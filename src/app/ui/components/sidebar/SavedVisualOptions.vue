@@ -83,7 +83,6 @@ import { storeToRefs } from "pinia";
 import { toast } from "vue-sonner";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { ColorTranslator } from "colortranslator";
-import { onMounted } from "vue";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
