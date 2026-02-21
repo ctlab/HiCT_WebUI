@@ -204,28 +204,38 @@ class HiCViewAndLayersManager {
       this.imageSizeScaled.push(
         this.imageSizes[i] * this.pixelResolutionSet[i]
       );
-
-      const layerResolutionBorders: LayerResolutionBorders = {
-        minResolutionInclusive:
-          i === this.resolutions.length - 1
-            ? Number.NEGATIVE_INFINITY
-            : this.pixelResolutionSet[i],
-        maxResolutionExclusive:
-          i === 0 ? Number.POSITIVE_INFINITY : this.pixelResolutionSet[i - 1],
-      };
-
-      this.layerResolutionBorders.set(
-        this.resolutions[i],
-        layerResolutionBorders
-      );
-
       this.resolutionTuples.push({
         bpResolution: this.resolutions[i],
         pixelResolution: this.pixelResolutionSet[i],
-        layerResolutionBorders: layerResolutionBorders,
+        layerResolutionBorders: {
+          minResolutionInclusive: Number.NaN,
+          maxResolutionExclusive: Number.NaN,
+        },
         imageSizeIndex: i,
       });
     }
+
+    this.resolutionTuples.sort(
+      (a, b) => a.pixelResolution - b.pixelResolution
+    );
+    for (let i = 0; i < this.resolutionTuples.length; ++i) {
+      const layerResolutionBorders: LayerResolutionBorders = {
+        minResolutionInclusive:
+          i === 0
+            ? Number.NEGATIVE_INFINITY
+            : this.resolutionTuples[i].pixelResolution,
+        maxResolutionExclusive:
+          i === this.resolutionTuples.length - 1
+            ? Number.POSITIVE_INFINITY
+            : this.resolutionTuples[i + 1].pixelResolution,
+      };
+      this.resolutionTuples[i].layerResolutionBorders = layerResolutionBorders;
+      this.layerResolutionBorders.set(
+        this.resolutionTuples[i].bpResolution,
+        layerResolutionBorders
+      );
+    }
+
     this.resolutionTuples.sort(
       (a, b) =>
         a.layerResolutionBorders.minResolutionInclusive -
