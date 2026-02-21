@@ -221,7 +221,9 @@ class HiCViewAndLayersManager {
     for (let i = 0; i < this.resolutionTuples.length; ++i) {
       const layerResolutionBorders: LayerResolutionBorders = {
         minResolutionInclusive:
-          i === 0 ? 0 : this.resolutionTuples[i].pixelResolution,
+          i === 0
+            ? Number.NEGATIVE_INFINITY
+            : this.resolutionTuples[i].pixelResolution,
         maxResolutionExclusive:
           i === this.resolutionTuples.length - 1
             ? Number.POSITIVE_INFINITY
