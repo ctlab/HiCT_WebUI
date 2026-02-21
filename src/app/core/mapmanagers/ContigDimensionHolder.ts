@@ -50,8 +50,10 @@ export default class ContigDimensionHolder {
       .forEach((id, ord) => (this.contigIdToOrd[id] = ord));
 
     this.resolutions.length = 0;
-    for (const resolution of contigDescriptors[0].contigLengthBins.keys()) {
-      this.resolutions.push(resolution);
+    if (contigDescriptors.length > 0) {
+      for (const resolution of contigDescriptors[0].contigLengthBins.keys()) {
+        this.resolutions.push(resolution);
+      }
     }
 
     this.contig_count = this.contigDescriptors.length;
@@ -193,10 +195,14 @@ export default class ContigDimensionHolder {
   ): number {
     const resolution_prefix_sum = this.prefix_sum_px.get(resolution);
     if (resolution_prefix_sum) {
+      const maxValue = resolution_prefix_sum[resolution_prefix_sum.length - 1] - 1;
+      if (maxValue < 0) {
+        return 0;
+      }
       return CommonUtils.clamp(
         coordinate,
         0,
-        resolution_prefix_sum[resolution_prefix_sum.length - 1] - 1
+        maxValue
       );
     } else {
       throw new Error("Missing resolution: " + resolution);
@@ -248,12 +254,15 @@ export default class ContigDimensionHolder {
   // search(3)
 
   public getContigOrderByPx(px: number, resolution: number): number {
+    if (this.contig_count <= 0) {
+      return 0;
+    }
     const prefix_sum_px = this.prefix_sum_px.get(resolution);
     if (!prefix_sum_px) {
       throw new Error("Unknown resolution for prefix_sum_px: " + resolution);
     }
     const contig_ord_containing_px = bounds.le(prefix_sum_px, px);
-    return contig_ord_containing_px;
+    return CommonUtils.clamp(contig_ord_containing_px, 0, this.contig_count - 1);
   }
 
   protected getStartBpOfBin_internal(
@@ -321,10 +330,15 @@ export default class ContigDimensionHolder {
   }
 
   public getStartBpOfPx(px: number, resolution: number): number {
+    if (this.contig_count <= 0) {
+      return 0;
+    }
     const prefixSumPx = this.prefix_sum_px.get(resolution);
-    const clampedPx: number = prefixSumPx
-      ? CommonUtils.clamp(px, 0, prefixSumPx[this.contig_count] - 1)
-      : px;
+    const maxPx = prefixSumPx ? prefixSumPx[this.contig_count] - 1 : -1;
+    if (maxPx < 0) {
+      return 0;
+    }
+    const clampedPx: number = CommonUtils.clamp(px, 0, maxPx);
     const start_bp = this.getStartBpOfPx_internal(clampedPx, resolution);
     return CommonUtils.clamp(
       start_bp,
