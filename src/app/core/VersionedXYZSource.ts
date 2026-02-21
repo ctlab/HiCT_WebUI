@@ -32,6 +32,7 @@ class VersionedXYZContactMapSource extends XYZ {
   constructor(
     protected readonly layersManager: HiCViewAndLayersManager,
     protected readonly zoomLevel: number,
+    protected readonly bpResolution: number,
     readonly xyzOptions?: XYZOptions
   ) {
     super(xyzOptions);
@@ -104,6 +105,7 @@ class VersionedXYZContactMapSource extends XYZ {
         `${unref(this.layersManager.mapManager.networkManager.host)}` +
         `/get_tile?version=${this.sourceVersion}` +
         `&level=${1 + this.zoomLevel}` +
+        `&bpResolution=${this.bpResolution}` +
         `&row=${row}` +
         `&col=${col}` +
         `&tile_size=${unref(this.layersManager.tileSize)}`

@@ -370,6 +370,7 @@ class HiCViewAndLayersManager {
     const resolutionDescriptor =
       this.viewResolutionToResolutionDescriptor(viewResolution);
     this.currentViewState.resolutionDesciptor = resolutionDescriptor;
+    this.syncLayerVisibilityForCurrentResolution();
   }
 
   public onTileSizeChanged(tileSize: number): void {
@@ -502,23 +503,28 @@ class HiCViewAndLayersManager {
           this.mapManager.getOptions().tileSize,
         ],
       });
-      const layerSource = new VersionedXYZContactMapSource(this, i, {
-        projection: this.pixelProjection,
-        tileGrid: layerTileGrid,
-        interpolate: false,
-        cacheSize: 0,
-      });
+      const layerSource = new VersionedXYZContactMapSource(
+        this,
+        i,
+        layerResolution,
+        {
+          projection: this.pixelProjection,
+          tileGrid: layerTileGrid,
+          interpolate: false,
+          cacheSize: 0,
+        }
+      );
       layerSource.do_reload();
       // Define layer:
       const layer = new TileLayer({
         source: layerSource,
         // cacheSize: 0,
-        minResolution:
-          this.layerResolutionBorders.get(layerResolution)
-            ?.minResolutionInclusive,
-        maxResolution:
-          this.layerResolutionBorders.get(layerResolution)
-            ?.maxResolutionExclusive,
+        minResolution: this.toFiniteResolutionBound(
+          this.layerResolutionBorders.get(layerResolution)?.minResolutionInclusive
+        ),
+        maxResolution: this.toFiniteResolutionBound(
+          this.layerResolutionBorders.get(layerResolution)?.maxResolutionExclusive
+        ),
         zIndex: this.layersZIndices.HIC_MAP_LAYER_Z_INDEX,
       });
       layer.set("bpResolution", layerResolution);
@@ -971,6 +977,40 @@ class HiCViewAndLayersManager {
     this.reloadTiles();
     this.reloadTracks();
     this.mapManager.map.changed();
+  }
+
+  private toFiniteResolutionBound(bound: number | undefined): number | undefined {
+    return Number.isFinite(bound) ? bound : undefined;
+  }
+
+  private syncLayerVisibilityForCurrentResolution(): void {
+    const activeResolution = this.currentViewState.resolutionDesciptor.bpResolution;
+    if (!Number.isFinite(activeResolution)) {
+      return;
+    }
+
+    for (const layer of this.layersHolder.hicDataLayers) {
+      const layerResolution = Number(layer.get("bpResolution"));
+      layer.setVisible(layerResolution === activeResolution);
+    }
+
+    for (const layer of this.layersHolder.contigBordersLayers) {
+      const layerResolution = Number(layer.get("bpResolution"));
+      layer.setVisible(layerResolution === activeResolution);
+    }
+
+    for (const layer of this.layersHolder.scaffoldBordersLayers) {
+      const layerResolution = Number(layer.get("bpResolution"));
+      layer.setVisible(layerResolution === activeResolution);
+    }
+
+    for (const layer of this.layersHolder.contigTranslocationArrowsLayers) {
+      const layerResolution = Number(layer.get("bpResolution"));
+      layer.setVisible(
+        layerResolution === activeResolution &&
+          this.currentViewState.activeTool === ActiveTool.TRANSLOCATION
+      );
+    }
   }
 }
 
