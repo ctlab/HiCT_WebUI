@@ -75,6 +75,15 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     // .filter((l) => l instanceof TileLayer)
     // .sort((l1, l2) => l1.zIndex - l2.zIndex)[0];
 
+    if (this.useAnchor_) {
+      this.lastMouseCoord = mapBrowserEvent.coordinate;
+      this.lastMousePixel = mapBrowserEvent.pixel;
+      this.lastCenterPixel = [
+        Math.round(map.getSize()[0] / 2),
+        Math.round(map.getSize()[1] / 2),
+      ];
+    }
+
     if (hovered_layer) {
       const layer_projection = hovered_layer.getSource().getProjection();
       const pixelResolution = hovered_layer.get("pixelResolution");
@@ -102,13 +111,9 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
 
       if (this.useAnchor_) {
         this.lastMouseBps = coord_bp;
-        this.lastMouseCoord = mapBrowserEvent.coordinate;
-        this.lastMousePixel = mapBrowserEvent.pixel;
-        this.lastCenterPixel = [
-          Math.round(map.getSize()[0] / 2),
-          Math.round(map.getSize()[1] / 2),
-        ];
       }
+    } else {
+      this.lastMouseBps = null;
     }
 
     // Delta normalisation inspired by
@@ -199,38 +204,25 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
       return;
     }
 
+    const newZoom = view.getConstrainedZoom(currentZoom + delta);
+    const newResolution = view.getResolutionForZoom(newZoom);
+    if (newResolution === undefined) {
+      return;
+    }
+
+    const old_level_index = this.getClosestResolutionIndex(view.getResolution());
+    const new_level_index = this.getClosestResolutionIndex(newResolution);
+
     if (
       this.lastMouseBps &&
       this.lastCenterPixel &&
       this.lastMousePixel &&
       this.lastMouseCoord &&
-      !isNaN(this.lastMouseCoord[0])
+      !isNaN(this.lastMouseCoord[0]) &&
+      new_level_index !== old_level_index
     ) {
-      const newZoom = view.getConstrainedZoom(currentZoom + delta);
-      const newResolution = view.getResolutionForZoom(newZoom);
-      const oldResolutionPreOrder = binarySearch(
-        this.pixelResolutionSet,
-        view.getResolution(),
-        (a, b) => b - a
-      );
-      const old_level_index =
-        oldResolutionPreOrder >= 0
-          ? oldResolutionPreOrder
-          : -(oldResolutionPreOrder + 1);
-
-      const newResolutionPreOrder = binarySearch(
-        this.pixelResolutionSet,
-        newResolution,
-        (a, b) => b - a
-      );
-      const newResolutionOrder =
-        newResolutionPreOrder >= 0
-          ? newResolutionPreOrder
-          : -(newResolutionPreOrder + 1);
-      const new_level_index = newResolutionOrder;
-
-      if (new_level_index !== old_level_index) {
-        const newResolutionSeq = this.resolutions[newResolutionOrder];
+      const newResolutionSeq = this.resolutions[new_level_index];
+      if (newResolutionSeq !== undefined) {
         const finish_bin_1 = this.dimension_holder.getBinContainingBp(
           this.lastMouseBps[0],
           newResolutionSeq
@@ -263,6 +255,12 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
           anchor: this.lastMouseCoord,
         });
       }
+    } else {
+      view.animate({
+        duration: this.duration_,
+        resolution: newResolution,
+        anchor: this.lastMouseCoord,
+      });
     }
 
     this.mode_ = undefined;
@@ -271,5 +269,21 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     this.timeoutId_ = undefined;
     // this.lastMousePixel = null;
     // this.lastCenterPixel = null;
+  }
+
+  getClosestResolutionIndex(resolution) {
+    if (!this.pixelResolutionSet.length) {
+      return 0;
+    }
+    let bestIdx = 0;
+    let bestDist = Math.abs(this.pixelResolutionSet[0] - resolution);
+    for (let i = 1; i < this.pixelResolutionSet.length; ++i) {
+      const dist = Math.abs(this.pixelResolutionSet[i] - resolution);
+      if (dist < bestDist) {
+        bestIdx = i;
+        bestDist = dist;
+      }
+    }
+    return bestIdx;
   }
 }

@@ -101,8 +101,12 @@ class VersionedXYZContactMapSource extends XYZ {
     return (coord_zxy: number[]) => {
       const col = coord_zxy[1];
       const row = coord_zxy[2];
+      const host = `${unref(this.layersManager.mapManager.networkManager.host)}`.replace(
+        /\/+$/,
+        ""
+      );
       return (
-        `${unref(this.layersManager.mapManager.networkManager.host)}` +
+        `${host}` +
         `/get_tile?version=${this.sourceVersion}` +
         `&level=${1 + this.zoomLevel}` +
         `&bpResolution=${this.bpResolution}` +
