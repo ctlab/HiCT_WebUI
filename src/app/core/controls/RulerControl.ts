@@ -168,9 +168,13 @@ class RulerControl extends Control {
 
     const pixelResolution = mapView.getResolution() ?? 1;
 
+    const layerPixelResolution = Number.isFinite(
+      resolutionDescriptor.pixelResolution
+    )
+      ? resolutionDescriptor.pixelResolution
+      : 1;
     const fraction1 =
-      pixelResolution /
-      resolutionDescriptor.layerResolutionBorders.minResolutionInclusive;
+      layerPixelResolution > 0 ? pixelResolution / layerPixelResolution : 1;
 
     const fixed_coordinates = transform(
       extent,
@@ -206,6 +210,14 @@ class RulerControl extends Control {
         )
       ),
     };
+    if (
+      !Number.isFinite(visibleMapBoxExtentPixel.left) ||
+      !Number.isFinite(visibleMapBoxExtentPixel.right) ||
+      !Number.isFinite(visibleMapBoxExtentPixel.top) ||
+      !Number.isFinite(visibleMapBoxExtentPixel.bottom)
+    ) {
+      return;
+    }
 
     // console.log(
     //   //   "Got extent",

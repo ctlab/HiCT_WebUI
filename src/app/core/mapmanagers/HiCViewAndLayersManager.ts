@@ -221,9 +221,7 @@ class HiCViewAndLayersManager {
     for (let i = 0; i < this.resolutionTuples.length; ++i) {
       const layerResolutionBorders: LayerResolutionBorders = {
         minResolutionInclusive:
-          i === 0
-            ? Number.NEGATIVE_INFINITY
-            : this.resolutionTuples[i].pixelResolution,
+          i === 0 ? 0 : this.resolutionTuples[i].pixelResolution,
         maxResolutionExclusive:
           i === this.resolutionTuples.length - 1
             ? Number.POSITIVE_INFINITY
@@ -566,6 +564,9 @@ class HiCViewAndLayersManager {
   public viewResolutionToResolutionDescriptor(
     viewResolution: number
   ): LayerResolutionDescriptor {
+    if (this.resolutionTuples.length === 0) {
+      throw new Error("No resolutions available");
+    }
     const testElement: LayerResolutionDescriptor = {
       bpResolution: Number.NaN,
       pixelResolution: Number.NaN,
@@ -575,12 +576,16 @@ class HiCViewAndLayersManager {
       },
       imageSizeIndex: Number.NaN,
     };
-    const descriptorIndex: number = bounds.le(
+    const descriptorIndexRaw: number = bounds.le(
       this.resolutionTuples,
       testElement,
       (d1, d2) =>
         d1.layerResolutionBorders.minResolutionInclusive -
         d2.layerResolutionBorders.minResolutionInclusive
+    );
+    const descriptorIndex = Math.max(
+      0,
+      Math.min(descriptorIndexRaw, this.resolutionTuples.length - 1)
     );
     const descriptor = this.resolutionTuples[descriptorIndex];
     return descriptor;
