@@ -50,21 +50,6 @@
             <div class="spinner-border ms-auto" role="status"></div>
           </div>
           <div>
-            <select
-              class="form-select form-select-lg mb-3"
-              v-model="selectedFilename"
-            >
-              <option selected>
-                Select {{ props.fileType ?? "a" }} file from the list below...
-              </option>
-              <option
-                v-for="(filename, idx) in filenames"
-                :key="idx"
-                :value="filename"
-              >
-                {{ filename }}
-              </option>
-            </select>
             <div class="card flex justify-content-center" v-if="primeVueTree">
               <Tree
                 :filter="true"
@@ -385,7 +370,7 @@ function onNodeSelect(evt: { originalIndex?: number; key?: string }) {
   // console.log(evt);
   const idx = evt.originalIndex;
   const key = evt.key;
-  if (idx) {
+  if (idx !== undefined && idx !== null) {
     const fn = filenames.value;
     if (fn) {
       selectedFilename.value = fn[idx];

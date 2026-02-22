@@ -123,8 +123,38 @@
             </ul>
           </li>
           <!-- Dev -->
-          <li class="nav-item">
-            <a aria-current="page" class="nav-link active" href="#">Dev</a>
+          <li class="nav-item dropdown">
+            <a
+              aria-current="page"
+              class="nav-link active dropdown-toggle"
+              data-bs-toggle="dropdown"
+              href="#"
+              >Dev</a
+            >
+            <ul class="dropdown-menu p-3">
+              <li class="form-check">
+                <input
+                  id="toggle-request-errors"
+                  class="form-check-input"
+                  type="checkbox"
+                  v-model="requestErrorToastsEnabled"
+                />
+                <label class="form-check-label" for="toggle-request-errors">
+                  Show request error toasts
+                </label>
+              </li>
+              <li class="form-check mt-2">
+                <input
+                  id="toggle-webui-errors"
+                  class="form-check-input"
+                  type="checkbox"
+                  v-model="webuiErrorToastsEnabled"
+                />
+                <label class="form-check-label" for="toggle-webui-errors">
+                  Show WebUI error toasts
+                </label>
+              </li>
+            </ul>
           </li>
           <!-- Connection settings -->
           <li class="nav-item dropdown">
@@ -220,6 +250,8 @@ import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import CoolerConverter from "./CoolerConverter.vue";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
 import { toast } from "vue-sonner";
+import { storeToRefs } from "pinia";
+import { useErrorToastStore } from "@/app/stores/errorToastStore";
 const openingFile = ref(false);
 const openingFASTAFile = ref(false);
 const openingAGPFile = ref(false);
@@ -238,6 +270,9 @@ const props = defineProps<{
 }>();
 
 const errorMessage: Ref<unknown | null> = ref(null);
+const errorToastStore = useErrorToastStore();
+const { requestErrorToastsEnabled, webuiErrorToastsEnabled } =
+  storeToRefs(errorToastStore);
 
 function onOpenFile() {
   openingFile.value = true;

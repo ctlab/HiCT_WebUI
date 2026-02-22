@@ -102,9 +102,15 @@
         id="export-png-button"
         class="btn-sm btn-outline-primary"
         type="button"
-        @click="props.mapManager?.exportCurrentMapSvg()"
+        :disabled="exportingSvg"
+        @click="exportSvg"
+        title="Export full map as SVG"
       >
-        <i class="bi bi-box-arrow-up"></i>
+        <span v-if="!exportingSvg"><i class="bi bi-box-arrow-up"></i></span>
+        <span v-else>
+          <span class="spinner-border spinner-border-sm me-2"></span>
+          {{ Math.round(svgProgress * 100) }}%
+        </span>
       </button>
     </div>
   </div>
@@ -121,6 +127,21 @@ const props = defineProps<{
 
 const rowContigId: Ref<number | null> = ref(null);
 const columnContigId: Ref<number | null> = ref(null);
+const exportingSvg = ref(false);
+const svgProgress = ref(0);
+
+async function exportSvg() {
+  if (!props.mapManager || exportingSvg.value) return;
+  exportingSvg.value = true;
+  svgProgress.value = 0;
+  try {
+    await props.mapManager.exportCurrentMapSvg((progress) => {
+      svgProgress.value = progress;
+    });
+  } finally {
+    exportingSvg.value = false;
+  }
+}
 
 function checkOptionsAndSnapToContigIntersection() {
   // alert("Row " + rowContigId.value + " Column " + columnContigId.value);

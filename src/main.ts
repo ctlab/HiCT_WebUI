@@ -31,6 +31,8 @@ import "primeicons/primeicons.css";
 // import "./assets/main.css";
 import { createApp } from "vue";
 import { createPinia } from "pinia";
+import { useErrorToastStore } from "@/app/stores/errorToastStore";
+import { toast } from "vue-sonner";
 
 const pinia = createPinia();
 
@@ -39,3 +41,41 @@ const pinia = createPinia();
 const app = createApp(App);
 app.use(pinia);
 app.mount("#app");
+
+const errorToastStore = useErrorToastStore(pinia);
+
+const originalConsoleError = console.error.bind(console);
+console.error = (...args: unknown[]) => {
+  originalConsoleError(...args);
+  if (!errorToastStore.webuiErrorToastsEnabled) return;
+  try {
+    const message = args
+      .map((arg) => {
+        if (arg instanceof Error) return arg.message;
+        if (typeof arg === "string") return arg;
+        return JSON.stringify(arg);
+      })
+      .join(" ");
+    toast.error(message);
+  } catch (_e) {
+    toast.error("WebUI error (see console for details)");
+  }
+};
+
+window.addEventListener("error", (event) => {
+  if (!errorToastStore.webuiErrorToastsEnabled) return;
+  const msg = event.error?.message ?? event.message ?? "WebUI error";
+  toast.error(msg);
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  if (!errorToastStore.webuiErrorToastsEnabled) return;
+  const reason = event.reason;
+  const msg =
+    reason instanceof Error
+      ? reason.message
+      : typeof reason === "string"
+      ? reason
+      : "Unhandled promise rejection";
+  toast.error(msg);
+});

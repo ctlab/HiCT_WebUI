@@ -68,6 +68,7 @@ import {
   CurrentSignalRangeResponse,
 } from "./response";
 import { toast } from "vue-sonner";
+import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 
 class RequestManager {
@@ -104,6 +105,17 @@ class RequestManager {
           }
         }
         return req;
+      })
+      .catch((err) => {
+        const errorToastStore = useErrorToastStore();
+        if (errorToastStore.requestErrorToastsEnabled) {
+          const message =
+            err?.response?.data?.error ??
+            err?.message ??
+            "Request failed";
+          toast.error(message);
+        }
+        throw err;
       });
   }
 

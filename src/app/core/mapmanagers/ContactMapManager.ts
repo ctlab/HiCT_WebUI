@@ -179,7 +179,9 @@ class ContactMapManager {
     this.viewAndLayersManager.reloadTiles();
   }
 
-  public async exportCurrentMapSvg(): Promise<void> {
+  public async exportCurrentMapSvg(
+    progressCallback?: (progress: number) => void
+  ): Promise<void> {
     const descriptor =
       this.viewAndLayersManager.currentViewState.resolutionDesciptor;
     const imageSize =
@@ -217,6 +219,7 @@ class ContactMapManager {
     const width = imageSize;
     const height = imageSize;
     const svgImages: string[] = [];
+    let completed = 0;
     let nextIndex = 0;
     const concurrency = 8;
     const worker = async () => {
@@ -238,8 +241,16 @@ class ContactMapManager {
               `<image x=\"${x}\" y=\"${y}\" width=\"${tileWidth}\" height=\"${tileHeight}\" href=\"${data.image}\" />`
             );
           }
+          completed += 1;
+          if (progressCallback) {
+            progressCallback(completed / Math.max(tiles.length, 1));
+          }
         } catch (e) {
           console.error("Failed to export tile", tile, e);
+          completed += 1;
+          if (progressCallback) {
+            progressCallback(completed / Math.max(tiles.length, 1));
+          }
         }
       }
     };
