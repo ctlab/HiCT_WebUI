@@ -83,6 +83,22 @@ class CommonEventManager {
     this.mapManager.viewAndLayersManager.onScanffoldBorderStyleChanged(style);
   }
 
+  public onContigBorderWidthChanged(width: number): void {
+    this.mapManager.viewAndLayersManager.onContigBorderWidthChanged(width);
+  }
+
+  public onScaffoldBorderWidthChanged(width: number): void {
+    this.mapManager.viewAndLayersManager.onScaffoldBorderWidthChanged(width);
+  }
+
+  public onContigFillColorChanged(fillColor: string): void {
+    this.mapManager.viewAndLayersManager.onContigFillColorChanged(fillColor);
+  }
+
+  public onScaffoldFillColorChanged(fillColor: string): void {
+    this.mapManager.viewAndLayersManager.onScaffoldFillColorChanged(fillColor);
+  }
+
   // public onNormalizationChanged(
   //   normalizationSettings: NormalizationSettings
   // ): void {

@@ -102,6 +102,7 @@
         id="export-png-button"
         class="btn-sm btn-outline-primary"
         type="button"
+        @click="props.mapManager?.exportCurrentMapSvg()"
       >
         <i class="bi bi-box-arrow-up"></i>
       </button>

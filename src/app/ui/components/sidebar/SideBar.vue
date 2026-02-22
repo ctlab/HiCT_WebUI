@@ -36,8 +36,10 @@
           v-bind:key="layer.name"
           v-bind:layer-name="layer.name"
           :getDefaultColor="layer.getStyle"
+          :enableStyleEditor="layer.enableStyleEditor"
           @onColorChanged="onColorChanged"
           @onBorderStyleChanged="onBorderStyleChanged"
+          @onStyleChanged="onStyleChanged"
         >
         </LayerComponent>
       </div>
@@ -117,20 +119,29 @@ class LayerDescriptor {
   constructor(
     public name: string,
     public getStyle?: () => Style | undefined,
-    public layer_manager?: unknown
+    public layer_manager?: unknown,
+    public enableStyleEditor: boolean = false
   ) {}
 }
 
 const layers: Ref<LayerDescriptor[]> = ref([
-  new LayerDescriptor("Contigs", () =>
-    props.mapManager
-      ?.getLayersManager()
-      .track2DHolder.contigBordersTrack.getStyle()
+  new LayerDescriptor(
+    "Contigs",
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.contigBordersTrack.getStyle(),
+    undefined,
+    true
   ),
-  new LayerDescriptor("Scaffolds", () =>
-    props.mapManager
-      ?.getLayersManager()
-      .track2DHolder.scaffoldBordersTrack.getStyle()
+  new LayerDescriptor(
+    "Scaffolds",
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.scaffoldBordersTrack.getStyle(),
+    undefined,
+    true
   ),
   new LayerDescriptor("Gridlines"),
   new LayerDescriptor("Background", () => backgroundColorStyle.value),
@@ -167,6 +178,26 @@ function onBorderStyleChanged(layerName: string, style: BorderStyle) {
       break;
     default:
       // alert(`Method for ${layerName} is undefined`);
+      toast.error(`Method for ${layerName} is undefined`);
+      console.error(`Method for ${layerName} is undefined`);
+  }
+}
+
+function onStyleChanged(
+  layerName: string,
+  borderWidth: number,
+  fillColor: ColorTranslator
+) {
+  switch (layerName) {
+    case "Contigs":
+      getEventManager()?.onContigBorderWidthChanged(borderWidth);
+      getEventManager()?.onContigFillColorChanged(fillColor.RGBA);
+      break;
+    case "Scaffolds":
+      getEventManager()?.onScaffoldBorderWidthChanged(borderWidth);
+      getEventManager()?.onScaffoldFillColorChanged(fillColor.RGBA);
+      break;
+    default:
       toast.error(`Method for ${layerName} is undefined`);
       console.error(`Method for ${layerName} is undefined`);
   }

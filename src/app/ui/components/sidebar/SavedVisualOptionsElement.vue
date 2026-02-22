@@ -67,6 +67,7 @@
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
+import type { TrackStylePresetBundle } from "@/app/core/tracks/TrackStylePreset";
 import { ref } from "vue";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
@@ -87,6 +88,7 @@ const props = defineProps<{
   name: string;
   visualizationOptions: VisualizationOptions;
   backgroundColor: ColorTranslator;
+  trackStyles?: TrackStylePresetBundle;
 }>();
 
 const emits = defineEmits<{
@@ -110,6 +112,9 @@ function setOptionsPreset() {
       props.visualizationOptions
     );
     stylesStore.setMapBackground(props.backgroundColor);
+    if (props.trackStyles) {
+      props.mapManager.getLayersManager().applyTrackStylePreset(props.trackStyles);
+    }
     props.mapManager?.visualizationManager
       .sendVisualizationOptionsToServer()
       .then(() => props.mapManager?.reloadTiles());

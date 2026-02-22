@@ -34,6 +34,7 @@ import { CommonEventManager } from "./CommonEventManager";
 import { CurrentSignalRangeResponse } from "../net/api/response";
 import { VisualizationManager } from "./VisualizationManager";
 import { Ref } from "vue";
+import { VersionedXYZContactMapSource } from "../VersionedXYZSource";
 
 class ContactMapManager {
   public readonly map: Map;
@@ -176,6 +177,90 @@ class ContactMapManager {
 
   public reloadTiles(): void {
     this.viewAndLayersManager.reloadTiles();
+  }
+
+  public async exportCurrentMapSvg(): Promise<void> {
+    const descriptor =
+      this.viewAndLayersManager.currentViewState.resolutionDesciptor;
+    const imageSize =
+      this.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex];
+    const tileSize = this.options.tileSize;
+
+    const layer =
+      this.viewAndLayersManager.layersHolder.bpResolutionToHiCDataLayer.get(
+        descriptor.bpResolution
+      );
+    if (!layer) {
+      throw new Error(
+        `Cannot export SVG: no data layer for resolution ${descriptor.bpResolution}`
+      );
+    }
+    const source = layer.getSource();
+    if (!(source instanceof VersionedXYZContactMapSource)) {
+      throw new Error("Cannot export SVG: unexpected data source type");
+    }
+
+    const tileUrlFn = source.getTileUrlFunction();
+    const projection = this.map.getView().getProjection();
+    const pixelRatio = window.devicePixelRatio ?? 1;
+    const tilesPerSide = Math.ceil(imageSize / tileSize);
+    const tiles: { col: number; row: number; url: string }[] = [];
+    for (let row = 0; row < tilesPerSide; row++) {
+      for (let col = 0; col < tilesPerSide; col++) {
+        const url = tileUrlFn([0, col, row], pixelRatio, projection);
+        if (url) {
+          tiles.push({ col, row, url });
+        }
+      }
+    }
+
+    const width = imageSize;
+    const height = imageSize;
+    const svgImages: string[] = [];
+    let nextIndex = 0;
+    const concurrency = 8;
+    const worker = async () => {
+      while (true) {
+        const idx = nextIndex++;
+        if (idx >= tiles.length) {
+          return;
+        }
+        const tile = tiles[idx];
+        try {
+          const response = await fetch(tile.url);
+          const data = await response.json();
+          if (data && data.image) {
+            const x = tile.col * tileSize;
+            const y = tile.row * tileSize;
+            const tileWidth = Math.min(tileSize, width - x);
+            const tileHeight = Math.min(tileSize, height - y);
+            svgImages.push(
+              `<image x=\"${x}\" y=\"${y}\" width=\"${tileWidth}\" height=\"${tileHeight}\" href=\"${data.image}\" />`
+            );
+          }
+        } catch (e) {
+          console.error("Failed to export tile", tile, e);
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+    let svg =
+      `<?xml version=\"1.0\" encoding=\"UTF-8\"?>` +
+      `<svg xmlns=\"http://www.w3.org/2000/svg\" ` +
+      `xmlns:xlink=\"http://www.w3.org/1999/xlink\" ` +
+      `width=\"${width}\" height=\"${height}\" viewBox=\"0 0 ${width} ${height}\">`;
+
+    svg += svgImages.join("");
+    svg += `</svg>`;
+
+    const blob = new Blob([svg], { type: "image/svg+xml" });
+    const a = document.createElement("a");
+    a.download = `${this.options.filename}.svg`;
+    a.href = URL.createObjectURL(blob);
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
   public dispose() {

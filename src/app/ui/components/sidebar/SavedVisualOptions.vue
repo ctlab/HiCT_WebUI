@@ -65,6 +65,7 @@
         :option_id="opt.option_id"
         :visualization-options="opt.options"
         :background-color="opt.backgroundColor"
+        :track-styles="opt.trackStyles"
         :name="opt.name"
         @remove="removeOption"
         @rename="renameOption"
@@ -78,6 +79,7 @@ import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { Ref, ref, shallowRef, triggerRef, onMounted } from "vue";
 import SavedVisualOptionsElement from "./SavedVisualOptionsElement.vue";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
+import type { TrackStylePresetBundle } from "@/app/core/tracks/TrackStylePreset";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import { toast } from "vue-sonner";
@@ -109,6 +111,7 @@ const savedOptions = shallowRef(
       name: string;
       options: VisualizationOptions;
       backgroundColor: ColorTranslator;
+      trackStyles?: TrackStylePresetBundle;
     }
   >()
 );
@@ -142,6 +145,7 @@ function saveOptions() {
     name: `Preset ${id}`,
     options: visualizationOptionsStore.asVisualizationOptions(),
     backgroundColor: mapBackgroundColor.value as ColorTranslator,
+    trackStyles: props.mapManager.getLayersManager().getTrackStylePreset(),
   });
   bumpSavedOptions();
 }
@@ -165,6 +169,7 @@ function exportOptions() {
     options: VisualizationOptions;
     backgroundColor: string; // <-- stable
     name: string;
+    trackStyles?: TrackStylePresetBundle;
   }[] = [];
 
   savedOptions.value.forEach((v) =>
@@ -173,6 +178,7 @@ function exportOptions() {
       options: v.options,
       name: v.name,
       backgroundColor: colorToString(v.backgroundColor),
+      trackStyles: v.trackStyles,
     })
   );
 
@@ -278,12 +284,14 @@ function importJSONResults(jsonPreResult: unknown) {
         options: VisualizationOptions;
         backgroundColor?: string | ColorTranslator;
         name?: string;
+        trackStyles?: TrackStylePresetBundle;
       }[];
       savedVisualizationPresets?: {
         option_id: number;
         options: VisualizationOptions;
         backgroundColor?: string | ColorTranslator;
         name?: string;
+        trackStyles?: TrackStylePresetBundle;
       }[];
     };
   };
@@ -312,6 +320,7 @@ function importJSONResults(jsonPreResult: unknown) {
       option_id: newId,
       options: option.options,
       backgroundColor,
+      trackStyles: option.trackStyles,
       name: option.name ?? `Imported preset ${newId}`,
     };
     savedOptions.value.set(newOption.option_id, newOption);

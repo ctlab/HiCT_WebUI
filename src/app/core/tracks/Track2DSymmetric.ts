@@ -87,6 +87,14 @@ abstract class Track2DSymmetric extends Track2D {
     return this.style;
   }
 
+  public getStyleType(): BorderStyle {
+    return BorderStyle.FULL;
+  }
+
+  public setStyleType(_style: BorderStyle): void {
+    // Default: non-ring tracks ignore border style changes.
+  }
+
   public generateStyleFunction(): () => Style {
     const style = new Style({
       stroke: new Stroke({
@@ -158,8 +166,11 @@ class BasePairsTrack2DSymmetric extends Track2DSymmetric {
 
 abstract class WithRing extends Track2DSymmetric {
   protected borderStyle: BorderStyle = BorderStyle.FULL;
-  public setStyleType(style: BorderStyle): void {
+  public override setStyleType(style: BorderStyle): void {
     this.borderStyle = style;
+  }
+  public override getStyleType(): BorderStyle {
+    return this.borderStyle;
   }
   protected drawPolygon(
     topLeft: Array<number>,

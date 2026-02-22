@@ -32,6 +32,8 @@ import VectorSource from "ol/source/Vector";
 import Stroke from "ol/style/Stroke";
 import Style from "ol/style/Style";
 import TileGrid from "ol/tilegrid/TileGrid";
+import { asString, type Color } from "ol/color";
+import type { ColorLike } from "ol/colorlike";
 import { type Ref, ref } from "vue";
 import ContigMouseWheelZoom from "@/ContigMouseWheelZoom";
 import BinMousePosition from "@/BinMousePosition";
@@ -46,6 +48,10 @@ import {
   Track2DSymmetric,
   BorderStyle,
 } from "../tracks/Track2DSymmetric";
+import type {
+  TrackStylePreset,
+  TrackStylePresetBundle,
+} from "../tracks/TrackStylePreset";
 import Fill from "ol/style/Fill";
 import { pointerMove, shiftKeyOnly, singleClick } from "ol/events/condition";
 import type { ContigDescriptor } from "../domain/ContigDescriptor";
@@ -424,6 +430,20 @@ class HiCViewAndLayersManager {
     this.reloadTracks();
   }
 
+  public onContigBorderWidthChanged(width: number): void {
+    this.track2DHolder.contigBordersTrack.options.width = Math.max(1, width);
+    this.track2DHolder.contigBordersTrack.style =
+      this.track2DHolder.contigBordersTrack.generateStyleFunction()();
+    this.reloadTracks();
+  }
+
+  public onContigFillColorChanged(fillColor: string): void {
+    this.track2DHolder.contigBordersTrack.options.fillColor = fillColor;
+    this.track2DHolder.contigBordersTrack.style =
+      this.track2DHolder.contigBordersTrack.generateStyleFunction()();
+    this.reloadTracks();
+  }
+
   public onScanffoldBorderStyleChanged(style: BorderStyle): void {
     this.track2DHolder.scaffoldBordersTrack.setStyleType(style);
 
@@ -431,6 +451,72 @@ class HiCViewAndLayersManager {
       this.track2DHolder.scaffoldBordersTrack.generateStyleFunction()();
 
     this.reloadTracks();
+  }
+
+  public onScaffoldBorderWidthChanged(width: number): void {
+    this.track2DHolder.scaffoldBordersTrack.options.width = Math.max(1, width);
+    this.track2DHolder.scaffoldBordersTrack.style =
+      this.track2DHolder.scaffoldBordersTrack.generateStyleFunction()();
+    this.reloadTracks();
+  }
+
+  public onScaffoldFillColorChanged(fillColor: string): void {
+    this.track2DHolder.scaffoldBordersTrack.options.fillColor = fillColor;
+    this.track2DHolder.scaffoldBordersTrack.style =
+      this.track2DHolder.scaffoldBordersTrack.generateStyleFunction()();
+    this.reloadTracks();
+  }
+
+  public getTrackStylePreset(): TrackStylePresetBundle {
+    return {
+      contigs: this.getSingleTrackStylePreset(
+        this.track2DHolder.contigBordersTrack
+      ),
+      scaffolds: this.getSingleTrackStylePreset(
+        this.track2DHolder.scaffoldBordersTrack
+      ),
+    };
+  }
+
+  public applyTrackStylePreset(preset: TrackStylePresetBundle): void {
+    this.applySingleTrackStylePreset(
+      this.track2DHolder.contigBordersTrack,
+      preset.contigs
+    );
+    this.applySingleTrackStylePreset(
+      this.track2DHolder.scaffoldBordersTrack,
+      preset.scaffolds
+    );
+    this.reloadTracks();
+  }
+
+  private getSingleTrackStylePreset(track: Track2DSymmetric): TrackStylePreset {
+    const borderColor = this.colorLikeToString(track.options.borderColor);
+    const fillColor = this.colorLikeToString(track.options.fillColor);
+    return {
+      borderColor,
+      fillColor,
+      width: track.options.width,
+      borderStyle: track.getStyleType(),
+    };
+  }
+
+  private applySingleTrackStylePreset(
+    track: Track2DSymmetric,
+    preset: TrackStylePreset
+  ): void {
+    track.options.borderColor = preset.borderColor;
+    track.options.fillColor = preset.fillColor;
+    track.options.width = Math.max(1, preset.width);
+    track.setStyleType(preset.borderStyle);
+    track.style = track.generateStyleFunction()();
+  }
+
+  private colorLikeToString(color: Color | ColorLike): string {
+    if (typeof color === "string") {
+      return color;
+    }
+    return asString(color as Color);
   }
 
   public getView(): View {

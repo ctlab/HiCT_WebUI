@@ -43,7 +43,49 @@
         <i v-if="bordersStyle === 1" class="bi bi-arrow-down-left"></i>
         <i v-if="bordersStyle === 2" class="bi bi-arrow-up-right"></i>
       </div>
-      <i class="bi bi-pencil edit-btn" @click="editLayer"></i>
+      <div
+        v-if="enableStyleEditor"
+        class="dropdown dropdown-sm"
+        data-bs-auto-close="false"
+      >
+        <i
+          class="bi bi-pencil edit-btn dropdown-toggle"
+          data-bs-toggle="dropdown"
+          aria-expanded="false"
+          @click="openStyleEditor"
+        ></i>
+        <div class="dropdown-menu p-3 track-style-menu">
+          <div class="mb-2">
+            <label class="form-label" for="track-border-width"
+              >Border width</label
+            >
+            <input
+              id="track-border-width"
+              class="form-control form-control-sm"
+              type="number"
+              min="1"
+              step="1"
+              v-model.number="borderWidth"
+            />
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Fill color</label>
+            <ColorPickerRectangle
+              :position="['top', 'left']"
+              :getDefaultColor="getDefaultFillColor"
+              @onColorChanged="(c: ColorTranslator) => (fillColor = c)"
+            ></ColorPickerRectangle>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-success" @click="applyStyle">
+              Apply
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" @click="resetStyle">
+              Reset
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -53,15 +95,14 @@ import { type Ref, ref } from "vue";
 import { BorderStyle } from "@/app/core/tracks/Track2DSymmetric";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import Style from "ol/style/Style";
-import { Color } from "ol/color";
-import { toast } from "vue-sonner";
 import { ColorTranslator } from "colortranslator";
-import { ColorLike } from "ol/colorlike";
+import type { ColorLike } from "ol/colorlike";
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const props = defineProps<{
   layerName: string;
   getDefaultColor?: () => Style | undefined;
+  enableStyleEditor?: boolean;
 }>();
 
 function getBaseColor(): ColorTranslator {
@@ -86,9 +127,19 @@ const emit = defineEmits<{
     layerName: string,
     borderStyle: BorderStyle
   ): void;
+  (
+    e: "onStyleChanged",
+    layerName: string,
+    borderWidth: number,
+    fillColor: ColorTranslator
+  ): void;
 }>();
 
 const currentColor = ref(new ColorTranslator("#ffaaff", { legacyCSS: true }));
+const borderWidth: Ref<number> = ref(2);
+const fillColor: Ref<ColorTranslator> = ref(
+  new ColorTranslator("rgba(0,0,0,0.0)", { legacyCSS: true })
+) as Ref<ColorTranslator>;
 
 const bordersStyle: Ref<number> = ref(0);
 const visible: Ref<boolean> = ref(true);
@@ -112,8 +163,42 @@ function updateBorderStyle() {
   emit("onBorderStyleChanged", props.layerName as string, bordersStyle.value);
   // (Object.values(BorderStyle) as Array<BorderStyle>)[bordersStyle.value]
 }
-function editLayer() {
-  toast.error("Editing layer is not implemented for " + props.layerName);
+
+function getDefaultFillColor(): ColorTranslator {
+  if (props.getDefaultColor) {
+    const olColorString = props
+      .getDefaultColor()
+      ?.getFill()
+      ?.getColor() as ColorLike as string;
+    if (olColorString) {
+      return new ColorTranslator(olColorString, { legacyCSS: true });
+    }
+  }
+  return new ColorTranslator("rgba(0,0,0,0.0)", { legacyCSS: true });
+}
+
+function openStyleEditor() {
+  if (!props.getDefaultColor) return;
+  const style = props.getDefaultColor();
+  const strokeWidth = style?.getStroke()?.getWidth();
+  if (strokeWidth) {
+    borderWidth.value = strokeWidth;
+  }
+  fillColor.value = getDefaultFillColor();
+}
+
+function applyStyle() {
+  emit(
+    "onStyleChanged",
+    props.layerName as string,
+    borderWidth.value,
+    fillColor.value
+  );
+}
+
+function resetStyle() {
+  openStyleEditor();
+  applyStyle();
 }
 </script>
 
