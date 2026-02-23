@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -35,6 +35,7 @@
               type="number"
               lang="en"
               v-model.number="lowerBound"
+              @keydown.enter="applySettings"
             />
           </li>
           <li class="list-group-item w-100 h-100">
@@ -56,6 +57,7 @@
               type="number"
               lang="en"
               v-model.number="upperBound"
+              @keydown.enter="applySettings"
             />
           </li>
           <li class="list-group-item w-100 h-100">
@@ -73,7 +75,7 @@
       <button
         type="button"
         id="gradient-apply-button"
-        class="btn m-1"
+        class="btn m-1 gradient-apply-button"
         :style="gradstyle"
         @click="applySettings"
       >
@@ -131,6 +133,7 @@ const gradstyle = ref({
     " , " +
     toColor.value.RGBA +
     ")",
+  color: "#ffffff",
 });
 
 watch(
@@ -238,5 +241,12 @@ function applySettings() {
 #gradient-apply-button {
   width: 250px;
   margin: 15px;
+}
+
+.gradient-apply-button {
+  text-shadow:
+    0 0 2px #000,
+    0 0 1px #000;
+  border: none;
 }
 </style>

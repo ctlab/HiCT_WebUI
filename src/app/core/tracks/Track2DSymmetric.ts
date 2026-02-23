@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -101,7 +101,7 @@ abstract class Track2DSymmetric extends Track2D {
       width: opt_options?.width ?? 2,
       zIndex: opt_options?.zIndex ?? 0,
       labelSize: opt_options?.labelSize ?? 12,
-      labelOffsetMultiplier: opt_options?.labelOffsetMultiplier ?? 0.5,
+      labelOffsetMultiplier: opt_options?.labelOffsetMultiplier ?? 1.25,
       labelBold: opt_options?.labelBold ?? true,
       labelOutline: opt_options?.labelOutline ?? true,
       labelOutlineWidth: opt_options?.labelOutlineWidth ?? 2,

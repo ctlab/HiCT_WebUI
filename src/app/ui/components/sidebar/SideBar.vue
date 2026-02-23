@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -41,6 +41,7 @@
           :getLabelBold="layer.getLabelBold"
           :getLabelOutline="layer.getLabelOutline"
           :getLabelOutlineWidth="layer.getLabelOutlineWidth"
+          :getIncludeInSvg="layer.getIncludeInSvg"
           :enableStyleEditor="layer.enableStyleEditor"
           @onColorChanged="onColorChanged"
           @onBorderStyleChanged="onBorderStyleChanged"
@@ -130,7 +131,8 @@ class LayerDescriptor {
     public getLabelOffsetMultiplier?: () => number,
     public getLabelBold?: () => boolean,
     public getLabelOutline?: () => boolean,
-    public getLabelOutlineWidth?: () => number
+    public getLabelOutlineWidth?: () => number,
+    public getIncludeInSvg?: () => boolean
   ) {}
 }
 
@@ -163,7 +165,8 @@ const layers: Ref<LayerDescriptor[]> = ref([
     () =>
       props.mapManager
         ?.getLayersManager()
-        .track2DHolder.contigBordersTrack.getLabelOutlineWidth() ?? 2
+        .track2DHolder.contigBordersTrack.getLabelOutlineWidth() ?? 2,
+    () => props.mapManager?.getLayersManager().getExportTrackFlags().contigBorders ?? true
   ),
   new LayerDescriptor(
     "Scaffolds",
@@ -193,7 +196,8 @@ const layers: Ref<LayerDescriptor[]> = ref([
     () =>
       props.mapManager
         ?.getLayersManager()
-        .track2DHolder.scaffoldBordersTrack.getLabelOutlineWidth() ?? 2
+        .track2DHolder.scaffoldBordersTrack.getLabelOutlineWidth() ?? 2,
+    () => props.mapManager?.getLayersManager().getExportTrackFlags().scaffoldBorders ?? true
   ),
   new LayerDescriptor(
     "Cnames",
@@ -220,7 +224,8 @@ const layers: Ref<LayerDescriptor[]> = ref([
     () =>
       props.mapManager
         ?.getLayersManager()
-        .track2DHolder.contigBordersTrack.getLabelOutlineWidth() ?? 2
+        .track2DHolder.contigBordersTrack.getLabelOutlineWidth() ?? 2,
+    () => props.mapManager?.getLayersManager().getExportTrackFlags().contigNames ?? true
   ),
   new LayerDescriptor(
     "Snames",
@@ -247,7 +252,8 @@ const layers: Ref<LayerDescriptor[]> = ref([
     () =>
       props.mapManager
         ?.getLayersManager()
-        .track2DHolder.scaffoldBordersTrack.getLabelOutlineWidth() ?? 2
+        .track2DHolder.scaffoldBordersTrack.getLabelOutlineWidth() ?? 2,
+    () => props.mapManager?.getLayersManager().getExportTrackFlags().scaffoldNames ?? true
   ),
   new LayerDescriptor("Background", () => backgroundColorStyle.value),
 ]);
@@ -305,7 +311,8 @@ function onStyleChanged(
   labelOffsetMultiplier: number,
   labelBold: boolean,
   labelOutline: boolean,
-  labelOutlineWidth: number
+  labelOutlineWidth: number,
+  includeInSvg: boolean
 ) {
   switch (layerName) {
     case "Contigs":
@@ -318,6 +325,7 @@ function onStyleChanged(
       getEventManager()?.onContigLabelBoldChanged(labelBold);
       getEventManager()?.onContigLabelOutlineChanged(labelOutline);
       getEventManager()?.onContigLabelOutlineWidthChanged(labelOutlineWidth);
+      getEventManager()?.onContigExportEnabledChanged(includeInSvg);
       break;
     case "Scaffolds":
       getEventManager()?.onScaffoldBorderWidthChanged(borderWidth);
@@ -329,6 +337,7 @@ function onStyleChanged(
       getEventManager()?.onScaffoldLabelBoldChanged(labelBold);
       getEventManager()?.onScaffoldLabelOutlineChanged(labelOutline);
       getEventManager()?.onScaffoldLabelOutlineWidthChanged(labelOutlineWidth);
+      getEventManager()?.onScaffoldExportEnabledChanged(includeInSvg);
       break;
     case "Cnames":
       getEventManager()?.onContigLabelSizeChanged(labelSize);
@@ -338,6 +347,7 @@ function onStyleChanged(
       getEventManager()?.onContigLabelBoldChanged(labelBold);
       getEventManager()?.onContigLabelOutlineChanged(labelOutline);
       getEventManager()?.onContigLabelOutlineWidthChanged(labelOutlineWidth);
+      getEventManager()?.onContigNamesExportEnabledChanged(includeInSvg);
       break;
     case "Snames":
       getEventManager()?.onScaffoldLabelSizeChanged(labelSize);
@@ -347,6 +357,7 @@ function onStyleChanged(
       getEventManager()?.onScaffoldLabelBoldChanged(labelBold);
       getEventManager()?.onScaffoldLabelOutlineChanged(labelOutline);
       getEventManager()?.onScaffoldLabelOutlineWidthChanged(labelOutlineWidth);
+      getEventManager()?.onScaffoldNamesExportEnabledChanged(includeInSvg);
       break;
     default:
       toast.error(`Method for ${layerName} is undefined`);

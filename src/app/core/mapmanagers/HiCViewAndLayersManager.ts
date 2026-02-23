@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -191,6 +191,14 @@ class HiCViewAndLayersManager {
     contrastSliderRangesCallbacks: [],
   };
 
+  public readonly exportTrackFlags = {
+    contigBorders: true,
+    scaffoldBorders: true,
+    contigNames: true,
+    scaffoldNames: true,
+    translocationArrows: true,
+  };
+
   constructor(
     public readonly mapManager: ContactMapManager,
     response: OpenFileResponse,
@@ -266,16 +274,22 @@ class HiCViewAndLayersManager {
       global: false,
       getPointResolution: (resolution) => resolution,
     });
+    const minPixelResolution = Math.min(...this.pixelResolutionSet);
+    const maxPixelResolution = Math.max(...this.pixelResolutionSet);
+    const overzoomFactor = 1024;
+    const minResolution = minPixelResolution / overzoomFactor;
+    const maxResolution = maxPixelResolution * overzoomFactor;
     // Define view:
     this.view = new View({
       center: [
         this.pixelProjection.getExtent()[0],
         this.pixelProjection.getExtent()[3],
       ],
-      resolutions: this.pixelResolutionSet,
-      resolution: Math.max(...this.pixelResolutionSet),
-      minResolution: Math.min(...this.pixelResolutionSet),
-      maxResolution: Math.max(...this.pixelResolutionSet),
+      resolution: maxPixelResolution,
+      minResolution: minResolution,
+      maxResolution: maxResolution,
+      constrainResolution: false,
+      zoomFactor: 2,
       showFullExtent: true,
       constrainOnlyCenter: true,
       projection: this.pixelProjection,
@@ -513,6 +527,26 @@ class HiCViewAndLayersManager {
   public onScaffoldLabelOutlineWidthChanged(width: number): void {
     this.track2DHolder.scaffoldBordersTrack.setLabelOutlineWidth(width);
     this.reloadTracks();
+  }
+
+  public onContigExportEnabledChanged(enabled: boolean): void {
+    this.exportTrackFlags.contigBorders = enabled;
+  }
+
+  public onScaffoldExportEnabledChanged(enabled: boolean): void {
+    this.exportTrackFlags.scaffoldBorders = enabled;
+  }
+
+  public onContigNamesExportEnabledChanged(enabled: boolean): void {
+    this.exportTrackFlags.contigNames = enabled;
+  }
+
+  public onScaffoldNamesExportEnabledChanged(enabled: boolean): void {
+    this.exportTrackFlags.scaffoldNames = enabled;
+  }
+
+  public getExportTrackFlags() {
+    return { ...this.exportTrackFlags };
   }
 
   public onContigLabelOffsetMultiplierChanged(multiplier: number): void {

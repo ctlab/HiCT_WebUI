@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -26,7 +26,10 @@
   <div v-if="job">
     <div class="status-header">
       <div>
-        <p><strong>Status:</strong> {{ job.status }}</p>
+        <p>
+          <strong>Status:</strong>
+          <span class="status-pill" :class="statusClass">{{ statusLabel }}</span>
+        </p>
         <p>
           <strong>Input:</strong> {{ job.sourceFilename }} ({{
             formatBytes(job.inputSizeBytes)
@@ -57,7 +60,7 @@
       <div class="some-progress">
         <p>
           Progress in current resolution:
-          {{ formatPercent(job.resolutionProgress) }}
+          {{ formatPercent(resolutionProgressValue) }}
           <span class="progress-meta">
             (elapsed {{ formatDuration(job.resolutionElapsedMillis) }}, eta
             {{ formatDuration(job.resolutionEtaMillis) }})
@@ -67,14 +70,14 @@
           <div
             class="progress-bar bg-info"
             role="progressbar"
-            :style="{ width: formatPercent(job.resolutionProgress) }"
+            :style="{ width: formatPercent(resolutionProgressValue) }"
           ></div>
         </div>
       </div>
       <div class="some-progress">
         <p>
           Total progress:
-          {{ formatPercent(job.overallProgress) }}
+          {{ formatPercent(overallProgressValue) }}
           <span class="progress-meta">
             (elapsed {{ formatDuration(job.elapsedMillis) }}, eta
             {{ formatDuration(job.etaMillis) }})
@@ -84,7 +87,7 @@
           <div
             class="progress-bar bg-success"
             role="progressbar"
-            :style="{ width: formatPercent(job.overallProgress) }"
+            :style="{ width: formatPercent(overallProgressValue) }"
           ></div>
         </div>
       </div>
@@ -110,6 +113,13 @@ const props = withDefaults(
   { showStop: true }
 );
 
+const emit = defineEmits<{
+  (
+    e: "status-update",
+    payload: { jobId: string; status: string; overallProgress: number }
+  ): void;
+}>();
+
 const job: Ref<ConversionJobResponse | undefined> = ref(undefined);
 const errorMessage: Ref<unknown | undefined> = ref(undefined);
 const timerId: Ref<string | number | undefined> = ref(undefined);
@@ -122,6 +132,11 @@ function updateState(): void {
     .then((resp) => {
       missedRequestCount.value = 0;
       job.value = resp;
+      emit("status-update", {
+        jobId: props.jobId,
+        status: resp.status ?? "unknown",
+        overallProgress: resp.overallProgress ?? 0,
+      });
       if (!isRunning.value) {
         stopTimer();
       }
@@ -156,6 +171,37 @@ function stopTimer(): void {
 
 const isRunning = computed(() => {
   return job.value?.status === "running" || job.value?.status === "queued";
+});
+
+const statusLabel = computed(() => {
+  return job.value?.status ?? "unknown";
+});
+
+const statusClass = computed(() => {
+  switch (job.value?.status) {
+    case "finished":
+      return "finished";
+    case "failed":
+      return "failed";
+    case "cancelled":
+      return "cancelled";
+    case "running":
+      return "running";
+    case "queued":
+      return "queued";
+    default:
+      return "unknown";
+  }
+});
+
+const overallProgressValue = computed(() => {
+  if (job.value?.status === "finished") return 1;
+  return job.value?.overallProgress ?? 0;
+});
+
+const resolutionProgressValue = computed(() => {
+  if (job.value?.status === "finished") return 1;
+  return job.value?.resolutionProgress ?? 0;
 });
 
 function formatPercent(value: number | undefined): string {
@@ -232,6 +278,36 @@ onMounted(() => {
 .actions {
   display: flex;
   align-items: flex-start;
+}
+.status-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+.status-pill.finished {
+  background: #d1fae5;
+  color: #065f46;
+}
+.status-pill.running {
+  background: #bfdbfe;
+  color: #1e3a8a;
+}
+.status-pill.queued {
+  background: #fef3c7;
+  color: #92400e;
+}
+.status-pill.failed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.status-pill.cancelled {
+  background: #e5e7eb;
+  color: #374151;
+}
+.status-pill.unknown {
+  background: #e5e7eb;
+  color: #374151;
 }
 .progress-meta {
   color: #6c757d;

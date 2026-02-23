@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -204,14 +204,26 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
       return;
     }
 
-    const newZoom = view.getConstrainedZoom(currentZoom + delta);
-    const newResolution = view.getResolutionForZoom(newZoom);
+    const zoomFactor = view.getZoomFactor ? view.getZoomFactor() : 2;
+    const currentResolution = view.getResolution();
+    if (currentResolution === undefined) {
+      return;
+    }
+    const newResolution =
+      currentResolution / Math.pow(zoomFactor, delta);
     if (newResolution === undefined) {
       return;
     }
 
+    const minResolution = view.getMinResolution();
+    const maxResolution = view.getMaxResolution();
+    const constrainedResolution = Math.min(
+      Math.max(newResolution, minResolution ?? newResolution),
+      maxResolution ?? newResolution
+    );
+
     const old_level_index = this.getClosestResolutionIndex(view.getResolution());
-    const new_level_index = this.getClosestResolutionIndex(newResolution);
+    const new_level_index = this.getClosestResolutionIndex(constrainedResolution);
 
     if (
       this.lastMouseBps &&
@@ -242,7 +254,7 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
         view.animate({
           // duration: 50,
           duration: this.duration_,
-          resolution: newResolution,
+          resolution: constrainedResolution,
           center: [
             finish_coordinate_on_map[0] + dx_px * newResolution,
             finish_coordinate_on_map[1] - dy_px * newResolution,
@@ -251,14 +263,14 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
       } else {
         view.animate({
           duration: this.duration_,
-          resolution: newResolution,
+          resolution: constrainedResolution,
           anchor: this.lastMouseCoord,
         });
       }
     } else {
       view.animate({
         duration: this.duration_,
-        resolution: newResolution,
+        resolution: constrainedResolution,
         anchor: this.lastMouseCoord,
       });
     }

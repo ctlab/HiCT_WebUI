@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -20,7 +20,7 @@
  */
 
 import { Map, View } from "ol";
-import { ZoomSlider, ScaleLine, OverviewMap } from "ol/control";
+import { ScaleLine, OverviewMap, ZoomSlider } from "ol/control";
 import { DoubleClickZoom, DragPan } from "ol/interaction";
 import TileLayer from "ol/layer/Tile";
 import ContigDimensionHolder from "./ContigDimensionHolder";
@@ -185,7 +185,11 @@ class ContactMapManager {
   }
 
   public async exportCurrentMapSvg(
-    progressCallback?: (progress: number) => void
+    progressCallback?: (progress: number) => void,
+    options?: {
+      backgroundColor?: string;
+      metadata?: Record<string, unknown>;
+    }
   ): Promise<void> {
     const descriptor =
       this.viewAndLayersManager.currentViewState.resolutionDesciptor;
@@ -223,6 +227,7 @@ class ContactMapManager {
 
     const width = imageSize;
     const height = imageSize;
+    const backgroundColor = options?.backgroundColor ?? "rgba(255,255,255,0)";
     const svgImages: string[] = [];
     let completed = 0;
     let nextIndex = 0;
@@ -268,7 +273,14 @@ class ContactMapManager {
       `xmlns:xlink=\"http://www.w3.org/1999/xlink\" ` +
       `width=\"${width}\" height=\"${height}\" viewBox=\"0 0 ${width} ${height}\">`;
 
+    svg += `<rect width=\"${width}\" height=\"${height}\" fill=\"${backgroundColor}\" />`;
+    if (options?.metadata) {
+      const metaJson = JSON.stringify(options.metadata);
+      svg += `<metadata><![CDATA[${metaJson}]]></metadata>`;
+    }
+
     svg += svgImages.join("");
+    svg += this.exportTracksSvg(descriptor.bpResolution);
     svg += `</svg>`;
 
     const blob = new Blob([svg], { type: "image/svg+xml" });
@@ -277,6 +289,139 @@ class ContactMapManager {
     a.href = URL.createObjectURL(blob);
     a.click();
     URL.revokeObjectURL(a.href);
+  }
+
+  private exportTracksSvg(bpResolution: number): string {
+    const flags = this.viewAndLayersManager.getExportTrackFlags();
+    if (
+      !flags.contigBorders &&
+      !flags.scaffoldBorders &&
+      !flags.contigNames &&
+      !flags.scaffoldNames
+    ) {
+      return "";
+    }
+
+    const contigTrack = this.viewAndLayersManager.track2DHolder.contigBordersTrack;
+    const scaffoldTrack =
+      this.viewAndLayersManager.track2DHolder.scaffoldBordersTrack;
+    const prefixPx = this.contigDimensionHolder.prefix_sum_px.get(bpResolution);
+    if (!prefixPx) {
+      return "";
+    }
+
+    const measureCanvas =
+      typeof document !== "undefined"
+        ? document.createElement("canvas")
+        : null;
+    const measureCtx = measureCanvas?.getContext("2d") ?? null;
+    const measureLabelWidth = (text: string, font: string): number => {
+      if (!measureCtx) return text.length * 6;
+      measureCtx.font = font;
+      return measureCtx.measureText(text).width;
+    };
+
+    const toFont = (track: typeof contigTrack) =>
+      `${track.getLabelBold() ? "bold " : ""}${track.getLabelSize()}px sans-serif`;
+
+    let svg = "";
+
+    if (flags.contigBorders || flags.contigNames) {
+      const borderStyle = contigTrack.getStyleType();
+      const strokeColor = contigTrack.options.borderColor as string;
+      const strokeWidth = contigTrack.options.width;
+      const fillColor = contigTrack.options.fillColor as string;
+      const labelSize = contigTrack.getLabelSize();
+      const labelOffset = labelSize * contigTrack.getLabelOffsetMultiplier();
+      const namePlacement = contigTrack.getNamePlacement();
+      const labelFont = toFont(contigTrack);
+      const labelStroke = contigTrack.getLabelOutline()
+        ? `stroke="rgba(0,0,0,0.9)" stroke-width="${contigTrack.getLabelOutlineWidth()}"`
+        : "";
+      for (let i = 0; i < this.contigDimensionHolder.contigDescriptors.length; i++) {
+        const cd = this.contigDimensionHolder.contigDescriptors[i];
+        const startPx = prefixPx[i] ?? 0;
+        const lenBins = cd.contigLengthBins.get(bpResolution) ?? 0;
+        const endPx = startPx + lenBins;
+        if (endPx <= startPx) continue;
+        if (flags.contigBorders) {
+          if (borderStyle === 0) {
+            svg += `<rect x="${startPx}" y="${startPx}" width="${lenBins}" height="${lenBins}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+          } else if (borderStyle === 1) {
+            svg += `<line x1="${startPx}" y1="${endPx}" x2="${endPx}" y2="${endPx}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+          } else if (borderStyle === 2) {
+            svg += `<line x1="${startPx}" y1="${startPx}" x2="${endPx}" y2="${startPx}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+          }
+        }
+        if (flags.contigNames) {
+          const rectWidth = endPx - startPx;
+          const labelWidth = measureLabelWidth(cd.contigName, labelFont);
+          if (rectWidth > 0 && labelWidth < rectWidth * 0.9) {
+            let labelY = (startPx + endPx) / 2;
+            if (namePlacement === 0) {
+              labelY = startPx - labelOffset;
+            } else if (namePlacement === 1) {
+              labelY = endPx + labelOffset;
+            }
+            const midPx = (startPx + endPx) / 2;
+            svg += `<text x="${midPx}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="${strokeColor}" font-size="${labelSize}" font-family="sans-serif" font-weight="${contigTrack.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${cd.contigName}</text>`;
+          }
+        }
+      }
+    }
+
+    if (flags.scaffoldBorders || flags.scaffoldNames) {
+      const borderStyle = scaffoldTrack.getStyleType();
+      const strokeColor = scaffoldTrack.options.borderColor as string;
+      const strokeWidth = scaffoldTrack.options.width;
+      const fillColor = scaffoldTrack.options.fillColor as string;
+      const labelSize = scaffoldTrack.getLabelSize();
+      const labelOffset = labelSize * scaffoldTrack.getLabelOffsetMultiplier();
+      const namePlacement = scaffoldTrack.getNamePlacement();
+      const labelFont = toFont(scaffoldTrack);
+      const labelStroke = scaffoldTrack.getLabelOutline()
+        ? `stroke="rgba(0,0,0,0.9)" stroke-width="${scaffoldTrack.getLabelOutlineWidth()}"`
+        : "";
+      for (const sd of this.scaffoldHolder.scaffoldTable.values()) {
+        const borders = sd.scaffoldBordersBP;
+        if (!borders) continue;
+        const startPx = this.contigDimensionHolder.getPxContainingBp(
+          borders.startBP,
+          bpResolution
+        );
+        const endPx = this.contigDimensionHolder.getPxContainingBp(
+          borders.endBP,
+          bpResolution
+        );
+        if (endPx <= startPx) continue;
+        const lenBins = endPx - startPx;
+        if (flags.scaffoldBorders) {
+          if (borderStyle === 0) {
+            svg += `<rect x="${startPx}" y="${startPx}" width="${lenBins}" height="${lenBins}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+          } else if (borderStyle === 1) {
+            svg += `<line x1="${startPx}" y1="${endPx}" x2="${endPx}" y2="${endPx}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+          } else if (borderStyle === 2) {
+            svg += `<line x1="${startPx}" y1="${startPx}" x2="${endPx}" y2="${startPx}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+          }
+        }
+        if (flags.scaffoldNames) {
+          const rectWidth = endPx - startPx;
+          const labelWidth = measureLabelWidth(sd.scaffoldName, labelFont);
+          if (rectWidth > 0 && labelWidth < rectWidth * 0.9) {
+            let labelY = (startPx + endPx) / 2;
+            if (namePlacement === 0) {
+              labelY = startPx - labelOffset;
+            } else if (namePlacement === 1) {
+              labelY = endPx + labelOffset;
+            }
+            const midPx = (startPx + endPx) / 2;
+            svg += `<text x="${midPx}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="${strokeColor}" font-size="${labelSize}" font-family="sans-serif" font-weight="${scaffoldTrack.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${sd.scaffoldName}</text>`;
+          }
+        }
+      }
+    }
+
+    return svg;
   }
 
   public dispose() {

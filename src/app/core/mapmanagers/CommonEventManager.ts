@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -168,6 +168,26 @@ class CommonEventManager {
   public onScaffoldLabelOutlineWidthChanged(width: number): void {
     this.mapManager.viewAndLayersManager.onScaffoldLabelOutlineWidthChanged(
       width
+    );
+  }
+
+  public onContigExportEnabledChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onContigExportEnabledChanged(enabled);
+  }
+
+  public onScaffoldExportEnabledChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onScaffoldExportEnabledChanged(enabled);
+  }
+
+  public onContigNamesExportEnabledChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onContigNamesExportEnabledChanged(
+      enabled
+    );
+  }
+
+  public onScaffoldNamesExportEnabledChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onScaffoldNamesExportEnabledChanged(
+      enabled
     );
   }
 

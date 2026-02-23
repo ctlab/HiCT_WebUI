@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -261,6 +261,13 @@ class RequestManager {
     return this.sendRequest(new ReloadTilesRequest())
       .then((response) => response.data)
       .then((json) => Number(json.version ?? 0));
+  }
+
+  public async getBackendVersion(): Promise<{ version: string; webuiVersion?: string } | string> {
+    return axios
+      .get(`${this.networkManager.host}/version`)
+      .then((resp) => resp.data ?? { version: "unknown" })
+      .catch(() => "unknown");
   }
 
   public async listAGPFiles(): Promise<string[]> {

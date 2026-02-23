@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -139,6 +139,7 @@
                   <input
                     type="checkbox"
                     :checked="batchSelection.has(file)"
+                    @click.stop="toggleSelection(file, index, $event)"
                     @change="toggleSelection(file, index, $event)"
                   />
                   <span>{{ file }}</span>
@@ -179,6 +180,11 @@
             </div>
             <div v-if="batchStep === 'progress'">
               <h6>Batch progress</h6>
+              <div class="overall-status">
+                <span class="status-pill" :class="overallBatchStatusClass">
+                  {{ overallBatchStatusLabel }}
+                </span>
+              </div>
               <div class="batch-progress-list">
                 <ConverterStatusChecker
                   v-for="job in batchJobIds"
@@ -186,6 +192,7 @@
                   :network-manager="networkManager"
                   :job-id="job"
                   :show-stop="true"
+                  @status-update="onBatchStatusUpdate"
                 />
               </div>
             </div>
@@ -206,7 +213,7 @@
 </template>
 
 <script setup lang="ts">
-import { type Ref, ref, onMounted } from "vue";
+import { type Ref, ref, onMounted, computed } from "vue";
 import { Modal } from "bootstrap";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import {
@@ -239,6 +246,8 @@ const batchSelection: Ref<Set<string>> = ref(new Set<string>());
 const batchParallelJobs: Ref<number> = ref(2);
 const batchParallelism: Ref<number> = ref(4);
 const batchJobIds: Ref<string[]> = ref([]);
+const batchStatusMap: Ref<Map<string, string>> = ref(new Map());
+const batchProgressMap: Ref<Map<string, number>> = ref(new Map());
 const allFiles: Ref<Set<string>> = ref(new Set<string>());
 const lastSelectedIndex: Ref<number | null> = ref(null);
 
@@ -259,6 +268,8 @@ function resetState(): void {
     batchFiles.value = [];
     batchSelection.value = new Set<string>();
     batchJobIds.value = [];
+    batchStatusMap.value.clear();
+    batchProgressMap.value.clear();
     allFiles.value = new Set<string>();
     lastSelectedIndex.value = null;
   }
@@ -427,6 +438,8 @@ function proceedBatchSettings(): void {
 
 function startBatchConversion(): void {
   const files = Array.from(batchSelection.value);
+  batchStatusMap.value.clear();
+  batchProgressMap.value.clear();
   props.networkManager.requestManager
     .startBatchConversionJobs(
       new StartBatchConversionJobsRequest({
@@ -443,6 +456,41 @@ function startBatchConversion(): void {
       errorMessage.value = e;
     });
 }
+
+function onBatchStatusUpdate(payload: {
+  jobId: string;
+  status: string;
+  overallProgress: number;
+}): void {
+  batchStatusMap.value.set(payload.jobId, payload.status);
+  batchProgressMap.value.set(payload.jobId, payload.overallProgress);
+}
+
+const overallBatchStatusLabel = computed(() => {
+  const statuses = Array.from(batchStatusMap.value.values());
+  if (!statuses.length) return "Running";
+  if (statuses.some((s) => s === "failed")) return "Failed";
+  if (statuses.some((s) => s === "cancelled")) return "Cancelled";
+  if (statuses.every((s) => s === "finished")) return "Finished";
+  if (statuses.some((s) => s === "running")) return "Running";
+  if (statuses.some((s) => s === "queued")) return "Queued";
+  return "Running";
+});
+
+const overallBatchStatusClass = computed(() => {
+  switch (overallBatchStatusLabel.value) {
+    case "Finished":
+      return "finished";
+    case "Failed":
+      return "failed";
+    case "Cancelled":
+      return "cancelled";
+    case "Queued":
+      return "queued";
+    default:
+      return "running";
+  }
+});
 </script>
 
 <style scoped>
@@ -455,6 +503,8 @@ function startBatchConversion(): void {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: 180px;
+  overflow: auto;
 }
 .job-list li {
   display: flex;
@@ -513,5 +563,33 @@ function startBatchConversion(): void {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.overall-status {
+  margin-bottom: 8px;
+}
+
+.status-pill.finished {
+  background: #d1fae5;
+  color: #065f46;
+}
+.status-pill.running {
+  background: #bfdbfe;
+  color: #1e3a8a;
+}
+.status-pill.queued {
+  background: #fef3c7;
+  color: #92400e;
+}
+.status-pill.failed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.status-pill.cancelled {
+  background: #e5e7eb;
+  color: #374151;
 }
 </style>

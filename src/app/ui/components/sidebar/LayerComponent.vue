@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -130,6 +130,19 @@
               />
             </div>
           </div>
+          <div class="mb-2">
+            <div class="form-check">
+              <input
+                id="track-export-svg"
+                class="form-check-input"
+                type="checkbox"
+                v-model="includeInSvg"
+              />
+              <label class="form-check-label" for="track-export-svg">
+                Include in SVG export
+              </label>
+            </div>
+          </div>
           <div class="d-flex gap-2">
             <button class="btn btn-sm btn-success" @click="applyStyle">
               Apply
@@ -163,6 +176,7 @@ const props = defineProps<{
   getLabelBold?: () => boolean;
   getLabelOutline?: () => boolean;
   getLabelOutlineWidth?: () => number;
+  getIncludeInSvg?: () => boolean;
 }>();
 
 function getBaseColor(): ColorTranslator {
@@ -196,7 +210,8 @@ const emit = defineEmits<{
     labelOffsetMultiplier: number,
     labelBold: boolean,
     labelOutline: boolean,
-    labelOutlineWidth: number
+    labelOutlineWidth: number,
+    includeInSvg: boolean
   ): void;
 }>();
 
@@ -206,10 +221,11 @@ const fillColor: Ref<ColorTranslator> = ref(
   new ColorTranslator("rgba(0,0,0,0.0)", { legacyCSS: true })
 ) as Ref<ColorTranslator>;
 const labelSize: Ref<number> = ref(12);
-const labelOffsetMultiplier: Ref<number> = ref(0.5);
+const labelOffsetMultiplier: Ref<number> = ref(1.25);
 const labelBold: Ref<boolean> = ref(true);
 const labelOutline: Ref<boolean> = ref(true);
 const labelOutlineWidth: Ref<number> = ref(2);
+const includeInSvg: Ref<boolean> = ref(true);
 
 const bordersStyle: Ref<number> = ref(
   props.layerName.includes("names") ? BorderStyle.TOP : 0
@@ -272,6 +288,9 @@ function openStyleEditor() {
   if (props.getLabelOutlineWidth) {
     labelOutlineWidth.value = props.getLabelOutlineWidth();
   }
+  if (props.getIncludeInSvg) {
+    includeInSvg.value = props.getIncludeInSvg();
+  }
 }
 
 function applyStyle() {
@@ -284,7 +303,8 @@ function applyStyle() {
     labelOffsetMultiplier.value,
     labelBold.value,
     labelOutline.value,
-    labelOutlineWidth.value
+    labelOutlineWidth.value,
+    includeInSvg.value
   );
 }
 

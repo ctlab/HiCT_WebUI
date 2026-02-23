@@ -1,0 +1,3 @@
+body.custom-zoomslider-enabled .ol-zoomslider:not(.custom-zoomslider) {
+  display: none;
+}

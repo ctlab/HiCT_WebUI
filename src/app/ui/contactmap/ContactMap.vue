@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -20,7 +20,15 @@
  -->
 
 <template>
-  <div id="hic-contact-map" :style="mapContainerStyle" ref="mapTarget"></div>
+  <div class="map-shell">
+    <div id="hic-contact-map" :style="mapContainerStyle" ref="mapTarget"></div>
+    <div
+      class="zoom-slider-overlay"
+      v-if="props.mapManager && customZoomSliderEnabled"
+    >
+      <ZoomSlider :map-manager="props.mapManager" />
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -29,6 +37,9 @@ import { useStyleStore } from "@/app/stores/styleStore";
 import { ref, computed, Ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { usehtmlElementReferencesStore } from "@/app/stores/htmlElementReferencesStore";
+import ZoomSlider from "@/app/ui/components/toolbar/upper_blocks/ZoomSlider.vue";
+import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 
 const stylesStore = useStyleStore();
 
@@ -48,6 +59,27 @@ const mapContainerStyle = ref({
   height: "100%",
   "padding-right": "15px",
 });
+
+const props = defineProps<{
+  mapManager?: ContactMapManager;
+}>();
+
+const uiSettingsStore = useUiSettingsStore();
+const { customZoomSliderEnabled } = storeToRefs(uiSettingsStore);
 </script>
 
-<style scoped></style>
+<style scoped>
+.map-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.zoom-slider-overlay {
+  position: absolute;
+  left: 8px;
+  top: 140px;
+  z-index: 20;
+  pointer-events: auto;
+}
+</style>
