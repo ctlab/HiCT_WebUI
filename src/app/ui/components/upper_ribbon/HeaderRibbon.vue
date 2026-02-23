@@ -120,20 +120,50 @@
       >
         Reload tiles
       </button>
-      <button
-        id="export-png-button"
-        class="btn-sm btn-outline-primary"
-        type="button"
-        :disabled="exportingSvg"
-        @click="exportSvg"
-        title="Export full map as SVG"
-      >
-        <span v-if="!exportingSvg"><i class="bi bi-box-arrow-up"></i></span>
-        <span v-else>
-          <span class="spinner-border spinner-border-sm me-2"></span>
-          {{ Math.round(svgProgress * 100) }}%
-        </span>
-      </button>
+      <div class="export-group">
+        <button
+          id="export-svg-button"
+          class="btn-sm btn-outline-primary"
+          type="button"
+          :disabled="exportingType !== null"
+          @click="exportSvg"
+          title="Export full map as SVG"
+        >
+          <span v-if="exportingType !== 'svg'"><i class="bi bi-box-arrow-up"></i> SVG</span>
+          <span v-else>
+            <span class="spinner-border spinner-border-sm me-2"></span>
+            {{ Math.round(svgProgress * 100) }}%
+          </span>
+        </button>
+        <button
+          id="export-png-button"
+          class="btn-sm btn-outline-primary"
+          type="button"
+          :disabled="exportingType !== null"
+          @click="exportPng"
+          title="Export full map as PNG"
+        >
+          <span v-if="exportingType !== 'png'"><i class="bi bi-box-arrow-up"></i> PNG</span>
+          <span v-else>
+            <span class="spinner-border spinner-border-sm me-2"></span>
+            {{ Math.round(svgProgress * 100) }}%
+          </span>
+        </button>
+        <button
+          id="export-pdf-button"
+          class="btn-sm btn-outline-primary"
+          type="button"
+          :disabled="exportingType !== null"
+          @click="exportPdf"
+          title="Export full map as PDF"
+        >
+          <span v-if="exportingType !== 'pdf'"><i class="bi bi-box-arrow-up"></i> PDF</span>
+          <span v-else>
+            <span class="spinner-border spinner-border-sm me-2"></span>
+            {{ Math.round(svgProgress * 100) }}%
+          </span>
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -154,7 +184,7 @@ const props = defineProps<{
 
 const rowContigId: Ref<number | null> = ref(null);
 const columnContigId: Ref<number | null> = ref(null);
-const exportingSvg = ref(false);
+const exportingType = ref<"svg" | "png" | "pdf" | null>(null);
 const svgProgress = ref(0);
 const searchQuery = ref("");
 const searchResults = ref<
@@ -180,8 +210,8 @@ const {
 } = storeToRefs(visualizationOptionsStore);
 
 async function exportSvg() {
-  if (!props.mapManager || exportingSvg.value) return;
-  exportingSvg.value = true;
+  if (!props.mapManager || exportingType.value) return;
+  exportingType.value = "svg";
   svgProgress.value = 0;
   const cmap = colormap.value;
   const metadata: Record<string, unknown> = {
@@ -214,8 +244,94 @@ async function exportSvg() {
         metadata,
       }
     );
+  } catch (e) {
+    toast.error((e as Error)?.message ?? "Failed to export SVG");
   } finally {
-    exportingSvg.value = false;
+    exportingType.value = null;
+  }
+}
+
+async function exportPng() {
+  if (!props.mapManager || exportingType.value) return;
+  exportingType.value = "png";
+  svgProgress.value = 0;
+  const cmap = colormap.value;
+  const metadata: Record<string, unknown> = {
+    filename: props.mapManager.getOptions().filename,
+    visualization: {
+      preLogBase: preLogBase.value,
+      postLogBase: postLogBase.value,
+      applyCoolerWeights: applyCoolerWeights.value,
+      resolutionScaling: resolutionScaling.value,
+      resolutionLinearScaling: resolutionLinearScaling.value,
+      colormap:
+        cmap instanceof SimpleLinearGradient
+          ? {
+              type: cmap.colormapType,
+              startColor: cmap.startColorRGBA?.RGBA,
+              endColor: cmap.endColorRGBA?.RGBA,
+              minSignal: cmap.minSignal,
+              maxSignal: cmap.maxSignal,
+            }
+          : { type: cmap?.colormapType ?? "Unknown" },
+    },
+  };
+  try {
+    await props.mapManager.exportCurrentMapPng(
+      (progress) => {
+        svgProgress.value = progress;
+      },
+      {
+        backgroundColor: mapBackgroundColor.value.RGBA,
+        metadata,
+      }
+    );
+  } catch (e) {
+    toast.error((e as Error)?.message ?? "Failed to export PNG");
+  } finally {
+    exportingType.value = null;
+  }
+}
+
+async function exportPdf() {
+  if (!props.mapManager || exportingType.value) return;
+  exportingType.value = "pdf";
+  svgProgress.value = 0;
+  const cmap = colormap.value;
+  const metadata: Record<string, unknown> = {
+    filename: props.mapManager.getOptions().filename,
+    visualization: {
+      preLogBase: preLogBase.value,
+      postLogBase: postLogBase.value,
+      applyCoolerWeights: applyCoolerWeights.value,
+      resolutionScaling: resolutionScaling.value,
+      resolutionLinearScaling: resolutionLinearScaling.value,
+      colormap:
+        cmap instanceof SimpleLinearGradient
+          ? {
+              type: cmap.colormapType,
+              startColor: cmap.startColorRGBA?.RGBA,
+              endColor: cmap.endColorRGBA?.RGBA,
+              minSignal: cmap.minSignal,
+              maxSignal: cmap.maxSignal,
+            }
+          : { type: cmap?.colormapType ?? "Unknown" },
+    },
+  };
+  try {
+    await props.mapManager.exportCurrentMapPdf(
+      (progress) => {
+        svgProgress.value = progress;
+      },
+      {
+        backgroundColor: mapBackgroundColor.value.RGBA,
+        metadata,
+      }
+    );
+  } catch (e) {
+    toast.error((e as Error)?.message ?? "Failed to export PDF");
+  } finally {
+    exportingType.value = null;
   }
 }
 
@@ -621,7 +737,9 @@ function onNormalizationChanged() {
   flex-grow: 0;
 }
 
-#export-png-button {
+#export-png-button,
+#export-svg-button,
+#export-pdf-button {
   /* _base */
 
   box-sizing: border-box;
@@ -644,5 +762,10 @@ function onNormalizationChanged() {
   flex: none;
   order: 1;
   flex-grow: 0;
+}
+
+.export-group {
+  display: flex;
+  gap: 6px;
 }
 </style>

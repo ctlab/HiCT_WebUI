@@ -184,13 +184,13 @@ class ContactMapManager {
     this.viewAndLayersManager.reloadTiles(version);
   }
 
-  public async exportCurrentMapSvg(
+  private async buildCurrentMapSvg(
     progressCallback?: (progress: number) => void,
     options?: {
       backgroundColor?: string;
       metadata?: Record<string, unknown>;
     }
-  ): Promise<void> {
+  ): Promise<string> {
     const descriptor =
       this.viewAndLayersManager.currentViewState.resolutionDesciptor;
     const imageSize =
@@ -228,6 +228,7 @@ class ContactMapManager {
     const width = imageSize;
     const height = imageSize;
     const backgroundColor = options?.backgroundColor ?? "rgba(255,255,255,0)";
+    const escapeAttr = ContactMapManager.escapeXml;
     const svgImages: string[] = [];
     let completed = 0;
     let nextIndex = 0;
@@ -248,7 +249,7 @@ class ContactMapManager {
             const tileWidth = Math.min(tileSize, width - x);
             const tileHeight = Math.min(tileSize, height - y);
             svgImages.push(
-              `<image x=\"${x}\" y=\"${y}\" width=\"${tileWidth}\" height=\"${tileHeight}\" href=\"${data.image}\" />`
+              `<image x=\"${x}\" y=\"${y}\" width=\"${tileWidth}\" height=\"${tileHeight}\" href=\"${escapeAttr(data.image)}\" />`
             );
           }
           completed += 1;
@@ -283,12 +284,141 @@ class ContactMapManager {
     svg += this.exportTracksSvg(descriptor.bpResolution);
     svg += `</svg>`;
 
+    if (typeof DOMParser !== "undefined") {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svg, "image/svg+xml");
+      const errorNode = doc.querySelector("parsererror");
+      if (errorNode) {
+        const errorText = errorNode.textContent ?? "Unknown SVG parse error";
+        let context = "";
+        const match = errorText.match(/line\s+(\d+)\s+at\s+column\s+(\d+)/i);
+        if (match) {
+          const column = Number(match[2]);
+          if (Number.isFinite(column)) {
+            const idx = Math.max(0, column - 1);
+            const start = Math.max(0, idx - 200);
+            const end = Math.min(svg.length, idx + 200);
+            context = svg.slice(start, end);
+          }
+        }
+        throw new Error(
+          `SVG export failed validation: ${errorText}${
+            context ? `\nContext:\n${context}` : ""
+          }`
+        );
+      }
+    }
+
+    return svg;
+  }
+
+  public async exportCurrentMapSvg(
+    progressCallback?: (progress: number) => void,
+    options?: {
+      backgroundColor?: string;
+      metadata?: Record<string, unknown>;
+    }
+  ): Promise<void> {
+    const svg = await this.buildCurrentMapSvg(progressCallback, options);
     const blob = new Blob([svg], { type: "image/svg+xml" });
     const a = document.createElement("a");
     a.download = `${this.options.filename}.svg`;
     a.href = URL.createObjectURL(blob);
     a.click();
     URL.revokeObjectURL(a.href);
+  }
+
+  public async exportCurrentMapPng(
+    progressCallback?: (progress: number) => void,
+    options?: {
+      backgroundColor?: string;
+      metadata?: Record<string, unknown>;
+    }
+  ): Promise<void> {
+    const svg = await this.buildCurrentMapSvg(progressCallback, options);
+    const svgBlob = new Blob([svg], { type: "image/svg+xml" });
+    const svgUrl = URL.createObjectURL(svgBlob);
+    const image = new Image();
+    const descriptor =
+      this.viewAndLayersManager.currentViewState.resolutionDesciptor;
+    const imageSize =
+      this.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex];
+
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = (e) => reject(e);
+      image.src = svgUrl;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = imageSize;
+    canvas.height = imageSize;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      URL.revokeObjectURL(svgUrl);
+      throw new Error("Cannot export PNG: canvas not available");
+    }
+    ctx.drawImage(image, 0, 0);
+
+    await new Promise<void>((resolve) => {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          resolve();
+          return;
+        }
+        const a = document.createElement("a");
+        a.download = `${this.options.filename}.png`;
+        a.href = URL.createObjectURL(blob);
+        a.click();
+        URL.revokeObjectURL(a.href);
+        resolve();
+      }, "image/png");
+    });
+    URL.revokeObjectURL(svgUrl);
+  }
+
+  public async exportCurrentMapPdf(
+    progressCallback?: (progress: number) => void,
+    options?: {
+      backgroundColor?: string;
+      metadata?: Record<string, unknown>;
+    }
+  ): Promise<void> {
+    const svg = await this.buildCurrentMapSvg(progressCallback, options);
+    const svgBlob = new Blob([svg], { type: "image/svg+xml" });
+    const svgUrl = URL.createObjectURL(svgBlob);
+    const image = new Image();
+    const descriptor =
+      this.viewAndLayersManager.currentViewState.resolutionDesciptor;
+    const imageSize =
+      this.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex];
+
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = (e) => reject(e);
+      image.src = svgUrl;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = imageSize;
+    canvas.height = imageSize;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      URL.revokeObjectURL(svgUrl);
+      throw new Error("Cannot export PDF: canvas not available");
+    }
+    ctx.drawImage(image, 0, 0);
+    const dataUrl = canvas.toDataURL("image/png");
+    const { jsPDF } = await import("jspdf");
+    const orientation = imageSize >= imageSize ? "landscape" : "portrait";
+    const pdf = new jsPDF({
+      orientation,
+      unit: "px",
+      format: [imageSize, imageSize],
+    });
+    pdf.addImage(dataUrl, "PNG", 0, 0, imageSize, imageSize);
+    pdf.save(`${this.options.filename}.pdf`);
+    URL.revokeObjectURL(svgUrl);
   }
 
   private exportTracksSvg(bpResolution: number): string {
@@ -320,9 +450,18 @@ class ContactMapManager {
       measureCtx.font = font;
       return measureCtx.measureText(text).width;
     };
+    const escapeXml = ContactMapManager.escapeXml;
+    const escapeAttr = ContactMapManager.escapeXml;
 
-    const toFont = (track: typeof contigTrack) =>
-      `${track.getLabelBold() ? "bold " : ""}${track.getLabelSize()}px sans-serif`;
+    const toFont = (track: typeof contigTrack) => {
+      const fontFamily =
+        typeof window !== "undefined"
+          ? window.getComputedStyle(document.body).fontFamily
+          : "sans-serif";
+      return `${track.getLabelBold() ? "bold " : ""}${track.getLabelSize()}px ${fontFamily}`;
+    };
+    const toFontFamily = (track: typeof contigTrack) =>
+      toFont(track).replace(/^[^ ]+ /, "");
 
     let svg = "";
 
@@ -336,7 +475,7 @@ class ContactMapManager {
       const namePlacement = contigTrack.getNamePlacement();
       const labelFont = toFont(contigTrack);
       const labelStroke = contigTrack.getLabelOutline()
-        ? `stroke="rgba(0,0,0,0.9)" stroke-width="${contigTrack.getLabelOutlineWidth()}"`
+        ? `stroke="rgba(0,0,0,0.9)" stroke-width="${contigTrack.getLabelOutlineWidth()}" paint-order="stroke fill" stroke-linejoin="round"`
         : "";
       for (let i = 0; i < this.contigDimensionHolder.contigDescriptors.length; i++) {
         const cd = this.contigDimensionHolder.contigDescriptors[i];
@@ -346,11 +485,11 @@ class ContactMapManager {
         if (endPx <= startPx) continue;
         if (flags.contigBorders) {
           if (borderStyle === 0) {
-            svg += `<rect x="${startPx}" y="${startPx}" width="${lenBins}" height="${lenBins}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+            svg += `<rect x="${startPx}" y="${startPx}" width="${lenBins}" height="${lenBins}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
           } else if (borderStyle === 1) {
-            svg += `<line x1="${startPx}" y1="${endPx}" x2="${endPx}" y2="${endPx}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+            svg += `<polyline points="${startPx},${startPx} ${endPx},${startPx} ${endPx},${endPx}" fill="none" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
           } else if (borderStyle === 2) {
-            svg += `<line x1="${startPx}" y1="${startPx}" x2="${endPx}" y2="${startPx}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+            svg += `<polyline points="${endPx},${endPx} ${startPx},${endPx} ${startPx},${startPx}" fill="none" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
           }
         }
         if (flags.contigNames) {
@@ -364,7 +503,7 @@ class ContactMapManager {
               labelY = endPx + labelOffset;
             }
             const midPx = (startPx + endPx) / 2;
-            svg += `<text x="${midPx}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="${strokeColor}" font-size="${labelSize}" font-family="sans-serif" font-weight="${contigTrack.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${cd.contigName}</text>`;
+            svg += `<text x="${midPx}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="${escapeAttr(strokeColor)}" font-size="${labelSize}" font-family="${escapeAttr(toFontFamily(contigTrack))}" font-weight="${contigTrack.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${escapeXml(cd.contigName)}</text>`;
           }
         }
       }
@@ -380,7 +519,7 @@ class ContactMapManager {
       const namePlacement = scaffoldTrack.getNamePlacement();
       const labelFont = toFont(scaffoldTrack);
       const labelStroke = scaffoldTrack.getLabelOutline()
-        ? `stroke="rgba(0,0,0,0.9)" stroke-width="${scaffoldTrack.getLabelOutlineWidth()}"`
+        ? `stroke="rgba(0,0,0,0.9)" stroke-width="${scaffoldTrack.getLabelOutlineWidth()}" paint-order="stroke fill" stroke-linejoin="round"`
         : "";
       for (const sd of this.scaffoldHolder.scaffoldTable.values()) {
         const borders = sd.scaffoldBordersBP;
@@ -397,11 +536,11 @@ class ContactMapManager {
         const lenBins = endPx - startPx;
         if (flags.scaffoldBorders) {
           if (borderStyle === 0) {
-            svg += `<rect x="${startPx}" y="${startPx}" width="${lenBins}" height="${lenBins}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+            svg += `<rect x="${startPx}" y="${startPx}" width="${lenBins}" height="${lenBins}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
           } else if (borderStyle === 1) {
-            svg += `<line x1="${startPx}" y1="${endPx}" x2="${endPx}" y2="${endPx}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+            svg += `<polyline points="${startPx},${startPx} ${endPx},${startPx} ${endPx},${endPx}" fill="none" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
           } else if (borderStyle === 2) {
-            svg += `<line x1="${startPx}" y1="${startPx}" x2="${endPx}" y2="${startPx}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />`;
+            svg += `<polyline points="${endPx},${endPx} ${startPx},${endPx} ${startPx},${startPx}" fill="none" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
           }
         }
         if (flags.scaffoldNames) {
@@ -415,13 +554,22 @@ class ContactMapManager {
               labelY = endPx + labelOffset;
             }
             const midPx = (startPx + endPx) / 2;
-            svg += `<text x="${midPx}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="${strokeColor}" font-size="${labelSize}" font-family="sans-serif" font-weight="${scaffoldTrack.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${sd.scaffoldName}</text>`;
+            svg += `<text x="${midPx}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="${escapeAttr(strokeColor)}" font-size="${labelSize}" font-family="${escapeAttr(toFontFamily(scaffoldTrack))}" font-weight="${scaffoldTrack.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${escapeXml(sd.scaffoldName)}</text>`;
           }
         }
       }
     }
 
     return svg;
+  }
+
+  private static escapeXml(text: string): string {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
   }
 
   public dispose() {

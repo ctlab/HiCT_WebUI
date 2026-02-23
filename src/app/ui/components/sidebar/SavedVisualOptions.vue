@@ -79,6 +79,8 @@ import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { Ref, ref, shallowRef, triggerRef, onMounted } from "vue";
 import SavedVisualOptionsElement from "./SavedVisualOptionsElement.vue";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
+import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
+import Colormap from "@/app/core/visualization/colormap/Colormap";
 import type { TrackStylePresetBundle } from "@/app/core/tracks/TrackStylePreset";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
@@ -166,7 +168,7 @@ function renameOption(option_id: number, name: string) {
 function exportOptions() {
   const values: {
     option_id: number;
-    options: VisualizationOptions;
+    options: Record<string, unknown>;
     backgroundColor: string; // <-- stable
     name: string;
     trackStyles?: TrackStylePresetBundle;
@@ -175,7 +177,7 @@ function exportOptions() {
   savedOptions.value.forEach((v) =>
     values.push({
       option_id: v.option_id,
-      options: v.options,
+      options: serializeVisualizationOptions(v.options),
       name: v.name,
       backgroundColor: colorToString(v.backgroundColor),
       trackStyles: v.trackStyles,
@@ -281,14 +283,14 @@ function importJSONResults(jsonPreResult: unknown) {
       filename: string;
       savedLocations?: {
         option_id: number;
-        options: VisualizationOptions;
+        options: Record<string, unknown>;
         backgroundColor?: string | ColorTranslator;
         name?: string;
         trackStyles?: TrackStylePresetBundle;
       }[];
       savedVisualizationPresets?: {
         option_id: number;
-        options: VisualizationOptions;
+        options: Record<string, unknown>;
         backgroundColor?: string | ColorTranslator;
         name?: string;
         trackStyles?: TrackStylePresetBundle;
@@ -318,7 +320,7 @@ function importJSONResults(jsonPreResult: unknown) {
 
     const newOption = {
       option_id: newId,
-      options: option.options,
+      options: deserializeVisualizationOptions(option.options),
       backgroundColor,
       trackStyles: option.trackStyles,
       name: option.name ?? `Imported preset ${newId}`,
@@ -326,6 +328,83 @@ function importJSONResults(jsonPreResult: unknown) {
     savedOptions.value.set(newOption.option_id, newOption);
     bumpSavedOptions();
   });
+}
+
+function serializeVisualizationOptions(options: VisualizationOptions): Record<string, unknown> {
+  const cmap = options.colormap;
+  if (cmap instanceof SimpleLinearGradient) {
+    return {
+      preLogBase: options.preLogBase,
+      postLogBase: options.postLogBase,
+      applyCoolerWeights: options.applyCoolerWeights ?? false,
+      resolutionScaling: options.resolutionScaling ?? false,
+      resolutionLinearScaling: options.resolutionLinearScaling ?? false,
+      colormap: {
+        colormapType: cmap.colormapType,
+        startColorRGBAString: cmap.startColorRGBA.toString(),
+        endColorRGBAString: cmap.endColorRGBA.toString(),
+        minSignal: cmap.minSignal,
+        maxSignal: cmap.maxSignal,
+      },
+    };
+  }
+  return {
+    preLogBase: options.preLogBase,
+    postLogBase: options.postLogBase,
+    applyCoolerWeights: options.applyCoolerWeights ?? false,
+    resolutionScaling: options.resolutionScaling ?? false,
+    resolutionLinearScaling: options.resolutionLinearScaling ?? false,
+    colormap: {
+      colormapType: options.colormap?.colormapType ?? "Unknown",
+    },
+  };
+}
+
+function deserializeVisualizationOptions(raw: Record<string, unknown>): VisualizationOptions {
+  const preLogBase = typeof raw.preLogBase === "number" ? raw.preLogBase : -1;
+  const postLogBase = typeof raw.postLogBase === "number" ? raw.postLogBase : 10;
+  const applyCoolerWeights =
+    typeof raw.applyCoolerWeights === "boolean" ? raw.applyCoolerWeights : false;
+  const resolutionScaling =
+    typeof raw.resolutionScaling === "boolean" ? raw.resolutionScaling : false;
+  const resolutionLinearScaling =
+    typeof raw.resolutionLinearScaling === "boolean" ? raw.resolutionLinearScaling : false;
+  const cmapRaw = isRecord(raw.colormap) ? raw.colormap : {};
+  const cmapType =
+    typeof cmapRaw.colormapType === "string"
+      ? cmapRaw.colormapType
+      : "Unknown";
+  let cmap: Colormap;
+  if (cmapType === "SimpleLinearGradient") {
+    const startColor =
+      typeof cmapRaw.startColorRGBAString === "string"
+        ? cmapRaw.startColorRGBAString
+        : "rgba(0,255,0,0.0)";
+    const endColor =
+      typeof cmapRaw.endColorRGBAString === "string"
+        ? cmapRaw.endColorRGBAString
+        : "rgba(0,96,0,1.0)";
+    const minSignal =
+      typeof cmapRaw.minSignal === "number" ? cmapRaw.minSignal : 0;
+    const maxSignal =
+      typeof cmapRaw.maxSignal === "number" ? cmapRaw.maxSignal : 1;
+    cmap = new SimpleLinearGradient(
+      new ColorTranslator(startColor, { legacyCSS: true }),
+      new ColorTranslator(endColor, { legacyCSS: true }),
+      minSignal,
+      maxSignal
+    );
+  } else {
+    cmap = new Colormap(cmapType);
+  }
+  return new VisualizationOptions(
+    preLogBase,
+    postLogBase,
+    applyCoolerWeights,
+    resolutionScaling,
+    resolutionLinearScaling,
+    cmap
+  );
 }
 
 function importOptionsFromFile() {

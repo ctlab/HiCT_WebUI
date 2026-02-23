@@ -49,7 +49,8 @@
     "vue": "^3.2.41",
     "vue-color-kit": "^1.0.6",
     "vue-sonner": "^0.4.2",
-    "colortranslator": "^4.1.0"
+    "colortranslator": "^4.1.0",
+    "jspdf": "^2.5.1"
   },
   "devDependencies": {
     "@rushstack/eslint-patch": "^1.2.0",
