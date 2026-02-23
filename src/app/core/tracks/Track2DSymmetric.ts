@@ -63,6 +63,7 @@ interface Track2DSymmetricOptions {
   labelBold: boolean;
   labelOutline: boolean;
   labelOutlineWidth: number;
+  labelColor: Color | ColorLike;
 }
 
 export enum NamePlacement {
@@ -92,6 +93,7 @@ abstract class Track2DSymmetric extends Track2D {
       labelBold?: boolean | undefined;
       labelOutline?: boolean | undefined;
       labelOutlineWidth?: number | undefined;
+      labelColor?: Color | ColorLike;
     }
   ) {
     super();
@@ -105,6 +107,10 @@ abstract class Track2DSymmetric extends Track2D {
       labelBold: opt_options?.labelBold ?? true,
       labelOutline: opt_options?.labelOutline ?? true,
       labelOutlineWidth: opt_options?.labelOutlineWidth ?? 2,
+      labelColor:
+        opt_options?.labelColor ??
+        opt_options?.borderColor ??
+        [0xff, 0xaa, 0xcc, 1.0],
     };
     this.style = this.generateStyleFunction()();
   }
@@ -175,6 +181,14 @@ abstract class Track2DSymmetric extends Track2D {
     return this.options.labelOutlineWidth;
   }
 
+  public setLabelColor(color: Color | ColorLike): void {
+    this.options.labelColor = color;
+  }
+
+  public getLabelColor(): Color | ColorLike {
+    return this.options.labelColor;
+  }
+
   public setNamePlacement(placement: NamePlacement): void {
     this.namePlacement = placement;
   }
@@ -191,7 +205,7 @@ abstract class Track2DSymmetric extends Track2D {
           this.options.labelSize
         }px sans-serif`,
         fill: new Fill({
-          color: this.options.borderColor,
+          color: this.options.labelColor ?? this.options.borderColor,
         }),
         stroke: this.options.labelOutline
           ? new Stroke({

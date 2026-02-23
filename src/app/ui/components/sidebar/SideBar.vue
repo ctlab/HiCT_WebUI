@@ -201,7 +201,16 @@ const layers: Ref<LayerDescriptor[]> = ref([
   ),
   new LayerDescriptor(
     "Cnames",
-    undefined,
+    () => {
+      const color =
+        props.mapManager?.getLayersManager().track2DHolder.contigBordersTrack.getLabelColor() ??
+        props.mapManager?.getLayersManager().track2DHolder.contigBordersTrack.options.borderColor;
+      return new Style({
+        stroke: new Stroke({
+          color: color as string,
+        }),
+      });
+    },
     undefined,
     true,
     () =>
@@ -229,7 +238,16 @@ const layers: Ref<LayerDescriptor[]> = ref([
   ),
   new LayerDescriptor(
     "Snames",
-    undefined,
+    () => {
+      const color =
+        props.mapManager?.getLayersManager().track2DHolder.scaffoldBordersTrack.getLabelColor() ??
+        props.mapManager?.getLayersManager().track2DHolder.scaffoldBordersTrack.options.borderColor;
+      return new Style({
+        stroke: new Stroke({
+          color: color as string,
+        }),
+      });
+    },
     undefined,
     true,
     () =>
@@ -267,7 +285,16 @@ function onColorChanged(layerName: string, newColor: ColorTranslator) {
       getEventManager()?.onScanffoldBorderColorChanged(newColor.RGBA);
       break;
     case "Cnames":
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.contigBordersTrack.setLabelColor(newColor.RGBA);
+      getEventManager()?.reloadTracks();
+      break;
     case "Snames":
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.scaffoldBordersTrack.setLabelColor(newColor.RGBA);
+      getEventManager()?.reloadTracks();
       break;
     case "Background":
       stylesStore.setMapBackground(newColor);

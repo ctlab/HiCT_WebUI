@@ -468,6 +468,7 @@ class ContactMapManager {
     if (flags.contigBorders || flags.contigNames) {
       const borderStyle = contigTrack.getStyleType();
       const strokeColor = contigTrack.options.borderColor as string;
+      const labelColor = contigTrack.getLabelColor() as string;
       const strokeWidth = contigTrack.options.width;
       const fillColor = contigTrack.options.fillColor as string;
       const labelSize = contigTrack.getLabelSize();
@@ -503,7 +504,7 @@ class ContactMapManager {
               labelY = endPx + labelOffset;
             }
             const midPx = (startPx + endPx) / 2;
-            svg += `<text x="${midPx}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="${escapeAttr(strokeColor)}" font-size="${labelSize}" font-family="${escapeAttr(toFontFamily(contigTrack))}" font-weight="${contigTrack.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${escapeXml(cd.contigName)}</text>`;
+            svg += `<text x="${midPx}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="${escapeAttr(labelColor)}" font-size="${labelSize}" font-family="${escapeAttr(toFontFamily(contigTrack))}" font-weight="${contigTrack.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${escapeXml(cd.contigName)}</text>`;
           }
         }
       }
@@ -512,6 +513,7 @@ class ContactMapManager {
     if (flags.scaffoldBorders || flags.scaffoldNames) {
       const borderStyle = scaffoldTrack.getStyleType();
       const strokeColor = scaffoldTrack.options.borderColor as string;
+      const labelColor = scaffoldTrack.getLabelColor() as string;
       const strokeWidth = scaffoldTrack.options.width;
       const fillColor = scaffoldTrack.options.fillColor as string;
       const labelSize = scaffoldTrack.getLabelSize();
@@ -554,7 +556,7 @@ class ContactMapManager {
               labelY = endPx + labelOffset;
             }
             const midPx = (startPx + endPx) / 2;
-            svg += `<text x="${midPx}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="${escapeAttr(strokeColor)}" font-size="${labelSize}" font-family="${escapeAttr(toFontFamily(scaffoldTrack))}" font-weight="${scaffoldTrack.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${escapeXml(sd.scaffoldName)}</text>`;
+            svg += `<text x="${midPx}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="${escapeAttr(labelColor)}" font-size="${labelSize}" font-family="${escapeAttr(toFontFamily(scaffoldTrack))}" font-weight="${scaffoldTrack.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${escapeXml(sd.scaffoldName)}</text>`;
           }
         }
       }

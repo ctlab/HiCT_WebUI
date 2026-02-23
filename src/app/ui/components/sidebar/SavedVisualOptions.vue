@@ -131,7 +131,7 @@ function nextOptionId(): number {
 }
 
 function colorToString(c: ColorTranslator): string {
-  return c.toString();
+  return c.RGBA;
 }
 
 const importFileBtn: Ref<HTMLInputElement | null> = ref(null);
@@ -181,6 +181,7 @@ function exportOptions() {
       name: v.name,
       backgroundColor: colorToString(v.backgroundColor),
       trackStyles: v.trackStyles,
+      signalThresholds: extractSignalThresholds(v.options),
     })
   );
 
@@ -229,53 +230,6 @@ function importJSONResults(jsonPreResult: unknown) {
     return;
   }
 
-  // Compatibility with old saved visualization presets:
-  const savedVisualizationPresets = data.savedVisualizationPresets;
-  if (isArray(savedVisualizationPresets) && savedVisualizationPresets.length > 0) {
-    savedVisualizationPresets.forEach((sl) => {
-      if (!isRecord(sl)) return;
-
-      if (typeof sl.backgroundColor === "string") {
-        sl.backgroundColor = new ColorTranslator(sl.backgroundColor);
-      }
-
-      const opt = sl.options;
-      if (isRecord(opt) && isRecord(opt.colormap)) {
-        const cm = opt.colormap;
-
-        if (typeof cm.startColorRGBAString === "string") {
-          cm.startColorRGBA = new ColorTranslator(cm.startColorRGBAString as string);
-        }
-        if (typeof cm.endColorRGBAString === "string") {
-          cm.endColorRGBA = new ColorTranslator(cm.endColorRGBAString as string);
-        }
-      }
-    });
-  }
-
-  const savedLocations = data.savedLocations;
-  if (isArray(savedLocations) && savedLocations.length > 0) {
-    savedLocations.forEach((sl) => {
-      if (!isRecord(sl)) return;
-
-      if (typeof sl.backgroundColor === "string") {
-        sl.backgroundColor = new ColorTranslator(sl.backgroundColor);
-      }
-
-      const opt = sl.options;
-      if (isRecord(opt) && isRecord(opt.colormap)) {
-        const cm = opt.colormap;
-
-        if (typeof cm.startColorRGBAString === "string") {
-          cm.startColorRGBA = new ColorTranslator(cm.startColorRGBAString as string);
-        }
-        if (typeof cm.endColorRGBAString === "string") {
-          cm.endColorRGBA = new ColorTranslator(cm.endColorRGBAString as string);
-        }
-      }
-    });
-  }
-
   // Now parse into your expected (new) format safely
   const jsonResult = jsonPreResult as {
     exportType: "visualizationOptions";
@@ -287,6 +241,10 @@ function importJSONResults(jsonPreResult: unknown) {
         backgroundColor?: string | ColorTranslator;
         name?: string;
         trackStyles?: TrackStylePresetBundle;
+        signalThresholds?: {
+          lowerSignalBound?: number;
+          upperSignalBound?: number;
+        };
       }[];
       savedVisualizationPresets?: {
         option_id: number;
@@ -294,6 +252,10 @@ function importJSONResults(jsonPreResult: unknown) {
         backgroundColor?: string | ColorTranslator;
         name?: string;
         trackStyles?: TrackStylePresetBundle;
+        signalThresholds?: {
+          lowerSignalBound?: number;
+          upperSignalBound?: number;
+        };
       }[];
     };
   };
@@ -302,6 +264,11 @@ function importJSONResults(jsonPreResult: unknown) {
     jsonResult.data.savedVisualizationPresets ??
     jsonResult.data.savedLocations ??
     [];
+
+  const existingKeys = new Set<string>();
+  savedOptions.value.forEach((opt) => {
+    existingKeys.add(buildPresetKey(opt));
+  });
 
   arr.forEach((option) => {
     const newId = nextOptionId();
@@ -314,8 +281,14 @@ function importJSONResults(jsonPreResult: unknown) {
     const b = option.backgroundColor;
     if (b instanceof ColorTranslator) {
       backgroundColor = b;
-    } else if (typeof b === "string") {
-      backgroundColor = new ColorTranslator(b);
+  } else if (typeof b === "string") {
+      try {
+        backgroundColor = new ColorTranslator(b, { legacyCSS: true });
+      } catch {
+        backgroundColor = new ColorTranslator("rgba(255,255,255,1.0)", {
+          legacyCSS: true,
+        });
+      }
     }
 
     const newOption = {
@@ -325,8 +298,13 @@ function importJSONResults(jsonPreResult: unknown) {
       trackStyles: option.trackStyles,
       name: option.name ?? `Imported preset ${newId}`,
     };
-    savedOptions.value.set(newOption.option_id, newOption);
-    bumpSavedOptions();
+    const key = buildPresetKey(newOption);
+    if (!existingKeys.has(key)) {
+      savedOptions.value.set(newOption.option_id, newOption);
+      existingKeys.add(key);
+      bumpSavedOptions();
+      applySignalThresholds(option);
+    }
   });
 }
 
@@ -341,8 +319,8 @@ function serializeVisualizationOptions(options: VisualizationOptions): Record<st
       resolutionLinearScaling: options.resolutionLinearScaling ?? false,
       colormap: {
         colormapType: cmap.colormapType,
-        startColorRGBAString: cmap.startColorRGBA.toString(),
-        endColorRGBAString: cmap.endColorRGBA.toString(),
+        startColorRGBAString: cmap.startColorRGBA.RGBA,
+        endColorRGBAString: cmap.endColorRGBA.RGBA,
         minSignal: cmap.minSignal,
         maxSignal: cmap.maxSignal,
       },
@@ -388,12 +366,19 @@ function deserializeVisualizationOptions(raw: Record<string, unknown>): Visualiz
       typeof cmapRaw.minSignal === "number" ? cmapRaw.minSignal : 0;
     const maxSignal =
       typeof cmapRaw.maxSignal === "number" ? cmapRaw.maxSignal : 1;
-    cmap = new SimpleLinearGradient(
-      new ColorTranslator(startColor, { legacyCSS: true }),
-      new ColorTranslator(endColor, { legacyCSS: true }),
-      minSignal,
-      maxSignal
-    );
+    let startCt: ColorTranslator;
+    let endCt: ColorTranslator;
+    try {
+      startCt = new ColorTranslator(startColor, { legacyCSS: true });
+    } catch {
+      startCt = new ColorTranslator("rgba(0,255,0,0.0)", { legacyCSS: true });
+    }
+    try {
+      endCt = new ColorTranslator(endColor, { legacyCSS: true });
+    } catch {
+      endCt = new ColorTranslator("rgba(0,96,0,1.0)", { legacyCSS: true });
+    }
+    cmap = new SimpleLinearGradient(startCt, endCt, minSignal, maxSignal);
   } else {
     cmap = new Colormap(cmapType);
   }
@@ -405,6 +390,68 @@ function deserializeVisualizationOptions(raw: Record<string, unknown>): Visualiz
     resolutionLinearScaling,
     cmap
   );
+}
+
+function extractSignalThresholds(options: VisualizationOptions): {
+  lowerSignalBound?: number;
+  upperSignalBound?: number;
+} {
+  const cmap = options.colormap;
+  if (cmap instanceof SimpleLinearGradient) {
+    return {
+      lowerSignalBound: cmap.minSignal,
+      upperSignalBound: cmap.maxSignal,
+    };
+  }
+  return {};
+}
+
+function applySignalThresholds(option: {
+  signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
+}) {
+  const thresholds = option.signalThresholds;
+  if (!thresholds) return;
+  const lower = thresholds.lowerSignalBound;
+  const upper = thresholds.upperSignalBound;
+  if (typeof lower === "number" && colormap.value instanceof SimpleLinearGradient) {
+    const cmap = colormap.value as SimpleLinearGradient;
+    colormap.value = new SimpleLinearGradient(
+      cmap.startColorRGBA,
+      cmap.endColorRGBA,
+      lower,
+      typeof upper === "number" ? upper : cmap.maxSignal
+    );
+  }
+}
+
+function buildPresetKey(opt: {
+  name: string;
+  options: VisualizationOptions;
+  backgroundColor: ColorTranslator;
+  trackStyles?: TrackStylePresetBundle;
+}): string {
+  const payload = {
+    name: opt.name,
+    options: serializeVisualizationOptions(opt.options),
+    backgroundColor: colorToString(opt.backgroundColor),
+    trackStyles: opt.trackStyles ?? null,
+  };
+  return stableStringify(payload);
+}
+
+function stableStringify(obj: unknown): string {
+  if (obj === null || obj === undefined) return String(obj);
+  if (Array.isArray(obj)) {
+    return `[${obj.map((v) => stableStringify(v)).join(",")}]`;
+  }
+  if (typeof obj === "object") {
+    const record = obj as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    return `{${keys
+      .map((k) => `${JSON.stringify(k)}:${stableStringify(record[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(obj);
 }
 
 function importOptionsFromFile() {

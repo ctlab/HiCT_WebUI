@@ -6,6 +6,11 @@ export type TrackStylePreset = {
   width: number;
   labelSize?: number;
   borderStyle: BorderStyle;
+  labelBold?: boolean;
+  labelOutline?: boolean;
+  labelOutlineWidth?: number;
+  labelOffsetMultiplier?: number;
+  labelColor?: string;
 };
 
 export type TrackStylePresetBundle = {

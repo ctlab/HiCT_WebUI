@@ -606,6 +606,11 @@ class HiCViewAndLayersManager {
       fillColor,
       width: track.options.width,
       labelSize: track.getLabelSize(),
+      labelOffsetMultiplier: track.getLabelOffsetMultiplier(),
+      labelBold: track.getLabelBold(),
+      labelOutline: track.getLabelOutline(),
+      labelOutlineWidth: track.getLabelOutlineWidth(),
+      labelColor: this.colorLikeToString(track.getLabelColor()),
       borderStyle: track.getStyleType(),
     };
   }
@@ -618,6 +623,21 @@ class HiCViewAndLayersManager {
     track.options.fillColor = preset.fillColor;
     track.options.width = Math.max(1, preset.width);
     track.setLabelSize(preset.labelSize ?? track.getLabelSize());
+    if (preset.labelOffsetMultiplier !== undefined) {
+      track.setLabelOffsetMultiplier(preset.labelOffsetMultiplier);
+    }
+    if (preset.labelBold !== undefined) {
+      track.setLabelBold(preset.labelBold);
+    }
+    if (preset.labelOutline !== undefined) {
+      track.setLabelOutline(preset.labelOutline);
+    }
+    if (preset.labelOutlineWidth !== undefined) {
+      track.setLabelOutlineWidth(preset.labelOutlineWidth);
+    }
+    if (preset.labelColor !== undefined) {
+      track.setLabelColor(preset.labelColor);
+    }
     track.setStyleType(preset.borderStyle);
     track.style = track.generateStyleFunction()();
   }

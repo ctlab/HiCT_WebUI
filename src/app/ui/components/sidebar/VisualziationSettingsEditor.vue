@@ -157,6 +157,18 @@ watch(
 );
 
 watch(
+  () => colormap.value,
+  () => {
+    if (colormap.value instanceof SimpleLinearGradient) {
+      const cmap = colormap.value as SimpleLinearGradient;
+      lowerBound.value = cmap.minSignal;
+      upperBound.value = cmap.maxSignal;
+    }
+  },
+  { deep: false }
+);
+
+watch(
   () => [
     fromColor.value,
     toColor.value,
