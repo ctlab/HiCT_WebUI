@@ -46,6 +46,7 @@ import {
   TranslocationArrowsTrack2D,
   ScaffoldBordersTrack2D,
   Track2DSymmetric,
+  NamePlacement,
   BorderStyle,
 } from "../tracks/Track2DSymmetric";
 import type {
@@ -308,6 +309,13 @@ class HiCViewAndLayersManager {
       scaffoldBordersTrack: new ScaffoldBordersTrack2D(this.mapManager),
     };
 
+    this.track2DHolder.contigBordersTrack.setNamePlacement(
+      NamePlacement.TOP
+    );
+    this.track2DHolder.scaffoldBordersTrack.setNamePlacement(
+      NamePlacement.TOP
+    );
+
     this.deferredInitializationInteractions = {
       scissorsGuideInteraction: undefined,
     };
@@ -467,6 +475,72 @@ class HiCViewAndLayersManager {
     this.reloadTracks();
   }
 
+  public onContigLabelSizeChanged(size: number): void {
+    this.track2DHolder.contigBordersTrack.setLabelSize(size);
+    this.reloadTracks();
+  }
+
+  public onScaffoldLabelSizeChanged(size: number): void {
+    this.track2DHolder.scaffoldBordersTrack.setLabelSize(size);
+    this.reloadTracks();
+  }
+
+  public onContigLabelBoldChanged(enabled: boolean): void {
+    this.track2DHolder.contigBordersTrack.setLabelBold(enabled);
+    this.reloadTracks();
+  }
+
+  public onScaffoldLabelBoldChanged(enabled: boolean): void {
+    this.track2DHolder.scaffoldBordersTrack.setLabelBold(enabled);
+    this.reloadTracks();
+  }
+
+  public onContigLabelOutlineChanged(enabled: boolean): void {
+    this.track2DHolder.contigBordersTrack.setLabelOutline(enabled);
+    this.reloadTracks();
+  }
+
+  public onScaffoldLabelOutlineChanged(enabled: boolean): void {
+    this.track2DHolder.scaffoldBordersTrack.setLabelOutline(enabled);
+    this.reloadTracks();
+  }
+
+  public onContigLabelOutlineWidthChanged(width: number): void {
+    this.track2DHolder.contigBordersTrack.setLabelOutlineWidth(width);
+    this.reloadTracks();
+  }
+
+  public onScaffoldLabelOutlineWidthChanged(width: number): void {
+    this.track2DHolder.scaffoldBordersTrack.setLabelOutlineWidth(width);
+    this.reloadTracks();
+  }
+
+  public onContigLabelOffsetMultiplierChanged(multiplier: number): void {
+    this.track2DHolder.contigBordersTrack.setLabelOffsetMultiplier(multiplier);
+    this.reloadTracks();
+  }
+
+  public onScaffoldLabelOffsetMultiplierChanged(multiplier: number): void {
+    this.track2DHolder.scaffoldBordersTrack.setLabelOffsetMultiplier(multiplier);
+    this.reloadTracks();
+  }
+
+  public onContigNamePlacementChanged(placement: NamePlacement): void {
+    this.track2DHolder.contigBordersTrack.setNamePlacement(placement);
+    this.reloadTracks();
+  }
+
+  public onScaffoldNamePlacementChanged(placement: NamePlacement): void {
+    this.track2DHolder.scaffoldBordersTrack.setNamePlacement(placement);
+    this.reloadTracks();
+  }
+
+  public onNamePlacementChanged(placement: NamePlacement): void {
+    this.track2DHolder.contigBordersTrack.setNamePlacement(placement);
+    this.track2DHolder.scaffoldBordersTrack.setNamePlacement(placement);
+    this.reloadTracks();
+  }
+
   public getTrackStylePreset(): TrackStylePresetBundle {
     return {
       contigs: this.getSingleTrackStylePreset(
@@ -497,6 +571,7 @@ class HiCViewAndLayersManager {
       borderColor,
       fillColor,
       width: track.options.width,
+      labelSize: track.getLabelSize(),
       borderStyle: track.getStyleType(),
     };
   }
@@ -508,6 +583,7 @@ class HiCViewAndLayersManager {
     track.options.borderColor = preset.borderColor;
     track.options.fillColor = preset.fillColor;
     track.options.width = Math.max(1, preset.width);
+    track.setLabelSize(preset.labelSize ?? track.getLabelSize());
     track.setStyleType(preset.borderStyle);
     track.style = track.generateStyleFunction()();
   }
@@ -986,11 +1062,15 @@ class HiCViewAndLayersManager {
     return layer as Layer<VectorSource>;
   }
 
-  public reloadTiles(): void {
+  public reloadTiles(version?: number): void {
     for (const layer of this.layersHolder.hicDataLayers) {
       const source = layer.getSource();
       if (source instanceof VersionedXYZContactMapSource) {
-        source.do_reload();
+        if (version !== undefined) {
+          source.reloadWithVersion(version);
+        } else {
+          source.do_reload();
+        }
       }
     }
   }

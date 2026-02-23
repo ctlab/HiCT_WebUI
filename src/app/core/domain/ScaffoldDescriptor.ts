@@ -22,6 +22,7 @@
 interface ScaffoldDescriptor {
   scaffoldId: number;
   scaffoldName: string;
+  scaffoldOriginalName: string;
   spacerLength: number;
   scaffoldBordersBP: ScaffoldBordersBP | null;
 }

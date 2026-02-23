@@ -94,7 +94,7 @@
         id="reload-tiles-button"
         class="btn-sm btn-outline-primary"
         type="button"
-        @click="props.mapManager?.reloadTiles()"
+        @click="reloadTiles"
       >
         Reload tiles
       </button>
@@ -120,6 +120,7 @@
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import NormalizationSelector from "./NormalizationSelector.vue";
 import { Ref, ref } from "vue";
+import { toast } from "vue-sonner";
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -209,6 +210,15 @@ function checkOptionsAndSnapToContigIntersection() {
 
       //([lu_x, lu_y, br_x, br_y], {minResolution: bpResolutionToSnapAt})
     }
+  }
+}
+
+async function reloadTiles() {
+  try {
+    await props.mapManager?.reloadTilesFromBackend();
+  } catch (e) {
+    toast.error("Failed to reload tiles");
+    console.error(e);
   }
 }
 
@@ -345,7 +355,7 @@ function onNormalizationChanged() {
   padding: 0px;
   gap: 16px;
 
-  width: 150px;
+  width: auto;
   height: 29px;
 
   /* Inside auto layout */
@@ -399,7 +409,7 @@ function onNormalizationChanged() {
   align-items: center;
   padding: 4px 8px;
 
-  width: 37px;
+  min-width: 140px;
   height: 29px;
 
   /* Global/07. Light */

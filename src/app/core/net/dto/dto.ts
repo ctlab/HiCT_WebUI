@@ -87,6 +87,7 @@ class ContigDescriptorDTO extends InboundDTO<ContigDescriptor> {
     return {
       contigId: this.json.contigId as number,
       contigName: this.json.contigName as string,
+      contigOriginalName: this.json.contigOriginalName as string,
       contigLengthBp: this.json.contigLengthBp as number,
       contigLengthBins: new Map(
         Array.from(
@@ -124,6 +125,7 @@ class ScaffoldDescriptorDTO extends InboundDTO<ScaffoldDescriptor> {
     return {
       scaffoldId: this.json.scaffoldId as number,
       scaffoldName: this.json.scaffoldName as string,
+      scaffoldOriginalName: this.json.scaffoldOriginalName as string,
       spacerLength: this.json.spacerLength as number,
       scaffoldBordersBP: this.json.scaffoldBordersBP
         ? new ScaffoldBordersBPDTO(

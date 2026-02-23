@@ -35,16 +35,45 @@ class TilePOSTResponse {
   ) {}
 }
 
-class ConverterStatusResponse {
+class ConversionJobResponse {
   public constructor(
-    public readonly isConverting: boolean,
+    public readonly jobId: string,
+    public readonly status: string,
+    public readonly sourceFilename: string,
+    public readonly outputFilename: string,
+    public readonly direction: string,
+    public readonly overallProgress: number,
     public readonly resolutionProgress: number,
-    public readonly totalProgress: number
+    public readonly currentResolution: number,
+    public readonly elapsedMillis: number,
+    public readonly etaMillis: number,
+    public readonly resolutionElapsedMillis: number,
+    public readonly resolutionEtaMillis: number,
+    public readonly inputSizeBytes: number,
+    public readonly outputSizeBytes: number,
+    public readonly logs: string[],
+    public readonly error: string
+  ) {}
+}
+
+class NameMappingResponse {
+  public constructor(
+    public readonly contigs: {
+      contigId: number;
+      originalName: string;
+      name: string;
+    }[],
+    public readonly scaffolds: {
+      scaffoldId: number;
+      originalName: string;
+      name: string;
+    }[]
   ) {}
 }
 
 export {
   CurrentSignalRangeResponse,
   TilePOSTResponse,
-  ConverterStatusResponse,
+  ConversionJobResponse,
+  NameMappingResponse,
 };

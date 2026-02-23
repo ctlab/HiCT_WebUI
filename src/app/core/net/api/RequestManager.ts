@@ -32,16 +32,15 @@ import {
 } from "../dto/dto";
 import { HiCTAPIRequestDTO } from "../dto/requestDTO";
 import {
-  ConverterStatusResponseDTO,
+  ConversionJobResponseDTO,
   CurrentSignalRangeResponseDTO,
+  NameMappingResponseDTO,
   TilePOSTResponseDTO,
 } from "../dto/responseDTO";
 import type { OpenFileResponse } from "../netcommon";
 import type { NetworkManager } from "../NetworkManager";
 import {
-  ConvertCoolerRequest,
   GetAGPForAssemblyRequest,
-  GetConverterStatusRequest,
   GetCurrentSignalRangeRequest,
   GetFastaForAssemblyRequest,
   GetFastaForSelectionRequest,
@@ -62,10 +61,21 @@ import {
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
+  StartBatchConversionJobsRequest,
+  StartConversionJobRequest,
+  ListConversionJobsRequest,
+  GetConversionJobRequest,
+  StopConversionJobRequest,
+  RenameContigRequest,
+  RenameScaffoldRequest,
+  ExportNameMappingRequest,
+  ImportNameMappingRequest,
+  ReloadTilesRequest,
 } from "./request";
 import {
-  ConverterStatusResponse,
+  ConversionJobResponse,
   CurrentSignalRangeResponse,
+  NameMappingResponse,
 } from "./response";
 import { toast } from "vue-sonner";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
@@ -73,6 +83,11 @@ import VisualizationOptions from "../../visualization/VisualizationOptions";
 
 class RequestManager {
   constructor(public readonly networkManager: NetworkManager) {}
+
+  private normalizeAssemblyInfo(json: Record<string, unknown>): Record<string, unknown> {
+    const assemblyInfo = json["assemblyInfo"] as Record<string, unknown> | undefined;
+    return assemblyInfo ?? json;
+  }
 
   public async sendRequest(
     request: HiCTAPIRequest,
@@ -165,18 +180,87 @@ class RequestManager {
       });
   }
 
-  public async convertCooler(request: ConvertCoolerRequest): Promise<void> {
-    return this.sendRequest(request).then(() => {
-      return;
-    });
+  public async startConversionJob(
+    request: StartConversionJobRequest
+  ): Promise<{ status: string; jobId: string }> {
+    return this.sendRequest(request).then((response) => response.data);
   }
 
-  public async getConverterStatus(): Promise<ConverterStatusResponse> {
-    return this.sendRequest(new GetConverterStatusRequest(), {
-      timeout: 1000,
-    }).then((response) =>
-      new ConverterStatusResponseDTO(response.data).toEntity()
+  public async startBatchConversionJobs(
+    request: StartBatchConversionJobsRequest
+  ): Promise<{ status: string; groupId: string; jobIds: string[] }> {
+    return this.sendRequest(request).then((response) => response.data);
+  }
+
+  public async listConversionJobs(): Promise<ConversionJobResponse[]> {
+    return this.sendRequest(new ListConversionJobsRequest()).then((response) =>
+      (response.data as Record<string, unknown>[]).map((job) =>
+        new ConversionJobResponseDTO(job).toEntity()
+      )
     );
+  }
+
+  public async getConversionJob(jobId: string): Promise<ConversionJobResponse> {
+    return this.sendRequest(new GetConversionJobRequest(jobId)).then(
+      (response) => new ConversionJobResponseDTO(response.data).toEntity()
+    );
+  }
+
+  public async stopConversionJob(
+    jobId: string
+  ): Promise<{ status: string; jobId: string }> {
+    return this.sendRequest(new StopConversionJobRequest(jobId)).then(
+      (response) => response.data
+    );
+  }
+
+  public async renameContig(
+    contigId: number,
+    newName: string | null
+  ): Promise<AssemblyInfo> {
+    return this.sendRequest(new RenameContigRequest({ contigId, newName }))
+      .then((response) => response.data)
+      .then((json) =>
+        new AssemblyInfoDTO(this.normalizeAssemblyInfo(json)).toEntity()
+      );
+  }
+
+  public async renameScaffold(
+    scaffoldId: number,
+    newName: string | null
+  ): Promise<AssemblyInfo> {
+    return this.sendRequest(
+      new RenameScaffoldRequest({ scaffoldId, newName })
+    )
+      .then((response) => response.data)
+      .then((json) =>
+        new AssemblyInfoDTO(this.normalizeAssemblyInfo(json)).toEntity()
+      );
+  }
+
+  public async exportNameMapping(): Promise<NameMappingResponse> {
+    return this.sendRequest(new ExportNameMappingRequest())
+      .then((response) => response.data)
+      .then((json) => new NameMappingResponseDTO(json).toEntity());
+  }
+
+  public async importNameMapping(
+    contigs: { contigId: number; name: string }[],
+    scaffolds: { scaffoldId: number; name: string }[]
+  ): Promise<AssemblyInfo> {
+    return this.sendRequest(
+      new ImportNameMappingRequest({ contigs, scaffolds })
+    )
+      .then((response) => response.data)
+      .then((json) =>
+        new AssemblyInfoDTO(this.normalizeAssemblyInfo(json)).toEntity()
+      );
+  }
+
+  public async reloadTilesVersion(): Promise<number> {
+    return this.sendRequest(new ReloadTilesRequest())
+      .then((response) => response.data)
+      .then((json) => Number(json.version ?? 0));
   }
 
   public async listAGPFiles(): Promise<string[]> {
@@ -243,7 +327,9 @@ class RequestManager {
   ): Promise<AssemblyInfo> {
     return this.sendRequest(request)
       .then((response) => response.data)
-      .then((json) => new AssemblyInfoDTO(json).toEntity());
+      .then((json) =>
+        new AssemblyInfoDTO(this.normalizeAssemblyInfo(json)).toEntity()
+      );
   }
 
   public async ungroupContigsFromScaffold(
@@ -251,7 +337,9 @@ class RequestManager {
   ): Promise<AssemblyInfo> {
     return this.sendRequest(request)
       .then((response) => response.data)
-      .then((json) => new AssemblyInfoDTO(json).toEntity());
+      .then((json) =>
+        new AssemblyInfoDTO(this.normalizeAssemblyInfo(json)).toEntity()
+      );
   }
 
   public async moveSelectionToDebris(
@@ -259,7 +347,9 @@ class RequestManager {
   ): Promise<AssemblyInfo> {
     return this.sendRequest(request)
       .then((response) => response.data)
-      .then((json) => new AssemblyInfoDTO(json).toEntity());
+      .then((json) =>
+        new AssemblyInfoDTO(this.normalizeAssemblyInfo(json)).toEntity()
+      );
   }
 
   public async reverseSelectionRange(
@@ -267,7 +357,9 @@ class RequestManager {
   ): Promise<AssemblyInfo> {
     return this.sendRequest(request)
       .then((response) => response.data)
-      .then((json) => new AssemblyInfoDTO(json).toEntity());
+      .then((json) =>
+        new AssemblyInfoDTO(this.normalizeAssemblyInfo(json)).toEntity()
+      );
   }
 
   public async moveSelectionRange(
@@ -275,7 +367,9 @@ class RequestManager {
   ): Promise<AssemblyInfo> {
     return this.sendRequest(request)
       .then((response) => response.data)
-      .then((json) => new AssemblyInfoDTO(json).toEntity());
+      .then((json) =>
+        new AssemblyInfoDTO(this.normalizeAssemblyInfo(json)).toEntity()
+      );
   }
 
   public async splitContigAtPx(
@@ -283,7 +377,9 @@ class RequestManager {
   ): Promise<AssemblyInfo> {
     return this.sendRequest(request)
       .then((response) => response.data)
-      .then((json) => new AssemblyInfoDTO(json).toEntity());
+      .then((json) =>
+        new AssemblyInfoDTO(this.normalizeAssemblyInfo(json)).toEntity()
+      );
   }
 
   public async getVisualizationOptions(

@@ -69,10 +69,6 @@ class ListCoolerFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_coolers";
 }
 
-class GetConverterStatusRequest implements HiCTAPIRequest {
-  requestPath = "/converter_status";
-}
-
 class CloseFileRequest implements HiCTAPIRequest {
   requestPath = "/close";
 }
@@ -108,14 +104,91 @@ class SetNormalizationRequest implements HiCTAPIRequest {
   ) {}
 }
 
-class ConvertCoolerRequest implements HiCTAPIRequest {
-  requestPath = "/convert_cooler";
+class RenameContigRequest implements HiCTAPIRequest {
+  requestPath = "/names/contig";
 
   public constructor(
     public readonly options: {
-      readonly cooler_filename: string;
+      readonly contigId: number;
+      readonly newName: string | null;
     }
   ) {}
+}
+
+class RenameScaffoldRequest implements HiCTAPIRequest {
+  requestPath = "/names/scaffold";
+
+  public constructor(
+    public readonly options: {
+      readonly scaffoldId: number;
+      readonly newName: string | null;
+    }
+  ) {}
+}
+
+class ExportNameMappingRequest implements HiCTAPIRequest {
+  requestPath = "/names/export";
+}
+
+class ImportNameMappingRequest implements HiCTAPIRequest {
+  requestPath = "/names/import";
+
+  public constructor(
+    public readonly options: {
+      readonly contigs: { contigId: number; name: string }[];
+      readonly scaffolds: { scaffoldId: number; name: string }[];
+    }
+  ) {}
+}
+
+class StartConversionJobRequest implements HiCTAPIRequest {
+  requestPath = "/convert/jobs";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+      readonly direction?: string;
+      readonly resolutions?: string;
+      readonly compression?: number;
+      readonly compressionAlgorithm?: string;
+      readonly chunkSize?: number;
+      readonly parallelism?: number;
+    }
+  ) {}
+}
+
+class StartBatchConversionJobsRequest implements HiCTAPIRequest {
+  requestPath = "/convert/jobs/batch";
+
+  public constructor(
+    public readonly options: {
+      readonly files: string[];
+      readonly parallelJobs: number;
+      readonly parallelism: number;
+      readonly resolutions?: string;
+      readonly compression?: number;
+      readonly compressionAlgorithm?: string;
+      readonly chunkSize?: number;
+    }
+  ) {}
+}
+
+class ListConversionJobsRequest implements HiCTAPIRequest {
+  requestPath = "/convert/jobs/list";
+}
+
+class GetConversionJobRequest implements HiCTAPIRequest {
+  public requestPath: string;
+  public constructor(public readonly jobId: string) {
+    this.requestPath = `/convert/jobs/${jobId}`;
+  }
+}
+
+class StopConversionJobRequest implements HiCTAPIRequest {
+  public requestPath: string;
+  public constructor(public readonly jobId: string) {
+    this.requestPath = `/convert/jobs/${jobId}/stop`;
+  }
 }
 
 class SetContrastRangeRequest implements HiCTAPIRequest {
@@ -126,6 +199,10 @@ class SetContrastRangeRequest implements HiCTAPIRequest {
       readonly contrastRangeSettings: ContrastRangeSettings;
     }
   ) {}
+}
+
+class ReloadTilesRequest implements HiCTAPIRequest {
+  requestPath = "/tiles/reload";
 }
 
 class GetCurrentSignalRangeRequest implements HiCTAPIRequest {
@@ -260,7 +337,16 @@ export {
   type HiCTAPIRequest,
   CloseFileRequest,
   ListCoolerFilesRequest,
-  ConvertCoolerRequest,
+  StartConversionJobRequest,
+  StartBatchConversionJobsRequest,
+  ListConversionJobsRequest,
+  GetConversionJobRequest,
+  StopConversionJobRequest,
+  RenameContigRequest,
+  RenameScaffoldRequest,
+  ExportNameMappingRequest,
+  ImportNameMappingRequest,
+  ReloadTilesRequest,
   GetFastaForAssemblyRequest,
   GetAGPForAssemblyRequest,
   OpenFileRequest,
@@ -278,7 +364,6 @@ export {
   SetContrastRangeRequest,
   GetCurrentSignalRangeRequest,
   SaveFileRequest,
-  GetConverterStatusRequest,
   SplitContigRequest,
   // TileLoadPOSTRequest,
   MoveSelectionToDebrisRequest,

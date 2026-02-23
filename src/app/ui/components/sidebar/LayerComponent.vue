@@ -69,12 +69,66 @@
             />
           </div>
           <div class="mb-2">
-            <label class="form-label">Fill color</label>
-            <ColorPickerRectangle
-              :position="['top', 'left']"
-              :getDefaultColor="getDefaultFillColor"
-              @onColorChanged="(c: ColorTranslator) => (fillColor = c)"
-            ></ColorPickerRectangle>
+            <label class="form-label" for="track-label-size">Label size</label>
+            <input
+              id="track-label-size"
+              class="form-control form-control-sm"
+              type="number"
+              min="6"
+              step="1"
+              v-model.number="labelSize"
+            />
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="track-label-offset"
+              >Label offset</label
+            >
+            <input
+              id="track-label-offset"
+              class="form-control form-control-sm"
+              type="number"
+              min="0"
+              step="0.1"
+              v-model.number="labelOffsetMultiplier"
+            />
+          </div>
+          <div class="mb-2" v-if="props.layerName.includes('names')">
+            <div class="form-check">
+              <input
+                id="track-label-bold"
+                class="form-check-input"
+                type="checkbox"
+                v-model="labelBold"
+              />
+              <label class="form-check-label" for="track-label-bold"
+                >Bold</label
+              >
+            </div>
+            <div class="form-check mt-1">
+              <input
+                id="track-label-outline"
+                class="form-check-input"
+                type="checkbox"
+                v-model="labelOutline"
+              />
+              <label class="form-check-label" for="track-label-outline"
+                >Outline</label
+              >
+            </div>
+            <div class="mt-2">
+              <label class="form-label" for="track-label-outline-width"
+                >Outline width</label
+              >
+              <input
+                id="track-label-outline-width"
+                class="form-control form-control-sm"
+                type="number"
+                min="0"
+                step="0.5"
+                v-model.number="labelOutlineWidth"
+                :disabled="!labelOutline"
+              />
+            </div>
           </div>
           <div class="d-flex gap-2">
             <button class="btn btn-sm btn-success" @click="applyStyle">
@@ -86,6 +140,7 @@
           </div>
         </div>
       </div>
+      <div v-else class="edit-spacer"></div>
     </div>
   </div>
 </template>
@@ -103,6 +158,11 @@ const props = defineProps<{
   layerName: string;
   getDefaultColor?: () => Style | undefined;
   enableStyleEditor?: boolean;
+  getLabelSize?: () => number;
+  getLabelOffsetMultiplier?: () => number;
+  getLabelBold?: () => boolean;
+  getLabelOutline?: () => boolean;
+  getLabelOutlineWidth?: () => number;
 }>();
 
 function getBaseColor(): ColorTranslator {
@@ -131,7 +191,12 @@ const emit = defineEmits<{
     e: "onStyleChanged",
     layerName: string,
     borderWidth: number,
-    fillColor: ColorTranslator
+    fillColor: ColorTranslator,
+    labelSize: number,
+    labelOffsetMultiplier: number,
+    labelBold: boolean,
+    labelOutline: boolean,
+    labelOutlineWidth: number
   ): void;
 }>();
 
@@ -140,8 +205,15 @@ const borderWidth: Ref<number> = ref(2);
 const fillColor: Ref<ColorTranslator> = ref(
   new ColorTranslator("rgba(0,0,0,0.0)", { legacyCSS: true })
 ) as Ref<ColorTranslator>;
+const labelSize: Ref<number> = ref(12);
+const labelOffsetMultiplier: Ref<number> = ref(0.5);
+const labelBold: Ref<boolean> = ref(true);
+const labelOutline: Ref<boolean> = ref(true);
+const labelOutlineWidth: Ref<number> = ref(2);
 
-const bordersStyle: Ref<number> = ref(0);
+const bordersStyle: Ref<number> = ref(
+  props.layerName.includes("names") ? BorderStyle.TOP : 0
+);
 const visible: Ref<boolean> = ref(true);
 
 function updateVisibility() {
@@ -185,6 +257,21 @@ function openStyleEditor() {
     borderWidth.value = strokeWidth;
   }
   fillColor.value = getDefaultFillColor();
+  if (props.getLabelSize) {
+    labelSize.value = props.getLabelSize();
+  }
+  if (props.getLabelOffsetMultiplier) {
+    labelOffsetMultiplier.value = props.getLabelOffsetMultiplier();
+  }
+  if (props.getLabelBold) {
+    labelBold.value = props.getLabelBold();
+  }
+  if (props.getLabelOutline) {
+    labelOutline.value = props.getLabelOutline();
+  }
+  if (props.getLabelOutlineWidth) {
+    labelOutlineWidth.value = props.getLabelOutlineWidth();
+  }
 }
 
 function applyStyle() {
@@ -192,7 +279,12 @@ function applyStyle() {
     "onStyleChanged",
     props.layerName as string,
     borderWidth.value,
-    fillColor.value
+    fillColor.value,
+    labelSize.value,
+    labelOffsetMultiplier.value,
+    labelBold.value,
+    labelOutline.value,
+    labelOutlineWidth.value
   );
 }
 
@@ -226,7 +318,7 @@ function resetStyle() {
 .layer-name {
   /* layer name */
 
-  width: 21px;
+  width: 28px;
   height: 20px;
 
   /* Body/Small */
@@ -315,5 +407,13 @@ function resetStyle() {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+.edit-spacer {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  order: 3;
+  flex-grow: 0;
 }
 </style>

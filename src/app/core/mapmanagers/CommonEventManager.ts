@@ -38,7 +38,7 @@ import {
 } from "../net/api/request";
 import { ContactMapManager } from "./ContactMapManager";
 import { ActiveTool } from "./HiCViewAndLayersManager";
-import { BorderStyle } from "@/app/core/tracks/Track2DSymmetric";
+import { BorderStyle, NamePlacement } from "@/app/core/tracks/Track2DSymmetric";
 import { Coordinate } from "ol/coordinate";
 import { toast } from "vue-sonner";
 
@@ -97,6 +97,95 @@ class CommonEventManager {
 
   public onScaffoldFillColorChanged(fillColor: string): void {
     this.mapManager.viewAndLayersManager.onScaffoldFillColorChanged(fillColor);
+  }
+
+  public onContigLabelSizeChanged(size: number): void {
+    this.mapManager.viewAndLayersManager.onContigLabelSizeChanged(size);
+  }
+
+  public onScaffoldLabelSizeChanged(size: number): void {
+    this.mapManager.viewAndLayersManager.onScaffoldLabelSizeChanged(size);
+  }
+
+  private toNamePlacement(style: BorderStyle): NamePlacement {
+    switch (style) {
+      case BorderStyle.FULL:
+        return NamePlacement.CENTER;
+      case BorderStyle.BOTTOM:
+        return NamePlacement.BOTTOM;
+      case BorderStyle.TOP:
+        return NamePlacement.TOP;
+      case BorderStyle.NONE:
+      default:
+        return NamePlacement.HIDDEN;
+    }
+  }
+
+  public onContigNamePlacementChanged(style: BorderStyle): void {
+    const placement = this.toNamePlacement(style);
+    this.mapManager.viewAndLayersManager.onContigNamePlacementChanged(placement);
+  }
+
+  public onScaffoldNamePlacementChanged(style: BorderStyle): void {
+    const placement = this.toNamePlacement(style);
+    this.mapManager.viewAndLayersManager.onScaffoldNamePlacementChanged(
+      placement
+    );
+  }
+
+  public onContigLabelOffsetMultiplierChanged(multiplier: number): void {
+    this.mapManager.viewAndLayersManager.onContigLabelOffsetMultiplierChanged(
+      multiplier
+    );
+  }
+
+  public onScaffoldLabelOffsetMultiplierChanged(multiplier: number): void {
+    this.mapManager.viewAndLayersManager.onScaffoldLabelOffsetMultiplierChanged(
+      multiplier
+    );
+  }
+
+  public onContigLabelBoldChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onContigLabelBoldChanged(enabled);
+  }
+
+  public onScaffoldLabelBoldChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onScaffoldLabelBoldChanged(enabled);
+  }
+
+  public onContigLabelOutlineChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onContigLabelOutlineChanged(enabled);
+  }
+
+  public onScaffoldLabelOutlineChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onScaffoldLabelOutlineChanged(enabled);
+  }
+
+  public onContigLabelOutlineWidthChanged(width: number): void {
+    this.mapManager.viewAndLayersManager.onContigLabelOutlineWidthChanged(width);
+  }
+
+  public onScaffoldLabelOutlineWidthChanged(width: number): void {
+    this.mapManager.viewAndLayersManager.onScaffoldLabelOutlineWidthChanged(
+      width
+    );
+  }
+
+  public onNamePlacementChanged(style: BorderStyle): void {
+    const placement = (() => {
+      switch (style) {
+        case BorderStyle.FULL:
+          return NamePlacement.TOP;
+        case BorderStyle.BOTTOM:
+          return NamePlacement.BOTTOM;
+        case BorderStyle.TOP:
+          return NamePlacement.TOP;
+        case BorderStyle.NONE:
+        default:
+          return NamePlacement.HIDDEN;
+      }
+    })();
+    this.mapManager.viewAndLayersManager.onNamePlacementChanged(placement);
   }
 
   // public onNormalizationChanged(

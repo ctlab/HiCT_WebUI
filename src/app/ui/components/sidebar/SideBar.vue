@@ -36,6 +36,11 @@
           v-bind:key="layer.name"
           v-bind:layer-name="layer.name"
           :getDefaultColor="layer.getStyle"
+          :getLabelSize="layer.getLabelSize"
+          :getLabelOffsetMultiplier="layer.getLabelOffsetMultiplier"
+          :getLabelBold="layer.getLabelBold"
+          :getLabelOutline="layer.getLabelOutline"
+          :getLabelOutlineWidth="layer.getLabelOutlineWidth"
           :enableStyleEditor="layer.enableStyleEditor"
           @onColorChanged="onColorChanged"
           @onBorderStyleChanged="onBorderStyleChanged"
@@ -120,7 +125,12 @@ class LayerDescriptor {
     public name: string,
     public getStyle?: () => Style | undefined,
     public layer_manager?: unknown,
-    public enableStyleEditor: boolean = false
+    public enableStyleEditor: boolean = false,
+    public getLabelSize?: () => number,
+    public getLabelOffsetMultiplier?: () => number,
+    public getLabelBold?: () => boolean,
+    public getLabelOutline?: () => boolean,
+    public getLabelOutlineWidth?: () => number
   ) {}
 }
 
@@ -132,7 +142,28 @@ const layers: Ref<LayerDescriptor[]> = ref([
         ?.getLayersManager()
         .track2DHolder.contigBordersTrack.getStyle(),
     undefined,
-    true
+    true,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.contigBordersTrack.getLabelSize() ?? 12,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.contigBordersTrack.getLabelOffsetMultiplier() ?? 1.25
+    ,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.contigBordersTrack.getLabelBold() ?? true,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.contigBordersTrack.getLabelOutline() ?? true,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.contigBordersTrack.getLabelOutlineWidth() ?? 2
   ),
   new LayerDescriptor(
     "Scaffolds",
@@ -141,9 +172,83 @@ const layers: Ref<LayerDescriptor[]> = ref([
         ?.getLayersManager()
         .track2DHolder.scaffoldBordersTrack.getStyle(),
     undefined,
-    true
+    true,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.scaffoldBordersTrack.getLabelSize() ?? 12,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.scaffoldBordersTrack.getLabelOffsetMultiplier() ?? 1.25
+    ,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.scaffoldBordersTrack.getLabelBold() ?? true,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.scaffoldBordersTrack.getLabelOutline() ?? true,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.scaffoldBordersTrack.getLabelOutlineWidth() ?? 2
   ),
-  new LayerDescriptor("Gridlines"),
+  new LayerDescriptor(
+    "Cnames",
+    undefined,
+    undefined,
+    true,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.contigBordersTrack.getLabelSize() ?? 12,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.contigBordersTrack.getLabelOffsetMultiplier() ?? 1.25
+    ,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.contigBordersTrack.getLabelBold() ?? true,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.contigBordersTrack.getLabelOutline() ?? true,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.contigBordersTrack.getLabelOutlineWidth() ?? 2
+  ),
+  new LayerDescriptor(
+    "Snames",
+    undefined,
+    undefined,
+    true,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.scaffoldBordersTrack.getLabelSize() ?? 12,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.scaffoldBordersTrack.getLabelOffsetMultiplier() ?? 1.25
+    ,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.scaffoldBordersTrack.getLabelBold() ?? true,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.scaffoldBordersTrack.getLabelOutline() ?? true,
+    () =>
+      props.mapManager
+        ?.getLayersManager()
+        .track2DHolder.scaffoldBordersTrack.getLabelOutlineWidth() ?? 2
+  ),
   new LayerDescriptor("Background", () => backgroundColorStyle.value),
 ]);
 
@@ -154,6 +259,9 @@ function onColorChanged(layerName: string, newColor: ColorTranslator) {
       break;
     case "Scaffolds":
       getEventManager()?.onScanffoldBorderColorChanged(newColor.RGBA);
+      break;
+    case "Cnames":
+    case "Snames":
       break;
     case "Background":
       stylesStore.setMapBackground(newColor);
@@ -176,6 +284,12 @@ function onBorderStyleChanged(layerName: string, style: BorderStyle) {
     case "Scaffolds":
       getEventManager()?.onScanffoldBorderStyleChanged(style);
       break;
+    case "Cnames":
+      getEventManager()?.onContigNamePlacementChanged(style);
+      break;
+    case "Snames":
+      getEventManager()?.onScaffoldNamePlacementChanged(style);
+      break;
     default:
       // alert(`Method for ${layerName} is undefined`);
       toast.error(`Method for ${layerName} is undefined`);
@@ -186,16 +300,53 @@ function onBorderStyleChanged(layerName: string, style: BorderStyle) {
 function onStyleChanged(
   layerName: string,
   borderWidth: number,
-  fillColor: ColorTranslator
+  fillColor: ColorTranslator,
+  labelSize: number,
+  labelOffsetMultiplier: number,
+  labelBold: boolean,
+  labelOutline: boolean,
+  labelOutlineWidth: number
 ) {
   switch (layerName) {
     case "Contigs":
       getEventManager()?.onContigBorderWidthChanged(borderWidth);
       getEventManager()?.onContigFillColorChanged(fillColor.RGBA);
+      getEventManager()?.onContigLabelSizeChanged(labelSize);
+      getEventManager()?.onContigLabelOffsetMultiplierChanged(
+        labelOffsetMultiplier
+      );
+      getEventManager()?.onContigLabelBoldChanged(labelBold);
+      getEventManager()?.onContigLabelOutlineChanged(labelOutline);
+      getEventManager()?.onContigLabelOutlineWidthChanged(labelOutlineWidth);
       break;
     case "Scaffolds":
       getEventManager()?.onScaffoldBorderWidthChanged(borderWidth);
       getEventManager()?.onScaffoldFillColorChanged(fillColor.RGBA);
+      getEventManager()?.onScaffoldLabelSizeChanged(labelSize);
+      getEventManager()?.onScaffoldLabelOffsetMultiplierChanged(
+        labelOffsetMultiplier
+      );
+      getEventManager()?.onScaffoldLabelBoldChanged(labelBold);
+      getEventManager()?.onScaffoldLabelOutlineChanged(labelOutline);
+      getEventManager()?.onScaffoldLabelOutlineWidthChanged(labelOutlineWidth);
+      break;
+    case "Cnames":
+      getEventManager()?.onContigLabelSizeChanged(labelSize);
+      getEventManager()?.onContigLabelOffsetMultiplierChanged(
+        labelOffsetMultiplier
+      );
+      getEventManager()?.onContigLabelBoldChanged(labelBold);
+      getEventManager()?.onContigLabelOutlineChanged(labelOutline);
+      getEventManager()?.onContigLabelOutlineWidthChanged(labelOutlineWidth);
+      break;
+    case "Snames":
+      getEventManager()?.onScaffoldLabelSizeChanged(labelSize);
+      getEventManager()?.onScaffoldLabelOffsetMultiplierChanged(
+        labelOffsetMultiplier
+      );
+      getEventManager()?.onScaffoldLabelBoldChanged(labelBold);
+      getEventManager()?.onScaffoldLabelOutlineChanged(labelOutline);
+      getEventManager()?.onScaffoldLabelOutlineWidthChanged(labelOutlineWidth);
       break;
     default:
       toast.error(`Method for ${layerName} is undefined`);

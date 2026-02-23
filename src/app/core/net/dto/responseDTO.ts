@@ -20,8 +20,9 @@
  */
 
 import {
-  ConverterStatusResponse,
+  ConversionJobResponse,
   CurrentSignalRangeResponse,
+  NameMappingResponse,
   TilePOSTResponse,
 } from "../api/response";
 import { InboundDTO } from "./dto";
@@ -68,12 +69,42 @@ class TilePOSTResponseDTO extends InboundDTO<TilePOSTResponse> {
   }
 }
 
-class ConverterStatusResponseDTO extends InboundDTO<ConverterStatusResponse> {
-  public toEntity(): ConverterStatusResponse {
-    return new ConverterStatusResponse(
-      this.json["isConverting"] as boolean,
+class ConversionJobResponseDTO extends InboundDTO<ConversionJobResponse> {
+  public toEntity(): ConversionJobResponse {
+    return new ConversionJobResponse(
+      this.json["jobId"] as string,
+      this.json["status"] as string,
+      this.json["sourceFilename"] as string,
+      this.json["outputFilename"] as string,
+      this.json["direction"] as string,
+      this.json["overallProgress"] as number,
       this.json["resolutionProgress"] as number,
-      this.json["totalProgress"] as number
+      this.json["currentResolution"] as number,
+      this.json["elapsedMillis"] as number,
+      this.json["etaMillis"] as number,
+      this.json["resolutionElapsedMillis"] as number,
+      this.json["resolutionEtaMillis"] as number,
+      this.json["inputSizeBytes"] as number,
+      this.json["outputSizeBytes"] as number,
+      (this.json["logs"] as string[]) ?? [],
+      (this.json["error"] as string) ?? ""
+    );
+  }
+}
+
+class NameMappingResponseDTO extends InboundDTO<NameMappingResponse> {
+  public toEntity(): NameMappingResponse {
+    return new NameMappingResponse(
+      (this.json["contigs"] as Record<string, unknown>[]).map((item) => ({
+        contigId: item["contigId"] as number,
+        originalName: item["originalName"] as string,
+        name: item["name"] as string,
+      })),
+      (this.json["scaffolds"] as Record<string, unknown>[]).map((item) => ({
+        scaffoldId: item["scaffoldId"] as number,
+        originalName: item["originalName"] as string,
+        name: item["name"] as string,
+      }))
     );
   }
 }
@@ -81,5 +112,6 @@ class ConverterStatusResponseDTO extends InboundDTO<ConverterStatusResponse> {
 export {
   CurrentSignalRangeResponseDTO,
   TilePOSTResponseDTO,
-  ConverterStatusResponseDTO,
+  ConversionJobResponseDTO,
+  NameMappingResponseDTO,
 };

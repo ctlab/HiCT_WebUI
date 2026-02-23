@@ -179,6 +179,11 @@ class ContactMapManager {
     this.viewAndLayersManager.reloadTiles();
   }
 
+  public async reloadTilesFromBackend(): Promise<void> {
+    const version = await this.networkManager.requestManager.reloadTilesVersion();
+    this.viewAndLayersManager.reloadTiles(version);
+  }
+
   public async exportCurrentMapSvg(
     progressCallback?: (progress: number) => void
   ): Promise<void> {

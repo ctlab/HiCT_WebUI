@@ -97,6 +97,14 @@ class VersionedXYZContactMapSource extends XYZ {
     this.changed();
   }
 
+  public reloadWithVersion(version: number) {
+    this.tileCache.expireCache({});
+    this.tileCache.clear();
+    this.sourceVersion = Math.max(0, Math.floor(version));
+    this.setTileUrlFunction(this.create_tile_url_function());
+    this.changed();
+  }
+
   protected create_tile_url_function() {
     return (coord_zxy: number[]) => {
       const col = coord_zxy[1];

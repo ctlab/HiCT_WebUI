@@ -4,6 +4,7 @@ export type TrackStylePreset = {
   borderColor: string;
   fillColor: string;
   width: number;
+  labelSize?: number;
   borderStyle: BorderStyle;
 };
 

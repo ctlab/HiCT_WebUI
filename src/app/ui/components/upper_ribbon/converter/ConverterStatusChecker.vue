@@ -23,128 +23,107 @@
   <div class="d-flex align-items-center" v-if="errorMessage">
     <p class="error-message">Error: {{ errorMessage }}</p>
   </div>
-  <div class="d-flex align-items-center" v-if="loading">
-    <div v-if="converterStatus && converterStatus.isConverting">
-      <div class="spinner-border ms-auto" role="status"></div>
-      <p><strong>Converting...</strong></p>
-      <p>The status is updated automatically. Please, wait.</p>
+  <div v-if="job">
+    <div class="status-header">
+      <div>
+        <p><strong>Status:</strong> {{ job.status }}</p>
+        <p>
+          <strong>Input:</strong> {{ job.sourceFilename }} ({{
+            formatBytes(job.inputSizeBytes)
+          }})
+        </p>
+        <p>
+          <strong>Output:</strong> {{ job.outputFilename }} ({{
+            formatBytes(job.outputSizeBytes)
+          }})
+        </p>
+        <p v-if="job.currentResolution">
+          <strong>Current resolution:</strong> {{ job.currentResolution }}
+        </p>
+      </div>
+      <div class="actions">
+        <button
+          v-if="showStop && isRunning"
+          type="button"
+          class="btn btn-danger"
+          @click="onStopClicked"
+        >
+          Stop
+        </button>
+      </div>
     </div>
-    <div v-if="converterStatus && !converterStatus.isConverting">
-      <p><strong>Conversion finished!</strong></p>
-      <p>Please, click "Next" to continue.</p>
-    </div>
+
     <div class="progress-wrapper">
       <div class="some-progress">
         <p>
           Progress in current resolution:
-          {{
-            String(
-              Math.round(100 * (converterStatus?.resolutionProgress ?? 0))
-            ) + "%"
-          }}
+          {{ formatPercent(job.resolutionProgress) }}
+          <span class="progress-meta">
+            (elapsed {{ formatDuration(job.resolutionElapsedMillis) }}, eta
+            {{ formatDuration(job.resolutionEtaMillis) }})
+          </span>
         </p>
         <div class="progress hict-progress">
           <div
             class="progress-bar bg-info"
             role="progressbar"
-            :style="{
-              width:
-                String(
-                  Math.round(100 * (converterStatus?.resolutionProgress ?? 0))
-                ) + '%',
-            }"
-            aria-valuenow="{{ Math.round(100 * (converterStatus?.resolutionProgress ?? 0)) }}"
-            aria-valuemin="0"
-            aria-valuemax="100"
+            :style="{ width: formatPercent(job.resolutionProgress) }"
           ></div>
         </div>
       </div>
       <div class="some-progress">
         <p>
           Total progress:
-          {{
-            String(Math.round(100 * (converterStatus?.totalProgress ?? 0))) +
-            "%"
-          }}
+          {{ formatPercent(job.overallProgress) }}
+          <span class="progress-meta">
+            (elapsed {{ formatDuration(job.elapsedMillis) }}, eta
+            {{ formatDuration(job.etaMillis) }})
+          </span>
         </p>
         <div class="progress hict-progress">
           <div
             class="progress-bar bg-success"
             role="progressbar"
-            :style="{
-              width:
-                String(
-                  Math.round(100 * (converterStatus?.totalProgress ?? 0))
-                ) + '%',
-            }"
-            aria-valuenow="{{ Math.round(100 * (converterStatus?.totalProgress ?? 0)) }}"
-            aria-valuemin="0"
-            aria-valuemax="100"
+            :style="{ width: formatPercent(job.overallProgress) }"
           ></div>
         </div>
       </div>
     </div>
-  </div>
-  <div>
-    <button
-      type="button"
-      class="btn btn-primary"
-      v-if="converterStatus && !converterStatus.isConverting"
-      @click="onNextClicked"
-    >
-      Next
-    </button>
+
+    <div v-if="job.error" class="error-message">
+      Error: {{ job.error }}
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { type Ref, ref, onMounted } from "vue";
+import { type Ref, ref, onMounted, computed, withDefaults } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
-import { ConverterStatusResponse } from "@/app/core/net/api/response";
+import { ConversionJobResponse } from "@/app/core/net/api/response";
 
-const props = defineProps<{
-  networkManager: NetworkManager;
-}>();
+const props = withDefaults(
+  defineProps<{
+    networkManager: NetworkManager;
+    jobId: string;
+    showStop?: boolean;
+  }>(),
+  { showStop: true }
+);
 
-const emit = defineEmits<{
-  (e: "finished"): void;
-}>();
-
-const loading: Ref<boolean> = ref(true);
-const converterStatus: Ref<ConverterStatusResponse | undefined> =
-  ref(undefined);
+const job: Ref<ConversionJobResponse | undefined> = ref(undefined);
 const errorMessage: Ref<unknown | undefined> = ref(undefined);
 const timerId: Ref<string | number | undefined> = ref(undefined);
 const missedRequestCount: Ref<number> = ref(0);
 const MISSED_THRESHOLD = 10;
 
-function resetState(): void {
-  if (timerId.value) {
-    clearInterval(timerId.value);
-    timerId.value = undefined;
-  }
-  loading.value = true;
-  converterStatus.value = undefined;
-  errorMessage.value = null;
-  missedRequestCount.value = 0;
-}
-
-function onNextClicked(): void {
-  emit("finished");
-  resetState();
-}
-
 function updateState(): void {
   props.networkManager.requestManager
-    .getConverterStatus()
+    .getConversionJob(props.jobId)
     .then((resp) => {
       missedRequestCount.value = 0;
-      converterStatus.value = resp;
-      if (!resp.isConverting) {
-        if (timerId.value) {
-          clearInterval(timerId.value);
-          timerId.value = undefined;
-        }
+      job.value = resp;
+      if (!isRunning.value) {
+        stopTimer();
       }
     })
     .catch((err) => {
@@ -162,9 +141,68 @@ function updateState(): void {
     });
 }
 
+function onStopClicked(): void {
+  props.networkManager.requestManager.stopConversionJob(props.jobId).catch((e) => {
+    errorMessage.value = e;
+  });
+}
+
+function stopTimer(): void {
+  if (timerId.value) {
+    clearInterval(timerId.value);
+    timerId.value = undefined;
+  }
+}
+
+const isRunning = computed(() => {
+  return job.value?.status === "running" || job.value?.status === "queued";
+});
+
+function formatPercent(value: number | undefined): string {
+  if (value === undefined || Number.isNaN(value)) {
+    return "0%";
+  }
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatDuration(millis: number | undefined): string {
+  if (!millis || millis <= 0) {
+    return "00:00";
+  }
+  const totalSeconds = Math.floor(millis / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
+      2,
+      "0"
+    )}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
+    2,
+    "0"
+  )}`;
+}
+
+function formatBytes(bytes: number | undefined): string {
+  if (!bytes || bytes <= 0) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = bytes;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit++;
+  }
+  return `${size.toFixed(1)} ${units[unit]}`;
+}
+
 onMounted(() => {
   // @ts-expect-error "Using default JS-style timer instead of NodeJS"
-  timerId.value = setInterval(updateState, 5000);
+  timerId.value = setInterval(updateState, 3000);
+  updateState();
 });
 </script>
 
@@ -184,5 +222,20 @@ onMounted(() => {
 
 .hict-progress {
   width: 100%;
+}
+.status-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.actions {
+  display: flex;
+  align-items: flex-start;
+}
+.progress-meta {
+  color: #6c757d;
+  font-size: 0.85em;
+  margin-left: 6px;
 }
 </style>
