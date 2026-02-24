@@ -211,6 +211,10 @@ function applyDefaultVisualizationPreset() {
   }
   const first = presets[0] as Record<string, unknown>;
   const opt = (first["options"] as Record<string, unknown>) ?? {};
+  const signalThresholds = first["signalThresholds"] as
+    | { lowerSignalBound?: number; upperSignalBound?: number }
+    | undefined;
+  const trackStyles = first["trackStyles"] as Record<string, unknown> | undefined;
   const cmap = (opt["colormap"] as Record<string, unknown>) ?? {};
   const startColor = (cmap["startColorRGBAString"] as string) ?? "rgba(0,255,0,0.0)";
   const endColor = (cmap["endColorRGBAString"] as string) ?? "rgba(0,96,0,1.0)";
@@ -228,6 +232,17 @@ function applyDefaultVisualizationPreset() {
     minSignal,
     maxSignal
   );
+  let finalCmap = cmapObj;
+  if (signalThresholds && typeof signalThresholds.lowerSignalBound === "number") {
+    finalCmap = new SimpleLinearGradient(
+      cmapObj.startColorRGBA,
+      cmapObj.endColorRGBA,
+      signalThresholds.lowerSignalBound,
+      typeof signalThresholds.upperSignalBound === "number"
+        ? signalThresholds.upperSignalBound
+        : cmapObj.maxSignal
+    );
+  }
   visualizationOptionsStore.setVisualizationOptions(
     new VisualizationOptions(
       preLogBase,
@@ -235,11 +250,14 @@ function applyDefaultVisualizationPreset() {
       applyCoolerWeights,
       resolutionScaling,
       resolutionLinearScaling,
-      cmapObj
+      finalCmap
     )
   );
   const bg = (first["backgroundColor"] as string) ?? "rgba(255,255,255,1)";
   stylesStore.setMapBackground(new ColorTranslator(bg, { legacyCSS: true }));
+  if (trackStyles && mapManager.value) {
+    mapManager.value.getLayersManager().applyTrackStylePreset(trackStyles as never);
+  }
   mapManager.value?.visualizationManager.sendVisualizationOptionsToServer().then(() => {
     mapManager.value?.reloadTiles();
   });

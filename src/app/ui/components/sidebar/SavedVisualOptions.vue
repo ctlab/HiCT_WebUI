@@ -66,6 +66,7 @@
         :visualization-options="opt.options"
         :background-color="opt.backgroundColor"
         :track-styles="opt.trackStyles"
+        :signal-thresholds="opt.signalThresholds"
         :name="opt.name"
         @remove="removeOption"
         @rename="renameOption"
@@ -116,6 +117,10 @@ const savedOptions = shallowRef(
       options: VisualizationOptions;
       backgroundColor: ColorTranslator;
       trackStyles?: TrackStylePresetBundle;
+      signalThresholds?: {
+        lowerSignalBound?: number;
+        upperSignalBound?: number;
+      };
     }
   >()
 );
@@ -151,6 +156,9 @@ function saveOptions() {
     options: visualizationOptionsStore.asVisualizationOptions(),
     backgroundColor: mapBackgroundColor.value as ColorTranslator,
     trackStyles: props.mapManager.getLayersManager().getTrackStylePreset(),
+    signalThresholds: extractSignalThresholds(
+      visualizationOptionsStore.asVisualizationOptions()
+    ),
   });
   bumpSavedOptions();
 }
@@ -184,7 +192,7 @@ function exportOptions() {
       name: v.name,
       backgroundColor: colorToString(v.backgroundColor),
       trackStyles: v.trackStyles,
-      signalThresholds: extractSignalThresholds(v.options),
+      signalThresholds: v.signalThresholds ?? extractSignalThresholds(v.options),
     })
   );
 
@@ -244,6 +252,7 @@ function loadFromSessionStore() {
       options: deserializeVisualizationOptions(opt.options ?? {}),
       backgroundColor,
       trackStyles: opt.trackStyles as TrackStylePresetBundle | undefined,
+      signalThresholds: opt.signalThresholds,
     });
   });
   bumpSavedOptions();
@@ -359,6 +368,7 @@ function importJSONResults(jsonPreResult: unknown) {
       backgroundColor,
       trackStyles: option.trackStyles,
       name: option.name ?? `Imported preset ${newId}`,
+      signalThresholds: option.signalThresholds,
     };
     const key = buildPresetKey(newOption);
     if (!existingKeys.has(key)) {
@@ -491,12 +501,14 @@ function buildPresetKey(opt: {
   options: VisualizationOptions;
   backgroundColor: ColorTranslator;
   trackStyles?: TrackStylePresetBundle;
+  signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
 }): string {
   const payload = {
     name: opt.name,
     options: serializeVisualizationOptions(opt.options),
     backgroundColor: colorToString(opt.backgroundColor),
     trackStyles: opt.trackStyles ?? null,
+    signalThresholds: opt.signalThresholds ?? null,
   };
   return stableStringify(payload);
 }

@@ -72,6 +72,7 @@ import { ref } from "vue";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import { useStyleStore } from "@/app/stores/styleStore";
+import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import { ColorTranslator } from "colortranslator";
 
 const visualizationOptionsStore = useVisualizationOptionsStore();
@@ -89,6 +90,7 @@ const props = defineProps<{
   visualizationOptions: VisualizationOptions;
   backgroundColor: ColorTranslator;
   trackStyles?: TrackStylePresetBundle;
+  signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
 }>();
 
 const emits = defineEmits<{
@@ -111,6 +113,22 @@ function setOptionsPreset() {
     visualizationOptionsStore.setVisualizationOptions(
       props.visualizationOptions
     );
+    if (
+      props.signalThresholds &&
+      colormap.value instanceof SimpleLinearGradient
+    ) {
+      const lower = props.signalThresholds.lowerSignalBound;
+      const upper = props.signalThresholds.upperSignalBound;
+      if (typeof lower === "number") {
+        const cmap = colormap.value as SimpleLinearGradient;
+        colormap.value = new SimpleLinearGradient(
+          cmap.startColorRGBA,
+          cmap.endColorRGBA,
+          lower,
+          typeof upper === "number" ? upper : cmap.maxSignal
+        );
+      }
+    }
     stylesStore.setMapBackground(props.backgroundColor);
     if (props.trackStyles) {
       props.mapManager.getLayersManager().applyTrackStylePreset(props.trackStyles);

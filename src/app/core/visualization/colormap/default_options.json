@@ -17,7 +17,39 @@
           }
         },
         "name": "Mosquitoes Demo",
-        "backgroundColor": "rgb(255,255,255)"
+        "backgroundColor": "rgb(255,255,255)",
+        "signalThresholds": {
+          "lowerSignalBound": 0,
+          "upperSignalBound": 0.003
+        },
+        "trackStyles": {
+          "contigs": {
+            "borderColor": "rgba(61, 167, 221, 1)",
+            "fillColor": "rgba(0, 127, 127, 0.0)",
+            "width": 2,
+            "labelSize": 12,
+            "borderStyle": 1,
+            "namePlacement": "HIDDEN",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(61, 167, 221, 1)"
+          },
+          "scaffolds": {
+            "borderColor": "rgba(100, 104, 111, 0.698)",
+            "fillColor": "rgba(64, 64, 255, 0.0)",
+            "width": 4,
+            "labelSize": 12,
+            "borderStyle": 1,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(100, 104, 111, 0.698)"
+          }
+        }
       },
       {
         "option_id": 1,
@@ -34,7 +66,39 @@
           }
         },
         "name": "Cold-Hot",
-        "backgroundColor": "rgba(0,0,0,1)"
+        "backgroundColor": "rgba(0,0,0,1)",
+        "signalThresholds": {
+          "lowerSignalBound": 0,
+          "upperSignalBound": 0.75
+        },
+        "trackStyles": {
+          "contigs": {
+            "borderColor": "rgba(255, 64, 64, 1.0)",
+            "fillColor": "rgba(0, 127, 127, 0.0)",
+            "width": 2,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 64, 64, 1.0)"
+          },
+          "scaffolds": {
+            "borderColor": "rgba(255, 255, 0, 1)",
+            "fillColor": "rgba(64, 64, 255, 0.0)",
+            "width": 4,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 255, 0, 1)"
+          }
+        }
       },
       {
         "option_id": 2,
@@ -51,7 +115,39 @@
           }
         },
         "name": "Visible dots with cooler weights",
-        "backgroundColor": "rgba(0,0,0,1)"
+        "backgroundColor": "rgba(0,0,0,1)",
+        "signalThresholds": {
+          "lowerSignalBound": 0,
+          "upperSignalBound": 1
+        },
+        "trackStyles": {
+          "contigs": {
+            "borderColor": "rgba(255, 64, 64, 1.0)",
+            "fillColor": "rgba(0, 127, 127, 0.0)",
+            "width": 2,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 64, 64, 1.0)"
+          },
+          "scaffolds": {
+            "borderColor": "rgba(255, 255, 0, 1)",
+            "fillColor": "rgba(64, 64, 255, 0.0)",
+            "width": 4,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 255, 0, 1)"
+          }
+        }
       },
       {
         "option_id": 3,
@@ -68,7 +164,39 @@
           }
         },
         "name": "JBAT-like",
-        "backgroundColor": "rgba(255,255,255,1)"
+        "backgroundColor": "rgba(255,255,255,1)",
+        "signalThresholds": {
+          "lowerSignalBound": 0,
+          "upperSignalBound": 1
+        },
+        "trackStyles": {
+          "contigs": {
+            "borderColor": "rgba(255, 64, 64, 1.0)",
+            "fillColor": "rgba(0, 127, 127, 0.0)",
+            "width": 2,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 64, 64, 1.0)"
+          },
+          "scaffolds": {
+            "borderColor": "rgba(255, 255, 0, 1)",
+            "fillColor": "rgba(64, 64, 255, 0.0)",
+            "width": 4,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 255, 0, 1)"
+          }
+        }
       },
       {
         "option_id": 4,
@@ -85,7 +213,39 @@
           }
         },
         "name": "Night JBAT-like",
-        "backgroundColor": "rgba(0,0,0,1)"
+        "backgroundColor": "rgba(0,0,0,1)",
+        "signalThresholds": {
+          "lowerSignalBound": 0,
+          "upperSignalBound": 1
+        },
+        "trackStyles": {
+          "contigs": {
+            "borderColor": "rgba(255, 64, 64, 1.0)",
+            "fillColor": "rgba(0, 127, 127, 0.0)",
+            "width": 2,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 64, 64, 1.0)"
+          },
+          "scaffolds": {
+            "borderColor": "rgba(255, 255, 0, 1)",
+            "fillColor": "rgba(64, 64, 255, 0.0)",
+            "width": 4,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 255, 0, 1)"
+          }
+        }
       },
       {
         "option_id": 5,
@@ -102,7 +262,39 @@
           }
         },
         "name": "Light terminal",
-        "backgroundColor": "rgba(255,255,255,1)"
+        "backgroundColor": "rgba(255,255,255,1)",
+        "signalThresholds": {
+          "lowerSignalBound": 0,
+          "upperSignalBound": 1
+        },
+        "trackStyles": {
+          "contigs": {
+            "borderColor": "rgba(255, 64, 64, 1.0)",
+            "fillColor": "rgba(0, 127, 127, 0.0)",
+            "width": 2,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 64, 64, 1.0)"
+          },
+          "scaffolds": {
+            "borderColor": "rgba(255, 255, 0, 1)",
+            "fillColor": "rgba(64, 64, 255, 0.0)",
+            "width": 4,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 255, 0, 1)"
+          }
+        }
       },
       {
         "option_id": 6,
@@ -119,7 +311,39 @@
           }
         },
         "name": "Terminal",
-        "backgroundColor": "rgba(0,0,0,1)"
+        "backgroundColor": "rgba(0,0,0,1)",
+        "signalThresholds": {
+          "lowerSignalBound": 0,
+          "upperSignalBound": 4
+        },
+        "trackStyles": {
+          "contigs": {
+            "borderColor": "rgba(255, 64, 64, 1.0)",
+            "fillColor": "rgba(0, 127, 127, 0.0)",
+            "width": 2,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 64, 64, 1.0)"
+          },
+          "scaffolds": {
+            "borderColor": "rgba(255, 255, 0, 1)",
+            "fillColor": "rgba(64, 64, 255, 0.0)",
+            "width": 4,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 255, 0, 1)"
+          }
+        }
       },
       {
         "option_id": 7,
@@ -136,8 +360,40 @@
           }
         },
         "name": "Greens",
-        "backgroundColor": "rgb(255,255,255)"
-      }      
+        "backgroundColor": "rgb(255,255,255)",
+        "signalThresholds": {
+          "lowerSignalBound": 0,
+          "upperSignalBound": 1
+        },
+        "trackStyles": {
+          "contigs": {
+            "borderColor": "rgba(255, 64, 64, 1.0)",
+            "fillColor": "rgba(0, 127, 127, 0.0)",
+            "width": 2,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 64, 64, 1.0)"
+          },
+          "scaffolds": {
+            "borderColor": "rgba(255, 255, 0, 1)",
+            "fillColor": "rgba(64, 64, 255, 0.0)",
+            "width": 4,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 255, 0, 1)"
+          }
+        }
+      }
     ]
   }
 }

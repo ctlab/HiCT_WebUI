@@ -612,6 +612,7 @@ class HiCViewAndLayersManager {
       labelOutlineWidth: track.getLabelOutlineWidth(),
       labelColor: this.colorLikeToString(track.getLabelColor()),
       borderStyle: track.getStyleType(),
+      namePlacement: track.getNamePlacement(),
     };
   }
 
@@ -637,6 +638,16 @@ class HiCViewAndLayersManager {
     }
     if (preset.labelColor !== undefined) {
       track.setLabelColor(preset.labelColor);
+    }
+    if (preset.namePlacement !== undefined) {
+      if (typeof preset.namePlacement === "string") {
+        const key = preset.namePlacement as keyof typeof NamePlacement;
+        if (NamePlacement[key] !== undefined) {
+          track.setNamePlacement(NamePlacement[key]);
+        }
+      } else {
+        track.setNamePlacement(preset.namePlacement);
+      }
     }
     track.setStyleType(preset.borderStyle);
     track.style = track.generateStyleFunction()();
