@@ -220,7 +220,9 @@ class ContactMapManager {
       for (let col = 0; col < tilesPerSide; col++) {
         const url = tileUrlFn([0, col, row], pixelRatio, projection);
         if (url) {
-          tiles.push({ col, row, url });
+          const withPriority =
+            url.indexOf("?") >= 0 ? `${url}&priority=low` : `${url}?priority=low`;
+          tiles.push({ col, row, url: withPriority });
         }
       }
     }
