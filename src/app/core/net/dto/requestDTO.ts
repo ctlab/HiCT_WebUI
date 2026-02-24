@@ -34,6 +34,7 @@ import {
   MoveSelectionRangeRequest,
   ListAGPFilesRequest,
   LoadAGPRequest,
+  OpenProgressRequest,
   GetFastaForSelectionRequest,
   SetNormalizationRequest,
   SetContrastRangeRequest,
@@ -146,6 +147,8 @@ abstract class HiCTAPIRequestDTO<
         return new ListAGPFilesRequestDTO(entity);
       case entity instanceof LoadAGPRequest:
         return new LoadAGPRequestDTO(entity as LoadAGPRequest);
+      case entity instanceof OpenProgressRequest:
+        return new OpenProgressRequestDTO(entity);
       case entity instanceof CloseFileRequest:
         return new CloseFileRequestDTO(entity as CloseFileRequest);
       case entity instanceof AttachSessionRequest:
@@ -181,6 +184,12 @@ abstract class HiCTAPIRequestDTO<
 }
 
 class GetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<GetVisualizationOptionsRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class OpenProgressRequestDTO extends HiCTAPIRequestDTO<OpenProgressRequest> {
   toDTO(): Record<string, unknown> {
     return {};
   }

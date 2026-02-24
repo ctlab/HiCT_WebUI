@@ -308,6 +308,11 @@ class LoadAGPRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class OpenProgressRequest implements HiCTAPIRequest {
+  requestPath = "/open_progress";
+  public constructor() {}
+}
+
 class GetVisualizationOptionsRequest implements HiCTAPIRequest {
   requestPath = "/get_visualization_options";
 
@@ -364,6 +369,7 @@ export {
   MoveSelectionRangeRequest,
   ListAGPFilesRequest,
   LoadAGPRequest,
+  OpenProgressRequest,
   GetFastaForSelectionRequest,
   SetNormalizationRequest,
   SetContrastRangeRequest,

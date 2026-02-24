@@ -23,6 +23,44 @@
   <Toaster position="bottom-right" />
   <!-- <button @click="() => toast('My first toast')">Render a toast</button> -->
   <div class="main-ui-component">
+    <div v-if="openProgressVisible">
+      <div class="modal-backdrop fade show open-progress-backdrop"></div>
+      <div
+        class="modal fade show open-progress-modal"
+        style="display: block"
+        tabindex="-1"
+        role="dialog"
+      >
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Opening file</h5>
+              <button type="button" class="btn-close" @click="closeOpenProgress"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-2">{{ openProgressStage }}</div>
+              <div class="progress">
+                <div
+                  class="progress-bar"
+                  role="progressbar"
+                  :style="{ width: `${openProgressPct}%` }"
+                  :aria-valuenow="openProgressPct"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                >
+                  {{ openProgressPct }}%
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" @click="closeOpenProgress">
+                Hide
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <UpperFrame
       :networkManager="networkManager"
       :mapManager="mapManager"
@@ -93,6 +131,44 @@ const sessionStore = useSessionStore();
 const htmlElementReferencesStore = usehtmlElementReferencesStore();
 const { mapTarget, miniMapTarget } = storeToRefs(htmlElementReferencesStore);
 const lastAgpFilename: Ref<string> = ref("");
+let openProgressTimer: number | undefined;
+const openProgressVisible = ref(false);
+const openProgressStage = ref("starting");
+const openProgressPct = ref(0);
+let openProgressInFlight = false;
+
+function startOpenProgress() {
+  if (openProgressTimer !== undefined) {
+    return;
+  }
+  openProgressVisible.value = true;
+  openProgressTimer = window.setInterval(() => {
+    if (openProgressInFlight) return;
+    openProgressInFlight = true;
+    networkManager.requestManager
+      .getOpenProgress()
+      .then((p) => {
+        openProgressStage.value = p.stage ?? "working";
+        openProgressPct.value = Math.max(0, Math.min(100, Math.round((p.progress ?? 0) * 100)));
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        openProgressInFlight = false;
+      });
+  }, 500);
+}
+
+function stopOpenProgress() {
+  if (openProgressTimer !== undefined) {
+    window.clearInterval(openProgressTimer);
+    openProgressTimer = undefined;
+  }
+  openProgressVisible.value = false;
+}
+
+function closeOpenProgress() {
+  openProgressVisible.value = false;
+}
 
 function safeColorTranslator(value: unknown, fallback: string): ColorTranslator {
   if (typeof value !== "string" || value.length > 128) {
@@ -165,6 +241,7 @@ async function openFileWithOptions(
   fname: string,
   ffname: string | undefined
 ): Promise<void> {
+  startOpenProgress();
   const openFileResponse = await networkManager.requestManager.openFile(
     fname,
     ffname
@@ -184,6 +261,7 @@ async function openFileWithOptions(
   networkManager.mapManager = mapManager.value;
   newManager.initializeMap();
   applyDefaultVisualizationPreset();
+  stopOpenProgress();
 }
 
 function displayNewMap() {
@@ -205,6 +283,7 @@ function displayNewMap() {
     .catch((a) => {
       console.log(a);
       toast.error(a);
+      stopOpenProgress();
     });
 }
 
@@ -527,5 +606,12 @@ function onFileSelected(newFilename: string) {
 .main-ui-component {
   width: 100%;
   height: 100vh;
+}
+
+.open-progress-modal {
+  z-index: 1055;
+}
+.open-progress-backdrop {
+  z-index: 1050;
 }
 </style>

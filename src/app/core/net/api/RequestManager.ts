@@ -73,6 +73,7 @@ import {
   ReloadTilesRequest,
   AttachSessionRequest,
   CloseFileRequest,
+  OpenProgressRequest,
 } from "./request";
 import {
   ConversionJobResponse,
@@ -163,6 +164,17 @@ class RequestManager {
     )
       .then((response) => response.data)
       .then((json) => new OpenFileResponseDTO(json).toEntity());
+  }
+
+  public async getOpenProgress(): Promise<{ stage: string; progress: number }> {
+    return this.sendRequest(new OpenProgressRequest())
+      .then((response) => response.data)
+      .then((json) => {
+        return {
+          stage: String((json as Record<string, unknown>)?.stage ?? "unknown"),
+          progress: Number((json as Record<string, unknown>)?.progress ?? 0),
+        };
+      });
   }
 
   public async closeFile(): Promise<void> {
