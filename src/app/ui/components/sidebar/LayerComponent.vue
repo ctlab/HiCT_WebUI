@@ -180,16 +180,18 @@ const props = defineProps<{
 }>();
 
 function getBaseColor(): ColorTranslator {
-  if (props.getDefaultColor) {
-    const olColorString = props
-      .getDefaultColor()
-      ?.getStroke()
-      ?.getColor() as ColorLike as string;
-
-    const color = new ColorTranslator(olColorString, { legacyCSS: true });
-    if (color) {
-      return color;
+  try {
+    if (props.getDefaultColor) {
+      const style = props.getDefaultColor();
+      const olColorString = style
+        ?.getStroke()
+        ?.getColor() as ColorLike as string | undefined;
+      if (olColorString) {
+        return new ColorTranslator(olColorString, { legacyCSS: true });
+      }
     }
+  } catch (e) {
+    // fall through to default
   }
   return new ColorTranslator("rgb(127, 192, 224)", { legacyCSS: true });
 }

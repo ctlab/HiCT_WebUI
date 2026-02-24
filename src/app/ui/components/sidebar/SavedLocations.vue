@@ -221,6 +221,7 @@ import { Coordinate } from "ol/coordinate";
 import { toast } from "vue-sonner";
 import type { ContigDescriptor } from "@/app/core/domain/ContigDescriptor";
 import type { ScaffoldDescriptor } from "@/app/core/domain/ScaffoldDescriptor";
+import { useSessionStore } from "@/app/stores/sessionStore";
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -241,6 +242,7 @@ const savedLocations: Ref<
 > = ref(new Map());
 
 const locationCount = ref(0);
+const sessionStore = useSessionStore();
 
 const contigList = ref<ContigDescriptor[]>([]);
 const scaffoldList = ref<ScaffoldDescriptor[]>([]);
@@ -299,6 +301,7 @@ watch(activeTab, () => {
 
 onMounted(() => {
   refreshAssemblyLists();
+  syncSessionStore();
   // Poll for assembly changes triggered by backend ops (group/ungroup/move).
   // This keeps Contigs/Scaffolds tabs in sync without tab switches.
   refreshTimer = window.setInterval(() => {
@@ -326,6 +329,7 @@ function saveLocation() {
       rotation: view.getRotation(),
     });
     locationCount.value += 1;
+    syncSessionStore();
   }
 }
 
@@ -344,6 +348,7 @@ function gotoSavedLocation(location_id: number) {
 
 function removeSavedLocation(location_id: number) {
   savedLocations.value.delete(location_id);
+  syncSessionStore();
 }
 
 function exportBookmarks(): void {
@@ -383,11 +388,53 @@ function importBookmarks(event: Event): void {
         });
       });
       locationCount.value = entries.length;
+      syncSessionStore();
     } catch (e) {
       toast.error("Invalid bookmarks file");
     }
   });
 }
+
+function syncSessionStore() {
+  const entries = Array.from(savedLocations.value.values()).map((loc, idx) => ({
+    location_id: idx,
+    center_point: (loc.center_point ?? [0, 0]) as [number, number],
+    resolution: loc.resolution ?? 1,
+    rotation: loc.rotation ?? 0,
+  }));
+  sessionStore.setSavedLocations(entries);
+}
+
+function loadFromSessionStore() {
+  const entries = sessionStore.savedLocations;
+  savedLocations.value.clear();
+  entries.forEach((entry, idx) => {
+    savedLocations.value.set(idx, {
+      location_id: idx,
+      center_point: entry.center_point,
+      resolution: entry.resolution,
+      rotation: entry.rotation,
+    });
+  });
+  locationCount.value = entries.length;
+}
+
+watch(
+  () => sessionStore.savedLocations,
+  () => {
+    const current = Array.from(savedLocations.value.values()).map((loc) => ({
+      location_id: loc.location_id,
+      center_point: loc.center_point,
+      resolution: loc.resolution,
+      rotation: loc.rotation,
+    }));
+    const next = sessionStore.savedLocations;
+    if (JSON.stringify(current) !== JSON.stringify(next)) {
+      loadFromSessionStore();
+    }
+  },
+  { deep: true }
+);
 
 function markContigDirty(contigId: number): void {
   contigDirty.value.add(contigId);

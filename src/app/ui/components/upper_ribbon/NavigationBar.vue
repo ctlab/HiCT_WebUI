@@ -51,6 +51,28 @@
                 >
               </li>
               <li>
+                <a class="dropdown-item" href="#" @click="onAttachClicked"
+                  >Attach</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onSaveSessionClicked"
+                  >Save session</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onOpenSessionClicked"
+                  >Open session</a
+                >
+                <input
+                  ref="sessionFileInput"
+                  type="file"
+                  accept="application/json"
+                  @change="onSessionFileSelected"
+                  hidden
+                />
+              </li>
+              <li>
                 <a
                   class="dropdown-item"
                   href="#"
@@ -333,6 +355,11 @@ SOFTWARE.`;
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
   (e: "closed"): void;
+  (e: "attached"): void;
+  (e: "saveSession"): void;
+  (e: "openSession", file: File): void;
+  (e: "agpLoaded", filename: string): void;
+  (e: "fastaLinked", filename: string): void;
 }>();
 
 const props = defineProps<{
@@ -369,6 +396,31 @@ function onSaveClicked(): void {
 
 function onCloseClicked(): void {
   emit("closed");
+  errorMessage.value = null;
+}
+
+function onAttachClicked(): void {
+  emit("attached");
+  errorMessage.value = null;
+}
+
+function onSaveSessionClicked(): void {
+  emit("saveSession");
+  errorMessage.value = null;
+}
+
+const sessionFileInput = ref<HTMLInputElement | null>(null);
+
+function onOpenSessionClicked(): void {
+  sessionFileInput.value?.click();
+}
+
+function onSessionFileSelected(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  emit("openSession", file);
+  input.value = "";
   errorMessage.value = null;
 }
 
@@ -435,6 +487,7 @@ function openAGP(filename: string) {
       openingFile.value = false;
       openingAGPFile.value = false;
       errorMessage.value = null;
+      emit("agpLoaded", filename);
       toast.message("Assembly loaded from AGP file " + filename);
     })
     .catch((e) => {
@@ -449,6 +502,7 @@ function linkFASTA(filename: string) {
       openingFile.value = false;
       openingFASTAFile.value = false;
       errorMessage.value = false;
+      emit("fastaLinked", filename);
       toast.message("Linked FASTA file " + filename);
     })
     .catch((e) => {

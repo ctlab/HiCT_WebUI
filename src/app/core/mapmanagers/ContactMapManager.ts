@@ -575,6 +575,7 @@ class ContactMapManager {
   }
 
   public dispose() {
+    this.viewAndLayersManager?.dispose?.();
     this.map.setTarget(undefined);
   }
 

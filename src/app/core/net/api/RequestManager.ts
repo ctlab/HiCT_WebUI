@@ -71,6 +71,8 @@ import {
   ExportNameMappingRequest,
   ImportNameMappingRequest,
   ReloadTilesRequest,
+  AttachSessionRequest,
+  CloseFileRequest,
 } from "./request";
 import {
   ConversionJobResponse,
@@ -93,9 +95,11 @@ class RequestManager {
     request: HiCTAPIRequest,
     axiosConfig?: AxiosRequestConfig | undefined
   ): Promise<AxiosResponse> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    const path = request.requestPath.replace(/^\/+/, "");
     return axios
       .post(
-        `${this.networkManager.host}/${request.requestPath}`,
+        `${host}/${path}`,
         HiCTAPIRequestDTO.toDTOClass(request).toDTO(),
         axiosConfig ?? undefined
       )
@@ -143,6 +147,25 @@ class RequestManager {
     )
       .then((response) => response.data)
       .then((json) => new OpenFileResponseDTO(json).toEntity());
+  }
+
+  public async closeFile(): Promise<void> {
+    await this.sendRequest(new CloseFileRequest());
+  }
+
+  public async attachSession(): Promise<{ filename: string; response: OpenFileResponse }> {
+    return this.sendRequest(new AttachSessionRequest())
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => {
+        if (json && typeof json === "object" && "error" in json) {
+          throw new Error(String((json as Record<string, unknown>).error));
+        }
+        const filename = (json["filename"] as string) ?? "";
+        const response = new OpenFileResponseDTO(
+          json["openFileResponse"] as Record<string, unknown>
+        ).toEntity();
+        return { filename, response };
+      });
   }
 
   public async getSignalRanges(

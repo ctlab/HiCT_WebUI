@@ -73,6 +73,10 @@ class CloseFileRequest implements HiCTAPIRequest {
   requestPath = "/close";
 }
 
+class AttachSessionRequest implements HiCTAPIRequest {
+  requestPath = "/attach";
+}
+
 class GetFastaForAssemblyRequest implements HiCTAPIRequest {
   requestPath = "/get_fasta_for_assembly";
 }
@@ -335,6 +339,7 @@ class SetVisualizationOptionsRequest implements HiCTAPIRequest {
 
 export {
   type HiCTAPIRequest,
+  AttachSessionRequest,
   CloseFileRequest,
   ListCoolerFilesRequest,
   StartConversionJobRequest,

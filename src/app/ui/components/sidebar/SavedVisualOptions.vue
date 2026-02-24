@@ -76,7 +76,7 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { Ref, ref, shallowRef, triggerRef, onMounted } from "vue";
+import { Ref, ref, shallowRef, triggerRef, onMounted, watch } from "vue";
 import SavedVisualOptionsElement from "./SavedVisualOptionsElement.vue";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
@@ -88,6 +88,7 @@ import { toast } from "vue-sonner";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { ColorTranslator } from "colortranslator";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
+import { useSessionStore } from "@/app/stores/sessionStore";
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
   visualizationOptionsStore
@@ -100,6 +101,7 @@ onMounted(() => {
 
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
+const sessionStore = useSessionStore();
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -120,6 +122,7 @@ const savedOptions = shallowRef(
 
 function bumpSavedOptions() {
   triggerRef(savedOptions);
+  syncSessionStore();
 }
 
 function nextOptionId(): number {
@@ -204,6 +207,65 @@ function exportOptions() {
   a.click();
   URL.revokeObjectURL(a.href);
 }
+
+function syncSessionStore() {
+  const values: {
+    option_id: number;
+    options: Record<string, unknown>;
+    backgroundColor: string;
+    name: string;
+    trackStyles?: TrackStylePresetBundle;
+    signalThresholds?: { min: number; max: number };
+  }[] = [];
+  savedOptions.value.forEach((v) =>
+    values.push({
+      option_id: v.option_id,
+      options: serializeVisualizationOptions(v.options),
+      name: v.name,
+      backgroundColor: colorToString(v.backgroundColor),
+      trackStyles: v.trackStyles,
+      signalThresholds: extractSignalThresholds(v.options),
+    })
+  );
+  sessionStore.setSavedVisualizationPresets(values);
+}
+
+function loadFromSessionStore() {
+  const presets = sessionStore.savedVisualizationPresets;
+  savedOptions.value.clear();
+  presets.forEach((opt, idx) => {
+    const backgroundColor = new ColorTranslator(
+      opt.backgroundColor ?? "rgba(255,255,255,1.0)",
+      { legacyCSS: true }
+    );
+    savedOptions.value.set(idx, {
+      option_id: idx,
+      name: opt.name ?? `Preset ${idx}`,
+      options: deserializeVisualizationOptions(opt.options ?? {}),
+      backgroundColor,
+      trackStyles: opt.trackStyles as TrackStylePresetBundle | undefined,
+    });
+  });
+  bumpSavedOptions();
+}
+
+watch(
+  () => sessionStore.savedVisualizationPresets,
+  () => {
+    const current = Array.from(savedOptions.value.values()).map((v) => ({
+      option_id: v.option_id,
+      options: serializeVisualizationOptions(v.options),
+      backgroundColor: colorToString(v.backgroundColor),
+      name: v.name,
+      trackStyles: v.trackStyles,
+    }));
+    const next = sessionStore.savedVisualizationPresets;
+    if (JSON.stringify(current) !== JSON.stringify(next)) {
+      loadFromSessionStore();
+    }
+  },
+  { deep: true }
+);
 
 type UnknownRecord = Record<string, unknown>;
 

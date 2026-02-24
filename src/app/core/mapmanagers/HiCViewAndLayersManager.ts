@@ -882,6 +882,25 @@ class HiCViewAndLayersManager {
     }
   }
 
+  public dispose(): void {
+    if (!this.map) {
+      return;
+    }
+    try {
+      this.map.getControls().clear();
+      const hTrack = document.getElementById("horizontal-igv-track-div");
+      if (hTrack) {
+        hTrack.replaceChildren();
+      }
+      const vTrack = document.getElementById("vertical-igv-track-div");
+      if (vTrack) {
+        vTrack.replaceChildren();
+      }
+    } catch (e: unknown) {
+      console.log("Error while disposing controls", e);
+    }
+  }
+
   public initializeMapInteractions(): void {
     this.mapManager.getMap().addInteraction(
       new ContigMouseWheelZoom({

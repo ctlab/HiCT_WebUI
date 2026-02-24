@@ -23,6 +23,7 @@ import {
   ListFilesRequest,
   OpenFileRequest,
   CloseFileRequest,
+  AttachSessionRequest,
   GetFastaForAssemblyRequest,
   type HiCTAPIRequest,
   GroupContigsIntoScaffoldRequest,
@@ -147,6 +148,8 @@ abstract class HiCTAPIRequestDTO<
         return new LoadAGPRequestDTO(entity as LoadAGPRequest);
       case entity instanceof CloseFileRequest:
         return new CloseFileRequestDTO(entity as CloseFileRequest);
+      case entity instanceof AttachSessionRequest:
+        return new AttachSessionRequestDTO(entity as AttachSessionRequest);
       case entity instanceof GetFastaForAssemblyRequest:
         return new GetFastaForAssemblyRequestDTO(
           entity as GetFastaForAssemblyRequest
@@ -424,6 +427,12 @@ class CloseFileRequestDTO extends HiCTAPIRequestDTO<CloseFileRequest> {
   }
 }
 
+class AttachSessionRequestDTO extends HiCTAPIRequestDTO<AttachSessionRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
 class GetFastaForAssemblyRequestDTO extends HiCTAPIRequestDTO<GetFastaForAssemblyRequest> {
   toDTO(): Record<string, unknown> {
     return {};
@@ -451,6 +460,7 @@ export {
   OpenFileRequestDTO,
   ListFilesRequestDTO,
   CloseFileRequestDTO,
+  AttachSessionRequestDTO,
   StartConversionJobRequestDTO,
   StartBatchConversionJobsRequestDTO,
   ListConversionJobsRequestDTO,

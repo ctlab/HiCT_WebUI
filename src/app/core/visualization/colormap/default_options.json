@@ -1,40 +1,39 @@
 {
   "exportType": "visualizationOptions",
   "data": {
-    "filename": "quad_orlando_4DN.mcool.hict.hdf5",
     "savedLocations": [
       {
         "option_id": 0,
         "options": {
-          "preLogBase": 10,
-          "postLogBase": 0,
-          "applyCoolerWeights": false,
+          "preLogBase": 0,
+          "postLogBase": -1,
+          "applyCoolerWeights": true,
           "colormap": {
             "colormapType": "SimpleLinearGradient",
             "startColorRGBAString": "rgba(255,255,255,1.000000)",
-            "endColorRGBAString": "rgba(0,96,0,1.000000)",
+            "endColorRGBAString": "rgba(232,0,0,1.000000)",
             "minSignal": 0,
-            "maxSignal": 1
+            "maxSignal": 0.003
           }
         },
-        "name": "Greens",
+        "name": "Mosquitoes Demo",
         "backgroundColor": "rgb(255,255,255)"
       },
       {
         "option_id": 1,
         "options": {
           "preLogBase": 10,
-          "postLogBase": 0,
+          "postLogBase": 5,
           "applyCoolerWeights": false,
           "colormap": {
             "colormapType": "SimpleLinearGradient",
-            "startColorRGBAString": "rgba(0,0,0,0.000000)",
-            "endColorRGBAString": "rgba(0,96,0,1.000000)",
+            "startColorRGBAString": "rgba(0,19,227,0.000000)",
+            "endColorRGBAString": "rgba(232,0,0,1.000000)",
             "minSignal": 0,
-            "maxSignal": 4
+            "maxSignal": 0.75
           }
         },
-        "name": "Terminal",
+        "name": "Cold-Hot",
         "backgroundColor": "rgba(0,0,0,1)"
       },
       {
@@ -58,23 +57,6 @@
         "option_id": 3,
         "options": {
           "preLogBase": 10,
-          "postLogBase": 1.0001,
-          "applyCoolerWeights": true,
-          "colormap": {
-            "colormapType": "SimpleLinearGradient",
-            "startColorRGBAString": "rgba(0,0,0,0.000000)",
-            "endColorRGBAString": "rgba(0,232,0,1.000000)",
-            "minSignal": 0,
-            "maxSignal": 1
-          }
-        },
-        "name": "Light terminal",
-        "backgroundColor": "rgba(255,255,255,1)"
-      },
-      {
-        "option_id": 4,
-        "options": {
-          "preLogBase": 10,
           "postLogBase": 5,
           "applyCoolerWeights": false,
           "colormap": {
@@ -89,7 +71,7 @@
         "backgroundColor": "rgba(255,255,255,1)"
       },
       {
-        "option_id": 5,
+        "option_id": 4,
         "options": {
           "preLogBase": 10,
           "postLogBase": 5,
@@ -106,22 +88,56 @@
         "backgroundColor": "rgba(0,0,0,1)"
       },
       {
+        "option_id": 5,
+        "options": {
+          "preLogBase": 10,
+          "postLogBase": 1.0001,
+          "applyCoolerWeights": true,
+          "colormap": {
+            "colormapType": "SimpleLinearGradient",
+            "startColorRGBAString": "rgba(0,0,0,0.000000)",
+            "endColorRGBAString": "rgba(0,232,0,1.000000)",
+            "minSignal": 0,
+            "maxSignal": 1
+          }
+        },
+        "name": "Light terminal",
+        "backgroundColor": "rgba(255,255,255,1)"
+      },
+      {
         "option_id": 6,
         "options": {
           "preLogBase": 10,
-          "postLogBase": 5,
+          "postLogBase": 0,
           "applyCoolerWeights": false,
           "colormap": {
             "colormapType": "SimpleLinearGradient",
-            "startColorRGBAString": "rgba(0,19,227,0.000000)",
-            "endColorRGBAString": "rgba(232,0,0,1.000000)",
+            "startColorRGBAString": "rgba(0,0,0,0.000000)",
+            "endColorRGBAString": "rgba(0,96,0,1.000000)",
             "minSignal": 0,
-            "maxSignal": 2
+            "maxSignal": 4
           }
         },
-        "name": "Cold-Hot",
+        "name": "Terminal",
         "backgroundColor": "rgba(0,0,0,1)"
-      }
+      },
+      {
+        "option_id": 7,
+        "options": {
+          "preLogBase": 10,
+          "postLogBase": 0,
+          "applyCoolerWeights": false,
+          "colormap": {
+            "colormapType": "SimpleLinearGradient",
+            "startColorRGBAString": "rgba(255,255,255,1.000000)",
+            "endColorRGBAString": "rgba(0,96,0,1.000000)",
+            "minSignal": 0,
+            "maxSignal": 1
+          }
+        },
+        "name": "Greens",
+        "backgroundColor": "rgb(255,255,255)"
+      }      
     ]
   }
 }
