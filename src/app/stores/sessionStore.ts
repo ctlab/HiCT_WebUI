@@ -14,7 +14,7 @@ export interface SessionVisualizationPreset {
   backgroundColor: string;
   name: string;
   trackStyles?: Record<string, unknown>;
-  signalThresholds?: { min: number; max: number };
+  signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
 }
 
 export const useSessionStore = defineStore("sessionStore", () => {

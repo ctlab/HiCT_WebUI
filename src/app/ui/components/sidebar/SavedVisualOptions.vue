@@ -183,6 +183,7 @@ function exportOptions() {
     backgroundColor: string; // <-- stable
     name: string;
     trackStyles?: TrackStylePresetBundle;
+    signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
   }[] = [];
 
   savedOptions.value.forEach((v) =>
@@ -223,7 +224,7 @@ function syncSessionStore() {
     backgroundColor: string;
     name: string;
     trackStyles?: TrackStylePresetBundle;
-    signalThresholds?: { min: number; max: number };
+    signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
   }[] = [];
   savedOptions.value.forEach((v) =>
     values.push({

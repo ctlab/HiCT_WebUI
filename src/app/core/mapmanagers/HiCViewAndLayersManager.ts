@@ -894,11 +894,11 @@ class HiCViewAndLayersManager {
   }
 
   public dispose(): void {
-    if (!this.map) {
+    if (!this.mapManager.getMap()) {
       return;
     }
     try {
-      this.map.getControls().clear();
+      this.mapManager.getMap().getControls().clear();
       const hTrack = document.getElementById("horizontal-igv-track-div");
       if (hTrack) {
         hTrack.replaceChildren();
