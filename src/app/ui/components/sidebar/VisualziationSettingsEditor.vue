@@ -115,6 +115,7 @@ const toColor = ref(
 ) as Ref<ColorTranslator>;
 const lowerBound: Ref<number> = ref(signalMin.value);
 const upperBound: Ref<number> = ref(signalMax.value);
+const syncingFromColormap: Ref<boolean> = ref(false);
 
 const fromColorFn: Ref<() => ColorTranslator> = ref(
   () => fromColor.value
@@ -145,13 +146,19 @@ watch(
   },
   () => {
     if (colormap.value instanceof SimpleLinearGradient) {
+      syncingFromColormap.value = true;
       // console.log("Colormap type changed and simple linear gradient, was: ", fromColor.value, toColor.value);
       const cmap = colormap.value as SimpleLinearGradient;
-      fromColor.value = cmap.startColorRGBA;
-      toColor.value = cmap.endColorRGBA;
+      if (fromColor.value?.RGBA !== cmap.startColorRGBA?.RGBA) {
+        fromColor.value = cmap.startColorRGBA;
+      }
+      if (toColor.value?.RGBA !== cmap.endColorRGBA?.RGBA) {
+        toColor.value = cmap.endColorRGBA;
+      }
       fromColorFn.value = () => fromColor.value;
       toColorFn.value = () => toColor.value;
       // console.log("Now: ", fromColor.value, toColor.value);
+      syncingFromColormap.value = false;
     }
   }
 );
@@ -160,9 +167,15 @@ watch(
   () => colormap.value,
   () => {
     if (colormap.value instanceof SimpleLinearGradient) {
+      syncingFromColormap.value = true;
       const cmap = colormap.value as SimpleLinearGradient;
-      lowerBound.value = cmap.minSignal;
-      upperBound.value = cmap.maxSignal;
+      if (lowerBound.value !== cmap.minSignal) {
+        lowerBound.value = cmap.minSignal;
+      }
+      if (upperBound.value !== cmap.maxSignal) {
+        upperBound.value = cmap.maxSignal;
+      }
+      syncingFromColormap.value = false;
     }
   },
   { deep: false }
@@ -178,6 +191,9 @@ watch(
     signalMax.value,
   ],
   () => {
+    if (syncingFromColormap.value) {
+      return;
+    }
     gradstyle.value["background-image"] =
       "linear-gradient(to right," +
       fromColor.value +
@@ -186,12 +202,25 @@ watch(
       ")";
     fromColorFn.value = () => fromColor.value;
     toColorFn.value = () => toColor.value;
-    colormap.value = new SimpleLinearGradient(
-      fromColor.value,
-      toColor.value,
-      lowerBound.value,
-      upperBound.value
-    );
+    const nextMin = lowerBound.value;
+    const nextMax = upperBound.value;
+    const existing = colormap.value;
+    const fromRGBA = fromColor.value?.RGBA ?? "";
+    const toRGBA = toColor.value?.RGBA ?? "";
+    if (
+      !(existing instanceof SimpleLinearGradient) ||
+      existing.minSignal !== nextMin ||
+      existing.maxSignal !== nextMax ||
+      existing.startColorRGBA?.RGBA !== fromRGBA ||
+      existing.endColorRGBA?.RGBA !== toRGBA
+    ) {
+      colormap.value = new SimpleLinearGradient(
+        fromColor.value,
+        toColor.value,
+        nextMin,
+        nextMax
+      );
+    }
     // console.log("UpperBound", upperBound.value);
   }
 );
@@ -219,10 +248,16 @@ function updateFromStore() {
   if (cmap) {
     switch (true) {
       case cmap instanceof SimpleLinearGradient: {
+        syncingFromColormap.value = true;
         const grad = cmap as SimpleLinearGradient;
-        fromColor.value = grad.startColorRGBA;
-        toColor.value = grad.endColorRGBA;
+        if (fromColor.value?.RGBA !== grad.startColorRGBA?.RGBA) {
+          fromColor.value = grad.startColorRGBA;
+        }
+        if (toColor.value?.RGBA !== grad.endColorRGBA?.RGBA) {
+          toColor.value = grad.endColorRGBA;
+        }
         console.log("Updated: ", fromColor.value, toColor.value);
+        syncingFromColormap.value = false;
         break;
       }
       default:

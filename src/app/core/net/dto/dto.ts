@@ -166,6 +166,17 @@ class OpenFileResponseDTO extends InboundDTO<OpenFileResponse> {
 }
 
 class SimpleLinearGradientDTO extends InboundDTO<SimpleLinearGradient> {
+  private static safeColor(value: unknown, fallback: string): ColorTranslator {
+    if (typeof value !== "string" || value.length > 128) {
+      return new ColorTranslator(fallback, { legacyCSS: true });
+    }
+    try {
+      return new ColorTranslator(value, { legacyCSS: true });
+    } catch {
+      return new ColorTranslator(fallback, { legacyCSS: true });
+    }
+  }
+
   public static fromEntity(e: SimpleLinearGradient) {
     return new SimpleLinearGradientDTO({
       startColorRGBAString: e.startColorRGBA.RGBA,
@@ -176,15 +187,29 @@ class SimpleLinearGradientDTO extends InboundDTO<SimpleLinearGradient> {
   }
 
   public toEntity(): SimpleLinearGradient {
+    const start = SimpleLinearGradientDTO.safeColor(
+      this.json["startColorRGBAString"],
+      "rgba(0,255,0,0.0)"
+    );
+    const end = SimpleLinearGradientDTO.safeColor(
+      this.json["endColorRGBAString"],
+      "rgba(0,96,0,1.0)"
+    );
+    const minSignalRaw = this.json["minSignal"];
+    const maxSignalRaw = this.json["maxSignal"];
+    const minSignal =
+      typeof minSignalRaw === "number" && Number.isFinite(minSignalRaw)
+        ? minSignalRaw
+        : 0;
+    const maxSignal =
+      typeof maxSignalRaw === "number" && Number.isFinite(maxSignalRaw)
+        ? maxSignalRaw
+        : 1;
     return new SimpleLinearGradient(
-      new ColorTranslator(this.json["startColorRGBAString"] as string, {
-        legacyCSS: true,
-      }),
-      new ColorTranslator(this.json["endColorRGBAString"] as string, {
-        legacyCSS: true,
-      }),
-      this.json["minSignal"] as number,
-      this.json["maxSignal"] as number
+      start,
+      end,
+      minSignal,
+      maxSignal
     );
   }
 }

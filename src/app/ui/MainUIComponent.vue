@@ -94,6 +94,17 @@ const htmlElementReferencesStore = usehtmlElementReferencesStore();
 const { mapTarget, miniMapTarget } = storeToRefs(htmlElementReferencesStore);
 const lastAgpFilename: Ref<string> = ref("");
 
+function safeColorTranslator(value: unknown, fallback: string): ColorTranslator {
+  if (typeof value !== "string" || value.length > 128) {
+    return new ColorTranslator(fallback, { legacyCSS: true });
+  }
+  try {
+    return new ColorTranslator(value, { legacyCSS: true });
+  } catch {
+    return new ColorTranslator(fallback, { legacyCSS: true });
+  }
+}
+
 function resetState() {
   mapManager.value?.dispose();
   filename.value = "";
@@ -227,8 +238,8 @@ function applyDefaultVisualizationPreset() {
   const resolutionLinearScaling =
     (opt["resolutionLinearScaling"] as boolean) ?? false;
   const cmapObj = new SimpleLinearGradient(
-    new ColorTranslator(startColor, { legacyCSS: true }),
-    new ColorTranslator(endColor, { legacyCSS: true }),
+    safeColorTranslator(startColor, "rgba(0,255,0,0.0)"),
+    safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
     minSignal,
     maxSignal
   );
@@ -254,7 +265,9 @@ function applyDefaultVisualizationPreset() {
     )
   );
   const bg = (first["backgroundColor"] as string) ?? "rgba(255,255,255,1)";
-  stylesStore.setMapBackground(new ColorTranslator(bg, { legacyCSS: true }));
+  stylesStore.setMapBackground(
+    safeColorTranslator(bg, "rgba(255,255,255,1)")
+  );
   if (trackStyles && mapManager.value) {
     mapManager.value.getLayersManager().applyTrackStylePreset(trackStyles as never);
   }
@@ -416,8 +429,8 @@ async function onOpenSession(file: File): Promise<void> {
       const resolutionLinearScaling =
         (visRaw["resolutionLinearScaling"] as boolean) ?? false;
       const cmapObj = new SimpleLinearGradient(
-        new ColorTranslator(startColor, { legacyCSS: true }),
-        new ColorTranslator(endColor, { legacyCSS: true }),
+        safeColorTranslator(startColor, "rgba(0,255,0,0.0)"),
+        safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
         minSignal,
         maxSignal
       );
@@ -435,7 +448,9 @@ async function onOpenSession(file: File): Promise<void> {
 
     const bg = (session["backgroundColor"] as string) ?? null;
     if (bg) {
-      stylesStore.setMapBackground(new ColorTranslator(bg, { legacyCSS: true }));
+      stylesStore.setMapBackground(
+        safeColorTranslator(bg, "rgba(255,255,255,1)")
+      );
     }
 
     const trackStyles = session["trackStyles"] as Record<string, unknown>;

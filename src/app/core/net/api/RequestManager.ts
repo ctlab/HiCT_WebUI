@@ -97,13 +97,29 @@ class RequestManager {
   ): Promise<AxiosResponse> {
     const host = this.networkManager.host.replace(/\/+$/, "");
     const path = request.requestPath.replace(/^\/+/, "");
+    const mergedConfig: AxiosRequestConfig = {
+      ...(axiosConfig ?? {}),
+      headers: {
+        Accept: "application/json",
+        ...((axiosConfig ?? {}).headers ?? {}),
+      },
+    };
     return axios
       .post(
         `${host}/${path}`,
         HiCTAPIRequestDTO.toDTOClass(request).toDTO(),
-        axiosConfig ?? undefined
+        mergedConfig
       )
       .then((req) => {
+        if (typeof req.data === "string") {
+          try {
+            req.data = JSON.parse(req.data);
+          } catch (e) {
+            throw new Error(
+              `Invalid response from ${request.requestPath}: ${req.data.slice(0, 200)}`
+            );
+          }
+        }
         if (req instanceof InboundDTO) {
           if (req.error) {
             toast.error(req.error);
@@ -287,8 +303,9 @@ class RequestManager {
   }
 
   public async getBackendVersion(): Promise<{ version: string; webuiVersion?: string } | string> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
     return axios
-      .get(`${this.networkManager.host}/version`)
+      .get(`${host}/version`)
       .then((resp) => resp.data ?? { version: "unknown" })
       .catch(() => "unknown");
   }
