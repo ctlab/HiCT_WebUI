@@ -34,7 +34,7 @@
             "labelOutline": true,
             "labelOutlineWidth": 2,
             "labelOffsetMultiplier": 1.25,
-            "labelColor": "rgba(61, 167, 221, 1)"
+            "labelColor": "rgba(255, 64, 64, 1.0)"
           },
           "scaffolds": {
             "borderColor": "rgba(100, 104, 111, 0.698)",
@@ -47,7 +47,7 @@
             "labelOutline": true,
             "labelOutlineWidth": 2,
             "labelOffsetMultiplier": 1.25,
-            "labelColor": "rgba(100, 104, 111, 0.698)"
+            "labelColor": "rgba(255, 255, 0, 1)"
           }
         }
       },
