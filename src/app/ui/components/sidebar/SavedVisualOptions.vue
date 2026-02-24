@@ -124,9 +124,18 @@ const savedOptions = shallowRef(
     }
   >()
 );
+const syncingFromSession = ref(false);
+
+function triggerSavedOptions() {
+  triggerRef(savedOptions);
+}
 
 function bumpSavedOptions() {
-  triggerRef(savedOptions);
+  if (syncingFromSession.value) {
+    triggerSavedOptions();
+    return;
+  }
+  triggerSavedOptions();
   syncSessionStore();
 }
 
@@ -240,6 +249,7 @@ function syncSessionStore() {
 }
 
 function loadFromSessionStore() {
+  syncingFromSession.value = true;
   const presets = sessionStore.savedVisualizationPresets;
   savedOptions.value.clear();
   presets.forEach((opt, idx) => {
@@ -256,7 +266,8 @@ function loadFromSessionStore() {
       signalThresholds: opt.signalThresholds,
     });
   });
-  bumpSavedOptions();
+  triggerSavedOptions();
+  syncingFromSession.value = false;
 }
 
 watch(
@@ -268,6 +279,7 @@ watch(
       backgroundColor: colorToString(v.backgroundColor),
       name: v.name,
       trackStyles: v.trackStyles,
+      signalThresholds: v.signalThresholds ?? extractSignalThresholds(v.options),
     }));
     const next = sessionStore.savedVisualizationPresets;
     if (JSON.stringify(current) !== JSON.stringify(next)) {

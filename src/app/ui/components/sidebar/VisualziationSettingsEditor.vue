@@ -158,9 +158,12 @@ watch(
       fromColorFn.value = () => fromColor.value;
       toColorFn.value = () => toColor.value;
       // console.log("Now: ", fromColor.value, toColor.value);
-      syncingFromColormap.value = false;
+      queueMicrotask(() => {
+        syncingFromColormap.value = false;
+      });
     }
-  }
+  },
+  { flush: "sync" }
 );
 
 watch(
@@ -175,10 +178,12 @@ watch(
       if (upperBound.value !== cmap.maxSignal) {
         upperBound.value = cmap.maxSignal;
       }
-      syncingFromColormap.value = false;
+      queueMicrotask(() => {
+        syncingFromColormap.value = false;
+      });
     }
   },
-  { deep: false }
+  { deep: false, flush: "sync" }
 );
 
 watch(
@@ -257,7 +262,9 @@ function updateFromStore() {
           toColor.value = grad.endColorRGBA;
         }
         console.log("Updated: ", fromColor.value, toColor.value);
-        syncingFromColormap.value = false;
+        queueMicrotask(() => {
+          syncingFromColormap.value = false;
+        });
         break;
       }
       default:
