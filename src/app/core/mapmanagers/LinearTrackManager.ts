@@ -29,6 +29,8 @@ import type {
 } from "@/app/core/net/api/response";
 
 type Orientation = "horizontal" | "vertical";
+const DEFAULT_PREFETCH_EXTENT_SCREENS = 2;
+const CACHE_MAX_AGE_MS = 1500;
 
 class LinearTrackManager {
   private horizontalCanvas: HTMLCanvasElement | null = null;
@@ -51,6 +53,11 @@ class LinearTrackManager {
     vertical: { statusMessage: "No tracks loaded", trackCount: 0 },
   };
   private readonly lastTrackErrors = new Map<string, string>();
+  private readonly prefetchExtentScreens = DEFAULT_PREFETCH_EXTENT_SCREENS;
+  private readonly queryCache: Record<Orientation, TrackQueryCache | null> = {
+    horizontal: null,
+    vertical: null,
+  };
 
   constructor(private readonly mapManager: ContactMapManager) {
     const map = this.mapManager.getMap();
@@ -73,6 +80,8 @@ class LinearTrackManager {
     this.verticalResizeObserver?.disconnect();
     this.horizontalCanvas = null;
     this.verticalCanvas = null;
+    this.queryCache.horizontal = null;
+    this.queryCache.vertical = null;
     this.listSubscribers.clear();
     this.renderStateSubscribers.horizontal.clear();
     this.renderStateSubscribers.vertical.clear();
@@ -138,6 +147,7 @@ class LinearTrackManager {
 
   public async refreshTrackList(): Promise<TrackSummaryResponse[]> {
     this.tracks = await this.mapManager.networkManager.requestManager.listTracks();
+    this.invalidateQueryCache();
     this.notifyTrackListChanged();
     await this.render();
     return this.tracks.slice();
@@ -207,6 +217,11 @@ class LinearTrackManager {
     });
   }
 
+  private invalidateQueryCache(): void {
+    this.queryCache.horizontal = null;
+    this.queryCache.vertical = null;
+  }
+
   private createResizeObserver(
     canvas: HTMLCanvasElement | null
   ): ResizeObserver | null {
@@ -266,12 +281,36 @@ class LinearTrackManager {
 
     const viewport = this.getViewportGeometry(orientation);
     try {
+      const prefetch = this.buildPrefetchViewport(viewport);
+      const cached = this.queryCache[orientation];
       const response =
-        await this.mapManager.networkManager.requestManager.queryTracks1D(
-          viewport.startBp,
-          viewport.endBp,
-          viewport.visibleWidthPx
-        );
+        cached &&
+        Date.now() - cached.fetchedAtMs <= CACHE_MAX_AGE_MS &&
+        cached.bpResolution === viewport.bpResolution &&
+        cached.prefetchStartPx <= viewport.startPx &&
+        cached.prefetchEndPx >= viewport.endPx
+          ? cached.response
+          : await this.mapManager.networkManager.requestManager.queryTracks1D(
+              prefetch.prefetchStartPx,
+              prefetch.prefetchEndPx,
+              prefetch.prefetchWidthPx,
+              viewport.bpResolution
+            );
+      if (
+        !cached ||
+        Date.now() - cached.fetchedAtMs > CACHE_MAX_AGE_MS ||
+        cached.bpResolution !== viewport.bpResolution ||
+        cached.prefetchStartPx > viewport.startPx ||
+        cached.prefetchEndPx < viewport.endPx
+      ) {
+        this.queryCache[orientation] = {
+          bpResolution: viewport.bpResolution,
+          prefetchStartPx: prefetch.prefetchStartPx,
+          prefetchEndPx: prefetch.prefetchEndPx,
+          fetchedAtMs: Date.now(),
+          response,
+        };
+      }
       if (requestId !== this.renderRequestId) {
         return;
       }
@@ -303,7 +342,10 @@ class LinearTrackManager {
         {
           startBp: viewport.startBp,
           endBp: viewport.endBp,
+          startPx: viewport.startPx,
+          endPx: viewport.endPx,
           widthPx: orientation === "horizontal" ? canvas.width : canvas.height,
+          bpResolution: viewport.bpResolution,
           tracks: [],
         },
         viewport,
@@ -376,26 +418,45 @@ class LinearTrackManager {
       }
       ctx.fillStyle = track.color ?? "#4e79a7";
       for (const bin of track.bins) {
-        const intervalStart = Math.max(0, Math.min(bin.startBp, bin.endBp));
-        const intervalEnd = Math.max(intervalStart + 1, Math.max(bin.startBp, bin.endBp));
-        const intervalProbeEnd = Math.max(intervalStart, intervalEnd - 1);
-        if (
-          !this.mapManager
-            .getContigDimensionHolder()
-            .isBpVisibleAtResolution(intervalStart, bpResolution) &&
-          !this.mapManager
-            .getContigDimensionHolder()
-            .isBpVisibleAtResolution(intervalProbeEnd, bpResolution)
-        ) {
-          continue;
+        const hasProjectedPx =
+          typeof bin.startPx === "number" &&
+          Number.isFinite(bin.startPx) &&
+          typeof bin.endPx === "number" &&
+          Number.isFinite(bin.endPx);
+        const startPx = hasProjectedPx
+          ? Math.max(0, Math.min(bin.startPx ?? 0, bin.endPx ?? 0))
+          : this.mapManager
+              .getContigDimensionHolder()
+              .getPxContainingBp(
+                Math.max(0, Math.min(bin.startBp, bin.endBp)),
+                bpResolution
+              );
+        const endPx = hasProjectedPx
+          ? Math.max(startPx + 1, Math.max(bin.startPx ?? startPx, bin.endPx ?? startPx))
+          : this.mapManager
+              .getContigDimensionHolder()
+              .getPxContainingBp(
+                Math.max(
+                  Math.max(0, Math.min(bin.startBp, bin.endBp)),
+                  Math.max(0, Math.max(bin.startBp, bin.endBp) - 1)
+                ),
+                bpResolution
+              ) + 1;
+        if (!hasProjectedPx) {
+          const intervalStart = Math.max(0, Math.min(bin.startBp, bin.endBp));
+          const intervalEnd = Math.max(intervalStart + 1, Math.max(bin.startBp, bin.endBp));
+          const intervalProbeEnd = Math.max(intervalStart, intervalEnd - 1);
+          if (
+            !this.mapManager
+              .getContigDimensionHolder()
+              .isBpVisibleAtResolution(intervalStart, bpResolution) &&
+            !this.mapManager
+              .getContigDimensionHolder()
+              .isBpVisibleAtResolution(intervalProbeEnd, bpResolution)
+          ) {
+            continue;
+          }
         }
-        const startPx = this.mapManager
-          .getContigDimensionHolder()
-          .getPxContainingBp(intervalStart, bpResolution);
-        const endPx =
-          this.mapManager
-            .getContigDimensionHolder()
-            .getPxContainingBp(intervalProbeEnd, bpResolution) + 1;
         const normalizedValue = Math.max(
           0,
           Math.min(1, (bin.value ?? 0) / maxValue)
@@ -557,6 +618,29 @@ class LinearTrackManager {
       visibleWidthPx: Math.max(1, visibleEndScreen - visibleStartScreen),
     };
   }
+
+  private buildPrefetchViewport(viewport: ViewportGeometry): {
+    prefetchStartPx: number;
+    prefetchEndPx: number;
+    prefetchWidthPx: number;
+  } {
+    const visibleSpanPx = Math.max(1, viewport.endPx - viewport.startPx);
+    const paddingPx = Math.ceil(visibleSpanPx * this.prefetchExtentScreens);
+    const totalPx =
+      this.mapManager
+        .getContigDimensionHolder()
+        .prefix_sum_px.get(viewport.bpResolution)?.[
+        this.mapManager.getContigDimensionHolder().contig_count
+      ] ?? viewport.endPx;
+    const prefetchStartPx = Math.max(0, viewport.startPx - paddingPx);
+    const prefetchEndPx = Math.min(Math.max(prefetchStartPx + 1, totalPx), viewport.endPx + paddingPx);
+    const prefetchSpan = Math.max(1, prefetchEndPx - prefetchStartPx);
+    const prefetchWidthPx = Math.max(
+      viewport.visibleWidthPx,
+      Math.ceil((viewport.visibleWidthPx * prefetchSpan) / visibleSpanPx)
+    );
+    return { prefetchStartPx, prefetchEndPx, prefetchWidthPx };
+  }
 }
 
 export { LinearTrackManager, type Orientation };
@@ -574,4 +658,12 @@ type ViewportGeometry = {
   bpResolution: number;
   pxToScreen: (px: number) => number;
   visibleWidthPx: number;
+};
+
+type TrackQueryCache = {
+  bpResolution: number;
+  prefetchStartPx: number;
+  prefetchEndPx: number;
+  fetchedAtMs: number;
+  response: TrackQueryResponse;
 };

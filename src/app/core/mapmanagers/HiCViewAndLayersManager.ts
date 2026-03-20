@@ -919,17 +919,9 @@ class HiCViewAndLayersManager {
     }
     try {
       this.mapManager.getMap().getControls().clear();
-      const hTrack = document.getElementById("horizontal-igv-track-div");
-      if (hTrack) {
-        hTrack.replaceChildren();
-      }
       const hRuler = document.getElementById("horizontal-ruler-div");
       if (hRuler) {
         hRuler.replaceChildren();
-      }
-      const vTrack = document.getElementById("vertical-igv-track-div");
-      if (vTrack) {
-        vTrack.replaceChildren();
       }
       const vRuler = document.getElementById("vertical-ruler-div");
       if (vRuler) {

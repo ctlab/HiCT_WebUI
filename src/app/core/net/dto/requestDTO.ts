@@ -484,9 +484,10 @@ class RemoveTrackRequestDTO extends HiCTAPIRequestDTO<RemoveTrackRequest> {
 class QueryTracks1DRequestDTO extends HiCTAPIRequestDTO<QueryTracks1DRequest> {
   toDTO(): Record<string, unknown> {
     return {
-      startBp: this.entity.options.startBp,
-      endBp: this.entity.options.endBp,
+      startPx: this.entity.options.startPx,
+      endPx: this.entity.options.endPx,
       widthPx: this.entity.options.widthPx,
+      bpResolution: this.entity.options.bpResolution,
     };
   }
 }

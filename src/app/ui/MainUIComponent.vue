@@ -189,22 +189,6 @@ function resetState() {
   filename.value = "";
   fastaFilename.value = "";
   mapManager.value = undefined;
-  const hTrack = document.getElementById("horizontal-igv-track-div");
-  if (hTrack) {
-    hTrack.replaceChildren();
-  }
-  const hRuler = document.getElementById("horizontal-ruler-div");
-  if (hRuler) {
-    hRuler.replaceChildren();
-  }
-  const vTrack = document.getElementById("vertical-igv-track-div");
-  if (vTrack) {
-    vTrack.replaceChildren();
-  }
-  const vRuler = document.getElementById("vertical-ruler-div");
-  if (vRuler) {
-    vRuler.replaceChildren();
-  }
 }
 
 function onClosed() {

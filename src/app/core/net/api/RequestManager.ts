@@ -279,11 +279,12 @@ class RequestManager {
   }
 
   public async queryTracks1D(
-    startBp: number,
-    endBp: number,
-    widthPx: number
+    startPx: number,
+    endPx: number,
+    widthPx: number,
+    bpResolution: number
   ): Promise<TrackQueryResponse> {
-    return this.sendRequest(new QueryTracks1DRequest({ startBp, endBp, widthPx }))
+    return this.sendRequest(new QueryTracks1DRequest({ startPx, endPx, widthPx, bpResolution }))
       .then((response) => response.data)
       .then((json) => new TrackQueryResponseDTO(json).toEntity());
   }

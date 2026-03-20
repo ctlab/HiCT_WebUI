@@ -139,7 +139,9 @@ class TrackBinResponseDTO extends InboundDTO<TrackBinResponse> {
       this.json["endBp"] as number,
       this.json["value"] as number,
       this.json["count"] as number,
-      (this.json["label"] as string) ?? null
+      (this.json["label"] as string) ?? null,
+      (this.json["startPx"] as number) ?? null,
+      (this.json["endPx"] as number) ?? null
     );
   }
 }
@@ -165,7 +167,10 @@ class TrackQueryResponseDTO extends InboundDTO<TrackQueryResponse> {
     return new TrackQueryResponse(
       this.json["startBp"] as number,
       this.json["endBp"] as number,
+      (this.json["startPx"] as number) ?? 0,
+      (this.json["endPx"] as number) ?? 0,
       this.json["widthPx"] as number,
+      (this.json["bpResolution"] as number) ?? 1,
       ((this.json["tracks"] as Record<string, unknown>[]) ?? []).map((track) =>
         new TrackRenderResponseDTO(track).toEntity()
       )

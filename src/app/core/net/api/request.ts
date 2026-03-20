@@ -380,9 +380,10 @@ class QueryTracks1DRequest implements HiCTAPIRequest {
 
   public constructor(
     public readonly options: {
-      readonly startBp: number;
-      readonly endBp: number;
+      readonly startPx: number;
+      readonly endPx: number;
       readonly widthPx: number;
+      readonly bpResolution: number;
     }
   ) {}
 }

@@ -91,7 +91,9 @@ class TrackBinResponse {
     public readonly endBp: number,
     public readonly value: number,
     public readonly count: number,
-    public readonly label: string | null
+    public readonly label: string | null,
+    public readonly startPx: number | null,
+    public readonly endPx: number | null
   ) {}
 }
 
@@ -111,7 +113,10 @@ class TrackQueryResponse {
   public constructor(
     public readonly startBp: number,
     public readonly endBp: number,
+    public readonly startPx: number,
+    public readonly endPx: number,
     public readonly widthPx: number,
+    public readonly bpResolution: number,
     public readonly tracks: TrackRenderResponse[]
   ) {}
 }
