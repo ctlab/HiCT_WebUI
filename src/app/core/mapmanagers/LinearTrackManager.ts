@@ -26,11 +26,13 @@ import type { ContactMapManager } from "./ContactMapManager";
 import type {
   TrackQueryResponse,
   TrackSummaryResponse,
+  TracksPrecomputeStatusResponse,
 } from "@/app/core/net/api/response";
 
 type Orientation = "horizontal" | "vertical";
 const DEFAULT_PREFETCH_EXTENT_SCREENS = 2;
 const CACHE_MAX_AGE_MS = 1500;
+const MAX_PREFETCH_QUERY_WIDTH_PX = 2048;
 
 class LinearTrackManager {
   private horizontalCanvas: HTMLCanvasElement | null = null;
@@ -185,6 +187,20 @@ class LinearTrackManager {
       options
     );
     await this.refreshTrackList();
+  }
+
+  public async startPrecompute(
+    trackId?: string,
+    force = false
+  ): Promise<TracksPrecomputeStatusResponse> {
+    return this.mapManager.networkManager.requestManager.startTracksPrecompute(
+      trackId,
+      force
+    );
+  }
+
+  public async getPrecomputeStatus(): Promise<TracksPrecomputeStatusResponse> {
+    return this.mapManager.networkManager.requestManager.getTracksPrecomputeStatus();
   }
 
   public async render(): Promise<void> {
@@ -639,7 +655,11 @@ class LinearTrackManager {
       viewport.visibleWidthPx,
       Math.ceil((viewport.visibleWidthPx * prefetchSpan) / visibleSpanPx)
     );
-    return { prefetchStartPx, prefetchEndPx, prefetchWidthPx };
+    return {
+      prefetchStartPx,
+      prefetchEndPx,
+      prefetchWidthPx: Math.min(MAX_PREFETCH_QUERY_WIDTH_PX, prefetchWidthPx),
+    };
   }
 }
 

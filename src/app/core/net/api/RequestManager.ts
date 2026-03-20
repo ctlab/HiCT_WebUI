@@ -36,6 +36,7 @@ import {
   CurrentSignalRangeResponseDTO,
   FastaLinkResponseDTO,
   NameMappingResponseDTO,
+  TracksPrecomputeStatusResponseDTO,
   TrackQueryResponseDTO,
   TrackSummaryResponseDTO,
   TilePOSTResponseDTO,
@@ -83,12 +84,15 @@ import {
   UpdateTrackRequest,
   RemoveTrackRequest,
   QueryTracks1DRequest,
+  StartTracksPrecomputeRequest,
+  GetTracksPrecomputeStatusRequest,
 } from "./request";
 import {
   ConversionJobResponse,
   CurrentSignalRangeResponse,
   FastaLinkResponse,
   NameMappingResponse,
+  TracksPrecomputeStatusResponse,
   TrackQueryResponse,
   TrackSummaryResponse,
 } from "./response";
@@ -287,6 +291,21 @@ class RequestManager {
     return this.sendRequest(new QueryTracks1DRequest({ startPx, endPx, widthPx, bpResolution }))
       .then((response) => response.data)
       .then((json) => new TrackQueryResponseDTO(json).toEntity());
+  }
+
+  public async startTracksPrecompute(
+    trackId?: string,
+    force = false
+  ): Promise<TracksPrecomputeStatusResponse> {
+    return this.sendRequest(new StartTracksPrecomputeRequest({ trackId, force }))
+      .then((response) => response.data)
+      .then((json) => new TracksPrecomputeStatusResponseDTO(json).toEntity());
+  }
+
+  public async getTracksPrecomputeStatus(): Promise<TracksPrecomputeStatusResponse> {
+    return this.sendRequest(new GetTracksPrecomputeStatusRequest())
+      .then((response) => response.data)
+      .then((json) => new TracksPrecomputeStatusResponseDTO(json).toEntity());
   }
 
   public async listFASTAFiles(): Promise<string[]> {

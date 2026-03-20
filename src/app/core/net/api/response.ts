@@ -121,6 +121,28 @@ class TrackQueryResponse {
   ) {}
 }
 
+class TrackPrecomputeTrackStatusResponse {
+  public constructor(
+    public readonly trackId: string,
+    public readonly trackName: string,
+    public readonly status: string,
+    public readonly totalTasks: number,
+    public readonly completedTasks: number,
+    public readonly progress: number,
+    public readonly currentTask: string,
+    public readonly error: string | null,
+    public readonly updatedAtMs: number
+  ) {}
+}
+
+class TracksPrecomputeStatusResponse {
+  public constructor(
+    public readonly tracks: TrackPrecomputeTrackStatusResponse[],
+    public readonly runningJobs: number,
+    public readonly processedDirectory: string
+  ) {}
+}
+
 class FastaLinkMismatchResponse {
   public constructor(
     public readonly index: number,
@@ -166,6 +188,8 @@ export {
   TrackBinResponse,
   TrackRenderResponse,
   TrackQueryResponse,
+  TrackPrecomputeTrackStatusResponse,
+  TracksPrecomputeStatusResponse,
   FastaLinkMismatchResponse,
   FastaLinkCompatibilityResponse,
   FastaLinkResponse,

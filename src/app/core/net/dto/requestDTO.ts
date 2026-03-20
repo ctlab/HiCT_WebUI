@@ -48,6 +48,8 @@ import {
   UpdateTrackRequest,
   RemoveTrackRequest,
   QueryTracks1DRequest,
+  StartTracksPrecomputeRequest,
+  GetTracksPrecomputeStatusRequest,
   StartConversionJobRequest,
   StartBatchConversionJobsRequest,
   ListConversionJobsRequest,
@@ -139,6 +141,10 @@ abstract class HiCTAPIRequestDTO<
         return new RemoveTrackRequestDTO(entity as RemoveTrackRequest);
       case entity instanceof QueryTracks1DRequest:
         return new QueryTracks1DRequestDTO(entity as QueryTracks1DRequest);
+      case entity instanceof StartTracksPrecomputeRequest:
+        return new StartTracksPrecomputeRequestDTO(entity as StartTracksPrecomputeRequest);
+      case entity instanceof GetTracksPrecomputeStatusRequest:
+        return new GetTracksPrecomputeStatusRequestDTO(entity as GetTracksPrecomputeStatusRequest);
       case entity instanceof ListConversionJobsRequest:
         return new ListConversionJobsRequestDTO(entity);
       case entity instanceof GetConversionJobRequest:
@@ -492,6 +498,21 @@ class QueryTracks1DRequestDTO extends HiCTAPIRequestDTO<QueryTracks1DRequest> {
   }
 }
 
+class StartTracksPrecomputeRequestDTO extends HiCTAPIRequestDTO<StartTracksPrecomputeRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      trackId: this.entity.options.trackId,
+      force: this.entity.options.force,
+    };
+  }
+}
+
+class GetTracksPrecomputeStatusRequestDTO extends HiCTAPIRequestDTO<GetTracksPrecomputeStatusRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
 class ListFASTAFilesRequestDTO extends HiCTAPIRequestDTO<ListFASTAFilesRequest> {
   toDTO(): Record<string, unknown> {
     return {};
@@ -568,6 +589,8 @@ export {
   UpdateTrackRequestDTO,
   RemoveTrackRequestDTO,
   QueryTracks1DRequestDTO,
+  StartTracksPrecomputeRequestDTO,
+  GetTracksPrecomputeStatusRequestDTO,
   ListCoolerFilesRequestDTO,
   SplitContigRequestDTO,
   MoveSelectionToDebrisRequestDTO,

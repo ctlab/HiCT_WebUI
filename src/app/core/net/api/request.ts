@@ -388,6 +388,21 @@ class QueryTracks1DRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class StartTracksPrecomputeRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/precompute/start";
+
+  public constructor(
+    public readonly options: {
+      readonly trackId?: string;
+      readonly force?: boolean;
+    } = {}
+  ) {}
+}
+
+class GetTracksPrecomputeStatusRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/precompute/status";
+}
+
 // class TileLoadPOSTRequest implements HiCTAPIRequest {
 //   requestPath = "/get_tile";
 
@@ -445,4 +460,6 @@ export {
   UpdateTrackRequest,
   RemoveTrackRequest,
   QueryTracks1DRequest,
+  StartTracksPrecomputeRequest,
+  GetTracksPrecomputeStatusRequest,
 };

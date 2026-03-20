@@ -26,6 +26,8 @@ import {
   FastaLinkMismatchResponse,
   FastaLinkResponse,
   NameMappingResponse,
+  TrackPrecomputeTrackStatusResponse,
+  TracksPrecomputeStatusResponse,
   TrackBinResponse,
   TrackQueryResponse,
   TrackRenderResponse,
@@ -178,6 +180,34 @@ class TrackQueryResponseDTO extends InboundDTO<TrackQueryResponse> {
   }
 }
 
+class TrackPrecomputeTrackStatusResponseDTO extends InboundDTO<TrackPrecomputeTrackStatusResponse> {
+  public toEntity(): TrackPrecomputeTrackStatusResponse {
+    return new TrackPrecomputeTrackStatusResponse(
+      this.json["trackId"] as string,
+      this.json["trackName"] as string,
+      this.json["status"] as string,
+      (this.json["totalTasks"] as number) ?? 0,
+      (this.json["completedTasks"] as number) ?? 0,
+      (this.json["progress"] as number) ?? 0,
+      (this.json["currentTask"] as string) ?? "",
+      (this.json["error"] as string) ?? null,
+      (this.json["updatedAtMs"] as number) ?? 0
+    );
+  }
+}
+
+class TracksPrecomputeStatusResponseDTO extends InboundDTO<TracksPrecomputeStatusResponse> {
+  public toEntity(): TracksPrecomputeStatusResponse {
+    return new TracksPrecomputeStatusResponse(
+      ((this.json["tracks"] as Record<string, unknown>[]) ?? []).map((item) =>
+        new TrackPrecomputeTrackStatusResponseDTO(item).toEntity()
+      ),
+      (this.json["runningJobs"] as number) ?? 0,
+      (this.json["processedDirectory"] as string) ?? ""
+    );
+  }
+}
+
 class FastaLinkMismatchResponseDTO extends InboundDTO<FastaLinkMismatchResponse> {
   public toEntity(): FastaLinkMismatchResponse {
     return new FastaLinkMismatchResponse(
@@ -231,5 +261,6 @@ export {
   NameMappingResponseDTO,
   TrackSummaryResponseDTO,
   TrackQueryResponseDTO,
+  TracksPrecomputeStatusResponseDTO,
   FastaLinkResponseDTO,
 };

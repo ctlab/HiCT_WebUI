@@ -65,6 +65,35 @@
                 </div>
               </div>
 
+              <div class="alert alert-secondary py-2">
+                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                  <strong>1D track precompute</strong>
+                  <button class="btn btn-sm btn-outline-primary" @click="onStartPrecomputeAll">
+                    Precompute all
+                  </button>
+                </div>
+                <div v-if="precomputeStatus && precomputeStatus.tracks.length > 0" class="precompute-list">
+                  <div v-for="item in precomputeStatus.tracks" :key="item.trackId" class="precompute-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <small>{{ item.trackName }}</small>
+                      <small class="text-muted">
+                        {{ item.status }} {{ Math.round(item.progress * 100) }}%
+                      </small>
+                    </div>
+                    <div class="progress" style="height: 6px">
+                      <div
+                        class="progress-bar"
+                        role="progressbar"
+                        :style="{ width: `${Math.max(0, Math.min(100, Math.round(item.progress * 100)))}%` }"
+                      ></div>
+                    </div>
+                    <small v-if="item.currentTask" class="text-muted">{{ item.currentTask }}</small>
+                    <small v-if="item.error" class="text-danger">{{ item.error }}</small>
+                  </div>
+                </div>
+                <small v-else class="text-muted">No background jobs yet.</small>
+              </div>
+
               <div class="tracks-list">
                 <div
                   class="track-row d-flex align-items-center gap-2"
@@ -148,8 +177,11 @@
 
 <script setup lang="ts">
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import type { TrackSummaryResponse } from "@/app/core/net/api/response";
-import { onMounted, ref } from "vue";
+import type {
+  TrackSummaryResponse,
+  TracksPrecomputeStatusResponse,
+} from "@/app/core/net/api/response";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
@@ -164,6 +196,8 @@ const availableFiles = ref<string[]>([]);
 const selectedFile = ref("");
 const trackDisplayName = ref("");
 const tracks = ref<TrackSummaryResponse[]>([]);
+const precomputeStatus = ref<TracksPrecomputeStatusResponse | null>(null);
+let precomputePollHandle: number | null = null;
 
 const normalizeColor = (value: string): string => {
   if (/^#[0-9a-fA-F]{6}$/.test(value)) {
@@ -217,6 +251,19 @@ const refreshTracks = async () => {
   }
 };
 
+const refreshPrecomputeStatus = async () => {
+  if (!props.mapManager) {
+    precomputeStatus.value = null;
+    return;
+  }
+  try {
+    precomputeStatus.value =
+      await props.mapManager.linearTrackManager.getPrecomputeStatus();
+  } catch (err) {
+    console.debug("Failed to fetch precompute status", err);
+  }
+};
+
 const onAddTrack = async () => {
   if (!props.mapManager || !selectedFile.value) {
     return;
@@ -228,6 +275,7 @@ const onAddTrack = async () => {
     );
     trackDisplayName.value = "";
     await refreshTracks();
+    await refreshPrecomputeStatus();
   } catch (err) {
     toast.error(String(err));
   }
@@ -324,8 +372,39 @@ const clearAnnotations = () => {
   props.mapManager?.getLayersManager().clearAnnotations();
 };
 
+const onStartPrecomputeAll = async () => {
+  if (!props.mapManager) {
+    return;
+  }
+  try {
+    precomputeStatus.value = await props.mapManager.linearTrackManager.startPrecompute(
+      undefined,
+      true
+    );
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
+const startPrecomputePolling = () => {
+  if (precomputePollHandle !== null) {
+    window.clearInterval(precomputePollHandle);
+  }
+  precomputePollHandle = window.setInterval(() => {
+    void refreshPrecomputeStatus();
+  }, 1200);
+};
+
 onMounted(async () => {
-  await Promise.all([refreshFiles(), refreshTracks()]);
+  await Promise.all([refreshFiles(), refreshTracks(), refreshPrecomputeStatus()]);
+  startPrecomputePolling();
+});
+
+onBeforeUnmount(() => {
+  if (precomputePollHandle !== null) {
+    window.clearInterval(precomputePollHandle);
+    precomputePollHandle = null;
+  }
 });
 </script>
 
@@ -349,5 +428,17 @@ onMounted(async () => {
 
 .track-mode-select {
   max-width: 7rem;
+}
+
+.precompute-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.precompute-item {
+  border: 1px solid #e6e6e6;
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
 }
 </style>
