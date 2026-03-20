@@ -76,6 +76,7 @@
       :mapManager="mapManager"
       :filename="filename"
     ></WorkspaceComponent>
+    <NotificationCenterModal></NotificationCenterModal>
     <div
       class="toast-container position-absolute top-0 end-0 p-3"
       id="toasts-container"
@@ -98,6 +99,8 @@ import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinear
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
 import { ColorTranslator } from "colortranslator";
 import { LoadAGPRequest } from "@/app/core/net/api/request";
+import { LinkFASTARequest } from "@/app/core/net/api/request";
+import NotificationCenterModal from "@/app/ui/components/notifications/NotificationCenterModal.vue";
 
 import WorkspaceComponent from "@/app/ui/components/workspace/WorkspaceComponent.vue";
 import { Toaster, toast } from "vue-sonner";
@@ -190,9 +193,17 @@ function resetState() {
   if (hTrack) {
     hTrack.replaceChildren();
   }
+  const hRuler = document.getElementById("horizontal-ruler-div");
+  if (hRuler) {
+    hRuler.replaceChildren();
+  }
   const vTrack = document.getElementById("vertical-igv-track-div");
   if (vTrack) {
     vTrack.replaceChildren();
+  }
+  const vRuler = document.getElementById("vertical-ruler-div");
+  if (vRuler) {
+    vRuler.replaceChildren();
   }
 }
 
@@ -206,17 +217,18 @@ function onClosed() {
 function onAttached() {
   networkManager.requestManager
     .attachSession()
-    .then(({ filename: attachedName, response }) => {
+    .then(({ filename: attachedName, fastaFilename: attachedFastaName, response }) => {
       if (!attachedName) {
         toast.error("No active session to attach");
         return;
       }
       mapManager.value?.dispose();
       filename.value = attachedName;
+      fastaFilename.value = attachedFastaName ?? "";
       const newManager = new ContactMapManager({
         response,
         filename: attachedName,
-        fastaFilename: fastaFilename.value ?? "",
+        fastaFilename: attachedFastaName ?? "",
         tileSize: tileSize.value,
         contigBorderColor: contigBorderColor.value,
         mapTargetSelector: "hic-contact-map",
@@ -261,6 +273,24 @@ async function openFileWithOptions(
   networkManager.mapManager = mapManager.value;
   newManager.initializeMap();
   applyDefaultVisualizationPreset();
+  if (ffname && ffname.trim() !== "") {
+    try {
+      const linkResponse = await networkManager.requestManager.linkFASTA(
+        new LinkFASTARequest({ fastaFilename: ffname, allowMismatch: true })
+      );
+      linkResponse.warnings.forEach((warning) =>
+        toast(warning, {
+          style: {
+            "background-color": "lightyellow",
+            color: "black",
+          },
+        })
+      );
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to link FASTA file " + ffname);
+    }
+  }
   stopOpenProgress();
 }
 

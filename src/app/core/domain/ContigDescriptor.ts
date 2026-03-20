@@ -25,6 +25,8 @@ interface ContigDescriptor {
   contigId: number;
   contigName: string;
   contigOriginalName: string;
+  contigSourceName: string;
+  contigOffsetInSource: number;
   contigLengthBp: number;
   contigLengthBins: Map<number, number>;
   direction: ContigDirection;

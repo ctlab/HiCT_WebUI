@@ -21,8 +21,16 @@
 
 <template>
   <div class="block-of-buttons">
-    <button class="btn btn-outline-primary" type="button">
+    <button
+      class="btn btn-outline-primary"
+      type="button"
+      title="Notifications"
+      @click="notificationStore.isOpen = true"
+    >
       <i class="bi bi-chevron-left"></i>
+      <span v-if="notificationCount > 0" class="notification-badge">
+        {{ notificationCount > 99 ? "99+" : notificationCount }}
+      </span>
     </button>
     <button class="btn btn-outline-primary" type="button">
       <i class="bi bi-terminal"></i>
@@ -30,12 +38,37 @@
   </div>
 </template>
 
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import { computed } from "vue";
+import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
+
+const notificationStore = useNotificationCenterStore();
+const notificationCount = computed(() => notificationStore.entries.length);
+</script>
 
 <style scoped>
 .block-of-buttons {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.block-of-buttons button {
+  position: relative;
+}
+
+.notification-badge {
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #dc3545;
+  color: white;
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
 }
 </style>

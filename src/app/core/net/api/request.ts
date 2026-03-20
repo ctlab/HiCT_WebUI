@@ -69,6 +69,10 @@ class ListCoolerFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_coolers";
 }
 
+class ListTrackFilesRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/list_files";
+}
+
 class CloseFileRequest implements HiCTAPIRequest {
   requestPath = "/close";
 }
@@ -294,6 +298,7 @@ class LinkFASTARequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       readonly fastaFilename: string;
+      readonly allowMismatch?: boolean;
     }
   ) {}
 }
@@ -325,6 +330,59 @@ class SetVisualizationOptionsRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       options: VisualizationOptions;
+    }
+  ) {}
+}
+
+class OpenTrackRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/open";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+      readonly name?: string;
+      readonly color?: string;
+    }
+  ) {}
+}
+
+class ListTracksRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/list";
+}
+
+class UpdateTrackRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/update";
+
+  public constructor(
+    public readonly options: {
+      readonly trackId: string;
+      readonly visible?: boolean;
+      readonly color?: string;
+      readonly name?: string;
+      readonly renderMode?: string;
+      readonly aggregationMode?: string;
+    }
+  ) {}
+}
+
+class RemoveTrackRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/remove";
+
+  public constructor(
+    public readonly options: {
+      readonly trackId: string;
+    }
+  ) {}
+}
+
+class QueryTracks1DRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/query_1d";
+
+  public constructor(
+    public readonly options: {
+      readonly startBp: number;
+      readonly endBp: number;
+      readonly widthPx: number;
     }
   ) {}
 }
@@ -380,4 +438,10 @@ export {
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
+  ListTrackFilesRequest,
+  OpenTrackRequest,
+  ListTracksRequest,
+  UpdateTrackRequest,
+  RemoveTrackRequest,
+  QueryTracks1DRequest,
 };

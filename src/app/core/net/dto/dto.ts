@@ -88,6 +88,10 @@ class ContigDescriptorDTO extends InboundDTO<ContigDescriptor> {
       contigId: this.json.contigId as number,
       contigName: this.json.contigName as string,
       contigOriginalName: this.json.contigOriginalName as string,
+      contigSourceName:
+        (this.json.contigSourceName as string) ??
+        (this.json.contigOriginalName as string),
+      contigOffsetInSource: (this.json.contigOffsetInSource as number) ?? 0,
       contigLengthBp: this.json.contigLengthBp as number,
       contigLengthBins: new Map(
         Array.from(

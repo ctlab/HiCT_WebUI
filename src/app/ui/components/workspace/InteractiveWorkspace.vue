@@ -21,15 +21,16 @@
 
 <template>
   <div :class="iwsClass" :style="iwcStyle">
-    <div class="interactive-workspace_tracknames">
-      <TrackNames></TrackNames>
+    <div class="interactive-workspace_corner_track"></div>
+    <div class="interactive-workspace_corner_ruler"></div>
+    <div class="interactive-workspace_horizontal_tracks">
+      <HorizontalIGVTrack :map-manager="props.mapManager"></HorizontalIGVTrack>
     </div>
-    <div class="interactive-workspace_horizontal">
-      <HorizontalIGVTrack></HorizontalIGVTrack>
+    <div class="interactive-workspace_horizontal_ruler" id="horizontal-ruler-div"></div>
+    <div class="interactive-workspace_vertical_tracks">
+      <VerticalIGVTrack :map-manager="props.mapManager"></VerticalIGVTrack>
     </div>
-    <div class="interactive-workspace_vertical">
-      <VerticalIGVTrack></VerticalIGVTrack>
-    </div>
+    <div class="interactive-workspace_vertical_ruler" id="vertical-ruler-div"></div>
     <div class="interactive-workspace_content">
       <ContactMap :map-manager="props.mapManager"></ContactMap>
     </div>
@@ -41,15 +42,13 @@ import {
   ContactMapManager,
   // type ContactMapManagerOptions,
 } from "@/app/core/mapmanagers/ContactMapManager";
-import TrackNames from "./TrackNames.vue";
 import HorizontalIGVTrack from "../tracks/HorizontalIGVTrack.vue";
 import ContactMap from "../../contactmap/ContactMap.vue";
 import VerticalIGVTrack from "../tracks/VerticalIGVTrack.vue";
 
 import { useStyleStore } from "@/app/stores/styleStore";
-import { ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
-import { ColorTranslator } from "colortranslator";
 
 const stylesStore = useStyleStore();
 
@@ -71,42 +70,117 @@ const props = defineProps<{
   mapManager: ContactMapManager | undefined;
   filename?: string;
 }>();
+
+const visibleTrackCount = ref(0);
+let unsubscribeTrackList: (() => void) | undefined;
+
+const bindTrackVisibility = () => {
+  unsubscribeTrackList?.();
+  visibleTrackCount.value = 0;
+  if (!props.mapManager) {
+    return;
+  }
+  const syncVisibleCount = () => {
+    visibleTrackCount.value = props.mapManager
+      ?.linearTrackManager.getTracksSnapshot()
+      .filter((track) => track.visible).length ?? 0;
+  };
+  syncVisibleCount();
+  unsubscribeTrackList = props.mapManager.linearTrackManager.subscribeTrackList(
+    () => {
+      syncVisibleCount();
+    }
+  );
+};
+
+onMounted(() => {
+  bindTrackVisibility();
+});
+
+watch(
+  () => props.mapManager,
+  () => {
+    bindTrackVisibility();
+  }
+);
+
+watch(visibleTrackCount, async () => {
+  await nextTick();
+  window.requestAnimationFrame(() => {
+    void props.mapManager?.linearTrackManager.render();
+  });
+});
+
+onBeforeUnmount(() => {
+  unsubscribeTrackList?.();
+});
+
+const trackPanelCssSize = computed(() =>
+  visibleTrackCount.value > 0 ? "140px" : "0px"
+);
+const rulerPanelCssSize = "44px";
 </script>
 
 <style scoped>
 .interactive-workspace {
   width: 100%;
   display: grid;
-  grid-template-rows: 100px 1fr;
-  grid-template-columns: 100px 1fr;
+  grid-template-rows: v-bind(rulerPanelCssSize) v-bind(trackPanelCssSize) 1fr;
+  grid-template-columns: v-bind(rulerPanelCssSize) v-bind(trackPanelCssSize) 1fr;
   grid-template-areas:
-    "tracknames horizontal"
-    "vertical content";
+    "corner-ruler corner-track horizontal-ruler"
+    "corner-ruler corner-track horizontal-tracks"
+    "vertical-ruler vertical-tracks content";
 }
 
-/*
-.interactive-workspace_tracknames {
-  grid-area: tracknames;
-  background-color: red;
+.interactive-workspace_horizontal_tracks,
+.interactive-workspace_vertical_tracks,
+.interactive-workspace_content,
+.interactive-workspace_horizontal_ruler,
+.interactive-workspace_vertical_ruler {
+  min-width: 0;
+  min-height: 0;
 }
-.interactive-workspace_horizontal {
-  grid-area: horizontal;
-  background-color: green;
+
+.interactive-workspace_corner_track {
+  grid-area: corner-track;
+  background: rgba(244, 247, 251, 0.98);
+  border-right: 1px solid black;
+  border-bottom: 1px solid black;
 }
-.interactive-workspace_vertical {
-  grid-area: vertical;
-  background-color: yellow;
+
+.interactive-workspace_corner_ruler {
+  grid-area: corner-ruler;
+  background: rgba(255, 255, 255, 0.95);
+  border-right: 1px solid black;
+  border-bottom: 1px solid black;
 }
+
+.interactive-workspace_horizontal_tracks {
+  grid-area: horizontal-tracks;
+}
+
+.interactive-workspace_horizontal_ruler {
+  grid-area: horizontal-ruler;
+  overflow: hidden;
+  border-right: 1px solid black;
+  border-bottom: 1px solid black;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.interactive-workspace_vertical_tracks {
+  grid-area: vertical-tracks;
+}
+
+.interactive-workspace_vertical_ruler {
+  grid-area: vertical-ruler;
+  overflow: hidden;
+  border-right: 1px solid black;
+  border-bottom: 1px solid black;
+  background: rgba(255, 255, 255, 0.95);
+}
+
 .interactive-workspace_content {
   grid-area: content;
-  background-color: magenta;
-}
-*/
-
-.test {
-  width: 100%;
-  height: 100%;
-
-  background-color: black;
 }
 </style>

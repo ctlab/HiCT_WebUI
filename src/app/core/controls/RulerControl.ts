@@ -69,7 +69,7 @@ class RulerControl extends Control {
           ? document.getElementById(opt_options.target as string)
           : (opt_options.target as HTMLElement);
       if (parent) {
-        parent?.appendChild(canvas);
+        parent.appendChild(canvas);
       } else {
         throw new Error(
           "Cannot find parent element for RulerControl with target " +
@@ -121,9 +121,11 @@ class RulerControl extends Control {
   render(mapEvent: MapEvent) {
     //this.updateCanvasSize();
     const map = mapEvent.map;
-    // const size = this.canvasSize; //map.getSize() as [number, number];
-    this.canvas.width = this.canvasSize[0];
-    this.canvas.height = this.canvasSize[1];
+    const parent = this.canvas.parentElement;
+    const width = parent ? Math.max(1, Math.floor(parent.clientWidth)) : this.canvasSize[0];
+    const height = parent ? Math.max(1, Math.floor(parent.clientHeight)) : this.canvasSize[1];
+    this.canvas.width = width;
+    this.canvas.height = height;
     const context = this.canvas.getContext("2d");
     console.log("Got context: ", context, "RulerControl: ", this);
     if (!context) return;

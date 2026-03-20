@@ -34,7 +34,10 @@ import { HiCTAPIRequestDTO } from "../dto/requestDTO";
 import {
   ConversionJobResponseDTO,
   CurrentSignalRangeResponseDTO,
+  FastaLinkResponseDTO,
   NameMappingResponseDTO,
+  TrackQueryResponseDTO,
+  TrackSummaryResponseDTO,
   TilePOSTResponseDTO,
 } from "../dto/responseDTO";
 import type { OpenFileResponse } from "../netcommon";
@@ -74,11 +77,20 @@ import {
   AttachSessionRequest,
   CloseFileRequest,
   OpenProgressRequest,
+  ListTrackFilesRequest,
+  OpenTrackRequest,
+  ListTracksRequest,
+  UpdateTrackRequest,
+  RemoveTrackRequest,
+  QueryTracks1DRequest,
 } from "./request";
 import {
   ConversionJobResponse,
   CurrentSignalRangeResponse,
+  FastaLinkResponse,
   NameMappingResponse,
+  TrackQueryResponse,
+  TrackSummaryResponse,
 } from "./response";
 import { toast } from "vue-sonner";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
@@ -181,7 +193,7 @@ class RequestManager {
     await this.sendRequest(new CloseFileRequest());
   }
 
-  public async attachSession(): Promise<{ filename: string; response: OpenFileResponse }> {
+  public async attachSession(): Promise<{ filename: string; fastaFilename: string; response: OpenFileResponse }> {
     return this.sendRequest(new AttachSessionRequest())
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => {
@@ -189,10 +201,11 @@ class RequestManager {
           throw new Error(String((json as Record<string, unknown>).error));
         }
         const filename = (json["filename"] as string) ?? "";
+        const fastaFilename = (json["fastaFilename"] as string) ?? "";
         const response = new OpenFileResponseDTO(
           json["openFileResponse"] as Record<string, unknown>
         ).toEntity();
-        return { filename, response };
+        return { filename, fastaFilename, response };
       });
   }
 
@@ -216,16 +229,74 @@ class RequestManager {
     return response.data as string[];
   }
 
+  public async listTrackFiles(): Promise<string[]> {
+    const response = await this.sendRequest(new ListTrackFilesRequest());
+    return response.data as string[];
+  }
+
+  public async openTrack(
+    filename: string,
+    name?: string,
+    color?: string
+  ): Promise<TrackSummaryResponse> {
+    return this.sendRequest(new OpenTrackRequest({ filename, name, color }))
+      .then((response) => response.data)
+      .then((json) => new TrackSummaryResponseDTO(json).toEntity());
+  }
+
+  public async listTracks(): Promise<TrackSummaryResponse[]> {
+    return this.sendRequest(new ListTracksRequest())
+      .then((response) => response.data as Record<string, unknown>[])
+      .then((items) => items.map((item) => new TrackSummaryResponseDTO(item).toEntity()));
+  }
+
+  public async updateTrack(
+    trackId: string,
+    options: {
+      visible?: boolean;
+      color?: string;
+      name?: string;
+      renderMode?: string;
+      aggregationMode?: string;
+    }
+  ): Promise<TrackSummaryResponse> {
+    return this.sendRequest(
+      new UpdateTrackRequest({
+        trackId,
+        visible: options.visible,
+        color: options.color,
+        name: options.name,
+        renderMode: options.renderMode,
+        aggregationMode: options.aggregationMode,
+      })
+    )
+      .then((response) => response.data)
+      .then((json) => new TrackSummaryResponseDTO(json).toEntity());
+  }
+
+  public async removeTrack(trackId: string): Promise<void> {
+    await this.sendRequest(new RemoveTrackRequest({ trackId }));
+  }
+
+  public async queryTracks1D(
+    startBp: number,
+    endBp: number,
+    widthPx: number
+  ): Promise<TrackQueryResponse> {
+    return this.sendRequest(new QueryTracks1DRequest({ startBp, endBp, widthPx }))
+      .then((response) => response.data)
+      .then((json) => new TrackQueryResponseDTO(json).toEntity());
+  }
+
   public async listFASTAFiles(): Promise<string[]> {
     const response = await this.sendRequest(new ListFASTAFilesRequest());
     return response.data as string[];
   }
 
-  public async linkFASTA(request: LinkFASTARequest): Promise<void> {
+  public async linkFASTA(request: LinkFASTARequest): Promise<FastaLinkResponse> {
     return this.sendRequest(request)
-      .then(() => {
-        return;
-      })
+      .then((response) => response.data)
+      .then((json) => new FastaLinkResponseDTO(json).toEntity())
       .catch((err) => {
         throw new Error("Cannot link FASTA file: " + err);
       });

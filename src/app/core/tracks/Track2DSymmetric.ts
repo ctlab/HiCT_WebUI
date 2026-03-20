@@ -45,7 +45,7 @@ type track2DSymmetricBorders = [startIncl: number, endExcl: number];
 
 interface Track2DSymmetricDescriptor {
   name: string;
-  features: Map<[resolution: number], Feature<Geometry>[]>;
+  features: Map<number, Feature<Geometry>[]>;
 }
 
 interface BasePairsTrack2DSymmetricDescriptor {

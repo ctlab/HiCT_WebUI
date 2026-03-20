@@ -32,6 +32,10 @@ import "primeicons/primeicons.css";
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
+import {
+  useNotificationCenterStore,
+  type NotificationLevel,
+} from "@/app/stores/notificationCenterStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { toast } from "vue-sonner";
 import { watch } from "vue";
@@ -81,7 +85,75 @@ const tooltipObserver = new MutationObserver((mutations) => {
 tooltipObserver.observe(document.body, { childList: true, subtree: true });
 
 const errorToastStore = useErrorToastStore(pinia);
+const notificationCenterStore = useNotificationCenterStore(pinia);
 const uiSettingsStore = useUiSettingsStore(pinia);
+
+const originalConsoleError = console.error.bind(console);
+const originalConsoleWarn = console.warn.bind(console);
+const originalConsoleInfo = console.info.bind(console);
+const originalConsoleLog = console.log.bind(console);
+
+const originalToastError = toast.error.bind(toast);
+const originalToastSuccess = toast.success.bind(toast);
+const originalToastMessage = toast.message.bind(toast);
+
+const stringifyNotificationMessage = (value: unknown): string => {
+  if (value instanceof Error) {
+    return value.stack ?? value.message;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const pushNotification = (
+  level: NotificationLevel,
+  message: string,
+  options?: { skipConsole?: boolean }
+) => {
+  if (!options?.skipConsole) {
+    switch (level) {
+      case "error":
+        originalConsoleError(message);
+        break;
+      case "warning":
+        originalConsoleWarn(message);
+        break;
+      case "success":
+      case "info":
+      case "message":
+        originalConsoleInfo(message);
+        break;
+      default:
+        originalConsoleLog(message);
+        break;
+    }
+  }
+  notificationCenterStore.add(level, message);
+};
+
+toast.error = ((message: unknown, data?: unknown) => {
+  const normalized = stringifyNotificationMessage(message);
+  pushNotification("error", normalized);
+  return originalToastError(normalized, data as never);
+}) as typeof toast.error;
+
+toast.success = ((message: unknown, data?: unknown) => {
+  const normalized = stringifyNotificationMessage(message);
+  pushNotification("success", normalized);
+  return originalToastSuccess(normalized, data as never);
+}) as typeof toast.success;
+
+toast.message = ((message: unknown, data?: unknown) => {
+  const normalized = stringifyNotificationMessage(message);
+  pushNotification("message", normalized);
+  return originalToastMessage(normalized, data as never);
+}) as typeof toast.message;
 
 watch(
   () => uiSettingsStore.customZoomSliderEnabled,
@@ -91,28 +163,26 @@ watch(
   { immediate: true }
 );
 
-const originalConsoleError = console.error.bind(console);
 console.error = (...args: unknown[]) => {
   originalConsoleError(...args);
   if (!errorToastStore.webuiErrorToastsEnabled) return;
   try {
-    const message = args
-      .map((arg) => {
-        if (arg instanceof Error) return arg.message;
-        if (typeof arg === "string") return arg;
-        return JSON.stringify(arg);
-      })
-      .join(" ");
-    toast.error(message);
+    const message = args.map(stringifyNotificationMessage).join(" ");
+    pushNotification("error", message, { skipConsole: true });
+    originalToastError(message);
   } catch (_e) {
-    toast.error("WebUI error (see console for details)");
+    pushNotification("error", "WebUI error (see console for details)", {
+      skipConsole: true,
+    });
+    originalToastError("WebUI error (see console for details)");
   }
 };
 
 window.addEventListener("error", (event) => {
   if (!errorToastStore.webuiErrorToastsEnabled) return;
   const msg = event.error?.message ?? event.message ?? "WebUI error";
-  toast.error(msg);
+  pushNotification("error", msg, { skipConsole: true });
+  originalToastError(msg);
 });
 
 window.addEventListener("unhandledrejection", (event) => {
@@ -124,5 +194,6 @@ window.addEventListener("unhandledrejection", (event) => {
       : typeof reason === "string"
       ? reason
       : "Unhandled promise rejection";
-  toast.error(msg);
+  pushNotification("error", msg, { skipConsole: true });
+  originalToastError(msg);
 });

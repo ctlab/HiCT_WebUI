@@ -49,6 +49,7 @@ import {
   NamePlacement,
   BorderStyle,
 } from "../tracks/Track2DSymmetric";
+import { AnnotationTrack2D } from "../tracks/Track2DAnnotations";
 import type {
   TrackStylePreset,
   TrackStylePresetBundle,
@@ -98,10 +99,12 @@ interface CurrentHiCViewState {
 interface LayersHolder {
   readonly hicDataLayers: Layer[];
   readonly track2DLayers: Layer[];
+  readonly annotationLayers: Layer[];
   readonly contigBordersLayers: Layer[];
   readonly contigTranslocationArrowsLayers: Layer[];
   readonly scaffoldBordersLayers: Layer[];
   readonly bpResolutionToHiCDataLayer: Map<number, Layer>;
+  readonly bpResolutionToAnnotationLayer: Map<number, Layer>;
   readonly bpResolutionToContigBordersLayer: Map<number, Layer>;
   readonly bpResolutionToContigTranslocationArrowsLayer: Map<number, Layer>;
   readonly bpResolutionToScaffoldBordersLayer: Map<number, Layer>;
@@ -109,6 +112,7 @@ interface LayersHolder {
 
 interface Track2DHolder {
   readonly tracks2D: Track2D[];
+  readonly annotationTrack: AnnotationTrack2D;
   readonly contigBordersTrack: ContigBordersTrack2D;
   readonly contigTranslocationArrowsTrack: TranslocationArrowsTrack2D;
   readonly scaffoldBordersTrack: ScaffoldBordersTrack2D;
@@ -129,10 +133,12 @@ class HiCViewAndLayersManager {
   public readonly layersHolder: LayersHolder = {
     hicDataLayers: [],
     track2DLayers: [],
+    annotationLayers: [],
     contigBordersLayers: [],
     contigTranslocationArrowsLayers: [],
     scaffoldBordersLayers: [],
     bpResolutionToHiCDataLayer: new Map(),
+    bpResolutionToAnnotationLayer: new Map(),
     bpResolutionToContigBordersLayer: new Map(),
     bpResolutionToContigTranslocationArrowsLayer: new Map(),
     bpResolutionToScaffoldBordersLayer: new Map(),
@@ -316,12 +322,14 @@ class HiCViewAndLayersManager {
 
     this.track2DHolder = {
       tracks2D: [],
+      annotationTrack: new AnnotationTrack2D(this.mapManager),
       contigBordersTrack: new ContigBordersTrack2D(this.mapManager),
       contigTranslocationArrowsTrack: new TranslocationArrowsTrack2D(
         this.mapManager
       ),
       scaffoldBordersTrack: new ScaffoldBordersTrack2D(this.mapManager),
     };
+    this.track2DHolder.tracks2D.push(this.track2DHolder.annotationTrack);
 
     this.track2DHolder.contigBordersTrack.setNamePlacement(
       NamePlacement.TOP
@@ -823,6 +831,16 @@ class HiCViewAndLayersManager {
   public initializeTracks(): void {
     this.reloadTracks();
     this.add2DTrackSymmetric(
+      this.track2DHolder.annotationTrack,
+      this.layersHolder.annotationLayers
+    );
+    this.layersHolder.annotationLayers.forEach((layer) => {
+      this.layersHolder.bpResolutionToAnnotationLayer.set(
+        layer.get("bpResolution"),
+        layer
+      );
+    });
+    this.add2DTrackSymmetric(
       this.track2DHolder.contigBordersTrack,
       this.layersHolder.contigBordersLayers
     );
@@ -870,23 +888,25 @@ class HiCViewAndLayersManager {
       // position: "top",
       direction: "horizontal",
       mapManager: this.mapManager,
-      target: "horizontal-igv-track-div",
+      target: "horizontal-ruler-div",
     });
     const rulerV = new RulerControl({
       // position: "top",
       direction: "vertical",
       mapManager: this.mapManager,
-      target: "vertical-igv-track-div",
+      target: "vertical-ruler-div",
     });
     try {
       const map = this.mapManager.getMap();
-      map.addControl(rulerH);
-      map.addControl(rulerV);
       map.on("moveend", (event) => {
         rulerH.render(event);
       });
       map.on("moveend", (event) => {
         rulerV.render(event);
+      });
+      map.once("postrender", () => {
+        rulerH.render({ map } as never);
+        rulerV.render({ map } as never);
       });
     } catch (e: unknown) {
       console.log("Error while adding rulers", e);
@@ -903,9 +923,17 @@ class HiCViewAndLayersManager {
       if (hTrack) {
         hTrack.replaceChildren();
       }
+      const hRuler = document.getElementById("horizontal-ruler-div");
+      if (hRuler) {
+        hRuler.replaceChildren();
+      }
       const vTrack = document.getElementById("vertical-igv-track-div");
       if (vTrack) {
         vTrack.replaceChildren();
+      }
+      const vRuler = document.getElementById("vertical-ruler-div");
+      if (vRuler) {
+        vRuler.replaceChildren();
       }
     } catch (e: unknown) {
       console.log("Error while disposing controls", e);
@@ -1171,6 +1199,20 @@ class HiCViewAndLayersManager {
       layer.getSource()?.changed();
       layer.changed();
     }
+    for (const layer of this.layersHolder.annotationLayers) {
+      const source = layer.getSource() as VectorSource | undefined;
+      if (source) {
+        source.clear();
+        const features = this.track2DHolder.annotationTrack.features.get(
+          layer.get("bpResolution")
+        );
+        if (features) {
+          source.addFeatures(features);
+        }
+        source.changed();
+      }
+      layer.changed();
+    }
     for (const layer of this.layersHolder.contigBordersLayers) {
       const source = layer.getSource() as VectorSource | undefined;
       if (source) {
@@ -1238,6 +1280,7 @@ class HiCViewAndLayersManager {
       }
       layer.changed();
     }
+    void this.mapManager.linearTrackManager.render();
   }
 
   public reloadVisuals(): void {
@@ -1278,6 +1321,55 @@ class HiCViewAndLayersManager {
           this.currentViewState.activeTool === ActiveTool.TRANSLOCATION
       );
     }
+
+    for (const layer of this.layersHolder.annotationLayers) {
+      const layerResolution = Number(layer.get("bpResolution"));
+      layer.setVisible(layerResolution === activeResolution);
+    }
+  }
+
+  public addAnnotationMarkerAtCenter(name?: string): void {
+    const center = this.getView().getCenter();
+    if (!center) {
+      return;
+    }
+    const descriptor = this.currentViewState.resolutionDesciptor;
+    const xPx = center[0] / descriptor.pixelResolution;
+    const yPx = -center[1] / descriptor.pixelResolution;
+    const xBp = this.mapManager
+      .getContigDimensionHolder()
+      .getStartBpOfPx(Math.floor(xPx), descriptor.bpResolution);
+    const yBp = this.mapManager
+      .getContigDimensionHolder()
+      .getStartBpOfPx(Math.floor(yPx), descriptor.bpResolution);
+    this.track2DHolder.annotationTrack.addMarkerFromAssemblyBp(
+      xBp,
+      yBp,
+      name ?? `marker_${this.track2DHolder.annotationTrack.getMarkerCount() + 1}`
+    );
+    this.reloadTracks();
+  }
+
+  public addAnnotationRectangleFromSelection(name?: string): void {
+    const left = this.currentViewState.selectionBorders.leftBP;
+    const right = this.currentViewState.selectionBorders.rightBP;
+    if (!left || !right) {
+      return;
+    }
+    this.track2DHolder.annotationTrack.addRectangleFromAssemblyBp(
+      Math.min(left[0], right[0]),
+      Math.max(left[0], right[0]),
+      Math.min(left[1], right[1]),
+      Math.max(left[1], right[1]),
+      name ??
+        `rect_${this.track2DHolder.annotationTrack.getRectangleCount() + 1}`
+    );
+    this.reloadTracks();
+  }
+
+  public clearAnnotations(): void {
+    this.track2DHolder.annotationTrack.clearAll();
+    this.reloadTracks();
   }
 }
 

@@ -42,6 +42,12 @@ import {
   SaveFileRequest,
   GetAGPForAssemblyRequest,
   ListCoolerFilesRequest,
+  ListTrackFilesRequest,
+  OpenTrackRequest,
+  ListTracksRequest,
+  UpdateTrackRequest,
+  RemoveTrackRequest,
+  QueryTracks1DRequest,
   StartConversionJobRequest,
   StartBatchConversionJobsRequest,
   ListConversionJobsRequest,
@@ -121,6 +127,18 @@ abstract class HiCTAPIRequestDTO<
         return new ListFilesRequestDTO(entity);
       case entity instanceof ListCoolerFilesRequest:
         return new ListCoolerFilesRequestDTO(entity);
+      case entity instanceof ListTrackFilesRequest:
+        return new ListTrackFilesRequestDTO(entity);
+      case entity instanceof OpenTrackRequest:
+        return new OpenTrackRequestDTO(entity as OpenTrackRequest);
+      case entity instanceof ListTracksRequest:
+        return new ListTracksRequestDTO(entity);
+      case entity instanceof UpdateTrackRequest:
+        return new UpdateTrackRequestDTO(entity as UpdateTrackRequest);
+      case entity instanceof RemoveTrackRequest:
+        return new RemoveTrackRequestDTO(entity as RemoveTrackRequest);
+      case entity instanceof QueryTracks1DRequest:
+        return new QueryTracks1DRequestDTO(entity as QueryTracks1DRequest);
       case entity instanceof ListConversionJobsRequest:
         return new ListConversionJobsRequestDTO(entity);
       case entity instanceof GetConversionJobRequest:
@@ -343,6 +361,7 @@ class LinkFASTARequestDTO extends HiCTAPIRequestDTO<LinkFASTARequest> {
   toDTO(): Record<string, unknown> {
     return {
       fastaFilename: this.entity.options.fastaFilename,
+      allowMismatch: this.entity.options.allowMismatch,
     };
   }
 }
@@ -419,6 +438,59 @@ class ListCoolerFilesRequestDTO extends HiCTAPIRequestDTO<ListCoolerFilesRequest
   }
 }
 
+class ListTrackFilesRequestDTO extends HiCTAPIRequestDTO<ListTrackFilesRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class OpenTrackRequestDTO extends HiCTAPIRequestDTO<OpenTrackRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      filename: this.entity.options.filename,
+      name: this.entity.options.name,
+      color: this.entity.options.color,
+    };
+  }
+}
+
+class ListTracksRequestDTO extends HiCTAPIRequestDTO<ListTracksRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class UpdateTrackRequestDTO extends HiCTAPIRequestDTO<UpdateTrackRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      trackId: this.entity.options.trackId,
+      visible: this.entity.options.visible,
+      color: this.entity.options.color,
+      name: this.entity.options.name,
+      renderMode: this.entity.options.renderMode,
+      aggregationMode: this.entity.options.aggregationMode,
+    };
+  }
+}
+
+class RemoveTrackRequestDTO extends HiCTAPIRequestDTO<RemoveTrackRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      trackId: this.entity.options.trackId,
+    };
+  }
+}
+
+class QueryTracks1DRequestDTO extends HiCTAPIRequestDTO<QueryTracks1DRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      startBp: this.entity.options.startBp,
+      endBp: this.entity.options.endBp,
+      widthPx: this.entity.options.widthPx,
+    };
+  }
+}
+
 class ListFASTAFilesRequestDTO extends HiCTAPIRequestDTO<ListFASTAFilesRequest> {
   toDTO(): Record<string, unknown> {
     return {};
@@ -489,6 +561,12 @@ export {
   SetContrastRangeRequestDTO,
   GetCurrentSignalRangeRequestDTO,
   SaveFileRequestDTO,
+  ListTrackFilesRequestDTO,
+  OpenTrackRequestDTO,
+  ListTracksRequestDTO,
+  UpdateTrackRequestDTO,
+  RemoveTrackRequestDTO,
+  QueryTracks1DRequestDTO,
   ListCoolerFilesRequestDTO,
   SplitContigRequestDTO,
   MoveSelectionToDebrisRequestDTO,

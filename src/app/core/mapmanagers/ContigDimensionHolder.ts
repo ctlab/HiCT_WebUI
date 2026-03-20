@@ -480,6 +480,20 @@ export default class ContigDimensionHolder {
     return this.contigDescriptors[contig_ord].contigName;
   }
 
+  public isBpVisibleAtResolution(bp: number, resolution: number): boolean {
+    if (this.contig_count <= 0) {
+      return false;
+    }
+    const contigOrd = this.getContigOrderByBp_internal(bp);
+    const hideType = this.contigDescriptors[contigOrd].presenceAtResolution.get(
+      resolution
+    );
+    return (
+      hideType !== ContigHideType.AUTO_HIDDEN &&
+      hideType !== ContigHideType.FORCED_HIDDEN
+    );
+  }
+
   public getContigIdByContigOrder(contig_order: number): number {
     if (0 <= contig_order && contig_order < this.contig_count) {
       return this.contigDescriptors[contig_order].contigId;
@@ -516,5 +530,74 @@ export default class ContigDimensionHolder {
 
   public binsToPixels(bin_ids: number[], resolution: number): number[] {
     return bin_ids.map((bin_id) => this.binToPixel(bin_id, resolution));
+  }
+
+  public getSourceLocusByBp(bp: number): {
+    sourceContig: string;
+    sourceBp: number;
+  } {
+    const contigOrd = this.getContigOrderByBp_internal(bp);
+    const descriptor = this.contigDescriptors[contigOrd];
+    const contigStartBp = this.prefix_sum_bp[contigOrd];
+    const inContigOffset = CommonUtils.clamp(
+      bp - contigStartBp,
+      0,
+      Math.max(0, descriptor.contigLengthBp - 1)
+    );
+    if (descriptor.direction === ContigDirection.FORWARD) {
+      return {
+        sourceContig: descriptor.contigSourceName,
+        sourceBp: descriptor.contigOffsetInSource + inContigOffset,
+      };
+    }
+    return {
+      sourceContig: descriptor.contigSourceName,
+      sourceBp:
+        descriptor.contigOffsetInSource +
+        (descriptor.contigLengthBp - 1 - inContigOffset),
+    };
+  }
+
+  public projectSourceIntervalToAssembly(
+    sourceContig: string,
+    sourceStartBp: number,
+    sourceEndBp: number
+  ): Array<{ startBp: number; endBp: number }> {
+    const start = Math.min(sourceStartBp, sourceEndBp);
+    const end = Math.max(sourceStartBp, sourceEndBp);
+    if (end <= start) {
+      return [];
+    }
+    const result: Array<{ startBp: number; endBp: number }> = [];
+    for (let i = 0; i < this.contigDescriptors.length; i++) {
+      const descriptor = this.contigDescriptors[i];
+      if (descriptor.contigSourceName !== sourceContig) {
+        continue;
+      }
+      const contigSourceStart = descriptor.contigOffsetInSource;
+      const contigSourceEnd = contigSourceStart + descriptor.contigLengthBp;
+      const overlapStart = Math.max(start, contigSourceStart);
+      const overlapEnd = Math.min(end, contigSourceEnd);
+      if (overlapEnd <= overlapStart) {
+        continue;
+      }
+      const assemblyContigStart = this.prefix_sum_bp[i];
+      const localStart = overlapStart - contigSourceStart;
+      const localEnd = overlapEnd - contigSourceStart;
+      if (descriptor.direction === ContigDirection.FORWARD) {
+        result.push({
+          startBp: assemblyContigStart + localStart,
+          endBp: assemblyContigStart + localEnd,
+        });
+      } else {
+        const len = descriptor.contigLengthBp;
+        result.push({
+          startBp: assemblyContigStart + (len - localEnd),
+          endBp: assemblyContigStart + (len - localStart),
+        });
+      }
+    }
+    result.sort((a, b) => a.startBp - b.startBp);
+    return result;
   }
 }

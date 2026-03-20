@@ -71,9 +71,97 @@ class NameMappingResponse {
   ) {}
 }
 
+class TrackSummaryResponse {
+  public constructor(
+    public readonly trackId: string,
+    public readonly name: string,
+    public readonly type: string,
+    public readonly sourceFile: string,
+    public readonly color: string,
+    public readonly visible: boolean,
+    public readonly featureCount: number,
+    public readonly renderMode: string,
+    public readonly aggregationMode: string
+  ) {}
+}
+
+class TrackBinResponse {
+  public constructor(
+    public readonly startBp: number,
+    public readonly endBp: number,
+    public readonly value: number,
+    public readonly count: number,
+    public readonly label: string | null
+  ) {}
+}
+
+class TrackRenderResponse {
+  public constructor(
+    public readonly trackId: string,
+    public readonly name: string,
+    public readonly type: string,
+    public readonly color: string,
+    public readonly bins: TrackBinResponse[],
+    public readonly maxValue: number,
+    public readonly error: string | null
+  ) {}
+}
+
+class TrackQueryResponse {
+  public constructor(
+    public readonly startBp: number,
+    public readonly endBp: number,
+    public readonly widthPx: number,
+    public readonly tracks: TrackRenderResponse[]
+  ) {}
+}
+
+class FastaLinkMismatchResponse {
+  public constructor(
+    public readonly index: number,
+    public readonly fastaName: string | null,
+    public readonly fastaLengthBp: number,
+    public readonly assemblyCurrentName: string | null,
+    public readonly assemblyOriginalName: string | null,
+    public readonly assemblySourceName: string | null,
+    public readonly assemblyLengthBp: number
+  ) {}
+}
+
+class FastaLinkCompatibilityResponse {
+  public constructor(
+    public readonly fastaRecordCount: number,
+    public readonly assemblyContigCount: number,
+    public readonly sameRecordCount: boolean,
+    public readonly sameOrderAndLength: boolean,
+    public readonly sameOrderLengthAndCurrentNames: boolean,
+    public readonly sameOrderLengthAndOriginalNames: boolean,
+    public readonly sameOrderLengthAndSourceNames: boolean,
+    public readonly sameLengthMultiset: boolean,
+    public readonly mismatches: FastaLinkMismatchResponse[]
+  ) {}
+}
+
+class FastaLinkResponse {
+  public constructor(
+    public readonly fastaFilename: string,
+    public readonly linked: boolean,
+    public readonly requiresConfirmation: boolean,
+    public readonly warnings: string[],
+    public readonly compatibility: FastaLinkCompatibilityResponse
+  ) {}
+}
+
 export {
   CurrentSignalRangeResponse,
   TilePOSTResponse,
   ConversionJobResponse,
   NameMappingResponse,
+  TrackSummaryResponse,
+  TrackBinResponse,
+  TrackRenderResponse,
+  TrackQueryResponse,
+  FastaLinkMismatchResponse,
+  FastaLinkCompatibilityResponse,
+  FastaLinkResponse,
 };

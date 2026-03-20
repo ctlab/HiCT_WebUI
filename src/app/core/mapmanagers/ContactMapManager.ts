@@ -35,6 +35,7 @@ import { CurrentSignalRangeResponse } from "../net/api/response";
 import { VisualizationManager } from "./VisualizationManager";
 import { Ref } from "vue";
 import { VersionedXYZContactMapSource } from "../VersionedXYZSource";
+import { LinearTrackManager } from "./LinearTrackManager";
 
 class ContactMapManager {
   public readonly map: Map;
@@ -46,6 +47,7 @@ class ContactMapManager {
   public sizeObserver?: ResizeObserver;
   public readonly toastHandlers: (() => void)[] = [];
   public readonly visualizationManager: VisualizationManager;
+  public readonly linearTrackManager: LinearTrackManager;
   public minimap: OverviewMap | null;
 
   constructor(
@@ -77,13 +79,14 @@ class ContactMapManager {
       options.response
     );
 
-    this.visualizationManager = new VisualizationManager(this);
-    this.visualizationManager.fetchVisualizationOptions();
-
     this.map = new Map({
       layers: [],
       interactions: [],
     });
+
+    this.visualizationManager = new VisualizationManager(this);
+    this.visualizationManager.fetchVisualizationOptions();
+    this.linearTrackManager = new LinearTrackManager(this);
 
     this.minimap = null;
   }
@@ -101,6 +104,7 @@ class ContactMapManager {
     this.viewAndLayersManager.initializeTracks();
     this.initializeMapInteractions();
     this.initializeMapControls();
+    void this.linearTrackManager.refreshTrackList();
     console.log("Map initialized. Contact map manager: ", this);
   }
 
@@ -577,6 +581,7 @@ class ContactMapManager {
   }
 
   public dispose() {
+    this.linearTrackManager.dispose();
     this.viewAndLayersManager?.dispose?.();
     this.map.setTarget(undefined);
   }

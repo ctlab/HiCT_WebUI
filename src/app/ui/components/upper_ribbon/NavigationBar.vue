@@ -91,9 +91,11 @@
               >View</a
             >
             <ul class="dropdown-menu">
-              <li><a class="dropdown-item" href="#">Choose color scheme</a></li>
-              <li><a class="dropdown-item" href="#">Show borders</a></li>
-              <li><a class="dropdown-item" href="#">Something else</a></li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onOpenTrackManager"
+                  >Tracks and layers...</a
+                >
+              </li>
             </ul>
           </li>
           <!-- Bookmarks -->
@@ -258,7 +260,8 @@
     @selected="linkFASTA"
     @dismissed="onFASTAFileDismissed"
     :error-message="errorMessage"
-    :file-name-predicate="(name: string) => name.endsWith('.fasta') || name.endsWith('.fa')"
+    :title="'Select FASTA file'"
+    :file-name-predicate="isFastaFilename"
   ></UniversalFileSelector>
   <UniversalFileSelector
     :network-manager="props.networkManager"
@@ -274,6 +277,17 @@
     @dismissed="onConvertCoolersDismissed"
   >
   </CoolerConverter>
+  <TrackManager
+    v-if="trackManagerOpen"
+    :map-manager="props.mapManager"
+    @dismissed="trackManagerOpen = false"
+  />
+  <FastaLinkWarningModal
+    v-if="fastaLinkReport"
+    :report="fastaLinkReport"
+    @cancel="cancelFastaLinkWarning"
+    @proceed="proceedFastaLinkWarning"
+  />
   <div
     v-if="aboutOpen"
     class="about-backdrop"
@@ -302,9 +316,6 @@
 
 <script setup lang="ts">
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
-import OpenFileSelector from "@/app/ui/components/upper_ribbon/OpenFileSelector.vue";
-import FASTAFileSelector from "@/app/ui/components/upper_ribbon/FASTAFileSelector.vue";
-import AGPFileSelector from "@/app/ui/components/upper_ribbon/AGPFileSelector.vue";
 import { Ref, ref, watch } from "vue";
 import {
   GetAGPForAssemblyRequest,
@@ -315,18 +326,24 @@ import {
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import CoolerConverter from "./CoolerConverter.vue";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
+import TrackManager from "@/app/ui/components/upper_ribbon/TrackManager.vue";
+import FastaLinkWarningModal from "@/app/ui/components/upper_ribbon/FastaLinkWarningModal.vue";
 import { toast } from "vue-sonner";
 import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+import type { FastaLinkResponse } from "@/app/core/net/api/response";
 import pkg from "../../../../../package.json";
 const openingFile = ref(false);
 const openingFASTAFile = ref(false);
 const openingAGPFile = ref(false);
 const convertingCoolers = ref(false);
+const trackManagerOpen = ref(false);
 const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
+const pendingFastaFilename = ref<string | null>(null);
+const fastaLinkReport = ref<FastaLinkResponse | null>(null);
 const backendVersion = ref("loading...");
 const webuiVersion = ref(String((pkg as { version?: string })?.version ?? "unknown"));
 const webuiCommit = ref("unknown");
@@ -376,6 +393,10 @@ const { customZoomSliderEnabled } = storeToRefs(uiSettingsStore);
 
 function onOpenFile() {
   openingFile.value = true;
+}
+
+function onOpenTrackManager() {
+  trackManagerOpen.value = true;
 }
 
 function onLoadAGP() {
@@ -449,11 +470,15 @@ function openAbout(): void {
 }
 
 function onOpenFASTAFile() {
+  pendingFastaFilename.value = null;
+  fastaLinkReport.value = null;
   openingFASTAFile.value = true;
 }
 
 function onFASTAFileDismissed() {
   openingFASTAFile.value = false;
+  pendingFastaFilename.value = null;
+  fastaLinkReport.value = null;
 }
 
 function onGatewayChanged() {
@@ -495,14 +520,59 @@ function openAGP(filename: string) {
     });
 }
 
-function linkFASTA(filename: string) {
+function isFastaFilename(name: string): boolean {
+  const lowered = name.toLowerCase();
+  return (
+    lowered.endsWith(".fasta") ||
+    lowered.endsWith(".fa") ||
+    lowered.endsWith(".fna") ||
+    lowered.endsWith(".fas") ||
+    lowered.endsWith(".fasta.gz") ||
+    lowered.endsWith(".fa.gz") ||
+    lowered.endsWith(".fna.gz") ||
+    lowered.endsWith(".fas.gz")
+  );
+}
+
+function cancelFastaLinkWarning(): void {
+  pendingFastaFilename.value = null;
+  fastaLinkReport.value = null;
+}
+
+function proceedFastaLinkWarning(): void {
+  const filename = pendingFastaFilename.value;
+  if (!filename) {
+    cancelFastaLinkWarning();
+    return;
+  }
+  linkFASTA(filename, true);
+}
+
+function linkFASTA(filename: string, allowMismatch = false) {
   props.networkManager.requestManager
-    .linkFASTA(new LinkFASTARequest({ fastaFilename: filename }))
-    .then(() => {
+    .linkFASTA(new LinkFASTARequest({ fastaFilename: filename, allowMismatch }))
+    .then((response) => {
+      if (response.requiresConfirmation && !allowMismatch) {
+        openingFile.value = false;
+        openingFASTAFile.value = false;
+        pendingFastaFilename.value = filename;
+        fastaLinkReport.value = response;
+        return;
+      }
+      pendingFastaFilename.value = null;
+      fastaLinkReport.value = null;
       openingFile.value = false;
       openingFASTAFile.value = false;
-      errorMessage.value = false;
+      errorMessage.value = null;
       emit("fastaLinked", filename);
+      response.warnings.forEach((warning) =>
+        toast(warning, {
+          style: {
+            "background-color": "lightyellow",
+            color: "black",
+          },
+        })
+      );
       toast.message("Linked FASTA file " + filename);
     })
     .catch((e) => {
