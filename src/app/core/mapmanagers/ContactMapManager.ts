@@ -181,11 +181,13 @@ class ContactMapManager {
 
   public reloadTiles(): void {
     this.viewAndLayersManager.reloadTiles();
+    void this.linearTrackManager.clearCachesAndRender();
   }
 
   public async reloadTilesFromBackend(): Promise<void> {
     const version = await this.networkManager.requestManager.reloadTilesVersion();
     this.viewAndLayersManager.reloadTiles(version);
+    void this.linearTrackManager.clearCachesAndRender();
   }
 
   private async buildCurrentMapSvg(
@@ -639,6 +641,7 @@ class ContactMapManager {
 
   public reloadVisuals(): void {
     this.viewAndLayersManager.reloadVisuals();
+    void this.linearTrackManager.clearCachesAndRender();
   }
 }
 

@@ -33,6 +33,7 @@ type Orientation = "horizontal" | "vertical";
 const DEFAULT_PREFETCH_EXTENT_SCREENS = 2;
 const CACHE_MAX_AGE_MS = 1500;
 const MAX_PREFETCH_QUERY_WIDTH_PX = 2048;
+const MAX_CACHED_RESOLUTIONS_PER_ORIENTATION = 6;
 
 class LinearTrackManager {
   private horizontalCanvas: HTMLCanvasElement | null = null;
@@ -42,7 +43,9 @@ class LinearTrackManager {
   private tracks: TrackSummaryResponse[] = [];
   private renderRequestId = 0;
   private readonly moveEndListener?: EventsKey;
+  private readonly centerListener?: EventsKey;
   private readonly resolutionListener?: EventsKey;
+  private interactiveRenderFramePending = false;
   private readonly listSubscribers = new Set<
     (tracks: TrackSummaryResponse[]) => void
   >();
@@ -54,26 +57,44 @@ class LinearTrackManager {
     horizontal: { statusMessage: "No tracks loaded", trackCount: 0 },
     vertical: { statusMessage: "No tracks loaded", trackCount: 0 },
   };
+  private cacheEpoch = 0;
   private readonly lastTrackErrors = new Map<string, string>();
   private readonly prefetchExtentScreens = DEFAULT_PREFETCH_EXTENT_SCREENS;
-  private readonly queryCache: Record<Orientation, TrackQueryCache | null> = {
-    horizontal: null,
-    vertical: null,
+  private readonly queryCache: Record<Orientation, Map<number, TrackQueryCache>> = {
+    horizontal: new Map<number, TrackQueryCache>(),
+    vertical: new Map<number, TrackQueryCache>(),
+  };
+  private readonly prefetchInFlight = {
+    horizontal: new Set<string>(),
+    vertical: new Set<string>(),
   };
 
   constructor(private readonly mapManager: ContactMapManager) {
     const map = this.mapManager.getMap();
+    const view = this.mapManager.getView();
     this.moveEndListener = map.on("moveend", () => {
-      void this.render();
+      void this.render({ allowFetch: true });
     });
-    this.resolutionListener = this.mapManager.getView().on("change:resolution", () => {
-      void this.render();
+    this.centerListener = view.on("change:center", () => {
+      if (this.isViewInteracting()) {
+        this.scheduleInteractiveRender();
+      }
+    });
+    this.resolutionListener = view.on("change:resolution", () => {
+      if (this.isViewInteracting()) {
+        this.scheduleInteractiveRender();
+        return;
+      }
+      void this.render({ allowFetch: true });
     });
   }
 
   public dispose(): void {
     if (this.moveEndListener) {
       unByKey(this.moveEndListener);
+    }
+    if (this.centerListener) {
+      unByKey(this.centerListener);
     }
     if (this.resolutionListener) {
       unByKey(this.resolutionListener);
@@ -82,8 +103,7 @@ class LinearTrackManager {
     this.verticalResizeObserver?.disconnect();
     this.horizontalCanvas = null;
     this.verticalCanvas = null;
-    this.queryCache.horizontal = null;
-    this.queryCache.vertical = null;
+    this.invalidateQueryCache();
     this.listSubscribers.clear();
     this.renderStateSubscribers.horizontal.clear();
     this.renderStateSubscribers.vertical.clear();
@@ -203,14 +223,42 @@ class LinearTrackManager {
     return this.mapManager.networkManager.requestManager.getTracksPrecomputeStatus();
   }
 
-  public async render(): Promise<void> {
+  public async render(options?: { allowFetch?: boolean }): Promise<void> {
     if (!this.horizontalCanvas && !this.verticalCanvas) {
       return;
     }
+    const allowFetch = options?.allowFetch ?? true;
     const requestId = ++this.renderRequestId;
-    const horizontalPromise = this.renderOrientation("horizontal", requestId);
-    const verticalPromise = this.renderOrientation("vertical", requestId);
+    const horizontalPromise = this.renderOrientation(
+      "horizontal",
+      requestId,
+      allowFetch
+    );
+    const verticalPromise = this.renderOrientation(
+      "vertical",
+      requestId,
+      allowFetch
+    );
     await Promise.all([horizontalPromise, verticalPromise]);
+  }
+
+  private isViewInteracting(): boolean {
+    const view = this.mapManager.getView();
+    return view.getInteracting() || view.getAnimating();
+  }
+
+  private scheduleInteractiveRender(): void {
+    if (this.interactiveRenderFramePending) {
+      return;
+    }
+    this.interactiveRenderFramePending = true;
+    window.requestAnimationFrame(() => {
+      this.interactiveRenderFramePending = false;
+      if (!this.isViewInteracting()) {
+        return;
+      }
+      void this.render({ allowFetch: false });
+    });
   }
 
   private notifyTrackListChanged(): void {
@@ -234,8 +282,16 @@ class LinearTrackManager {
   }
 
   private invalidateQueryCache(): void {
-    this.queryCache.horizontal = null;
-    this.queryCache.vertical = null;
+    this.cacheEpoch += 1;
+    this.queryCache.horizontal.clear();
+    this.queryCache.vertical.clear();
+    this.prefetchInFlight.horizontal.clear();
+    this.prefetchInFlight.vertical.clear();
+  }
+
+  public async clearCachesAndRender(): Promise<void> {
+    this.invalidateQueryCache();
+    await this.render({ allowFetch: true });
   }
 
   private createResizeObserver(
@@ -268,7 +324,8 @@ class LinearTrackManager {
 
   private async renderOrientation(
     orientation: Orientation,
-    requestId: number
+    requestId: number,
+    allowFetch: boolean
   ): Promise<void> {
     const canvas =
       orientation === "horizontal" ? this.horizontalCanvas : this.verticalCanvas;
@@ -296,36 +353,50 @@ class LinearTrackManager {
     }
 
     const viewport = this.getViewportGeometry(orientation);
+    const cacheEpoch = this.cacheEpoch;
     try {
       const prefetch = this.buildPrefetchViewport(viewport);
-      const cached = this.queryCache[orientation];
-      const response =
-        cached &&
-        Date.now() - cached.fetchedAtMs <= CACHE_MAX_AGE_MS &&
-        cached.bpResolution === viewport.bpResolution &&
+      const orientationCache = this.queryCache[orientation];
+      const cached = orientationCache.get(viewport.bpResolution);
+      const cacheMatchesResolution =
+        !!cached && cached.bpResolution === viewport.bpResolution;
+      const cacheFresh =
+        !!cached && Date.now() - cached.fetchedAtMs <= CACHE_MAX_AGE_MS;
+      const cacheCoversViewport =
+        !!cached &&
+        cacheMatchesResolution &&
         cached.prefetchStartPx <= viewport.startPx &&
-        cached.prefetchEndPx >= viewport.endPx
-          ? cached.response
-          : await this.mapManager.networkManager.requestManager.queryTracks1D(
-              prefetch.prefetchStartPx,
-              prefetch.prefetchEndPx,
-              prefetch.prefetchWidthPx,
-              viewport.bpResolution
-            );
+        cached.prefetchEndPx >= viewport.endPx;
+      let response: TrackQueryResponse;
       if (
-        !cached ||
-        Date.now() - cached.fetchedAtMs > CACHE_MAX_AGE_MS ||
-        cached.bpResolution !== viewport.bpResolution ||
-        cached.prefetchStartPx > viewport.startPx ||
-        cached.prefetchEndPx < viewport.endPx
+        cached &&
+        cacheMatchesResolution &&
+        (cacheCoversViewport ? cacheFresh || !allowFetch : !allowFetch)
       ) {
-        this.queryCache[orientation] = {
+        response = cached.response;
+      } else if (!allowFetch) {
+        return;
+      } else {
+        response = await this.mapManager.networkManager.requestManager.queryTracks1D(
+          prefetch.prefetchStartPx,
+          prefetch.prefetchEndPx,
+          prefetch.prefetchWidthPx,
+          viewport.bpResolution
+        );
+        if (cacheEpoch !== this.cacheEpoch) {
+          return;
+        }
+        orientationCache.set(viewport.bpResolution, {
           bpResolution: viewport.bpResolution,
           prefetchStartPx: prefetch.prefetchStartPx,
           prefetchEndPx: prefetch.prefetchEndPx,
           fetchedAtMs: Date.now(),
           response,
-        };
+        });
+        this.pruneCache(orientation);
+      }
+      if (allowFetch) {
+        this.prefetchNeighborResolutions(orientation, viewport, cacheEpoch);
       }
       if (requestId !== this.renderRequestId) {
         return;
@@ -635,7 +706,7 @@ class LinearTrackManager {
     };
   }
 
-  private buildPrefetchViewport(viewport: ViewportGeometry): {
+  private buildPrefetchViewport(viewport: PrefetchViewport): {
     prefetchStartPx: number;
     prefetchEndPx: number;
     prefetchWidthPx: number;
@@ -661,6 +732,153 @@ class LinearTrackManager {
       prefetchWidthPx: Math.min(MAX_PREFETCH_QUERY_WIDTH_PX, prefetchWidthPx),
     };
   }
+
+  private pruneCache(orientation: Orientation): void {
+    const cache = this.queryCache[orientation];
+    if (cache.size <= MAX_CACHED_RESOLUTIONS_PER_ORIENTATION) {
+      return;
+    }
+    const sortedKeysByRecency = [...cache.entries()]
+      .sort((a, b) => b[1].fetchedAtMs - a[1].fetchedAtMs)
+      .map(([bpResolution]) => bpResolution);
+    const keep = new Set(
+      sortedKeysByRecency.slice(0, MAX_CACHED_RESOLUTIONS_PER_ORIENTATION)
+    );
+    for (const bpResolution of cache.keys()) {
+      if (!keep.has(bpResolution)) {
+        cache.delete(bpResolution);
+      }
+    }
+  }
+
+  private prefetchNeighborResolutions(
+    orientation: Orientation,
+    viewport: ViewportGeometry,
+    cacheEpoch: number
+  ): void {
+    if (cacheEpoch !== this.cacheEpoch) {
+      return;
+    }
+    if (!this.tracks.some((track) => track.visible)) {
+      return;
+    }
+    const orientationCache = this.queryCache[orientation];
+    const inFlight = this.prefetchInFlight[orientation];
+    const neighborBpResolutions = this.getNeighborBpResolutions(
+      viewport.bpResolution
+    );
+    for (const neighborBpResolution of neighborBpResolutions) {
+      const neighborViewport = this.projectViewportToResolution(
+        viewport,
+        neighborBpResolution
+      );
+      if (!neighborViewport) {
+        continue;
+      }
+      const neighborPrefetch = this.buildPrefetchViewport(neighborViewport);
+      const cached = orientationCache.get(neighborBpResolution);
+      const cacheFresh =
+        !!cached && Date.now() - cached.fetchedAtMs <= CACHE_MAX_AGE_MS;
+      const cacheCoversViewport =
+        !!cached &&
+        cached.prefetchStartPx <= neighborViewport.startPx &&
+        cached.prefetchEndPx >= neighborViewport.endPx;
+      if (cacheFresh && cacheCoversViewport) {
+        continue;
+      }
+      const prefetchKey = [
+        neighborBpResolution,
+        neighborPrefetch.prefetchStartPx,
+        neighborPrefetch.prefetchEndPx,
+        neighborPrefetch.prefetchWidthPx,
+      ].join(":");
+      if (inFlight.has(prefetchKey)) {
+        continue;
+      }
+      inFlight.add(prefetchKey);
+      void this.mapManager.networkManager.requestManager
+        .queryTracks1D(
+          neighborPrefetch.prefetchStartPx,
+          neighborPrefetch.prefetchEndPx,
+          neighborPrefetch.prefetchWidthPx,
+          neighborBpResolution
+        )
+        .then((response) => {
+          if (cacheEpoch !== this.cacheEpoch) {
+            return;
+          }
+          orientationCache.set(neighborBpResolution, {
+            bpResolution: neighborBpResolution,
+            prefetchStartPx: neighborPrefetch.prefetchStartPx,
+            prefetchEndPx: neighborPrefetch.prefetchEndPx,
+            fetchedAtMs: Date.now(),
+            response,
+          });
+          this.pruneCache(orientation);
+        })
+        .catch((error) => {
+          console.debug(
+            `Track prefetch for resolution ${neighborBpResolution} failed`,
+            error
+          );
+        })
+        .finally(() => {
+          inFlight.delete(prefetchKey);
+        });
+    }
+  }
+
+  private getNeighborBpResolutions(currentBpResolution: number): number[] {
+    const tuples = this.mapManager.getLayersManager().resolutionTuples;
+    const currentIndex = tuples.findIndex(
+      (tuple) => tuple.bpResolution === currentBpResolution
+    );
+    if (currentIndex < 0) {
+      return [];
+    }
+    const neighbors: number[] = [];
+    if (currentIndex > 0) {
+      neighbors.push(tuples[currentIndex - 1].bpResolution);
+    }
+    if (currentIndex + 1 < tuples.length) {
+      neighbors.push(tuples[currentIndex + 1].bpResolution);
+    }
+    return neighbors;
+  }
+
+  private projectViewportToResolution(
+    viewport: ViewportGeometry,
+    targetBpResolution: number
+  ): PrefetchViewport | null {
+    const contigDimensionHolder = this.mapManager.getContigDimensionHolder();
+    const totalPx =
+      contigDimensionHolder.prefix_sum_px.get(targetBpResolution)?.[
+        contigDimensionHolder.contig_count
+      ] ?? 0;
+    if (totalPx <= 0) {
+      return null;
+    }
+    const startBp = Math.max(0, viewport.startBp);
+    const endBp = Math.max(startBp + 1, viewport.endBp);
+    const startPxRaw = contigDimensionHolder.getPxContainingBp(
+      startBp,
+      targetBpResolution
+    );
+    const endPxRaw =
+      contigDimensionHolder.getPxContainingBp(
+        Math.max(startBp, endBp - 1),
+        targetBpResolution
+      ) + 1;
+    const maxStartPx = Math.max(0, totalPx - 1);
+    const startPx = Math.max(0, Math.min(startPxRaw, maxStartPx));
+    const endPx = Math.max(startPx + 1, Math.min(endPxRaw, totalPx));
+    return {
+      startPx,
+      endPx,
+      bpResolution: targetBpResolution,
+      visibleWidthPx: viewport.visibleWidthPx,
+    };
+  }
 }
 
 export { LinearTrackManager, type Orientation };
@@ -677,6 +895,13 @@ type ViewportGeometry = {
   endPx: number;
   bpResolution: number;
   pxToScreen: (px: number) => number;
+  visibleWidthPx: number;
+};
+
+type PrefetchViewport = {
+  startPx: number;
+  endPx: number;
+  bpResolution: number;
   visibleWidthPx: number;
 };
 

@@ -25,6 +25,7 @@ import {
   NormalizationSettings,
 } from "@/app/ui/components/ComponentCommon";
 import { ContigDescriptor } from "../domain/ContigDescriptor";
+import { type ScaffoldDescriptor } from "../domain/ScaffoldDescriptor";
 import {
   GroupContigsIntoScaffoldRequest,
   UngroupContigsFromScaffoldRequest,
@@ -44,6 +45,14 @@ import { toast } from "vue-sonner";
 
 class CommonEventManager {
   public constructor(public readonly mapManager: ContactMapManager) {}
+
+  private applyAssemblyInfo(asmInfo: {
+    contigDescriptors: ContigDescriptor[];
+    scaffoldDescriptors: ScaffoldDescriptor[];
+  }): void {
+    this.mapManager.contigDimensionHolder.updateContigData(asmInfo.contigDescriptors);
+    this.mapManager.scaffoldHolder.updateScaffoldData(asmInfo.scaffoldDescriptors);
+  }
 
   public reloadTiles() {
     this.mapManager.reloadTiles();
@@ -289,12 +298,8 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.mapManager.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.mapManager.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
+        this.applyAssemblyInfo(asmInfo);
+        void this.mapManager.linearTrackManager.clearCachesAndRender();
         this.resetSelection();
         this.reloadTracks();
       });
@@ -345,12 +350,8 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.mapManager.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.mapManager.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
+        this.applyAssemblyInfo(asmInfo);
+        void this.mapManager.linearTrackManager.clearCachesAndRender();
         this.resetSelection();
         this.reloadTracks();
       });
@@ -401,12 +402,8 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.mapManager.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.mapManager.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
+        this.applyAssemblyInfo(asmInfo);
+        void this.mapManager.linearTrackManager.clearCachesAndRender();
         this.resetSelection();
         this.reloadTracks();
       });
@@ -456,12 +453,7 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.mapManager.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.mapManager.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
+        this.applyAssemblyInfo(asmInfo);
         this.resetSelection();
         this.mapManager.reloadVisuals();
       });
@@ -649,12 +641,7 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.mapManager.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.mapManager.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
+        this.applyAssemblyInfo(asmInfo);
       })
       .finally(() => {
         this.onMoveSelectionClicked();
@@ -683,12 +670,7 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.mapManager.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.mapManager.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
+        this.applyAssemblyInfo(asmInfo);
       })
       .finally(() => {
         this.mapManager.deactivateScissors();
