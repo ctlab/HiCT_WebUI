@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -51,6 +51,28 @@
                 >
               </li>
               <li>
+                <a class="dropdown-item" href="#" @click="onAttachClicked"
+                  >Attach</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onSaveSessionClicked"
+                  >Save session</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onOpenSessionClicked"
+                  >Open session</a
+                >
+                <input
+                  ref="sessionFileInput"
+                  type="file"
+                  accept="application/json"
+                  @change="onSessionFileSelected"
+                  hidden
+                />
+              </li>
+              <li>
                 <a
                   class="dropdown-item"
                   href="#"
@@ -69,9 +91,11 @@
               >View</a
             >
             <ul class="dropdown-menu">
-              <li><a class="dropdown-item" href="#">Choose color scheme</a></li>
-              <li><a class="dropdown-item" href="#">Show borders</a></li>
-              <li><a class="dropdown-item" href="#">Something else</a></li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onOpenTrackManager"
+                  >Tracks and layers...</a
+                >
+              </li>
             </ul>
           </li>
           <!-- Bookmarks -->
@@ -123,8 +147,55 @@
             </ul>
           </li>
           <!-- Dev -->
-          <li class="nav-item">
-            <a aria-current="page" class="nav-link active" href="#">Dev</a>
+          <li class="nav-item dropdown">
+            <a
+              aria-current="page"
+              class="nav-link active dropdown-toggle"
+              data-bs-toggle="dropdown"
+              href="#"
+              >Dev</a
+            >
+            <ul class="dropdown-menu p-3">
+              <li class="form-check">
+                <input
+                  id="toggle-request-errors"
+                  class="form-check-input"
+                  type="checkbox"
+                  v-model="requestErrorToastsEnabled"
+                />
+                <label class="form-check-label" for="toggle-request-errors">
+                  Show request error toasts
+                </label>
+              </li>
+              <li class="form-check mt-2">
+                <input
+                  id="toggle-webui-errors"
+                  class="form-check-input"
+                  type="checkbox"
+                  v-model="webuiErrorToastsEnabled"
+                />
+                <label class="form-check-label" for="toggle-webui-errors">
+                  Show WebUI error toasts
+                </label>
+              </li>
+              <li class="form-check mt-2">
+                <input
+                  id="toggle-custom-zoomslider"
+                  class="form-check-input"
+                  type="checkbox"
+                  v-model="customZoomSliderEnabled"
+                />
+                <label class="form-check-label" for="toggle-custom-zoomslider">
+                  Use custom ZoomSlider
+                </label>
+              </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenWorkerDiagnostics">
+                  Worker diagnostics...
+                </a>
+              </li>
+            </ul>
           </li>
           <!-- Connection settings -->
           <li class="nav-item dropdown">
@@ -159,6 +230,15 @@
             <a
               aria-current="page"
               class="nav-link active"
+              href="#"
+              @click="openAbout"
+              >About</a
+            >
+          </li>
+          <li class="nav-item">
+            <a
+              aria-current="page"
+              class="nav-link active"
               href="https://github.com/ctlab/HiCT/issues"
               >Report a bug</a
             >
@@ -186,7 +266,8 @@
     @selected="linkFASTA"
     @dismissed="onFASTAFileDismissed"
     :error-message="errorMessage"
-    :file-name-predicate="(name: string) => name.endsWith('.fasta') || name.endsWith('.fa')"
+    :title="'Select FASTA file'"
+    :file-name-predicate="isFastaFilename"
   ></UniversalFileSelector>
   <UniversalFileSelector
     :network-manager="props.networkManager"
@@ -202,13 +283,50 @@
     @dismissed="onConvertCoolersDismissed"
   >
   </CoolerConverter>
+  <TrackManager
+    v-if="trackManagerOpen"
+    :map-manager="props.mapManager"
+    @dismissed="trackManagerOpen = false"
+  />
+  <WorkerDiagnosticsModal
+    v-if="workerDiagnosticsOpen"
+    :network-manager="props.networkManager"
+    @dismissed="workerDiagnosticsOpen = false"
+  />
+  <FastaLinkWarningModal
+    v-if="fastaLinkReport"
+    :report="fastaLinkReport"
+    @cancel="cancelFastaLinkWarning"
+    @proceed="proceedFastaLinkWarning"
+  />
+  <div
+    v-if="aboutOpen"
+    class="about-backdrop"
+    @click.self="aboutOpen = false"
+  >
+    <div class="about-modal">
+      <div class="about-header">
+        <h2>HiCT</h2>
+        <button class="btn-close" @click="aboutOpen = false"></button>
+      </div>
+      <div class="about-body">
+        <p class="about-authors">
+          Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii
+          Dravgelis and Computer Technologies Laboratory ITMO University team.
+        </p>
+        <pre class="about-license">{{ licenseText }}</pre>
+        <div class="about-versions">
+          <div><strong>Backend:</strong> {{ backendVersion }}</div>
+          <div><strong>WebUI:</strong> {{ webuiVersion }}</div>
+          <div><strong>Commit:</strong> {{ webuiCommit }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
-import OpenFileSelector from "@/app/ui/components/upper_ribbon/OpenFileSelector.vue";
-import FASTAFileSelector from "@/app/ui/components/upper_ribbon/FASTAFileSelector.vue";
-import AGPFileSelector from "@/app/ui/components/upper_ribbon/AGPFileSelector.vue";
 import { Ref, ref, watch } from "vue";
 import {
   GetAGPForAssemblyRequest,
@@ -219,17 +337,59 @@ import {
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import CoolerConverter from "./CoolerConverter.vue";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
+import TrackManager from "@/app/ui/components/upper_ribbon/TrackManager.vue";
+import FastaLinkWarningModal from "@/app/ui/components/upper_ribbon/FastaLinkWarningModal.vue";
+import WorkerDiagnosticsModal from "@/app/ui/components/upper_ribbon/WorkerDiagnosticsModal.vue";
 import { toast } from "vue-sonner";
+import { storeToRefs } from "pinia";
+import { useErrorToastStore } from "@/app/stores/errorToastStore";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+import type { FastaLinkResponse } from "@/app/core/net/api/response";
+import pkg from "../../../../../package.json";
 const openingFile = ref(false);
 const openingFASTAFile = ref(false);
 const openingAGPFile = ref(false);
 const convertingCoolers = ref(false);
+const trackManagerOpen = ref(false);
+const workerDiagnosticsOpen = ref(false);
 const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
+const aboutOpen = ref(false);
+const pendingFastaFilename = ref<string | null>(null);
+const fastaLinkReport = ref<FastaLinkResponse | null>(null);
+const backendVersion = ref("loading...");
+const webuiVersion = ref(String((pkg as { version?: string })?.version ?? "unknown"));
+const webuiCommit = ref("unknown");
+const licenseText = `MIT License
+
+Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`;
 
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
   (e: "closed"): void;
+  (e: "attached"): void;
+  (e: "saveSession"): void;
+  (e: "openSession", file: File): void;
+  (e: "agpLoaded", filename: string): void;
+  (e: "fastaLinked", filename: string): void;
 }>();
 
 const props = defineProps<{
@@ -238,9 +398,22 @@ const props = defineProps<{
 }>();
 
 const errorMessage: Ref<unknown | null> = ref(null);
+const errorToastStore = useErrorToastStore();
+const uiSettingsStore = useUiSettingsStore();
+const { requestErrorToastsEnabled, webuiErrorToastsEnabled } =
+  storeToRefs(errorToastStore);
+const { customZoomSliderEnabled } = storeToRefs(uiSettingsStore);
 
 function onOpenFile() {
   openingFile.value = true;
+}
+
+function onOpenTrackManager() {
+  trackManagerOpen.value = true;
+}
+
+function onOpenWorkerDiagnostics() {
+  workerDiagnosticsOpen.value = true;
 }
 
 function onLoadAGP() {
@@ -264,6 +437,31 @@ function onCloseClicked(): void {
   errorMessage.value = null;
 }
 
+function onAttachClicked(): void {
+  emit("attached");
+  errorMessage.value = null;
+}
+
+function onSaveSessionClicked(): void {
+  emit("saveSession");
+  errorMessage.value = null;
+}
+
+const sessionFileInput = ref<HTMLInputElement | null>(null);
+
+function onOpenSessionClicked(): void {
+  sessionFileInput.value?.click();
+}
+
+function onSessionFileSelected(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  emit("openSession", file);
+  input.value = "";
+  errorMessage.value = null;
+}
+
 function onConvertCoolersClicked(): void {
   convertingCoolers.value = true;
 }
@@ -272,12 +470,32 @@ function onConvertCoolersDismissed(): void {
   convertingCoolers.value = false;
 }
 
+function openAbout(): void {
+  aboutOpen.value = true;
+  backendVersion.value = "loading...";
+  props.networkManager.requestManager
+    .getBackendVersion()
+    .then((v) => {
+      if (typeof v === "string") {
+        backendVersion.value = v;
+      } else {
+        backendVersion.value = v.version ?? "unknown";
+        webuiVersion.value = v.webuiVersion ?? webuiVersion.value;
+      }
+    })
+    .catch(() => (backendVersion.value = "unknown"));
+}
+
 function onOpenFASTAFile() {
+  pendingFastaFilename.value = null;
+  fastaLinkReport.value = null;
   openingFASTAFile.value = true;
 }
 
 function onFASTAFileDismissed() {
   openingFASTAFile.value = false;
+  pendingFastaFilename.value = null;
+  fastaLinkReport.value = null;
 }
 
 function onGatewayChanged() {
@@ -311,6 +529,7 @@ function openAGP(filename: string) {
       openingFile.value = false;
       openingAGPFile.value = false;
       errorMessage.value = null;
+      emit("agpLoaded", filename);
       toast.message("Assembly loaded from AGP file " + filename);
     })
     .catch((e) => {
@@ -318,13 +537,59 @@ function openAGP(filename: string) {
     });
 }
 
-function linkFASTA(filename: string) {
+function isFastaFilename(name: string): boolean {
+  const lowered = name.toLowerCase();
+  return (
+    lowered.endsWith(".fasta") ||
+    lowered.endsWith(".fa") ||
+    lowered.endsWith(".fna") ||
+    lowered.endsWith(".fas") ||
+    lowered.endsWith(".fasta.gz") ||
+    lowered.endsWith(".fa.gz") ||
+    lowered.endsWith(".fna.gz") ||
+    lowered.endsWith(".fas.gz")
+  );
+}
+
+function cancelFastaLinkWarning(): void {
+  pendingFastaFilename.value = null;
+  fastaLinkReport.value = null;
+}
+
+function proceedFastaLinkWarning(): void {
+  const filename = pendingFastaFilename.value;
+  if (!filename) {
+    cancelFastaLinkWarning();
+    return;
+  }
+  linkFASTA(filename, true);
+}
+
+function linkFASTA(filename: string, allowMismatch = false) {
   props.networkManager.requestManager
-    .linkFASTA(new LinkFASTARequest({ fastaFilename: filename }))
-    .then(() => {
+    .linkFASTA(new LinkFASTARequest({ fastaFilename: filename, allowMismatch }))
+    .then((response) => {
+      if (response.requiresConfirmation && !allowMismatch) {
+        openingFile.value = false;
+        openingFASTAFile.value = false;
+        pendingFastaFilename.value = filename;
+        fastaLinkReport.value = response;
+        return;
+      }
+      pendingFastaFilename.value = null;
+      fastaLinkReport.value = null;
       openingFile.value = false;
       openingFASTAFile.value = false;
-      errorMessage.value = false;
+      errorMessage.value = null;
+      emit("fastaLinked", filename);
+      response.warnings.forEach((warning) =>
+        toast(warning, {
+          style: {
+            "background-color": "lightyellow",
+            color: "black",
+          },
+        })
+      );
       toast.message("Linked FASTA file " + filename);
     })
     .catch((e) => {
@@ -413,5 +678,53 @@ function onAssemblyAGPRequest() {
 
 #set-gateway-btn {
   margin-right: 30px;
+}
+
+.about-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.about-modal {
+  background: #ffffff;
+  border-radius: 10px;
+  width: min(720px, 90vw);
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
+  padding: 20px 24px;
+}
+
+.about-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.about-body {
+  margin-top: 12px;
+}
+
+.about-authors {
+  margin-bottom: 12px;
+}
+
+.about-license {
+  background: #f8f9fa;
+  padding: 12px;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+
+.about-versions {
+  margin-top: 12px;
+  display: grid;
+  gap: 4px;
 }
 </style>

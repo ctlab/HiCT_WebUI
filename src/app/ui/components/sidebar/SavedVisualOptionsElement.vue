@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -67,10 +67,12 @@
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
+import type { TrackStylePresetBundle } from "@/app/core/tracks/TrackStylePreset";
 import { ref } from "vue";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import { useStyleStore } from "@/app/stores/styleStore";
+import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import { ColorTranslator } from "colortranslator";
 
 const visualizationOptionsStore = useVisualizationOptionsStore();
@@ -87,6 +89,8 @@ const props = defineProps<{
   name: string;
   visualizationOptions: VisualizationOptions;
   backgroundColor: ColorTranslator;
+  trackStyles?: TrackStylePresetBundle;
+  signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
 }>();
 
 const emits = defineEmits<{
@@ -109,7 +113,26 @@ function setOptionsPreset() {
     visualizationOptionsStore.setVisualizationOptions(
       props.visualizationOptions
     );
+    if (
+      props.signalThresholds &&
+      colormap.value instanceof SimpleLinearGradient
+    ) {
+      const lower = props.signalThresholds.lowerSignalBound;
+      const upper = props.signalThresholds.upperSignalBound;
+      if (typeof lower === "number") {
+        const cmap = colormap.value as SimpleLinearGradient;
+        colormap.value = new SimpleLinearGradient(
+          cmap.startColorRGBA,
+          cmap.endColorRGBA,
+          lower,
+          typeof upper === "number" ? upper : cmap.maxSignal
+        );
+      }
+    }
     stylesStore.setMapBackground(props.backgroundColor);
+    if (props.trackStyles) {
+      props.mapManager.getLayersManager().applyTrackStylePreset(props.trackStyles);
+    }
     props.mapManager?.visualizationManager
       .sendVisualizationOptionsToServer()
       .then(() => props.mapManager?.reloadTiles());

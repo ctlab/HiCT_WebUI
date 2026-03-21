@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -35,6 +35,7 @@
               type="number"
               lang="en"
               v-model.number="lowerBound"
+              @keydown.enter="applySettings"
             />
           </li>
           <li class="list-group-item w-100 h-100">
@@ -56,6 +57,7 @@
               type="number"
               lang="en"
               v-model.number="upperBound"
+              @keydown.enter="applySettings"
             />
           </li>
           <li class="list-group-item w-100 h-100">
@@ -73,7 +75,7 @@
       <button
         type="button"
         id="gradient-apply-button"
-        class="btn m-1"
+        class="btn m-1 gradient-apply-button"
         :style="gradstyle"
         @click="applySettings"
       >
@@ -113,6 +115,7 @@ const toColor = ref(
 ) as Ref<ColorTranslator>;
 const lowerBound: Ref<number> = ref(signalMin.value);
 const upperBound: Ref<number> = ref(signalMax.value);
+const syncingFromColormap: Ref<boolean> = ref(false);
 
 const fromColorFn: Ref<() => ColorTranslator> = ref(
   () => fromColor.value
@@ -131,6 +134,7 @@ const gradstyle = ref({
     " , " +
     toColor.value.RGBA +
     ")",
+  color: "#ffffff",
 });
 
 watch(
@@ -142,15 +146,44 @@ watch(
   },
   () => {
     if (colormap.value instanceof SimpleLinearGradient) {
+      syncingFromColormap.value = true;
       // console.log("Colormap type changed and simple linear gradient, was: ", fromColor.value, toColor.value);
       const cmap = colormap.value as SimpleLinearGradient;
-      fromColor.value = cmap.startColorRGBA;
-      toColor.value = cmap.endColorRGBA;
+      if (fromColor.value?.RGBA !== cmap.startColorRGBA?.RGBA) {
+        fromColor.value = cmap.startColorRGBA;
+      }
+      if (toColor.value?.RGBA !== cmap.endColorRGBA?.RGBA) {
+        toColor.value = cmap.endColorRGBA;
+      }
       fromColorFn.value = () => fromColor.value;
       toColorFn.value = () => toColor.value;
       // console.log("Now: ", fromColor.value, toColor.value);
+      queueMicrotask(() => {
+        syncingFromColormap.value = false;
+      });
     }
-  }
+  },
+  { flush: "sync" }
+);
+
+watch(
+  () => colormap.value,
+  () => {
+    if (colormap.value instanceof SimpleLinearGradient) {
+      syncingFromColormap.value = true;
+      const cmap = colormap.value as SimpleLinearGradient;
+      if (lowerBound.value !== cmap.minSignal) {
+        lowerBound.value = cmap.minSignal;
+      }
+      if (upperBound.value !== cmap.maxSignal) {
+        upperBound.value = cmap.maxSignal;
+      }
+      queueMicrotask(() => {
+        syncingFromColormap.value = false;
+      });
+    }
+  },
+  { deep: false, flush: "sync" }
 );
 
 watch(
@@ -163,6 +196,9 @@ watch(
     signalMax.value,
   ],
   () => {
+    if (syncingFromColormap.value) {
+      return;
+    }
     gradstyle.value["background-image"] =
       "linear-gradient(to right," +
       fromColor.value +
@@ -171,12 +207,25 @@ watch(
       ")";
     fromColorFn.value = () => fromColor.value;
     toColorFn.value = () => toColor.value;
-    colormap.value = new SimpleLinearGradient(
-      fromColor.value,
-      toColor.value,
-      lowerBound.value,
-      upperBound.value
-    );
+    const nextMin = lowerBound.value;
+    const nextMax = upperBound.value;
+    const existing = colormap.value;
+    const fromRGBA = fromColor.value?.RGBA ?? "";
+    const toRGBA = toColor.value?.RGBA ?? "";
+    if (
+      !(existing instanceof SimpleLinearGradient) ||
+      existing.minSignal !== nextMin ||
+      existing.maxSignal !== nextMax ||
+      existing.startColorRGBA?.RGBA !== fromRGBA ||
+      existing.endColorRGBA?.RGBA !== toRGBA
+    ) {
+      colormap.value = new SimpleLinearGradient(
+        fromColor.value,
+        toColor.value,
+        nextMin,
+        nextMax
+      );
+    }
     // console.log("UpperBound", upperBound.value);
   }
 );
@@ -204,10 +253,18 @@ function updateFromStore() {
   if (cmap) {
     switch (true) {
       case cmap instanceof SimpleLinearGradient: {
+        syncingFromColormap.value = true;
         const grad = cmap as SimpleLinearGradient;
-        fromColor.value = grad.startColorRGBA;
-        toColor.value = grad.endColorRGBA;
+        if (fromColor.value?.RGBA !== grad.startColorRGBA?.RGBA) {
+          fromColor.value = grad.startColorRGBA;
+        }
+        if (toColor.value?.RGBA !== grad.endColorRGBA?.RGBA) {
+          toColor.value = grad.endColorRGBA;
+        }
         console.log("Updated: ", fromColor.value, toColor.value);
+        queueMicrotask(() => {
+          syncingFromColormap.value = false;
+        });
         break;
       }
       default:
@@ -238,5 +295,12 @@ function applySettings() {
 #gradient-apply-button {
   width: 250px;
   margin: 15px;
+}
+
+.gradient-apply-button {
+  text-shadow:
+    0 0 2px #000,
+    0 0 1px #000;
+  border: none;
 }
 </style>

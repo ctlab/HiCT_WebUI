@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -69,12 +69,16 @@ class ListCoolerFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_coolers";
 }
 
-class GetConverterStatusRequest implements HiCTAPIRequest {
-  requestPath = "/converter_status";
+class ListTrackFilesRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/list_files";
 }
 
 class CloseFileRequest implements HiCTAPIRequest {
   requestPath = "/close";
+}
+
+class AttachSessionRequest implements HiCTAPIRequest {
+  requestPath = "/attach";
 }
 
 class GetFastaForAssemblyRequest implements HiCTAPIRequest {
@@ -108,14 +112,91 @@ class SetNormalizationRequest implements HiCTAPIRequest {
   ) {}
 }
 
-class ConvertCoolerRequest implements HiCTAPIRequest {
-  requestPath = "/convert_cooler";
+class RenameContigRequest implements HiCTAPIRequest {
+  requestPath = "/names/contig";
 
   public constructor(
     public readonly options: {
-      readonly cooler_filename: string;
+      readonly contigId: number;
+      readonly newName: string | null;
     }
   ) {}
+}
+
+class RenameScaffoldRequest implements HiCTAPIRequest {
+  requestPath = "/names/scaffold";
+
+  public constructor(
+    public readonly options: {
+      readonly scaffoldId: number;
+      readonly newName: string | null;
+    }
+  ) {}
+}
+
+class ExportNameMappingRequest implements HiCTAPIRequest {
+  requestPath = "/names/export";
+}
+
+class ImportNameMappingRequest implements HiCTAPIRequest {
+  requestPath = "/names/import";
+
+  public constructor(
+    public readonly options: {
+      readonly contigs: { contigId: number; name: string }[];
+      readonly scaffolds: { scaffoldId: number; name: string }[];
+    }
+  ) {}
+}
+
+class StartConversionJobRequest implements HiCTAPIRequest {
+  requestPath = "/convert/jobs";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+      readonly direction?: string;
+      readonly resolutions?: string;
+      readonly compression?: number;
+      readonly compressionAlgorithm?: string;
+      readonly chunkSize?: number;
+      readonly parallelism?: number;
+    }
+  ) {}
+}
+
+class StartBatchConversionJobsRequest implements HiCTAPIRequest {
+  requestPath = "/convert/jobs/batch";
+
+  public constructor(
+    public readonly options: {
+      readonly files: string[];
+      readonly parallelJobs: number;
+      readonly parallelism: number;
+      readonly resolutions?: string;
+      readonly compression?: number;
+      readonly compressionAlgorithm?: string;
+      readonly chunkSize?: number;
+    }
+  ) {}
+}
+
+class ListConversionJobsRequest implements HiCTAPIRequest {
+  requestPath = "/convert/jobs/list";
+}
+
+class GetConversionJobRequest implements HiCTAPIRequest {
+  public requestPath: string;
+  public constructor(public readonly jobId: string) {
+    this.requestPath = `/convert/jobs/${jobId}`;
+  }
+}
+
+class StopConversionJobRequest implements HiCTAPIRequest {
+  public requestPath: string;
+  public constructor(public readonly jobId: string) {
+    this.requestPath = `/convert/jobs/${jobId}/stop`;
+  }
 }
 
 class SetContrastRangeRequest implements HiCTAPIRequest {
@@ -126,6 +207,10 @@ class SetContrastRangeRequest implements HiCTAPIRequest {
       readonly contrastRangeSettings: ContrastRangeSettings;
     }
   ) {}
+}
+
+class ReloadTilesRequest implements HiCTAPIRequest {
+  requestPath = "/tiles/reload";
 }
 
 class GetCurrentSignalRangeRequest implements HiCTAPIRequest {
@@ -213,6 +298,7 @@ class LinkFASTARequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       readonly fastaFilename: string;
+      readonly allowMismatch?: boolean;
     }
   ) {}
 }
@@ -225,6 +311,15 @@ class LoadAGPRequest implements HiCTAPIRequest {
       readonly agpFilename: string;
     }
   ) {}
+}
+
+class OpenProgressRequest implements HiCTAPIRequest {
+  requestPath = "/open_progress";
+  public constructor() {}
+}
+
+class GetWorkerDiagnosticsRequest implements HiCTAPIRequest {
+  requestPath = "/diagnostics/workers";
 }
 
 class GetVisualizationOptionsRequest implements HiCTAPIRequest {
@@ -243,6 +338,75 @@ class SetVisualizationOptionsRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class OpenTrackRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/open";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+      readonly name?: string;
+      readonly color?: string;
+    }
+  ) {}
+}
+
+class ListTracksRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/list";
+}
+
+class UpdateTrackRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/update";
+
+  public constructor(
+    public readonly options: {
+      readonly trackId: string;
+      readonly visible?: boolean;
+      readonly color?: string;
+      readonly name?: string;
+      readonly renderMode?: string;
+      readonly aggregationMode?: string;
+    }
+  ) {}
+}
+
+class RemoveTrackRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/remove";
+
+  public constructor(
+    public readonly options: {
+      readonly trackId: string;
+    }
+  ) {}
+}
+
+class QueryTracks1DRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/query_1d";
+
+  public constructor(
+    public readonly options: {
+      readonly startPx: number;
+      readonly endPx: number;
+      readonly widthPx: number;
+      readonly bpResolution: number;
+    }
+  ) {}
+}
+
+class StartTracksPrecomputeRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/precompute/start";
+
+  public constructor(
+    public readonly options: {
+      readonly trackId?: string;
+      readonly force?: boolean;
+    } = {}
+  ) {}
+}
+
+class GetTracksPrecomputeStatusRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/precompute/status";
+}
+
 // class TileLoadPOSTRequest implements HiCTAPIRequest {
 //   requestPath = "/get_tile";
 
@@ -258,9 +422,19 @@ class SetVisualizationOptionsRequest implements HiCTAPIRequest {
 
 export {
   type HiCTAPIRequest,
+  AttachSessionRequest,
   CloseFileRequest,
   ListCoolerFilesRequest,
-  ConvertCoolerRequest,
+  StartConversionJobRequest,
+  StartBatchConversionJobsRequest,
+  ListConversionJobsRequest,
+  GetConversionJobRequest,
+  StopConversionJobRequest,
+  RenameContigRequest,
+  RenameScaffoldRequest,
+  ExportNameMappingRequest,
+  ImportNameMappingRequest,
+  ReloadTilesRequest,
   GetFastaForAssemblyRequest,
   GetAGPForAssemblyRequest,
   OpenFileRequest,
@@ -273,15 +447,24 @@ export {
   MoveSelectionRangeRequest,
   ListAGPFilesRequest,
   LoadAGPRequest,
+  OpenProgressRequest,
   GetFastaForSelectionRequest,
   SetNormalizationRequest,
   SetContrastRangeRequest,
   GetCurrentSignalRangeRequest,
   SaveFileRequest,
-  GetConverterStatusRequest,
   SplitContigRequest,
   // TileLoadPOSTRequest,
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
+  ListTrackFilesRequest,
+  OpenTrackRequest,
+  ListTracksRequest,
+  UpdateTrackRequest,
+  RemoveTrackRequest,
+  QueryTracks1DRequest,
+  StartTracksPrecomputeRequest,
+  GetTracksPrecomputeStatusRequest,
+  GetWorkerDiagnosticsRequest,
 };

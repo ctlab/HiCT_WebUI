@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -21,7 +21,7 @@
 
 <template>
   <div class="header-ribbon">
-    <div id="left-header-block" class="input-group">
+    <div id="left-header-block" class="header-block">
       <div id="search-container">
         <div id="search-input-group" class="input-group input-group-sm mb-3">
           <input
@@ -29,13 +29,35 @@
             class="form-control form-control-sm m-0"
             placeholder="I'm looking for..."
             type="text"
+            v-model="searchQuery"
+            @input="onSearchInput"
           />
           <button
             id="global-search-button"
             class="btn btn-sm btn-outline-light"
             type="button"
+            @click="goToSelection"
           >
             Go to
+          </button>
+        </div>
+        <div
+          v-if="searchResults.length > 0 && searchQuery.length >= 3"
+          class="search-dropdown"
+        >
+          <button
+            v-for="(item, idx) in searchResults"
+            :key="item.key"
+            type="button"
+            class="search-result"
+            :class="{ active: idx === selectedIndex }"
+            @click="selectResult(idx)"
+          >
+            <span class="search-type">{{ item.type }}</span>
+            <span class="search-name">{{ item.name }}</span>
+            <span class="search-original" v-if="item.originalName">
+              ({{ item.originalName }})
+            </span>
           </button>
         </div>
       </div>
@@ -89,22 +111,59 @@
         <NormalizationSelector :map-manager="props.mapManager" />
       </div>
     </div>
-    <div id="right-header-block" class="input-group">
+    <div id="right-header-block" class="header-block">
       <button
         id="reload-tiles-button"
         class="btn-sm btn-outline-primary"
         type="button"
-        @click="props.mapManager?.reloadTiles()"
+        @click="reloadTiles"
       >
         Reload tiles
       </button>
-      <button
-        id="export-png-button"
-        class="btn-sm btn-outline-primary"
-        type="button"
-      >
-        <i class="bi bi-box-arrow-up"></i>
-      </button>
+      <div class="export-group">
+        <button
+          id="export-svg-button"
+          class="btn-sm btn-outline-primary"
+          type="button"
+          :disabled="exportingType !== null"
+          @click="exportSvg"
+          title="Export full map as SVG"
+        >
+          <span v-if="exportingType !== 'svg'"><i class="bi bi-box-arrow-up"></i> SVG</span>
+          <span v-else>
+            <span class="spinner-border spinner-border-sm me-2"></span>
+            {{ Math.round(svgProgress * 100) }}%
+          </span>
+        </button>
+        <button
+          id="export-png-button"
+          class="btn-sm btn-outline-primary"
+          type="button"
+          :disabled="exportingType !== null"
+          @click="exportPng"
+          title="Export full map as PNG"
+        >
+          <span v-if="exportingType !== 'png'"><i class="bi bi-box-arrow-up"></i> PNG</span>
+          <span v-else>
+            <span class="spinner-border spinner-border-sm me-2"></span>
+            {{ Math.round(svgProgress * 100) }}%
+          </span>
+        </button>
+        <button
+          id="export-pdf-button"
+          class="btn-sm btn-outline-primary"
+          type="button"
+          :disabled="exportingType !== null"
+          @click="exportPdf"
+          title="Export full map as PDF"
+        >
+          <span v-if="exportingType !== 'pdf'"><i class="bi bi-box-arrow-up"></i> PDF</span>
+          <span v-else>
+            <span class="spinner-border spinner-border-sm me-2"></span>
+            {{ Math.round(svgProgress * 100) }}%
+          </span>
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -113,6 +172,11 @@
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import NormalizationSelector from "./NormalizationSelector.vue";
 import { Ref, ref } from "vue";
+import { toast } from "vue-sonner";
+import { useStyleStore } from "@/app/stores/styleStore";
+import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
+import { storeToRefs } from "pinia";
+import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -120,6 +184,256 @@ const props = defineProps<{
 
 const rowContigId: Ref<number | null> = ref(null);
 const columnContigId: Ref<number | null> = ref(null);
+const exportingType = ref<"svg" | "png" | "pdf" | null>(null);
+const svgProgress = ref(0);
+const searchQuery = ref("");
+const searchResults = ref<
+  {
+    key: string;
+    type: "Contig" | "Scaffold";
+    id: number;
+    name: string;
+    originalName?: string;
+  }[]
+>([]);
+const selectedIndex = ref(0);
+const stylesStore = useStyleStore();
+const visualizationOptionsStore = useVisualizationOptionsStore();
+const { mapBackgroundColor } = storeToRefs(stylesStore);
+const {
+  preLogBase,
+  postLogBase,
+  applyCoolerWeights,
+  resolutionScaling,
+  resolutionLinearScaling,
+  colormap,
+} = storeToRefs(visualizationOptionsStore);
+
+async function exportSvg() {
+  if (!props.mapManager || exportingType.value) return;
+  exportingType.value = "svg";
+  svgProgress.value = 0;
+  const cmap = colormap.value;
+  const metadata: Record<string, unknown> = {
+    filename: props.mapManager.getOptions().filename,
+    visualization: {
+      preLogBase: preLogBase.value,
+      postLogBase: postLogBase.value,
+      applyCoolerWeights: applyCoolerWeights.value,
+      resolutionScaling: resolutionScaling.value,
+      resolutionLinearScaling: resolutionLinearScaling.value,
+      colormap:
+        cmap instanceof SimpleLinearGradient
+          ? {
+              type: cmap.colormapType,
+              startColor: cmap.startColorRGBA?.RGBA,
+              endColor: cmap.endColorRGBA?.RGBA,
+              minSignal: cmap.minSignal,
+              maxSignal: cmap.maxSignal,
+            }
+          : { type: cmap?.colormapType ?? "Unknown" },
+    },
+  };
+  try {
+    await props.mapManager.exportCurrentMapSvg(
+      (progress) => {
+        svgProgress.value = progress;
+      },
+      {
+        backgroundColor: mapBackgroundColor.value.RGBA,
+        metadata,
+      }
+    );
+  } catch (e) {
+    toast.error((e as Error)?.message ?? "Failed to export SVG");
+  } finally {
+    exportingType.value = null;
+  }
+}
+
+async function exportPng() {
+  if (!props.mapManager || exportingType.value) return;
+  exportingType.value = "png";
+  svgProgress.value = 0;
+  const cmap = colormap.value;
+  const metadata: Record<string, unknown> = {
+    filename: props.mapManager.getOptions().filename,
+    visualization: {
+      preLogBase: preLogBase.value,
+      postLogBase: postLogBase.value,
+      applyCoolerWeights: applyCoolerWeights.value,
+      resolutionScaling: resolutionScaling.value,
+      resolutionLinearScaling: resolutionLinearScaling.value,
+      colormap:
+        cmap instanceof SimpleLinearGradient
+          ? {
+              type: cmap.colormapType,
+              startColor: cmap.startColorRGBA?.RGBA,
+              endColor: cmap.endColorRGBA?.RGBA,
+              minSignal: cmap.minSignal,
+              maxSignal: cmap.maxSignal,
+            }
+          : { type: cmap?.colormapType ?? "Unknown" },
+    },
+  };
+  try {
+    await props.mapManager.exportCurrentMapPng(
+      (progress) => {
+        svgProgress.value = progress;
+      },
+      {
+        backgroundColor: mapBackgroundColor.value.RGBA,
+        metadata,
+      }
+    );
+  } catch (e) {
+    toast.error((e as Error)?.message ?? "Failed to export PNG");
+  } finally {
+    exportingType.value = null;
+  }
+}
+
+async function exportPdf() {
+  if (!props.mapManager || exportingType.value) return;
+  exportingType.value = "pdf";
+  svgProgress.value = 0;
+  const cmap = colormap.value;
+  const metadata: Record<string, unknown> = {
+    filename: props.mapManager.getOptions().filename,
+    visualization: {
+      preLogBase: preLogBase.value,
+      postLogBase: postLogBase.value,
+      applyCoolerWeights: applyCoolerWeights.value,
+      resolutionScaling: resolutionScaling.value,
+      resolutionLinearScaling: resolutionLinearScaling.value,
+      colormap:
+        cmap instanceof SimpleLinearGradient
+          ? {
+              type: cmap.colormapType,
+              startColor: cmap.startColorRGBA?.RGBA,
+              endColor: cmap.endColorRGBA?.RGBA,
+              minSignal: cmap.minSignal,
+              maxSignal: cmap.maxSignal,
+            }
+          : { type: cmap?.colormapType ?? "Unknown" },
+    },
+  };
+  try {
+    await props.mapManager.exportCurrentMapPdf(
+      (progress) => {
+        svgProgress.value = progress;
+      },
+      {
+        backgroundColor: mapBackgroundColor.value.RGBA,
+        metadata,
+      }
+    );
+  } catch (e) {
+    toast.error((e as Error)?.message ?? "Failed to export PDF");
+  } finally {
+    exportingType.value = null;
+  }
+}
+
+function buildSearchResults(): void {
+  const query = searchQuery.value.trim().toLowerCase();
+  if (!props.mapManager || query.length < 3) {
+    searchResults.value = [];
+    selectedIndex.value = 0;
+    return;
+  }
+  const contigs =
+    props.mapManager.getContigDimensionHolder().contigDescriptors ?? [];
+  const scaffolds = Array.from(
+    props.mapManager.scaffoldHolder.scaffoldTable.values()
+  );
+  const results: typeof searchResults.value = [];
+  for (const ctg of contigs) {
+    const name = ctg.contigName ?? "";
+    const original = ctg.contigOriginalName ?? "";
+    if (
+      name.toLowerCase().includes(query) ||
+      original.toLowerCase().includes(query)
+    ) {
+      results.push({
+        key: `contig-${ctg.contigId}`,
+        type: "Contig",
+        id: ctg.contigId,
+        name,
+        originalName: original !== name ? original : undefined,
+      });
+    }
+  }
+  for (const sc of scaffolds) {
+    const name = sc.scaffoldName ?? "";
+    const original = sc.scaffoldOriginalName ?? "";
+    if (
+      name.toLowerCase().includes(query) ||
+      original.toLowerCase().includes(query)
+    ) {
+      results.push({
+        key: `scaffold-${sc.scaffoldId}`,
+        type: "Scaffold",
+        id: sc.scaffoldId,
+        name,
+        originalName: original !== name ? original : undefined,
+      });
+    }
+  }
+  searchResults.value = results.slice(0, 50);
+  selectedIndex.value = 0;
+}
+
+function onSearchInput(): void {
+  buildSearchResults();
+}
+
+function selectResult(idx: number): void {
+  selectedIndex.value = idx;
+  const item = searchResults.value[idx];
+  if (item) {
+    searchQuery.value = item.name;
+  }
+}
+
+function goToSelection(): void {
+  if (!props.mapManager) return;
+  const item = searchResults.value[selectedIndex.value] ?? searchResults.value[0];
+  if (!item) return;
+  if (item.type === "Contig") {
+    const contig =
+      props.mapManager
+        .getContigDimensionHolder()
+        .contigDescriptors.find((c) => c.contigId === item.id) ?? null;
+    if (!contig) return;
+    const view = props.mapManager.getView();
+    const prefix = props.mapManager.contigDimensionHolder.prefix_sum_bp;
+    const ord =
+      props.mapManager.contigDimensionHolder.contigIdToOrd[contig.contigId];
+    if (ord === undefined || Number.isNaN(ord)) {
+      toast.error("Contig is not available in the current assembly");
+      return;
+    }
+    const startBp = prefix[ord];
+    const endBp = startBp + contig.contigLengthBp;
+    const midBp = (startBp + endBp) / 2;
+    const res = view.getResolution() ?? 1;
+    const midPx = midBp / res;
+    view.animate({ center: [midPx, -midPx] });
+  } else {
+    const scaffold = props.mapManager.scaffoldHolder.getScaffoldById(item.id);
+    const borders = scaffold.scaffoldBordersBP;
+    if (!borders) {
+      toast.error("Scaffold has no borders in the current assembly");
+      return;
+    }
+    const view = props.mapManager.getView();
+    const midBp = (borders.startBP + borders.endBP) / 2;
+    const res = view.getResolution() ?? 1;
+    const midPx = midBp / res;
+    view.animate({ center: [midPx, -midPx] });
+  }
+}
 
 function checkOptionsAndSnapToContigIntersection() {
   // alert("Row " + rowContigId.value + " Column " + columnContigId.value);
@@ -190,6 +504,15 @@ function checkOptionsAndSnapToContigIntersection() {
   }
 }
 
+async function reloadTiles() {
+  try {
+    await props.mapManager?.reloadTilesFromBackend();
+  } catch (e) {
+    toast.error("Failed to reload tiles");
+    console.error(e);
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 // const emit = defineEmits<{
 //   (e: "reloadTiles"): void;
@@ -233,6 +556,7 @@ function onNormalizationChanged() {
   flex-direction: row;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: nowrap;
   padding: 12px 16px;
   gap: 16px;
 
@@ -248,23 +572,41 @@ function onNormalizationChanged() {
   flex-grow: 0;
 }
 
+.header-ribbon .mb-3 {
+  margin-bottom: 0 !important;
+}
+
+#left-header-block,
+#right-header-block {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: nowrap;
+}
+
 #left-header-block {
   /* left block */
 
   /* Auto layout */
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
+  align-items: center;
   padding: 0px;
   gap: 16px;
 
-  width: calc(100% - 150px);
+  width: auto;
   height: 29px;
 
   /* Inside auto layout */
-  flex: none;
+  flex: 1 1 auto;
+  min-width: 0;
   order: 0;
-  flex-grow: 0;
+  flex-grow: 1;
+}
+
+#right-header-block {
+  gap: 12px;
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 
 #search-container {
@@ -284,6 +626,7 @@ function onNormalizationChanged() {
   flex: none;
   order: 0;
   flex-grow: 0;
+  position: relative;
 }
 
 #search-input-group {
@@ -313,23 +656,52 @@ function onNormalizationChanged() {
   flex-grow: 0;
 }
 
-#right-header-block {
-  /* right block */
+.search-dropdown {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  width: 320px;
+  max-height: 240px;
+  overflow: auto;
+  background: #ffffff;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+  z-index: 30;
+  padding: 4px;
+}
 
-  /* Auto layout */
+.search-result {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 6px 8px;
   display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  padding: 0px;
-  gap: 16px;
+  gap: 6px;
+  align-items: center;
+  border-radius: 4px;
+}
 
-  width: 150px;
-  height: 29px;
+.search-result:hover,
+.search-result.active {
+  background: #f1f3f5;
+}
 
-  /* Inside auto layout */
-  flex: none;
-  order: 1;
-  flex-grow: 0;
+.search-type {
+  font-size: 11px;
+  color: #6c757d;
+  min-width: 52px;
+}
+
+.search-name {
+  font-weight: 600;
+  color: #212529;
+}
+
+.search-original {
+  font-size: 11px;
+  color: #6c757d;
 }
 
 #reload-tiles-button {
@@ -365,7 +737,9 @@ function onNormalizationChanged() {
   flex-grow: 0;
 }
 
-#export-png-button {
+#export-png-button,
+#export-svg-button,
+#export-pdf-button {
   /* _base */
 
   box-sizing: border-box;
@@ -377,7 +751,7 @@ function onNormalizationChanged() {
   align-items: center;
   padding: 4px 8px;
 
-  width: 37px;
+  min-width: 140px;
   height: 29px;
 
   /* Global/07. Light */
@@ -388,5 +762,10 @@ function onNormalizationChanged() {
   flex: none;
   order: 1;
   flex-grow: 0;
+}
+
+.export-group {
+  display: flex;
+  gap: 6px;
 }
 </style>

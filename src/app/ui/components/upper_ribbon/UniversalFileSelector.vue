@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -50,21 +50,6 @@
             <div class="spinner-border ms-auto" role="status"></div>
           </div>
           <div>
-            <select
-              class="form-select form-select-lg mb-3"
-              v-model="selectedFilename"
-            >
-              <option selected>
-                Select {{ props.fileType ?? "a" }} file from the list below...
-              </option>
-              <option
-                v-for="(filename, idx) in filenames"
-                :key="idx"
-                :value="filename"
-              >
-                {{ filename }}
-              </option>
-            </select>
             <div class="card flex justify-content-center" v-if="primeVueTree">
               <Tree
                 :filter="true"
@@ -385,7 +370,7 @@ function onNodeSelect(evt: { originalIndex?: number; key?: string }) {
   // console.log(evt);
   const idx = evt.originalIndex;
   const key = evt.key;
-  if (idx) {
+  if (idx !== undefined && idx !== null) {
     const fn = filenames.value;
     if (fn) {
       selectedFilename.value = fn[idx];

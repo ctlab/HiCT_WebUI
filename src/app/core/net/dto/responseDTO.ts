@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -20,8 +20,21 @@
  */
 
 import {
-  ConverterStatusResponse,
+  ConversionJobResponse,
   CurrentSignalRangeResponse,
+  FastaLinkCompatibilityResponse,
+  FastaLinkMismatchResponse,
+  FastaLinkResponse,
+  NameMappingResponse,
+  TrackPrecomputeTrackStatusResponse,
+  TracksPrecomputeStatusResponse,
+  TrackBinResponse,
+  TrackQueryResponse,
+  TrackRenderResponse,
+  TrackSummaryResponse,
+  WorkerCancellationDomainDiagnosticsResponse,
+  WorkerPoolDiagnosticsResponse,
+  WorkerSchedulerDiagnosticsResponse,
   TilePOSTResponse,
 } from "../api/response";
 import { InboundDTO } from "./dto";
@@ -68,12 +81,233 @@ class TilePOSTResponseDTO extends InboundDTO<TilePOSTResponse> {
   }
 }
 
-class ConverterStatusResponseDTO extends InboundDTO<ConverterStatusResponse> {
-  public toEntity(): ConverterStatusResponse {
-    return new ConverterStatusResponse(
-      this.json["isConverting"] as boolean,
+class ConversionJobResponseDTO extends InboundDTO<ConversionJobResponse> {
+  public toEntity(): ConversionJobResponse {
+    return new ConversionJobResponse(
+      this.json["jobId"] as string,
+      this.json["status"] as string,
+      this.json["sourceFilename"] as string,
+      this.json["outputFilename"] as string,
+      this.json["direction"] as string,
+      this.json["overallProgress"] as number,
       this.json["resolutionProgress"] as number,
-      this.json["totalProgress"] as number
+      this.json["currentResolution"] as number,
+      this.json["elapsedMillis"] as number,
+      this.json["etaMillis"] as number,
+      this.json["resolutionElapsedMillis"] as number,
+      this.json["resolutionEtaMillis"] as number,
+      this.json["inputSizeBytes"] as number,
+      this.json["outputSizeBytes"] as number,
+      (this.json["logs"] as string[]) ?? [],
+      (this.json["error"] as string) ?? ""
+    );
+  }
+}
+
+class NameMappingResponseDTO extends InboundDTO<NameMappingResponse> {
+  public toEntity(): NameMappingResponse {
+    return new NameMappingResponse(
+      (this.json["contigs"] as Record<string, unknown>[]).map((item) => ({
+        contigId: item["contigId"] as number,
+        originalName: item["originalName"] as string,
+        name: item["name"] as string,
+      })),
+      (this.json["scaffolds"] as Record<string, unknown>[]).map((item) => ({
+        scaffoldId: item["scaffoldId"] as number,
+        originalName: item["originalName"] as string,
+        name: item["name"] as string,
+      }))
+    );
+  }
+}
+
+class TrackSummaryResponseDTO extends InboundDTO<TrackSummaryResponse> {
+  public toEntity(): TrackSummaryResponse {
+    return new TrackSummaryResponse(
+      this.json["trackId"] as string,
+      this.json["name"] as string,
+      this.json["type"] as string,
+      this.json["sourceFile"] as string,
+      this.json["color"] as string,
+      this.json["visible"] as boolean,
+      this.json["featureCount"] as number,
+      (this.json["renderMode"] as string) ?? "COVERAGE",
+      (this.json["aggregationMode"] as string) ?? "MAX"
+    );
+  }
+}
+
+class TrackBinResponseDTO extends InboundDTO<TrackBinResponse> {
+  public toEntity(): TrackBinResponse {
+    return new TrackBinResponse(
+      this.json["startBp"] as number,
+      this.json["endBp"] as number,
+      this.json["value"] as number,
+      this.json["count"] as number,
+      (this.json["label"] as string) ?? null,
+      (this.json["startPx"] as number) ?? null,
+      (this.json["endPx"] as number) ?? null
+    );
+  }
+}
+
+class TrackRenderResponseDTO extends InboundDTO<TrackRenderResponse> {
+  public toEntity(): TrackRenderResponse {
+    return new TrackRenderResponse(
+      this.json["trackId"] as string,
+      this.json["name"] as string,
+      this.json["type"] as string,
+      this.json["color"] as string,
+      ((this.json["bins"] as Record<string, unknown>[]) ?? []).map((bin) =>
+        new TrackBinResponseDTO(bin).toEntity()
+      ),
+      this.json["maxValue"] as number,
+      (this.json["error"] as string) ?? null
+    );
+  }
+}
+
+class TrackQueryResponseDTO extends InboundDTO<TrackQueryResponse> {
+  public toEntity(): TrackQueryResponse {
+    return new TrackQueryResponse(
+      this.json["startBp"] as number,
+      this.json["endBp"] as number,
+      (this.json["startPx"] as number) ?? 0,
+      (this.json["endPx"] as number) ?? 0,
+      this.json["widthPx"] as number,
+      (this.json["bpResolution"] as number) ?? 1,
+      ((this.json["tracks"] as Record<string, unknown>[]) ?? []).map((track) =>
+        new TrackRenderResponseDTO(track).toEntity()
+      )
+    );
+  }
+}
+
+class TrackPrecomputeTrackStatusResponseDTO extends InboundDTO<TrackPrecomputeTrackStatusResponse> {
+  public toEntity(): TrackPrecomputeTrackStatusResponse {
+    return new TrackPrecomputeTrackStatusResponse(
+      this.json["trackId"] as string,
+      this.json["trackName"] as string,
+      this.json["status"] as string,
+      (this.json["totalTasks"] as number) ?? 0,
+      (this.json["completedTasks"] as number) ?? 0,
+      (this.json["progress"] as number) ?? 0,
+      (this.json["currentTask"] as string) ?? "",
+      (this.json["error"] as string) ?? null,
+      (this.json["updatedAtMs"] as number) ?? 0
+    );
+  }
+}
+
+class TracksPrecomputeStatusResponseDTO extends InboundDTO<TracksPrecomputeStatusResponse> {
+  public toEntity(): TracksPrecomputeStatusResponse {
+    return new TracksPrecomputeStatusResponse(
+      ((this.json["tracks"] as Record<string, unknown>[]) ?? []).map((item) =>
+        new TrackPrecomputeTrackStatusResponseDTO(item).toEntity()
+      ),
+      (this.json["runningJobs"] as number) ?? 0,
+      (this.json["processedDirectory"] as string) ?? ""
+    );
+  }
+}
+
+class WorkerPoolDiagnosticsResponseDTO extends InboundDTO<WorkerPoolDiagnosticsResponse> {
+  public toEntity(): WorkerPoolDiagnosticsResponse {
+    return new WorkerPoolDiagnosticsResponse(
+      (this.json["corePoolSize"] as number) ?? 0,
+      (this.json["maxPoolSize"] as number) ?? 0,
+      (this.json["currentPoolSize"] as number) ?? 0,
+      (this.json["largestPoolSize"] as number) ?? 0,
+      (this.json["activeCount"] as number) ?? 0,
+      (this.json["queueSize"] as number) ?? 0,
+      (this.json["queueCapacity"] as number) ?? 0,
+      (this.json["completedTaskCount"] as number) ?? 0,
+      (this.json["taskCount"] as number) ?? 0
+    );
+  }
+}
+
+class WorkerCancellationDomainDiagnosticsResponseDTO extends InboundDTO<WorkerCancellationDomainDiagnosticsResponse> {
+  public toEntity(): WorkerCancellationDomainDiagnosticsResponse {
+    return new WorkerCancellationDomainDiagnosticsResponse(
+      (this.json["currentGeneration"] as number) ?? 0,
+      (this.json["trackedTaskCount"] as number) ?? 0,
+      ((this.json["trackedTasksByGeneration"] as Record<string, number>) ?? {})
+    );
+  }
+}
+
+class WorkerSchedulerDiagnosticsResponseDTO extends InboundDTO<WorkerSchedulerDiagnosticsResponse> {
+  public toEntity(): WorkerSchedulerDiagnosticsResponse {
+    const poolsJson = (this.json["pools"] as Record<string, Record<string, unknown>>) ?? {};
+    const cancellationJson =
+      (this.json["cancellationDomains"] as Record<string, Record<string, unknown>>) ?? {};
+    const pools = Object.fromEntries(
+      Object.entries(poolsJson).map(([priority, payload]) => [
+        priority,
+        new WorkerPoolDiagnosticsResponseDTO(payload).toEntity(),
+      ])
+    );
+    const cancellationDomains = Object.fromEntries(
+      Object.entries(cancellationJson).map(([domain, payload]) => [
+        domain,
+        new WorkerCancellationDomainDiagnosticsResponseDTO(payload).toEntity(),
+      ])
+    );
+    return new WorkerSchedulerDiagnosticsResponse(
+      (this.json["timestampMs"] as number) ?? 0,
+      (this.json["totalMaxWorkers"] as number) ?? 0,
+      (this.json["reservedMinWorkers"] as number) ?? 0,
+      (this.json["elasticWorkersInUse"] as number) ?? 0,
+      (this.json["elasticWorkersAvailable"] as number) ?? 0,
+      pools,
+      cancellationDomains
+    );
+  }
+}
+
+class FastaLinkMismatchResponseDTO extends InboundDTO<FastaLinkMismatchResponse> {
+  public toEntity(): FastaLinkMismatchResponse {
+    return new FastaLinkMismatchResponse(
+      this.json["index"] as number,
+      (this.json["fastaName"] as string) ?? null,
+      this.json["fastaLengthBp"] as number,
+      (this.json["assemblyCurrentName"] as string) ?? null,
+      (this.json["assemblyOriginalName"] as string) ?? null,
+      (this.json["assemblySourceName"] as string) ?? null,
+      this.json["assemblyLengthBp"] as number
+    );
+  }
+}
+
+class FastaLinkCompatibilityResponseDTO extends InboundDTO<FastaLinkCompatibilityResponse> {
+  public toEntity(): FastaLinkCompatibilityResponse {
+    return new FastaLinkCompatibilityResponse(
+      this.json["fastaRecordCount"] as number,
+      this.json["assemblyContigCount"] as number,
+      this.json["sameRecordCount"] as boolean,
+      this.json["sameOrderAndLength"] as boolean,
+      this.json["sameOrderLengthAndCurrentNames"] as boolean,
+      this.json["sameOrderLengthAndOriginalNames"] as boolean,
+      this.json["sameOrderLengthAndSourceNames"] as boolean,
+      this.json["sameLengthMultiset"] as boolean,
+      ((this.json["mismatches"] as Record<string, unknown>[]) ?? []).map((item) =>
+        new FastaLinkMismatchResponseDTO(item).toEntity()
+      )
+    );
+  }
+}
+
+class FastaLinkResponseDTO extends InboundDTO<FastaLinkResponse> {
+  public toEntity(): FastaLinkResponse {
+    return new FastaLinkResponse(
+      this.json["fastaFilename"] as string,
+      this.json["linked"] as boolean,
+      this.json["requiresConfirmation"] as boolean,
+      (this.json["warnings"] as string[]) ?? [],
+      new FastaLinkCompatibilityResponseDTO(
+        this.json["compatibility"] as Record<string, unknown>
+      ).toEntity()
     );
   }
 }
@@ -81,5 +315,11 @@ class ConverterStatusResponseDTO extends InboundDTO<ConverterStatusResponse> {
 export {
   CurrentSignalRangeResponseDTO,
   TilePOSTResponseDTO,
-  ConverterStatusResponseDTO,
+  ConversionJobResponseDTO,
+  NameMappingResponseDTO,
+  TrackSummaryResponseDTO,
+  TrackQueryResponseDTO,
+  TracksPrecomputeStatusResponseDTO,
+  WorkerSchedulerDiagnosticsResponseDTO,
+  FastaLinkResponseDTO,
 };

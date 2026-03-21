@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -56,6 +56,7 @@ class RulerControl extends Control {
   protected readonly colormap: Ref<Colormap>;
 
   public readonly canvasSize: number[];
+  public readonly direction: "vertical" | "horizontal";
 
   public constructor(public readonly opt_options: Options) {
     const canvas = document.createElement("canvas");
@@ -68,7 +69,7 @@ class RulerControl extends Control {
           ? document.getElementById(opt_options.target as string)
           : (opt_options.target as HTMLElement);
       if (parent) {
-        parent?.appendChild(canvas);
+        parent.appendChild(canvas);
       } else {
         throw new Error(
           "Cannot find parent element for RulerControl with target " +
@@ -102,6 +103,7 @@ class RulerControl extends Control {
     this.mapManager = opt_options.mapManager;
     this.viewAndLayersManager = this.mapManager.getLayersManager();
     this.contigDimensionHolder = this.mapManager.getContigDimensionHolder();
+    this.direction = opt_options.direction;
 
     const visualizationOptionsStore = useVisualizationOptionsStore();
     const { colormap } = storeToRefs(visualizationOptionsStore);
@@ -117,10 +119,13 @@ class RulerControl extends Control {
   }
 
   render(mapEvent: MapEvent) {
+    //this.updateCanvasSize();
     const map = mapEvent.map;
-    // const size = this.canvasSize; //map.getSize() as [number, number];
-    this.canvas.width = this.canvasSize[0];
-    this.canvas.height = this.canvasSize[1];
+    const parent = this.canvas.parentElement;
+    const width = parent ? Math.max(1, Math.floor(parent.clientWidth)) : this.canvasSize[0];
+    const height = parent ? Math.max(1, Math.floor(parent.clientHeight)) : this.canvasSize[1];
+    this.canvas.width = width;
+    this.canvas.height = height;
     const context = this.canvas.getContext("2d");
     console.log("Got context: ", context, "RulerControl: ", this);
     if (!context) return;
@@ -168,9 +173,13 @@ class RulerControl extends Control {
 
     const pixelResolution = mapView.getResolution() ?? 1;
 
+    const layerPixelResolution = Number.isFinite(
+      resolutionDescriptor.pixelResolution
+    )
+      ? resolutionDescriptor.pixelResolution
+      : 1;
     const fraction1 =
-      pixelResolution /
-      resolutionDescriptor.layerResolutionBorders.minResolutionInclusive;
+      layerPixelResolution > 0 ? pixelResolution / layerPixelResolution : 1;
 
     const fixed_coordinates = transform(
       extent,
@@ -206,6 +215,14 @@ class RulerControl extends Control {
         )
       ),
     };
+    if (
+      !Number.isFinite(visibleMapBoxExtentPixel.left) ||
+      !Number.isFinite(visibleMapBoxExtentPixel.right) ||
+      !Number.isFinite(visibleMapBoxExtentPixel.top) ||
+      !Number.isFinite(visibleMapBoxExtentPixel.bottom)
+    ) {
+      return;
+    }
 
     // console.log(
     //   //   "Got extent",
@@ -413,6 +430,27 @@ class RulerControl extends Control {
           FONT_STRING
         );
       }
+    }
+  }
+
+  private updateCanvasSize(): void {
+    const parent = this.canvas.parentElement;
+    if (parent) {
+      const dim = parent.getBoundingClientRect();
+      const newWidth = Math.max(1, Math.floor(dim.width));
+      const newHeight = Math.max(1, Math.floor(dim.height));
+      this.canvasSize[0] = newWidth;
+      this.canvasSize[1] = newHeight;
+      return;
+    }
+    const mapSize = this.mapManager.getMap().getSize() as [number, number];
+    if (!mapSize) return;
+    if (this.direction === "vertical") {
+      this.canvasSize[0] = DEFAULT_CANVAS_SIZE;
+      this.canvasSize[1] = mapSize[1];
+    } else {
+      this.canvasSize[0] = mapSize[0];
+      this.canvasSize[1] = DEFAULT_CANVAS_SIZE;
     }
   }
 

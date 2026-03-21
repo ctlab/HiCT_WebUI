@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -50,8 +50,10 @@ export default class ContigDimensionHolder {
       .forEach((id, ord) => (this.contigIdToOrd[id] = ord));
 
     this.resolutions.length = 0;
-    for (const resolution of contigDescriptors[0].contigLengthBins.keys()) {
-      this.resolutions.push(resolution);
+    if (contigDescriptors.length > 0) {
+      for (const resolution of contigDescriptors[0].contigLengthBins.keys()) {
+        this.resolutions.push(resolution);
+      }
     }
 
     this.contig_count = this.contigDescriptors.length;
@@ -193,10 +195,14 @@ export default class ContigDimensionHolder {
   ): number {
     const resolution_prefix_sum = this.prefix_sum_px.get(resolution);
     if (resolution_prefix_sum) {
+      const maxValue = resolution_prefix_sum[resolution_prefix_sum.length - 1] - 1;
+      if (maxValue < 0) {
+        return 0;
+      }
       return CommonUtils.clamp(
         coordinate,
         0,
-        resolution_prefix_sum[resolution_prefix_sum.length - 1] - 1
+        maxValue
       );
     } else {
       throw new Error("Missing resolution: " + resolution);
@@ -248,12 +254,15 @@ export default class ContigDimensionHolder {
   // search(3)
 
   public getContigOrderByPx(px: number, resolution: number): number {
+    if (this.contig_count <= 0) {
+      return 0;
+    }
     const prefix_sum_px = this.prefix_sum_px.get(resolution);
     if (!prefix_sum_px) {
       throw new Error("Unknown resolution for prefix_sum_px: " + resolution);
     }
     const contig_ord_containing_px = bounds.le(prefix_sum_px, px);
-    return contig_ord_containing_px;
+    return CommonUtils.clamp(contig_ord_containing_px, 0, this.contig_count - 1);
   }
 
   protected getStartBpOfBin_internal(
@@ -321,10 +330,15 @@ export default class ContigDimensionHolder {
   }
 
   public getStartBpOfPx(px: number, resolution: number): number {
+    if (this.contig_count <= 0) {
+      return 0;
+    }
     const prefixSumPx = this.prefix_sum_px.get(resolution);
-    const clampedPx: number = prefixSumPx
-      ? CommonUtils.clamp(px, 0, prefixSumPx[this.contig_count] - 1)
-      : px;
+    const maxPx = prefixSumPx ? prefixSumPx[this.contig_count] - 1 : -1;
+    if (maxPx < 0) {
+      return 0;
+    }
+    const clampedPx: number = CommonUtils.clamp(px, 0, maxPx);
     const start_bp = this.getStartBpOfPx_internal(clampedPx, resolution);
     return CommonUtils.clamp(
       start_bp,
@@ -466,6 +480,20 @@ export default class ContigDimensionHolder {
     return this.contigDescriptors[contig_ord].contigName;
   }
 
+  public isBpVisibleAtResolution(bp: number, resolution: number): boolean {
+    if (this.contig_count <= 0) {
+      return false;
+    }
+    const contigOrd = this.getContigOrderByBp_internal(bp);
+    const hideType = this.contigDescriptors[contigOrd].presenceAtResolution.get(
+      resolution
+    );
+    return (
+      hideType !== ContigHideType.AUTO_HIDDEN &&
+      hideType !== ContigHideType.FORCED_HIDDEN
+    );
+  }
+
   public getContigIdByContigOrder(contig_order: number): number {
     if (0 <= contig_order && contig_order < this.contig_count) {
       return this.contigDescriptors[contig_order].contigId;
@@ -502,5 +530,74 @@ export default class ContigDimensionHolder {
 
   public binsToPixels(bin_ids: number[], resolution: number): number[] {
     return bin_ids.map((bin_id) => this.binToPixel(bin_id, resolution));
+  }
+
+  public getSourceLocusByBp(bp: number): {
+    sourceContig: string;
+    sourceBp: number;
+  } {
+    const contigOrd = this.getContigOrderByBp_internal(bp);
+    const descriptor = this.contigDescriptors[contigOrd];
+    const contigStartBp = this.prefix_sum_bp[contigOrd];
+    const inContigOffset = CommonUtils.clamp(
+      bp - contigStartBp,
+      0,
+      Math.max(0, descriptor.contigLengthBp - 1)
+    );
+    if (descriptor.direction === ContigDirection.FORWARD) {
+      return {
+        sourceContig: descriptor.contigSourceName,
+        sourceBp: descriptor.contigOffsetInSource + inContigOffset,
+      };
+    }
+    return {
+      sourceContig: descriptor.contigSourceName,
+      sourceBp:
+        descriptor.contigOffsetInSource +
+        (descriptor.contigLengthBp - 1 - inContigOffset),
+    };
+  }
+
+  public projectSourceIntervalToAssembly(
+    sourceContig: string,
+    sourceStartBp: number,
+    sourceEndBp: number
+  ): Array<{ startBp: number; endBp: number }> {
+    const start = Math.min(sourceStartBp, sourceEndBp);
+    const end = Math.max(sourceStartBp, sourceEndBp);
+    if (end <= start) {
+      return [];
+    }
+    const result: Array<{ startBp: number; endBp: number }> = [];
+    for (let i = 0; i < this.contigDescriptors.length; i++) {
+      const descriptor = this.contigDescriptors[i];
+      if (descriptor.contigSourceName !== sourceContig) {
+        continue;
+      }
+      const contigSourceStart = descriptor.contigOffsetInSource;
+      const contigSourceEnd = contigSourceStart + descriptor.contigLengthBp;
+      const overlapStart = Math.max(start, contigSourceStart);
+      const overlapEnd = Math.min(end, contigSourceEnd);
+      if (overlapEnd <= overlapStart) {
+        continue;
+      }
+      const assemblyContigStart = this.prefix_sum_bp[i];
+      const localStart = overlapStart - contigSourceStart;
+      const localEnd = overlapEnd - contigSourceStart;
+      if (descriptor.direction === ContigDirection.FORWARD) {
+        result.push({
+          startBp: assemblyContigStart + localStart,
+          endBp: assemblyContigStart + localEnd,
+        });
+      } else {
+        const len = descriptor.contigLengthBp;
+        result.push({
+          startBp: assemblyContigStart + (len - localEnd),
+          endBp: assemblyContigStart + (len - localStart),
+        });
+      }
+    }
+    result.sort((a, b) => a.startBp - b.startBp);
+    return result;
   }
 }

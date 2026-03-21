@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -43,7 +43,117 @@
         <i v-if="bordersStyle === 1" class="bi bi-arrow-down-left"></i>
         <i v-if="bordersStyle === 2" class="bi bi-arrow-up-right"></i>
       </div>
-      <i class="bi bi-pencil edit-btn" @click="editLayer"></i>
+      <div
+        v-if="enableStyleEditor"
+        class="dropdown dropdown-sm"
+        data-bs-auto-close="false"
+      >
+        <i
+          class="bi bi-pencil edit-btn dropdown-toggle"
+          data-bs-toggle="dropdown"
+          aria-expanded="false"
+          @click="openStyleEditor"
+        ></i>
+        <div class="dropdown-menu p-3 track-style-menu">
+          <div class="mb-2">
+            <label class="form-label" for="track-border-width"
+              >Border width</label
+            >
+            <input
+              id="track-border-width"
+              class="form-control form-control-sm"
+              type="number"
+              min="1"
+              step="1"
+              v-model.number="borderWidth"
+            />
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="track-label-size">Label size</label>
+            <input
+              id="track-label-size"
+              class="form-control form-control-sm"
+              type="number"
+              min="6"
+              step="1"
+              v-model.number="labelSize"
+            />
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="track-label-offset"
+              >Label offset</label
+            >
+            <input
+              id="track-label-offset"
+              class="form-control form-control-sm"
+              type="number"
+              min="0"
+              step="0.1"
+              v-model.number="labelOffsetMultiplier"
+            />
+          </div>
+          <div class="mb-2" v-if="props.layerName.includes('names')">
+            <div class="form-check">
+              <input
+                id="track-label-bold"
+                class="form-check-input"
+                type="checkbox"
+                v-model="labelBold"
+              />
+              <label class="form-check-label" for="track-label-bold"
+                >Bold</label
+              >
+            </div>
+            <div class="form-check mt-1">
+              <input
+                id="track-label-outline"
+                class="form-check-input"
+                type="checkbox"
+                v-model="labelOutline"
+              />
+              <label class="form-check-label" for="track-label-outline"
+                >Outline</label
+              >
+            </div>
+            <div class="mt-2">
+              <label class="form-label" for="track-label-outline-width"
+                >Outline width</label
+              >
+              <input
+                id="track-label-outline-width"
+                class="form-control form-control-sm"
+                type="number"
+                min="0"
+                step="0.5"
+                v-model.number="labelOutlineWidth"
+                :disabled="!labelOutline"
+              />
+            </div>
+          </div>
+          <div class="mb-2">
+            <div class="form-check">
+              <input
+                id="track-export-svg"
+                class="form-check-input"
+                type="checkbox"
+                v-model="includeInSvg"
+              />
+              <label class="form-check-label" for="track-export-svg">
+                Include in SVG export
+              </label>
+            </div>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-success" @click="applyStyle">
+              Apply
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" @click="resetStyle">
+              Reset
+            </button>
+          </div>
+        </div>
+      </div>
+      <div v-else class="edit-spacer"></div>
     </div>
   </div>
 </template>
@@ -53,28 +163,35 @@ import { type Ref, ref } from "vue";
 import { BorderStyle } from "@/app/core/tracks/Track2DSymmetric";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import Style from "ol/style/Style";
-import { Color } from "ol/color";
-import { toast } from "vue-sonner";
 import { ColorTranslator } from "colortranslator";
-import { ColorLike } from "ol/colorlike";
+import type { ColorLike } from "ol/colorlike";
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const props = defineProps<{
   layerName: string;
   getDefaultColor?: () => Style | undefined;
+  enableStyleEditor?: boolean;
+  getLabelSize?: () => number;
+  getLabelOffsetMultiplier?: () => number;
+  getLabelBold?: () => boolean;
+  getLabelOutline?: () => boolean;
+  getLabelOutlineWidth?: () => number;
+  getIncludeInSvg?: () => boolean;
 }>();
 
 function getBaseColor(): ColorTranslator {
-  if (props.getDefaultColor) {
-    const olColorString = props
-      .getDefaultColor()
-      ?.getStroke()
-      ?.getColor() as ColorLike as string;
-
-    const color = new ColorTranslator(olColorString, { legacyCSS: true });
-    if (color) {
-      return color;
+  try {
+    if (props.getDefaultColor) {
+      const style = props.getDefaultColor();
+      const olColorString = style
+        ?.getStroke()
+        ?.getColor() as ColorLike as string | undefined;
+      if (olColorString) {
+        return new ColorTranslator(olColorString, { legacyCSS: true });
+      }
     }
+  } catch (e) {
+    // fall through to default
   }
   return new ColorTranslator("rgb(127, 192, 224)", { legacyCSS: true });
 }
@@ -86,11 +203,35 @@ const emit = defineEmits<{
     layerName: string,
     borderStyle: BorderStyle
   ): void;
+  (
+    e: "onStyleChanged",
+    layerName: string,
+    borderWidth: number,
+    fillColor: ColorTranslator,
+    labelSize: number,
+    labelOffsetMultiplier: number,
+    labelBold: boolean,
+    labelOutline: boolean,
+    labelOutlineWidth: number,
+    includeInSvg: boolean
+  ): void;
 }>();
 
 const currentColor = ref(new ColorTranslator("#ffaaff", { legacyCSS: true }));
+const borderWidth: Ref<number> = ref(2);
+const fillColor: Ref<ColorTranslator> = ref(
+  new ColorTranslator("rgba(0,0,0,0.0)", { legacyCSS: true })
+) as Ref<ColorTranslator>;
+const labelSize: Ref<number> = ref(12);
+const labelOffsetMultiplier: Ref<number> = ref(1.25);
+const labelBold: Ref<boolean> = ref(true);
+const labelOutline: Ref<boolean> = ref(true);
+const labelOutlineWidth: Ref<number> = ref(2);
+const includeInSvg: Ref<boolean> = ref(true);
 
-const bordersStyle: Ref<number> = ref(0);
+const bordersStyle: Ref<number> = ref(
+  props.layerName.includes("names") ? BorderStyle.TOP : 0
+);
 const visible: Ref<boolean> = ref(true);
 
 function updateVisibility() {
@@ -112,8 +253,66 @@ function updateBorderStyle() {
   emit("onBorderStyleChanged", props.layerName as string, bordersStyle.value);
   // (Object.values(BorderStyle) as Array<BorderStyle>)[bordersStyle.value]
 }
-function editLayer() {
-  toast.error("Editing layer is not implemented for " + props.layerName);
+
+function getDefaultFillColor(): ColorTranslator {
+  if (props.getDefaultColor) {
+    const olColorString = props
+      .getDefaultColor()
+      ?.getFill()
+      ?.getColor() as ColorLike as string;
+    if (olColorString) {
+      return new ColorTranslator(olColorString, { legacyCSS: true });
+    }
+  }
+  return new ColorTranslator("rgba(0,0,0,0.0)", { legacyCSS: true });
+}
+
+function openStyleEditor() {
+  if (!props.getDefaultColor) return;
+  const style = props.getDefaultColor();
+  const strokeWidth = style?.getStroke()?.getWidth();
+  if (strokeWidth) {
+    borderWidth.value = strokeWidth;
+  }
+  fillColor.value = getDefaultFillColor();
+  if (props.getLabelSize) {
+    labelSize.value = props.getLabelSize();
+  }
+  if (props.getLabelOffsetMultiplier) {
+    labelOffsetMultiplier.value = props.getLabelOffsetMultiplier();
+  }
+  if (props.getLabelBold) {
+    labelBold.value = props.getLabelBold();
+  }
+  if (props.getLabelOutline) {
+    labelOutline.value = props.getLabelOutline();
+  }
+  if (props.getLabelOutlineWidth) {
+    labelOutlineWidth.value = props.getLabelOutlineWidth();
+  }
+  if (props.getIncludeInSvg) {
+    includeInSvg.value = props.getIncludeInSvg();
+  }
+}
+
+function applyStyle() {
+  emit(
+    "onStyleChanged",
+    props.layerName as string,
+    borderWidth.value,
+    fillColor.value,
+    labelSize.value,
+    labelOffsetMultiplier.value,
+    labelBold.value,
+    labelOutline.value,
+    labelOutlineWidth.value,
+    includeInSvg.value
+  );
+}
+
+function resetStyle() {
+  openStyleEditor();
+  applyStyle();
 }
 </script>
 
@@ -141,7 +340,7 @@ function editLayer() {
 .layer-name {
   /* layer name */
 
-  width: 21px;
+  width: 28px;
   height: 20px;
 
   /* Body/Small */
@@ -230,5 +429,13 @@ function editLayer() {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+.edit-spacer {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  order: 3;
+  flex-grow: 0;
 }
 </style>

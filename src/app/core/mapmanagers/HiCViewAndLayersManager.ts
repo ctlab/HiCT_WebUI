@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -32,6 +32,8 @@ import VectorSource from "ol/source/Vector";
 import Stroke from "ol/style/Stroke";
 import Style from "ol/style/Style";
 import TileGrid from "ol/tilegrid/TileGrid";
+import { asString, type Color } from "ol/color";
+import type { ColorLike } from "ol/colorlike";
 import { type Ref, ref } from "vue";
 import ContigMouseWheelZoom from "@/ContigMouseWheelZoom";
 import BinMousePosition from "@/BinMousePosition";
@@ -44,8 +46,14 @@ import {
   TranslocationArrowsTrack2D,
   ScaffoldBordersTrack2D,
   Track2DSymmetric,
+  NamePlacement,
   BorderStyle,
 } from "../tracks/Track2DSymmetric";
+import { AnnotationTrack2D } from "../tracks/Track2DAnnotations";
+import type {
+  TrackStylePreset,
+  TrackStylePresetBundle,
+} from "../tracks/TrackStylePreset";
 import Fill from "ol/style/Fill";
 import { pointerMove, shiftKeyOnly, singleClick } from "ol/events/condition";
 import type { ContigDescriptor } from "../domain/ContigDescriptor";
@@ -91,10 +99,12 @@ interface CurrentHiCViewState {
 interface LayersHolder {
   readonly hicDataLayers: Layer[];
   readonly track2DLayers: Layer[];
+  readonly annotationLayers: Layer[];
   readonly contigBordersLayers: Layer[];
   readonly contigTranslocationArrowsLayers: Layer[];
   readonly scaffoldBordersLayers: Layer[];
   readonly bpResolutionToHiCDataLayer: Map<number, Layer>;
+  readonly bpResolutionToAnnotationLayer: Map<number, Layer>;
   readonly bpResolutionToContigBordersLayer: Map<number, Layer>;
   readonly bpResolutionToContigTranslocationArrowsLayer: Map<number, Layer>;
   readonly bpResolutionToScaffoldBordersLayer: Map<number, Layer>;
@@ -102,6 +112,7 @@ interface LayersHolder {
 
 interface Track2DHolder {
   readonly tracks2D: Track2D[];
+  readonly annotationTrack: AnnotationTrack2D;
   readonly contigBordersTrack: ContigBordersTrack2D;
   readonly contigTranslocationArrowsTrack: TranslocationArrowsTrack2D;
   readonly scaffoldBordersTrack: ScaffoldBordersTrack2D;
@@ -122,10 +133,12 @@ class HiCViewAndLayersManager {
   public readonly layersHolder: LayersHolder = {
     hicDataLayers: [],
     track2DLayers: [],
+    annotationLayers: [],
     contigBordersLayers: [],
     contigTranslocationArrowsLayers: [],
     scaffoldBordersLayers: [],
     bpResolutionToHiCDataLayer: new Map(),
+    bpResolutionToAnnotationLayer: new Map(),
     bpResolutionToContigBordersLayer: new Map(),
     bpResolutionToContigTranslocationArrowsLayer: new Map(),
     bpResolutionToScaffoldBordersLayer: new Map(),
@@ -184,6 +197,14 @@ class HiCViewAndLayersManager {
     contrastSliderRangesCallbacks: [],
   };
 
+  public readonly exportTrackFlags = {
+    contigBorders: true,
+    scaffoldBorders: true,
+    contigNames: true,
+    scaffoldNames: true,
+    translocationArrows: true,
+  };
+
   constructor(
     public readonly mapManager: ContactMapManager,
     response: OpenFileResponse,
@@ -204,28 +225,38 @@ class HiCViewAndLayersManager {
       this.imageSizeScaled.push(
         this.imageSizes[i] * this.pixelResolutionSet[i]
       );
-
-      const layerResolutionBorders: LayerResolutionBorders = {
-        minResolutionInclusive:
-          i === this.resolutions.length - 1
-            ? Number.NEGATIVE_INFINITY
-            : this.pixelResolutionSet[i],
-        maxResolutionExclusive:
-          i === 0 ? Number.POSITIVE_INFINITY : this.pixelResolutionSet[i - 1],
-      };
-
-      this.layerResolutionBorders.set(
-        this.resolutions[i],
-        layerResolutionBorders
-      );
-
       this.resolutionTuples.push({
         bpResolution: this.resolutions[i],
         pixelResolution: this.pixelResolutionSet[i],
-        layerResolutionBorders: layerResolutionBorders,
+        layerResolutionBorders: {
+          minResolutionInclusive: Number.NaN,
+          maxResolutionExclusive: Number.NaN,
+        },
         imageSizeIndex: i,
       });
     }
+
+    this.resolutionTuples.sort(
+      (a, b) => a.pixelResolution - b.pixelResolution
+    );
+    for (let i = 0; i < this.resolutionTuples.length; ++i) {
+      const layerResolutionBorders: LayerResolutionBorders = {
+        minResolutionInclusive:
+          i === 0
+            ? Number.NEGATIVE_INFINITY
+            : this.resolutionTuples[i].pixelResolution,
+        maxResolutionExclusive:
+          i === this.resolutionTuples.length - 1
+            ? Number.POSITIVE_INFINITY
+            : this.resolutionTuples[i + 1].pixelResolution,
+      };
+      this.resolutionTuples[i].layerResolutionBorders = layerResolutionBorders;
+      this.layerResolutionBorders.set(
+        this.resolutionTuples[i].bpResolution,
+        layerResolutionBorders
+      );
+    }
+
     this.resolutionTuples.sort(
       (a, b) =>
         a.layerResolutionBorders.minResolutionInclusive -
@@ -249,16 +280,22 @@ class HiCViewAndLayersManager {
       global: false,
       getPointResolution: (resolution) => resolution,
     });
+    const minPixelResolution = Math.min(...this.pixelResolutionSet);
+    const maxPixelResolution = Math.max(...this.pixelResolutionSet);
+    const overzoomFactor = 1024;
+    const minResolution = minPixelResolution / overzoomFactor;
+    const maxResolution = maxPixelResolution * overzoomFactor;
     // Define view:
     this.view = new View({
       center: [
         this.pixelProjection.getExtent()[0],
         this.pixelProjection.getExtent()[3],
       ],
-      resolutions: this.pixelResolutionSet,
-      resolution: Math.max(...this.pixelResolutionSet),
-      minResolution: Math.min(...this.pixelResolutionSet),
-      maxResolution: Math.max(...this.pixelResolutionSet),
+      resolution: maxPixelResolution,
+      minResolution: minResolution,
+      maxResolution: maxResolution,
+      constrainResolution: false,
+      zoomFactor: 2,
       showFullExtent: true,
       constrainOnlyCenter: true,
       projection: this.pixelProjection,
@@ -285,12 +322,21 @@ class HiCViewAndLayersManager {
 
     this.track2DHolder = {
       tracks2D: [],
+      annotationTrack: new AnnotationTrack2D(this.mapManager),
       contigBordersTrack: new ContigBordersTrack2D(this.mapManager),
       contigTranslocationArrowsTrack: new TranslocationArrowsTrack2D(
         this.mapManager
       ),
       scaffoldBordersTrack: new ScaffoldBordersTrack2D(this.mapManager),
     };
+    this.track2DHolder.tracks2D.push(this.track2DHolder.annotationTrack);
+
+    this.track2DHolder.contigBordersTrack.setNamePlacement(
+      NamePlacement.TOP
+    );
+    this.track2DHolder.scaffoldBordersTrack.setNamePlacement(
+      NamePlacement.TOP
+    );
 
     this.deferredInitializationInteractions = {
       scissorsGuideInteraction: undefined,
@@ -370,6 +416,7 @@ class HiCViewAndLayersManager {
     const resolutionDescriptor =
       this.viewResolutionToResolutionDescriptor(viewResolution);
     this.currentViewState.resolutionDesciptor = resolutionDescriptor;
+    this.syncLayerVisibilityForCurrentResolution();
   }
 
   public onTileSizeChanged(tileSize: number): void {
@@ -413,6 +460,20 @@ class HiCViewAndLayersManager {
     this.reloadTracks();
   }
 
+  public onContigBorderWidthChanged(width: number): void {
+    this.track2DHolder.contigBordersTrack.options.width = Math.max(1, width);
+    this.track2DHolder.contigBordersTrack.style =
+      this.track2DHolder.contigBordersTrack.generateStyleFunction()();
+    this.reloadTracks();
+  }
+
+  public onContigFillColorChanged(fillColor: string): void {
+    this.track2DHolder.contigBordersTrack.options.fillColor = fillColor;
+    this.track2DHolder.contigBordersTrack.style =
+      this.track2DHolder.contigBordersTrack.generateStyleFunction()();
+    this.reloadTracks();
+  }
+
   public onScanffoldBorderStyleChanged(style: BorderStyle): void {
     this.track2DHolder.scaffoldBordersTrack.setStyleType(style);
 
@@ -420,6 +481,191 @@ class HiCViewAndLayersManager {
       this.track2DHolder.scaffoldBordersTrack.generateStyleFunction()();
 
     this.reloadTracks();
+  }
+
+  public onScaffoldBorderWidthChanged(width: number): void {
+    this.track2DHolder.scaffoldBordersTrack.options.width = Math.max(1, width);
+    this.track2DHolder.scaffoldBordersTrack.style =
+      this.track2DHolder.scaffoldBordersTrack.generateStyleFunction()();
+    this.reloadTracks();
+  }
+
+  public onScaffoldFillColorChanged(fillColor: string): void {
+    this.track2DHolder.scaffoldBordersTrack.options.fillColor = fillColor;
+    this.track2DHolder.scaffoldBordersTrack.style =
+      this.track2DHolder.scaffoldBordersTrack.generateStyleFunction()();
+    this.reloadTracks();
+  }
+
+  public onContigLabelSizeChanged(size: number): void {
+    this.track2DHolder.contigBordersTrack.setLabelSize(size);
+    this.reloadTracks();
+  }
+
+  public onScaffoldLabelSizeChanged(size: number): void {
+    this.track2DHolder.scaffoldBordersTrack.setLabelSize(size);
+    this.reloadTracks();
+  }
+
+  public onContigLabelBoldChanged(enabled: boolean): void {
+    this.track2DHolder.contigBordersTrack.setLabelBold(enabled);
+    this.reloadTracks();
+  }
+
+  public onScaffoldLabelBoldChanged(enabled: boolean): void {
+    this.track2DHolder.scaffoldBordersTrack.setLabelBold(enabled);
+    this.reloadTracks();
+  }
+
+  public onContigLabelOutlineChanged(enabled: boolean): void {
+    this.track2DHolder.contigBordersTrack.setLabelOutline(enabled);
+    this.reloadTracks();
+  }
+
+  public onScaffoldLabelOutlineChanged(enabled: boolean): void {
+    this.track2DHolder.scaffoldBordersTrack.setLabelOutline(enabled);
+    this.reloadTracks();
+  }
+
+  public onContigLabelOutlineWidthChanged(width: number): void {
+    this.track2DHolder.contigBordersTrack.setLabelOutlineWidth(width);
+    this.reloadTracks();
+  }
+
+  public onScaffoldLabelOutlineWidthChanged(width: number): void {
+    this.track2DHolder.scaffoldBordersTrack.setLabelOutlineWidth(width);
+    this.reloadTracks();
+  }
+
+  public onContigExportEnabledChanged(enabled: boolean): void {
+    this.exportTrackFlags.contigBorders = enabled;
+  }
+
+  public onScaffoldExportEnabledChanged(enabled: boolean): void {
+    this.exportTrackFlags.scaffoldBorders = enabled;
+  }
+
+  public onContigNamesExportEnabledChanged(enabled: boolean): void {
+    this.exportTrackFlags.contigNames = enabled;
+  }
+
+  public onScaffoldNamesExportEnabledChanged(enabled: boolean): void {
+    this.exportTrackFlags.scaffoldNames = enabled;
+  }
+
+  public getExportTrackFlags() {
+    return { ...this.exportTrackFlags };
+  }
+
+  public onContigLabelOffsetMultiplierChanged(multiplier: number): void {
+    this.track2DHolder.contigBordersTrack.setLabelOffsetMultiplier(multiplier);
+    this.reloadTracks();
+  }
+
+  public onScaffoldLabelOffsetMultiplierChanged(multiplier: number): void {
+    this.track2DHolder.scaffoldBordersTrack.setLabelOffsetMultiplier(multiplier);
+    this.reloadTracks();
+  }
+
+  public onContigNamePlacementChanged(placement: NamePlacement): void {
+    this.track2DHolder.contigBordersTrack.setNamePlacement(placement);
+    this.reloadTracks();
+  }
+
+  public onScaffoldNamePlacementChanged(placement: NamePlacement): void {
+    this.track2DHolder.scaffoldBordersTrack.setNamePlacement(placement);
+    this.reloadTracks();
+  }
+
+  public onNamePlacementChanged(placement: NamePlacement): void {
+    this.track2DHolder.contigBordersTrack.setNamePlacement(placement);
+    this.track2DHolder.scaffoldBordersTrack.setNamePlacement(placement);
+    this.reloadTracks();
+  }
+
+  public getTrackStylePreset(): TrackStylePresetBundle {
+    return {
+      contigs: this.getSingleTrackStylePreset(
+        this.track2DHolder.contigBordersTrack
+      ),
+      scaffolds: this.getSingleTrackStylePreset(
+        this.track2DHolder.scaffoldBordersTrack
+      ),
+    };
+  }
+
+  public applyTrackStylePreset(preset: TrackStylePresetBundle): void {
+    this.applySingleTrackStylePreset(
+      this.track2DHolder.contigBordersTrack,
+      preset.contigs
+    );
+    this.applySingleTrackStylePreset(
+      this.track2DHolder.scaffoldBordersTrack,
+      preset.scaffolds
+    );
+    this.reloadTracks();
+  }
+
+  private getSingleTrackStylePreset(track: Track2DSymmetric): TrackStylePreset {
+    const borderColor = this.colorLikeToString(track.options.borderColor);
+    const fillColor = this.colorLikeToString(track.options.fillColor);
+    return {
+      borderColor,
+      fillColor,
+      width: track.options.width,
+      labelSize: track.getLabelSize(),
+      labelOffsetMultiplier: track.getLabelOffsetMultiplier(),
+      labelBold: track.getLabelBold(),
+      labelOutline: track.getLabelOutline(),
+      labelOutlineWidth: track.getLabelOutlineWidth(),
+      labelColor: this.colorLikeToString(track.getLabelColor()),
+      borderStyle: track.getStyleType(),
+      namePlacement: track.getNamePlacement(),
+    };
+  }
+
+  private applySingleTrackStylePreset(
+    track: Track2DSymmetric,
+    preset: TrackStylePreset
+  ): void {
+    track.options.borderColor = preset.borderColor;
+    track.options.fillColor = preset.fillColor;
+    track.options.width = Math.max(1, preset.width);
+    track.setLabelSize(preset.labelSize ?? track.getLabelSize());
+    if (preset.labelOffsetMultiplier !== undefined) {
+      track.setLabelOffsetMultiplier(preset.labelOffsetMultiplier);
+    }
+    if (preset.labelBold !== undefined) {
+      track.setLabelBold(preset.labelBold);
+    }
+    if (preset.labelOutline !== undefined) {
+      track.setLabelOutline(preset.labelOutline);
+    }
+    if (preset.labelOutlineWidth !== undefined) {
+      track.setLabelOutlineWidth(preset.labelOutlineWidth);
+    }
+    if (preset.labelColor !== undefined) {
+      track.setLabelColor(preset.labelColor);
+    }
+    if (preset.namePlacement !== undefined) {
+      if (typeof preset.namePlacement === "string") {
+        const key = preset.namePlacement as keyof typeof NamePlacement;
+        if (NamePlacement[key] !== undefined) {
+          track.setNamePlacement(NamePlacement[key]);
+        }
+      } else {
+        track.setNamePlacement(preset.namePlacement);
+      }
+    }
+    track.setStyleType(preset.borderStyle);
+    track.style = track.generateStyleFunction()();
+  }
+
+  private colorLikeToString(color: Color | ColorLike): string {
+    if (typeof color === "string") {
+      return color;
+    }
+    return asString(color as Color);
   }
 
   public getView(): View {
@@ -502,23 +748,28 @@ class HiCViewAndLayersManager {
           this.mapManager.getOptions().tileSize,
         ],
       });
-      const layerSource = new VersionedXYZContactMapSource(this, i, {
-        projection: this.pixelProjection,
-        tileGrid: layerTileGrid,
-        interpolate: false,
-        cacheSize: 0,
-      });
+      const layerSource = new VersionedXYZContactMapSource(
+        this,
+        i,
+        layerResolution,
+        {
+          projection: this.pixelProjection,
+          tileGrid: layerTileGrid,
+          interpolate: false,
+          cacheSize: 0,
+        }
+      );
       layerSource.do_reload();
       // Define layer:
       const layer = new TileLayer({
         source: layerSource,
         // cacheSize: 0,
-        minResolution:
-          this.layerResolutionBorders.get(layerResolution)
-            ?.minResolutionInclusive,
-        maxResolution:
-          this.layerResolutionBorders.get(layerResolution)
-            ?.maxResolutionExclusive,
+        minResolution: this.toFiniteResolutionBound(
+          this.layerResolutionBorders.get(layerResolution)?.minResolutionInclusive
+        ),
+        maxResolution: this.toFiniteResolutionBound(
+          this.layerResolutionBorders.get(layerResolution)?.maxResolutionExclusive
+        ),
         zIndex: this.layersZIndices.HIC_MAP_LAYER_Z_INDEX,
       });
       layer.set("bpResolution", layerResolution);
@@ -550,6 +801,9 @@ class HiCViewAndLayersManager {
   public viewResolutionToResolutionDescriptor(
     viewResolution: number
   ): LayerResolutionDescriptor {
+    if (this.resolutionTuples.length === 0) {
+      throw new Error("No resolutions available");
+    }
     const testElement: LayerResolutionDescriptor = {
       bpResolution: Number.NaN,
       pixelResolution: Number.NaN,
@@ -559,12 +813,16 @@ class HiCViewAndLayersManager {
       },
       imageSizeIndex: Number.NaN,
     };
-    const descriptorIndex: number = bounds.le(
+    const descriptorIndexRaw: number = bounds.le(
       this.resolutionTuples,
       testElement,
       (d1, d2) =>
         d1.layerResolutionBorders.minResolutionInclusive -
         d2.layerResolutionBorders.minResolutionInclusive
+    );
+    const descriptorIndex = Math.max(
+      0,
+      Math.min(descriptorIndexRaw, this.resolutionTuples.length - 1)
     );
     const descriptor = this.resolutionTuples[descriptorIndex];
     return descriptor;
@@ -572,6 +830,16 @@ class HiCViewAndLayersManager {
 
   public initializeTracks(): void {
     this.reloadTracks();
+    this.add2DTrackSymmetric(
+      this.track2DHolder.annotationTrack,
+      this.layersHolder.annotationLayers
+    );
+    this.layersHolder.annotationLayers.forEach((layer) => {
+      this.layersHolder.bpResolutionToAnnotationLayer.set(
+        layer.get("bpResolution"),
+        layer
+      );
+    });
     this.add2DTrackSymmetric(
       this.track2DHolder.contigBordersTrack,
       this.layersHolder.contigBordersLayers
@@ -620,26 +888,47 @@ class HiCViewAndLayersManager {
       // position: "top",
       direction: "horizontal",
       mapManager: this.mapManager,
-      target: "horizontal-igv-track-div",
+      target: "horizontal-ruler-div",
     });
     const rulerV = new RulerControl({
       // position: "top",
       direction: "vertical",
       mapManager: this.mapManager,
-      target: "vertical-igv-track-div",
+      target: "vertical-ruler-div",
     });
     try {
       const map = this.mapManager.getMap();
-      map.addControl(rulerH);
-      map.addControl(rulerV);
       map.on("moveend", (event) => {
         rulerH.render(event);
       });
       map.on("moveend", (event) => {
         rulerV.render(event);
       });
+      map.once("postrender", () => {
+        rulerH.render({ map } as never);
+        rulerV.render({ map } as never);
+      });
     } catch (e: unknown) {
       console.log("Error while adding rulers", e);
+    }
+  }
+
+  public dispose(): void {
+    if (!this.mapManager.getMap()) {
+      return;
+    }
+    try {
+      this.mapManager.getMap().getControls().clear();
+      const hRuler = document.getElementById("horizontal-ruler-div");
+      if (hRuler) {
+        hRuler.replaceChildren();
+      }
+      const vRuler = document.getElementById("vertical-ruler-div");
+      if (vRuler) {
+        vRuler.replaceChildren();
+      }
+    } catch (e: unknown) {
+      console.log("Error while disposing controls", e);
     }
   }
 
@@ -877,11 +1166,15 @@ class HiCViewAndLayersManager {
     return layer as Layer<VectorSource>;
   }
 
-  public reloadTiles(): void {
+  public reloadTiles(version?: number): void {
     for (const layer of this.layersHolder.hicDataLayers) {
       const source = layer.getSource();
       if (source instanceof VersionedXYZContactMapSource) {
-        source.do_reload();
+        if (version !== undefined) {
+          source.reloadWithVersion(version);
+        } else {
+          source.do_reload();
+        }
       }
     }
   }
@@ -896,6 +1189,20 @@ class HiCViewAndLayersManager {
     for (const layer of this.layersHolder.track2DLayers) {
       //TODO:
       layer.getSource()?.changed();
+      layer.changed();
+    }
+    for (const layer of this.layersHolder.annotationLayers) {
+      const source = layer.getSource() as VectorSource | undefined;
+      if (source) {
+        source.clear();
+        const features = this.track2DHolder.annotationTrack.features.get(
+          layer.get("bpResolution")
+        );
+        if (features) {
+          source.addFeatures(features);
+        }
+        source.changed();
+      }
       layer.changed();
     }
     for (const layer of this.layersHolder.contigBordersLayers) {
@@ -965,12 +1272,96 @@ class HiCViewAndLayersManager {
       }
       layer.changed();
     }
+    void this.mapManager.linearTrackManager.render();
   }
 
   public reloadVisuals(): void {
     this.reloadTiles();
     this.reloadTracks();
     this.mapManager.map.changed();
+  }
+
+  private toFiniteResolutionBound(bound: number | undefined): number | undefined {
+    return Number.isFinite(bound) ? bound : undefined;
+  }
+
+  private syncLayerVisibilityForCurrentResolution(): void {
+    const activeResolution = this.currentViewState.resolutionDesciptor.bpResolution;
+    if (!Number.isFinite(activeResolution)) {
+      return;
+    }
+
+    for (const layer of this.layersHolder.hicDataLayers) {
+      const layerResolution = Number(layer.get("bpResolution"));
+      layer.setVisible(layerResolution === activeResolution);
+    }
+
+    for (const layer of this.layersHolder.contigBordersLayers) {
+      const layerResolution = Number(layer.get("bpResolution"));
+      layer.setVisible(layerResolution === activeResolution);
+    }
+
+    for (const layer of this.layersHolder.scaffoldBordersLayers) {
+      const layerResolution = Number(layer.get("bpResolution"));
+      layer.setVisible(layerResolution === activeResolution);
+    }
+
+    for (const layer of this.layersHolder.contigTranslocationArrowsLayers) {
+      const layerResolution = Number(layer.get("bpResolution"));
+      layer.setVisible(
+        layerResolution === activeResolution &&
+          this.currentViewState.activeTool === ActiveTool.TRANSLOCATION
+      );
+    }
+
+    for (const layer of this.layersHolder.annotationLayers) {
+      const layerResolution = Number(layer.get("bpResolution"));
+      layer.setVisible(layerResolution === activeResolution);
+    }
+  }
+
+  public addAnnotationMarkerAtCenter(name?: string): void {
+    const center = this.getView().getCenter();
+    if (!center) {
+      return;
+    }
+    const descriptor = this.currentViewState.resolutionDesciptor;
+    const xPx = center[0] / descriptor.pixelResolution;
+    const yPx = -center[1] / descriptor.pixelResolution;
+    const xBp = this.mapManager
+      .getContigDimensionHolder()
+      .getStartBpOfPx(Math.floor(xPx), descriptor.bpResolution);
+    const yBp = this.mapManager
+      .getContigDimensionHolder()
+      .getStartBpOfPx(Math.floor(yPx), descriptor.bpResolution);
+    this.track2DHolder.annotationTrack.addMarkerFromAssemblyBp(
+      xBp,
+      yBp,
+      name ?? `marker_${this.track2DHolder.annotationTrack.getMarkerCount() + 1}`
+    );
+    this.reloadTracks();
+  }
+
+  public addAnnotationRectangleFromSelection(name?: string): void {
+    const left = this.currentViewState.selectionBorders.leftBP;
+    const right = this.currentViewState.selectionBorders.rightBP;
+    if (!left || !right) {
+      return;
+    }
+    this.track2DHolder.annotationTrack.addRectangleFromAssemblyBp(
+      Math.min(left[0], right[0]),
+      Math.max(left[0], right[0]),
+      Math.min(left[1], right[1]),
+      Math.max(left[1], right[1]),
+      name ??
+        `rect_${this.track2DHolder.annotationTrack.getRectangleCount() + 1}`
+    );
+    this.reloadTracks();
+  }
+
+  public clearAnnotations(): void {
+    this.track2DHolder.annotationTrack.clearAll();
+    this.reloadTracks();
   }
 }
 

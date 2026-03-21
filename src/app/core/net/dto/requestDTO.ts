@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -23,6 +23,7 @@ import {
   ListFilesRequest,
   OpenFileRequest,
   CloseFileRequest,
+  AttachSessionRequest,
   GetFastaForAssemblyRequest,
   type HiCTAPIRequest,
   GroupContigsIntoScaffoldRequest,
@@ -33,6 +34,8 @@ import {
   MoveSelectionRangeRequest,
   ListAGPFilesRequest,
   LoadAGPRequest,
+  OpenProgressRequest,
+  GetWorkerDiagnosticsRequest,
   GetFastaForSelectionRequest,
   SetNormalizationRequest,
   SetContrastRangeRequest,
@@ -40,8 +43,24 @@ import {
   SaveFileRequest,
   GetAGPForAssemblyRequest,
   ListCoolerFilesRequest,
-  ConvertCoolerRequest,
-  GetConverterStatusRequest,
+  ListTrackFilesRequest,
+  OpenTrackRequest,
+  ListTracksRequest,
+  UpdateTrackRequest,
+  RemoveTrackRequest,
+  QueryTracks1DRequest,
+  StartTracksPrecomputeRequest,
+  GetTracksPrecomputeStatusRequest,
+  StartConversionJobRequest,
+  StartBatchConversionJobsRequest,
+  ListConversionJobsRequest,
+  GetConversionJobRequest,
+  StopConversionJobRequest,
+  RenameContigRequest,
+  RenameScaffoldRequest,
+  ExportNameMappingRequest,
+  ImportNameMappingRequest,
+  ReloadTilesRequest,
   SplitContigRequest,
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
@@ -79,8 +98,14 @@ abstract class HiCTAPIRequestDTO<
         );
       case entity instanceof SplitContigRequest:
         return new SplitContigRequestDTO(entity as SplitContigRequest);
-      case entity instanceof ConvertCoolerRequest:
-        return new ConvertCoolerRequestDTO(entity as ConvertCoolerRequest);
+      case entity instanceof StartConversionJobRequest:
+        return new StartConversionJobRequestDTO(
+          entity as StartConversionJobRequest
+        );
+      case entity instanceof StartBatchConversionJobsRequest:
+        return new StartBatchConversionJobsRequestDTO(
+          entity as StartBatchConversionJobsRequest
+        );
       case entity instanceof UngroupContigsFromScaffoldRequest:
         return new UngroupContigsFromScaffoldRequestDTO(
           entity as UngroupContigsFromScaffoldRequest
@@ -105,10 +130,40 @@ abstract class HiCTAPIRequestDTO<
         return new ListFilesRequestDTO(entity);
       case entity instanceof ListCoolerFilesRequest:
         return new ListCoolerFilesRequestDTO(entity);
-      case entity instanceof GetConverterStatusRequest:
-        return new GetConverterStatusRequestDTO(
-          entity as GetConverterStatusRequest
+      case entity instanceof ListTrackFilesRequest:
+        return new ListTrackFilesRequestDTO(entity);
+      case entity instanceof OpenTrackRequest:
+        return new OpenTrackRequestDTO(entity as OpenTrackRequest);
+      case entity instanceof ListTracksRequest:
+        return new ListTracksRequestDTO(entity);
+      case entity instanceof UpdateTrackRequest:
+        return new UpdateTrackRequestDTO(entity as UpdateTrackRequest);
+      case entity instanceof RemoveTrackRequest:
+        return new RemoveTrackRequestDTO(entity as RemoveTrackRequest);
+      case entity instanceof QueryTracks1DRequest:
+        return new QueryTracks1DRequestDTO(entity as QueryTracks1DRequest);
+      case entity instanceof StartTracksPrecomputeRequest:
+        return new StartTracksPrecomputeRequestDTO(entity as StartTracksPrecomputeRequest);
+      case entity instanceof GetTracksPrecomputeStatusRequest:
+        return new GetTracksPrecomputeStatusRequestDTO(entity as GetTracksPrecomputeStatusRequest);
+      case entity instanceof ListConversionJobsRequest:
+        return new ListConversionJobsRequestDTO(entity);
+      case entity instanceof GetConversionJobRequest:
+        return new GetConversionJobRequestDTO(entity as GetConversionJobRequest);
+      case entity instanceof StopConversionJobRequest:
+        return new StopConversionJobRequestDTO(
+          entity as StopConversionJobRequest
         );
+      case entity instanceof RenameContigRequest:
+        return new RenameContigRequestDTO(entity as RenameContigRequest);
+      case entity instanceof RenameScaffoldRequest:
+        return new RenameScaffoldRequestDTO(entity as RenameScaffoldRequest);
+      case entity instanceof ExportNameMappingRequest:
+        return new ExportNameMappingRequestDTO(entity);
+      case entity instanceof ImportNameMappingRequest:
+        return new ImportNameMappingRequestDTO(entity as ImportNameMappingRequest);
+      case entity instanceof ReloadTilesRequest:
+        return new ReloadTilesRequestDTO(entity);
       case entity instanceof ListFASTAFilesRequest:
         return new ListFASTAFilesRequestDTO(entity);
       case entity instanceof LinkFASTARequest:
@@ -117,8 +172,14 @@ abstract class HiCTAPIRequestDTO<
         return new ListAGPFilesRequestDTO(entity);
       case entity instanceof LoadAGPRequest:
         return new LoadAGPRequestDTO(entity as LoadAGPRequest);
+      case entity instanceof OpenProgressRequest:
+        return new OpenProgressRequestDTO(entity);
+      case entity instanceof GetWorkerDiagnosticsRequest:
+        return new GetWorkerDiagnosticsRequestDTO(entity);
       case entity instanceof CloseFileRequest:
         return new CloseFileRequestDTO(entity as CloseFileRequest);
+      case entity instanceof AttachSessionRequest:
+        return new AttachSessionRequestDTO(entity as AttachSessionRequest);
       case entity instanceof GetFastaForAssemblyRequest:
         return new GetFastaForAssemblyRequestDTO(
           entity as GetFastaForAssemblyRequest
@@ -155,6 +216,18 @@ class GetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<GetVisualizati
   }
 }
 
+class OpenProgressRequestDTO extends HiCTAPIRequestDTO<OpenProgressRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class GetWorkerDiagnosticsRequestDTO extends HiCTAPIRequestDTO<GetWorkerDiagnosticsRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
 class SetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<SetVisualizationOptionsRequest> {
   toDTO(): Record<string, unknown> {
     return {
@@ -178,11 +251,88 @@ class ReverseSelectionRangeRequestDTO extends HiCTAPIRequestDTO<ReverseSelection
     };
   }
 }
-class ConvertCoolerRequestDTO extends HiCTAPIRequestDTO<ConvertCoolerRequest> {
+class StartConversionJobRequestDTO extends HiCTAPIRequestDTO<StartConversionJobRequest> {
   toDTO(): Record<string, unknown> {
     return {
-      cooler_filename: this.entity.options.cooler_filename,
+      filename: this.entity.options.filename,
+      direction: this.entity.options.direction,
+      resolutions: this.entity.options.resolutions,
+      compression: this.entity.options.compression,
+      compressionAlgorithm: this.entity.options.compressionAlgorithm,
+      chunkSize: this.entity.options.chunkSize,
+      parallelism: this.entity.options.parallelism,
     };
+  }
+}
+
+class StartBatchConversionJobsRequestDTO extends HiCTAPIRequestDTO<StartBatchConversionJobsRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      files: this.entity.options.files,
+      parallelJobs: this.entity.options.parallelJobs,
+      parallelism: this.entity.options.parallelism,
+      resolutions: this.entity.options.resolutions,
+      compression: this.entity.options.compression,
+      compressionAlgorithm: this.entity.options.compressionAlgorithm,
+      chunkSize: this.entity.options.chunkSize,
+    };
+  }
+}
+
+class ListConversionJobsRequestDTO extends HiCTAPIRequestDTO<ListConversionJobsRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class GetConversionJobRequestDTO extends HiCTAPIRequestDTO<GetConversionJobRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class StopConversionJobRequestDTO extends HiCTAPIRequestDTO<StopConversionJobRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class RenameContigRequestDTO extends HiCTAPIRequestDTO<RenameContigRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      contigId: this.entity.options.contigId,
+      newName: this.entity.options.newName,
+    };
+  }
+}
+
+class RenameScaffoldRequestDTO extends HiCTAPIRequestDTO<RenameScaffoldRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      scaffoldId: this.entity.options.scaffoldId,
+      newName: this.entity.options.newName,
+    };
+  }
+}
+
+class ExportNameMappingRequestDTO extends HiCTAPIRequestDTO<ExportNameMappingRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class ImportNameMappingRequestDTO extends HiCTAPIRequestDTO<ImportNameMappingRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      contigs: this.entity.options.contigs,
+      scaffolds: this.entity.options.scaffolds,
+    };
+  }
+}
+
+class ReloadTilesRequestDTO extends HiCTAPIRequestDTO<ReloadTilesRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
   }
 }
 
@@ -226,6 +376,7 @@ class LinkFASTARequestDTO extends HiCTAPIRequestDTO<LinkFASTARequest> {
   toDTO(): Record<string, unknown> {
     return {
       fastaFilename: this.entity.options.fastaFilename,
+      allowMismatch: this.entity.options.allowMismatch,
     };
   }
 }
@@ -302,7 +453,70 @@ class ListCoolerFilesRequestDTO extends HiCTAPIRequestDTO<ListCoolerFilesRequest
   }
 }
 
-class GetConverterStatusRequestDTO extends HiCTAPIRequestDTO<GetConverterStatusRequest> {
+class ListTrackFilesRequestDTO extends HiCTAPIRequestDTO<ListTrackFilesRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class OpenTrackRequestDTO extends HiCTAPIRequestDTO<OpenTrackRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      filename: this.entity.options.filename,
+      name: this.entity.options.name,
+      color: this.entity.options.color,
+    };
+  }
+}
+
+class ListTracksRequestDTO extends HiCTAPIRequestDTO<ListTracksRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class UpdateTrackRequestDTO extends HiCTAPIRequestDTO<UpdateTrackRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      trackId: this.entity.options.trackId,
+      visible: this.entity.options.visible,
+      color: this.entity.options.color,
+      name: this.entity.options.name,
+      renderMode: this.entity.options.renderMode,
+      aggregationMode: this.entity.options.aggregationMode,
+    };
+  }
+}
+
+class RemoveTrackRequestDTO extends HiCTAPIRequestDTO<RemoveTrackRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      trackId: this.entity.options.trackId,
+    };
+  }
+}
+
+class QueryTracks1DRequestDTO extends HiCTAPIRequestDTO<QueryTracks1DRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      startPx: this.entity.options.startPx,
+      endPx: this.entity.options.endPx,
+      widthPx: this.entity.options.widthPx,
+      bpResolution: this.entity.options.bpResolution,
+    };
+  }
+}
+
+class StartTracksPrecomputeRequestDTO extends HiCTAPIRequestDTO<StartTracksPrecomputeRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      trackId: this.entity.options.trackId,
+      force: this.entity.options.force,
+    };
+  }
+}
+
+class GetTracksPrecomputeStatusRequestDTO extends HiCTAPIRequestDTO<GetTracksPrecomputeStatusRequest> {
   toDTO(): Record<string, unknown> {
     return {};
   }
@@ -320,6 +534,12 @@ class ListAGPFilesRequestDTO extends HiCTAPIRequestDTO<ListAGPFilesRequest> {
 }
 
 class CloseFileRequestDTO extends HiCTAPIRequestDTO<CloseFileRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class AttachSessionRequestDTO extends HiCTAPIRequestDTO<AttachSessionRequest> {
   toDTO(): Record<string, unknown> {
     return {};
   }
@@ -352,7 +572,17 @@ export {
   OpenFileRequestDTO,
   ListFilesRequestDTO,
   CloseFileRequestDTO,
-  ConvertCoolerRequest,
+  AttachSessionRequestDTO,
+  StartConversionJobRequestDTO,
+  StartBatchConversionJobsRequestDTO,
+  ListConversionJobsRequestDTO,
+  GetConversionJobRequestDTO,
+  StopConversionJobRequestDTO,
+  RenameContigRequestDTO,
+  RenameScaffoldRequestDTO,
+  ExportNameMappingRequestDTO,
+  ImportNameMappingRequestDTO,
+  ReloadTilesRequestDTO,
   GetFastaForAssemblyRequestDTO,
   GetAGPForAssemblyRequestDTO,
   GroupContigsIntoScaffoldRequestDTO,
@@ -362,10 +592,18 @@ export {
   SetContrastRangeRequestDTO,
   GetCurrentSignalRangeRequestDTO,
   SaveFileRequestDTO,
+  ListTrackFilesRequestDTO,
+  OpenTrackRequestDTO,
+  ListTracksRequestDTO,
+  UpdateTrackRequestDTO,
+  RemoveTrackRequestDTO,
+  QueryTracks1DRequestDTO,
+  StartTracksPrecomputeRequestDTO,
+  GetTracksPrecomputeStatusRequestDTO,
   ListCoolerFilesRequestDTO,
-  GetConverterStatusRequestDTO,
   SplitContigRequestDTO,
   MoveSelectionToDebrisRequestDTO,
   GetVisualizationOptionsRequestDTO,
   SetVisualizationOptionsRequestDTO,
+  GetWorkerDiagnosticsRequestDTO,
 };

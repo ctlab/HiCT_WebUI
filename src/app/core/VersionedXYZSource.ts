@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -32,6 +32,7 @@ class VersionedXYZContactMapSource extends XYZ {
   constructor(
     protected readonly layersManager: HiCViewAndLayersManager,
     protected readonly zoomLevel: number,
+    protected readonly bpResolution: number,
     readonly xyzOptions?: XYZOptions
   ) {
     super(xyzOptions);
@@ -96,14 +97,27 @@ class VersionedXYZContactMapSource extends XYZ {
     this.changed();
   }
 
+  public reloadWithVersion(version: number) {
+    this.tileCache.expireCache({});
+    this.tileCache.clear();
+    this.sourceVersion = Math.max(0, Math.floor(version));
+    this.setTileUrlFunction(this.create_tile_url_function());
+    this.changed();
+  }
+
   protected create_tile_url_function() {
     return (coord_zxy: number[]) => {
       const col = coord_zxy[1];
       const row = coord_zxy[2];
+      const host = `${unref(this.layersManager.mapManager.networkManager.host)}`.replace(
+        /\/+$/,
+        ""
+      );
       return (
-        `${unref(this.layersManager.mapManager.networkManager.host)}` +
+        `${host}` +
         `/get_tile?version=${this.sourceVersion}` +
         `&level=${1 + this.zoomLevel}` +
+        `&bpResolution=${this.bpResolution}` +
         `&row=${row}` +
         `&col=${col}` +
         `&tile_size=${unref(this.layersManager.tileSize)}`

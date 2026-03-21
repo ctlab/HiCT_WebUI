@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -87,6 +87,11 @@ class ContigDescriptorDTO extends InboundDTO<ContigDescriptor> {
     return {
       contigId: this.json.contigId as number,
       contigName: this.json.contigName as string,
+      contigOriginalName: this.json.contigOriginalName as string,
+      contigSourceName:
+        (this.json.contigSourceName as string) ??
+        (this.json.contigOriginalName as string),
+      contigOffsetInSource: (this.json.contigOffsetInSource as number) ?? 0,
       contigLengthBp: this.json.contigLengthBp as number,
       contigLengthBins: new Map(
         Array.from(
@@ -124,6 +129,7 @@ class ScaffoldDescriptorDTO extends InboundDTO<ScaffoldDescriptor> {
     return {
       scaffoldId: this.json.scaffoldId as number,
       scaffoldName: this.json.scaffoldName as string,
+      scaffoldOriginalName: this.json.scaffoldOriginalName as string,
       spacerLength: this.json.spacerLength as number,
       scaffoldBordersBP: this.json.scaffoldBordersBP
         ? new ScaffoldBordersBPDTO(
@@ -164,6 +170,17 @@ class OpenFileResponseDTO extends InboundDTO<OpenFileResponse> {
 }
 
 class SimpleLinearGradientDTO extends InboundDTO<SimpleLinearGradient> {
+  private static safeColor(value: unknown, fallback: string): ColorTranslator {
+    if (typeof value !== "string" || value.length > 128) {
+      return new ColorTranslator(fallback, { legacyCSS: true });
+    }
+    try {
+      return new ColorTranslator(value, { legacyCSS: true });
+    } catch {
+      return new ColorTranslator(fallback, { legacyCSS: true });
+    }
+  }
+
   public static fromEntity(e: SimpleLinearGradient) {
     return new SimpleLinearGradientDTO({
       startColorRGBAString: e.startColorRGBA.RGBA,
@@ -174,15 +191,29 @@ class SimpleLinearGradientDTO extends InboundDTO<SimpleLinearGradient> {
   }
 
   public toEntity(): SimpleLinearGradient {
+    const start = SimpleLinearGradientDTO.safeColor(
+      this.json["startColorRGBAString"],
+      "rgba(0,255,0,0.0)"
+    );
+    const end = SimpleLinearGradientDTO.safeColor(
+      this.json["endColorRGBAString"],
+      "rgba(0,96,0,1.0)"
+    );
+    const minSignalRaw = this.json["minSignal"];
+    const maxSignalRaw = this.json["maxSignal"];
+    const minSignal =
+      typeof minSignalRaw === "number" && Number.isFinite(minSignalRaw)
+        ? minSignalRaw
+        : 0;
+    const maxSignal =
+      typeof maxSignalRaw === "number" && Number.isFinite(maxSignalRaw)
+        ? maxSignalRaw
+        : 1;
     return new SimpleLinearGradient(
-      new ColorTranslator(this.json["startColorRGBAString"] as string, {
-        legacyCSS: true,
-      }),
-      new ColorTranslator(this.json["endColorRGBAString"] as string, {
-        legacyCSS: true,
-      }),
-      this.json["minSignal"] as number,
-      this.json["maxSignal"] as number
+      start,
+      end,
+      minSignal,
+      maxSignal
     );
   }
 }

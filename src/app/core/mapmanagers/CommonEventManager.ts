@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -25,6 +25,7 @@ import {
   NormalizationSettings,
 } from "@/app/ui/components/ComponentCommon";
 import { ContigDescriptor } from "../domain/ContigDescriptor";
+import { type ScaffoldDescriptor } from "../domain/ScaffoldDescriptor";
 import {
   GroupContigsIntoScaffoldRequest,
   UngroupContigsFromScaffoldRequest,
@@ -38,12 +39,20 @@ import {
 } from "../net/api/request";
 import { ContactMapManager } from "./ContactMapManager";
 import { ActiveTool } from "./HiCViewAndLayersManager";
-import { BorderStyle } from "@/app/core/tracks/Track2DSymmetric";
+import { BorderStyle, NamePlacement } from "@/app/core/tracks/Track2DSymmetric";
 import { Coordinate } from "ol/coordinate";
 import { toast } from "vue-sonner";
 
 class CommonEventManager {
   public constructor(public readonly mapManager: ContactMapManager) {}
+
+  private applyAssemblyInfo(asmInfo: {
+    contigDescriptors: ContigDescriptor[];
+    scaffoldDescriptors: ScaffoldDescriptor[];
+  }): void {
+    this.mapManager.contigDimensionHolder.updateContigData(asmInfo.contigDescriptors);
+    this.mapManager.scaffoldHolder.updateScaffoldData(asmInfo.scaffoldDescriptors);
+  }
 
   public reloadTiles() {
     this.mapManager.reloadTiles();
@@ -81,6 +90,131 @@ class CommonEventManager {
 
   public onScanffoldBorderStyleChanged(style: BorderStyle): void {
     this.mapManager.viewAndLayersManager.onScanffoldBorderStyleChanged(style);
+  }
+
+  public onContigBorderWidthChanged(width: number): void {
+    this.mapManager.viewAndLayersManager.onContigBorderWidthChanged(width);
+  }
+
+  public onScaffoldBorderWidthChanged(width: number): void {
+    this.mapManager.viewAndLayersManager.onScaffoldBorderWidthChanged(width);
+  }
+
+  public onContigFillColorChanged(fillColor: string): void {
+    this.mapManager.viewAndLayersManager.onContigFillColorChanged(fillColor);
+  }
+
+  public onScaffoldFillColorChanged(fillColor: string): void {
+    this.mapManager.viewAndLayersManager.onScaffoldFillColorChanged(fillColor);
+  }
+
+  public onContigLabelSizeChanged(size: number): void {
+    this.mapManager.viewAndLayersManager.onContigLabelSizeChanged(size);
+  }
+
+  public onScaffoldLabelSizeChanged(size: number): void {
+    this.mapManager.viewAndLayersManager.onScaffoldLabelSizeChanged(size);
+  }
+
+  private toNamePlacement(style: BorderStyle): NamePlacement {
+    switch (style) {
+      case BorderStyle.FULL:
+        return NamePlacement.CENTER;
+      case BorderStyle.BOTTOM:
+        return NamePlacement.BOTTOM;
+      case BorderStyle.TOP:
+        return NamePlacement.TOP;
+      case BorderStyle.NONE:
+      default:
+        return NamePlacement.HIDDEN;
+    }
+  }
+
+  public onContigNamePlacementChanged(style: BorderStyle): void {
+    const placement = this.toNamePlacement(style);
+    this.mapManager.viewAndLayersManager.onContigNamePlacementChanged(placement);
+  }
+
+  public onScaffoldNamePlacementChanged(style: BorderStyle): void {
+    const placement = this.toNamePlacement(style);
+    this.mapManager.viewAndLayersManager.onScaffoldNamePlacementChanged(
+      placement
+    );
+  }
+
+  public onContigLabelOffsetMultiplierChanged(multiplier: number): void {
+    this.mapManager.viewAndLayersManager.onContigLabelOffsetMultiplierChanged(
+      multiplier
+    );
+  }
+
+  public onScaffoldLabelOffsetMultiplierChanged(multiplier: number): void {
+    this.mapManager.viewAndLayersManager.onScaffoldLabelOffsetMultiplierChanged(
+      multiplier
+    );
+  }
+
+  public onContigLabelBoldChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onContigLabelBoldChanged(enabled);
+  }
+
+  public onScaffoldLabelBoldChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onScaffoldLabelBoldChanged(enabled);
+  }
+
+  public onContigLabelOutlineChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onContigLabelOutlineChanged(enabled);
+  }
+
+  public onScaffoldLabelOutlineChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onScaffoldLabelOutlineChanged(enabled);
+  }
+
+  public onContigLabelOutlineWidthChanged(width: number): void {
+    this.mapManager.viewAndLayersManager.onContigLabelOutlineWidthChanged(width);
+  }
+
+  public onScaffoldLabelOutlineWidthChanged(width: number): void {
+    this.mapManager.viewAndLayersManager.onScaffoldLabelOutlineWidthChanged(
+      width
+    );
+  }
+
+  public onContigExportEnabledChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onContigExportEnabledChanged(enabled);
+  }
+
+  public onScaffoldExportEnabledChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onScaffoldExportEnabledChanged(enabled);
+  }
+
+  public onContigNamesExportEnabledChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onContigNamesExportEnabledChanged(
+      enabled
+    );
+  }
+
+  public onScaffoldNamesExportEnabledChanged(enabled: boolean): void {
+    this.mapManager.viewAndLayersManager.onScaffoldNamesExportEnabledChanged(
+      enabled
+    );
+  }
+
+  public onNamePlacementChanged(style: BorderStyle): void {
+    const placement = (() => {
+      switch (style) {
+        case BorderStyle.FULL:
+          return NamePlacement.TOP;
+        case BorderStyle.BOTTOM:
+          return NamePlacement.BOTTOM;
+        case BorderStyle.TOP:
+          return NamePlacement.TOP;
+        case BorderStyle.NONE:
+        default:
+          return NamePlacement.HIDDEN;
+      }
+    })();
+    this.mapManager.viewAndLayersManager.onNamePlacementChanged(placement);
   }
 
   // public onNormalizationChanged(
@@ -164,12 +298,8 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.mapManager.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.mapManager.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
+        this.applyAssemblyInfo(asmInfo);
+        void this.mapManager.linearTrackManager.clearCachesAndRender();
         this.resetSelection();
         this.reloadTracks();
       });
@@ -220,12 +350,8 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.mapManager.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.mapManager.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
+        this.applyAssemblyInfo(asmInfo);
+        void this.mapManager.linearTrackManager.clearCachesAndRender();
         this.resetSelection();
         this.reloadTracks();
       });
@@ -276,12 +402,8 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.mapManager.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.mapManager.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
+        this.applyAssemblyInfo(asmInfo);
+        void this.mapManager.linearTrackManager.clearCachesAndRender();
         this.resetSelection();
         this.reloadTracks();
       });
@@ -331,12 +453,7 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.mapManager.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.mapManager.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
+        this.applyAssemblyInfo(asmInfo);
         this.resetSelection();
         this.mapManager.reloadVisuals();
       });
@@ -524,12 +641,7 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.mapManager.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.mapManager.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
+        this.applyAssemblyInfo(asmInfo);
       })
       .finally(() => {
         this.onMoveSelectionClicked();
@@ -558,12 +670,7 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.mapManager.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.mapManager.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
+        this.applyAssemblyInfo(asmInfo);
       })
       .finally(() => {
         this.mapManager.deactivateScissors();

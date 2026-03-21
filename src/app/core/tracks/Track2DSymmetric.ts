@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -33,6 +33,8 @@ import {
 import Fill from "ol/style/Fill";
 import Stroke from "ol/style/Stroke";
 import Style from "ol/style/Style";
+import Text from "ol/style/Text";
+import Point from "ol/geom/Point";
 import { ContigHideType } from "../domain/common";
 import type { ContigDescriptor } from "../domain/ContigDescriptor";
 import type { ContactMapManager } from "../mapmanagers/ContactMapManager";
@@ -43,7 +45,7 @@ type track2DSymmetricBorders = [startIncl: number, endExcl: number];
 
 interface Track2DSymmetricDescriptor {
   name: string;
-  features: Map<[resolution: number], Feature<Geometry>[]>;
+  features: Map<number, Feature<Geometry>[]>;
 }
 
 interface BasePairsTrack2DSymmetricDescriptor {
@@ -56,12 +58,27 @@ interface Track2DSymmetricOptions {
   fillColor: Color | ColorLike;
   width: number;
   zIndex: number;
+  labelSize: number;
+  labelOffsetMultiplier: number;
+  labelBold: boolean;
+  labelOutline: boolean;
+  labelOutlineWidth: number;
+  labelColor: Color | ColorLike;
+}
+
+export enum NamePlacement {
+  CENTER = -1,
+  TOP = 0,
+  BOTTOM = 1,
+  HIDDEN = 2,
 }
 
 abstract class Track2DSymmetric extends Track2D {
   public features: Map<number, Feature<Geometry>[]> = new Map();
   public options: Track2DSymmetricOptions;
   public style: Style;
+  protected namePlacement: NamePlacement = NamePlacement.TOP;
+  private static measureCanvas?: HTMLCanvasElement;
 
   public constructor(
     public readonly trackDescriptor: Track2DSymmetricDescriptor,
@@ -71,6 +88,12 @@ abstract class Track2DSymmetric extends Track2D {
       fillColor?: Color | ColorLike;
       width?: number | undefined;
       zIndex?: number | undefined;
+      labelSize?: number | undefined;
+      labelOffsetMultiplier?: number | undefined;
+      labelBold?: boolean | undefined;
+      labelOutline?: boolean | undefined;
+      labelOutlineWidth?: number | undefined;
+      labelColor?: Color | ColorLike;
     }
   ) {
     super();
@@ -79,12 +102,29 @@ abstract class Track2DSymmetric extends Track2D {
       fillColor: opt_options?.fillColor ?? [0x77, 0x77, 0x77, 0.1],
       width: opt_options?.width ?? 2,
       zIndex: opt_options?.zIndex ?? 0,
+      labelSize: opt_options?.labelSize ?? 12,
+      labelOffsetMultiplier: opt_options?.labelOffsetMultiplier ?? 1.25,
+      labelBold: opt_options?.labelBold ?? true,
+      labelOutline: opt_options?.labelOutline ?? true,
+      labelOutlineWidth: opt_options?.labelOutlineWidth ?? 2,
+      labelColor:
+        opt_options?.labelColor ??
+        opt_options?.borderColor ??
+        [0xff, 0xaa, 0xcc, 1.0],
     };
     this.style = this.generateStyleFunction()();
   }
 
   public getStyle(): Style {
     return this.style;
+  }
+
+  public getStyleType(): BorderStyle {
+    return BorderStyle.FULL;
+  }
+
+  public setStyleType(_style: BorderStyle): void {
+    // Default: non-ring tracks ignore border style changes.
   }
 
   public generateStyleFunction(): () => Style {
@@ -99,6 +139,96 @@ abstract class Track2DSymmetric extends Track2D {
     });
     // console.log("Generate style function called and produced ", style);
     return () => style;
+  }
+
+  public setLabelSize(size: number): void {
+    this.options.labelSize = Math.max(6, size);
+  }
+
+  public getLabelSize(): number {
+    return this.options.labelSize;
+  }
+
+  public setLabelOffsetMultiplier(multiplier: number): void {
+    this.options.labelOffsetMultiplier = Math.max(0, multiplier);
+  }
+
+  public getLabelOffsetMultiplier(): number {
+    return this.options.labelOffsetMultiplier;
+  }
+
+  public setLabelBold(enabled: boolean): void {
+    this.options.labelBold = enabled;
+  }
+
+  public getLabelBold(): boolean {
+    return this.options.labelBold;
+  }
+
+  public setLabelOutline(enabled: boolean): void {
+    this.options.labelOutline = enabled;
+  }
+
+  public getLabelOutline(): boolean {
+    return this.options.labelOutline;
+  }
+
+  public setLabelOutlineWidth(width: number): void {
+    this.options.labelOutlineWidth = Math.max(0, width);
+  }
+
+  public getLabelOutlineWidth(): number {
+    return this.options.labelOutlineWidth;
+  }
+
+  public setLabelColor(color: Color | ColorLike): void {
+    this.options.labelColor = color;
+  }
+
+  public getLabelColor(): Color | ColorLike {
+    return this.options.labelColor;
+  }
+
+  public setNamePlacement(placement: NamePlacement): void {
+    this.namePlacement = placement;
+  }
+
+  public getNamePlacement(): NamePlacement {
+    return this.namePlacement;
+  }
+
+  protected createLabelStyle(label: string): Style {
+    return new Style({
+      text: new Text({
+        text: label,
+        font: `${this.options.labelBold ? "bold " : ""}${
+          this.options.labelSize
+        }px sans-serif`,
+        fill: new Fill({
+          color: this.options.labelColor ?? this.options.borderColor,
+        }),
+        stroke: this.options.labelOutline
+          ? new Stroke({
+              color: "rgba(0,0,0,0.9)",
+              width: this.options.labelOutlineWidth,
+            })
+          : undefined,
+        overflow: true,
+        textAlign: "center",
+      }),
+    });
+  }
+
+  protected measureLabelWidthPx(label: string): number {
+    if (!Track2DSymmetric.measureCanvas) {
+      Track2DSymmetric.measureCanvas = document.createElement("canvas");
+    }
+    const ctx = Track2DSymmetric.measureCanvas.getContext("2d");
+    if (!ctx) {
+      return label.length * this.options.labelSize * 0.6;
+    }
+    ctx.font = `${this.options.labelSize}px sans-serif`;
+    return ctx.measureText(label).width;
   }
 }
 
@@ -158,8 +288,11 @@ class BasePairsTrack2DSymmetric extends Track2DSymmetric {
 
 abstract class WithRing extends Track2DSymmetric {
   protected borderStyle: BorderStyle = BorderStyle.FULL;
-  public setStyleType(style: BorderStyle): void {
+  public override setStyleType(style: BorderStyle): void {
     this.borderStyle = style;
+  }
+  public override getStyleType(): BorderStyle {
+    return this.borderStyle;
   }
   protected drawPolygon(
     topLeft: Array<number>,
@@ -289,6 +422,36 @@ class ContigBordersTrack2D extends WithRing {
 
             this.features.get(resolution)?.push(polygonFeature);
 
+            if (this.namePlacement !== NamePlacement.HIDDEN) {
+              const rectWidthPx = toPx - fromPx;
+              const labelWidthPx = this.measureLabelWidthPx(cd.contigName);
+              if (rectWidthPx > 0 && labelWidthPx < rectWidthPx * 0.9) {
+                const labelOffset =
+                  this.options.labelSize * this.options.labelOffsetMultiplier;
+                const labelY =
+                  this.namePlacement === NamePlacement.CENTER
+                    ? -(fromPx + toPx) / 2
+                    : this.namePlacement === NamePlacement.TOP
+                    ? -fromPx + labelOffset
+                    : -toPx - labelOffset;
+                const midPx = (fromPx + toPx) / 2;
+                const labelPoint = new Point([
+                  midPx * pixelResolution,
+                  labelY * pixelResolution,
+                ]);
+                const labelFeature = new Feature({
+                  name: `ContigName-${cd.contigName}-bp${resolution}`,
+                  geometry: labelPoint,
+                });
+                labelFeature.setStyle(this.createLabelStyle(cd.contigName));
+                labelFeature.set("trackType", "contigNames");
+                labelFeature.set("bpResolution", resolution);
+                labelFeature.set("pixelResolution", pixelResolution);
+                labelFeature.set("contigDescriptor", cd);
+                this.features.get(resolution)?.push(labelFeature);
+              }
+            }
+
             break;
           }
           default:
@@ -390,6 +553,40 @@ class ScaffoldBordersTrack2D extends WithRing {
             polygonFeature.set("scaffolDescriptor", scaffoldDescriptor);
 
             this.features.get(bpResolution)?.push(polygonFeature);
+
+            if (this.namePlacement !== NamePlacement.HIDDEN) {
+              const rectWidthPx = toPx - fromPx;
+              const labelWidthPx = this.measureLabelWidthPx(
+                scaffoldDescriptor.scaffoldName
+              );
+              if (rectWidthPx > 0 && labelWidthPx < rectWidthPx * 0.9) {
+                const labelOffset =
+                  this.options.labelSize * this.options.labelOffsetMultiplier;
+                const labelY =
+                  this.namePlacement === NamePlacement.CENTER
+                    ? -(fromPx + toPx) / 2
+                    : this.namePlacement === NamePlacement.TOP
+                    ? -fromPx + labelOffset
+                    : -toPx - labelOffset;
+                const midPx = (fromPx + toPx) / 2;
+                const labelPoint = new Point([
+                  midPx * pixelResolution,
+                  labelY * pixelResolution,
+                ]);
+                const labelFeature = new Feature({
+                  name: `ScaffoldName-${scaffoldDescriptor.scaffoldName}-bp${bpResolution}`,
+                  geometry: labelPoint,
+                });
+                labelFeature.setStyle(
+                  this.createLabelStyle(scaffoldDescriptor.scaffoldName)
+                );
+                labelFeature.set("trackType", "scaffoldNames");
+                labelFeature.set("bpResolution", bpResolution);
+                labelFeature.set("pixelResolution", pixelResolution);
+                labelFeature.set("scaffolDescriptor", scaffoldDescriptor);
+                this.features.get(bpResolution)?.push(labelFeature);
+              }
+            }
           }
         );
       }

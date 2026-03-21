@@ -1,5 +1,5 @@
 <!--
- Copyright (c) 2021-2024 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy of
  this software and associated documentation files (the "Software"), to deal in
@@ -26,6 +26,11 @@
       :mapManager="props.mapManager"
       @selected="onFileSelected"
       @closed="onClosed"
+      @attached="onAttached"
+      @saveSession="onSaveSession"
+      @openSession="onOpenSession"
+      @agpLoaded="onAgpLoaded"
+      @fastaLinked="onFastaLinked"
     ></NavigationBar>
     <HeaderRibbon :mapManager="props.mapManager"></HeaderRibbon>
   </div>
@@ -39,6 +44,11 @@ import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
   (e: "closed"): void;
+  (e: "attached"): void;
+  (e: "saveSession"): void;
+  (e: "openSession", file: File): void;
+  (e: "agpLoaded", filename: string): void;
+  (e: "fastaLinked", filename: string): void;
 }>();
 
 const props = defineProps<{
@@ -52,6 +62,26 @@ function onFileSelected(filename: string): void {
 
 function onClosed(): void {
   emit("closed");
+}
+
+function onAttached(): void {
+  emit("attached");
+}
+
+function onSaveSession(): void {
+  emit("saveSession");
+}
+
+function onOpenSession(file: File): void {
+  emit("openSession", file);
+}
+
+function onAgpLoaded(filename: string): void {
+  emit("agpLoaded", filename);
+}
+
+function onFastaLinked(filename: string): void {
+  emit("fastaLinked", filename);
 }
 </script>
 
