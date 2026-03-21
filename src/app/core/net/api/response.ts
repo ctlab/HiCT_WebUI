@@ -143,6 +143,43 @@ class TracksPrecomputeStatusResponse {
   ) {}
 }
 
+class WorkerPoolDiagnosticsResponse {
+  public constructor(
+    public readonly corePoolSize: number,
+    public readonly maxPoolSize: number,
+    public readonly currentPoolSize: number,
+    public readonly largestPoolSize: number,
+    public readonly activeCount: number,
+    public readonly queueSize: number,
+    public readonly queueCapacity: number,
+    public readonly completedTaskCount: number,
+    public readonly taskCount: number
+  ) {}
+}
+
+class WorkerCancellationDomainDiagnosticsResponse {
+  public constructor(
+    public readonly currentGeneration: number,
+    public readonly trackedTaskCount: number,
+    public readonly trackedTasksByGeneration: Record<string, number>
+  ) {}
+}
+
+class WorkerSchedulerDiagnosticsResponse {
+  public constructor(
+    public readonly timestampMs: number,
+    public readonly totalMaxWorkers: number,
+    public readonly reservedMinWorkers: number,
+    public readonly elasticWorkersInUse: number,
+    public readonly elasticWorkersAvailable: number,
+    public readonly pools: Record<string, WorkerPoolDiagnosticsResponse>,
+    public readonly cancellationDomains: Record<
+      string,
+      WorkerCancellationDomainDiagnosticsResponse
+    >
+  ) {}
+}
+
 class FastaLinkMismatchResponse {
   public constructor(
     public readonly index: number,
@@ -190,6 +227,9 @@ export {
   TrackQueryResponse,
   TrackPrecomputeTrackStatusResponse,
   TracksPrecomputeStatusResponse,
+  WorkerPoolDiagnosticsResponse,
+  WorkerCancellationDomainDiagnosticsResponse,
+  WorkerSchedulerDiagnosticsResponse,
   FastaLinkMismatchResponse,
   FastaLinkCompatibilityResponse,
   FastaLinkResponse,

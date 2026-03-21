@@ -318,6 +318,10 @@ class OpenProgressRequest implements HiCTAPIRequest {
   public constructor() {}
 }
 
+class GetWorkerDiagnosticsRequest implements HiCTAPIRequest {
+  requestPath = "/diagnostics/workers";
+}
+
 class GetVisualizationOptionsRequest implements HiCTAPIRequest {
   requestPath = "/get_visualization_options";
 
@@ -462,4 +466,5 @@ export {
   QueryTracks1DRequest,
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
+  GetWorkerDiagnosticsRequest,
 };

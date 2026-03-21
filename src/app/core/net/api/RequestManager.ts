@@ -40,6 +40,7 @@ import {
   TrackQueryResponseDTO,
   TrackSummaryResponseDTO,
   TilePOSTResponseDTO,
+  WorkerSchedulerDiagnosticsResponseDTO,
 } from "../dto/responseDTO";
 import type { OpenFileResponse } from "../netcommon";
 import type { NetworkManager } from "../NetworkManager";
@@ -86,6 +87,7 @@ import {
   QueryTracks1DRequest,
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
+  GetWorkerDiagnosticsRequest,
 } from "./request";
 import {
   ConversionJobResponse,
@@ -95,6 +97,7 @@ import {
   TracksPrecomputeStatusResponse,
   TrackQueryResponse,
   TrackSummaryResponse,
+  WorkerSchedulerDiagnosticsResponse,
 } from "./response";
 import { toast } from "vue-sonner";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
@@ -306,6 +309,12 @@ class RequestManager {
     return this.sendRequest(new GetTracksPrecomputeStatusRequest())
       .then((response) => response.data)
       .then((json) => new TracksPrecomputeStatusResponseDTO(json).toEntity());
+  }
+
+  public async getWorkerDiagnostics(): Promise<WorkerSchedulerDiagnosticsResponse> {
+    return this.sendRequest(new GetWorkerDiagnosticsRequest())
+      .then((response) => response.data)
+      .then((json) => new WorkerSchedulerDiagnosticsResponseDTO(json).toEntity());
   }
 
   public async listFASTAFiles(): Promise<string[]> {

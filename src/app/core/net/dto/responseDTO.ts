@@ -32,6 +32,9 @@ import {
   TrackQueryResponse,
   TrackRenderResponse,
   TrackSummaryResponse,
+  WorkerCancellationDomainDiagnosticsResponse,
+  WorkerPoolDiagnosticsResponse,
+  WorkerSchedulerDiagnosticsResponse,
   TilePOSTResponse,
 } from "../api/response";
 import { InboundDTO } from "./dto";
@@ -208,6 +211,61 @@ class TracksPrecomputeStatusResponseDTO extends InboundDTO<TracksPrecomputeStatu
   }
 }
 
+class WorkerPoolDiagnosticsResponseDTO extends InboundDTO<WorkerPoolDiagnosticsResponse> {
+  public toEntity(): WorkerPoolDiagnosticsResponse {
+    return new WorkerPoolDiagnosticsResponse(
+      (this.json["corePoolSize"] as number) ?? 0,
+      (this.json["maxPoolSize"] as number) ?? 0,
+      (this.json["currentPoolSize"] as number) ?? 0,
+      (this.json["largestPoolSize"] as number) ?? 0,
+      (this.json["activeCount"] as number) ?? 0,
+      (this.json["queueSize"] as number) ?? 0,
+      (this.json["queueCapacity"] as number) ?? 0,
+      (this.json["completedTaskCount"] as number) ?? 0,
+      (this.json["taskCount"] as number) ?? 0
+    );
+  }
+}
+
+class WorkerCancellationDomainDiagnosticsResponseDTO extends InboundDTO<WorkerCancellationDomainDiagnosticsResponse> {
+  public toEntity(): WorkerCancellationDomainDiagnosticsResponse {
+    return new WorkerCancellationDomainDiagnosticsResponse(
+      (this.json["currentGeneration"] as number) ?? 0,
+      (this.json["trackedTaskCount"] as number) ?? 0,
+      ((this.json["trackedTasksByGeneration"] as Record<string, number>) ?? {})
+    );
+  }
+}
+
+class WorkerSchedulerDiagnosticsResponseDTO extends InboundDTO<WorkerSchedulerDiagnosticsResponse> {
+  public toEntity(): WorkerSchedulerDiagnosticsResponse {
+    const poolsJson = (this.json["pools"] as Record<string, Record<string, unknown>>) ?? {};
+    const cancellationJson =
+      (this.json["cancellationDomains"] as Record<string, Record<string, unknown>>) ?? {};
+    const pools = Object.fromEntries(
+      Object.entries(poolsJson).map(([priority, payload]) => [
+        priority,
+        new WorkerPoolDiagnosticsResponseDTO(payload).toEntity(),
+      ])
+    );
+    const cancellationDomains = Object.fromEntries(
+      Object.entries(cancellationJson).map(([domain, payload]) => [
+        domain,
+        new WorkerCancellationDomainDiagnosticsResponseDTO(payload).toEntity(),
+      ])
+    );
+    return new WorkerSchedulerDiagnosticsResponse(
+      (this.json["timestampMs"] as number) ?? 0,
+      (this.json["totalMaxWorkers"] as number) ?? 0,
+      (this.json["reservedMinWorkers"] as number) ?? 0,
+      (this.json["elasticWorkersInUse"] as number) ?? 0,
+      (this.json["elasticWorkersAvailable"] as number) ?? 0,
+      pools,
+      cancellationDomains
+    );
+  }
+}
+
 class FastaLinkMismatchResponseDTO extends InboundDTO<FastaLinkMismatchResponse> {
   public toEntity(): FastaLinkMismatchResponse {
     return new FastaLinkMismatchResponse(
@@ -262,5 +320,6 @@ export {
   TrackSummaryResponseDTO,
   TrackQueryResponseDTO,
   TracksPrecomputeStatusResponseDTO,
+  WorkerSchedulerDiagnosticsResponseDTO,
   FastaLinkResponseDTO,
 };

@@ -189,6 +189,12 @@
                   Use custom ZoomSlider
                 </label>
               </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenWorkerDiagnostics">
+                  Worker diagnostics...
+                </a>
+              </li>
             </ul>
           </li>
           <!-- Connection settings -->
@@ -282,6 +288,11 @@
     :map-manager="props.mapManager"
     @dismissed="trackManagerOpen = false"
   />
+  <WorkerDiagnosticsModal
+    v-if="workerDiagnosticsOpen"
+    :network-manager="props.networkManager"
+    @dismissed="workerDiagnosticsOpen = false"
+  />
   <FastaLinkWarningModal
     v-if="fastaLinkReport"
     :report="fastaLinkReport"
@@ -328,6 +339,7 @@ import CoolerConverter from "./CoolerConverter.vue";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
 import TrackManager from "@/app/ui/components/upper_ribbon/TrackManager.vue";
 import FastaLinkWarningModal from "@/app/ui/components/upper_ribbon/FastaLinkWarningModal.vue";
+import WorkerDiagnosticsModal from "@/app/ui/components/upper_ribbon/WorkerDiagnosticsModal.vue";
 import { toast } from "vue-sonner";
 import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
@@ -339,6 +351,7 @@ const openingFASTAFile = ref(false);
 const openingAGPFile = ref(false);
 const convertingCoolers = ref(false);
 const trackManagerOpen = ref(false);
+const workerDiagnosticsOpen = ref(false);
 const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
@@ -397,6 +410,10 @@ function onOpenFile() {
 
 function onOpenTrackManager() {
   trackManagerOpen.value = true;
+}
+
+function onOpenWorkerDiagnostics() {
+  workerDiagnosticsOpen.value = true;
 }
 
 function onLoadAGP() {
