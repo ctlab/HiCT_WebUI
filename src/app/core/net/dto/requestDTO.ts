@@ -21,6 +21,7 @@
 
 import {
   ListFilesRequest,
+  ListFilesDetailedRequest,
   OpenFileRequest,
   CloseFileRequest,
   AttachSessionRequest,
@@ -45,6 +46,7 @@ import {
   ListCoolerFilesRequest,
   ListTrackFilesRequest,
   OpenTrackRequest,
+  ProbeTrackCompatibilityRequest,
   ListTracksRequest,
   UpdateTrackRequest,
   RemoveTrackRequest,
@@ -128,12 +130,16 @@ abstract class HiCTAPIRequestDTO<
         return new SaveFileRequestDTO(entity as SaveFileRequest);
       case entity instanceof ListFilesRequest:
         return new ListFilesRequestDTO(entity);
+      case entity instanceof ListFilesDetailedRequest:
+        return new ListFilesDetailedRequestDTO(entity);
       case entity instanceof ListCoolerFilesRequest:
         return new ListCoolerFilesRequestDTO(entity);
       case entity instanceof ListTrackFilesRequest:
         return new ListTrackFilesRequestDTO(entity);
       case entity instanceof OpenTrackRequest:
         return new OpenTrackRequestDTO(entity as OpenTrackRequest);
+      case entity instanceof ProbeTrackCompatibilityRequest:
+        return new ProbeTrackCompatibilityRequestDTO(entity as ProbeTrackCompatibilityRequest);
       case entity instanceof ListTracksRequest:
         return new ListTracksRequestDTO(entity);
       case entity instanceof UpdateTrackRequest:
@@ -447,6 +453,12 @@ class ListFilesRequestDTO extends HiCTAPIRequestDTO<ListFilesRequest> {
   }
 }
 
+class ListFilesDetailedRequestDTO extends HiCTAPIRequestDTO<ListFilesDetailedRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
 class ListCoolerFilesRequestDTO extends HiCTAPIRequestDTO<ListCoolerFilesRequest> {
   toDTO(): Record<string, unknown> {
     return {};
@@ -465,6 +477,14 @@ class OpenTrackRequestDTO extends HiCTAPIRequestDTO<OpenTrackRequest> {
       filename: this.entity.options.filename,
       name: this.entity.options.name,
       color: this.entity.options.color,
+    };
+  }
+}
+
+class ProbeTrackCompatibilityRequestDTO extends HiCTAPIRequestDTO<ProbeTrackCompatibilityRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      filename: this.entity.options.filename,
     };
   }
 }
@@ -498,12 +518,32 @@ class RemoveTrackRequestDTO extends HiCTAPIRequestDTO<RemoveTrackRequest> {
 
 class QueryTracks1DRequestDTO extends HiCTAPIRequestDTO<QueryTracks1DRequest> {
   toDTO(): Record<string, unknown> {
-    return {
-      startPx: this.entity.options.startPx,
-      endPx: this.entity.options.endPx,
+    const dto: Record<string, unknown> = {
       widthPx: this.entity.options.widthPx,
       bpResolution: this.entity.options.bpResolution,
     };
+    if (this.entity.options.unit) {
+      dto.unit = this.entity.options.unit;
+    }
+    if (this.entity.options.startPx !== undefined) {
+      dto.startPx = this.entity.options.startPx;
+    }
+    if (this.entity.options.endPx !== undefined) {
+      dto.endPx = this.entity.options.endPx;
+    }
+    if (this.entity.options.startBin !== undefined) {
+      dto.startBin = this.entity.options.startBin;
+    }
+    if (this.entity.options.endBin !== undefined) {
+      dto.endBin = this.entity.options.endBin;
+    }
+    if (this.entity.options.startBP !== undefined) {
+      dto.startBP = this.entity.options.startBP;
+    }
+    if (this.entity.options.endBP !== undefined) {
+      dto.endBP = this.entity.options.endBP;
+    }
+    return dto;
   }
 }
 
@@ -571,6 +611,7 @@ export {
   HiCTAPIRequestDTO,
   OpenFileRequestDTO,
   ListFilesRequestDTO,
+  ListFilesDetailedRequestDTO,
   CloseFileRequestDTO,
   AttachSessionRequestDTO,
   StartConversionJobRequestDTO,
@@ -594,6 +635,7 @@ export {
   SaveFileRequestDTO,
   ListTrackFilesRequestDTO,
   OpenTrackRequestDTO,
+  ProbeTrackCompatibilityRequestDTO,
   ListTracksRequestDTO,
   UpdateTrackRequestDTO,
   RemoveTrackRequestDTO,

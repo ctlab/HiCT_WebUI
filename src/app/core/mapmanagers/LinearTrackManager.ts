@@ -24,6 +24,8 @@ import { unByKey } from "ol/Observable";
 import { transform } from "ol/proj";
 import type { ContactMapManager } from "./ContactMapManager";
 import type {
+  FileEntryResponse,
+  TrackCompatibilityReportResponse,
   TrackQueryResponse,
   TrackSummaryResponse,
   TracksPrecomputeStatusResponse,
@@ -177,6 +179,18 @@ class LinearTrackManager {
 
   public async listTrackFiles(): Promise<string[]> {
     return this.mapManager.networkManager.requestManager.listTrackFiles();
+  }
+
+  public async listFilesDetailed(): Promise<FileEntryResponse[]> {
+    return this.mapManager.networkManager.requestManager.listFilesDetailed();
+  }
+
+  public async probeTrackCompatibility(
+    filename: string
+  ): Promise<TrackCompatibilityReportResponse> {
+    return this.mapManager.networkManager.requestManager.probeTrackCompatibility(
+      filename
+    );
   }
 
   public async openTrack(filename: string, name?: string): Promise<void> {
@@ -463,6 +477,7 @@ class LinearTrackManager {
         name: track.name,
         type: track.type,
         color: track.color,
+        renderStyle: track.renderStyle ?? "SIGNAL",
         bins: [],
         maxValue: 0,
         error: null,
@@ -503,6 +518,10 @@ class LinearTrackManager {
         ctx.strokeStyle = "rgba(120,130,145,0.55)";
         ctx.strokeRect(laneStart + 0.5, 0.5, laneSize - 1, canvas.height - 1);
       }
+      const renderStyle =
+        (track.renderStyle ?? "SIGNAL").toUpperCase() === "FEATURE"
+          ? "FEATURE"
+          : "SIGNAL";
       ctx.fillStyle = track.color ?? "#4e79a7";
       for (const bin of track.bins) {
         const hasProjectedPx =
@@ -519,7 +538,10 @@ class LinearTrackManager {
                 bpResolution
               );
         const endPx = hasProjectedPx
-          ? Math.max(startPx + 1, Math.max(bin.startPx ?? startPx, bin.endPx ?? startPx))
+          ? Math.max(
+              startPx + 1,
+              Math.max(bin.startPx ?? startPx, bin.endPx ?? startPx)
+            )
           : this.mapManager
               .getContigDimensionHolder()
               .getPxContainingBp(
@@ -531,7 +553,10 @@ class LinearTrackManager {
               ) + 1;
         if (!hasProjectedPx) {
           const intervalStart = Math.max(0, Math.min(bin.startBp, bin.endBp));
-          const intervalEnd = Math.max(intervalStart + 1, Math.max(bin.startBp, bin.endBp));
+          const intervalEnd = Math.max(
+            intervalStart + 1,
+            Math.max(bin.startBp, bin.endBp)
+          );
           const intervalProbeEnd = Math.max(intervalStart, intervalEnd - 1);
           if (
             !this.mapManager
@@ -544,33 +569,167 @@ class LinearTrackManager {
             continue;
           }
         }
-        const normalizedValue = Math.max(
-          0,
-          Math.min(1, (bin.value ?? 0) / maxValue)
-        );
+
         if (orientation === "horizontal") {
           const x0ByPx = Math.floor(viewport.pxToScreen(startPx));
-          const x1ByPx = Math.max(x0ByPx + 1, Math.ceil(viewport.pxToScreen(endPx)));
+          const x1ByPx = Math.max(
+            x0ByPx + 1,
+            Math.ceil(viewport.pxToScreen(endPx))
+          );
           const x0 = Math.max(0, Math.min(canvas.width - 1, x0ByPx));
           const x1 = Math.max(x0 + 1, Math.min(canvas.width, x1ByPx));
           if (x1 <= x0 || x1ByPx === x0ByPx) {
             continue;
           }
-          const barHeight =
-            (laneInnerEnd - laneInnerStart) * normalizedValue;
-          const y = laneInnerEnd - barHeight;
-          ctx.fillRect(x0, y, x1 - x0, Math.max(1, barHeight));
+          if (renderStyle === "SIGNAL") {
+            const normalizedValue = Math.max(
+              0,
+              Math.min(1, (bin.value ?? 0) / maxValue)
+            );
+            const barHeight = (laneInnerEnd - laneInnerStart) * normalizedValue;
+            const y = laneInnerEnd - barHeight;
+            ctx.fillRect(x0, y, x1 - x0, Math.max(1, barHeight));
+          } else {
+            const laneCenter = (laneInnerStart + laneInnerEnd) / 2;
+            const thinHeight = Math.max(
+              1,
+              Math.round((laneInnerEnd - laneInnerStart) * 0.16)
+            );
+            const thickHeight = Math.max(
+              thinHeight + 1,
+              Math.round((laneInnerEnd - laneInnerStart) * 0.48)
+            );
+            const thinY = Math.floor(laneCenter - thinHeight / 2);
+            const thickY = Math.floor(laneCenter - thickHeight / 2);
+            ctx.fillRect(x0, thinY, x1 - x0, thinHeight);
+            const hasThickPx =
+              typeof bin.thickStartPx === "number" &&
+              Number.isFinite(bin.thickStartPx) &&
+              typeof bin.thickEndPx === "number" &&
+              Number.isFinite(bin.thickEndPx);
+            let thickX0 = x0;
+            let thickX1 = x1;
+            if (hasThickPx) {
+              const thickStartPx = Math.max(
+                0,
+                Math.min(bin.thickStartPx ?? 0, bin.thickEndPx ?? 0)
+              );
+              const thickEndPx = Math.max(
+                thickStartPx + 1,
+                Math.max(bin.thickStartPx ?? thickStartPx, bin.thickEndPx ?? thickStartPx)
+              );
+              const thickX0ByPx = Math.floor(viewport.pxToScreen(thickStartPx));
+              const thickX1ByPx = Math.max(
+                thickX0ByPx + 1,
+                Math.ceil(viewport.pxToScreen(thickEndPx))
+              );
+              thickX0 = Math.max(x0, Math.min(canvas.width - 1, thickX0ByPx));
+              thickX1 = Math.max(thickX0 + 1, Math.min(x1, thickX1ByPx));
+            }
+            ctx.fillRect(thickX0, thickY, Math.max(1, thickX1 - thickX0), thickHeight);
+
+            const strand = bin.strand;
+            if ((strand === "+" || strand === "-") && x1 - x0 > 8) {
+              const arrowSpacing = 14;
+              const arrowSize = 3;
+              const arrowY = Math.floor(laneCenter);
+              ctx.beginPath();
+              if (strand === "+") {
+                for (let x = x0 + 4; x < x1 - 2; x += arrowSpacing) {
+                  ctx.moveTo(x - arrowSize, arrowY - arrowSize);
+                  ctx.lineTo(x + arrowSize, arrowY);
+                  ctx.lineTo(x - arrowSize, arrowY + arrowSize);
+                }
+              } else {
+                for (let x = x1 - 4; x > x0 + 2; x -= arrowSpacing) {
+                  ctx.moveTo(x + arrowSize, arrowY - arrowSize);
+                  ctx.lineTo(x - arrowSize, arrowY);
+                  ctx.lineTo(x + arrowSize, arrowY + arrowSize);
+                }
+              }
+              ctx.fill();
+            }
+          }
         } else {
           const y0ByPx = Math.floor(viewport.pxToScreen(startPx));
-          const y1ByPx = Math.max(y0ByPx + 1, Math.ceil(viewport.pxToScreen(endPx)));
+          const y1ByPx = Math.max(
+            y0ByPx + 1,
+            Math.ceil(viewport.pxToScreen(endPx))
+          );
           const y0 = Math.max(0, Math.min(canvas.height - 1, y0ByPx));
           const y1 = Math.max(y0 + 1, Math.min(canvas.height, y1ByPx));
           if (y1 <= y0 || y1ByPx === y0ByPx) {
             continue;
           }
-          const barWidth = (laneInnerEnd - laneInnerStart) * normalizedValue;
-          const x = laneInnerEnd - Math.max(1, barWidth);
-          ctx.fillRect(x, y0, Math.max(1, barWidth), y1 - y0);
+          if (renderStyle === "SIGNAL") {
+            const normalizedValue = Math.max(
+              0,
+              Math.min(1, (bin.value ?? 0) / maxValue)
+            );
+            const barWidth = (laneInnerEnd - laneInnerStart) * normalizedValue;
+            const x = laneInnerEnd - Math.max(1, barWidth);
+            ctx.fillRect(x, y0, Math.max(1, barWidth), y1 - y0);
+          } else {
+            const laneCenter = (laneInnerStart + laneInnerEnd) / 2;
+            const thinWidth = Math.max(
+              1,
+              Math.round((laneInnerEnd - laneInnerStart) * 0.16)
+            );
+            const thickWidth = Math.max(
+              thinWidth + 1,
+              Math.round((laneInnerEnd - laneInnerStart) * 0.48)
+            );
+            const thinX = Math.floor(laneCenter - thinWidth / 2);
+            const thickX = Math.floor(laneCenter - thickWidth / 2);
+            ctx.fillRect(thinX, y0, thinWidth, y1 - y0);
+            const hasThickPx =
+              typeof bin.thickStartPx === "number" &&
+              Number.isFinite(bin.thickStartPx) &&
+              typeof bin.thickEndPx === "number" &&
+              Number.isFinite(bin.thickEndPx);
+            let thickY0 = y0;
+            let thickY1 = y1;
+            if (hasThickPx) {
+              const thickStartPx = Math.max(
+                0,
+                Math.min(bin.thickStartPx ?? 0, bin.thickEndPx ?? 0)
+              );
+              const thickEndPx = Math.max(
+                thickStartPx + 1,
+                Math.max(bin.thickStartPx ?? thickStartPx, bin.thickEndPx ?? thickStartPx)
+              );
+              const thickY0ByPx = Math.floor(viewport.pxToScreen(thickStartPx));
+              const thickY1ByPx = Math.max(
+                thickY0ByPx + 1,
+                Math.ceil(viewport.pxToScreen(thickEndPx))
+              );
+              thickY0 = Math.max(y0, Math.min(canvas.height - 1, thickY0ByPx));
+              thickY1 = Math.max(thickY0 + 1, Math.min(y1, thickY1ByPx));
+            }
+            ctx.fillRect(thickX, thickY0, thickWidth, Math.max(1, thickY1 - thickY0));
+
+            const strand = bin.strand;
+            if ((strand === "+" || strand === "-") && y1 - y0 > 8) {
+              const arrowSpacing = 14;
+              const arrowSize = 3;
+              const arrowX = Math.floor(laneCenter);
+              ctx.beginPath();
+              if (strand === "+") {
+                for (let y = y0 + 4; y < y1 - 2; y += arrowSpacing) {
+                  ctx.moveTo(arrowX - arrowSize, y - arrowSize);
+                  ctx.lineTo(arrowX, y + arrowSize);
+                  ctx.lineTo(arrowX + arrowSize, y - arrowSize);
+                }
+              } else {
+                for (let y = y1 - 4; y > y0 + 2; y -= arrowSpacing) {
+                  ctx.moveTo(arrowX - arrowSize, y + arrowSize);
+                  ctx.lineTo(arrowX, y - arrowSize);
+                  ctx.lineTo(arrowX + arrowSize, y + arrowSize);
+                }
+              }
+              ctx.fill();
+            }
+          }
         }
       }
       ctx.fillStyle = "rgba(20,20,20,0.85)";
@@ -585,6 +744,18 @@ class LinearTrackManager {
           ctx.fillStyle = "rgba(90,90,90,0.75)";
           ctx.font = "10px sans-serif";
           ctx.fillText(statusMessage ?? "No signal in current view", 6, laneStart + 20);
+        }
+        if ((track.renderStyle ?? "SIGNAL").toUpperCase() !== "FEATURE") {
+          ctx.fillStyle = "rgba(30,40,55,0.72)";
+          ctx.font = "9px monospace";
+          ctx.textAlign = "right";
+          ctx.fillText(
+            this.formatScaleValue(maxValue),
+            canvas.width - 4,
+            laneStart + 4
+          );
+          ctx.fillText("0", canvas.width - 4, laneEnd - 12);
+          ctx.textAlign = "left";
         }
       } else {
         ctx.save();
@@ -609,6 +780,12 @@ class LinearTrackManager {
           ctx.fillText(statusMessage ?? "No signal", 0, 0);
           ctx.restore();
         }
+        if ((track.renderStyle ?? "SIGNAL").toUpperCase() !== "FEATURE") {
+          ctx.fillStyle = "rgba(30,40,55,0.72)";
+          ctx.font = "9px monospace";
+          ctx.fillText(this.formatScaleValue(maxValue), laneStart + 2, 2);
+          ctx.fillText("0", laneStart + 2, canvas.height - 12);
+        }
       }
     });
     const hasAnySignal = tracks.some((track) => track.bins.length > 0);
@@ -621,6 +798,19 @@ class LinearTrackManager {
         : statusMessage ?? "No signal in current view",
       trackCount: tracks.length,
     });
+  }
+
+  private formatScaleValue(value: number): string {
+    if (!Number.isFinite(value) || value <= 0) {
+      return "0";
+    }
+    if (value >= 1000 || value < 0.01) {
+      return value.toExponential(2);
+    }
+    if (value >= 10) {
+      return value.toFixed(1);
+    }
+    return value.toFixed(3);
   }
 
   private getViewportGeometry(orientation: Orientation): ViewportGeometry {

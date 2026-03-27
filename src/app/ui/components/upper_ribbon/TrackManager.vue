@@ -40,16 +40,21 @@
             </div>
             <template v-else>
               <div class="row g-2 align-items-end mb-3">
-                <div class="col-6">
+                <div class="col-7">
                   <label class="form-label">Track file</label>
-                  <select v-model="selectedFile" class="form-select">
-                    <option value="">Select BED/VCF/BigWig/BAM file</option>
-                    <option v-for="file in availableFiles" :key="file" :value="file">
-                      {{ file }}
-                    </option>
-                  </select>
+                  <div class="input-group">
+                    <input
+                      type="text"
+                      class="form-control"
+                      :value="selectedFile || 'Select BED/VCF/GFF/GTF/BigWig/BAM file'"
+                      readonly
+                    />
+                    <button class="btn btn-outline-secondary" @click="trackFileSelectorOpen = true">
+                      Browse…
+                    </button>
+                  </div>
                 </div>
-                <div class="col-4">
+                <div class="col-3">
                   <label class="form-label">Display name</label>
                   <input
                     v-model="trackDisplayName"
@@ -172,15 +177,60 @@
         </div>
       </div>
     </div>
+    <UniversalFileSelector
+      v-if="trackFileSelectorOpen && props.mapManager"
+      :network-manager="props.mapManager.networkManager"
+      :title="'Select 1D track file'"
+      :file-name-predicate="isSupportedTrackFilename"
+      @selected="onTrackFileSelected"
+      @dismissed="trackFileSelectorOpen = false"
+    />
+    <template v-if="pendingTrackProbe">
+      <div class="modal-backdrop fade show track-compat-backdrop"></div>
+      <div class="modal fade show track-compat-modal" style="display: block" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Track Compatibility Warning</h5>
+              <button class="btn-close" @click="pendingTrackProbe = null"></button>
+            </div>
+            <div class="modal-body">
+              <p class="mb-2">{{ pendingTrackProbe.message }}</p>
+              <ul class="small mb-2">
+                <li>Track names: {{ pendingTrackProbe.totalNames }}</li>
+                <li>Matched source names: {{ pendingTrackProbe.matchedSourceNames }}</li>
+                <li>Matched assembly names: {{ pendingTrackProbe.matchedAssemblyNames }}</li>
+                <li>Matched total: {{ pendingTrackProbe.matchedAnyNames }}</li>
+              </ul>
+              <div
+                v-if="pendingTrackProbe.unknownNames.length > 0"
+                class="alert alert-warning py-2 mb-0"
+              >
+                Unknown names:
+                <code>{{ pendingTrackProbe.unknownNames.slice(0, 12).join(", ") }}</code>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" @click="pendingTrackProbe = null">Cancel</button>
+              <button class="btn btn-primary" @click="onProceedTrackWithMismatch">
+                Ignore and Load
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type {
+  TrackCompatibilityReportResponse,
   TrackSummaryResponse,
   TracksPrecomputeStatusResponse,
 } from "@/app/core/net/api/response";
+import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
 
@@ -192,9 +242,10 @@ defineEmits<{
   (e: "dismissed"): void;
 }>();
 
-const availableFiles = ref<string[]>([]);
 const selectedFile = ref("");
 const trackDisplayName = ref("");
+const trackFileSelectorOpen = ref(false);
+const pendingTrackProbe = ref<TrackCompatibilityReportResponse | null>(null);
 const tracks = ref<TrackSummaryResponse[]>([]);
 const precomputeStatus = ref<TracksPrecomputeStatusResponse | null>(null);
 let precomputePollHandle: number | null = null;
@@ -227,16 +278,25 @@ const normalizeBigWigAggregation = (value: string): "MAX" | "MEAN" | "SUM" => {
   return "MAX";
 };
 
-const refreshFiles = async () => {
-  if (!props.mapManager) {
-    availableFiles.value = [];
-    return;
-  }
-  try {
-    availableFiles.value = await props.mapManager.linearTrackManager.listTrackFiles();
-  } catch (err) {
-    toast.error(String(err));
-  }
+const TRACK_SUFFIXES = [
+  ".bed",
+  ".bed.gz",
+  ".vcf",
+  ".vcf.gz",
+  ".gff",
+  ".gff.gz",
+  ".gff3",
+  ".gff3.gz",
+  ".gtf",
+  ".gtf.gz",
+  ".bw",
+  ".bigwig",
+  ".bam",
+];
+
+const isSupportedTrackFilename = (name: string): boolean => {
+  const lowered = name.toLowerCase();
+  return TRACK_SUFFIXES.some((suffix) => lowered.endsWith(suffix));
 };
 
 const refreshTracks = async () => {
@@ -264,7 +324,7 @@ const refreshPrecomputeStatus = async () => {
   }
 };
 
-const onAddTrack = async () => {
+const openTrackInternal = async () => {
   if (!props.mapManager || !selectedFile.value) {
     return;
   }
@@ -278,6 +338,38 @@ const onAddTrack = async () => {
     await refreshPrecomputeStatus();
   } catch (err) {
     toast.error(String(err));
+  }
+};
+
+const onAddTrack = async () => {
+  if (!props.mapManager || !selectedFile.value) {
+    return;
+  }
+  try {
+    const probe = await props.mapManager.linearTrackManager.probeTrackCompatibility(
+      selectedFile.value
+    );
+    if (probe.status !== "ok") {
+      pendingTrackProbe.value = probe;
+      return;
+    }
+    await openTrackInternal();
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
+const onProceedTrackWithMismatch = async () => {
+  pendingTrackProbe.value = null;
+  await openTrackInternal();
+};
+
+const onTrackFileSelected = (filename: string) => {
+  selectedFile.value = filename;
+  trackFileSelectorOpen.value = false;
+  if (!trackDisplayName.value.trim()) {
+    const parts = filename.split("/");
+    trackDisplayName.value = parts[parts.length - 1] ?? "";
   }
 };
 
@@ -396,7 +488,7 @@ const startPrecomputePolling = () => {
 };
 
 onMounted(async () => {
-  await Promise.all([refreshFiles(), refreshTracks(), refreshPrecomputeStatus()]);
+  await Promise.all([refreshTracks(), refreshPrecomputeStatus()]);
   startPrecomputePolling();
 });
 
@@ -440,5 +532,13 @@ onBeforeUnmount(() => {
   border: 1px solid #e6e6e6;
   border-radius: 4px;
   padding: 0.35rem 0.5rem;
+}
+
+.track-compat-backdrop {
+  z-index: 1060;
+}
+
+.track-compat-modal {
+  z-index: 1065;
 }
 </style>

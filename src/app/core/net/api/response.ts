@@ -80,6 +80,7 @@ class TrackSummaryResponse {
     public readonly color: string,
     public readonly visible: boolean,
     public readonly featureCount: number,
+    public readonly renderStyle: string,
     public readonly renderMode: string,
     public readonly aggregationMode: string
   ) {}
@@ -93,7 +94,13 @@ class TrackBinResponse {
     public readonly count: number,
     public readonly label: string | null,
     public readonly startPx: number | null,
-    public readonly endPx: number | null
+    public readonly endPx: number | null,
+    public readonly strand: string | null,
+    public readonly thickStartBp: number | null,
+    public readonly thickEndBp: number | null,
+    public readonly thickStartPx: number | null,
+    public readonly thickEndPx: number | null,
+    public readonly featureType: string | null
   ) {}
 }
 
@@ -103,6 +110,7 @@ class TrackRenderResponse {
     public readonly name: string,
     public readonly type: string,
     public readonly color: string,
+    public readonly renderStyle: string,
     public readonly bins: TrackBinResponse[],
     public readonly maxValue: number,
     public readonly error: string | null
@@ -140,6 +148,31 @@ class TracksPrecomputeStatusResponse {
     public readonly tracks: TrackPrecomputeTrackStatusResponse[],
     public readonly runningJobs: number,
     public readonly processedDirectory: string
+  ) {}
+}
+
+class TrackCompatibilityReportResponse {
+  public constructor(
+    public readonly filename: string,
+    public readonly trackType: string,
+    public readonly status: string,
+    public readonly totalNames: number,
+    public readonly matchedSourceNames: number,
+    public readonly matchedAssemblyNames: number,
+    public readonly matchedAnyNames: number,
+    public readonly unknownNames: string[],
+    public readonly recommendation: string,
+    public readonly message: string
+  ) {}
+}
+
+class FileEntryResponse {
+  public constructor(
+    public readonly path: string,
+    public readonly name: string,
+    public readonly sizeBytes: number,
+    public readonly modifiedAtMs: number,
+    public readonly extension: string
   ) {}
 }
 
@@ -227,6 +260,8 @@ export {
   TrackQueryResponse,
   TrackPrecomputeTrackStatusResponse,
   TracksPrecomputeStatusResponse,
+  TrackCompatibilityReportResponse,
+  FileEntryResponse,
   WorkerPoolDiagnosticsResponse,
   WorkerCancellationDomainDiagnosticsResponse,
   WorkerSchedulerDiagnosticsResponse,

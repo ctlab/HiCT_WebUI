@@ -37,6 +37,8 @@ import {
   FastaLinkResponseDTO,
   NameMappingResponseDTO,
   TracksPrecomputeStatusResponseDTO,
+  TrackCompatibilityReportResponseDTO,
+  FileEntryResponseDTO,
   TrackQueryResponseDTO,
   TrackSummaryResponseDTO,
   TilePOSTResponseDTO,
@@ -53,6 +55,7 @@ import {
   LinkFASTARequest,
   ListAGPFilesRequest,
   ListCoolerFilesRequest,
+  ListFilesDetailedRequest,
   ListFASTAFilesRequest,
   ListFilesRequest,
   LoadAGPRequest,
@@ -81,6 +84,7 @@ import {
   OpenProgressRequest,
   ListTrackFilesRequest,
   OpenTrackRequest,
+  ProbeTrackCompatibilityRequest,
   ListTracksRequest,
   UpdateTrackRequest,
   RemoveTrackRequest,
@@ -93,7 +97,9 @@ import {
   ConversionJobResponse,
   CurrentSignalRangeResponse,
   FastaLinkResponse,
+  FileEntryResponse,
   NameMappingResponse,
+  TrackCompatibilityReportResponse,
   TracksPrecomputeStatusResponse,
   TrackQueryResponse,
   TrackSummaryResponse,
@@ -231,6 +237,12 @@ class RequestManager {
     return response.data as string[];
   }
 
+  public async listFilesDetailed(): Promise<FileEntryResponse[]> {
+    return this.sendRequest(new ListFilesDetailedRequest())
+      .then((response) => response.data as Record<string, unknown>[])
+      .then((items) => items.map((item) => new FileEntryResponseDTO(item).toEntity()));
+  }
+
   public async listCoolers(): Promise<string[]> {
     const response = await this.sendRequest(new ListCoolerFilesRequest());
     return response.data as string[];
@@ -249,6 +261,14 @@ class RequestManager {
     return this.sendRequest(new OpenTrackRequest({ filename, name, color }))
       .then((response) => response.data)
       .then((json) => new TrackSummaryResponseDTO(json).toEntity());
+  }
+
+  public async probeTrackCompatibility(
+    filename: string
+  ): Promise<TrackCompatibilityReportResponse> {
+    return this.sendRequest(new ProbeTrackCompatibilityRequest({ filename }))
+      .then((response) => response.data)
+      .then((json) => new TrackCompatibilityReportResponseDTO(json).toEntity());
   }
 
   public async listTracks(): Promise<TrackSummaryResponse[]> {
@@ -291,7 +311,52 @@ class RequestManager {
     widthPx: number,
     bpResolution: number
   ): Promise<TrackQueryResponse> {
-    return this.sendRequest(new QueryTracks1DRequest({ startPx, endPx, widthPx, bpResolution }))
+    return this.sendRequest(
+      new QueryTracks1DRequest({
+        unit: "PIXELS",
+        startPx,
+        endPx,
+        widthPx,
+        bpResolution,
+      })
+    )
+      .then((response) => response.data)
+      .then((json) => new TrackQueryResponseDTO(json).toEntity());
+  }
+
+  public async queryTracks1DByUnits(options: {
+    unit: "PIXELS" | "BINS" | "BP";
+    start: number;
+    end: number;
+    widthPx: number;
+    bpResolution: number;
+  }): Promise<TrackQueryResponse> {
+    const payload: {
+      unit: "PIXELS" | "BINS" | "BP";
+      widthPx: number;
+      bpResolution: number;
+      startPx?: number;
+      endPx?: number;
+      startBin?: number;
+      endBin?: number;
+      startBP?: number;
+      endBP?: number;
+    } = {
+      unit: options.unit,
+      widthPx: options.widthPx,
+      bpResolution: options.bpResolution,
+    };
+    if (options.unit === "PIXELS") {
+      payload.startPx = options.start;
+      payload.endPx = options.end;
+    } else if (options.unit === "BINS") {
+      payload.startBin = options.start;
+      payload.endBin = options.end;
+    } else {
+      payload.startBP = options.start;
+      payload.endBP = options.end;
+    }
+    return this.sendRequest(new QueryTracks1DRequest(payload))
       .then((response) => response.data)
       .then((json) => new TrackQueryResponseDTO(json).toEntity());
   }

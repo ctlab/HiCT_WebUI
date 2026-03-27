@@ -57,6 +57,10 @@ class ListFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_files";
 }
 
+class ListFilesDetailedRequest implements HiCTAPIRequest {
+  requestPath = "/list_files_detailed";
+}
+
 class ListFASTAFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_fasta_files";
 }
@@ -350,6 +354,16 @@ class OpenTrackRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class ProbeTrackCompatibilityRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/probe";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+    }
+  ) {}
+}
+
 class ListTracksRequest implements HiCTAPIRequest {
   requestPath = "/tracks/list";
 }
@@ -384,8 +398,13 @@ class QueryTracks1DRequest implements HiCTAPIRequest {
 
   public constructor(
     public readonly options: {
-      readonly startPx: number;
-      readonly endPx: number;
+      readonly startPx?: number;
+      readonly endPx?: number;
+      readonly startBin?: number;
+      readonly endBin?: number;
+      readonly startBP?: number;
+      readonly endBP?: number;
+      readonly unit?: "PIXELS" | "BINS" | "BP";
       readonly widthPx: number;
       readonly bpResolution: number;
     }
@@ -439,6 +458,7 @@ export {
   GetAGPForAssemblyRequest,
   OpenFileRequest,
   ListFilesRequest,
+  ListFilesDetailedRequest,
   GroupContigsIntoScaffoldRequest,
   UngroupContigsFromScaffoldRequest,
   ReverseSelectionRangeRequest,
@@ -460,6 +480,7 @@ export {
   SetVisualizationOptionsRequest,
   ListTrackFilesRequest,
   OpenTrackRequest,
+  ProbeTrackCompatibilityRequest,
   ListTracksRequest,
   UpdateTrackRequest,
   RemoveTrackRequest,
