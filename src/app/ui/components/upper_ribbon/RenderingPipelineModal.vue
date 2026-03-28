@@ -27,7 +27,7 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">Rendering Pipeline</h5>
-            <button type="button" class="btn-close" @click="emit('dismissed')"></button>
+            <button type="button" class="btn-close" @click="dismissModal"></button>
           </div>
           <div class="modal-body">
             <div class="alert alert-warning py-2 mb-3">
@@ -68,7 +68,20 @@
             <button class="btn btn-outline-danger me-auto" :disabled="saving" @click="resetConfig">
               Reset
             </button>
-            <button class="btn btn-secondary" @click="emit('dismissed')">Close</button>
+            <input
+              ref="importInputRef"
+              type="file"
+              accept=".json,application/json"
+              class="d-none"
+              @change="onImportFileSelected"
+            />
+            <button class="btn btn-outline-secondary" :disabled="saving || loading" @click="exportGraphToFile">
+              Export graph
+            </button>
+            <button class="btn btn-outline-secondary" :disabled="saving || loading" @click="triggerImportGraph">
+              Import graph
+            </button>
+            <button class="btn btn-secondary" @click="dismissModal">Close</button>
             <button class="btn btn-primary" :disabled="saving" @click="saveConfig">
               <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>
               Apply
@@ -155,6 +168,7 @@ const loading = ref(false);
 const saving = ref(false);
 const graphHost = ref<HTMLDivElement | null>(null);
 const graphCanvasRef = ref<HTMLCanvasElement | null>(null);
+const importInputRef = ref<HTMLInputElement | null>(null);
 
 let graph: LGraph | null = null;
 let graphCanvas: LGraphCanvas | null = null;
@@ -162,6 +176,7 @@ let resizeObserver: ResizeObserver | null = null;
 let upperSinkId: number | null = null;
 let lowerSinkId: number | null = null;
 let nodeTypesRegistered = false;
+const HICT_PIPELINE_FILTER = "hict_pipeline_graph";
 
 const defaultExpression = (): PipelineExpression => ({
   type: "source",
@@ -173,6 +188,17 @@ const ensureMapManager = (): ContactMapManager => {
     throw new Error("Map manager is unavailable");
   }
   return props.mapManager;
+};
+
+const cleanupContextMenus = (): void => {
+  document.querySelectorAll(".litecontextmenu").forEach((element) => {
+    element.remove();
+  });
+};
+
+const dismissModal = (): void => {
+  cleanupContextMenus();
+  emit("dismissed");
 };
 
 const toSourceName = (value: unknown): SourceName =>
@@ -341,6 +367,12 @@ const ensureNodeTypesRegistered = (): void => {
       this.size = [190, 62];
     }
   }
+  (SourceNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  (ConstantNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  (DynamicNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  (UnaryNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  (BinaryNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  (SinkNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
 
   if (!LiteGraph.registered_node_types[SOURCE_NODE_TYPE]) {
     LiteGraph.registerNodeType(SOURCE_NODE_TYPE, SourceNode as unknown as { new (): LGraphNode });
@@ -405,6 +437,7 @@ const initializeGraph = (): void => {
   }
   ensureNodeTypesRegistered();
   graph = new LGraph();
+  (graph as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
   graphCanvas = new LGraphCanvas(graphCanvasRef.value, graph);
   graphCanvas.allow_interaction = true;
   graphCanvas.background_image = "";
@@ -414,6 +447,62 @@ const initializeGraph = (): void => {
   if (graphHost.value) {
     resizeObserver = new ResizeObserver(() => fitGraphCanvas());
     resizeObserver.observe(graphHost.value);
+  }
+};
+
+const triggerImportGraph = (): void => {
+  importInputRef.value?.click();
+};
+
+const exportGraphToFile = (): void => {
+  try {
+    const payload = {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      enabled: enabled.value,
+      swapUpperLower: swapUpperLower.value,
+      upperExpression: expressionFromSink("UPPER"),
+      lowerExpression: expressionFromSink("LOWER"),
+      liteGraph: graph?.serialize?.() ?? null,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "hict_render_pipeline.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    toast.error(String(error));
+  }
+};
+
+const onImportFileSelected = async (event: Event): Promise<void> => {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) {
+    return;
+  }
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    const importedEnabled = parsed.enabled;
+    const importedSwap = parsed.swapUpperLower;
+    const upperRaw = parsed.upperExpression ?? parsed.upper;
+    const lowerRaw = parsed.lowerExpression ?? parsed.lower;
+    enabled.value = typeof importedEnabled === "boolean" ? importedEnabled : enabled.value;
+    swapUpperLower.value =
+      typeof importedSwap === "boolean" ? importedSwap : swapUpperLower.value;
+    buildGraphFromExpressions(parseExpression(upperRaw), parseExpression(lowerRaw));
+    toast.success("Pipeline graph imported");
+  } catch (error) {
+    toast.error(`Import failed: ${String(error)}`);
+  } finally {
+    if (input) {
+      input.value = "";
+    }
   }
 };
 
@@ -637,6 +726,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  cleanupContextMenus();
   resizeObserver?.disconnect();
   resizeObserver = null;
   graphCanvas?.clear();
@@ -653,7 +743,13 @@ onBeforeUnmount(() => {
 
 .pipeline-graph {
   min-height: 420px;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.pipeline-root .modal-content,
+.pipeline-root .modal-body,
+.pipeline-root .graph-host {
+  overflow: visible;
 }
 
 .graph-host {
@@ -671,5 +767,9 @@ onBeforeUnmount(() => {
 
 .pipeline-root :deep(.litegraph) {
   background: transparent;
+}
+
+:global(.litecontextmenu) {
+  z-index: 5000 !important;
 }
 </style>

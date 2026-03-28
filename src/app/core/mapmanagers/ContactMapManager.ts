@@ -1005,21 +1005,11 @@ class ContactMapManager {
     const contigTrack = this.viewAndLayersManager.track2DHolder.contigBordersTrack;
     const scaffoldTrack =
       this.viewAndLayersManager.track2DHolder.scaffoldBordersTrack;
-    const prefixPx = this.contigDimensionHolder.prefix_sum_px.get(bpResolution);
-    if (!prefixPx) {
+    const pixelResolution =
+      this.viewAndLayersManager.resolutionToPixelResolution.get(bpResolution) ?? 1;
+    if (!Number.isFinite(pixelResolution) || pixelResolution <= 0) {
       return "";
     }
-
-    const measureCanvas =
-      typeof document !== "undefined"
-        ? document.createElement("canvas")
-        : null;
-    const measureCtx = measureCanvas?.getContext("2d") ?? null;
-    const measureLabelWidth = (text: string, font: string): number => {
-      if (!measureCtx) return text.length * 6;
-      measureCtx.font = font;
-      return measureCtx.measureText(text).width;
-    };
     const escapeXml = ContactMapManager.escapeXml;
     const escapeAttr = ContactMapManager.escapeXml;
 
@@ -1032,105 +1022,95 @@ class ContactMapManager {
     };
     const toFontFamily = (track: typeof contigTrack) =>
       toFont(track).replace(/^[^ ]+ /, "");
+    const toSvgPoint = (coordinate: [number, number]): [number, number] => [
+      coordinate[0] / pixelResolution,
+      -coordinate[1] / pixelResolution,
+    ];
+    const polylineSvg = (coordinates: [number, number][]): string =>
+      coordinates
+        .map((coordinate) => {
+          const [x, y] = toSvgPoint(coordinate);
+          return `${x},${y}`;
+        })
+        .join(" ");
+    const renderTrackFeatures = (
+      featureSource: typeof contigTrack,
+      borderEnabled: boolean,
+      namesEnabled: boolean,
+      borderTrackType: "contigBorders" | "scaffoldBorders",
+      namesTrackType: "contigNames" | "scaffoldNames",
+      labelExtractor: (featureName: unknown) => string
+    ): string => {
+      const features = featureSource.features.get(bpResolution) ?? [];
+      if (features.length === 0) {
+        return "";
+      }
+      const strokeColor = featureSource.options.borderColor as string;
+      const labelColor = featureSource.getLabelColor() as string;
+      const strokeWidth = featureSource.options.width;
+      const fillColor = featureSource.options.fillColor as string;
+      const labelSize = featureSource.getLabelSize();
+      const labelStroke = featureSource.getLabelOutline()
+        ? `stroke="rgba(0,0,0,0.9)" stroke-width="${featureSource.getLabelOutlineWidth()}" paint-order="stroke fill" stroke-linejoin="round"`
+        : "";
+      let result = "";
+      for (const feature of features) {
+        const trackType = String(feature.get("trackType") ?? "");
+        const geometry = feature.getGeometry();
+        if (!geometry) {
+          continue;
+        }
+        if (borderEnabled && trackType === borderTrackType) {
+          const geometryType = geometry.getType();
+          if (geometryType === "Polygon") {
+            const ring = (geometry as unknown as { getCoordinates(): [number, number][][] })
+              .getCoordinates()[0] as [number, number][];
+            result += `<polygon points="${polylineSvg(ring)}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
+          } else if (geometryType === "LineString") {
+            const line = (geometry as unknown as { getCoordinates(): [number, number][] })
+              .getCoordinates() as [number, number][];
+            result += `<polyline points="${polylineSvg(line)}" fill="none" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
+          }
+        } else if (namesEnabled && trackType === namesTrackType) {
+          if (geometry.getType() !== "Point") {
+            continue;
+          }
+          const point = (geometry as unknown as { getCoordinates(): [number, number] })
+            .getCoordinates();
+          const [x, y] = toSvgPoint(point);
+          const labelText = labelExtractor(feature.get("name"));
+          result += `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" fill="${escapeAttr(labelColor)}" font-size="${labelSize}" font-family="${escapeAttr(toFontFamily(featureSource))}" font-weight="${featureSource.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${escapeXml(labelText)}</text>`;
+        }
+      }
+      return result;
+    };
+    const extractFeatureName = (raw: unknown): string => {
+      const value = String(raw ?? "");
+      const firstDash = value.indexOf("-");
+      const secondDash = value.lastIndexOf("-bp");
+      if (firstDash >= 0 && secondDash > firstDash) {
+        return value.slice(firstDash + 1, secondDash);
+      }
+      return value;
+    };
 
     let svg = "";
-
-    if (flags.contigBorders || flags.contigNames) {
-      const borderStyle = contigTrack.getStyleType();
-      const strokeColor = contigTrack.options.borderColor as string;
-      const labelColor = contigTrack.getLabelColor() as string;
-      const strokeWidth = contigTrack.options.width;
-      const fillColor = contigTrack.options.fillColor as string;
-      const labelSize = contigTrack.getLabelSize();
-      const labelOffset = labelSize * contigTrack.getLabelOffsetMultiplier();
-      const namePlacement = contigTrack.getNamePlacement();
-      const labelFont = toFont(contigTrack);
-      const labelStroke = contigTrack.getLabelOutline()
-        ? `stroke="rgba(0,0,0,0.9)" stroke-width="${contigTrack.getLabelOutlineWidth()}" paint-order="stroke fill" stroke-linejoin="round"`
-        : "";
-      for (let i = 0; i < this.contigDimensionHolder.contigDescriptors.length; i++) {
-        const cd = this.contigDimensionHolder.contigDescriptors[i];
-        const startPx = prefixPx[i] ?? 0;
-        const lenBins = cd.contigLengthBins.get(bpResolution) ?? 0;
-        const endPx = startPx + lenBins;
-        if (endPx <= startPx) continue;
-        if (flags.contigBorders) {
-          if (borderStyle === 0) {
-            svg += `<rect x="${startPx}" y="${startPx}" width="${lenBins}" height="${lenBins}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
-          } else if (borderStyle === 1) {
-            svg += `<polyline points="${startPx},${startPx} ${endPx},${startPx} ${endPx},${endPx}" fill="none" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
-          } else if (borderStyle === 2) {
-            svg += `<polyline points="${endPx},${endPx} ${startPx},${endPx} ${startPx},${startPx}" fill="none" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
-          }
-        }
-        if (flags.contigNames) {
-          const rectWidth = endPx - startPx;
-          const labelWidth = measureLabelWidth(cd.contigName, labelFont);
-          if (rectWidth > 0 && labelWidth < rectWidth * 0.9) {
-            let labelY = (startPx + endPx) / 2;
-            if (namePlacement === 0) {
-              labelY = startPx - labelOffset;
-            } else if (namePlacement === 1) {
-              labelY = endPx + labelOffset;
-            }
-            const midPx = (startPx + endPx) / 2;
-            svg += `<text x="${midPx}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="${escapeAttr(labelColor)}" font-size="${labelSize}" font-family="${escapeAttr(toFontFamily(contigTrack))}" font-weight="${contigTrack.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${escapeXml(cd.contigName)}</text>`;
-          }
-        }
-      }
-    }
-
-    if (flags.scaffoldBorders || flags.scaffoldNames) {
-      const borderStyle = scaffoldTrack.getStyleType();
-      const strokeColor = scaffoldTrack.options.borderColor as string;
-      const labelColor = scaffoldTrack.getLabelColor() as string;
-      const strokeWidth = scaffoldTrack.options.width;
-      const fillColor = scaffoldTrack.options.fillColor as string;
-      const labelSize = scaffoldTrack.getLabelSize();
-      const labelOffset = labelSize * scaffoldTrack.getLabelOffsetMultiplier();
-      const namePlacement = scaffoldTrack.getNamePlacement();
-      const labelFont = toFont(scaffoldTrack);
-      const labelStroke = scaffoldTrack.getLabelOutline()
-        ? `stroke="rgba(0,0,0,0.9)" stroke-width="${scaffoldTrack.getLabelOutlineWidth()}" paint-order="stroke fill" stroke-linejoin="round"`
-        : "";
-      for (const sd of this.scaffoldHolder.scaffoldTable.values()) {
-        const borders = sd.scaffoldBordersBP;
-        if (!borders) continue;
-        const startPx = this.contigDimensionHolder.getPxContainingBp(
-          borders.startBP,
-          bpResolution
-        );
-        const endPx = this.contigDimensionHolder.getPxContainingBp(
-          borders.endBP,
-          bpResolution
-        );
-        if (endPx <= startPx) continue;
-        const lenBins = endPx - startPx;
-        if (flags.scaffoldBorders) {
-          if (borderStyle === 0) {
-            svg += `<rect x="${startPx}" y="${startPx}" width="${lenBins}" height="${lenBins}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
-          } else if (borderStyle === 1) {
-            svg += `<polyline points="${startPx},${startPx} ${endPx},${startPx} ${endPx},${endPx}" fill="none" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
-          } else if (borderStyle === 2) {
-            svg += `<polyline points="${endPx},${endPx} ${startPx},${endPx} ${startPx},${startPx}" fill="none" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
-          }
-        }
-        if (flags.scaffoldNames) {
-          const rectWidth = endPx - startPx;
-          const labelWidth = measureLabelWidth(sd.scaffoldName, labelFont);
-          if (rectWidth > 0 && labelWidth < rectWidth * 0.9) {
-            let labelY = (startPx + endPx) / 2;
-            if (namePlacement === 0) {
-              labelY = startPx - labelOffset;
-            } else if (namePlacement === 1) {
-              labelY = endPx + labelOffset;
-            }
-            const midPx = (startPx + endPx) / 2;
-            svg += `<text x="${midPx}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" fill="${escapeAttr(labelColor)}" font-size="${labelSize}" font-family="${escapeAttr(toFontFamily(scaffoldTrack))}" font-weight="${scaffoldTrack.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${escapeXml(sd.scaffoldName)}</text>`;
-          }
-        }
-      }
-    }
+    svg += renderTrackFeatures(
+      contigTrack,
+      flags.contigBorders,
+      flags.contigNames,
+      "contigBorders",
+      "contigNames",
+      extractFeatureName
+    );
+    svg += renderTrackFeatures(
+      scaffoldTrack,
+      flags.scaffoldBorders,
+      flags.scaffoldNames,
+      "scaffoldBorders",
+      "scaffoldNames",
+      extractFeatureName
+    );
 
     return svg;
   }
