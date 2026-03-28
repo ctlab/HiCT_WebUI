@@ -368,11 +368,17 @@ const ensureNodeTypesRegistered = (): void => {
     }
   }
   (SourceNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  (SourceNode as unknown as { title?: string }).title = "Source";
   (ConstantNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  (ConstantNode as unknown as { title?: string }).title = "Constant";
   (DynamicNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  (DynamicNode as unknown as { title?: string }).title = "Dynamic";
   (UnaryNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  (UnaryNode as unknown as { title?: string }).title = "Unary";
   (BinaryNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  (BinaryNode as unknown as { title?: string }).title = "Binary";
   (SinkNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  (SinkNode as unknown as { title?: string }).title = "Sink";
 
   if (!LiteGraph.registered_node_types[SOURCE_NODE_TYPE]) {
     LiteGraph.registerNodeType(SOURCE_NODE_TYPE, SourceNode as unknown as { new (): LGraphNode });
