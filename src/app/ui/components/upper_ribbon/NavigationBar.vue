@@ -259,6 +259,9 @@
     @selected="onFileSelected"
     @dismissed="onFileDismissed"
     :error-message="errorMessage"
+    :title="'Open Hi-C dataset'"
+    :file-type="'.hict.hdf5, .hict, .cool, .mcool'"
+    :file-name-predicate="isOpenableAssemblyFilename"
   ></UniversalFileSelector>
   <UniversalFileSelector
     :network-manager="props.networkManager"
@@ -279,6 +282,7 @@
   ></UniversalFileSelector>
   <CoolerConverter
     :network-manager="networkManager"
+    :initial-cooler-filename="coolerToConvert"
     v-if="convertingCoolers"
     @dismissed="onConvertCoolersDismissed"
   >
@@ -350,6 +354,7 @@ const openingFile = ref(false);
 const openingFASTAFile = ref(false);
 const openingAGPFile = ref(false);
 const convertingCoolers = ref(false);
+const coolerToConvert = ref<string | undefined>(undefined);
 const trackManagerOpen = ref(false);
 const workerDiagnosticsOpen = ref(false);
 const saving = ref(false);
@@ -463,10 +468,12 @@ function onSessionFileSelected(event: Event): void {
 }
 
 function onConvertCoolersClicked(): void {
+  coolerToConvert.value = undefined;
   convertingCoolers.value = true;
 }
 
 function onConvertCoolersDismissed(): void {
+  coolerToConvert.value = undefined;
   convertingCoolers.value = false;
 }
 
@@ -508,18 +515,33 @@ function onAGPFileDismissed() {
 
 function onFileSelected(filename: string) {
   if (filename && filename !== "") {
-    if (filename.endsWith(".hict") || filename.endsWith(".hict.hdf5")) {
+    const lowered = filename.toLowerCase();
+    if (lowered.endsWith(".hict") || lowered.endsWith(".hict.hdf5")) {
       openingFile.value = false;
       emit("selected", filename);
-    } else if (filename.endsWith(".agp")) {
+    } else if (lowered.endsWith(".cool") || lowered.endsWith(".mcool")) {
+      openingFile.value = false;
+      coolerToConvert.value = filename;
+      convertingCoolers.value = true;
+    } else if (lowered.endsWith(".agp")) {
       openAGP(filename);
-    } else if (filename.endsWith(".fasta") || filename.endsWith(".fa")) {
+    } else if (lowered.endsWith(".fasta") || lowered.endsWith(".fa")) {
       linkFASTA(filename);
     } else {
       errorMessage.value = "Unknown type of file to be opened: " + filename;
-      toast.error("errorMessage.value");
+      toast.error(String(errorMessage.value));
     }
   }
+}
+
+function isOpenableAssemblyFilename(name: string): boolean {
+  const lowered = name.toLowerCase();
+  return (
+    lowered.endsWith(".hict.hdf5") ||
+    lowered.endsWith(".hict") ||
+    lowered.endsWith(".cool") ||
+    lowered.endsWith(".mcool")
+  );
 }
 
 function openAGP(filename: string) {

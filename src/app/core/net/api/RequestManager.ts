@@ -84,6 +84,7 @@ import {
   OpenProgressRequest,
   ListTrackFilesRequest,
   OpenTrackRequest,
+  OpenCoolerWeightsTrackRequest,
   ProbeTrackCompatibilityRequest,
   ListTracksRequest,
   UpdateTrackRequest,
@@ -92,6 +93,9 @@ import {
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
   GetWorkerDiagnosticsRequest,
+  GetRenderPipelineRequest,
+  SetRenderPipelineRequest,
+  ResetRenderPipelineRequest,
 } from "./request";
 import {
   ConversionJobResponse,
@@ -263,6 +267,15 @@ class RequestManager {
       .then((json) => new TrackSummaryResponseDTO(json).toEntity());
   }
 
+  public async openCoolerWeightsTrack(
+    name?: string,
+    color?: string
+  ): Promise<TrackSummaryResponse> {
+    return this.sendRequest(new OpenCoolerWeightsTrackRequest({ name, color }))
+      .then((response) => response.data)
+      .then((json) => new TrackSummaryResponseDTO(json).toEntity());
+  }
+
   public async probeTrackCompatibility(
     filename: string
   ): Promise<TrackCompatibilityReportResponse> {
@@ -285,6 +298,7 @@ class RequestManager {
       name?: string;
       renderMode?: string;
       aggregationMode?: string;
+      logScale?: boolean;
     }
   ): Promise<TrackSummaryResponse> {
     return this.sendRequest(
@@ -295,6 +309,7 @@ class RequestManager {
         name: options.name,
         renderMode: options.renderMode,
         aggregationMode: options.aggregationMode,
+        logScale: options.logScale,
       })
     )
       .then((response) => response.data)
@@ -380,6 +395,23 @@ class RequestManager {
     return this.sendRequest(new GetWorkerDiagnosticsRequest())
       .then((response) => response.data)
       .then((json) => new WorkerSchedulerDiagnosticsResponseDTO(json).toEntity());
+  }
+
+  public async getRenderPipelineConfig(): Promise<Record<string, unknown>> {
+    return this.sendRequest(new GetRenderPipelineRequest())
+      .then((response) => response.data as Record<string, unknown>);
+  }
+
+  public async setRenderPipelineConfig(
+    config: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    return this.sendRequest(new SetRenderPipelineRequest(config))
+      .then((response) => response.data as Record<string, unknown>);
+  }
+
+  public async resetRenderPipelineConfig(): Promise<Record<string, unknown>> {
+    return this.sendRequest(new ResetRenderPipelineRequest())
+      .then((response) => response.data as Record<string, unknown>);
   }
 
   public async listFASTAFiles(): Promise<string[]> {

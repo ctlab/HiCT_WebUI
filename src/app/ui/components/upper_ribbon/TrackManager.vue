@@ -63,9 +63,12 @@
                     placeholder="Optional"
                   />
                 </div>
-                <div class="col-2 d-grid">
+                <div class="col-2 d-grid gap-2">
                   <button class="btn btn-primary" @click="onAddTrack" :disabled="!selectedFile">
-                    Add
+                    Add file
+                  </button>
+                  <button class="btn btn-outline-primary btn-sm" @click="onAddCoolerWeights">
+                    Add weights
                   </button>
                 </div>
               </div>
@@ -97,6 +100,32 @@
                   </div>
                 </div>
                 <small v-else class="text-muted">No background jobs yet.</small>
+              </div>
+
+              <div class="alert alert-light border py-2">
+                <div class="d-flex align-items-center justify-content-between gap-2">
+                  <strong class="small">Track panel background</strong>
+                  <div class="d-flex align-items-center gap-2">
+                    <div class="form-check form-switch m-0">
+                      <input
+                        id="track-bg-inherit"
+                        v-model="inheritTrackBackgroundFromMap"
+                        class="form-check-input"
+                        type="checkbox"
+                      />
+                      <label class="form-check-label small" for="track-bg-inherit">
+                        Inherit from Hi-C map
+                      </label>
+                    </div>
+                    <input
+                      type="color"
+                      class="form-control form-control-color"
+                      :value="trackBackgroundHex"
+                      :disabled="inheritTrackBackgroundFromMap"
+                      @change="onTrackBackgroundColorChanged(($event.target as HTMLInputElement).value)"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div class="tracks-list">
@@ -134,6 +163,24 @@
                     <option value="MEAN">mean</option>
                     <option value="SUM">sum</option>
                   </select>
+                  <div
+                    v-if="(track.renderStyle ?? 'SIGNAL').toUpperCase() !== 'FEATURE'"
+                    class="form-check form-switch ms-1"
+                  >
+                    <input
+                      :id="`track-log-scale-${track.trackId}`"
+                      class="form-check-input"
+                      type="checkbox"
+                      :checked="track.logScale"
+                      @change="onChangeLogScale(track.trackId, ($event.target as HTMLInputElement).checked)"
+                    />
+                    <label
+                      class="form-check-label small"
+                      :for="`track-log-scale-${track.trackId}`"
+                    >
+                      log
+                    </label>
+                  </div>
                   <select
                     v-if="track.type === 'BAM'"
                     class="form-select form-select-sm track-mode-select"
@@ -230,8 +277,10 @@ import type {
   TrackSummaryResponse,
   TracksPrecomputeStatusResponse,
 } from "@/app/core/net/api/response";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { storeToRefs } from "pinia";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
@@ -249,6 +298,9 @@ const pendingTrackProbe = ref<TrackCompatibilityReportResponse | null>(null);
 const tracks = ref<TrackSummaryResponse[]>([]);
 const precomputeStatus = ref<TracksPrecomputeStatusResponse | null>(null);
 let precomputePollHandle: number | null = null;
+const uiSettingsStore = useUiSettingsStore();
+const { inheritTrackBackgroundFromMap, trackBackgroundColor } =
+  storeToRefs(uiSettingsStore);
 
 const normalizeColor = (value: string): string => {
   if (/^#[0-9a-fA-F]{6}$/.test(value)) {
@@ -277,6 +329,33 @@ const normalizeBigWigAggregation = (value: string): "MAX" | "MEAN" | "SUM" => {
   }
   return "MAX";
 };
+
+const rgbaLikeToHex = (value: string): string => {
+  const normalized = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(normalized)) {
+    return normalized;
+  }
+  const rgbMatch = normalized.match(
+    /rgba?\s*\(\s*(\d+)\s*[, ]\s*(\d+)\s*[, ]\s*(\d+)/
+  );
+  if (!rgbMatch) {
+    return "#f4f7fb";
+  }
+  const channel = (idx: number): string =>
+    Math.max(0, Math.min(255, Number(rgbMatch[idx])))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${channel(1)}${channel(2)}${channel(3)}`;
+};
+
+const onTrackBackgroundColorChanged = (value: string): void => {
+  if (!/^#[0-9a-fA-F]{6}$/.test(value)) {
+    return;
+  }
+  trackBackgroundColor.value = value;
+};
+
+const trackBackgroundHex = computed(() => rgbaLikeToHex(trackBackgroundColor.value));
 
 const TRACK_SUFFIXES = [
   ".bed",
@@ -354,6 +433,22 @@ const onAddTrack = async () => {
       return;
     }
     await openTrackInternal();
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
+const onAddCoolerWeights = async () => {
+  if (!props.mapManager) {
+    return;
+  }
+  try {
+    await props.mapManager.linearTrackManager.openCoolerWeightsTrack(
+      trackDisplayName.value.trim() || undefined
+    );
+    trackDisplayName.value = "";
+    await refreshTracks();
+    await refreshPrecomputeStatus();
   } catch (err) {
     toast.error(String(err));
   }
@@ -445,6 +540,20 @@ const onChangeBigWigAggregation = async (
   try {
     await props.mapManager.linearTrackManager.updateTrack(trackId, {
       aggregationMode: normalizeBigWigAggregation(aggregationMode),
+    });
+    await refreshTracks();
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
+const onChangeLogScale = async (trackId: string, logScale: boolean) => {
+  if (!props.mapManager) {
+    return;
+  }
+  try {
+    await props.mapManager.linearTrackManager.updateTrack(trackId, {
+      logScale,
     });
     await refreshTracks();
   } catch (err) {

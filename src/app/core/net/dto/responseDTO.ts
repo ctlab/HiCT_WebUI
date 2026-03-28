@@ -135,7 +135,8 @@ class TrackSummaryResponseDTO extends InboundDTO<TrackSummaryResponse> {
       this.json["featureCount"] as number,
       (this.json["renderStyle"] as string) ?? "SIGNAL",
       (this.json["renderMode"] as string) ?? "COVERAGE",
-      (this.json["aggregationMode"] as string) ?? "MAX"
+      (this.json["aggregationMode"] as string) ?? "MAX",
+      (this.json["logScale"] as boolean) ?? false
     );
   }
 }

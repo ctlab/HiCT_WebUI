@@ -23,6 +23,8 @@ import type { EventsKey } from "ol/events";
 import { unByKey } from "ol/Observable";
 import { transform } from "ol/proj";
 import type { ContactMapManager } from "./ContactMapManager";
+import { useStyleStore } from "@/app/stores/styleStore";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import type {
   FileEntryResponse,
   TrackCompatibilityReportResponse,
@@ -201,6 +203,13 @@ class LinearTrackManager {
     await this.refreshTrackList();
   }
 
+  public async openCoolerWeightsTrack(name?: string): Promise<void> {
+    await this.mapManager.networkManager.requestManager.openCoolerWeightsTrack(
+      name
+    );
+    await this.refreshTrackList();
+  }
+
   public async removeTrack(trackId: string): Promise<void> {
     await this.mapManager.networkManager.requestManager.removeTrack(trackId);
     await this.refreshTrackList();
@@ -214,6 +223,7 @@ class LinearTrackManager {
       name?: string;
       renderMode?: string;
       aggregationMode?: string;
+      logScale?: boolean;
     }
   ): Promise<void> {
     await this.mapManager.networkManager.requestManager.updateTrack(
@@ -468,7 +478,7 @@ class LinearTrackManager {
     }
     ctx.textBaseline = "top";
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "rgba(248,249,250,0.98)";
+    ctx.fillStyle = this.resolveTrackBackgroundColor();
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const fallbackTracks = this.tracks
       .filter((track) => track.visible)
@@ -497,6 +507,7 @@ class LinearTrackManager {
     const descriptor =
       this.mapManager.getLayersManager().currentViewState.resolutionDesciptor;
     const bpResolution = descriptor.bpResolution;
+    const laneBackgroundColor = this.resolveTrackBackgroundColor();
     const laneSize =
       orientation === "horizontal"
         ? canvas.height / tracks.length
@@ -506,22 +517,28 @@ class LinearTrackManager {
       const laneEnd = laneStart + laneSize;
       const laneInnerStart = laneStart + 2;
       const laneInnerEnd = laneEnd - 2;
-      const maxValue = Math.max(track.maxValue, 1);
+      const maxValue = Math.max(track.maxValue, 0);
 
-      ctx.fillStyle = "rgba(226,232,240,0.95)";
+      ctx.fillStyle = laneBackgroundColor;
       if (orientation === "horizontal") {
         ctx.fillRect(0, laneStart, canvas.width, laneSize - 1);
-        ctx.strokeStyle = "rgba(120,130,145,0.55)";
+        ctx.strokeStyle = "rgba(120,130,145,0.35)";
         ctx.strokeRect(0.5, laneStart + 0.5, canvas.width - 1, laneSize - 1);
       } else {
         ctx.fillRect(laneStart, 0, laneSize - 1, canvas.height);
-        ctx.strokeStyle = "rgba(120,130,145,0.55)";
+        ctx.strokeStyle = "rgba(120,130,145,0.35)";
         ctx.strokeRect(laneStart + 0.5, 0.5, laneSize - 1, canvas.height - 1);
       }
       const renderStyle =
         (track.renderStyle ?? "SIGNAL").toUpperCase() === "FEATURE"
           ? "FEATURE"
           : "SIGNAL";
+      const trackSummary = this.tracks.find(
+        (item) => item.trackId === track.trackId
+      );
+      const useLogScale =
+        renderStyle === "SIGNAL" && !!trackSummary?.logScale;
+      const scaleTransform = this.buildScaleTransform(maxValue, useLogScale);
       ctx.fillStyle = track.color ?? "#4e79a7";
       for (const bin of track.bins) {
         const hasProjectedPx =
@@ -582,10 +599,7 @@ class LinearTrackManager {
             continue;
           }
           if (renderStyle === "SIGNAL") {
-            const normalizedValue = Math.max(
-              0,
-              Math.min(1, (bin.value ?? 0) / maxValue)
-            );
+            const normalizedValue = scaleTransform.normalize(bin.value ?? 0);
             const barHeight = (laneInnerEnd - laneInnerStart) * normalizedValue;
             const y = laneInnerEnd - barHeight;
             ctx.fillRect(x0, y, x1 - x0, Math.max(1, barHeight));
@@ -662,10 +676,7 @@ class LinearTrackManager {
             continue;
           }
           if (renderStyle === "SIGNAL") {
-            const normalizedValue = Math.max(
-              0,
-              Math.min(1, (bin.value ?? 0) / maxValue)
-            );
+            const normalizedValue = scaleTransform.normalize(bin.value ?? 0);
             const barWidth = (laneInnerEnd - laneInnerStart) * normalizedValue;
             const x = laneInnerEnd - Math.max(1, barWidth);
             ctx.fillRect(x, y0, Math.max(1, barWidth), y1 - y0);
@@ -746,45 +757,53 @@ class LinearTrackManager {
           ctx.fillText(statusMessage ?? "No signal in current view", 6, laneStart + 20);
         }
         if ((track.renderStyle ?? "SIGNAL").toUpperCase() !== "FEATURE") {
-          ctx.fillStyle = "rgba(30,40,55,0.72)";
-          ctx.font = "9px monospace";
-          ctx.textAlign = "right";
-          ctx.fillText(
-            this.formatScaleValue(maxValue),
-            canvas.width - 4,
-            laneStart + 4
+          this.drawSignalScaleTicks(
+            ctx,
+            orientation,
+            laneStart,
+            laneEnd,
+            laneInnerStart,
+            laneInnerEnd,
+            scaleTransform,
+            canvas.width,
+            canvas.height
           );
-          ctx.fillText("0", canvas.width - 4, laneEnd - 12);
-          ctx.textAlign = "left";
         }
       } else {
         ctx.save();
-        ctx.translate(laneStart + 12, 6);
-        ctx.rotate(Math.PI / 2);
+        ctx.translate(laneStart + 10, canvas.height - 4);
+        ctx.rotate(-Math.PI / 2);
         ctx.fillText(track.name, 0, 0);
         ctx.restore();
         if (track.error) {
           ctx.save();
-          ctx.translate(laneStart + 24, 6);
-          ctx.rotate(Math.PI / 2);
+          ctx.translate(laneStart + 22, canvas.height - 4);
+          ctx.rotate(-Math.PI / 2);
           ctx.fillStyle = "rgba(160, 30, 30, 0.88)";
           ctx.font = "10px sans-serif";
           ctx.fillText(track.error, 0, 0);
           ctx.restore();
         } else if (track.bins.length === 0) {
           ctx.save();
-          ctx.translate(laneStart + 24, 6);
-          ctx.rotate(Math.PI / 2);
+          ctx.translate(laneStart + 22, canvas.height - 4);
+          ctx.rotate(-Math.PI / 2);
           ctx.fillStyle = "rgba(90,90,90,0.75)";
           ctx.font = "10px sans-serif";
           ctx.fillText(statusMessage ?? "No signal", 0, 0);
           ctx.restore();
         }
         if ((track.renderStyle ?? "SIGNAL").toUpperCase() !== "FEATURE") {
-          ctx.fillStyle = "rgba(30,40,55,0.72)";
-          ctx.font = "9px monospace";
-          ctx.fillText(this.formatScaleValue(maxValue), laneStart + 2, 2);
-          ctx.fillText("0", laneStart + 2, canvas.height - 12);
+          this.drawSignalScaleTicks(
+            ctx,
+            orientation,
+            laneStart,
+            laneEnd,
+            laneInnerStart,
+            laneInnerEnd,
+            scaleTransform,
+            canvas.width,
+            canvas.height
+          );
         }
       }
     });
@@ -811,6 +830,167 @@ class LinearTrackManager {
       return value.toFixed(1);
     }
     return value.toFixed(3);
+  }
+
+  private resolveTrackBackgroundColor(): string {
+    const uiSettingsStore = useUiSettingsStore();
+    if (uiSettingsStore.inheritTrackBackgroundFromMap) {
+      return useStyleStore().mapBackgroundColor.RGB;
+    }
+    return uiSettingsStore.trackBackgroundColor || "rgba(244,247,251,0.98)";
+  }
+
+  private buildScaleTransform(
+    maxValue: number,
+    logScale: boolean
+  ): SignalScaleTransform {
+    const safeMax =
+      Number.isFinite(maxValue) && maxValue > 0 ? maxValue : 1;
+    if (!logScale) {
+      return {
+        logScale: false,
+        maxValue: safeMax,
+        normalize: (value: number) =>
+          Math.max(0, Math.min(1, (Number.isFinite(value) ? value : 0) / safeMax)),
+      };
+    }
+    const maxLog = Math.log10(1 + safeMax);
+    const safeMaxLog = Number.isFinite(maxLog) && maxLog > 0 ? maxLog : 1;
+    return {
+      logScale: true,
+      maxValue: safeMax,
+      normalize: (value: number) => {
+        if (!Number.isFinite(value) || value <= 0) {
+          return 0;
+        }
+        return Math.max(0, Math.min(1, Math.log10(1 + value) / safeMaxLog));
+      },
+    };
+  }
+
+  private drawSignalScaleTicks(
+    ctx: CanvasRenderingContext2D,
+    orientation: Orientation,
+    laneStart: number,
+    laneEnd: number,
+    laneInnerStart: number,
+    laneInnerEnd: number,
+    scale: SignalScaleTransform,
+    canvasWidth: number,
+    canvasHeight: number
+  ): void {
+    const axisSpan = Math.max(1, laneInnerEnd - laneInnerStart);
+    const ticks = this.buildScaleTicks(scale, axisSpan);
+    if (ticks.length === 0) {
+      return;
+    }
+    ctx.fillStyle = "rgba(30,40,55,0.76)";
+    ctx.strokeStyle = "rgba(30,40,55,0.55)";
+    ctx.font = "9px monospace";
+    let lastLabelCoord = Number.NEGATIVE_INFINITY;
+    const minLabelSpacing = 12;
+    if (orientation === "horizontal") {
+      ctx.textAlign = "right";
+      const axisX0 = canvasWidth - 16;
+      const axisX1 = canvasWidth - 9;
+      for (const tick of ticks) {
+        const normalized = scale.normalize(tick);
+        const y = laneInnerEnd - normalized * axisSpan;
+        const iy = Math.max(laneStart + 3, Math.min(laneEnd - 10, y));
+        if (Math.abs(iy - lastLabelCoord) < minLabelSpacing) {
+          continue;
+        }
+        lastLabelCoord = iy;
+        ctx.beginPath();
+        ctx.moveTo(axisX0, iy + 3);
+        ctx.lineTo(axisX1, iy + 3);
+        ctx.stroke();
+        ctx.fillText(this.formatScaleValue(tick), canvasWidth - 2, iy - 2);
+      }
+      if (scale.logScale) {
+        ctx.fillStyle = "rgba(30,40,55,0.72)";
+        ctx.font = "8px monospace";
+        ctx.textAlign = "left";
+        ctx.fillText("log10", 2, Math.max(laneStart + 2, laneInnerStart));
+      }
+      ctx.textAlign = "left";
+      return;
+    }
+    const axisY0 = Math.max(4, canvasHeight - 20);
+    const axisY1 = axisY0 + 6;
+    ctx.textAlign = "center";
+    for (const tick of ticks) {
+      const normalized = scale.normalize(tick);
+      const x = laneInnerEnd - normalized * axisSpan;
+      const ix = Math.max(laneStart + 2, Math.min(laneEnd - 20, x));
+      if (Math.abs(ix - lastLabelCoord) < minLabelSpacing) {
+        continue;
+      }
+      lastLabelCoord = ix;
+      ctx.beginPath();
+      ctx.moveTo(ix + 3, axisY0);
+      ctx.lineTo(ix + 3, axisY1);
+      ctx.stroke();
+      ctx.save();
+      ctx.translate(ix + 6, axisY1 + 1);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(this.formatScaleValue(tick), 0, 0);
+      ctx.restore();
+    }
+    if (scale.logScale) {
+      ctx.save();
+      ctx.fillStyle = "rgba(30,40,55,0.72)";
+      ctx.translate(laneStart + 3, axisY1 + 1);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText("log10", 0, 0);
+      ctx.restore();
+    }
+  }
+
+  private buildScaleTicks(
+    scale: SignalScaleTransform,
+    pixelSpan: number
+  ): number[] {
+    const maxTickCount = Math.max(2, Math.min(7, Math.floor(pixelSpan / 16)));
+    const maxValue = Math.max(scale.maxValue, 0);
+    if (!Number.isFinite(maxValue) || maxValue <= 0) {
+      return [0];
+    }
+    if (!scale.logScale) {
+      const step = this.niceStep(maxValue / Math.max(1, maxTickCount - 1));
+      const ticks: number[] = [0];
+      for (let value = step; value < maxValue; value += step) {
+        ticks.push(value);
+      }
+      ticks.push(maxValue);
+      return this.uniqueSortedTicks(ticks);
+    }
+    const maxLog = Math.log10(1 + maxValue);
+    const stepLog = maxLog / Math.max(1, maxTickCount - 1);
+    const ticks: number[] = [];
+    for (let i = 0; i < maxTickCount; i++) {
+      ticks.push(Math.max(0, Math.pow(10, i * stepLog) - 1));
+    }
+    ticks.push(maxValue);
+    return this.uniqueSortedTicks(ticks);
+  }
+
+  private uniqueSortedTicks(values: number[]): number[] {
+    return [...new Set(values.map((value) => Number(value.toFixed(6))))]
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b);
+  }
+
+  private niceStep(value: number): number {
+    if (!Number.isFinite(value) || value <= 0) {
+      return 1;
+    }
+    const exponent = Math.floor(Math.log10(value));
+    const base = Math.pow(10, exponent);
+    const normalized = value / base;
+    const multiplier =
+      normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+    return multiplier * base;
   }
 
   private getViewportGeometry(orientation: Orientation): ViewportGeometry {
@@ -1101,4 +1281,10 @@ type TrackQueryCache = {
   prefetchEndPx: number;
   fetchedAtMs: number;
   response: TrackQueryResponse;
+};
+
+type SignalScaleTransform = {
+  logScale: boolean;
+  maxValue: number;
+  normalize: (value: number) => number;
 };

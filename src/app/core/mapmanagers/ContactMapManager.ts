@@ -20,9 +20,20 @@
  */
 
 import { Map, View } from "ol";
-import { ScaleLine, OverviewMap, ZoomSlider } from "ol/control";
+import { ZoomSlider } from "ol/control";
 import { DoubleClickZoom, DragPan } from "ol/interaction";
 import TileLayer from "ol/layer/Tile";
+import VectorLayer from "ol/layer/Vector";
+import VectorSource from "ol/source/Vector";
+import Feature from "ol/Feature";
+import Polygon, { fromExtent } from "ol/geom/Polygon";
+import Fill from "ol/style/Fill";
+import Stroke from "ol/style/Stroke";
+import Style from "ol/style/Style";
+import { transformExtent } from "ol/proj";
+import { getCenter, getHeight, getWidth, intersects } from "ol/extent";
+import { unByKey } from "ol/Observable";
+import type { EventsKey } from "ol/events";
 import ContigDimensionHolder from "./ContigDimensionHolder";
 import { ScaffoldHolder } from "./ScaffoldHolder";
 import { HiCViewAndLayersManager } from "./HiCViewAndLayersManager";
@@ -48,7 +59,11 @@ class ContactMapManager {
   public readonly toastHandlers: (() => void)[] = [];
   public readonly visualizationManager: VisualizationManager;
   public readonly linearTrackManager: LinearTrackManager;
-  public minimap: OverviewMap | null;
+  public minimap: Map | null;
+  private minimapViewportFeature: Feature<Polygon> | null;
+  private minimapResizeObserver: ResizeObserver | null;
+  private minimapSyncListeners: EventsKey[];
+  private minimapRenderFramePending: boolean;
 
   constructor(
     protected readonly options: {
@@ -89,6 +104,10 @@ class ContactMapManager {
     this.linearTrackManager = new LinearTrackManager(this);
 
     this.minimap = null;
+    this.minimapViewportFeature = null;
+    this.minimapResizeObserver = null;
+    this.minimapSyncListeners = [];
+    this.minimapRenderFramePending = false;
   }
 
   public initializeMap(): void {
@@ -136,14 +155,88 @@ class ContactMapManager {
   }
 
   public addOverviewMapTarget(target: HTMLElement | string) {
-    this.map.addControl(
-      new OverviewMap({
-        collapsed: false,
-        target: target,
-        layers: this.viewAndLayersManager.layersHolder.hicDataLayers,
-        collapsible: false,
-      })
+    this.clearOverviewMapTarget();
+    const resolvedTarget =
+      typeof target === "string"
+        ? document.getElementById(target)
+        : target;
+    if (!resolvedTarget) {
+      return;
+    }
+    const coarsestLayer = this.createCoarsestMinimapLayer();
+    const source = coarsestLayer?.getSource();
+    const projection = source?.getProjection();
+    const projectionExtent = projection?.getExtent();
+    if (!coarsestLayer || !source || !projection || !projectionExtent) {
+      return;
+    }
+
+    const viewportSource = new VectorSource();
+    const viewportFeature = new Feature<Polygon>(fromExtent(projectionExtent));
+    viewportSource.addFeature(viewportFeature);
+    const viewportLayer = new VectorLayer({
+      source: viewportSource,
+      style: new Style({
+        stroke: new Stroke({
+          color: "rgba(220,38,38,0.95)",
+          width: 2,
+        }),
+        fill: new Fill({
+          color: "rgba(220,38,38,0.10)",
+        }),
+      }),
+    });
+
+    const projectionExtentTuple = projectionExtent as [number, number, number, number];
+    const minimap = new Map({
+      target: resolvedTarget,
+      controls: [],
+      interactions: [],
+      layers: [coarsestLayer, viewportLayer],
+      view: new View({
+        projection,
+        center: getCenter(projectionExtentTuple),
+        resolution: this.estimateMinimapResolution(projectionExtentTuple, resolvedTarget),
+        constrainResolution: false,
+        extent: projectionExtentTuple,
+      }),
+    });
+    this.minimap = minimap;
+    this.minimapViewportFeature = viewportFeature;
+    this.fitMinimapToFullExtent();
+    this.minimapResizeObserver = new ResizeObserver(() => {
+      this.minimap?.updateSize();
+      this.fitMinimapToFullExtent();
+      this.scheduleMinimapViewportSync();
+    });
+    this.minimapResizeObserver.observe(resolvedTarget);
+
+    const mainView = this.map.getView();
+    this.minimapSyncListeners.push(
+      this.map.on("moveend", () => this.scheduleMinimapViewportSync())
     );
+    this.minimapSyncListeners.push(
+      mainView.on("change:center", () => this.scheduleMinimapViewportSync())
+    );
+    this.minimapSyncListeners.push(
+      mainView.on("change:resolution", () => this.scheduleMinimapViewportSync())
+    );
+    this.scheduleMinimapViewportSync();
+  }
+
+  public clearOverviewMapTarget(): void {
+    this.minimapResizeObserver?.disconnect();
+    this.minimapResizeObserver = null;
+    if (this.minimapSyncListeners.length > 0) {
+      unByKey(this.minimapSyncListeners);
+      this.minimapSyncListeners = [];
+    }
+    this.minimapViewportFeature = null;
+    if (!this.minimap) {
+      return;
+    }
+    this.minimap.setTarget(undefined);
+    this.minimap = null;
   }
 
   public getOptions() {
@@ -154,7 +247,7 @@ class ContactMapManager {
     return this.map;
   }
 
-  public getMiniMap(): OverviewMap {
+  public getMiniMap(): Map {
     const minimap = this.minimap;
     if (minimap) {
       return minimap;
@@ -182,12 +275,14 @@ class ContactMapManager {
   public reloadTiles(): void {
     this.viewAndLayersManager.reloadTiles();
     void this.linearTrackManager.clearCachesAndRender();
+    this.scheduleMinimapViewportSync();
   }
 
   public async reloadTilesFromBackend(): Promise<void> {
     const version = await this.networkManager.requestManager.reloadTilesVersion();
     this.viewAndLayersManager.reloadTiles(version);
     void this.linearTrackManager.clearCachesAndRender();
+    this.scheduleMinimapViewportSync();
   }
 
   private async buildCurrentMapSvg(
@@ -195,8 +290,34 @@ class ContactMapManager {
     options?: {
       backgroundColor?: string;
       metadata?: Record<string, unknown>;
+      includeWorkspaceComposite?: boolean;
     }
   ): Promise<string> {
+    if (options?.includeWorkspaceComposite ?? true) {
+      const composite = await this.renderWorkspaceCompositeCanvas(
+        options?.backgroundColor
+      );
+      const dataUrl = composite.toDataURL("image/png");
+      progressCallback?.(1);
+      let svg =
+        `<?xml version=\"1.0\" encoding=\"UTF-8\"?>` +
+        `<svg xmlns=\"http://www.w3.org/2000/svg\" ` +
+        `xmlns:xlink=\"http://www.w3.org/1999/xlink\" ` +
+        `width=\"${composite.width}\" height=\"${composite.height}\" viewBox=\"0 0 ${composite.width} ${composite.height}\">`;
+      svg += `<rect width=\"${composite.width}\" height=\"${composite.height}\" fill=\"${
+        options?.backgroundColor ?? "rgba(255,255,255,1)"
+      }\" />`;
+      if (options?.metadata) {
+        const metaJson = JSON.stringify(options.metadata);
+        svg += `<metadata><![CDATA[${metaJson}]]></metadata>`;
+      }
+      svg += `<image x=\"0\" y=\"0\" width=\"${composite.width}\" height=\"${composite.height}\" href=\"${ContactMapManager.escapeXml(
+        dataUrl
+      )}\" />`;
+      svg += `</svg>`;
+      return svg;
+    }
+
     const descriptor =
       this.viewAndLayersManager.currentViewState.resolutionDesciptor;
     const imageSize =
@@ -325,6 +446,7 @@ class ContactMapManager {
     options?: {
       backgroundColor?: string;
       metadata?: Record<string, unknown>;
+      includeWorkspaceComposite?: boolean;
     }
   ): Promise<void> {
     const svg = await this.buildCurrentMapSvg(progressCallback, options);
@@ -341,8 +463,31 @@ class ContactMapManager {
     options?: {
       backgroundColor?: string;
       metadata?: Record<string, unknown>;
+      includeWorkspaceComposite?: boolean;
     }
   ): Promise<void> {
+    if (options?.includeWorkspaceComposite ?? true) {
+      const canvas = await this.renderWorkspaceCompositeCanvas(
+        options?.backgroundColor
+      );
+      progressCallback?.(1);
+      await new Promise<void>((resolve) => {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            resolve();
+            return;
+          }
+          const a = document.createElement("a");
+          a.download = `${this.options.filename}.png`;
+          a.href = URL.createObjectURL(blob);
+          a.click();
+          URL.revokeObjectURL(a.href);
+          resolve();
+        }, "image/png");
+      });
+      return;
+    }
+
     const svg = await this.buildCurrentMapSvg(progressCallback, options);
     const svgBlob = new Blob([svg], { type: "image/svg+xml" });
     const svgUrl = URL.createObjectURL(svgBlob);
@@ -390,8 +535,26 @@ class ContactMapManager {
     options?: {
       backgroundColor?: string;
       metadata?: Record<string, unknown>;
+      includeWorkspaceComposite?: boolean;
     }
   ): Promise<void> {
+    if (options?.includeWorkspaceComposite ?? true) {
+      const canvas = await this.renderWorkspaceCompositeCanvas(
+        options?.backgroundColor
+      );
+      progressCallback?.(1);
+      const dataUrl = canvas.toDataURL("image/png");
+      const { jsPDF } = await import("jspdf");
+      const pdf = new jsPDF({
+        orientation: canvas.width >= canvas.height ? "landscape" : "portrait",
+        unit: "px",
+        format: [canvas.width, canvas.height],
+      });
+      pdf.addImage(dataUrl, "PNG", 0, 0, canvas.width, canvas.height);
+      pdf.save(`${this.options.filename}.pdf`);
+      return;
+    }
+
     const svg = await this.buildCurrentMapSvg(progressCallback, options);
     const svgBlob = new Blob([svg], { type: "image/svg+xml" });
     const svgUrl = URL.createObjectURL(svgBlob);
@@ -582,8 +745,27 @@ class ContactMapManager {
       .replace(/'/g, "&apos;");
   }
 
+  private async renderWorkspaceCompositeCanvas(
+    backgroundColor?: string
+  ): Promise<HTMLCanvasElement> {
+    const workspace = document.querySelector(
+      ".interactive-workspace"
+    ) as HTMLElement | null;
+    if (!workspace) {
+      throw new Error("Cannot export composite: workspace is not available");
+    }
+    const { default: html2canvas } = await import("html2canvas");
+    return html2canvas(workspace, {
+      backgroundColor: backgroundColor ?? null,
+      useCORS: true,
+      scale: Math.min(2, window.devicePixelRatio || 1),
+      logging: false,
+    });
+  }
+
   public dispose() {
     this.linearTrackManager.dispose();
+    this.clearOverviewMapTarget();
     this.viewAndLayersManager?.dispose?.();
     this.map.setTarget(undefined);
   }
@@ -642,6 +824,134 @@ class ContactMapManager {
   public reloadVisuals(): void {
     this.viewAndLayersManager.reloadVisuals();
     void this.linearTrackManager.clearCachesAndRender();
+    this.scheduleMinimapViewportSync();
+  }
+
+  public refreshOverviewMinimap(): void {
+    this.scheduleMinimapViewportSync();
+  }
+
+  private createCoarsestMinimapLayer():
+    | TileLayer<VersionedXYZContactMapSource>
+    | null {
+    if (this.viewAndLayersManager.resolutionTuples.length === 0) {
+      return null;
+    }
+    const coarsestDescriptor = this.viewAndLayersManager.resolutionTuples.reduce(
+      (accumulator, descriptor) =>
+        descriptor.pixelResolution > accumulator.pixelResolution
+          ? descriptor
+          : accumulator
+    );
+    const layer = this.viewAndLayersManager.layersHolder.bpResolutionToHiCDataLayer.get(
+      coarsestDescriptor.bpResolution
+    );
+    if (!(layer instanceof TileLayer)) {
+      return null;
+    }
+    const source = layer.getSource();
+    if (!(source instanceof VersionedXYZContactMapSource)) {
+      return null;
+    }
+    return new TileLayer({
+      source,
+      preload: 0,
+    });
+  }
+
+  private estimateMinimapResolution(
+    projectionExtent: [number, number, number, number],
+    target: HTMLElement
+  ): number {
+    const width = Math.max(1, target.clientWidth || 1);
+    const height = Math.max(1, target.clientHeight || 1);
+    const widthResolution = getWidth(projectionExtent) / width;
+    const heightResolution = getHeight(projectionExtent) / height;
+    const estimatedResolution = Math.max(widthResolution, heightResolution);
+    return Number.isFinite(estimatedResolution) && estimatedResolution > 0
+      ? estimatedResolution
+      : 1;
+  }
+
+  private fitMinimapToFullExtent(): void {
+    if (!this.minimap) {
+      return;
+    }
+    const view = this.minimap.getView();
+    const extent = view.getProjection().getExtent();
+    const target = this.minimap.getTargetElement();
+    if (!extent || !target) {
+      return;
+    }
+    const extentTuple = extent as [number, number, number, number];
+    view.setCenter(getCenter(extentTuple));
+    view.setResolution(this.estimateMinimapResolution(extentTuple, target));
+  }
+
+  private scheduleMinimapViewportSync(): void {
+    if (this.minimapRenderFramePending) {
+      return;
+    }
+    this.minimapRenderFramePending = true;
+    window.requestAnimationFrame(() => {
+      this.minimapRenderFramePending = false;
+      this.syncMinimapViewport();
+    });
+  }
+
+  private syncMinimapViewport(): void {
+    if (!this.minimap || !this.minimapViewportFeature) {
+      return;
+    }
+    const minimapView = this.minimap.getView();
+    const minimapProjection = minimapView.getProjection();
+    const minimapProjectionExtent = minimapProjection.getExtent();
+    if (!minimapProjectionExtent) {
+      return;
+    }
+    const mainMapSize = this.map.getSize();
+    if (!mainMapSize) {
+      return;
+    }
+    const mainExtent = this.map.getView().calculateExtent(mainMapSize);
+    const transformedMainExtent = transformExtent(
+      mainExtent,
+      this.map.getView().getProjection(),
+      minimapProjection
+    );
+    if (!transformedMainExtent.every((value) => Number.isFinite(value))) {
+      return;
+    }
+    const clampedExtent = this.clampExtentToBounds(
+      transformedMainExtent as [number, number, number, number],
+      minimapProjectionExtent as [number, number, number, number]
+    );
+    this.minimapViewportFeature.setGeometry(fromExtent(clampedExtent));
+    this.minimap.render();
+  }
+
+  private clampExtentToBounds(
+    extent: [number, number, number, number],
+    bounds: [number, number, number, number]
+  ): [number, number, number, number] {
+    if (!intersects(extent, bounds)) {
+      return bounds;
+    }
+    const clamp = (value: number, minValue: number, maxValue: number): number =>
+      Math.max(minValue, Math.min(maxValue, value));
+    let left = clamp(extent[0], bounds[0], bounds[2]);
+    let right = clamp(extent[2], bounds[0], bounds[2]);
+    let bottom = clamp(extent[1], bounds[1], bounds[3]);
+    let top = clamp(extent[3], bounds[1], bounds[3]);
+    if (right <= left) {
+      right = Math.min(bounds[2], left + 1);
+      left = Math.max(bounds[0], right - 1);
+    }
+    if (top <= bottom) {
+      top = Math.min(bounds[3], bottom + 1);
+      bottom = Math.max(bounds[1], top - 1);
+    }
+    return [left, bottom, right, top];
   }
 }
 

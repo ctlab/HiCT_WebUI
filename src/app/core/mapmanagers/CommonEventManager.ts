@@ -52,6 +52,7 @@ class CommonEventManager {
   }): void {
     this.mapManager.contigDimensionHolder.updateContigData(asmInfo.contigDescriptors);
     this.mapManager.scaffoldHolder.updateScaffoldData(asmInfo.scaffoldDescriptors);
+    this.mapManager.refreshOverviewMinimap();
   }
 
   public reloadTiles() {

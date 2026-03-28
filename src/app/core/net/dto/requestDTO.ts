@@ -37,6 +37,9 @@ import {
   LoadAGPRequest,
   OpenProgressRequest,
   GetWorkerDiagnosticsRequest,
+  GetRenderPipelineRequest,
+  SetRenderPipelineRequest,
+  ResetRenderPipelineRequest,
   GetFastaForSelectionRequest,
   SetNormalizationRequest,
   SetContrastRangeRequest,
@@ -182,6 +185,12 @@ abstract class HiCTAPIRequestDTO<
         return new OpenProgressRequestDTO(entity);
       case entity instanceof GetWorkerDiagnosticsRequest:
         return new GetWorkerDiagnosticsRequestDTO(entity);
+      case entity instanceof GetRenderPipelineRequest:
+        return new GetRenderPipelineRequestDTO(entity);
+      case entity instanceof SetRenderPipelineRequest:
+        return new SetRenderPipelineRequestDTO(entity as SetRenderPipelineRequest);
+      case entity instanceof ResetRenderPipelineRequest:
+        return new ResetRenderPipelineRequestDTO(entity);
       case entity instanceof CloseFileRequest:
         return new CloseFileRequestDTO(entity as CloseFileRequest);
       case entity instanceof AttachSessionRequest:
@@ -229,6 +238,24 @@ class OpenProgressRequestDTO extends HiCTAPIRequestDTO<OpenProgressRequest> {
 }
 
 class GetWorkerDiagnosticsRequestDTO extends HiCTAPIRequestDTO<GetWorkerDiagnosticsRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class GetRenderPipelineRequestDTO extends HiCTAPIRequestDTO<GetRenderPipelineRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class SetRenderPipelineRequestDTO extends HiCTAPIRequestDTO<SetRenderPipelineRequest> {
+  toDTO(): Record<string, unknown> {
+    return this.entity.options;
+  }
+}
+
+class ResetRenderPipelineRequestDTO extends HiCTAPIRequestDTO<ResetRenderPipelineRequest> {
   toDTO(): Record<string, unknown> {
     return {};
   }
@@ -504,6 +531,7 @@ class UpdateTrackRequestDTO extends HiCTAPIRequestDTO<UpdateTrackRequest> {
       name: this.entity.options.name,
       renderMode: this.entity.options.renderMode,
       aggregationMode: this.entity.options.aggregationMode,
+      logScale: this.entity.options.logScale,
     };
   }
 }

@@ -21,11 +21,15 @@
 
 <template>
   <div :class="iwsClass" :style="iwcStyle">
-    <div class="interactive-workspace_corner_track"></div>
-    <div class="interactive-workspace_corner_ruler"></div>
+    <div class="interactive-workspace_corner_track">
+      <div ref="cornerMiniMapTarget" class="interactive-workspace_corner_minimap"></div>
+    </div>
+    <div class="interactive-workspace_corner_tracks_ruler"></div>
     <div class="interactive-workspace_horizontal_tracks">
       <HorizontalIGVTrack :map-manager="props.mapManager"></HorizontalIGVTrack>
     </div>
+    <div class="interactive-workspace_corner_ruler_tracks"></div>
+    <div class="interactive-workspace_corner_ruler"></div>
     <div class="interactive-workspace_horizontal_ruler" id="horizontal-ruler-div"></div>
     <div class="interactive-workspace_vertical_tracks">
       <VerticalIGVTrack :map-manager="props.mapManager"></VerticalIGVTrack>
@@ -70,6 +74,7 @@ const props = defineProps<{
   mapManager: ContactMapManager | undefined;
   filename?: string;
 }>();
+const cornerMiniMapTarget = ref<HTMLElement | null>(null);
 
 const visibleTrackCount = ref(0);
 let unsubscribeTrackList: (() => void) | undefined;
@@ -93,19 +98,30 @@ const bindTrackVisibility = () => {
   );
 };
 
+const bindCornerMinimap = () => {
+  if (!props.mapManager || !cornerMiniMapTarget.value || visibleTrackCount.value <= 0) {
+    props.mapManager?.clearOverviewMapTarget();
+    return;
+  }
+  props.mapManager.addOverviewMapTarget(cornerMiniMapTarget.value);
+};
+
 onMounted(() => {
   bindTrackVisibility();
+  bindCornerMinimap();
 });
 
 watch(
   () => props.mapManager,
   () => {
     bindTrackVisibility();
+    bindCornerMinimap();
   }
 );
 
 watch(visibleTrackCount, async () => {
   await nextTick();
+  bindCornerMinimap();
   window.requestAnimationFrame(() => {
     void props.mapManager?.linearTrackManager.render();
   });
@@ -113,6 +129,7 @@ watch(visibleTrackCount, async () => {
 
 onBeforeUnmount(() => {
   unsubscribeTrackList?.();
+  props.mapManager?.clearOverviewMapTarget();
 });
 
 const trackPanelCssSize = computed(() =>
@@ -125,12 +142,12 @@ const rulerPanelCssSize = "44px";
 .interactive-workspace {
   width: 100%;
   display: grid;
-  grid-template-rows: v-bind(rulerPanelCssSize) v-bind(trackPanelCssSize) 1fr;
-  grid-template-columns: v-bind(rulerPanelCssSize) v-bind(trackPanelCssSize) 1fr;
+  grid-template-rows: v-bind(trackPanelCssSize) v-bind(rulerPanelCssSize) 1fr;
+  grid-template-columns: v-bind(trackPanelCssSize) v-bind(rulerPanelCssSize) 1fr;
   grid-template-areas:
-    "corner-ruler corner-track horizontal-ruler"
-    "corner-ruler corner-track horizontal-tracks"
-    "vertical-ruler vertical-tracks content";
+    "corner-track corner-tracks-ruler horizontal-tracks"
+    "corner-ruler-tracks corner-ruler horizontal-ruler"
+    "vertical-tracks vertical-ruler content";
 }
 
 .interactive-workspace_horizontal_tracks,
@@ -144,6 +161,40 @@ const rulerPanelCssSize = "44px";
 
 .interactive-workspace_corner_track {
   grid-area: corner-track;
+  position: relative;
+  background: rgba(244, 247, 251, 0.98);
+  border-right: 1px solid black;
+  border-bottom: 1px solid black;
+  overflow: hidden;
+}
+
+.interactive-workspace_corner_minimap {
+  width: 100%;
+  height: 100%;
+  padding: 2px;
+  box-sizing: border-box;
+  border: 1px solid rgba(31, 41, 55, 0.55);
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.interactive-workspace_corner_minimap :deep(.ol-viewport) {
+  width: 100%;
+  height: 100%;
+}
+
+.interactive-workspace_corner_minimap :deep(canvas) {
+  image-rendering: auto;
+}
+
+.interactive-workspace_corner_tracks_ruler {
+  grid-area: corner-tracks-ruler;
+  background: rgba(244, 247, 251, 0.98);
+  border-right: 1px solid black;
+  border-bottom: 1px solid black;
+}
+
+.interactive-workspace_corner_ruler_tracks {
+  grid-area: corner-ruler-tracks;
   background: rgba(244, 247, 251, 0.98);
   border-right: 1px solid black;
   border-bottom: 1px solid black;
@@ -151,7 +202,7 @@ const rulerPanelCssSize = "44px";
 
 .interactive-workspace_corner_ruler {
   grid-area: corner-ruler;
-  background: rgba(255, 255, 255, 0.95);
+  background: inherit;
   border-right: 1px solid black;
   border-bottom: 1px solid black;
 }
@@ -165,7 +216,7 @@ const rulerPanelCssSize = "44px";
   overflow: hidden;
   border-right: 1px solid black;
   border-bottom: 1px solid black;
-  background: rgba(255, 255, 255, 0.95);
+  background: inherit;
 }
 
 .interactive-workspace_vertical_tracks {
@@ -177,7 +228,7 @@ const rulerPanelCssSize = "44px";
   overflow: hidden;
   border-right: 1px solid black;
   border-bottom: 1px solid black;
-  background: rgba(255, 255, 255, 0.95);
+  background: inherit;
 }
 
 .interactive-workspace_content {

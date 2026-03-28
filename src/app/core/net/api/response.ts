@@ -82,7 +82,8 @@ class TrackSummaryResponse {
     public readonly featureCount: number,
     public readonly renderStyle: string,
     public readonly renderMode: string,
-    public readonly aggregationMode: string
+    public readonly aggregationMode: string,
+    public readonly logScale: boolean
   ) {}
 }
 

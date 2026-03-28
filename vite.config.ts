@@ -51,4 +51,17 @@ export default defineConfig({
     strictPort: true,
     // https: true,
   },
+  build: {
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-vue": ["vue", "pinia"],
+          "vendor-ol": ["ol"],
+          "vendor-ui": ["bootstrap", "@popperjs/core", "axios"],
+          "vendor-export": ["jspdf", "html2canvas"],
+        },
+      },
+    },
+  },
 });

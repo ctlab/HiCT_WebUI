@@ -326,6 +326,22 @@ class GetWorkerDiagnosticsRequest implements HiCTAPIRequest {
   requestPath = "/diagnostics/workers";
 }
 
+class GetRenderPipelineRequest implements HiCTAPIRequest {
+  requestPath = "/render_pipeline/get";
+}
+
+class SetRenderPipelineRequest implements HiCTAPIRequest {
+  requestPath = "/render_pipeline/set";
+
+  public constructor(
+    public readonly options: Record<string, unknown>
+  ) {}
+}
+
+class ResetRenderPipelineRequest implements HiCTAPIRequest {
+  requestPath = "/render_pipeline/reset";
+}
+
 class GetVisualizationOptionsRequest implements HiCTAPIRequest {
   requestPath = "/get_visualization_options";
 
@@ -354,6 +370,17 @@ class OpenTrackRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class OpenCoolerWeightsTrackRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/open_cooler_weights";
+
+  public constructor(
+    public readonly options: {
+      readonly name?: string;
+      readonly color?: string;
+    } = {}
+  ) {}
+}
+
 class ProbeTrackCompatibilityRequest implements HiCTAPIRequest {
   requestPath = "/tracks/probe";
 
@@ -379,6 +406,7 @@ class UpdateTrackRequest implements HiCTAPIRequest {
       readonly name?: string;
       readonly renderMode?: string;
       readonly aggregationMode?: string;
+      readonly logScale?: boolean;
     }
   ) {}
 }
@@ -480,6 +508,7 @@ export {
   SetVisualizationOptionsRequest,
   ListTrackFilesRequest,
   OpenTrackRequest,
+  OpenCoolerWeightsTrackRequest,
   ProbeTrackCompatibilityRequest,
   ListTracksRequest,
   UpdateTrackRequest,
@@ -488,4 +517,7 @@ export {
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
   GetWorkerDiagnosticsRequest,
+  GetRenderPipelineRequest,
+  SetRenderPipelineRequest,
+  ResetRenderPipelineRequest,
 };

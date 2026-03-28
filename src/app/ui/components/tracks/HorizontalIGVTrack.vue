@@ -20,26 +20,41 @@
  -->
 
 <template>
-  <div id="horizontal-igv-track-div" class="horizontal-track-canvas-host">
+  <div
+    id="horizontal-igv-track-div"
+    class="horizontal-track-canvas-host"
+    :style="trackHostStyle"
+  >
     <canvas ref="trackCanvas"></canvas>
-    <div ref="chipList" class="track-chip-list"></div>
     <div ref="statusOverlay" class="track-status-overlay"></div>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useStyleStore } from "@/app/stores/styleStore";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+import { storeToRefs } from "pinia";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
 
 const trackCanvas = ref<HTMLCanvasElement | null>(null);
-const chipList = ref<HTMLDivElement | null>(null);
 const statusOverlay = ref<HTMLDivElement | null>(null);
 let unsubscribeRenderState: (() => void) | undefined;
-let unsubscribeTrackList: (() => void) | undefined;
+
+const styleStore = useStyleStore();
+const uiSettingsStore = useUiSettingsStore();
+const { mapBackgroundColor } = storeToRefs(styleStore);
+const { inheritTrackBackgroundFromMap, trackBackgroundColor } =
+  storeToRefs(uiSettingsStore);
+const trackHostStyle = computed(() => ({
+  background: inheritTrackBackgroundFromMap.value
+    ? mapBackgroundColor.value.RGB
+    : trackBackgroundColor.value,
+}));
 
 const bindCanvas = () => {
   props.mapManager?.linearTrackManager.registerCanvas(
@@ -50,12 +65,8 @@ const bindCanvas = () => {
 
 const bindSubscriptions = () => {
   unsubscribeRenderState?.();
-  unsubscribeTrackList?.();
   if (statusOverlay.value) {
     statusOverlay.value.textContent = props.mapManager ? "No tracks loaded" : "";
-  }
-  if (chipList.value) {
-    chipList.value.replaceChildren();
   }
   if (!props.mapManager) {
     return;
@@ -70,24 +81,6 @@ const bindSubscriptions = () => {
         }
       }
     );
-  unsubscribeTrackList = props.mapManager.linearTrackManager.subscribeTrackList(
-    (tracks) => {
-      if (!chipList.value) {
-        return;
-      }
-      const visibleTrackNames = tracks
-        .filter((track) => track.visible)
-        .map((track) => track.name);
-      const chips = visibleTrackNames.map((trackName) => {
-        const chip = document.createElement("span");
-        chip.className = "track-chip";
-        chip.textContent = trackName;
-        return chip;
-      });
-      chipList.value.replaceChildren(...chips);
-      chipList.value.style.display = chips.length > 0 ? "flex" : "none";
-    }
-  );
 };
 
 onMounted(() => {
@@ -106,7 +99,6 @@ watch(
 onBeforeUnmount(() => {
   props.mapManager?.linearTrackManager.registerCanvas("horizontal", null);
   unsubscribeRenderState?.();
-  unsubscribeTrackList?.();
 });
 </script>
 
@@ -117,7 +109,6 @@ onBeforeUnmount(() => {
   height: 100%;
   border: 1px solid black;
   overflow: hidden;
-  background: rgba(244, 247, 251, 0.98);
 }
 
 #horizontal-igv-track-div canvas {
@@ -127,24 +118,7 @@ onBeforeUnmount(() => {
 }
 
 .track-chip-list {
-  position: absolute;
-  left: 6px;
-  top: 6px;
   display: none;
-  flex-wrap: wrap;
-  gap: 4px;
-  max-width: calc(100% - 12px);
-  pointer-events: none;
-}
-
-.track-chip {
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: rgba(40, 48, 66, 0.78);
-  color: white;
-  font-size: 10px;
-  line-height: 1.2;
-  white-space: nowrap;
 }
 
 .track-status-overlay {

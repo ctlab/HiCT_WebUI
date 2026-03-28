@@ -230,6 +230,7 @@ const emit = defineEmits<{
 
 const props = defineProps<{
   networkManager: NetworkManager;
+  initialCoolerFilename?: string;
 }>();
 
 const selectedCoolerFilename: Ref<string | null> = ref(null);
@@ -309,6 +310,9 @@ function convertCooler(): void {
 
 onMounted(() => {
   converting.value = false;
+  if (props.initialCoolerFilename && props.initialCoolerFilename.trim().length > 0) {
+    selectedCoolerFilename.value = props.initialCoolerFilename;
+  }
   modal.value = new Modal(convertCoolerModal.value ?? "loadAGPModal", {
     backdrop: "static",
     keyboard: false,

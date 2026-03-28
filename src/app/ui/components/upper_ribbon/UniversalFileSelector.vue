@@ -57,14 +57,33 @@
                   Show all files
                 </label>
               </div>
+              <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Selector mode">
+                <button
+                  type="button"
+                  class="btn"
+                  :class="selectorMode === 'explorer' ? 'btn-primary' : 'btn-outline-primary'"
+                  @click="selectorMode = 'explorer'"
+                >
+                  Explorer
+                </button>
+                <button
+                  type="button"
+                  class="btn"
+                  :class="selectorMode === 'tree' ? 'btn-primary' : 'btn-outline-primary'"
+                  @click="selectorMode = 'tree'"
+                >
+                  Tree
+                </button>
+              </div>
             </div>
+            <small v-if="fileFilterHint" class="text-muted d-block mb-2">{{ fileFilterHint }}</small>
 
             <div v-if="loading" class="d-flex align-items-center gap-2 py-3">
               <strong>Loading files…</strong>
               <div class="spinner-border spinner-border-sm ms-auto" role="status"></div>
             </div>
 
-            <div v-else class="table-host">
+            <div v-else-if="selectorMode === 'explorer'" class="table-host">
               <table class="table table-sm table-hover align-middle mb-0 file-table">
                 <thead>
                   <tr>
@@ -82,7 +101,10 @@
                     @click="onRowClicked(entry.path)"
                     @dblclick="onSelectClicked"
                   >
-                    <td>{{ entry.name }}</td>
+                    <td>
+                      <i :class="getIconForEntry(entry.path, false)" aria-hidden="true"></i>
+                      <span class="ms-2">{{ entry.name }}</span>
+                    </td>
                     <td><code>{{ entry.path }}</code></td>
                     <td class="text-end">{{ formatBytes(entry.sizeBytes) }}</td>
                     <td class="text-end">{{ formatTimestamp(entry.modifiedAtMs) }}</td>
@@ -92,6 +114,39 @@
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div v-else class="tree-host">
+              <Tree
+                v-if="treeNodes.length > 0"
+                :value="treeNodes"
+                selectionMode="single"
+                v-model:selectionKeys="treeSelectionKeys"
+                @nodeSelect="onTreeNodeSelect"
+                class="legacy-tree"
+              >
+                <template #default="slotProps">
+                  <div
+                    class="tree-node-content"
+                    @dblclick="onTreeNodeDoubleClick(slotProps.node)"
+                  >
+                    <i
+                      :class="
+                        slotProps.node.icon ??
+                        getIconForEntry(slotProps.node.data?.path ?? slotProps.node.key, !slotProps.node.leaf)
+                      "
+                      aria-hidden="true"
+                    ></i>
+                    <span class="ms-2">{{ slotProps.node.label }}</span>
+                    <small
+                      v-if="slotProps.node.data?.meta"
+                      class="text-muted ms-2"
+                    >
+                      {{ slotProps.node.data.meta }}
+                    </small>
+                  </div>
+                </template>
+              </Tree>
+              <div v-else class="text-muted">No files found for current filter</div>
             </div>
           </div>
           <div class="modal-footer">
@@ -116,7 +171,10 @@
 <script setup lang="ts">
 import type { FileEntryResponse } from "@/app/core/net/api/response";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
-import { computed, onMounted, ref } from "vue";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+import { storeToRefs } from "pinia";
+import Tree from "primevue/tree";
+import { computed, onMounted, ref, watch } from "vue";
 
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
@@ -137,8 +195,25 @@ const selectedFilename = ref<string | null>(null);
 const allEntries = ref<FileEntryResponse[]>([]);
 const searchTerm = ref("");
 const showAllFiles = ref(false);
+const treeSelectionKeys = ref<Record<string, boolean>>({});
+const uiSettingsStore = useUiSettingsStore();
+const { fileSelectorMode } = storeToRefs(uiSettingsStore);
+const selectorMode = ref<"explorer" | "tree">(fileSelectorMode.value);
 
 const hasPredicate = computed(() => typeof props.fileNamePredicate === "function");
+const fileFilterHint = computed(() => {
+  if (!hasPredicate.value) {
+    return "";
+  }
+  if (props.fileType && props.fileType.trim().length > 0) {
+    return `Showing ${props.fileType} by default (toggle "Show all files" to browse everything).`;
+  }
+  return "File type filter is active (toggle \"Show all files\" to browse everything).";
+});
+
+watch(selectorMode, (mode) => {
+  fileSelectorMode.value = mode;
+});
 
 const filteredEntries = computed(() => {
   const predicate = props.fileNamePredicate;
@@ -158,6 +233,125 @@ const filteredEntries = computed(() => {
     );
   });
 });
+
+type PrimeTreeNode = {
+  key: string;
+  label: string;
+  icon?: string;
+  selectable?: boolean;
+  leaf?: boolean;
+  expanded?: boolean;
+  data?: {
+    path?: string;
+    meta?: string;
+  };
+  children?: PrimeTreeNode[];
+};
+
+type MutableTreeNode = {
+  key: string;
+  label: string;
+  children: Map<string, MutableTreeNode>;
+  path?: string;
+  meta?: string;
+};
+
+const treeNodes = computed<PrimeTreeNode[]>(() => {
+  const rootNodes = new Map<string, MutableTreeNode>();
+  for (const entry of filteredEntries.value) {
+    const chunks = entry.path.split("/").filter((chunk) => chunk.length > 0);
+    if (chunks.length === 0) {
+      continue;
+    }
+    let currentLevel = rootNodes;
+    let keyPath = "";
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      keyPath = keyPath.length > 0 ? `${keyPath}/${chunk}` : chunk;
+      let node = currentLevel.get(chunk);
+      if (!node) {
+        node = {
+          key: keyPath,
+          label: chunk,
+          children: new Map<string, MutableTreeNode>(),
+        };
+        currentLevel.set(chunk, node);
+      }
+      const isLeaf = i === chunks.length - 1;
+      if (isLeaf) {
+        node.path = entry.path;
+        node.meta = `${formatBytes(entry.sizeBytes)}, ${formatTimestamp(entry.modifiedAtMs)}`;
+      }
+      currentLevel = node.children;
+    }
+  }
+  return [...rootNodes.values()]
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .map((node) => mutableToPrimeNode(node));
+});
+
+const mutableToPrimeNode = (node: MutableTreeNode): PrimeTreeNode => {
+  const children = [...node.children.values()]
+    .sort((a, b) => {
+      const aLeaf = a.children.size === 0;
+      const bLeaf = b.children.size === 0;
+      if (aLeaf !== bLeaf) {
+        return aLeaf ? 1 : -1;
+      }
+      return a.label.localeCompare(b.label);
+    })
+    .map((child) => mutableToPrimeNode(child));
+  const leaf = children.length === 0;
+  return {
+    key: node.key,
+    label: node.label,
+    icon: getIconForEntry(node.path ?? node.key, !leaf),
+    selectable: !!node.path,
+    leaf,
+    expanded: node.key.split("/").length <= 2,
+    data: node.path
+      ? {
+          path: node.path,
+          meta: node.meta,
+        }
+      : undefined,
+    children: leaf ? undefined : children,
+  };
+};
+
+const getIconForEntry = (path: string, isDirectory: boolean): string => {
+  if (isDirectory) {
+    return "pi pi-fw pi-folder-open";
+  }
+  const normalized = path.toLowerCase();
+  if (normalized.endsWith(".hict") || normalized.endsWith(".hict.hdf5") || normalized.endsWith(".hdf5")) {
+    return "pi pi-fw pi-map";
+  }
+  if (normalized.endsWith(".cool") || normalized.endsWith(".mcool")) {
+    return "pi pi-fw pi-table";
+  }
+  if (
+    normalized.endsWith(".fasta") ||
+    normalized.endsWith(".fa") ||
+    normalized.endsWith(".fna") ||
+    normalized.endsWith(".fai")
+  ) {
+    return "pi pi-fw pi-book";
+  }
+  if (normalized.endsWith(".agp")) {
+    return "pi pi-fw pi-sitemap";
+  }
+  if (normalized.endsWith(".bw") || normalized.endsWith(".bigwig")) {
+    return "pi pi-fw pi-chart-line";
+  }
+  if (normalized.endsWith(".bed") || normalized.endsWith(".bed.gz") || normalized.endsWith(".bam")) {
+    return "pi pi-fw pi-list";
+  }
+  if (normalized.endsWith(".gff") || normalized.endsWith(".gtf") || normalized.endsWith(".gff3")) {
+    return "pi pi-fw pi-file-edit";
+  }
+  return "pi pi-fw pi-file";
+};
 
 const formatBytes = (sizeBytes: number): string => {
   if (!Number.isFinite(sizeBytes) || sizeBytes < 0) {
@@ -196,6 +390,39 @@ const onRowClicked = (path: string): void => {
   selectedFilename.value = path;
 };
 
+const onTreeNodeSelect = (event: { node?: PrimeTreeNode }): void => {
+  const path = event?.node?.data?.path;
+  if (!path) {
+    return;
+  }
+  selectedFilename.value = path;
+};
+
+const onTreeNodeDoubleClick = (node: { data?: { path?: string } }): void => {
+  const path = node?.data?.path;
+  if (!path) {
+    return;
+  }
+  selectedFilename.value = path;
+  onSelectClicked();
+};
+
+watch(filteredEntries, (entries) => {
+  if (entries.length === 0) {
+    selectedFilename.value = null;
+    treeSelectionKeys.value = {};
+    return;
+  }
+  if (selectedFilename.value && entries.some((entry) => entry.path === selectedFilename.value)) {
+    const currentPath = selectedFilename.value;
+    treeSelectionKeys.value = currentPath ? { [currentPath]: true } : {};
+    return;
+  }
+  selectedFilename.value = entries[0]?.path ?? null;
+  const firstPath = selectedFilename.value;
+  treeSelectionKeys.value = firstPath ? { [firstPath]: true } : {};
+});
+
 onMounted(async () => {
   showAllFiles.value = !hasPredicate.value;
   loading.value = true;
@@ -206,6 +433,7 @@ onMounted(async () => {
     const firstAllowed = filteredEntries.value[0];
     if (firstAllowed) {
       selectedFilename.value = firstAllowed.path;
+      treeSelectionKeys.value = { [firstAllowed.path]: true };
     }
   } catch (error: unknown) {
     errorMessage.value = String(error);
@@ -225,12 +453,32 @@ onMounted(async () => {
   overflow: auto;
   border: 1px solid #e5e7eb;
   border-radius: 0.5rem;
+  text-align: left;
+}
+
+.tree-host {
+  max-height: 58vh;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+}
+
+.legacy-tree {
+  border: none;
+}
+
+.tree-node-content {
+  display: flex;
+  align-items: center;
+  min-height: 1.4rem;
 }
 
 .file-table td,
 .file-table th {
   white-space: nowrap;
   vertical-align: middle;
+  text-align: left;
 }
 
 .file-table td:nth-child(2),
