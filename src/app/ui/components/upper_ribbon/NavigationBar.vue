@@ -96,6 +96,11 @@
                   >Tracks and layers...</a
                 >
               </li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onOpenRenderingPipeline"
+                  >Rendering pipeline...</a
+                >
+              </li>
             </ul>
           </li>
           <!-- Bookmarks -->
@@ -292,6 +297,11 @@
     :map-manager="props.mapManager"
     @dismissed="trackManagerOpen = false"
   />
+  <RenderingPipelineModal
+    v-if="renderingPipelineOpen"
+    :map-manager="props.mapManager"
+    @dismissed="renderingPipelineOpen = false"
+  />
   <WorkerDiagnosticsModal
     v-if="workerDiagnosticsOpen"
     :network-manager="props.networkManager"
@@ -331,7 +341,7 @@
 
 <script setup lang="ts">
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
-import { Ref, ref, watch } from "vue";
+import { defineAsyncComponent, Ref, ref, watch } from "vue";
 import {
   GetAGPForAssemblyRequest,
   GetFastaForAssemblyRequest,
@@ -356,6 +366,7 @@ const openingAGPFile = ref(false);
 const convertingCoolers = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
 const trackManagerOpen = ref(false);
+const renderingPipelineOpen = ref(false);
 const workerDiagnosticsOpen = ref(false);
 const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
@@ -365,6 +376,9 @@ const fastaLinkReport = ref<FastaLinkResponse | null>(null);
 const backendVersion = ref("loading...");
 const webuiVersion = ref(String((pkg as { version?: string })?.version ?? "unknown"));
 const webuiCommit = ref("unknown");
+const RenderingPipelineModal = defineAsyncComponent(
+  () => import("@/app/ui/components/upper_ribbon/RenderingPipelineModal.vue")
+);
 const licenseText = `MIT License
 
 Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
@@ -415,6 +429,10 @@ function onOpenFile() {
 
 function onOpenTrackManager() {
   trackManagerOpen.value = true;
+}
+
+function onOpenRenderingPipeline() {
+  renderingPipelineOpen.value = true;
 }
 
 function onOpenWorkerDiagnostics() {
@@ -682,8 +700,8 @@ function onAssemblyAGPRequest() {
   width: 100%;
   height: 56px;
 
-  /* Global/07. Light */
-  background: #f8f9fa;
+  background: var(--hict-ui-bg, #f8f9fa);
+  color: var(--hict-ui-fg, #1f2937);
 
   /* Shadows/02. Regular */
   box-shadow: 0px 8px 16px rgba(0, 0, 0, 0.15);
@@ -692,6 +710,21 @@ function onAssemblyAGPRequest() {
   flex: none;
   order: 0;
   flex-grow: 0;
+}
+
+.navbar-bar :deep(.navbar-brand),
+.navbar-bar :deep(.nav-link),
+.navbar-bar :deep(.dropdown-item),
+.navbar-bar :deep(.form-check-label),
+.navbar-bar :deep(#set-gateway-btn),
+.navbar-bar :deep(button),
+.navbar-bar :deep(input) {
+  color: var(--hict-ui-fg, #1f2937) !important;
+  text-shadow: 0 0 1px var(--hict-ui-outline, rgba(255, 255, 255, 0.9));
+}
+
+.navbar-bar :deep(.dropdown-menu) {
+  border-color: var(--hict-ui-border, rgba(15, 23, 38, 0.22));
 }
 
 #connection-settings-menu-dropdown {

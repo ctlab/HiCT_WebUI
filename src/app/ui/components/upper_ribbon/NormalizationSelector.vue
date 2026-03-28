@@ -190,11 +190,13 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { Ref, ref, watch } from "vue";
+import { defineAsyncComponent, Ref, ref, watch } from "vue";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import { toast } from "vue-sonner";
-import RenderingPipelineModal from "./RenderingPipelineModal.vue";
+const RenderingPipelineModal = defineAsyncComponent(
+  () => import("./RenderingPipelineModal.vue")
+);
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const {
   preLogBase,

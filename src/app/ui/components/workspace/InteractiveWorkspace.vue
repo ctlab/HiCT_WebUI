@@ -162,7 +162,7 @@ const rulerPanelCssSize = "44px";
 .interactive-workspace_corner_track {
   grid-area: corner-track;
   position: relative;
-  background: rgba(244, 247, 251, 0.98);
+  background: inherit;
   border-right: 1px solid black;
   border-bottom: 1px solid black;
   overflow: hidden;
@@ -174,12 +174,13 @@ const rulerPanelCssSize = "44px";
   padding: 2px;
   box-sizing: border-box;
   border: 1px solid rgba(31, 41, 55, 0.55);
-  background: rgba(255, 255, 255, 0.86);
+  background: inherit;
 }
 
 .interactive-workspace_corner_minimap :deep(.ol-viewport) {
   width: 100%;
   height: 100%;
+  background: transparent;
 }
 
 .interactive-workspace_corner_minimap :deep(canvas) {
@@ -188,14 +189,14 @@ const rulerPanelCssSize = "44px";
 
 .interactive-workspace_corner_tracks_ruler {
   grid-area: corner-tracks-ruler;
-  background: rgba(244, 247, 251, 0.98);
+  background: inherit;
   border-right: 1px solid black;
   border-bottom: 1px solid black;
 }
 
 .interactive-workspace_corner_ruler_tracks {
   grid-area: corner-ruler-tracks;
-  background: rgba(244, 247, 251, 0.98);
+  background: inherit;
   border-right: 1px solid black;
   border-bottom: 1px solid black;
 }

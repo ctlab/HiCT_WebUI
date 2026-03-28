@@ -127,16 +127,17 @@
                 <template #default="slotProps">
                   <div
                     class="tree-node-content"
+                    @click.stop="onTreeNodeClick(slotProps.node)"
                     @dblclick="onTreeNodeDoubleClick(slotProps.node)"
                   >
                     <i
                       :class="
-                        slotProps.node.icon ??
-                        getIconForEntry(slotProps.node.data?.path ?? slotProps.node.key, !slotProps.node.leaf)
+                        slotProps.node.data?.iconCls ??
+                        (slotProps.node.leaf ? 'pi pi-fw pi-file' : 'pi pi-fw pi-folder-open')
                       "
                       aria-hidden="true"
                     ></i>
-                    <span class="ms-2">{{ slotProps.node.label }}</span>
+                    <span>{{ slotProps.node.label }}</span>
                     <small
                       v-if="slotProps.node.data?.meta"
                       class="text-muted ms-2"
@@ -244,6 +245,7 @@ type PrimeTreeNode = {
   data?: {
     path?: string;
     meta?: string;
+    iconCls?: string;
   };
   children?: PrimeTreeNode[];
 };
@@ -255,6 +257,8 @@ type MutableTreeNode = {
   path?: string;
   meta?: string;
 };
+
+const fileSelectionKey = (path: string): string => `file:${path}`;
 
 const treeNodes = computed<PrimeTreeNode[]>(() => {
   const rootNodes = new Map<string, MutableTreeNode>();
@@ -271,7 +275,7 @@ const treeNodes = computed<PrimeTreeNode[]>(() => {
       let node = currentLevel.get(chunk);
       if (!node) {
         node = {
-          key: keyPath,
+          key: `dir:${keyPath}`,
           label: chunk,
           children: new Map<string, MutableTreeNode>(),
         };
@@ -279,6 +283,7 @@ const treeNodes = computed<PrimeTreeNode[]>(() => {
       }
       const isLeaf = i === chunks.length - 1;
       if (isLeaf) {
+        node.key = fileSelectionKey(entry.path);
         node.path = entry.path;
         node.meta = `${formatBytes(entry.sizeBytes)}, ${formatTimestamp(entry.modifiedAtMs)}`;
       }
@@ -305,7 +310,6 @@ const mutableToPrimeNode = (node: MutableTreeNode): PrimeTreeNode => {
   return {
     key: node.key,
     label: node.label,
-    icon: getIconForEntry(node.path ?? node.key, !leaf),
     selectable: !!node.path,
     leaf,
     expanded: node.key.split("/").length <= 2,
@@ -313,10 +317,30 @@ const mutableToPrimeNode = (node: MutableTreeNode): PrimeTreeNode => {
       ? {
           path: node.path,
           meta: node.meta,
+          iconCls: getIconForEntry(node.path, false),
         }
-      : undefined,
+      : {
+          iconCls: getIconForEntry(node.key, true),
+        },
     children: leaf ? undefined : children,
   };
+};
+
+const selectedPathFromTreeKeys = (): string | null => {
+  const activeKey = Object.entries(treeSelectionKeys.value).find(
+    ([, selected]) => !!selected
+  )?.[0];
+  if (!activeKey || !activeKey.startsWith("file:")) {
+    return null;
+  }
+  return activeKey.slice("file:".length);
+};
+
+const resolveSelectedPath = (): string | null => {
+  if (selectorMode.value === "tree") {
+    return selectedPathFromTreeKeys() ?? selectedFilename.value;
+  }
+  return selectedFilename.value;
 };
 
 const getIconForEntry = (path: string, isDirectory: boolean): string => {
@@ -379,15 +403,23 @@ const onDismissClicked = (): void => {
 };
 
 const onSelectClicked = (): void => {
-  if (!selectedFilename.value) {
+  const selectedPath = resolveSelectedPath();
+  if (!selectedPath) {
     errorMessage.value = "Please select a file";
     return;
   }
-  emit("selected", selectedFilename.value);
+  if (!filteredEntries.value.some((entry) => entry.path === selectedPath)) {
+    errorMessage.value = "Selected file is no longer available in current filter";
+    return;
+  }
+  selectedFilename.value = selectedPath;
+  treeSelectionKeys.value = { [fileSelectionKey(selectedPath)]: true };
+  emit("selected", selectedPath);
 };
 
 const onRowClicked = (path: string): void => {
   selectedFilename.value = path;
+  treeSelectionKeys.value = { [fileSelectionKey(path)]: true };
 };
 
 const onTreeNodeSelect = (event: { node?: PrimeTreeNode }): void => {
@@ -396,6 +428,7 @@ const onTreeNodeSelect = (event: { node?: PrimeTreeNode }): void => {
     return;
   }
   selectedFilename.value = path;
+  treeSelectionKeys.value = { [fileSelectionKey(path)]: true };
 };
 
 const onTreeNodeDoubleClick = (node: { data?: { path?: string } }): void => {
@@ -407,20 +440,41 @@ const onTreeNodeDoubleClick = (node: { data?: { path?: string } }): void => {
   onSelectClicked();
 };
 
+const onTreeNodeClick = (node: { data?: { path?: string } }): void => {
+  const path = node?.data?.path;
+  if (!path) {
+    return;
+  }
+  selectedFilename.value = path;
+  treeSelectionKeys.value = { [fileSelectionKey(path)]: true };
+};
+
 watch(filteredEntries, (entries) => {
   if (entries.length === 0) {
     selectedFilename.value = null;
     treeSelectionKeys.value = {};
     return;
   }
+  const selectedFromTree = selectedPathFromTreeKeys();
+  if (
+    selectedFromTree &&
+    entries.some((entry) => entry.path === selectedFromTree)
+  ) {
+    selectedFilename.value = selectedFromTree;
+    return;
+  }
   if (selectedFilename.value && entries.some((entry) => entry.path === selectedFilename.value)) {
     const currentPath = selectedFilename.value;
-    treeSelectionKeys.value = currentPath ? { [currentPath]: true } : {};
+    treeSelectionKeys.value = currentPath
+      ? { [fileSelectionKey(currentPath)]: true }
+      : {};
     return;
   }
   selectedFilename.value = entries[0]?.path ?? null;
   const firstPath = selectedFilename.value;
-  treeSelectionKeys.value = firstPath ? { [firstPath]: true } : {};
+  treeSelectionKeys.value = firstPath
+    ? { [fileSelectionKey(firstPath)]: true }
+    : {};
 });
 
 onMounted(async () => {
@@ -433,7 +487,7 @@ onMounted(async () => {
     const firstAllowed = filteredEntries.value[0];
     if (firstAllowed) {
       selectedFilename.value = firstAllowed.path;
-      treeSelectionKeys.value = { [firstAllowed.path]: true };
+      treeSelectionKeys.value = { [fileSelectionKey(firstAllowed.path)]: true };
     }
   } catch (error: unknown) {
     errorMessage.value = String(error);
@@ -462,6 +516,7 @@ onMounted(async () => {
   border: 1px solid #e5e7eb;
   border-radius: 0.5rem;
   padding: 0.5rem;
+  text-align: left;
 }
 
 .legacy-tree {
@@ -472,6 +527,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   min-height: 1.4rem;
+  gap: 0.35rem;
 }
 
 .file-table td,

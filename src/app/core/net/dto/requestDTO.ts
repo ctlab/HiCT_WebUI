@@ -49,6 +49,7 @@ import {
   ListCoolerFilesRequest,
   ListTrackFilesRequest,
   OpenTrackRequest,
+  OpenCoolerWeightsTrackRequest,
   ProbeTrackCompatibilityRequest,
   ListTracksRequest,
   UpdateTrackRequest,
@@ -141,6 +142,10 @@ abstract class HiCTAPIRequestDTO<
         return new ListTrackFilesRequestDTO(entity);
       case entity instanceof OpenTrackRequest:
         return new OpenTrackRequestDTO(entity as OpenTrackRequest);
+      case entity instanceof OpenCoolerWeightsTrackRequest:
+        return new OpenCoolerWeightsTrackRequestDTO(
+          entity as OpenCoolerWeightsTrackRequest
+        );
       case entity instanceof ProbeTrackCompatibilityRequest:
         return new ProbeTrackCompatibilityRequestDTO(entity as ProbeTrackCompatibilityRequest);
       case entity instanceof ListTracksRequest:
@@ -502,6 +507,15 @@ class OpenTrackRequestDTO extends HiCTAPIRequestDTO<OpenTrackRequest> {
   toDTO(): Record<string, unknown> {
     return {
       filename: this.entity.options.filename,
+      name: this.entity.options.name,
+      color: this.entity.options.color,
+    };
+  }
+}
+
+class OpenCoolerWeightsTrackRequestDTO extends HiCTAPIRequestDTO<OpenCoolerWeightsTrackRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
       name: this.entity.options.name,
       color: this.entity.options.color,
     };

@@ -165,21 +165,33 @@
                   </select>
                   <div
                     v-if="(track.renderStyle ?? 'SIGNAL').toUpperCase() !== 'FEATURE'"
-                    class="form-check form-switch ms-1"
+                    class="d-flex align-items-center gap-1 ms-1"
                   >
+                    <div class="form-check form-switch m-0">
+                      <input
+                        :id="`track-log-scale-${track.trackId}`"
+                        class="form-check-input"
+                        type="checkbox"
+                        :checked="track.logScale"
+                        @change="onChangeLogScale(track.trackId, ($event.target as HTMLInputElement).checked)"
+                      />
+                      <label
+                        class="form-check-label small"
+                        :for="`track-log-scale-${track.trackId}`"
+                      >
+                        log
+                      </label>
+                    </div>
                     <input
-                      :id="`track-log-scale-${track.trackId}`"
-                      class="form-check-input"
-                      type="checkbox"
-                      :checked="track.logScale"
-                      @change="onChangeLogScale(track.trackId, ($event.target as HTMLInputElement).checked)"
+                      v-if="track.logScale"
+                      type="number"
+                      class="form-control form-control-sm track-log-base-input"
+                      :value="getTrackLogBase(track.trackId)"
+                      min="1.000001"
+                      step="0.1"
+                      @change="onChangeLogBase(track.trackId, Number(($event.target as HTMLInputElement).value))"
+                      title="Log base for log(1+x)"
                     />
-                    <label
-                      class="form-check-label small"
-                      :for="`track-log-scale-${track.trackId}`"
-                    >
-                      log
-                    </label>
                   </div>
                   <select
                     v-if="track.type === 'BAM'"
@@ -561,6 +573,17 @@ const onChangeLogScale = async (trackId: string, logScale: boolean) => {
   }
 };
 
+const getTrackLogBase = (trackId: string): number => {
+  return props.mapManager?.linearTrackManager.getTrackLogBase(trackId) ?? 10;
+};
+
+const onChangeLogBase = (trackId: string, value: number): void => {
+  if (!props.mapManager) {
+    return;
+  }
+  props.mapManager.linearTrackManager.setTrackLogBase(trackId, value);
+};
+
 const addMarkerAtCenter = () => {
   props.mapManager?.getLayersManager().addAnnotationMarkerAtCenter();
 };
@@ -629,6 +652,10 @@ onBeforeUnmount(() => {
 
 .track-mode-select {
   max-width: 7rem;
+}
+
+.track-log-base-input {
+  max-width: 5.4rem;
 }
 
 .precompute-list {

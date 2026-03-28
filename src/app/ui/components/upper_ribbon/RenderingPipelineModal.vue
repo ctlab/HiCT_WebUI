@@ -30,7 +30,7 @@
             <button type="button" class="btn-close" @click="emit('dismissed')"></button>
           </div>
           <div class="modal-body">
-            <div class="alert alert-warning py-2">
+            <div class="alert alert-warning py-2 mb-3">
               Normalization dropdown updates this pipeline, but pipeline edits are not fully back-synced to checkbox controls.
             </div>
             <div class="d-flex gap-3 align-items-center mb-3">
@@ -47,43 +47,21 @@
               </button>
             </div>
 
-            <div class="pipeline-graph card mb-3">
-              <div class="card-body p-2">
-                <svg class="pipeline-svg" viewBox="0 0 980 220" preserveAspectRatio="none">
-                  <line x1="170" y1="52" x2="355" y2="52" class="edge"></line>
-                  <line x1="170" y1="168" x2="355" y2="168" class="edge"></line>
-                  <line x1="585" y1="52" x2="770" y2="110" class="edge"></line>
-                  <line x1="585" y1="168" x2="770" y2="110" class="edge"></line>
-                </svg>
-                <div class="node source-node top">Data Source: Primary (.hict.hdf5)</div>
-                <div class="node source-node bottom">Data Source: Secondary (reserved)</div>
-                <div class="node branch-node top">Upper Branch: {{ summarizeBranch(upperBranch) }}</div>
-                <div class="node branch-node bottom">Lower Branch: {{ summarizeBranch(lowerBranch) }}</div>
-                <div class="node sink-node">Render Sink</div>
+            <div class="pipeline-graph card mb-2">
+              <div class="card-body p-0">
+                <div ref="graphHost" class="graph-host">
+                  <canvas ref="graphCanvasRef" class="graph-canvas"></canvas>
+                </div>
               </div>
             </div>
+            <small class="text-muted d-block mb-2">
+              Right-click to add nodes. Available node types: source, constant, dynamic fields, unary ops and binary ops.
+              Keep "Upper sink" and "Lower sink" connected to branch outputs.
+            </small>
 
-            <div v-if="loading" class="py-3">
+            <div v-if="loading" class="py-2">
               <span class="spinner-border spinner-border-sm me-2"></span>
               Loading pipeline configuration…
-            </div>
-            <div v-else class="row g-3">
-              <div class="col-12 col-lg-6">
-                <div class="card h-100">
-                  <div class="card-header fw-bold">Upper branch</div>
-                  <div class="card-body">
-                    <BranchEditor v-model="upperBranch" />
-                  </div>
-                </div>
-              </div>
-              <div class="col-12 col-lg-6">
-                <div class="card h-100">
-                  <div class="card-header fw-bold">Lower branch</div>
-                  <div class="card-body">
-                    <BranchEditor v-model="lowerBranch" />
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -91,7 +69,7 @@
               Reset
             </button>
             <button class="btn btn-secondary" @click="emit('dismissed')">Close</button>
-            <button class="btn btn-primary" :disabled="loading || saving" @click="saveConfig">
+            <button class="btn btn-primary" :disabled="saving" @click="saveConfig">
               <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>
               Apply
             </button>
@@ -104,8 +82,10 @@
 
 <script setup lang="ts">
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { computed, defineComponent, h, onMounted, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
+import { LGraph, LGraphCanvas, LGraphNode, LiteGraph } from "litegraph.js";
+import "litegraph.js/css/litegraph.css";
 
 type SourceName = "PRIMARY" | "SECONDARY";
 type UnaryOp = "ABS" | "LOG1P" | "EXP" | "NEG";
@@ -124,20 +104,42 @@ type DynamicField =
   | "DIAG_PX_DISTANCE"
   | "BP_RESOLUTION";
 
-type OperandSpec =
-  | { kind: "SOURCE"; source: SourceName }
-  | { kind: "CONSTANT"; value: number }
-  | { kind: "DYNAMIC"; field: DynamicField };
+type PipelineExpression =
+  | { type: "source"; source: SourceName }
+  | { type: "constant"; value: number }
+  | { type: "dynamic"; field: DynamicField }
+  | { type: "unary"; op: UnaryOp; input: PipelineExpression }
+  | {
+      type: "binary";
+      op: BinaryOp;
+      left: PipelineExpression;
+      right: PipelineExpression;
+    };
 
-type BranchSpec = {
-  mode: "SOURCE" | "UNARY" | "BINARY";
-  source: SourceName;
-  unaryOp: UnaryOp;
-  unaryInput: OperandSpec;
-  binaryOp: BinaryOp;
-  left: OperandSpec;
-  right: OperandSpec;
-};
+const SOURCE_NODE_TYPE = "hict/source";
+const CONSTANT_NODE_TYPE = "hict/constant";
+const DYNAMIC_NODE_TYPE = "hict/dynamic";
+const UNARY_NODE_TYPE = "hict/unary";
+const BINARY_NODE_TYPE = "hict/binary";
+const SINK_NODE_TYPE = "hict/sink";
+
+const DYNAMIC_FIELDS: DynamicField[] = [
+  "ROW_BP",
+  "COL_BP",
+  "ROW_BIN",
+  "COL_BIN",
+  "ROW_PX",
+  "COL_PX",
+  "ROW_WEIGHT",
+  "COL_WEIGHT",
+  "DIAG_BP_DISTANCE",
+  "DIAG_BIN_DISTANCE",
+  "DIAG_PX_DISTANCE",
+  "BP_RESOLUTION",
+];
+
+const UNARY_OPS: UnaryOp[] = ["ABS", "LOG1P", "EXP", "NEG"];
+const BINARY_OPS: BinaryOp[] = ["ADD", "SUB", "MUL", "DIV", "MAX", "MIN"];
 
 const emit = defineEmits<{
   (e: "dismissed"): void;
@@ -151,20 +153,20 @@ const enabled = ref(false);
 const swapUpperLower = ref(false);
 const loading = ref(false);
 const saving = ref(false);
+const graphHost = ref<HTMLDivElement | null>(null);
+const graphCanvasRef = ref<HTMLCanvasElement | null>(null);
 
-const defaultOperand = (): OperandSpec => ({ kind: "SOURCE", source: "PRIMARY" });
-const defaultBranch = (): BranchSpec => ({
-  mode: "SOURCE",
+let graph: LGraph | null = null;
+let graphCanvas: LGraphCanvas | null = null;
+let resizeObserver: ResizeObserver | null = null;
+let upperSinkId: number | null = null;
+let lowerSinkId: number | null = null;
+let nodeTypesRegistered = false;
+
+const defaultExpression = (): PipelineExpression => ({
+  type: "source",
   source: "PRIMARY",
-  unaryOp: "ABS",
-  unaryInput: defaultOperand(),
-  binaryOp: "MUL",
-  left: defaultOperand(),
-  right: { kind: "CONSTANT", value: 1.0 },
 });
-
-const upperBranch = ref<BranchSpec>(defaultBranch());
-const lowerBranch = ref<BranchSpec>(defaultBranch());
 
 const ensureMapManager = (): ContactMapManager => {
   if (!props.mapManager) {
@@ -173,98 +175,404 @@ const ensureMapManager = (): ContactMapManager => {
   return props.mapManager;
 };
 
-const summarizeOperand = (operand: OperandSpec): string => {
-  if (operand.kind === "SOURCE") {
-    return operand.source === "PRIMARY" ? "source(primary)" : "source(secondary)";
-  }
-  if (operand.kind === "CONSTANT") {
-    return Number(operand.value).toString();
-  }
-  return operand.field;
+const toSourceName = (value: unknown): SourceName =>
+  String(value ?? "PRIMARY").toUpperCase() === "SECONDARY"
+    ? "SECONDARY"
+    : "PRIMARY";
+
+const toDynamicField = (value: unknown): DynamicField => {
+  const candidate = String(value ?? "ROW_BP").toUpperCase() as DynamicField;
+  return DYNAMIC_FIELDS.includes(candidate) ? candidate : "ROW_BP";
 };
 
-const summarizeBranch = (branch: BranchSpec): string => {
-  if (branch.mode === "SOURCE") {
-    return summarizeOperand({ kind: "SOURCE", source: branch.source });
-  }
-  if (branch.mode === "UNARY") {
-    return `${branch.unaryOp.toLowerCase()}(${summarizeOperand(branch.unaryInput)})`;
-  }
-  return `${branch.binaryOp.toLowerCase()}(${summarizeOperand(branch.left)}, ${summarizeOperand(branch.right)})`;
+const toUnaryOp = (value: unknown): UnaryOp => {
+  const candidate = String(value ?? "ABS").toUpperCase() as UnaryOp;
+  return UNARY_OPS.includes(candidate) ? candidate : "ABS";
 };
 
-const operandToNode = (operand: OperandSpec): Record<string, unknown> => {
-  if (operand.kind === "SOURCE") {
-    return { type: "source", source: operand.source };
-  }
-  if (operand.kind === "CONSTANT") {
-    return { type: "constant", value: Number.isFinite(operand.value) ? operand.value : 0 };
-  }
-  return { type: "dynamic", field: operand.field };
+const toBinaryOp = (value: unknown): BinaryOp => {
+  const candidate = String(value ?? "MUL").toUpperCase() as BinaryOp;
+  return BINARY_OPS.includes(candidate) ? candidate : "MUL";
 };
 
-const branchToNode = (branch: BranchSpec): Record<string, unknown> => {
-  if (branch.mode === "SOURCE") {
-    return { type: "source", source: branch.source };
+const parseExpression = (raw: unknown): PipelineExpression => {
+  const node = (raw ?? {}) as Record<string, unknown>;
+  const type = String(node.type ?? "source").toLowerCase();
+  if (type === "constant") {
+    const numeric = Number(node.value ?? 0);
+    return {
+      type: "constant",
+      value: Number.isFinite(numeric) ? numeric : 0,
+    };
   }
-  if (branch.mode === "UNARY") {
+  if (type === "dynamic") {
+    return {
+      type: "dynamic",
+      field: toDynamicField(node.field),
+    };
+  }
+  if (type === "unary") {
     return {
       type: "unary",
-      op: branch.unaryOp,
-      input: operandToNode(branch.unaryInput),
+      op: toUnaryOp(node.op),
+      input: parseExpression(node.input),
+    };
+  }
+  if (type === "binary") {
+    return {
+      type: "binary",
+      op: toBinaryOp(node.op),
+      left: parseExpression(node.left),
+      right: parseExpression(node.right),
     };
   }
   return {
-    type: "binary",
-    op: branch.binaryOp,
-    left: operandToNode(branch.left),
-    right: operandToNode(branch.right),
+    type: "source",
+    source: toSourceName(node.source),
   };
 };
 
-const parseOperand = (raw: unknown): OperandSpec => {
-  const node = (raw ?? {}) as Record<string, unknown>;
-  const type = String(node.type ?? "source").toUpperCase();
-  if (type === "SOURCE") {
-    const source = String(node.source ?? "PRIMARY").toUpperCase() === "SECONDARY" ? "SECONDARY" : "PRIMARY";
-    return { kind: "SOURCE", source };
+const ensureNodeTypesRegistered = (): void => {
+  if (nodeTypesRegistered) {
+    return;
   }
-  if (type === "CONSTANT") {
-    const value = Number(node.value ?? 0);
-    return { kind: "CONSTANT", value: Number.isFinite(value) ? value : 0 };
+
+  class SourceNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "Source";
+      this.addOutput("value", "number");
+      this.properties = { source: "PRIMARY" };
+      this.addWidget(
+        "combo",
+        "source",
+        this.properties.source,
+        (value: unknown) => {
+          this.properties.source = toSourceName(value);
+        },
+        { values: ["PRIMARY", "SECONDARY"] }
+      );
+      this.size = [190, 72];
+    }
   }
-  const dynamic = String(node.field ?? "ROW_BP").toUpperCase() as DynamicField;
-  return { kind: "DYNAMIC", field: dynamic };
+
+  class ConstantNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "Constant";
+      this.addOutput("value", "number");
+      this.properties = { value: 0 };
+      this.addWidget("number", "value", this.properties.value, (value: unknown) => {
+        const numeric = Number(value);
+        this.properties.value = Number.isFinite(numeric) ? numeric : 0;
+      });
+      this.size = [190, 72];
+    }
+  }
+
+  class DynamicNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "Dynamic";
+      this.addOutput("value", "number");
+      this.properties = { field: "ROW_BP" };
+      this.addWidget(
+        "combo",
+        "field",
+        this.properties.field,
+        (value: unknown) => {
+          this.properties.field = toDynamicField(value);
+        },
+        { values: DYNAMIC_FIELDS }
+      );
+      this.size = [220, 78];
+    }
+  }
+
+  class UnaryNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "Unary";
+      this.addInput("in", "number");
+      this.addOutput("out", "number");
+      this.properties = { op: "ABS" };
+      this.addWidget(
+        "combo",
+        "op",
+        this.properties.op,
+        (value: unknown) => {
+          this.properties.op = toUnaryOp(value);
+        },
+        { values: UNARY_OPS }
+      );
+      this.size = [190, 78];
+    }
+  }
+
+  class BinaryNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "Binary";
+      this.addInput("left", "number");
+      this.addInput("right", "number");
+      this.addOutput("out", "number");
+      this.properties = { op: "MUL" };
+      this.addWidget(
+        "combo",
+        "op",
+        this.properties.op,
+        (value: unknown) => {
+          this.properties.op = toBinaryOp(value);
+        },
+        { values: BINARY_OPS }
+      );
+      this.size = [210, 92];
+    }
+  }
+
+  class SinkNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "Sink";
+      this.addInput("value", "number");
+      this.properties = { branch: "UPPER" };
+      this.color = "#0f766e";
+      this.bgcolor = "#dcfce7";
+      this.size = [190, 62];
+    }
+  }
+
+  if (!LiteGraph.registered_node_types[SOURCE_NODE_TYPE]) {
+    LiteGraph.registerNodeType(SOURCE_NODE_TYPE, SourceNode as unknown as { new (): LGraphNode });
+  }
+  if (!LiteGraph.registered_node_types[CONSTANT_NODE_TYPE]) {
+    LiteGraph.registerNodeType(CONSTANT_NODE_TYPE, ConstantNode as unknown as { new (): LGraphNode });
+  }
+  if (!LiteGraph.registered_node_types[DYNAMIC_NODE_TYPE]) {
+    LiteGraph.registerNodeType(DYNAMIC_NODE_TYPE, DynamicNode as unknown as { new (): LGraphNode });
+  }
+  if (!LiteGraph.registered_node_types[UNARY_NODE_TYPE]) {
+    LiteGraph.registerNodeType(UNARY_NODE_TYPE, UnaryNode as unknown as { new (): LGraphNode });
+  }
+  if (!LiteGraph.registered_node_types[BINARY_NODE_TYPE]) {
+    LiteGraph.registerNodeType(BINARY_NODE_TYPE, BinaryNode as unknown as { new (): LGraphNode });
+  }
+  if (!LiteGraph.registered_node_types[SINK_NODE_TYPE]) {
+    LiteGraph.registerNodeType(SINK_NODE_TYPE, SinkNode as unknown as { new (): LGraphNode });
+  }
+
+  nodeTypesRegistered = true;
 };
 
-const parseBranch = (raw: unknown): BranchSpec => {
-  const node = (raw ?? {}) as Record<string, unknown>;
-  const type = String(node.type ?? "source").toUpperCase();
-  if (type === "UNARY") {
+const fitGraphCanvas = (): void => {
+  if (!graphHost.value || !graphCanvasRef.value || !graphCanvas) {
+    return;
+  }
+  const width = Math.max(640, Math.floor(graphHost.value.clientWidth));
+  const height = Math.max(380, Math.floor(graphHost.value.clientHeight));
+  graphCanvasRef.value.width = width;
+  graphCanvasRef.value.height = height;
+  graphCanvas.resize(width, height);
+  graphCanvas.draw(true, true);
+};
+
+const createSinkNodes = (): void => {
+  if (!graph) {
+    return;
+  }
+  const upperSink = LiteGraph.createNode(SINK_NODE_TYPE) as LGraphNode | null;
+  const lowerSink = LiteGraph.createNode(SINK_NODE_TYPE) as LGraphNode | null;
+  if (!upperSink || !lowerSink) {
+    return;
+  }
+  upperSink.title = "Upper sink";
+  upperSink.properties = { branch: "UPPER" };
+  upperSink.pos = [880, 90];
+
+  lowerSink.title = "Lower sink";
+  lowerSink.properties = { branch: "LOWER" };
+  lowerSink.pos = [880, 320];
+
+  graph.add(upperSink);
+  graph.add(lowerSink);
+  upperSinkId = upperSink.id ?? null;
+  lowerSinkId = lowerSink.id ?? null;
+};
+
+const initializeGraph = (): void => {
+  if (!graphCanvasRef.value) {
+    return;
+  }
+  ensureNodeTypesRegistered();
+  graph = new LGraph();
+  graphCanvas = new LGraphCanvas(graphCanvasRef.value, graph);
+  graphCanvas.allow_interaction = true;
+  graphCanvas.background_image = "";
+  graphCanvas.ds.scale = 0.9;
+  createSinkNodes();
+  fitGraphCanvas();
+  if (graphHost.value) {
+    resizeObserver = new ResizeObserver(() => fitGraphCanvas());
+    resizeObserver.observe(graphHost.value);
+  }
+};
+
+const clearGraph = (): void => {
+  graph?.clear();
+  upperSinkId = null;
+  lowerSinkId = null;
+};
+
+const createNodeFromExpression = (
+  expression: PipelineExpression,
+  depth: number,
+  centerY: number
+): LGraphNode | null => {
+  if (!graph) {
+    return null;
+  }
+  const x = Math.max(40, 640 - depth * 220);
+  let node: LGraphNode | null = null;
+  switch (expression.type) {
+    case "source":
+      node = LiteGraph.createNode(SOURCE_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.source = expression.source;
+      }
+      break;
+    case "constant":
+      node = LiteGraph.createNode(CONSTANT_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.value = expression.value;
+      }
+      break;
+    case "dynamic":
+      node = LiteGraph.createNode(DYNAMIC_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.field = expression.field;
+      }
+      break;
+    case "unary": {
+      node = LiteGraph.createNode(UNARY_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.op = expression.op;
+      }
+      break;
+    }
+    case "binary": {
+      node = LiteGraph.createNode(BINARY_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.op = expression.op;
+      }
+      break;
+    }
+  }
+
+  if (!node) {
+    return null;
+  }
+
+  node.pos = [x, centerY];
+  graph.add(node);
+
+  if (expression.type === "unary") {
+    const inputNode = createNodeFromExpression(expression.input, depth + 1, centerY);
+    inputNode?.connect(0, node, 0);
+  } else if (expression.type === "binary") {
+    const leftNode = createNodeFromExpression(expression.left, depth + 1, centerY - 80);
+    const rightNode = createNodeFromExpression(expression.right, depth + 1, centerY + 80);
+    leftNode?.connect(0, node, 0);
+    rightNode?.connect(0, node, 1);
+  }
+
+  return node;
+};
+
+const buildGraphFromExpressions = (
+  upperExpression: PipelineExpression,
+  lowerExpression: PipelineExpression
+): void => {
+  if (!graph) {
+    return;
+  }
+  clearGraph();
+  createSinkNodes();
+
+  const upperSink = upperSinkId != null ? graph.getNodeById(upperSinkId) : null;
+  const lowerSink = lowerSinkId != null ? graph.getNodeById(lowerSinkId) : null;
+  const upperNode = createNodeFromExpression(upperExpression, 0, 90);
+  const lowerNode = createNodeFromExpression(lowerExpression, 0, 320);
+  if (upperNode && upperSink) {
+    upperNode.connect(0, upperSink, 0);
+  }
+  if (lowerNode && lowerSink) {
+    lowerNode.connect(0, lowerSink, 0);
+  }
+  graphCanvas?.draw(true, true);
+};
+
+const expressionFromNode = (
+  node: LGraphNode | null,
+  visited: Set<number>
+): PipelineExpression => {
+  if (!node) {
+    return defaultExpression();
+  }
+  const nodeId = node.id ?? -1;
+  if (visited.has(nodeId)) {
+    return defaultExpression();
+  }
+  visited.add(nodeId);
+
+  if (node.type === SOURCE_NODE_TYPE) {
     return {
-      ...defaultBranch(),
-      mode: "UNARY",
-      unaryOp: (String(node.op ?? "ABS").toUpperCase() as UnaryOp) ?? "ABS",
-      unaryInput: parseOperand(node.input),
+      type: "source",
+      source: toSourceName(node.properties?.source),
     };
   }
-  if (type === "BINARY") {
+  if (node.type === CONSTANT_NODE_TYPE) {
+    const value = Number(node.properties?.value ?? 0);
     return {
-      ...defaultBranch(),
-      mode: "BINARY",
-      binaryOp: (String(node.op ?? "MUL").toUpperCase() as BinaryOp) ?? "MUL",
-      left: parseOperand(node.left),
-      right: parseOperand(node.right),
+      type: "constant",
+      value: Number.isFinite(value) ? value : 0,
     };
   }
-  return {
-    ...defaultBranch(),
-    mode: "SOURCE",
-    source:
-      String(node.source ?? "PRIMARY").toUpperCase() === "SECONDARY"
-        ? "SECONDARY"
-        : "PRIMARY",
-  };
+  if (node.type === DYNAMIC_NODE_TYPE) {
+    return {
+      type: "dynamic",
+      field: toDynamicField(node.properties?.field),
+    };
+  }
+  if (node.type === UNARY_NODE_TYPE) {
+    return {
+      type: "unary",
+      op: toUnaryOp(node.properties?.op),
+      input: expressionFromNode(node.getInputNode(0), visited),
+    };
+  }
+  if (node.type === BINARY_NODE_TYPE) {
+    return {
+      type: "binary",
+      op: toBinaryOp(node.properties?.op),
+      left: expressionFromNode(node.getInputNode(0), visited),
+      right: expressionFromNode(node.getInputNode(1), visited),
+    };
+  }
+
+  return defaultExpression();
+};
+
+const expressionFromSink = (branch: "UPPER" | "LOWER"): PipelineExpression => {
+  if (!graph) {
+    return defaultExpression();
+  }
+  const sinkId = branch === "UPPER" ? upperSinkId : lowerSinkId;
+  if (sinkId == null) {
+    return defaultExpression();
+  }
+  const sinkNode = graph.getNodeById(sinkId);
+  const sourceNode = sinkNode?.getInputNode(0) ?? null;
+  return expressionFromNode(sourceNode, new Set<number>());
 };
 
 const loadConfig = async (): Promise<void> => {
@@ -274,8 +582,9 @@ const loadConfig = async (): Promise<void> => {
     const response = await manager.networkManager.requestManager.getRenderPipelineConfig();
     enabled.value = Boolean(response.enabled ?? false);
     swapUpperLower.value = Boolean(response.swapUpperLower ?? false);
-    upperBranch.value = parseBranch(response.upperExpression ?? response.upper);
-    lowerBranch.value = parseBranch(response.lowerExpression ?? response.lower);
+    const upperExpression = parseExpression(response.upperExpression ?? response.upper);
+    const lowerExpression = parseExpression(response.lowerExpression ?? response.lower);
+    buildGraphFromExpressions(upperExpression, lowerExpression);
   } catch (error) {
     toast.error(String(error));
   } finally {
@@ -290,8 +599,8 @@ const saveConfig = async (): Promise<void> => {
     await manager.networkManager.requestManager.setRenderPipelineConfig({
       enabled: enabled.value,
       swapUpperLower: swapUpperLower.value,
-      upperExpression: branchToNode(upperBranch.value),
-      lowerExpression: branchToNode(lowerBranch.value),
+      upperExpression: expressionFromSink("UPPER"),
+      lowerExpression: expressionFromSink("LOWER"),
     });
     await manager.reloadTilesFromBackend();
     toast.success("Rendering pipeline updated");
@@ -309,8 +618,10 @@ const resetConfig = async (): Promise<void> => {
     const response = await manager.networkManager.requestManager.resetRenderPipelineConfig();
     enabled.value = Boolean(response.enabled ?? false);
     swapUpperLower.value = Boolean(response.swapUpperLower ?? false);
-    upperBranch.value = parseBranch(response.upperExpression ?? response.upper);
-    lowerBranch.value = parseBranch(response.lowerExpression ?? response.lower);
+    buildGraphFromExpressions(
+      parseExpression(response.upperExpression ?? response.upper),
+      parseExpression(response.lowerExpression ?? response.lower)
+    );
     await manager.reloadTilesFromBackend();
     toast.success("Rendering pipeline reset");
   } catch (error) {
@@ -321,214 +632,17 @@ const resetConfig = async (): Promise<void> => {
 };
 
 onMounted(() => {
+  initializeGraph();
   void loadConfig();
 });
 
-const operandOptions = computed(() => [
-  { label: "Source: primary", value: "SOURCE_PRIMARY" },
-  { label: "Source: secondary", value: "SOURCE_SECONDARY" },
-  { label: "Constant", value: "CONSTANT" },
-  { label: "Dynamic value", value: "DYNAMIC" },
-]);
-
-const dynamicFieldOptions: { label: string; value: DynamicField }[] = [
-  { label: "row_bp", value: "ROW_BP" },
-  { label: "col_bp", value: "COL_BP" },
-  { label: "row_bin", value: "ROW_BIN" },
-  { label: "col_bin", value: "COL_BIN" },
-  { label: "row_px", value: "ROW_PX" },
-  { label: "col_px", value: "COL_PX" },
-  { label: "row_weight", value: "ROW_WEIGHT" },
-  { label: "col_weight", value: "COL_WEIGHT" },
-  { label: "diag_bp_distance", value: "DIAG_BP_DISTANCE" },
-  { label: "diag_bin_distance", value: "DIAG_BIN_DISTANCE" },
-  { label: "diag_px_distance", value: "DIAG_PX_DISTANCE" },
-  { label: "bp_resolution", value: "BP_RESOLUTION" },
-];
-
-const coerceOperandKind = (operand: OperandSpec): string => {
-  if (operand.kind === "SOURCE") {
-    return operand.source === "SECONDARY" ? "SOURCE_SECONDARY" : "SOURCE_PRIMARY";
-  }
-  return operand.kind;
-};
-
-const applyOperandKind = (operand: OperandSpec, kind: string): OperandSpec => {
-  if (kind === "SOURCE_SECONDARY") {
-    return { kind: "SOURCE", source: "SECONDARY" };
-  }
-  if (kind === "SOURCE_PRIMARY") {
-    return { kind: "SOURCE", source: "PRIMARY" };
-  }
-  if (kind === "CONSTANT") {
-    return { kind: "CONSTANT", value: operand.kind === "CONSTANT" ? operand.value : 1.0 };
-  }
-  return {
-    kind: "DYNAMIC",
-    field: operand.kind === "DYNAMIC" ? operand.field : "DIAG_BP_DISTANCE",
-  };
-};
-
-const BranchEditor = defineComponent({
-  name: "BranchEditor",
-  props: {
-    modelValue: {
-      type: Object as () => BranchSpec,
-      required: true,
-    },
-  },
-  emits: ["update:modelValue"],
-  setup(props, { emit }) {
-    const update = (patch: Partial<BranchSpec>) => {
-      emit("update:modelValue", { ...props.modelValue, ...patch });
-    };
-    const updateOperand = (slot: "unaryInput" | "left" | "right", operand: OperandSpec) => {
-      emit("update:modelValue", { ...props.modelValue, [slot]: operand });
-    };
-    const renderOperandEditor = (label: string, slot: "unaryInput" | "left" | "right") => {
-      const operand = props.modelValue[slot];
-      const operandKind = coerceOperandKind(operand);
-      return h("div", { class: "mb-2" }, [
-        h("label", { class: "form-label form-label-sm mb-1" }, label),
-        h(
-          "select",
-          {
-            class: "form-select form-select-sm mb-1",
-            value: operandKind,
-            onChange: (event: Event) => {
-              const target = event.target as HTMLSelectElement;
-              updateOperand(slot, applyOperandKind(operand, target.value));
-            },
-          },
-          operandOptions.value.map((opt) =>
-            h("option", { value: opt.value }, opt.label)
-          )
-        ),
-        operand.kind === "CONSTANT"
-          ? h("input", {
-              class: "form-control form-control-sm",
-              type: "number",
-              value: Number.isFinite(operand.value) ? operand.value : 0,
-              onInput: (event: Event) => {
-                const target = event.target as HTMLInputElement;
-                const value = Number(target.value);
-                updateOperand(slot, {
-                  kind: "CONSTANT",
-                  value: Number.isFinite(value) ? value : 0,
-                });
-              },
-            })
-          : null,
-        operand.kind === "DYNAMIC"
-          ? h(
-              "select",
-              {
-                class: "form-select form-select-sm",
-                value: operand.field,
-                onChange: (event: Event) => {
-                  const target = event.target as HTMLSelectElement;
-                  updateOperand(slot, {
-                    kind: "DYNAMIC",
-                    field: target.value as DynamicField,
-                  });
-                },
-              },
-              dynamicFieldOptions.map((opt) =>
-                h("option", { value: opt.value }, opt.label)
-              )
-            )
-          : null,
-      ]);
-    };
-    return () =>
-      h("div", {}, [
-        h("div", { class: "mb-2" }, [
-          h("label", { class: "form-label form-label-sm mb-1" }, "Branch mode"),
-          h(
-            "select",
-            {
-              class: "form-select form-select-sm",
-              value: props.modelValue.mode,
-              onChange: (event: Event) =>
-                update({ mode: (event.target as HTMLSelectElement).value as BranchSpec["mode"] }),
-            },
-            [
-              h("option", { value: "SOURCE" }, "Source"),
-              h("option", { value: "UNARY" }, "Unary operation"),
-              h("option", { value: "BINARY" }, "Binary operation"),
-            ]
-          ),
-        ]),
-        props.modelValue.mode === "SOURCE"
-          ? h("div", { class: "mb-2" }, [
-              h("label", { class: "form-label form-label-sm mb-1" }, "Source"),
-              h(
-                "select",
-                {
-                  class: "form-select form-select-sm",
-                  value: props.modelValue.source,
-                  onChange: (event: Event) =>
-                    update({
-                      source:
-                        (event.target as HTMLSelectElement).value === "SECONDARY"
-                          ? "SECONDARY"
-                          : "PRIMARY",
-                    }),
-                },
-                [
-                  h("option", { value: "PRIMARY" }, "Primary"),
-                  h("option", { value: "SECONDARY" }, "Secondary"),
-                ]
-              ),
-            ])
-          : null,
-        props.modelValue.mode === "UNARY"
-          ? h("div", {}, [
-              h("div", { class: "mb-2" }, [
-                h("label", { class: "form-label form-label-sm mb-1" }, "Unary operation"),
-                h(
-                  "select",
-                  {
-                    class: "form-select form-select-sm",
-                    value: props.modelValue.unaryOp,
-                    onChange: (event: Event) =>
-                      update({
-                        unaryOp: (event.target as HTMLSelectElement).value as UnaryOp,
-                      }),
-                  },
-                  ["ABS", "LOG1P", "EXP", "NEG"].map((op) =>
-                    h("option", { value: op }, op.toLowerCase())
-                  )
-                ),
-              ]),
-              renderOperandEditor("Input", "unaryInput"),
-            ])
-          : null,
-        props.modelValue.mode === "BINARY"
-          ? h("div", {}, [
-              h("div", { class: "mb-2" }, [
-                h("label", { class: "form-label form-label-sm mb-1" }, "Binary operation"),
-                h(
-                  "select",
-                  {
-                    class: "form-select form-select-sm",
-                    value: props.modelValue.binaryOp,
-                    onChange: (event: Event) =>
-                      update({
-                        binaryOp: (event.target as HTMLSelectElement).value as BinaryOp,
-                      }),
-                  },
-                  ["ADD", "SUB", "MUL", "DIV", "MAX", "MIN"].map((op) =>
-                    h("option", { value: op }, op.toLowerCase())
-                  )
-                ),
-              ]),
-              renderOperandEditor("Left operand", "left"),
-              renderOperandEditor("Right operand", "right"),
-            ])
-          : null,
-      ]);
-  },
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  graphCanvas?.clear();
+  graphCanvas = null;
+  graph?.clear();
+  graph = null;
 });
 </script>
 
@@ -538,56 +652,24 @@ const BranchEditor = defineComponent({
 }
 
 .pipeline-graph {
-  position: relative;
-  min-height: 220px;
+  min-height: 420px;
   overflow: hidden;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
 }
 
-.pipeline-svg {
+.graph-host {
+  position: relative;
   width: 100%;
-  height: 220px;
+  height: 420px;
+  background: #111827;
 }
 
-.edge {
-  stroke: rgba(59, 130, 246, 0.7);
-  stroke-width: 2;
+.graph-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
-.node {
-  position: absolute;
-  border: 1px solid rgba(31, 41, 55, 0.25);
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 12px;
-  background: rgba(255, 255, 255, 0.93);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
-  white-space: nowrap;
-}
-
-.source-node.top {
-  left: 18px;
-  top: 22px;
-}
-
-.source-node.bottom {
-  left: 18px;
-  top: 138px;
-}
-
-.branch-node.top {
-  left: 355px;
-  top: 22px;
-}
-
-.branch-node.bottom {
-  left: 355px;
-  top: 138px;
-}
-
-.sink-node {
-  right: 18px;
-  top: 80px;
-  background: rgba(236, 253, 245, 0.96);
+.pipeline-root :deep(.litegraph) {
+  background: transparent;
 }
 </style>

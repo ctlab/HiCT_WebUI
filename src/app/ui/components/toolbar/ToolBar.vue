@@ -61,11 +61,15 @@ const props = defineProps<{
   width: 60px;
   /* height: 100%; TODO: сделать иначе  */
 
-  /* Global/07. Light */
-  background: #f8f9fa;
+  background: var(--hict-ui-bg, #f8f9fa);
+  color: var(--hict-ui-fg, #1f2937);
 
   /* Shadows/02. Regular */
   box-shadow: 0px 8px 16px rgba(0, 0, 0, 0.15);
+}
+
+.toolbar-outer :deep(*) {
+  text-shadow: 0 0 1px var(--hict-ui-outline, rgba(255, 255, 255, 0.9));
 }
 
 .toolbar-upper {
