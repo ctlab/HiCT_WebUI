@@ -20,7 +20,7 @@
  -->
 
 <template>
-  <nav class="navbar-bar navbar navbar-expand navbar-light bg-light">
+  <nav class="navbar-bar navbar navbar-expand">
     <div class="container-fluid">
       <!-- Logo -->
       <a class="navbar-brand" href="#">HiCT</a>
@@ -700,7 +700,7 @@ function onAssemblyAGPRequest() {
   width: 100%;
   height: 56px;
 
-  background: var(--hict-ui-bg, #f8f9fa);
+  background: var(--hict-ui-bg, #f8f9fa) !important;
   color: var(--hict-ui-fg, #1f2937);
 
   /* Shadows/02. Regular */

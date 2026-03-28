@@ -977,6 +977,7 @@ class LinearTrackManager {
         logScale: false,
         maxValue: safeMax,
         logBase: 10,
+        display: (value: number) => (Number.isFinite(value) ? Math.max(0, value) : 0),
         normalize: (value: number) =>
           Math.max(0, Math.min(1, (Number.isFinite(value) ? value : 0) / safeMax)),
       };
@@ -990,6 +991,12 @@ class LinearTrackManager {
       logScale: true,
       maxValue: safeMax,
       logBase: safeBase,
+      display: (value: number) => {
+        if (!Number.isFinite(value) || value <= 0) {
+          return 0;
+        }
+        return toLog(value);
+      },
       normalize: (value: number) => {
         if (!Number.isFinite(value) || value <= 0) {
           return 0;
@@ -1040,7 +1047,7 @@ class LinearTrackManager {
         ctx.stroke();
         this.drawOutlinedText(
           ctx,
-          this.formatScaleValue(tick),
+          this.formatScaleValue(scale.display(tick)),
           labelX,
           iy - 2,
           textPalette
@@ -1081,7 +1088,13 @@ class LinearTrackManager {
       ctx.translate(ix + 9, labelAxisY + 1);
       ctx.rotate(-Math.PI / 2);
       ctx.textAlign = "left";
-      this.drawOutlinedText(ctx, this.formatScaleValue(tick), 0, 0, textPalette);
+      this.drawOutlinedText(
+        ctx,
+        this.formatScaleValue(scale.display(tick)),
+        0,
+        0,
+        textPalette
+      );
       ctx.restore();
     }
     if (scale.logScale) {
@@ -1534,5 +1547,6 @@ type SignalScaleTransform = {
   logScale: boolean;
   maxValue: number;
   logBase: number;
+  display: (value: number) => number;
   normalize: (value: number) => number;
 };

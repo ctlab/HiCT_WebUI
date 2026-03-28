@@ -563,23 +563,12 @@ function onNormalizationChanged() {
   width: 100%;
   height: 53px;
 
-  background: var(--hict-ui-bg, #6c757d);
-  color: var(--hict-ui-fg, #1f2937);
+  background: #6c757d;
 
   /* Inside auto layout */
   flex: none;
   order: 1;
   flex-grow: 0;
-}
-
-.header-ribbon :deep(input),
-.header-ribbon :deep(select),
-.header-ribbon :deep(button),
-.header-ribbon :deep(label),
-.header-ribbon :deep(.form-select),
-.header-ribbon :deep(.form-control) {
-  color: var(--hict-ui-fg, #1f2937);
-  text-shadow: 0 0 1px var(--hict-ui-outline, rgba(255, 255, 255, 0.9));
 }
 
 .header-ribbon .mb-3 {
@@ -738,7 +727,7 @@ function onNormalizationChanged() {
   height: 29px;
 
   /* Global/07. Light */
-  border: 1px solid var(--hict-ui-border, #f8f9fa);
+  border: 1px solid #f8f9fa;
   border-radius: 4px;
 
   /* Inside auto layout */
@@ -765,7 +754,7 @@ function onNormalizationChanged() {
   height: 29px;
 
   /* Global/07. Light */
-  border: 1px solid var(--hict-ui-border, #f8f9fa);
+  border: 1px solid #f8f9fa;
   border-radius: 4px;
 
   /* Inside auto layout */

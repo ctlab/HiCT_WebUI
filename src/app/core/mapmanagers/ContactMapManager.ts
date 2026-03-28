@@ -686,24 +686,46 @@ class ContactMapManager {
     mapImage: HTMLImageElement,
     options: {
       mapSizePx: number;
+      mapOffset: number;
       totalWidth: number;
       totalHeight: number;
       backgroundColor: string;
     }
   ): void {
+    const minimapMaxWidth = Math.max(56, options.mapOffset - 16);
+    const minimapMaxHeight = Math.max(56, options.mapOffset - 16);
     const minimapSize = Math.max(
-      90,
-      Math.min(180, Math.round(options.mapSizePx * 0.18))
+      56,
+      Math.min(
+        180,
+        Math.round(options.mapSizePx * 0.18),
+        minimapMaxWidth,
+        minimapMaxHeight
+      )
     );
     const x = 8;
-    const y = options.totalHeight - minimapSize - 8;
+    const y = 8;
     context.save();
     context.fillStyle = options.backgroundColor;
     context.fillRect(x, y, minimapSize, minimapSize);
     context.strokeStyle = "rgba(31,41,55,0.55)";
     context.lineWidth = 1;
     context.strokeRect(x + 0.5, y + 0.5, minimapSize - 1, minimapSize - 1);
-    context.drawImage(mapImage, x, y, minimapSize, minimapSize);
+    const sourceSize = Math.max(
+      1,
+      Math.min(options.mapSizePx, mapImage.width, mapImage.height)
+    );
+    context.drawImage(
+      mapImage,
+      0,
+      0,
+      sourceSize,
+      sourceSize,
+      x,
+      y,
+      minimapSize,
+      minimapSize
+    );
 
     const viewport = this.getCurrentViewportInMapPixels(options.mapSizePx);
     if (viewport) {
@@ -732,8 +754,15 @@ class ContactMapManager {
     const descriptor =
       this.viewAndLayersManager.currentViewState.resolutionDesciptor;
     const bpResolution = descriptor.bpResolution;
-    const mapSizePx =
-      this.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex];
+    const configuredMapSizePx =
+      this.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex] ?? 1;
+    const prefixPx = this.contigDimensionHolder.prefix_sum_px.get(bpResolution);
+    const assemblyMapSizePx =
+      prefixPx?.[this.contigDimensionHolder.contig_count] ?? configuredMapSizePx;
+    const mapSizePx = Math.max(
+      1,
+      Math.min(configuredMapSizePx, assemblyMapSizePx)
+    );
     const visibleTrackCount = this.linearTrackManager
       .getTracksSnapshot()
       .filter((track) => track.visible).length;
@@ -764,7 +793,18 @@ class ContactMapManager {
       }
     );
     const mapImage = await this.loadSvgImage(mapSvg);
-    context.drawImage(mapImage, mapOffset, mapOffset, mapSizePx, mapSizePx);
+    const sourceSize = Math.min(mapSizePx, mapImage.width, mapImage.height);
+    context.drawImage(
+      mapImage,
+      0,
+      0,
+      sourceSize,
+      sourceSize,
+      mapOffset,
+      mapOffset,
+      mapSizePx,
+      mapSizePx
+    );
     progressCallback?.(0.68);
 
     if (visibleTrackCount > 0) {
@@ -812,12 +852,13 @@ class ContactMapManager {
       backgroundColor,
     });
 
-    this.drawExportMinimap(context, mapImage, {
-      mapSizePx,
-      totalWidth,
-      totalHeight,
-      backgroundColor,
-    });
+    // this.drawExportMinimap(context, mapImage, {
+    //   mapSizePx,
+    //   mapOffset,
+    //   totalWidth,
+    //   totalHeight,
+    //   backgroundColor,
+    // });
     progressCallback?.(1);
     return canvas;
   }
