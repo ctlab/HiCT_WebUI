@@ -322,6 +322,34 @@ class OpenProgressRequest implements HiCTAPIRequest {
   public constructor() {}
 }
 
+class OpenSecondarySourceRequest implements HiCTAPIRequest {
+  requestPath = "/secondary/open";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+    }
+  ) {}
+}
+
+class CloseSecondarySourceRequest implements HiCTAPIRequest {
+  requestPath = "/secondary/close";
+}
+
+class GetSecondarySourceStatusRequest implements HiCTAPIRequest {
+  requestPath = "/secondary/status";
+}
+
+class SetAssemblyInfoSourceRequest implements HiCTAPIRequest {
+  requestPath = "/secondary/set_assembly_source";
+
+  public constructor(
+    public readonly options: {
+      readonly assemblySource: "PRIMARY" | "SECONDARY";
+    }
+  ) {}
+}
+
 class GetWorkerDiagnosticsRequest implements HiCTAPIRequest {
   requestPath = "/diagnostics/workers";
 }
@@ -496,6 +524,10 @@ export {
   ListAGPFilesRequest,
   LoadAGPRequest,
   OpenProgressRequest,
+  OpenSecondarySourceRequest,
+  CloseSecondarySourceRequest,
+  GetSecondarySourceStatusRequest,
+  SetAssemblyInfoSourceRequest,
   GetFastaForSelectionRequest,
   SetNormalizationRequest,
   SetContrastRangeRequest,

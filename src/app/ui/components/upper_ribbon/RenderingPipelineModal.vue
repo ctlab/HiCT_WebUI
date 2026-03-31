@@ -55,8 +55,7 @@
               </div>
             </div>
             <small class="text-muted d-block mb-2">
-              Right-click to add nodes. Available node types: source, constant, dynamic fields, unary ops and binary ops.
-              Keep "Upper sink" and "Lower sink" connected to branch outputs.
+              Right-click to add HiCT nodes only. Upper/Lower sinks accept color outputs; keep a colormap node before each sink.
             </small>
 
             <div v-if="loading" class="py-2">
@@ -95,6 +94,8 @@
 
 <script setup lang="ts">
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import { VisualizationManager } from "@/app/core/mapmanagers/VisualizationManager";
+import type { TrackSummaryResponse } from "@/app/core/net/api/response";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
 import { LGraph, LGraphCanvas, LGraphNode, LiteGraph } from "litegraph.js";
@@ -118,9 +119,12 @@ type DynamicField =
   | "DIAG_BIN_DISTANCE"
   | "DIAG_PX_DISTANCE"
   | "BP_RESOLUTION";
+type TrackAxis = "ROW" | "COL";
+type ColorSpaceNodeType = "rgb" | "hsl" | "hsv";
 
 type PipelineExpression =
   | { type: "source"; source: SourceName }
+  | { type: "track1d"; trackId: string; axis: TrackAxis }
   | { type: "constant"; value: number }
   | { type: "dynamic"; field: DynamicField }
   | { type: "unary"; op: UnaryOp; input: PipelineExpression }
@@ -129,13 +133,41 @@ type PipelineExpression =
       op: BinaryOp;
       left: PipelineExpression;
       right: PipelineExpression;
+    }
+  | {
+      type: "clamp";
+      input: PipelineExpression;
+      minValue: number;
+      maxValue: number;
+    }
+  | {
+      type: "colormap";
+      mode: "LINEAR";
+      input: PipelineExpression;
+      startColor: string;
+      endColor: string;
+      minSignal: number;
+      maxSignal: number;
+    }
+  | {
+      type: ColorSpaceNodeType;
+      c1: PipelineExpression;
+      c2: PipelineExpression;
+      c3: PipelineExpression;
+      alpha: PipelineExpression;
     };
 
 const SOURCE_NODE_TYPE = "hict/source";
+const TRACK1D_NODE_TYPE = "hict/track1d";
 const CONSTANT_NODE_TYPE = "hict/constant";
 const DYNAMIC_NODE_TYPE = "hict/dynamic";
 const UNARY_NODE_TYPE = "hict/unary";
 const BINARY_NODE_TYPE = "hict/binary";
+const CLAMP_NODE_TYPE = "hict/clamp";
+const COLORMAP_NODE_TYPE = "hict/colormap";
+const RGB_NODE_TYPE = "hict/rgb";
+const HSL_NODE_TYPE = "hict/hsl";
+const HSV_NODE_TYPE = "hict/hsv";
 const SINK_NODE_TYPE = "hict/sink";
 
 const DYNAMIC_FIELDS: DynamicField[] = [
@@ -157,6 +189,7 @@ const DYNAMIC_FIELDS: DynamicField[] = [
 
 const UNARY_OPS: UnaryOp[] = ["ABS", "LOG1P", "EXP", "NEG"];
 const BINARY_OPS: BinaryOp[] = ["ADD", "SUB", "MUL", "DIV", "MAX", "MIN"];
+const HICT_PIPELINE_FILTER = "hict_pipeline_graph";
 
 const emit = defineEmits<{
   (e: "dismissed"): void;
@@ -173,6 +206,7 @@ const saving = ref(false);
 const graphHost = ref<HTMLDivElement | null>(null);
 const graphCanvasRef = ref<HTMLCanvasElement | null>(null);
 const importInputRef = ref<HTMLInputElement | null>(null);
+const trackOptions = ref<TrackSummaryResponse[]>([]);
 
 let graph: LGraph | null = null;
 let graphCanvas: LGraphCanvas | null = null;
@@ -180,11 +214,25 @@ let resizeObserver: ResizeObserver | null = null;
 let upperSinkId: number | null = null;
 let lowerSinkId: number | null = null;
 let nodeTypesRegistered = false;
-const HICT_PIPELINE_FILTER = "hict_pipeline_graph";
 
-const defaultExpression = (): PipelineExpression => ({
+let originalGetNodeTypesCategories: ((filter?: string) => string[]) | null = null;
+let originalGetNodeTypesInCategory:
+  | ((category: string, filter?: string) => Array<{ type: string }>)
+  | null = null;
+
+const defaultSignalExpression = (): PipelineExpression => ({
   type: "source",
   source: "PRIMARY",
+});
+
+const defaultColorExpression = (input?: PipelineExpression): PipelineExpression => ({
+  type: "colormap",
+  mode: "LINEAR",
+  input: input ?? defaultSignalExpression(),
+  startColor: "#ffffff00",
+  endColor: "#006000ff",
+  minSignal: 0,
+  maxSignal: 1,
 });
 
 const ensureMapManager = (): ContactMapManager => {
@@ -194,21 +242,21 @@ const ensureMapManager = (): ContactMapManager => {
   return props.mapManager;
 };
 
-const cleanupContextMenus = (): void => {
-  document.querySelectorAll(".litecontextmenu").forEach((element) => {
-    element.remove();
-  });
-};
-
-const dismissModal = (): void => {
-  cleanupContextMenus();
-  emit("dismissed");
+const sanitizeColor = (value: unknown, fallback: string): string => {
+  const text = String(value ?? "").trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(text) || /^#[0-9a-fA-F]{8}$/.test(text)) {
+    return text;
+  }
+  return fallback;
 };
 
 const toSourceName = (value: unknown): SourceName =>
   String(value ?? "PRIMARY").toUpperCase() === "SECONDARY"
     ? "SECONDARY"
     : "PRIMARY";
+
+const toTrackAxis = (value: unknown): TrackAxis =>
+  String(value ?? "ROW").toUpperCase() === "COL" ? "COL" : "ROW";
 
 const toDynamicField = (value: unknown): DynamicField => {
   const candidate = String(value ?? "ROW_BP").toUpperCase() as DynamicField;
@@ -225,20 +273,63 @@ const toBinaryOp = (value: unknown): BinaryOp => {
   return BINARY_OPS.includes(candidate) ? candidate : "MUL";
 };
 
+const toFiniteNumber = (value: unknown, fallback: number): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const parseClampBoundary = (value: unknown, fallback: number): number => {
+  if (value == null) {
+    return fallback;
+  }
+  if (typeof value === "number" || typeof value === "string") {
+    return toFiniteNumber(value, fallback);
+  }
+  if (typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    if (String(objectValue.type ?? "").toLowerCase() === "constant") {
+      return toFiniteNumber(objectValue.value, fallback);
+    }
+    return toFiniteNumber(objectValue.value, fallback);
+  }
+  return fallback;
+};
+
+const isColorExpression = (expression: PipelineExpression): boolean => {
+  return (
+    expression.type === "colormap" ||
+    expression.type === "rgb" ||
+    expression.type === "hsl" ||
+    expression.type === "hsv"
+  );
+};
+
+const ensureColorRootExpression = (expression: PipelineExpression): PipelineExpression => {
+  return isColorExpression(expression)
+    ? expression
+    : defaultColorExpression(expression);
+};
+
 const parseExpression = (raw: unknown): PipelineExpression => {
   const node = (raw ?? {}) as Record<string, unknown>;
   const type = String(node.type ?? "source").toLowerCase();
   if (type === "constant") {
-    const numeric = Number(node.value ?? 0);
     return {
       type: "constant",
-      value: Number.isFinite(numeric) ? numeric : 0,
+      value: toFiniteNumber(node.value, 0),
     };
   }
   if (type === "dynamic") {
     return {
       type: "dynamic",
       field: toDynamicField(node.field),
+    };
+  }
+  if (type === "track1d") {
+    return {
+      type: "track1d",
+      trackId: String(node.trackId ?? ""),
+      axis: toTrackAxis(node.axis),
     };
   }
   if (type === "unary") {
@@ -256,10 +347,108 @@ const parseExpression = (raw: unknown): PipelineExpression => {
       right: parseExpression(node.right),
     };
   }
+  if (type === "clamp") {
+    return {
+      type: "clamp",
+      input: parseExpression(node.input),
+      minValue: parseClampBoundary(node.minValue ?? node.minSignal ?? node.min, 0),
+      maxValue: parseClampBoundary(node.maxValue ?? node.maxSignal ?? node.max, 1),
+    };
+  }
+  if (type === "colormap") {
+    return {
+      type: "colormap",
+      mode: "LINEAR",
+      input: parseExpression(node.input),
+      startColor: sanitizeColor(node.startColor, "#ffffff00"),
+      endColor: sanitizeColor(node.endColor, "#006000ff"),
+      minSignal: toFiniteNumber(node.minSignal ?? 0, 0),
+      maxSignal: toFiniteNumber(node.maxSignal ?? 1, 1),
+    };
+  }
+  if (type === "rgb" || type === "hsl" || type === "hsv") {
+    return {
+      type,
+      c1: parseExpression(node.c1 ?? node.r ?? node.h ?? { type: "constant", value: 0 }),
+      c2: parseExpression(node.c2 ?? node.g ?? node.s ?? { type: "constant", value: 1 }),
+      c3: parseExpression(node.c3 ?? node.b ?? node.l ?? node.v ?? { type: "constant", value: 1 }),
+      alpha: parseExpression(node.alpha ?? node.a ?? { type: "constant", value: 255 }),
+    };
+  }
   return {
     type: "source",
     source: toSourceName(node.source),
   };
+};
+
+const cleanupContextMenus = (): void => {
+  document.querySelectorAll(".litecontextmenu").forEach((element) => {
+    element.remove();
+  });
+};
+
+const installNodeTypeFilterOverrides = (): void => {
+  if (!originalGetNodeTypesCategories) {
+    originalGetNodeTypesCategories = (
+      LiteGraph as unknown as {
+        getNodeTypesCategories: (filter?: string) => string[];
+      }
+    ).getNodeTypesCategories.bind(LiteGraph);
+  }
+  if (!originalGetNodeTypesInCategory) {
+    originalGetNodeTypesInCategory = (
+      LiteGraph as unknown as {
+        getNodeTypesInCategory: (
+          category: string,
+          filter?: string
+        ) => Array<{ type: string }>;
+      }
+    ).getNodeTypesInCategory.bind(LiteGraph);
+  }
+
+  (LiteGraph as unknown as { getNodeTypesCategories: (filter?: string) => string[] }).getNodeTypesCategories =
+    ((_: string | undefined) =>
+      (originalGetNodeTypesCategories as (filter?: string) => string[])(
+        HICT_PIPELINE_FILTER
+      )) as never;
+  (LiteGraph as unknown as {
+    getNodeTypesInCategory: (
+      category: string,
+      filter?: string
+    ) => Array<{ type: string }>;
+  }).getNodeTypesInCategory = ((category: string) =>
+    (originalGetNodeTypesInCategory as (
+      category: string,
+      filter?: string
+    ) => Array<{ type: string }>)(category, HICT_PIPELINE_FILTER)) as never;
+};
+
+const restoreNodeTypeFilterOverrides = (): void => {
+  if (originalGetNodeTypesCategories) {
+    (LiteGraph as unknown as { getNodeTypesCategories: (filter?: string) => string[] }).getNodeTypesCategories =
+      originalGetNodeTypesCategories as never;
+  }
+  if (originalGetNodeTypesInCategory) {
+    (LiteGraph as unknown as {
+      getNodeTypesInCategory: (
+        category: string,
+        filter?: string
+      ) => Array<{ type: string }>;
+    }).getNodeTypesInCategory = originalGetNodeTypesInCategory as never;
+  }
+};
+
+const trackIds = (): string[] => {
+  return trackOptions.value.map((track) => track.trackId);
+};
+
+const ensureNodeTrackId = (trackId: unknown): string => {
+  const ids = trackIds();
+  const candidate = String(trackId ?? "");
+  if (ids.includes(candidate)) {
+    return candidate;
+  }
+  return ids[0] ?? "";
 };
 
 const ensureNodeTypesRegistered = (): void => {
@@ -286,6 +475,37 @@ const ensureNodeTypesRegistered = (): void => {
     }
   }
 
+  class Track1DNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "1D track";
+      this.addOutput("value", "number");
+      this.properties = {
+        trackId: ensureNodeTrackId(""),
+        axis: "ROW",
+      };
+      this.addWidget(
+        "combo",
+        "track",
+        this.properties.trackId,
+        (value: unknown) => {
+          this.properties.trackId = ensureNodeTrackId(value);
+        },
+        { values: trackIds() }
+      );
+      this.addWidget(
+        "combo",
+        "axis",
+        this.properties.axis,
+        (value: unknown) => {
+          this.properties.axis = toTrackAxis(value);
+        },
+        { values: ["ROW", "COL"] }
+      );
+      this.size = [230, 104];
+    }
+  }
+
   class ConstantNode extends LGraphNode {
     constructor() {
       super();
@@ -293,8 +513,7 @@ const ensureNodeTypesRegistered = (): void => {
       this.addOutput("value", "number");
       this.properties = { value: 0 };
       this.addWidget("number", "value", this.properties.value, (value: unknown) => {
-        const numeric = Number(value);
-        this.properties.value = Number.isFinite(numeric) ? numeric : 0;
+        this.properties.value = toFiniteNumber(value, 0);
       });
       this.size = [190, 72];
     }
@@ -315,7 +534,7 @@ const ensureNodeTypesRegistered = (): void => {
         },
         { values: DYNAMIC_FIELDS }
       );
-      this.size = [220, 78];
+      this.size = [230, 82];
     }
   }
 
@@ -360,32 +579,140 @@ const ensureNodeTypesRegistered = (): void => {
     }
   }
 
+  class ClampNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "Clamp";
+      this.addInput("in", "number");
+      this.addOutput("out", "number");
+      this.properties = { minValue: 0, maxValue: 1 };
+      this.addWidget("number", "min", this.properties.minValue, (value: unknown) => {
+        this.properties.minValue = toFiniteNumber(value, 0);
+      });
+      this.addWidget("number", "max", this.properties.maxValue, (value: unknown) => {
+        this.properties.maxValue = toFiniteNumber(value, 1);
+      });
+      this.size = [210, 104];
+    }
+  }
+
+  class ColormapNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "Colormap";
+      this.addInput("signal", "number");
+      this.addOutput("color", "color");
+      this.properties = {
+        mode: "LINEAR",
+        startColor: "#ffffff00",
+        endColor: "#006000ff",
+        minSignal: 0,
+        maxSignal: 1,
+      };
+      this.addWidget("text", "start", this.properties.startColor, (value: unknown) => {
+        this.properties.startColor = sanitizeColor(value, "#ffffff00");
+      });
+      this.addWidget("text", "end", this.properties.endColor, (value: unknown) => {
+        this.properties.endColor = sanitizeColor(value, "#006000ff");
+      });
+      this.addWidget("number", "min", this.properties.minSignal, (value: unknown) => {
+        this.properties.minSignal = toFiniteNumber(value, 0);
+      });
+      this.addWidget("number", "max", this.properties.maxSignal, (value: unknown) => {
+        this.properties.maxSignal = toFiniteNumber(value, 1);
+      });
+      this.size = [240, 148];
+    }
+  }
+
+  class ColorSpaceNode extends LGraphNode {
+    constructor(private readonly colorSpaceType: ColorSpaceNodeType) {
+      super();
+      this.title = colorSpaceType.toUpperCase();
+      this.addInput("c1", "number");
+      this.addInput("c2", "number");
+      this.addInput("c3", "number");
+      this.addInput("a", "number");
+      this.addOutput("color", "color");
+      this.properties = {
+        c1: colorSpaceType === "hsv" ? 0 : 0,
+        c2: 1,
+        c3: colorSpaceType === "hsl" ? 0.5 : 1,
+        alpha: 255,
+      };
+      this.addWidget("number", "c1", this.properties.c1, (value: unknown) => {
+        this.properties.c1 = toFiniteNumber(value, 0);
+      });
+      this.addWidget("number", "c2", this.properties.c2, (value: unknown) => {
+        this.properties.c2 = toFiniteNumber(value, 1);
+      });
+      this.addWidget("number", "c3", this.properties.c3, (value: unknown) => {
+        this.properties.c3 = toFiniteNumber(value, 1);
+      });
+      this.addWidget("number", "alpha", this.properties.alpha, (value: unknown) => {
+        this.properties.alpha = toFiniteNumber(value, 255);
+      });
+      this.size = [200, 148];
+    }
+  }
+
+  class RGBNode extends ColorSpaceNode {
+    constructor() {
+      super("rgb");
+      this.title = "RGB";
+    }
+  }
+
+  class HSLNode extends ColorSpaceNode {
+    constructor() {
+      super("hsl");
+      this.title = "HSL";
+    }
+  }
+
+  class HSVNode extends ColorSpaceNode {
+    constructor() {
+      super("hsv");
+      this.title = "HSV";
+    }
+  }
+
   class SinkNode extends LGraphNode {
     constructor() {
       super();
       this.title = "Sink";
-      this.addInput("value", "number");
+      this.addInput("value", "color");
       this.properties = { branch: "UPPER" };
       this.color = "#0f766e";
       this.bgcolor = "#dcfce7";
       this.size = [190, 62];
     }
   }
-  (SourceNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
-  (SourceNode as unknown as { title?: string }).title = "Source";
-  (ConstantNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
-  (ConstantNode as unknown as { title?: string }).title = "Constant";
-  (DynamicNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
-  (DynamicNode as unknown as { title?: string }).title = "Dynamic";
-  (UnaryNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
-  (UnaryNode as unknown as { title?: string }).title = "Unary";
-  (BinaryNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
-  (BinaryNode as unknown as { title?: string }).title = "Binary";
-  (SinkNode as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
-  (SinkNode as unknown as { title?: string }).title = "Sink";
+
+  for (const [ctor, title] of [
+    [SourceNode, "Source"],
+    [Track1DNode, "1D track"],
+    [ConstantNode, "Constant"],
+    [DynamicNode, "Dynamic"],
+    [UnaryNode, "Unary"],
+    [BinaryNode, "Binary"],
+    [ClampNode, "Clamp"],
+    [ColormapNode, "Colormap"],
+    [RGBNode, "RGB"],
+    [HSLNode, "HSL"],
+    [HSVNode, "HSV"],
+    [SinkNode, "Sink"],
+  ] as Array<[unknown, string]>) {
+    (ctor as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+    (ctor as { title?: string }).title = title;
+    (ctor as { category?: string }).category = "hict";
+  }
 
   if (!LiteGraph.registered_node_types[SOURCE_NODE_TYPE]) {
     LiteGraph.registerNodeType(SOURCE_NODE_TYPE, SourceNode as unknown as { new (): LGraphNode });
+  }
+  if (!LiteGraph.registered_node_types[TRACK1D_NODE_TYPE]) {
+    LiteGraph.registerNodeType(TRACK1D_NODE_TYPE, Track1DNode as unknown as { new (): LGraphNode });
   }
   if (!LiteGraph.registered_node_types[CONSTANT_NODE_TYPE]) {
     LiteGraph.registerNodeType(CONSTANT_NODE_TYPE, ConstantNode as unknown as { new (): LGraphNode });
@@ -398,6 +725,21 @@ const ensureNodeTypesRegistered = (): void => {
   }
   if (!LiteGraph.registered_node_types[BINARY_NODE_TYPE]) {
     LiteGraph.registerNodeType(BINARY_NODE_TYPE, BinaryNode as unknown as { new (): LGraphNode });
+  }
+  if (!LiteGraph.registered_node_types[CLAMP_NODE_TYPE]) {
+    LiteGraph.registerNodeType(CLAMP_NODE_TYPE, ClampNode as unknown as { new (): LGraphNode });
+  }
+  if (!LiteGraph.registered_node_types[COLORMAP_NODE_TYPE]) {
+    LiteGraph.registerNodeType(COLORMAP_NODE_TYPE, ColormapNode as unknown as { new (): LGraphNode });
+  }
+  if (!LiteGraph.registered_node_types[RGB_NODE_TYPE]) {
+    LiteGraph.registerNodeType(RGB_NODE_TYPE, RGBNode as unknown as { new (): LGraphNode });
+  }
+  if (!LiteGraph.registered_node_types[HSL_NODE_TYPE]) {
+    LiteGraph.registerNodeType(HSL_NODE_TYPE, HSLNode as unknown as { new (): LGraphNode });
+  }
+  if (!LiteGraph.registered_node_types[HSV_NODE_TYPE]) {
+    LiteGraph.registerNodeType(HSV_NODE_TYPE, HSVNode as unknown as { new (): LGraphNode });
   }
   if (!LiteGraph.registered_node_types[SINK_NODE_TYPE]) {
     LiteGraph.registerNodeType(SINK_NODE_TYPE, SinkNode as unknown as { new (): LGraphNode });
@@ -429,11 +771,11 @@ const createSinkNodes = (): void => {
   }
   upperSink.title = "Upper sink";
   upperSink.properties = { branch: "UPPER" };
-  upperSink.pos = [880, 90];
+  upperSink.pos = [900, 90];
 
   lowerSink.title = "Lower sink";
   lowerSink.properties = { branch: "LOWER" };
-  lowerSink.pos = [880, 320];
+  lowerSink.pos = [900, 320];
 
   graph.add(upperSink);
   graph.add(lowerSink);
@@ -441,14 +783,45 @@ const createSinkNodes = (): void => {
   lowerSinkId = lowerSink.id ?? null;
 };
 
+const updateTrackNodeWidgets = (): void => {
+  if (!graph) {
+    return;
+  }
+  const ids = trackIds();
+  const fallback = ids[0] ?? "";
+  const nodes = (graph as unknown as { _nodes?: LGraphNode[] })._nodes ?? [];
+  nodes.forEach((node) => {
+    if (node.type !== TRACK1D_NODE_TYPE) {
+      return;
+    }
+    const widgets = (node as unknown as { widgets?: Array<{ name?: string; value?: unknown; options?: Record<string, unknown> }> }).widgets ?? [];
+    const trackWidget = widgets.find((widget) => widget.name === "track");
+    if (trackWidget) {
+      if (!trackWidget.options) {
+        trackWidget.options = {};
+      }
+      trackWidget.options.values = ids;
+      const selected = ensureNodeTrackId((node.properties ?? {}).trackId ?? fallback);
+      node.properties = {
+        ...(node.properties ?? {}),
+        trackId: selected,
+      };
+      trackWidget.value = selected;
+    }
+  });
+  graphCanvas?.draw(true, true);
+};
+
 const initializeGraph = (): void => {
   if (!graphCanvasRef.value) {
     return;
   }
   ensureNodeTypesRegistered();
+  installNodeTypeFilterOverrides();
   graph = new LGraph();
   (graph as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
   graphCanvas = new LGraphCanvas(graphCanvasRef.value, graph);
+  (graphCanvas as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
   graphCanvas.allow_interaction = true;
   graphCanvas.background_image = "";
   graphCanvas.ds.scale = 0.9;
@@ -464,10 +837,287 @@ const triggerImportGraph = (): void => {
   importInputRef.value?.click();
 };
 
+const clearGraph = (): void => {
+  graph?.clear();
+  upperSinkId = null;
+  lowerSinkId = null;
+};
+
+const createNodeFromExpression = (
+  expression: PipelineExpression,
+  depth: number,
+  centerY: number
+): LGraphNode | null => {
+  if (!graph) {
+    return null;
+  }
+  const x = Math.max(40, 680 - depth * 220);
+  let node: LGraphNode | null = null;
+
+  switch (expression.type) {
+    case "source":
+      node = LiteGraph.createNode(SOURCE_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.source = expression.source;
+      }
+      break;
+    case "track1d":
+      node = LiteGraph.createNode(TRACK1D_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.trackId = ensureNodeTrackId(expression.trackId);
+        node.properties.axis = expression.axis;
+      }
+      break;
+    case "constant":
+      node = LiteGraph.createNode(CONSTANT_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.value = expression.value;
+      }
+      break;
+    case "dynamic":
+      node = LiteGraph.createNode(DYNAMIC_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.field = expression.field;
+      }
+      break;
+    case "unary":
+      node = LiteGraph.createNode(UNARY_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.op = expression.op;
+      }
+      break;
+    case "binary":
+      node = LiteGraph.createNode(BINARY_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.op = expression.op;
+      }
+      break;
+    case "clamp":
+      node = LiteGraph.createNode(CLAMP_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.minValue = expression.minValue;
+        node.properties.maxValue = expression.maxValue;
+      }
+      break;
+    case "colormap":
+      node = LiteGraph.createNode(COLORMAP_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.mode = expression.mode;
+        node.properties.startColor = expression.startColor;
+        node.properties.endColor = expression.endColor;
+        node.properties.minSignal = expression.minSignal;
+        node.properties.maxSignal = expression.maxSignal;
+      }
+      break;
+    case "rgb":
+      node = LiteGraph.createNode(RGB_NODE_TYPE) as LGraphNode | null;
+      break;
+    case "hsl":
+      node = LiteGraph.createNode(HSL_NODE_TYPE) as LGraphNode | null;
+      break;
+    case "hsv":
+      node = LiteGraph.createNode(HSV_NODE_TYPE) as LGraphNode | null;
+      break;
+  }
+
+  if (!node) {
+    return null;
+  }
+
+  node.pos = [x, centerY];
+  graph.add(node);
+
+  if (expression.type === "unary") {
+    const inputNode = createNodeFromExpression(expression.input, depth + 1, centerY);
+    inputNode?.connect(0, node, 0);
+  }
+
+  if (expression.type === "binary") {
+    const leftNode = createNodeFromExpression(expression.left, depth + 1, centerY - 80);
+    const rightNode = createNodeFromExpression(expression.right, depth + 1, centerY + 80);
+    leftNode?.connect(0, node, 0);
+    rightNode?.connect(0, node, 1);
+  }
+
+  if (expression.type === "clamp") {
+    const inputNode = createNodeFromExpression(expression.input, depth + 1, centerY);
+    inputNode?.connect(0, node, 0);
+  }
+
+  if (expression.type === "colormap") {
+    const inputNode = createNodeFromExpression(expression.input, depth + 1, centerY);
+    inputNode?.connect(0, node, 0);
+  }
+
+  if (expression.type === "rgb" || expression.type === "hsl" || expression.type === "hsv") {
+    const c1Node = createNodeFromExpression(expression.c1, depth + 1, centerY - 105);
+    const c2Node = createNodeFromExpression(expression.c2, depth + 1, centerY - 35);
+    const c3Node = createNodeFromExpression(expression.c3, depth + 1, centerY + 35);
+    const alphaNode = createNodeFromExpression(expression.alpha, depth + 1, centerY + 105);
+    c1Node?.connect(0, node, 0);
+    c2Node?.connect(0, node, 1);
+    c3Node?.connect(0, node, 2);
+    alphaNode?.connect(0, node, 3);
+  }
+
+  return node;
+};
+
+const buildGraphFromExpressions = (
+  upperExpression: PipelineExpression,
+  lowerExpression: PipelineExpression
+): void => {
+  if (!graph) {
+    return;
+  }
+  clearGraph();
+  createSinkNodes();
+
+  const upperSink = upperSinkId != null ? graph.getNodeById(upperSinkId) : null;
+  const lowerSink = lowerSinkId != null ? graph.getNodeById(lowerSinkId) : null;
+
+  const upperNode = createNodeFromExpression(ensureColorRootExpression(upperExpression), 0, 90);
+  const lowerNode = createNodeFromExpression(ensureColorRootExpression(lowerExpression), 0, 320);
+
+  if (upperNode && upperSink) {
+    upperNode.connect(0, upperSink, 0);
+  }
+  if (lowerNode && lowerSink) {
+    lowerNode.connect(0, lowerSink, 0);
+  }
+
+  updateTrackNodeWidgets();
+  graphCanvas?.draw(true, true);
+};
+
+const expressionFromNode = (
+  node: LGraphNode | null,
+  visited: Set<number>
+): PipelineExpression => {
+  if (!node) {
+    return defaultSignalExpression();
+  }
+  const nodeId = node.id ?? -1;
+  if (visited.has(nodeId)) {
+    return defaultSignalExpression();
+  }
+  visited.add(nodeId);
+
+  if (node.type === SOURCE_NODE_TYPE) {
+    return {
+      type: "source",
+      source: toSourceName(node.properties?.source),
+    };
+  }
+
+  if (node.type === TRACK1D_NODE_TYPE) {
+    return {
+      type: "track1d",
+      trackId: ensureNodeTrackId(node.properties?.trackId),
+      axis: toTrackAxis(node.properties?.axis),
+    };
+  }
+
+  if (node.type === CONSTANT_NODE_TYPE) {
+    return {
+      type: "constant",
+      value: toFiniteNumber(node.properties?.value, 0),
+    };
+  }
+
+  if (node.type === DYNAMIC_NODE_TYPE) {
+    return {
+      type: "dynamic",
+      field: toDynamicField(node.properties?.field),
+    };
+  }
+
+  if (node.type === UNARY_NODE_TYPE) {
+    return {
+      type: "unary",
+      op: toUnaryOp(node.properties?.op),
+      input: expressionFromNode(node.getInputNode(0), visited),
+    };
+  }
+
+  if (node.type === BINARY_NODE_TYPE) {
+    return {
+      type: "binary",
+      op: toBinaryOp(node.properties?.op),
+      left: expressionFromNode(node.getInputNode(0), visited),
+      right: expressionFromNode(node.getInputNode(1), visited),
+    };
+  }
+
+  if (node.type === CLAMP_NODE_TYPE) {
+    return {
+      type: "clamp",
+      input: expressionFromNode(node.getInputNode(0), visited),
+      minValue: toFiniteNumber(node.properties?.minValue, 0),
+      maxValue: toFiniteNumber(node.properties?.maxValue, 1),
+    };
+  }
+
+  if (node.type === COLORMAP_NODE_TYPE) {
+    return {
+      type: "colormap",
+      mode: "LINEAR",
+      input: expressionFromNode(node.getInputNode(0), visited),
+      startColor: sanitizeColor(node.properties?.startColor, "#ffffff00"),
+      endColor: sanitizeColor(node.properties?.endColor, "#006000ff"),
+      minSignal: toFiniteNumber(node.properties?.minSignal, 0),
+      maxSignal: toFiniteNumber(node.properties?.maxSignal, 1),
+    };
+  }
+
+  if (node.type === RGB_NODE_TYPE || node.type === HSL_NODE_TYPE || node.type === HSV_NODE_TYPE) {
+    const fallbackConstant = (value: unknown): PipelineExpression => ({
+      type: "constant",
+      value: toFiniteNumber(value, 0),
+    });
+
+    const c1 = node.getInputNode(0)
+      ? expressionFromNode(node.getInputNode(0), visited)
+      : fallbackConstant(node.properties?.c1 ?? 0);
+    const c2 = node.getInputNode(1)
+      ? expressionFromNode(node.getInputNode(1), visited)
+      : fallbackConstant(node.properties?.c2 ?? 1);
+    const c3 = node.getInputNode(2)
+      ? expressionFromNode(node.getInputNode(2), visited)
+      : fallbackConstant(node.properties?.c3 ?? 1);
+    const alpha = node.getInputNode(3)
+      ? expressionFromNode(node.getInputNode(3), visited)
+      : fallbackConstant(node.properties?.alpha ?? 255);
+
+    if (node.type === RGB_NODE_TYPE) {
+      return { type: "rgb", c1, c2, c3, alpha };
+    }
+    if (node.type === HSL_NODE_TYPE) {
+      return { type: "hsl", c1, c2, c3, alpha };
+    }
+    return { type: "hsv", c1, c2, c3, alpha };
+  }
+
+  return defaultSignalExpression();
+};
+
+const expressionFromSink = (branch: "UPPER" | "LOWER"): PipelineExpression => {
+  if (!graph) {
+    return defaultColorExpression();
+  }
+  const sinkId = branch === "UPPER" ? upperSinkId : lowerSinkId;
+  if (sinkId == null) {
+    return defaultColorExpression();
+  }
+  const sinkNode = graph.getNodeById(sinkId);
+  const sourceNode = sinkNode?.getInputNode(0) ?? null;
+  return ensureColorRootExpression(expressionFromNode(sourceNode, new Set<number>()));
+};
+
 const exportGraphToFile = (): void => {
   try {
     const payload = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt: new Date().toISOString(),
       enabled: enabled.value,
       swapUpperLower: swapUpperLower.value,
@@ -516,167 +1166,31 @@ const onImportFileSelected = async (event: Event): Promise<void> => {
   }
 };
 
-const clearGraph = (): void => {
-  graph?.clear();
-  upperSinkId = null;
-  lowerSinkId = null;
+const dismissModal = (): void => {
+  cleanupContextMenus();
+  emit("dismissed");
 };
 
-const createNodeFromExpression = (
-  expression: PipelineExpression,
-  depth: number,
-  centerY: number
-): LGraphNode | null => {
-  if (!graph) {
-    return null;
+const onVisualizationOptionsUpdated = (): void => {
+  if (!loading.value && !saving.value) {
+    void loadConfig();
   }
-  const x = Math.max(40, 640 - depth * 220);
-  let node: LGraphNode | null = null;
-  switch (expression.type) {
-    case "source":
-      node = LiteGraph.createNode(SOURCE_NODE_TYPE) as LGraphNode | null;
-      if (node) {
-        node.properties.source = expression.source;
-      }
-      break;
-    case "constant":
-      node = LiteGraph.createNode(CONSTANT_NODE_TYPE) as LGraphNode | null;
-      if (node) {
-        node.properties.value = expression.value;
-      }
-      break;
-    case "dynamic":
-      node = LiteGraph.createNode(DYNAMIC_NODE_TYPE) as LGraphNode | null;
-      if (node) {
-        node.properties.field = expression.field;
-      }
-      break;
-    case "unary": {
-      node = LiteGraph.createNode(UNARY_NODE_TYPE) as LGraphNode | null;
-      if (node) {
-        node.properties.op = expression.op;
-      }
-      break;
-    }
-    case "binary": {
-      node = LiteGraph.createNode(BINARY_NODE_TYPE) as LGraphNode | null;
-      if (node) {
-        node.properties.op = expression.op;
-      }
-      break;
-    }
-  }
-
-  if (!node) {
-    return null;
-  }
-
-  node.pos = [x, centerY];
-  graph.add(node);
-
-  if (expression.type === "unary") {
-    const inputNode = createNodeFromExpression(expression.input, depth + 1, centerY);
-    inputNode?.connect(0, node, 0);
-  } else if (expression.type === "binary") {
-    const leftNode = createNodeFromExpression(expression.left, depth + 1, centerY - 80);
-    const rightNode = createNodeFromExpression(expression.right, depth + 1, centerY + 80);
-    leftNode?.connect(0, node, 0);
-    rightNode?.connect(0, node, 1);
-  }
-
-  return node;
 };
 
-const buildGraphFromExpressions = (
-  upperExpression: PipelineExpression,
-  lowerExpression: PipelineExpression
-): void => {
-  if (!graph) {
-    return;
+const refreshTrackOptions = async (): Promise<void> => {
+  try {
+    const manager = ensureMapManager();
+    trackOptions.value = await manager.networkManager.requestManager.listTracks();
+    updateTrackNodeWidgets();
+  } catch (error) {
+    console.debug("Failed to load track options for render pipeline", error);
   }
-  clearGraph();
-  createSinkNodes();
-
-  const upperSink = upperSinkId != null ? graph.getNodeById(upperSinkId) : null;
-  const lowerSink = lowerSinkId != null ? graph.getNodeById(lowerSinkId) : null;
-  const upperNode = createNodeFromExpression(upperExpression, 0, 90);
-  const lowerNode = createNodeFromExpression(lowerExpression, 0, 320);
-  if (upperNode && upperSink) {
-    upperNode.connect(0, upperSink, 0);
-  }
-  if (lowerNode && lowerSink) {
-    lowerNode.connect(0, lowerSink, 0);
-  }
-  graphCanvas?.draw(true, true);
-};
-
-const expressionFromNode = (
-  node: LGraphNode | null,
-  visited: Set<number>
-): PipelineExpression => {
-  if (!node) {
-    return defaultExpression();
-  }
-  const nodeId = node.id ?? -1;
-  if (visited.has(nodeId)) {
-    return defaultExpression();
-  }
-  visited.add(nodeId);
-
-  if (node.type === SOURCE_NODE_TYPE) {
-    return {
-      type: "source",
-      source: toSourceName(node.properties?.source),
-    };
-  }
-  if (node.type === CONSTANT_NODE_TYPE) {
-    const value = Number(node.properties?.value ?? 0);
-    return {
-      type: "constant",
-      value: Number.isFinite(value) ? value : 0,
-    };
-  }
-  if (node.type === DYNAMIC_NODE_TYPE) {
-    return {
-      type: "dynamic",
-      field: toDynamicField(node.properties?.field),
-    };
-  }
-  if (node.type === UNARY_NODE_TYPE) {
-    return {
-      type: "unary",
-      op: toUnaryOp(node.properties?.op),
-      input: expressionFromNode(node.getInputNode(0), visited),
-    };
-  }
-  if (node.type === BINARY_NODE_TYPE) {
-    return {
-      type: "binary",
-      op: toBinaryOp(node.properties?.op),
-      left: expressionFromNode(node.getInputNode(0), visited),
-      right: expressionFromNode(node.getInputNode(1), visited),
-    };
-  }
-
-  return defaultExpression();
-};
-
-const expressionFromSink = (branch: "UPPER" | "LOWER"): PipelineExpression => {
-  if (!graph) {
-    return defaultExpression();
-  }
-  const sinkId = branch === "UPPER" ? upperSinkId : lowerSinkId;
-  if (sinkId == null) {
-    return defaultExpression();
-  }
-  const sinkNode = graph.getNodeById(sinkId);
-  const sourceNode = sinkNode?.getInputNode(0) ?? null;
-  return expressionFromNode(sourceNode, new Set<number>());
 };
 
 const loadConfig = async (): Promise<void> => {
   loading.value = true;
   try {
+    await refreshTrackOptions();
     const manager = ensureMapManager();
     const response = await manager.networkManager.requestManager.getRenderPipelineConfig();
     enabled.value = Boolean(response.enabled ?? false);
@@ -732,11 +1246,20 @@ const resetConfig = async (): Promise<void> => {
 
 onMounted(() => {
   initializeGraph();
+  window.addEventListener(
+    VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+    onVisualizationOptionsUpdated as EventListener
+  );
   void loadConfig();
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener(
+    VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+    onVisualizationOptionsUpdated as EventListener
+  );
   cleanupContextMenus();
+  restoreNodeTypeFilterOverrides();
   resizeObserver?.disconnect();
   resizeObserver = null;
   graphCanvas?.clear();

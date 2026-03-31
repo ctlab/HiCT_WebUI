@@ -82,6 +82,10 @@ import {
   AttachSessionRequest,
   CloseFileRequest,
   OpenProgressRequest,
+  OpenSecondarySourceRequest,
+  CloseSecondarySourceRequest,
+  GetSecondarySourceStatusRequest,
+  SetAssemblyInfoSourceRequest,
   ListTrackFilesRequest,
   OpenTrackRequest,
   OpenCoolerWeightsTrackRequest,
@@ -204,6 +208,76 @@ class RequestManager {
           progress: Number((json as Record<string, unknown>)?.progress ?? 0),
         };
       });
+  }
+
+  public async getSecondarySourceStatus(): Promise<{
+    attached: boolean;
+    filename: string;
+    assemblySource: "PRIMARY" | "SECONDARY";
+  }> {
+    return this.sendRequest(new GetSecondarySourceStatusRequest())
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => ({
+        attached: Boolean(json.attached ?? false),
+        filename: String(json.filename ?? ""),
+        assemblySource:
+          String(json.assemblySource ?? "PRIMARY").toUpperCase() === "SECONDARY"
+            ? "SECONDARY"
+            : "PRIMARY",
+      }));
+  }
+
+  public async openSecondarySource(filename: string): Promise<{
+    attached: boolean;
+    filename: string;
+    assemblySource: "PRIMARY" | "SECONDARY";
+  }> {
+    return this.sendRequest(new OpenSecondarySourceRequest({ filename }))
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => ({
+        attached: Boolean(json.attached ?? false),
+        filename: String(json.filename ?? ""),
+        assemblySource:
+          String(json.assemblySource ?? "PRIMARY").toUpperCase() === "SECONDARY"
+            ? "SECONDARY"
+            : "PRIMARY",
+      }));
+  }
+
+  public async closeSecondarySource(): Promise<{
+    attached: boolean;
+    filename: string;
+    assemblySource: "PRIMARY" | "SECONDARY";
+  }> {
+    return this.sendRequest(new CloseSecondarySourceRequest())
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => ({
+        attached: Boolean(json.attached ?? false),
+        filename: String(json.filename ?? ""),
+        assemblySource:
+          String(json.assemblySource ?? "PRIMARY").toUpperCase() === "SECONDARY"
+            ? "SECONDARY"
+            : "PRIMARY",
+      }));
+  }
+
+  public async setAssemblyInfoSource(
+    assemblySource: "PRIMARY" | "SECONDARY"
+  ): Promise<{
+    assemblySource: "PRIMARY" | "SECONDARY";
+    assemblyInfo: AssemblyInfo;
+  }> {
+    return this.sendRequest(new SetAssemblyInfoSourceRequest({ assemblySource }))
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => ({
+        assemblySource:
+          String(json.assemblySource ?? "PRIMARY").toUpperCase() === "SECONDARY"
+            ? "SECONDARY"
+            : "PRIMARY",
+        assemblyInfo: new AssemblyInfoDTO(
+          (json.assemblyInfo ?? {}) as Record<string, unknown>
+        ).toEntity(),
+      }));
   }
 
   public async closeFile(): Promise<void> {

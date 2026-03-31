@@ -36,6 +36,10 @@ import {
   ListAGPFilesRequest,
   LoadAGPRequest,
   OpenProgressRequest,
+  OpenSecondarySourceRequest,
+  CloseSecondarySourceRequest,
+  GetSecondarySourceStatusRequest,
+  SetAssemblyInfoSourceRequest,
   GetWorkerDiagnosticsRequest,
   GetRenderPipelineRequest,
   SetRenderPipelineRequest,
@@ -188,6 +192,22 @@ abstract class HiCTAPIRequestDTO<
         return new LoadAGPRequestDTO(entity as LoadAGPRequest);
       case entity instanceof OpenProgressRequest:
         return new OpenProgressRequestDTO(entity);
+      case entity instanceof OpenSecondarySourceRequest:
+        return new OpenSecondarySourceRequestDTO(
+          entity as OpenSecondarySourceRequest
+        );
+      case entity instanceof CloseSecondarySourceRequest:
+        return new CloseSecondarySourceRequestDTO(
+          entity as CloseSecondarySourceRequest
+        );
+      case entity instanceof GetSecondarySourceStatusRequest:
+        return new GetSecondarySourceStatusRequestDTO(
+          entity as GetSecondarySourceStatusRequest
+        );
+      case entity instanceof SetAssemblyInfoSourceRequest:
+        return new SetAssemblyInfoSourceRequestDTO(
+          entity as SetAssemblyInfoSourceRequest
+        );
       case entity instanceof GetWorkerDiagnosticsRequest:
         return new GetWorkerDiagnosticsRequestDTO(entity);
       case entity instanceof GetRenderPipelineRequest:
@@ -221,6 +241,33 @@ abstract class HiCTAPIRequestDTO<
           entity as SetVisualizationOptionsRequest
         );
       default:
+        return HiCTAPIRequestDTO.toDTOByRequestPath(entity);
+    }
+  }
+
+  private static toDTOByRequestPath(entity: HiCTAPIRequest) {
+    switch (entity.requestPath) {
+      case "/tracks/open_cooler_weights":
+        return new OpenCoolerWeightsTrackRequestDTO(
+          entity as OpenCoolerWeightsTrackRequest
+        );
+      case "/secondary/open":
+        return new OpenSecondarySourceRequestDTO(
+          entity as OpenSecondarySourceRequest
+        );
+      case "/secondary/close":
+        return new CloseSecondarySourceRequestDTO(
+          entity as CloseSecondarySourceRequest
+        );
+      case "/secondary/status":
+        return new GetSecondarySourceStatusRequestDTO(
+          entity as GetSecondarySourceStatusRequest
+        );
+      case "/secondary/set_assembly_source":
+        return new SetAssemblyInfoSourceRequestDTO(
+          entity as SetAssemblyInfoSourceRequest
+        );
+      default:
         throw new Error(
           `Unknown HiCTAPIRequest type: ${typeof entity}, constructor ${
             entity.constructor
@@ -239,6 +286,34 @@ class GetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<GetVisualizati
 class OpenProgressRequestDTO extends HiCTAPIRequestDTO<OpenProgressRequest> {
   toDTO(): Record<string, unknown> {
     return {};
+  }
+}
+
+class OpenSecondarySourceRequestDTO extends HiCTAPIRequestDTO<OpenSecondarySourceRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      filename: this.entity.options.filename,
+    };
+  }
+}
+
+class CloseSecondarySourceRequestDTO extends HiCTAPIRequestDTO<CloseSecondarySourceRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class GetSecondarySourceStatusRequestDTO extends HiCTAPIRequestDTO<GetSecondarySourceStatusRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class SetAssemblyInfoSourceRequestDTO extends HiCTAPIRequestDTO<SetAssemblyInfoSourceRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      assemblySource: this.entity.options.assemblySource,
+    };
   }
 }
 

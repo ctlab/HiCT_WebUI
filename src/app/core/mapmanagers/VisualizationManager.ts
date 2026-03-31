@@ -28,6 +28,8 @@ import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsS
 import VisualizationOptions from "../visualization/VisualizationOptions";
 
 class VisualizationManager {
+  public static readonly VISUALIZATION_OPTIONS_UPDATED_EVENT =
+    "hict:visualization-options-updated";
   public readonly visualizationOptionsStore = useVisualizationOptionsStore();
   public constructor(public readonly mapManager: ContactMapManager) {}
 
@@ -36,6 +38,11 @@ class VisualizationManager {
       .getVisualizationOptions(new GetVisualizationOptionsRequest({}))
       .then((options) => {
         this.visualizationOptionsStore.setVisualizationOptions(options);
+        window.dispatchEvent(
+          new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
+            detail: { source: "server_fetch", options },
+          })
+        );
         return options;
       });
   }
@@ -49,6 +56,11 @@ class VisualizationManager {
       )
       .then((options) => {
         this.visualizationOptionsStore.setVisualizationOptions(options);
+        window.dispatchEvent(
+          new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
+            detail: { source: "server", options },
+          })
+        );
         return options;
       });
   }

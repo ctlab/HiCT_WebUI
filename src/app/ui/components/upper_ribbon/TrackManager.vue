@@ -73,6 +73,74 @@
                 </div>
               </div>
 
+              <div class="alert alert-light border py-2 mb-3">
+                <div class="row g-2 align-items-end">
+                  <div class="col-7">
+                    <label class="form-label mb-1">Secondary data source</label>
+                    <div class="input-group">
+                      <input
+                        type="text"
+                        class="form-control"
+                        :value="
+                          selectedSecondaryFile ||
+                          secondaryStatus.filename ||
+                          'Select secondary .hict.hdf5 source'
+                        "
+                        readonly
+                      />
+                      <button
+                        class="btn btn-outline-secondary"
+                        @click="secondaryFileSelectorOpen = true"
+                      >
+                        Browse…
+                      </button>
+                    </div>
+                  </div>
+                  <div class="col-2 d-grid gap-2">
+                    <button
+                      class="btn btn-outline-primary"
+                      :disabled="!selectedSecondaryFile"
+                      @click="onAttachSecondarySource"
+                    >
+                      Attach
+                    </button>
+                    <button
+                      class="btn btn-outline-danger btn-sm"
+                      :disabled="!secondaryStatus.attached"
+                      @click="onDetachSecondarySource"
+                    >
+                      Detach
+                    </button>
+                  </div>
+                  <div class="col-3">
+                    <label class="form-label mb-1">Assembly source</label>
+                    <select
+                      class="form-select"
+                      :value="secondaryStatus.assemblySource"
+                      @change="
+                        onAssemblySourceChanged(
+                          ($event.target as HTMLSelectElement).value as
+                            | 'PRIMARY'
+                            | 'SECONDARY'
+                        )
+                      "
+                    >
+                      <option value="PRIMARY">Primary</option>
+                      <option value="SECONDARY" :disabled="!secondaryStatus.attached">
+                        Secondary
+                      </option>
+                    </select>
+                  </div>
+                </div>
+                <small class="text-muted d-block mt-1">
+                  {{
+                    secondaryStatus.attached
+                      ? `Attached: ${secondaryStatus.filename}`
+                      : "No secondary source attached"
+                  }}
+                </small>
+              </div>
+
               <div class="alert alert-secondary py-2">
                 <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
                   <strong>1D track precompute</strong>
@@ -244,6 +312,14 @@
       @selected="onTrackFileSelected"
       @dismissed="trackFileSelectorOpen = false"
     />
+    <UniversalFileSelector
+      v-if="secondaryFileSelectorOpen && props.mapManager"
+      :network-manager="props.mapManager.networkManager"
+      :title="'Select secondary .hict.hdf5 source'"
+      :file-name-predicate="isSupportedSecondaryFilename"
+      @selected="onSecondaryFileSelected"
+      @dismissed="secondaryFileSelectorOpen = false"
+    />
     <template v-if="pendingTrackProbe">
       <div class="modal-backdrop fade show track-compat-backdrop"></div>
       <div class="modal fade show track-compat-modal" style="display: block" tabindex="-1" role="dialog">
@@ -284,6 +360,7 @@
 
 <script setup lang="ts">
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import type { AssemblyInfo } from "@/app/core/domain/AssemblyInfo";
 import type {
   TrackCompatibilityReportResponse,
   TrackSummaryResponse,
@@ -306,9 +383,20 @@ defineEmits<{
 const selectedFile = ref("");
 const trackDisplayName = ref("");
 const trackFileSelectorOpen = ref(false);
+const secondaryFileSelectorOpen = ref(false);
+const selectedSecondaryFile = ref("");
 const pendingTrackProbe = ref<TrackCompatibilityReportResponse | null>(null);
 const tracks = ref<TrackSummaryResponse[]>([]);
 const precomputeStatus = ref<TracksPrecomputeStatusResponse | null>(null);
+const secondaryStatus = ref<{
+  attached: boolean;
+  filename: string;
+  assemblySource: "PRIMARY" | "SECONDARY";
+}>({
+  attached: false,
+  filename: "",
+  assemblySource: "PRIMARY",
+});
 let precomputePollHandle: number | null = null;
 const uiSettingsStore = useUiSettingsStore();
 const { inheritTrackBackgroundFromMap, trackBackgroundColor } =
@@ -390,6 +478,11 @@ const isSupportedTrackFilename = (name: string): boolean => {
   return TRACK_SUFFIXES.some((suffix) => lowered.endsWith(suffix));
 };
 
+const isSupportedSecondaryFilename = (name: string): boolean => {
+  const lowered = name.toLowerCase();
+  return lowered.endsWith(".hict.hdf5");
+};
+
 const refreshTracks = async () => {
   if (!props.mapManager) {
     tracks.value = [];
@@ -412,6 +505,26 @@ const refreshPrecomputeStatus = async () => {
       await props.mapManager.linearTrackManager.getPrecomputeStatus();
   } catch (err) {
     console.debug("Failed to fetch precompute status", err);
+  }
+};
+
+const refreshSecondaryStatus = async () => {
+  if (!props.mapManager) {
+    secondaryStatus.value = {
+      attached: false,
+      filename: "",
+      assemblySource: "PRIMARY",
+    };
+    return;
+  }
+  try {
+    secondaryStatus.value =
+      await props.mapManager.networkManager.requestManager.getSecondarySourceStatus();
+    if (!secondaryStatus.value.attached) {
+      selectedSecondaryFile.value = "";
+    }
+  } catch (err) {
+    console.debug("Failed to fetch secondary source status", err);
   }
 };
 
@@ -477,6 +590,80 @@ const onTrackFileSelected = (filename: string) => {
   if (!trackDisplayName.value.trim()) {
     const parts = filename.split("/");
     trackDisplayName.value = parts[parts.length - 1] ?? "";
+  }
+};
+
+const onSecondaryFileSelected = (filename: string) => {
+  selectedSecondaryFile.value = filename;
+  secondaryFileSelectorOpen.value = false;
+};
+
+const applyAssemblyInfo = (assemblyInfo: AssemblyInfo): void => {
+  if (!props.mapManager) {
+    return;
+  }
+  props.mapManager.contigDimensionHolder.updateContigData(assemblyInfo.contigDescriptors);
+  props.mapManager.scaffoldHolder.updateScaffoldData(assemblyInfo.scaffoldDescriptors);
+  props.mapManager.reloadVisuals();
+  props.mapManager.refreshOverviewMinimap();
+  void props.mapManager.linearTrackManager.clearCachesAndRender();
+};
+
+const onAttachSecondarySource = async () => {
+  if (!props.mapManager || !selectedSecondaryFile.value) {
+    return;
+  }
+  try {
+    secondaryStatus.value =
+      await props.mapManager.networkManager.requestManager.openSecondarySource(
+        selectedSecondaryFile.value
+      );
+    await props.mapManager.reloadTilesFromBackend();
+    await refreshSecondaryStatus();
+    toast.success("Secondary source attached");
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
+const onDetachSecondarySource = async () => {
+  if (!props.mapManager) {
+    return;
+  }
+  try {
+    secondaryStatus.value =
+      await props.mapManager.networkManager.requestManager.closeSecondarySource();
+    await props.mapManager.reloadTilesFromBackend();
+    if (secondaryStatus.value.assemblySource === "PRIMARY") {
+      const result =
+        await props.mapManager.networkManager.requestManager.setAssemblyInfoSource(
+          "PRIMARY"
+        );
+      applyAssemblyInfo(result.assemblyInfo);
+    }
+    await refreshSecondaryStatus();
+    toast.success("Secondary source detached");
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
+const onAssemblySourceChanged = async (
+  assemblySource: "PRIMARY" | "SECONDARY"
+) => {
+  if (!props.mapManager) {
+    return;
+  }
+  try {
+    const result =
+      await props.mapManager.networkManager.requestManager.setAssemblyInfoSource(
+        assemblySource
+      );
+    secondaryStatus.value.assemblySource = result.assemblySource;
+    applyAssemblyInfo(result.assemblyInfo);
+  } catch (err) {
+    toast.error(String(err));
+    await refreshSecondaryStatus();
   }
 };
 
@@ -620,7 +807,11 @@ const startPrecomputePolling = () => {
 };
 
 onMounted(async () => {
-  await Promise.all([refreshTracks(), refreshPrecomputeStatus()]);
+  await Promise.all([
+    refreshTracks(),
+    refreshPrecomputeStatus(),
+    refreshSecondaryStatus(),
+  ]);
   startPrecomputePolling();
 });
 
