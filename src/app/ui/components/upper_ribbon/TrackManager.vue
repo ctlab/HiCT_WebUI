@@ -955,6 +955,7 @@ onBeforeUnmount(() => {
 }
 
 .track-log-base-input {
+  min-width: 4rem;
   max-width: 5.4rem;
 }
 

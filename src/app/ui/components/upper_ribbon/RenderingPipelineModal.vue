@@ -100,15 +100,37 @@
               Apply
             </button>
           </div>
+          <div v-if="!previewMode && colorPickerVisible" class="pipeline-color-picker card shadow-sm">
+            <div class="card-body p-2">
+              <div class="small fw-semibold mb-2">Pick color</div>
+              <div class="d-flex align-items-center gap-2">
+                <input
+                  v-model="colorPickerValue"
+                  type="color"
+                  class="form-control form-control-color"
+                  aria-label="Selected color"
+                />
+                <input
+                  :value="colorPickerValue"
+                  type="text"
+                  class="form-control form-control-sm color-picker-hex-input"
+                  aria-label="Selected color hex"
+                  readonly
+                />
+              </div>
+              <div class="mt-2 d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" @click="cancelColorPicker">
+                  Cancel
+                </button>
+                <button type="button" class="btn btn-sm btn-primary" @click="applyColorPicker">
+                  Apply
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-    <input
-      ref="hiddenColorInputRef"
-      type="color"
-      class="hidden-color-input"
-      @change="onHiddenColorInputChanged"
-    />
   </div>
 </template>
 
@@ -254,16 +276,17 @@ const previewMode = ref(false);
 const graphHost = ref<HTMLDivElement | null>(null);
 const graphCanvasRef = ref<HTMLCanvasElement | null>(null);
 const importInputRef = ref<HTMLInputElement | null>(null);
-const hiddenColorInputRef = ref<HTMLInputElement | null>(null);
 const trackOptions = ref<TrackSummaryResponse[]>([]);
 const pendingVisualizationSync = ref(false);
+const colorPickerVisible = ref(false);
+const colorPickerValue = ref("#000000");
 const previewSnapshot = ref<{
   enabled: boolean;
   swapUpperLower: boolean;
   upperExpression: PipelineExpression;
   lowerExpression: PipelineExpression;
 } | null>(null);
-let hiddenColorSelectHandler: ((hexColor: string) => void) | null = null;
+let colorPickerSelectHandler: ((hexColor: string) => void) | null = null;
 
 let graph: LGraph | null = null;
 let graphCanvas: LGraphCanvas | null = null;
@@ -326,22 +349,24 @@ const openColorPickerInput = (
   initialColor: string,
   onSelected: (hexColor: string) => void
 ): void => {
-  const input = hiddenColorInputRef.value;
-  if (!input) {
-    return;
-  }
-  hiddenColorSelectHandler = onSelected;
-  input.value = sanitizeColor(initialColor, "#000000").slice(0, 7).toLowerCase();
-  input.click();
+  colorPickerValue.value = sanitizeColor(initialColor, "#000000").slice(0, 7).toLowerCase();
+  colorPickerSelectHandler = onSelected;
+  colorPickerVisible.value = true;
 };
 
-const onHiddenColorInputChanged = (event: Event): void => {
-  const target = event.target as HTMLInputElement | null;
-  const selected = target?.value;
-  if (selected && hiddenColorSelectHandler) {
-    hiddenColorSelectHandler(selected);
+const cancelColorPicker = (): void => {
+  colorPickerVisible.value = false;
+  colorPickerSelectHandler = null;
+};
+
+const applyColorPicker = (): void => {
+  const selected = sanitizeColor(colorPickerValue.value, "#000000").slice(0, 7).toLowerCase();
+  colorPickerValue.value = selected;
+  if (colorPickerSelectHandler) {
+    colorPickerSelectHandler(selected);
+    graphCanvas?.draw(true, true);
   }
-  hiddenColorSelectHandler = null;
+  cancelColorPicker();
 };
 
 const toSourceName = (value: unknown): SourceName =>
@@ -1960,7 +1985,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   previewMode.value = false;
-  hiddenColorSelectHandler = null;
+  colorPickerVisible.value = false;
+  colorPickerSelectHandler = null;
   window.removeEventListener("resize", fitGraphCanvas);
   window.removeEventListener(
     VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
@@ -1999,6 +2025,7 @@ onBeforeUnmount(() => {
   height: 100%;
   display: flex;
   overflow: hidden;
+  position: relative;
 }
 
 .pipeline-root .modal.pipeline-preview .pipeline-dialog {
@@ -2042,14 +2069,16 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
-.hidden-color-input {
-  position: fixed;
-  left: -9999px;
-  top: 0;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: auto;
+.pipeline-color-picker {
+  position: absolute;
+  top: 60px;
+  right: 12px;
+  width: 224px;
+  z-index: 9;
+}
+
+.color-picker-hex-input {
+  text-transform: lowercase;
 }
 
 :global(.litecontextmenu) {

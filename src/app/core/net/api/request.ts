@@ -160,6 +160,7 @@ class StartConversionJobRequest implements HiCTAPIRequest {
     public readonly options: {
       readonly filename: string;
       readonly direction?: string;
+      readonly overwrite?: boolean;
       readonly resolutions?: string;
       readonly compression?: number;
       readonly compressionAlgorithm?: string;
@@ -177,6 +178,7 @@ class StartBatchConversionJobsRequest implements HiCTAPIRequest {
       readonly files: string[];
       readonly parallelJobs: number;
       readonly parallelism: number;
+      readonly overwrite?: boolean;
       readonly resolutions?: string;
       readonly compression?: number;
       readonly compressionAlgorithm?: string;

@@ -288,25 +288,37 @@ function onCoolerFileSelected(coolerFilename: string): void {
 
 function convertCooler(): void {
   const filename = selectedCoolerFilename.value;
-  if (filename) {
-    props.networkManager.requestManager
-      .startConversionJob(
-        new StartConversionJobRequest({
-          filename: filename,
-          direction: "mcool-to-hict",
-        })
-      )
-      .then((resp) => {
-        jobId.value = resp.jobId;
-      })
-      .catch((e) => {
-        errorMessage.value = e;
-      })
-      .finally(() => {
-        converting.value = false;
-      });
-    converting.value = true;
+  if (!filename) {
+    return;
   }
+  const overwriteExisting = isConverted(filename);
+  if (overwriteExisting) {
+    const output = deriveOutputFilename(filename);
+    const approved = window.confirm(
+      `Converted file already exists (${output}). Overwrite it with a new conversion?`
+    );
+    if (!approved) {
+      return;
+    }
+  }
+  props.networkManager.requestManager
+    .startConversionJob(
+      new StartConversionJobRequest({
+        filename: filename,
+        direction: "mcool-to-hict",
+        overwrite: overwriteExisting,
+      })
+    )
+    .then((resp) => {
+      jobId.value = resp.jobId;
+    })
+    .catch((e) => {
+      errorMessage.value = e;
+    })
+    .finally(() => {
+      converting.value = false;
+    });
+  converting.value = true;
 }
 
 onMounted(() => {
@@ -443,6 +455,16 @@ function proceedBatchSettings(): void {
 
 function startBatchConversion(): void {
   const files = Array.from(batchSelection.value);
+  const alreadyConverted = files.filter((file) => isConverted(file));
+  const overwriteExisting = alreadyConverted.length > 0;
+  if (overwriteExisting) {
+    const approved = window.confirm(
+      `${alreadyConverted.length} selected file(s) already have converted outputs. Overwrite existing outputs?`
+    );
+    if (!approved) {
+      return;
+    }
+  }
   batchStatusMap.value.clear();
   batchProgressMap.value.clear();
   props.networkManager.requestManager
@@ -451,6 +473,7 @@ function startBatchConversion(): void {
         files,
         parallelJobs: batchParallelJobs.value,
         parallelism: batchParallelism.value,
+        overwrite: overwriteExisting,
       })
     )
     .then((resp) => {

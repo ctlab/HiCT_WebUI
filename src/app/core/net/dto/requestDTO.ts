@@ -370,6 +370,7 @@ class StartConversionJobRequestDTO extends HiCTAPIRequestDTO<StartConversionJobR
     return {
       filename: this.entity.options.filename,
       direction: this.entity.options.direction,
+      overwrite: this.entity.options.overwrite,
       resolutions: this.entity.options.resolutions,
       compression: this.entity.options.compression,
       compressionAlgorithm: this.entity.options.compressionAlgorithm,
@@ -385,6 +386,7 @@ class StartBatchConversionJobsRequestDTO extends HiCTAPIRequestDTO<StartBatchCon
       files: this.entity.options.files,
       parallelJobs: this.entity.options.parallelJobs,
       parallelism: this.entity.options.parallelism,
+      overwrite: this.entity.options.overwrite,
       resolutions: this.entity.options.resolutions,
       compression: this.entity.options.compression,
       compressionAlgorithm: this.entity.options.compressionAlgorithm,
