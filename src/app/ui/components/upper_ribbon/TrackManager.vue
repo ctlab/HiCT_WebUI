@@ -84,7 +84,7 @@
                         :value="
                           selectedSecondaryFile ||
                           secondaryStatus.filename ||
-                          'Select secondary .hict.hdf5 source'
+                          'Select secondary data source (.hict.hdf5, .cool, .mcool)'
                         "
                         readonly
                       />
@@ -315,10 +315,18 @@
     <UniversalFileSelector
       v-if="secondaryFileSelectorOpen && props.mapManager"
       :network-manager="props.mapManager.networkManager"
-      :title="'Select secondary .hict.hdf5 source'"
+      :title="'Select secondary data source'"
+      :file-type="'.hict.hdf5, .cool, .mcool'"
+      :note="'Cooler files have to be converted into HiCT internal format before opening.'"
       :file-name-predicate="isSupportedSecondaryFilename"
       @selected="onSecondaryFileSelected"
       @dismissed="secondaryFileSelectorOpen = false"
+    />
+    <CoolerConverter
+      v-if="convertingSecondaryCooler && props.mapManager"
+      :network-manager="props.mapManager.networkManager"
+      :initial-cooler-filename="secondaryCoolerToConvert"
+      @dismissed="onSecondaryConverterDismissed"
     />
     <template v-if="pendingTrackProbe">
       <div class="modal-backdrop fade show track-compat-backdrop"></div>
@@ -355,18 +363,67 @@
         </div>
       </div>
     </template>
+    <template v-if="pendingSecondaryProbe">
+      <div class="modal-backdrop fade show track-compat-backdrop"></div>
+      <div class="modal fade show track-compat-modal" style="display: block" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Secondary Source Compatibility Warning</h5>
+              <button class="btn-close" @click="pendingSecondaryProbe = null"></button>
+            </div>
+            <div class="modal-body">
+              <p class="mb-2">
+                Secondary source differs from the primary source matrix sizes.
+                Smaller matrix regions will be padded with background color.
+              </p>
+              <ul class="small mb-2">
+                <li>Requested file: {{ pendingSecondaryProbe.requestedFilename || selectedSecondaryFile }}</li>
+                <li>Primary max bins: {{ pendingSecondaryProbe.compatibility?.primaryMaxBins ?? 0 }}</li>
+                <li>Secondary max bins: {{ pendingSecondaryProbe.compatibility?.secondaryMaxBins ?? 0 }}</li>
+                <li>
+                  Mismatched resolutions:
+                  {{
+                    (pendingSecondaryProbe.compatibility?.mismatchedResolutionOrders ?? []).length
+                  }}
+                </li>
+              </ul>
+              <div
+                v-if="pendingSecondaryProbe.warnings.length > 0"
+                class="alert alert-warning py-2 mb-0"
+              >
+                <div
+                  v-for="warning in pendingSecondaryProbe.warnings"
+                  :key="warning"
+                >
+                  {{ warning }}
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" @click="pendingSecondaryProbe = null">Cancel</button>
+              <button class="btn btn-primary" @click="onProceedSecondaryWithMismatch">
+                Continue and Attach
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { AssemblyInfo } from "@/app/core/domain/AssemblyInfo";
+import type { SecondarySourceStatusResponse } from "@/app/core/net/api/RequestManager";
 import type {
   TrackCompatibilityReportResponse,
   TrackSummaryResponse,
   TracksPrecomputeStatusResponse,
 } from "@/app/core/net/api/response";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+import CoolerConverter from "@/app/ui/components/upper_ribbon/CoolerConverter.vue";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
 import { storeToRefs } from "pinia";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
@@ -384,18 +441,19 @@ const selectedFile = ref("");
 const trackDisplayName = ref("");
 const trackFileSelectorOpen = ref(false);
 const secondaryFileSelectorOpen = ref(false);
+const convertingSecondaryCooler = ref(false);
+const secondaryCoolerToConvert = ref<string | undefined>(undefined);
 const selectedSecondaryFile = ref("");
 const pendingTrackProbe = ref<TrackCompatibilityReportResponse | null>(null);
+const pendingSecondaryProbe = ref<SecondarySourceStatusResponse | null>(null);
 const tracks = ref<TrackSummaryResponse[]>([]);
 const precomputeStatus = ref<TracksPrecomputeStatusResponse | null>(null);
-const secondaryStatus = ref<{
-  attached: boolean;
-  filename: string;
-  assemblySource: "PRIMARY" | "SECONDARY";
-}>({
+const secondaryStatus = ref<SecondarySourceStatusResponse>({
   attached: false,
   filename: "",
   assemblySource: "PRIMARY",
+  requiresConfirmation: false,
+  warnings: [],
 });
 let precomputePollHandle: number | null = null;
 const uiSettingsStore = useUiSettingsStore();
@@ -480,7 +538,11 @@ const isSupportedTrackFilename = (name: string): boolean => {
 
 const isSupportedSecondaryFilename = (name: string): boolean => {
   const lowered = name.toLowerCase();
-  return lowered.endsWith(".hict.hdf5");
+  return (
+    lowered.endsWith(".hict.hdf5") ||
+    lowered.endsWith(".cool") ||
+    lowered.endsWith(".mcool")
+  );
 };
 
 const refreshTracks = async () => {
@@ -514,6 +576,8 @@ const refreshSecondaryStatus = async () => {
       attached: false,
       filename: "",
       assemblySource: "PRIMARY",
+      requiresConfirmation: false,
+      warnings: [],
     };
     return;
   }
@@ -594,8 +658,20 @@ const onTrackFileSelected = (filename: string) => {
 };
 
 const onSecondaryFileSelected = (filename: string) => {
+  const lowered = filename.toLowerCase();
+  if (lowered.endsWith(".cool") || lowered.endsWith(".mcool")) {
+    secondaryFileSelectorOpen.value = false;
+    secondaryCoolerToConvert.value = filename;
+    convertingSecondaryCooler.value = true;
+    return;
+  }
   selectedSecondaryFile.value = filename;
   secondaryFileSelectorOpen.value = false;
+};
+
+const onSecondaryConverterDismissed = () => {
+  convertingSecondaryCooler.value = false;
+  secondaryCoolerToConvert.value = undefined;
 };
 
 const applyAssemblyInfo = (assemblyInfo: AssemblyInfo): void => {
@@ -614,13 +690,46 @@ const onAttachSecondarySource = async () => {
     return;
   }
   try {
-    secondaryStatus.value =
+    const response =
       await props.mapManager.networkManager.requestManager.openSecondarySource(
-        selectedSecondaryFile.value
+        selectedSecondaryFile.value,
+        false
       );
+    if (response.requiresConfirmation) {
+      pendingSecondaryProbe.value = response;
+      return;
+    }
+    pendingSecondaryProbe.value = null;
+    secondaryStatus.value = response;
     await props.mapManager.reloadTilesFromBackend();
     await refreshSecondaryStatus();
     toast.success("Secondary source attached");
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
+const onProceedSecondaryWithMismatch = async () => {
+  if (!props.mapManager) {
+    return;
+  }
+  const filenameToOpen =
+    pendingSecondaryProbe.value?.requestedFilename ?? selectedSecondaryFile.value;
+  if (!filenameToOpen) {
+    pendingSecondaryProbe.value = null;
+    return;
+  }
+  try {
+    pendingSecondaryProbe.value = null;
+    secondaryStatus.value =
+      await props.mapManager.networkManager.requestManager.openSecondarySource(
+        filenameToOpen,
+        true
+      );
+    selectedSecondaryFile.value = filenameToOpen;
+    await props.mapManager.reloadTilesFromBackend();
+    await refreshSecondaryStatus();
+    toast.success("Secondary source attached with compatibility warning");
   } catch (err) {
     toast.error(String(err));
   }

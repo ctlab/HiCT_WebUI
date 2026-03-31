@@ -64,6 +64,7 @@
             <div v-if="!jobId" class="convert-section">
               <CoolerFileSelector
                 :network-manager="networkManager"
+                :initial-filename="initialCoolerFilename"
                 @selected="onCoolerFileSelected"
               />
               <div class="mt-3 d-flex gap-2">

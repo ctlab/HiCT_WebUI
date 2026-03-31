@@ -328,6 +328,7 @@ class OpenSecondarySourceRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       readonly filename: string;
+      readonly allowMismatch?: boolean;
     }
   ) {}
 }

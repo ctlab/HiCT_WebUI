@@ -76,7 +76,8 @@
                 </button>
               </div>
             </div>
-            <small v-if="fileFilterHint" class="text-muted d-block mb-2">{{ fileFilterHint }}</small>
+            <small v-if="fileFilterHint" class="text-muted d-block mb-1">{{ fileFilterHint }}</small>
+            <small v-if="props.note" class="text-muted d-block mb-2">{{ props.note }}</small>
 
             <div v-if="loading" class="d-flex align-items-center gap-2 py-3">
               <strong>Loading files…</strong>
@@ -187,6 +188,7 @@ const props = defineProps<{
   fileNamePredicate?: (name: string) => boolean;
   title?: string;
   fileType?: string;
+  note?: string;
   errorMessage?: unknown;
 }>();
 
@@ -214,6 +216,12 @@ const fileFilterHint = computed(() => {
 
 watch(selectorMode, (mode) => {
   fileSelectorMode.value = mode;
+  if (mode === "tree") {
+    const currentPath = selectedFilename.value;
+    treeSelectionKeys.value = currentPath
+      ? { [fileSelectionKey(currentPath)]: true }
+      : {};
+  }
 });
 
 const filteredEntries = computed(() => {
@@ -338,7 +346,7 @@ const selectedPathFromTreeKeys = (): string | null => {
 
 const resolveSelectedPath = (): string | null => {
   if (selectorMode.value === "tree") {
-    return selectedPathFromTreeKeys() ?? selectedFilename.value;
+    return selectedPathFromTreeKeys();
   }
   return selectedFilename.value;
 };
@@ -521,6 +529,10 @@ onMounted(async () => {
 
 .legacy-tree {
   border: none;
+}
+
+.legacy-tree :deep(.p-tree-node-icon) {
+  display: none;
 }
 
 .tree-node-content {

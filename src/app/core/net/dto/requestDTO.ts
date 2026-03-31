@@ -293,6 +293,7 @@ class OpenSecondarySourceRequestDTO extends HiCTAPIRequestDTO<OpenSecondarySourc
   toDTO(): Record<string, unknown> {
     return {
       filename: this.entity.options.filename,
+      allowMismatch: this.entity.options.allowMismatch ?? false,
     };
   }
 }

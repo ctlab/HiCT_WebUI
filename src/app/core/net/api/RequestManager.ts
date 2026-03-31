@@ -117,12 +117,82 @@ import { toast } from "vue-sonner";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 
+export type SecondarySourceCompatibility = {
+  sameResolutions: boolean;
+  sameMatrixSizes: boolean;
+  exactMatch: boolean;
+  primaryMaxBins: number;
+  secondaryMaxBins: number;
+  primaryBinsByResolution: number[];
+  secondaryBinsByResolution: number[];
+  mismatchedResolutionOrders: number[];
+};
+
+export type SecondarySourceStatusResponse = {
+  attached: boolean;
+  filename: string;
+  assemblySource: "PRIMARY" | "SECONDARY";
+  requiresConfirmation: boolean;
+  requestedFilename?: string;
+  warnings: string[];
+  compatibility?: SecondarySourceCompatibility;
+};
+
 class RequestManager {
   constructor(public readonly networkManager: NetworkManager) {}
 
   private normalizeAssemblyInfo(json: Record<string, unknown>): Record<string, unknown> {
     const assemblyInfo = json["assemblyInfo"] as Record<string, unknown> | undefined;
     return assemblyInfo ?? json;
+  }
+
+  private parseSecondarySourceStatus(json: Record<string, unknown>): SecondarySourceStatusResponse {
+    if (typeof json.error === "string" && json.error.trim().length > 0) {
+      throw new Error(json.error);
+    }
+    const compatibilityRaw =
+      (json.compatibility as Record<string, unknown> | undefined) ?? undefined;
+    const compatibility: SecondarySourceCompatibility | undefined = compatibilityRaw
+      ? {
+          sameResolutions: Boolean(compatibilityRaw.sameResolutions ?? false),
+          sameMatrixSizes: Boolean(compatibilityRaw.sameMatrixSizes ?? false),
+          exactMatch: Boolean(compatibilityRaw.exactMatch ?? false),
+          primaryMaxBins: Number(compatibilityRaw.primaryMaxBins ?? 0),
+          secondaryMaxBins: Number(compatibilityRaw.secondaryMaxBins ?? 0),
+          primaryBinsByResolution: Array.isArray(compatibilityRaw.primaryBinsByResolution)
+            ? (compatibilityRaw.primaryBinsByResolution as unknown[]).map((value) =>
+                Number(value ?? 0)
+              )
+            : [],
+          secondaryBinsByResolution: Array.isArray(compatibilityRaw.secondaryBinsByResolution)
+            ? (compatibilityRaw.secondaryBinsByResolution as unknown[]).map((value) =>
+                Number(value ?? 0)
+              )
+            : [],
+          mismatchedResolutionOrders: Array.isArray(compatibilityRaw.mismatchedResolutionOrders)
+            ? (compatibilityRaw.mismatchedResolutionOrders as unknown[]).map((value) =>
+                Number(value ?? 0)
+              )
+            : [],
+        }
+      : undefined;
+    return {
+      attached: Boolean(json.attached ?? false),
+      filename: String(json.filename ?? ""),
+      assemblySource:
+        String(json.assemblySource ?? "PRIMARY").toUpperCase() === "SECONDARY"
+          ? "SECONDARY"
+          : "PRIMARY",
+      requiresConfirmation: Boolean(json.requiresConfirmation ?? false),
+      requestedFilename:
+        typeof json.requestedFilename === "string"
+          ? json.requestedFilename
+          : undefined,
+      warnings: Array.isArray(json.warnings)
+        ? (json.warnings as unknown[]).map((value) => String(value))
+        : [],
+      compatibility,
+    };
   }
 
   public async sendRequest(
@@ -210,55 +280,25 @@ class RequestManager {
       });
   }
 
-  public async getSecondarySourceStatus(): Promise<{
-    attached: boolean;
-    filename: string;
-    assemblySource: "PRIMARY" | "SECONDARY";
-  }> {
+  public async getSecondarySourceStatus(): Promise<SecondarySourceStatusResponse> {
     return this.sendRequest(new GetSecondarySourceStatusRequest())
       .then((response) => response.data as Record<string, unknown>)
-      .then((json) => ({
-        attached: Boolean(json.attached ?? false),
-        filename: String(json.filename ?? ""),
-        assemblySource:
-          String(json.assemblySource ?? "PRIMARY").toUpperCase() === "SECONDARY"
-            ? "SECONDARY"
-            : "PRIMARY",
-      }));
+      .then((json) => this.parseSecondarySourceStatus(json));
   }
 
-  public async openSecondarySource(filename: string): Promise<{
-    attached: boolean;
-    filename: string;
-    assemblySource: "PRIMARY" | "SECONDARY";
-  }> {
-    return this.sendRequest(new OpenSecondarySourceRequest({ filename }))
+  public async openSecondarySource(
+    filename: string,
+    allowMismatch = false
+  ): Promise<SecondarySourceStatusResponse> {
+    return this.sendRequest(new OpenSecondarySourceRequest({ filename, allowMismatch }))
       .then((response) => response.data as Record<string, unknown>)
-      .then((json) => ({
-        attached: Boolean(json.attached ?? false),
-        filename: String(json.filename ?? ""),
-        assemblySource:
-          String(json.assemblySource ?? "PRIMARY").toUpperCase() === "SECONDARY"
-            ? "SECONDARY"
-            : "PRIMARY",
-      }));
+      .then((json) => this.parseSecondarySourceStatus(json));
   }
 
-  public async closeSecondarySource(): Promise<{
-    attached: boolean;
-    filename: string;
-    assemblySource: "PRIMARY" | "SECONDARY";
-  }> {
+  public async closeSecondarySource(): Promise<SecondarySourceStatusResponse> {
     return this.sendRequest(new CloseSecondarySourceRequest())
       .then((response) => response.data as Record<string, unknown>)
-      .then((json) => ({
-        attached: Boolean(json.attached ?? false),
-        filename: String(json.filename ?? ""),
-        assemblySource:
-          String(json.assemblySource ?? "PRIMARY").toUpperCase() === "SECONDARY"
-            ? "SECONDARY"
-            : "PRIMARY",
-      }));
+      .then((json) => this.parseSecondarySourceStatus(json));
   }
 
   public async setAssemblyInfoSource(

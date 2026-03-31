@@ -265,7 +265,8 @@
     @dismissed="onFileDismissed"
     :error-message="errorMessage"
     :title="'Open Hi-C dataset'"
-    :file-type="'.hict.hdf5, .hict, .cool, .mcool'"
+    :file-type="'.hict.hdf5, .cool, .mcool'"
+    :note="'Cooler files have to be converted into HiCT internal format before opening.'"
     :file-name-predicate="isOpenableAssemblyFilename"
   ></UniversalFileSelector>
   <UniversalFileSelector
@@ -556,7 +557,6 @@ function isOpenableAssemblyFilename(name: string): boolean {
   const lowered = name.toLowerCase();
   return (
     lowered.endsWith(".hict.hdf5") ||
-    lowered.endsWith(".hict") ||
     lowered.endsWith(".cool") ||
     lowered.endsWith(".mcool")
   );
