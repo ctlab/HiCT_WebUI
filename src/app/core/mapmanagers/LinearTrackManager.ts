@@ -27,9 +27,11 @@ import { useStyleStore } from "@/app/stores/styleStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import type {
   FileEntryResponse,
+  TrackFeatureSearchHitResponse,
   TrackBinResponse,
   TrackCompatibilityReportResponse,
   TrackQueryResponse,
+  TrackRenderResponse,
   TrackSummaryResponse,
   TracksPrecomputeStatusResponse,
 } from "@/app/core/net/api/response";
@@ -82,6 +84,20 @@ class LinearTrackManager {
     horizontal: new Set<string>(),
     vertical: new Set<string>(),
   };
+  private readonly lastRenderedSnapshot: Record<
+    Orientation,
+    {
+      tracks: TrackRenderResponse[];
+      viewport: ViewportGeometry;
+      canvasWidth: number;
+      canvasHeight: number;
+      renderedAtMs: number;
+    } | null
+  > = {
+    horizontal: null,
+    vertical: null,
+  };
+  private readonly featureSearchCache = new Map<string, FeatureSearchEntry>();
 
   constructor(private readonly mapManager: ContactMapManager) {
     const map = this.mapManager.getMap();
@@ -391,11 +407,224 @@ class LinearTrackManager {
         this.trackLogBases.set(track.trackId, 10);
       }
     });
+    for (const [key, entry] of this.featureSearchCache.entries()) {
+      if (!existingIds.has(entry.trackId)) {
+        this.featureSearchCache.delete(key);
+      }
+    }
   }
 
   public async clearCachesAndRender(): Promise<void> {
     this.invalidateQueryCache();
     await this.render({ allowFetch: true });
+  }
+
+  public getFeatureHoverAt(
+    orientation: Orientation,
+    axisOffsetPx: number,
+    crossOffsetPx: number
+  ): FeatureHoverInfo | null {
+    const snapshot = this.lastRenderedSnapshot[orientation];
+    if (!snapshot || snapshot.tracks.length === 0) {
+      return null;
+    }
+    const laneSize =
+      orientation === "horizontal"
+        ? snapshot.canvasHeight / snapshot.tracks.length
+        : snapshot.canvasWidth / snapshot.tracks.length;
+    if (!Number.isFinite(laneSize) || laneSize <= 0) {
+      return null;
+    }
+    const laneIndex = Math.floor(crossOffsetPx / laneSize);
+    if (laneIndex < 0 || laneIndex >= snapshot.tracks.length) {
+      return null;
+    }
+    const track = snapshot.tracks[laneIndex];
+    if ((track.renderStyle ?? "SIGNAL").toUpperCase() !== "FEATURE") {
+      return null;
+    }
+    const laneStart = laneIndex * laneSize;
+    const laneEnd = laneStart + laneSize;
+    if (crossOffsetPx < laneStart || crossOffsetPx > laneEnd) {
+      return null;
+    }
+    for (const bin of track.bins) {
+      const interval = this.resolveBinIntervalPx(bin, snapshot.viewport.bpResolution);
+      if (!interval.visible) {
+        continue;
+      }
+      if (
+        interval.endPx <= snapshot.viewport.startPx ||
+        interval.startPx >= snapshot.viewport.endPx
+      ) {
+        continue;
+      }
+      const start = Math.floor(snapshot.viewport.pxToScreen(interval.startPx));
+      const end = Math.max(start + 1, Math.ceil(snapshot.viewport.pxToScreen(interval.endPx)));
+      if (axisOffsetPx < start || axisOffsetPx > end) {
+        continue;
+      }
+      const label = (bin.label ?? "").trim();
+      const featureType = (bin.featureType ?? "").trim();
+      return {
+        trackId: track.trackId,
+        trackName: track.name,
+        label: label.length > 0 ? label : null,
+        featureType: featureType.length > 0 ? featureType : null,
+        strand: bin.strand,
+        startBp: Math.min(bin.startBp, bin.endBp),
+        endBp: Math.max(bin.startBp, bin.endBp),
+        value: bin.value,
+      };
+    }
+    return null;
+  }
+
+  public searchFeatureSuggestions(
+    queryRaw: string,
+    limit = 50
+  ): FeatureSearchEntry[] {
+    const query = queryRaw.trim().toLowerCase();
+    if (query.length < 2) {
+      return [];
+    }
+    const now = Date.now();
+    const maxAgeMs = 6 * 60 * 1000;
+    const out: FeatureSearchEntry[] = [];
+    for (const [key, entry] of this.featureSearchCache.entries()) {
+      if (now - entry.updatedAtMs > maxAgeMs) {
+        this.featureSearchCache.delete(key);
+        continue;
+      }
+      if (
+        entry.label.toLowerCase().includes(query) ||
+        entry.trackName.toLowerCase().includes(query) ||
+        (entry.featureType ?? "").toLowerCase().includes(query)
+      ) {
+        out.push(entry);
+      }
+    }
+    out.sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+    return out.slice(0, Math.max(1, limit));
+  }
+
+  public async searchFeatureSuggestionsRemote(
+    queryRaw: string,
+    limit = 100
+  ): Promise<FeatureSearchEntry[]> {
+    const query = queryRaw.trim();
+    if (query.length < 2) {
+      return [];
+    }
+    const response =
+      await this.mapManager.networkManager.requestManager.searchTrackFeatures({
+        query,
+        limit: Math.max(1, Math.min(300, limit)),
+        offset: 0,
+      });
+    const now = Date.now();
+    for (const hit of response.hits) {
+      const entry = this.mapFeatureHitToSearchEntry(hit, now);
+      this.featureSearchCache.set(entry.key, entry);
+    }
+    return this.searchFeatureSuggestions(query, limit);
+  }
+
+  public centerOnFeature(entry: FeatureSearchEntry): void {
+    const view = this.mapManager.getView();
+    const map = this.mapManager.getMap();
+    const currentResolution = view.getResolution() ?? 1;
+    const mapSize = map.getSize() ?? [1200, 900];
+    const spanBp = Math.max(1, entry.endBp - entry.startBp);
+    const targetSpanPx = Math.max(80, Math.min(mapSize[0], mapSize[1]) * 0.35);
+    const targetBpPerPx = Math.max(1, spanBp / targetSpanPx);
+    const tuples = this.mapManager.getLayersManager().resolutionTuples;
+    let selectedBpResolution =
+      this.mapManager.getLayersManager().currentViewState.resolutionDesciptor.bpResolution;
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (const tuple of tuples) {
+      const widthPx = spanBp / Math.max(1, tuple.bpResolution);
+      const score = Math.abs(widthPx - targetSpanPx) + (widthPx < 32 ? 300 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        selectedBpResolution = tuple.bpResolution;
+      }
+      if (tuple.bpResolution <= targetBpPerPx) {
+        selectedBpResolution = tuple.bpResolution;
+        break;
+      }
+    }
+    const pixelResolution =
+      this.mapManager.getLayersManager().resolutionToPixelResolution.get(
+        selectedBpResolution
+      ) ?? currentResolution;
+    const midpointBp = (entry.startBp + entry.endBp) / 2;
+    const midpointPx = this.mapManager
+      .getContigDimensionHolder()
+      .getPxContainingBp(Math.max(0, Math.round(midpointBp)), selectedBpResolution);
+    view.animate({
+      center: [midpointPx, -midpointPx],
+      resolution: pixelResolution,
+      duration: 180,
+    });
+  }
+
+  public async prefetchFeatureContextAround(
+    startBp: number,
+    endBp: number,
+    options?: {
+      marginScreens?: number;
+      widthPx?: number;
+      bpResolution?: number;
+    }
+  ): Promise<void> {
+    const descriptor =
+      this.mapManager.getLayersManager().currentViewState.resolutionDesciptor;
+    const mapSize = this.mapManager.getMap().getSize() ?? [1200, 900];
+    const widthPx = Math.max(
+      96,
+      Math.round(options?.widthPx ?? Math.max(mapSize[0], mapSize[1]))
+    );
+    const bpResolution = Math.max(
+      1,
+      Math.round(options?.bpResolution ?? descriptor.bpResolution)
+    );
+    const marginScreens =
+      Number.isFinite(options?.marginScreens) && (options?.marginScreens ?? 0) >= 0
+        ? Number(options?.marginScreens)
+        : this.prefetchExtentScreens;
+    try {
+      const context =
+        await this.mapManager.networkManager.requestManager.getTrackFeatureContext({
+          unit: "BP",
+          start: Math.max(0, Math.floor(Math.min(startBp, endBp))),
+          end: Math.max(
+            Math.floor(Math.min(startBp, endBp)) + 1,
+            Math.ceil(Math.max(startBp, endBp))
+          ),
+          widthPx,
+          bpResolution,
+          marginScreens,
+        });
+      const cachedAt = Date.now();
+      const cacheRecord: TrackQueryCache = {
+        bpResolution: context.query.bpResolution,
+        prefetchStartPx: context.query.startPx,
+        prefetchEndPx: context.query.endPx,
+        fetchedAtMs: cachedAt,
+        response: context.query,
+      };
+      this.queryCache.horizontal.set(context.query.bpResolution, { ...cacheRecord });
+      this.queryCache.vertical.set(context.query.bpResolution, { ...cacheRecord });
+      this.pruneCache("horizontal");
+      this.pruneCache("vertical");
+      for (const track of context.query.tracks) {
+        this.refreshFeatureSearchCache(track, track.bins);
+      }
+      await this.render({ allowFetch: false });
+    } catch (error) {
+      console.debug("Feature context prefetch failed", error);
+    }
   }
 
   private createResizeObserver(
@@ -574,6 +803,13 @@ class LinearTrackManager {
       }));
     const tracks =
       (response.tracks ?? []).length > 0 ? response.tracks : fallbackTracks;
+    this.lastRenderedSnapshot[orientation] = {
+      tracks,
+      viewport,
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      renderedAtMs: Date.now(),
+    };
     const textPalette = this.resolveTrackTextPalette();
     if (tracks.length === 0) {
       ctx.fillStyle = textPalette.muted;
@@ -827,6 +1063,16 @@ class LinearTrackManager {
             canvas.height,
             textPalette
           );
+        } else {
+          this.drawFeatureLabels(
+            ctx,
+            orientation,
+            laneInnerStart,
+            laneInnerEnd,
+            viewport,
+            track.bins,
+            textPalette
+          );
         }
       } else {
         ctx.save();
@@ -870,8 +1116,19 @@ class LinearTrackManager {
             canvas.height,
             textPalette
           );
+        } else {
+          this.drawFeatureLabels(
+            ctx,
+            orientation,
+            laneInnerStart,
+            laneInnerEnd,
+            viewport,
+            track.bins,
+            textPalette
+          );
         }
       }
+      this.refreshFeatureSearchCache(track, track.bins);
     });
     const hasAnySignal = tracks.some((track) => track.bins.length > 0);
     const firstError = tracks.find((track) => track.error)?.error;
@@ -883,6 +1140,132 @@ class LinearTrackManager {
         : statusMessage ?? "No signal in current view",
       trackCount: tracks.length,
     });
+  }
+
+  private refreshFeatureSearchCache(
+    track: {
+      trackId: string;
+      name: string;
+      renderStyle?: string;
+    },
+    bins: TrackBinResponse[]
+  ): void {
+    if ((track.renderStyle ?? "SIGNAL").toUpperCase() !== "FEATURE") {
+      return;
+    }
+    const now = Date.now();
+    for (const bin of bins) {
+      const label = (bin.label ?? "").trim();
+      if (!label) {
+        continue;
+      }
+      const startBp = Math.min(bin.startBp, bin.endBp);
+      const endBp = Math.max(bin.startBp, bin.endBp);
+      const featureType = (bin.featureType ?? "").trim();
+      const key = `${track.trackId}:${startBp}:${endBp}:${label}:${featureType}`;
+      this.featureSearchCache.set(key, {
+        key,
+        trackId: track.trackId,
+        trackName: track.name,
+        label,
+        featureType: featureType.length > 0 ? featureType : null,
+        strand: bin.strand,
+        startBp,
+        endBp,
+        updatedAtMs: now,
+      });
+    }
+  }
+
+  private mapFeatureHitToSearchEntry(
+    hit: TrackFeatureSearchHitResponse,
+    updatedAtMs: number
+  ): FeatureSearchEntry {
+    const featureType = (hit.featureType ?? "").trim();
+    const label = hit.label?.trim() || `${hit.sourceName}:${hit.startBp}-${hit.endBp}`;
+    const startBp = Math.min(hit.startBp, hit.endBp);
+    const endBp = Math.max(hit.startBp, hit.endBp);
+    const key = `${hit.trackId}:${startBp}:${endBp}:${label}:${featureType}`;
+    return {
+      key,
+      trackId: hit.trackId,
+      trackName: hit.trackName,
+      label,
+      featureType: featureType.length > 0 ? featureType : null,
+      strand: hit.strand,
+      startBp,
+      endBp,
+      updatedAtMs,
+    };
+  }
+
+  private drawFeatureLabels(
+    ctx: CanvasRenderingContext2D,
+    orientation: Orientation,
+    laneInnerStart: number,
+    laneInnerEnd: number,
+    viewport: ViewportGeometry,
+    bins: TrackBinResponse[],
+    textPalette: TrackTextPalette
+  ): void {
+    const minFeatureSpanPx = 22;
+    const minLabelGapPx = 6;
+    const maxLabelsPerLane = 32;
+    let drawnCount = 0;
+    let lastLabelEnd = Number.NEGATIVE_INFINITY;
+    ctx.fillStyle = textPalette.primary;
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "left";
+    for (const bin of bins) {
+      if (drawnCount >= maxLabelsPerLane) {
+        break;
+      }
+      const label = (bin.label ?? "").trim();
+      if (!label) {
+        continue;
+      }
+      const interval = this.resolveBinIntervalPx(bin, viewport.bpResolution);
+      if (!interval.visible) {
+        continue;
+      }
+      if (interval.endPx <= viewport.startPx || interval.startPx >= viewport.endPx) {
+        continue;
+      }
+      const axisStart = Math.floor(viewport.pxToScreen(interval.startPx));
+      const axisEnd = Math.max(axisStart + 1, Math.ceil(viewport.pxToScreen(interval.endPx)));
+      const axisSpan = axisEnd - axisStart;
+      if (axisSpan < minFeatureSpanPx) {
+        continue;
+      }
+      if (orientation === "horizontal") {
+        const textWidth = ctx.measureText(label).width;
+        if (textWidth > axisSpan - 4) {
+          continue;
+        }
+        const drawX = axisStart + 2;
+        if (drawX < lastLabelEnd + minLabelGapPx) {
+          continue;
+        }
+        this.drawOutlinedText(ctx, label, drawX, laneInnerStart + 14, textPalette);
+        lastLabelEnd = drawX + textWidth;
+      } else {
+        const textLength = ctx.measureText(label).width;
+        if (textLength > axisSpan - 4) {
+          continue;
+        }
+        const drawY = axisStart + 2;
+        if (drawY < lastLabelEnd + minLabelGapPx) {
+          continue;
+        }
+        ctx.save();
+        ctx.translate(laneInnerStart + 10, drawY + textLength);
+        ctx.rotate(-Math.PI / 2);
+        this.drawOutlinedText(ctx, label, 0, 0, textPalette);
+        ctx.restore();
+        lastLabelEnd = drawY + textLength;
+      }
+      drawnCount += 1;
+    }
   }
 
   private getVisibleSignalMax(
@@ -1549,4 +1932,27 @@ type SignalScaleTransform = {
   logBase: number;
   display: (value: number) => number;
   normalize: (value: number) => number;
+};
+
+type FeatureSearchEntry = {
+  key: string;
+  trackId: string;
+  trackName: string;
+  label: string;
+  featureType: string | null;
+  strand: string | null;
+  startBp: number;
+  endBp: number;
+  updatedAtMs: number;
+};
+
+type FeatureHoverInfo = {
+  trackId: string;
+  trackName: string;
+  label: string | null;
+  featureType: string | null;
+  strand: string | null;
+  startBp: number;
+  endBp: number;
+  value: number;
 };

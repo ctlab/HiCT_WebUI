@@ -59,6 +59,8 @@ import {
   UpdateTrackRequest,
   RemoveTrackRequest,
   QueryTracks1DRequest,
+  SearchTrackFeaturesRequest,
+  GetTrackFeatureContextRequest,
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
   StartConversionJobRequest,
@@ -160,6 +162,14 @@ abstract class HiCTAPIRequestDTO<
         return new RemoveTrackRequestDTO(entity as RemoveTrackRequest);
       case entity instanceof QueryTracks1DRequest:
         return new QueryTracks1DRequestDTO(entity as QueryTracks1DRequest);
+      case entity instanceof SearchTrackFeaturesRequest:
+        return new SearchTrackFeaturesRequestDTO(
+          entity as SearchTrackFeaturesRequest
+        );
+      case entity instanceof GetTrackFeatureContextRequest:
+        return new GetTrackFeatureContextRequestDTO(
+          entity as GetTrackFeatureContextRequest
+        );
       case entity instanceof StartTracksPrecomputeRequest:
         return new StartTracksPrecomputeRequestDTO(entity as StartTracksPrecomputeRequest);
       case entity instanceof GetTracksPrecomputeStatusRequest:
@@ -266,6 +276,14 @@ abstract class HiCTAPIRequestDTO<
       case "/secondary/set_assembly_source":
         return new SetAssemblyInfoSourceRequestDTO(
           entity as SetAssemblyInfoSourceRequest
+        );
+      case "/tracks/search_features":
+        return new SearchTrackFeaturesRequestDTO(
+          entity as SearchTrackFeaturesRequest
+        );
+      case "/tracks/feature_context":
+        return new GetTrackFeatureContextRequestDTO(
+          entity as GetTrackFeatureContextRequest
         );
       default:
         throw new Error(
@@ -667,6 +685,49 @@ class QueryTracks1DRequestDTO extends HiCTAPIRequestDTO<QueryTracks1DRequest> {
   }
 }
 
+class SearchTrackFeaturesRequestDTO extends HiCTAPIRequestDTO<SearchTrackFeaturesRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      query: this.entity.options.query,
+      limit: this.entity.options.limit,
+      offset: this.entity.options.offset,
+      trackId: this.entity.options.trackId,
+    };
+  }
+}
+
+class GetTrackFeatureContextRequestDTO extends HiCTAPIRequestDTO<GetTrackFeatureContextRequest> {
+  toDTO(): Record<string, unknown> {
+    const dto: Record<string, unknown> = {
+      widthPx: this.entity.options.widthPx,
+      bpResolution: this.entity.options.bpResolution,
+      marginScreens: this.entity.options.marginScreens,
+    };
+    if (this.entity.options.unit) {
+      dto.unit = this.entity.options.unit;
+    }
+    if (this.entity.options.startPx !== undefined) {
+      dto.startPx = this.entity.options.startPx;
+    }
+    if (this.entity.options.endPx !== undefined) {
+      dto.endPx = this.entity.options.endPx;
+    }
+    if (this.entity.options.startBin !== undefined) {
+      dto.startBin = this.entity.options.startBin;
+    }
+    if (this.entity.options.endBin !== undefined) {
+      dto.endBin = this.entity.options.endBin;
+    }
+    if (this.entity.options.startBP !== undefined) {
+      dto.startBP = this.entity.options.startBP;
+    }
+    if (this.entity.options.endBP !== undefined) {
+      dto.endBP = this.entity.options.endBP;
+    }
+    return dto;
+  }
+}
+
 class StartTracksPrecomputeRequestDTO extends HiCTAPIRequestDTO<StartTracksPrecomputeRequest> {
   toDTO(): Record<string, unknown> {
     return {
@@ -760,6 +821,8 @@ export {
   UpdateTrackRequestDTO,
   RemoveTrackRequestDTO,
   QueryTracks1DRequestDTO,
+  SearchTrackFeaturesRequestDTO,
+  GetTrackFeatureContextRequestDTO,
   StartTracksPrecomputeRequestDTO,
   GetTracksPrecomputeStatusRequestDTO,
   ListCoolerFilesRequestDTO,

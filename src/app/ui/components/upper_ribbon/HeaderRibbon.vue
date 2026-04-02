@@ -42,9 +42,13 @@
           </button>
         </div>
         <div
-          v-if="searchResults.length > 0 && searchQuery.length >= 3"
+          v-if="(searchResults.length > 0 || searchLoadingRemote) && searchQuery.length >= 3"
           class="search-dropdown"
         >
+          <div v-if="searchLoadingRemote" class="search-loading">
+            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+            Searching genome features...
+          </div>
           <button
             v-for="(item, idx) in searchResults"
             :key="item.key"
@@ -171,7 +175,7 @@
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import NormalizationSelector from "./NormalizationSelector.vue";
-import { Ref, ref } from "vue";
+import { Ref, onBeforeUnmount, ref } from "vue";
 import { toast } from "vue-sonner";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
@@ -190,13 +194,21 @@ const searchQuery = ref("");
 const searchResults = ref<
   {
     key: string;
-    type: "Contig" | "Scaffold";
-    id: number;
+    type: "Contig" | "Scaffold" | "Feature";
+    id: number | string;
     name: string;
     originalName?: string;
+    trackName?: string;
+    featureStartBp?: number;
+    featureEndBp?: number;
+    featureType?: string;
+    strand?: string;
   }[]
 >([]);
 const selectedIndex = ref(0);
+const searchLoadingRemote = ref(false);
+let searchRequestToken = 0;
+let searchDebounceTimer: number | null = null;
 const stylesStore = useStyleStore();
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
@@ -380,12 +392,29 @@ function buildSearchResults(): void {
       });
     }
   }
+  const featureSuggestions =
+    props.mapManager.linearTrackManager.searchFeatureSuggestions(query, 30);
+  for (const feature of featureSuggestions) {
+    results.push({
+      key: `feature-${feature.key}`,
+      type: "Feature",
+      id: feature.key,
+      name: feature.label,
+      originalName: feature.featureType ?? undefined,
+      trackName: feature.trackName,
+      featureStartBp: feature.startBp,
+      featureEndBp: feature.endBp,
+      featureType: feature.featureType ?? undefined,
+      strand: feature.strand ?? undefined,
+    });
+  }
   searchResults.value = results.slice(0, 50);
   selectedIndex.value = 0;
 }
 
 function onSearchInput(): void {
   buildSearchResults();
+  scheduleRemoteSearch();
 }
 
 function selectResult(idx: number): void {
@@ -404,7 +433,7 @@ function goToSelection(): void {
     const contig =
       props.mapManager
         .getContigDimensionHolder()
-        .contigDescriptors.find((c) => c.contigId === item.id) ?? null;
+        .contigDescriptors.find((c) => c.contigId === Number(item.id)) ?? null;
     if (!contig) return;
     const view = props.mapManager.getView();
     const prefix = props.mapManager.contigDimensionHolder.prefix_sum_bp;
@@ -420,8 +449,9 @@ function goToSelection(): void {
     const res = view.getResolution() ?? 1;
     const midPx = midBp / res;
     view.animate({ center: [midPx, -midPx] });
-  } else {
-    const scaffold = props.mapManager.scaffoldHolder.getScaffoldById(item.id);
+    scheduleFeatureContextPrefetch(startBp, endBp);
+  } else if (item.type === "Scaffold") {
+    const scaffold = props.mapManager.scaffoldHolder.getScaffoldById(Number(item.id));
     const borders = scaffold.scaffoldBordersBP;
     if (!borders) {
       toast.error("Scaffold has no borders in the current assembly");
@@ -432,8 +462,137 @@ function goToSelection(): void {
     const res = view.getResolution() ?? 1;
     const midPx = midBp / res;
     view.animate({ center: [midPx, -midPx] });
+    scheduleFeatureContextPrefetch(borders.startBP, borders.endBP);
+  } else if (
+    typeof item.featureStartBp === "number" &&
+    typeof item.featureEndBp === "number"
+  ) {
+    props.mapManager.linearTrackManager.centerOnFeature({
+      key: String(item.id),
+      trackId: "",
+      trackName: item.trackName ?? "",
+      label: item.name,
+      featureType: item.featureType ?? null,
+      strand: item.strand ?? null,
+      startBp: item.featureStartBp,
+      endBp: item.featureEndBp,
+      updatedAtMs: Date.now(),
+    });
+    scheduleFeatureContextPrefetch(item.featureStartBp, item.featureEndBp);
   }
 }
+
+function scheduleRemoteSearch(): void {
+  if (!props.mapManager) {
+    searchLoadingRemote.value = false;
+    return;
+  }
+  const query = searchQuery.value.trim();
+  if (query.length < 3) {
+    if (searchDebounceTimer !== null) {
+      window.clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
+    searchRequestToken++;
+    searchLoadingRemote.value = false;
+    return;
+  }
+  if (searchDebounceTimer !== null) {
+    window.clearTimeout(searchDebounceTimer);
+  }
+  const token = ++searchRequestToken;
+  searchLoadingRemote.value = true;
+  searchDebounceTimer = window.setTimeout(() => {
+    void fetchRemoteSearchResults(query, token);
+  }, 140);
+}
+
+async function fetchRemoteSearchResults(
+  query: string,
+  token: number
+): Promise<void> {
+  try {
+    if (!props.mapManager) {
+      return;
+    }
+    const remote =
+      await props.mapManager.linearTrackManager.searchFeatureSuggestionsRemote(
+        query,
+        120
+      );
+    if (token !== searchRequestToken) {
+      return;
+    }
+    if (searchQuery.value.trim().toLowerCase() !== query.trim().toLowerCase()) {
+      return;
+    }
+    appendRemoteSearchResults(remote);
+  } catch (error) {
+    console.debug("Remote feature search failed", error);
+  } finally {
+    if (token === searchRequestToken) {
+      searchLoadingRemote.value = false;
+    }
+  }
+}
+
+function appendRemoteSearchResults(
+  remote: {
+    key: string;
+    label: string;
+    trackName: string;
+    featureType: string | null;
+    strand: string | null;
+    startBp: number;
+    endBp: number;
+  }[]
+): void {
+  if (remote.length === 0) {
+    return;
+  }
+  const merged = [...searchResults.value];
+  const seen = new Set(merged.map((item) => item.key));
+  for (const feature of remote) {
+    const key = `feature-${feature.key}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push({
+      key,
+      type: "Feature",
+      id: feature.key,
+      name: feature.label,
+      originalName: feature.featureType ?? undefined,
+      trackName: feature.trackName,
+      featureStartBp: feature.startBp,
+      featureEndBp: feature.endBp,
+      featureType: feature.featureType ?? undefined,
+      strand: feature.strand ?? undefined,
+    });
+  }
+  searchResults.value = merged.slice(0, 120);
+}
+
+function scheduleFeatureContextPrefetch(startBp: number, endBp: number): void {
+  if (!props.mapManager) {
+    return;
+  }
+  window.setTimeout(() => {
+    void props.mapManager?.linearTrackManager.prefetchFeatureContextAround(
+      startBp,
+      endBp
+    );
+  }, 220);
+}
+
+onBeforeUnmount(() => {
+  searchRequestToken++;
+  if (searchDebounceTimer !== null) {
+    window.clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+});
 
 function checkOptionsAndSnapToContigIntersection() {
   // alert("Row " + rowContigId.value + " Column " + columnContigId.value);
@@ -685,6 +844,15 @@ function onNormalizationChanged() {
 .search-result:hover,
 .search-result.active {
   background: #f1f3f5;
+}
+
+.search-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #495057;
+  padding: 6px 8px;
 }
 
 .search-type {

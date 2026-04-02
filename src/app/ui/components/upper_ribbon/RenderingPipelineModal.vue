@@ -100,34 +100,6 @@
               Apply
             </button>
           </div>
-          <div v-if="!previewMode && colorPickerVisible" class="pipeline-color-picker card shadow-sm">
-            <div class="card-body p-2">
-              <div class="small fw-semibold mb-2">Pick color</div>
-              <div class="d-flex align-items-center gap-2">
-                <input
-                  v-model="colorPickerValue"
-                  type="color"
-                  class="form-control form-control-color"
-                  aria-label="Selected color"
-                />
-                <input
-                  :value="colorPickerValue"
-                  type="text"
-                  class="form-control form-control-sm color-picker-hex-input"
-                  aria-label="Selected color hex"
-                  readonly
-                />
-              </div>
-              <div class="mt-2 d-flex justify-content-end gap-2">
-                <button type="button" class="btn btn-sm btn-outline-secondary" @click="cancelColorPicker">
-                  Cancel
-                </button>
-                <button type="button" class="btn btn-sm btn-primary" @click="applyColorPicker">
-                  Apply
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -278,15 +250,12 @@ const graphCanvasRef = ref<HTMLCanvasElement | null>(null);
 const importInputRef = ref<HTMLInputElement | null>(null);
 const trackOptions = ref<TrackSummaryResponse[]>([]);
 const pendingVisualizationSync = ref(false);
-const colorPickerVisible = ref(false);
-const colorPickerValue = ref("#000000");
 const previewSnapshot = ref<{
   enabled: boolean;
   swapUpperLower: boolean;
   upperExpression: PipelineExpression;
   lowerExpression: PipelineExpression;
 } | null>(null);
-let colorPickerSelectHandler: ((hexColor: string) => void) | null = null;
 
 let graph: LGraph | null = null;
 let graphCanvas: LGraphCanvas | null = null;
@@ -294,6 +263,7 @@ let resizeObserver: ResizeObserver | null = null;
 let upperSinkId: number | null = null;
 let lowerSinkId: number | null = null;
 let nodeTypesRegistered = false;
+let activeNativeColorInput: HTMLInputElement | null = null;
 
 let originalGetNodeTypesCategories: ((filter?: string) => string[]) | null = null;
 let originalGetNodeTypesInCategory:
@@ -337,36 +307,67 @@ const sanitizeColor = (value: unknown, fallback: string): string => {
   return fallback;
 };
 
-const withPreservedAlpha = (rgbHex: string, previousColor: unknown): string => {
-  const sanitizedRgb = sanitizeColor(rgbHex, "#000000");
-  const alpha = /^#[0-9a-fA-F]{8}$/.test(String(previousColor ?? ""))
-    ? String(previousColor).slice(7, 9)
-    : "ff";
-  return `${sanitizedRgb.toLowerCase()}${alpha.toLowerCase()}`;
+const normalizeHexaColor = (value: unknown, fallback: string): string => {
+  const sanitized = sanitizeColor(value, fallback).toLowerCase();
+  if (/^#[0-9a-f]{8}$/.test(sanitized)) {
+    return sanitized;
+  }
+  if (/^#[0-9a-f]{6}$/.test(sanitized)) {
+    return `${sanitized}ff`;
+  }
+  return sanitizeColor(fallback, "#000000ff").toLowerCase();
+};
+
+const cleanupColorPicker = (): void => {
+  if (activeNativeColorInput) {
+    try {
+      activeNativeColorInput.remove();
+    } catch (error) {
+      console.debug("Failed to destroy active color picker", error);
+    } finally {
+      activeNativeColorInput = null;
+    }
+  }
 };
 
 const openColorPickerInput = (
   initialColor: string,
-  onSelected: (hexColor: string) => void
+  onSelected: (hexaColor: string) => void
 ): void => {
-  colorPickerValue.value = sanitizeColor(initialColor, "#000000").slice(0, 7).toLowerCase();
-  colorPickerSelectHandler = onSelected;
-  colorPickerVisible.value = true;
-};
+  cleanupColorPicker();
+  const nativeInput = document.createElement("input");
+  nativeInput.type = "color";
+  nativeInput.value = normalizeHexaColor(initialColor, "#000000ff").slice(0, 7);
+  nativeInput.style.position = "fixed";
+  nativeInput.style.left = "-9999px";
+  nativeInput.style.top = "-9999px";
+  nativeInput.style.opacity = "0";
+  nativeInput.style.pointerEvents = "none";
+  document.body.appendChild(nativeInput);
+  activeNativeColorInput = nativeInput;
 
-const cancelColorPicker = (): void => {
-  colorPickerVisible.value = false;
-  colorPickerSelectHandler = null;
-};
-
-const applyColorPicker = (): void => {
-  const selected = sanitizeColor(colorPickerValue.value, "#000000").slice(0, 7).toLowerCase();
-  colorPickerValue.value = selected;
-  if (colorPickerSelectHandler) {
-    colorPickerSelectHandler(selected);
+  let changed = false;
+  nativeInput.addEventListener("input", () => {
+    changed = true;
+    onSelected(normalizeHexaColor(nativeInput.value, initialColor));
     graphCanvas?.draw(true, true);
-  }
-  cancelColorPicker();
+  });
+  nativeInput.addEventListener("change", () => {
+    changed = true;
+    onSelected(normalizeHexaColor(nativeInput.value, initialColor));
+    graphCanvas?.draw(true, true);
+  });
+  nativeInput.addEventListener(
+    "blur",
+    () => {
+      if (!changed) {
+        graphCanvas?.draw(true, true);
+      }
+      cleanupColorPicker();
+    },
+    { once: true }
+  );
+  nativeInput.click();
 };
 
 const toSourceName = (value: unknown): SourceName =>
@@ -807,9 +808,9 @@ const ensureNodeTypesRegistered = (): void => {
       this.addWidget("button", "pick start", "", () => {
         openColorPickerInput(
           sanitizeColor(this.properties.startColor, "#ffffff00"),
-          (hexColor) => {
-            this.properties.startColor = withPreservedAlpha(
-              hexColor,
+          (hexaColor) => {
+            this.properties.startColor = normalizeHexaColor(
+              hexaColor,
               this.properties.startColor
             );
             graphCanvas?.draw(true, true);
@@ -819,9 +820,9 @@ const ensureNodeTypesRegistered = (): void => {
       this.addWidget("button", "pick end", "", () => {
         openColorPickerInput(
           sanitizeColor(this.properties.endColor, "#006000ff"),
-          (hexColor) => {
-            this.properties.endColor = withPreservedAlpha(
-              hexColor,
+          (hexaColor) => {
+            this.properties.endColor = normalizeHexaColor(
+              hexaColor,
               this.properties.endColor
             );
             graphCanvas?.draw(true, true);
@@ -1820,6 +1821,7 @@ const persistConfig = async (
 };
 
 const destroyGraphRuntime = (): void => {
+  cleanupColorPicker();
   cleanupContextMenus();
   resizeObserver?.disconnect();
   resizeObserver = null;
@@ -1851,6 +1853,7 @@ const restoreGraphRuntime = async (): Promise<void> => {
 
 const dismissModal = async (): Promise<void> => {
   previewMode.value = false;
+  cleanupColorPicker();
   cleanupContextMenus();
   if (!loading.value && !saving.value) {
     try {
@@ -1874,6 +1877,7 @@ const dismissModal = async (): Promise<void> => {
 };
 
 const togglePreviewMode = (): void => {
+  cleanupColorPicker();
   cleanupContextMenus();
   if (!previewMode.value) {
     if (graph) {
@@ -1985,8 +1989,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   previewMode.value = false;
-  colorPickerVisible.value = false;
-  colorPickerSelectHandler = null;
+  cleanupColorPicker();
   window.removeEventListener("resize", fitGraphCanvas);
   window.removeEventListener(
     VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
@@ -2067,18 +2070,6 @@ onBeforeUnmount(() => {
 
 .pipeline-root :deep(.litegraph) {
   background: transparent;
-}
-
-.pipeline-color-picker {
-  position: absolute;
-  top: 60px;
-  right: 12px;
-  width: 224px;
-  z-index: 9;
-}
-
-.color-picker-hex-input {
-  text-transform: lowercase;
 }
 
 :global(.litecontextmenu) {

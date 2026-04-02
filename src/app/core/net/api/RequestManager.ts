@@ -39,6 +39,8 @@ import {
   TracksPrecomputeStatusResponseDTO,
   TrackCompatibilityReportResponseDTO,
   FileEntryResponseDTO,
+  TrackFeatureContextResponseDTO,
+  TrackFeatureSearchResponseDTO,
   TrackQueryResponseDTO,
   TrackSummaryResponseDTO,
   TilePOSTResponseDTO,
@@ -94,6 +96,8 @@ import {
   UpdateTrackRequest,
   RemoveTrackRequest,
   QueryTracks1DRequest,
+  SearchTrackFeaturesRequest,
+  GetTrackFeatureContextRequest,
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
   GetWorkerDiagnosticsRequest,
@@ -108,6 +112,8 @@ import {
   FileEntryResponse,
   NameMappingResponse,
   TrackCompatibilityReportResponse,
+  TrackFeatureContextResponse,
+  TrackFeatureSearchResponse,
   TracksPrecomputeStatusResponse,
   TrackQueryResponse,
   TrackSummaryResponse,
@@ -488,6 +494,64 @@ class RequestManager {
     return this.sendRequest(new QueryTracks1DRequest(payload))
       .then((response) => response.data)
       .then((json) => new TrackQueryResponseDTO(json).toEntity());
+  }
+
+  public async searchTrackFeatures(options: {
+    query: string;
+    limit?: number;
+    offset?: number;
+    trackId?: string;
+  }): Promise<TrackFeatureSearchResponse> {
+    return this.sendRequest(
+      new SearchTrackFeaturesRequest({
+        query: options.query,
+        limit: options.limit,
+        offset: options.offset,
+        trackId: options.trackId,
+      })
+    )
+      .then((response) => response.data)
+      .then((json) => new TrackFeatureSearchResponseDTO(json).toEntity());
+  }
+
+  public async getTrackFeatureContext(options: {
+    unit: "PIXELS" | "BINS" | "BP";
+    start: number;
+    end: number;
+    widthPx: number;
+    bpResolution: number;
+    marginScreens?: number;
+  }): Promise<TrackFeatureContextResponse> {
+    const payload: {
+      unit: "PIXELS" | "BINS" | "BP";
+      widthPx: number;
+      bpResolution: number;
+      marginScreens?: number;
+      startPx?: number;
+      endPx?: number;
+      startBin?: number;
+      endBin?: number;
+      startBP?: number;
+      endBP?: number;
+    } = {
+      unit: options.unit,
+      widthPx: options.widthPx,
+      bpResolution: options.bpResolution,
+      marginScreens: options.marginScreens,
+    };
+    if (options.unit === "PIXELS") {
+      payload.startPx = options.start;
+      payload.endPx = options.end;
+    } else if (options.unit === "BINS") {
+      payload.startBin = options.start;
+      payload.endBin = options.end;
+    } else {
+      payload.startBP = options.start;
+      payload.endBP = options.end;
+    }
+    return this.sendRequest(new GetTrackFeatureContextRequest(payload))
+      .then((response) => response.data)
+      .then((json) => new TrackFeatureContextResponseDTO(json).toEntity());
   }
 
   public async startTracksPrecompute(

@@ -20,7 +20,11 @@
  -->
 
 <template>
-  <div :class="iwsClass" :style="iwcStyle">
+  <div
+    ref="workspaceRoot"
+    :class="iwsClass"
+    :style="iwcStyle"
+  >
     <div class="interactive-workspace_corner_track">
       <div ref="cornerMiniMapTarget" class="interactive-workspace_corner_minimap"></div>
     </div>
@@ -38,6 +42,18 @@
     <div class="interactive-workspace_content">
       <ContactMap :map-manager="props.mapManager"></ContactMap>
     </div>
+    <div
+      v-if="visibleTrackCount > 0"
+      class="interactive-workspace_resize_handle interactive-workspace_resize_handle_horizontal"
+      @mousedown.prevent="startTrackPanelResize('horizontal', $event)"
+      title="Drag to resize horizontal tracks panel"
+    ></div>
+    <div
+      v-if="visibleTrackCount > 0"
+      class="interactive-workspace_resize_handle interactive-workspace_resize_handle_vertical"
+      @mousedown.prevent="startTrackPanelResize('vertical', $event)"
+      title="Drag to resize vertical tracks panel"
+    ></div>
   </div>
 </template>
 
@@ -74,10 +90,20 @@ const props = defineProps<{
   mapManager: ContactMapManager | undefined;
   filename?: string;
 }>();
+const workspaceRoot = ref<HTMLElement | null>(null);
 const cornerMiniMapTarget = ref<HTMLElement | null>(null);
 
 const visibleTrackCount = ref(0);
 let unsubscribeTrackList: (() => void) | undefined;
+const horizontalTrackPanelSizePx = ref(140);
+const verticalTrackPanelSizePx = ref(140);
+let trackPanelResizeState:
+  | {
+      orientation: "horizontal" | "vertical";
+      startPointer: number;
+      startSize: number;
+    }
+  | null = null;
 
 const bindTrackVisibility = () => {
   unsubscribeTrackList?.();
@@ -120,6 +146,16 @@ watch(
 );
 
 watch(visibleTrackCount, async () => {
+  if (visibleTrackCount.value <= 0) {
+    trackPanelResizeState = null;
+  } else {
+    if (horizontalTrackPanelSizePx.value < 60) {
+      horizontalTrackPanelSizePx.value = 140;
+    }
+    if (verticalTrackPanelSizePx.value < 60) {
+      verticalTrackPanelSizePx.value = 140;
+    }
+  }
   await nextTick();
   bindCornerMinimap();
   window.requestAnimationFrame(() => {
@@ -128,12 +164,80 @@ watch(visibleTrackCount, async () => {
 });
 
 onBeforeUnmount(() => {
+  document.body.style.removeProperty("cursor");
+  window.removeEventListener("mousemove", onTrackPanelResizeMove);
+  window.removeEventListener("mouseup", stopTrackPanelResize);
   unsubscribeTrackList?.();
   props.mapManager?.clearOverviewMapTarget();
 });
 
-const trackPanelCssSize = computed(() =>
-  visibleTrackCount.value > 0 ? "140px" : "0px"
+const clampTrackPanelSize = (value: number): number => {
+  const root = workspaceRoot.value;
+  if (!root) {
+    return Math.max(60, Math.min(380, Math.round(value)));
+  }
+  const maxHorizontal = Math.max(60, Math.floor(root.clientHeight * 0.45));
+  const maxVertical = Math.max(60, Math.floor(root.clientWidth * 0.45));
+  const hardMax = Math.max(60, Math.min(maxHorizontal, maxVertical, 420));
+  return Math.max(60, Math.min(hardMax, Math.round(value)));
+};
+
+const onTrackPanelResizeMove = (event: MouseEvent): void => {
+  if (!trackPanelResizeState) {
+    return;
+  }
+  if (trackPanelResizeState.orientation === "horizontal") {
+    const delta = event.clientY - trackPanelResizeState.startPointer;
+    horizontalTrackPanelSizePx.value = clampTrackPanelSize(
+      trackPanelResizeState.startSize + delta
+    );
+    document.body.style.cursor = "row-resize";
+  } else {
+    const delta = event.clientX - trackPanelResizeState.startPointer;
+    verticalTrackPanelSizePx.value = clampTrackPanelSize(
+      trackPanelResizeState.startSize + delta
+    );
+    document.body.style.cursor = "col-resize";
+  }
+};
+
+const stopTrackPanelResize = (): void => {
+  if (!trackPanelResizeState) {
+    return;
+  }
+  trackPanelResizeState = null;
+  document.body.style.removeProperty("cursor");
+  window.removeEventListener("mousemove", onTrackPanelResizeMove);
+  window.removeEventListener("mouseup", stopTrackPanelResize);
+};
+
+const startTrackPanelResize = (
+  orientation: "horizontal" | "vertical",
+  event: MouseEvent
+): void => {
+  if (visibleTrackCount.value <= 0) {
+    return;
+  }
+  trackPanelResizeState = {
+    orientation,
+    startPointer:
+      orientation === "horizontal" ? event.clientY : event.clientX,
+    startSize:
+      orientation === "horizontal"
+        ? horizontalTrackPanelSizePx.value
+        : verticalTrackPanelSizePx.value,
+  };
+  document.body.style.cursor =
+    orientation === "horizontal" ? "row-resize" : "col-resize";
+  window.addEventListener("mousemove", onTrackPanelResizeMove);
+  window.addEventListener("mouseup", stopTrackPanelResize);
+};
+
+const horizontalTrackPanelCssSize = computed(() =>
+  visibleTrackCount.value > 0 ? `${horizontalTrackPanelSizePx.value}px` : "0px"
+);
+const verticalTrackPanelCssSize = computed(() =>
+  visibleTrackCount.value > 0 ? `${verticalTrackPanelSizePx.value}px` : "0px"
 );
 const rulerPanelCssSize = "44px";
 </script>
@@ -141,9 +245,11 @@ const rulerPanelCssSize = "44px";
 <style scoped>
 .interactive-workspace {
   width: 100%;
+  height: 100%;
+  position: relative;
   display: grid;
-  grid-template-rows: v-bind(trackPanelCssSize) v-bind(rulerPanelCssSize) 1fr;
-  grid-template-columns: v-bind(trackPanelCssSize) v-bind(rulerPanelCssSize) 1fr;
+  grid-template-rows: v-bind(horizontalTrackPanelCssSize) v-bind(rulerPanelCssSize) 1fr;
+  grid-template-columns: v-bind(verticalTrackPanelCssSize) v-bind(rulerPanelCssSize) 1fr;
   grid-template-areas:
     "corner-track corner-tracks-ruler horizontal-tracks"
     "corner-ruler-tracks corner-ruler horizontal-ruler"
@@ -234,5 +340,29 @@ const rulerPanelCssSize = "44px";
 
 .interactive-workspace_content {
   grid-area: content;
+}
+
+.interactive-workspace_resize_handle {
+  position: absolute;
+  z-index: 26;
+  background: transparent;
+}
+
+.interactive-workspace_resize_handle_horizontal {
+  left: 0;
+  right: 0;
+  top: v-bind(horizontalTrackPanelCssSize);
+  height: 8px;
+  transform: translateY(-4px);
+  cursor: row-resize;
+}
+
+.interactive-workspace_resize_handle_vertical {
+  top: 0;
+  bottom: 0;
+  left: v-bind(verticalTrackPanelCssSize);
+  width: 8px;
+  transform: translateX(-4px);
+  cursor: col-resize;
 }
 </style>

@@ -470,6 +470,38 @@ class QueryTracks1DRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class SearchTrackFeaturesRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/search_features";
+
+  public constructor(
+    public readonly options: {
+      readonly query: string;
+      readonly limit?: number;
+      readonly offset?: number;
+      readonly trackId?: string;
+    }
+  ) {}
+}
+
+class GetTrackFeatureContextRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/feature_context";
+
+  public constructor(
+    public readonly options: {
+      readonly startPx?: number;
+      readonly endPx?: number;
+      readonly startBin?: number;
+      readonly endBin?: number;
+      readonly startBP?: number;
+      readonly endBP?: number;
+      readonly unit?: "PIXELS" | "BINS" | "BP";
+      readonly widthPx: number;
+      readonly bpResolution: number;
+      readonly marginScreens?: number;
+    }
+  ) {}
+}
+
 class StartTracksPrecomputeRequest implements HiCTAPIRequest {
   requestPath = "/tracks/precompute/start";
 
@@ -549,6 +581,8 @@ export {
   UpdateTrackRequest,
   RemoveTrackRequest,
   QueryTracks1DRequest,
+  SearchTrackFeaturesRequest,
+  GetTrackFeatureContextRequest,
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
   GetWorkerDiagnosticsRequest,

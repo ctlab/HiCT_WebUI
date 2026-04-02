@@ -31,6 +31,9 @@ import {
   TrackPrecomputeTrackStatusResponse,
   TracksPrecomputeStatusResponse,
   TrackBinResponse,
+  TrackFeatureContextResponse,
+  TrackFeatureSearchHitResponse,
+  TrackFeatureSearchResponse,
   TrackQueryResponse,
   TrackRenderResponse,
   TrackSummaryResponse,
@@ -190,6 +193,52 @@ class TrackQueryResponseDTO extends InboundDTO<TrackQueryResponse> {
       ((this.json["tracks"] as Record<string, unknown>[]) ?? []).map((track) =>
         new TrackRenderResponseDTO(track).toEntity()
       )
+    );
+  }
+}
+
+class TrackFeatureSearchHitResponseDTO extends InboundDTO<TrackFeatureSearchHitResponse> {
+  public toEntity(): TrackFeatureSearchHitResponse {
+    return new TrackFeatureSearchHitResponse(
+      (this.json["trackId"] as string) ?? "",
+      (this.json["trackName"] as string) ?? "",
+      (this.json["sourceName"] as string) ?? "",
+      (this.json["label"] as string) ?? "",
+      (this.json["featureType"] as string) ?? null,
+      (this.json["strand"] as string) ?? null,
+      (this.json["startBp"] as number) ?? 0,
+      (this.json["endBp"] as number) ?? 0
+    );
+  }
+}
+
+class TrackFeatureSearchResponseDTO extends InboundDTO<TrackFeatureSearchResponse> {
+  public toEntity(): TrackFeatureSearchResponse {
+    return new TrackFeatureSearchResponse(
+      (this.json["query"] as string) ?? "",
+      (this.json["limit"] as number) ?? 0,
+      (this.json["offset"] as number) ?? 0,
+      Boolean(this.json["hasMore"] ?? false),
+      ((this.json["hits"] as Record<string, unknown>[]) ?? []).map((item) =>
+        new TrackFeatureSearchHitResponseDTO(item).toEntity()
+      )
+    );
+  }
+}
+
+class TrackFeatureContextResponseDTO extends InboundDTO<TrackFeatureContextResponse> {
+  public toEntity(): TrackFeatureContextResponse {
+    return new TrackFeatureContextResponse(
+      (this.json["startBp"] as number) ?? 0,
+      (this.json["endBp"] as number) ?? 1,
+      (this.json["contextStartBp"] as number) ?? 0,
+      (this.json["contextEndBp"] as number) ?? 1,
+      (this.json["marginScreens"] as number) ?? 1,
+      (this.json["contextWidthPx"] as number) ?? 0,
+      (this.json["bpResolution"] as number) ?? 1,
+      new TrackQueryResponseDTO(
+        (this.json["query"] as Record<string, unknown>) ?? {}
+      ).toEntity()
     );
   }
 }
@@ -359,6 +408,8 @@ export {
   NameMappingResponseDTO,
   TrackSummaryResponseDTO,
   TrackQueryResponseDTO,
+  TrackFeatureSearchResponseDTO,
+  TrackFeatureContextResponseDTO,
   TracksPrecomputeStatusResponseDTO,
   TrackCompatibilityReportResponseDTO,
   FileEntryResponseDTO,

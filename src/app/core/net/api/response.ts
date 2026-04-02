@@ -130,6 +130,42 @@ class TrackQueryResponse {
   ) {}
 }
 
+class TrackFeatureSearchHitResponse {
+  public constructor(
+    public readonly trackId: string,
+    public readonly trackName: string,
+    public readonly sourceName: string,
+    public readonly label: string,
+    public readonly featureType: string | null,
+    public readonly strand: string | null,
+    public readonly startBp: number,
+    public readonly endBp: number
+  ) {}
+}
+
+class TrackFeatureSearchResponse {
+  public constructor(
+    public readonly query: string,
+    public readonly limit: number,
+    public readonly offset: number,
+    public readonly hasMore: boolean,
+    public readonly hits: TrackFeatureSearchHitResponse[]
+  ) {}
+}
+
+class TrackFeatureContextResponse {
+  public constructor(
+    public readonly startBp: number,
+    public readonly endBp: number,
+    public readonly contextStartBp: number,
+    public readonly contextEndBp: number,
+    public readonly marginScreens: number,
+    public readonly contextWidthPx: number,
+    public readonly bpResolution: number,
+    public readonly query: TrackQueryResponse
+  ) {}
+}
+
 class TrackPrecomputeTrackStatusResponse {
   public constructor(
     public readonly trackId: string,
@@ -259,6 +295,9 @@ export {
   TrackBinResponse,
   TrackRenderResponse,
   TrackQueryResponse,
+  TrackFeatureSearchHitResponse,
+  TrackFeatureSearchResponse,
+  TrackFeatureContextResponse,
   TrackPrecomputeTrackStatusResponse,
   TracksPrecomputeStatusResponse,
   TrackCompatibilityReportResponse,
