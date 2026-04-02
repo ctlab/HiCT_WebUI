@@ -101,6 +101,11 @@
                   >Rendering pipeline...</a
                 >
               </li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onOpenApiDocs"
+                  >API docs...</a
+                >
+              </li>
             </ul>
           </li>
           <!-- Bookmarks -->
@@ -438,6 +443,11 @@ function onOpenRenderingPipeline() {
 
 function onOpenWorkerDiagnostics() {
   workerDiagnosticsOpen.value = true;
+}
+
+function onOpenApiDocs(): void {
+  const base = props.networkManager.host.replace(/\/+$/, "");
+  window.open(`${base}/api/v1/`, "_blank", "noopener,noreferrer");
 }
 
 function onLoadAGP() {
