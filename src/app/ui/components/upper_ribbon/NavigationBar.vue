@@ -109,11 +109,11 @@
             </ul>
           </li>
           <!-- Bookmarks -->
-          <li class="nav-item">
+          <!-- <li class="nav-item">
             <a aria-current="page" class="nav-link active" href="#"
               >Bookmarks</a
             >
-          </li>
+          </li> -->
           <!-- Assembly -->
           <li class="nav-item dropdown">
             <a
@@ -197,6 +197,17 @@
                 />
                 <label class="form-check-label" for="toggle-custom-zoomslider">
                   Use custom ZoomSlider
+                </label>
+              </li>
+              <li class="form-check mt-2">
+                <input
+                  id="toggle-binary-tiles"
+                  class="form-check-input"
+                  type="checkbox"
+                  v-model="binaryTileTransportEnabled"
+                />
+                <label class="form-check-label" for="toggle-binary-tiles">
+                  Render tiles from binary signal (experimental)
                 </label>
               </li>
               <li><hr class="dropdown-divider" /></li>
@@ -427,7 +438,8 @@ const errorToastStore = useErrorToastStore();
 const uiSettingsStore = useUiSettingsStore();
 const { requestErrorToastsEnabled, webuiErrorToastsEnabled } =
   storeToRefs(errorToastStore);
-const { customZoomSliderEnabled } = storeToRefs(uiSettingsStore);
+const { customZoomSliderEnabled, binaryTileTransportEnabled } =
+  storeToRefs(uiSettingsStore);
 
 function onOpenFile() {
   openingFile.value = true;
@@ -653,6 +665,13 @@ watch(
     if (message) {
       toast.error(message);
     }
+  }
+);
+
+watch(
+  () => binaryTileTransportEnabled.value,
+  () => {
+    props.mapManager?.reloadTiles();
   }
 );
 

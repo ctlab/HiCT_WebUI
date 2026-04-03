@@ -932,8 +932,12 @@ class LinearTrackManager {
           ? this.getVisibleSignalMax(track.bins, viewport, bpResolution)
           : Math.max(track.maxValue, 0);
       const scaleTransform = this.buildScaleTransform(maxValue, useLogScale, logBase);
+      const binsToRender =
+        renderStyle === "FEATURE"
+          ? this.sortFeatureBinsForDraw(track.bins)
+          : track.bins;
       ctx.fillStyle = track.color ?? "#4e79a7";
-      for (const bin of track.bins) {
+      for (const bin of binsToRender) {
         const interval = this.resolveBinIntervalPx(bin, bpResolution);
         if (!interval.visible || interval.endPx <= viewport.startPx || interval.startPx >= viewport.endPx) {
           continue;
@@ -1568,6 +1572,68 @@ class LinearTrackManager {
     }
     ctx.closePath();
     ctx.fill();
+  }
+
+  private sortFeatureBinsForDraw(bins: TrackBinResponse[]): TrackBinResponse[] {
+    if (bins.length <= 1) {
+      return bins;
+    }
+    return [...bins].sort((left, right) => {
+      const depthDiff =
+        this.resolveFeatureHierarchyDepth(left.featureType) -
+        this.resolveFeatureHierarchyDepth(right.featureType);
+      if (depthDiff !== 0) {
+        return depthDiff;
+      }
+      const leftSpan = Math.max(1, left.endBp - left.startBp);
+      const rightSpan = Math.max(1, right.endBp - right.startBp);
+      if (leftSpan !== rightSpan) {
+        return rightSpan - leftSpan;
+      }
+      if (left.startBp !== right.startBp) {
+        return left.startBp - right.startBp;
+      }
+      return left.endBp - right.endBp;
+    });
+  }
+
+  private resolveFeatureHierarchyDepth(featureType: string | null): number {
+    const normalized = (featureType ?? "").trim().toLowerCase();
+    if (!normalized) {
+      return 1;
+    }
+    if (normalized === "gene" || normalized === "pseudogene") {
+      return 0;
+    }
+    if (
+      normalized === "transcript" ||
+      normalized === "mrna" ||
+      normalized === "ncrna" ||
+      normalized === "trna" ||
+      normalized === "rrna" ||
+      normalized === "snrna" ||
+      normalized === "snorna" ||
+      normalized === "lncrna" ||
+      normalized === "mirna" ||
+      normalized === "pirna" ||
+      normalized === "guide_rna" ||
+      normalized === "primary_transcript" ||
+      normalized === "pseudogenic_transcript"
+    ) {
+      return 1;
+    }
+    if (
+      normalized === "exon" ||
+      normalized === "cds" ||
+      normalized === "utr" ||
+      normalized === "five_prime_utr" ||
+      normalized === "three_prime_utr" ||
+      normalized === "start_codon" ||
+      normalized === "stop_codon"
+    ) {
+      return 2;
+    }
+    return 1;
   }
 
   private resolveFeatureBlocksIntervals(
