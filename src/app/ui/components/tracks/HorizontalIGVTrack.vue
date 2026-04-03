@@ -72,6 +72,7 @@ let unsubscribeRenderState: (() => void) | undefined;
 let draggingPointerId: number | null = null;
 let dragStartClientX = 0;
 let dragCenterX = 0;
+let pointerMoved = false;
 
 const featureTooltipVisible = ref(false);
 const featureTooltipTitle = ref("");
@@ -187,6 +188,7 @@ const onPointerDown = (event: PointerEvent): void => {
   draggingPointerId = event.pointerId;
   dragStartClientX = event.clientX;
   dragCenterX = center[0];
+  pointerMoved = false;
   hideFeatureTooltip();
   trackHost.value?.setPointerCapture(event.pointerId);
   event.preventDefault();
@@ -203,6 +205,12 @@ const onPointerMove = (event: PointerEvent): void => {
     return;
   }
   const dx = event.clientX - dragStartClientX;
+  if (Math.abs(dx) > 2) {
+    pointerMoved = true;
+  }
+  if (!pointerMoved) {
+    return;
+  }
   view.setCenter([dragCenterX - dx * resolution, center[1]]);
   event.preventDefault();
 };
@@ -211,7 +219,18 @@ const stopPointerDrag = (event: PointerEvent): void => {
   if (draggingPointerId !== event.pointerId) {
     return;
   }
+  if (!pointerMoved && props.mapManager && trackHost.value) {
+    const rect = trackHost.value.getBoundingClientRect();
+    const axisOffsetPx = event.clientX - rect.left;
+    const crossOffsetPx = event.clientY - rect.top;
+    props.mapManager.linearTrackManager.toggleFeatureSelectionAt(
+      "horizontal",
+      axisOffsetPx,
+      crossOffsetPx
+    );
+  }
   draggingPointerId = null;
+  pointerMoved = false;
   trackHost.value?.releasePointerCapture(event.pointerId);
 };
 

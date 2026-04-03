@@ -199,7 +199,7 @@
               <div class="tracks-list">
                 <div
                   class="track-row d-flex align-items-center gap-2"
-                  v-for="track in tracks"
+                  v-for="(track, trackIndex) in tracks"
                   :key="track.trackId"
                 >
                   <input
@@ -271,6 +271,22 @@
                     <option value="READ_DENSITY">density</option>
                   </select>
                   <small class="text-muted">{{ formatFeatureCount(track.featureCount) }}</small>
+                  <button
+                    class="btn btn-sm btn-outline-secondary"
+                    :disabled="trackIndex === 0"
+                    title="Move up"
+                    @click="onMoveTrack(track.trackId, trackIndex - 1)"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    class="btn btn-sm btn-outline-secondary"
+                    :disabled="trackIndex >= tracks.length - 1"
+                    title="Move down"
+                    @click="onMoveTrack(track.trackId, trackIndex + 1)"
+                  >
+                    ↓
+                  </button>
                   <button class="btn btn-sm btn-outline-danger ms-auto" @click="onRemove(track.trackId)">
                     Remove
                   </button>
@@ -818,6 +834,18 @@ const onRemove = async (trackId: string) => {
   }
   try {
     await props.mapManager.linearTrackManager.removeTrack(trackId);
+    await refreshTracks();
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
+const onMoveTrack = async (trackId: string, targetIndex: number) => {
+  if (!props.mapManager) {
+    return;
+  }
+  try {
+    await props.mapManager.linearTrackManager.reorderTrack(trackId, targetIndex);
     await refreshTracks();
   } catch (err) {
     toast.error(String(err));

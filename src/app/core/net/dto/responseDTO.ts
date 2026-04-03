@@ -30,6 +30,7 @@ import {
   TrackCompatibilityReportResponse,
   TrackPrecomputeTrackStatusResponse,
   TracksPrecomputeStatusResponse,
+  TrackBinBlockResponse,
   TrackBinResponse,
   TrackFeatureContextResponse,
   TrackFeatureSearchHitResponse,
@@ -159,7 +160,22 @@ class TrackBinResponseDTO extends InboundDTO<TrackBinResponse> {
       (this.json["thickEndBp"] as number) ?? null,
       (this.json["thickStartPx"] as number) ?? null,
       (this.json["thickEndPx"] as number) ?? null,
-      (this.json["featureType"] as string) ?? null
+      (this.json["featureType"] as string) ?? null,
+      ((this.json["blocks"] as Record<string, unknown>[]) ?? []).map(
+        (block) => new TrackBinBlockResponseDTO(block).toEntity()
+      )
+    );
+  }
+}
+
+class TrackBinBlockResponseDTO extends InboundDTO<TrackBinBlockResponse> {
+  public toEntity(): TrackBinBlockResponse {
+    return new TrackBinBlockResponse(
+      (this.json["startBp"] as number) ?? 0,
+      (this.json["endBp"] as number) ?? 0,
+      (this.json["startPx"] as number) ?? 0,
+      (this.json["endPx"] as number) ?? 0,
+      Boolean(this.json["coding"] ?? false)
     );
   }
 }

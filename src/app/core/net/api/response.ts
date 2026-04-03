@@ -87,6 +87,16 @@ class TrackSummaryResponse {
   ) {}
 }
 
+class TrackBinBlockResponse {
+  public constructor(
+    public readonly startBp: number,
+    public readonly endBp: number,
+    public readonly startPx: number,
+    public readonly endPx: number,
+    public readonly coding: boolean
+  ) {}
+}
+
 class TrackBinResponse {
   public constructor(
     public readonly startBp: number,
@@ -101,7 +111,8 @@ class TrackBinResponse {
     public readonly thickEndBp: number | null,
     public readonly thickStartPx: number | null,
     public readonly thickEndPx: number | null,
-    public readonly featureType: string | null
+    public readonly featureType: string | null,
+    public readonly blocks: TrackBinBlockResponse[]
   ) {}
 }
 
@@ -292,6 +303,7 @@ export {
   ConversionJobResponse,
   NameMappingResponse,
   TrackSummaryResponse,
+  TrackBinBlockResponse,
   TrackBinResponse,
   TrackRenderResponse,
   TrackQueryResponse,

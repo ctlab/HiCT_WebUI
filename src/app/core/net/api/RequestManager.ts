@@ -95,6 +95,7 @@ import {
   ListTracksRequest,
   UpdateTrackRequest,
   RemoveTrackRequest,
+  ReorderTrackRequest,
   QueryTracks1DRequest,
   SearchTrackFeaturesRequest,
   GetTrackFeatureContextRequest,
@@ -438,6 +439,17 @@ class RequestManager {
 
   public async removeTrack(trackId: string): Promise<void> {
     await this.sendRequest(new RemoveTrackRequest({ trackId }));
+  }
+
+  public async reorderTrack(
+    trackId: string,
+    targetIndex: number
+  ): Promise<TrackSummaryResponse[]> {
+    return this.sendRequest(new ReorderTrackRequest({ trackId, targetIndex }))
+      .then((response) => response.data as Record<string, unknown>[])
+      .then((items) =>
+        items.map((item) => new TrackSummaryResponseDTO(item).toEntity())
+      );
   }
 
   public async queryTracks1D(

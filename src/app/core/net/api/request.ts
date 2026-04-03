@@ -452,6 +452,17 @@ class RemoveTrackRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class ReorderTrackRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/reorder";
+
+  public constructor(
+    public readonly options: {
+      readonly trackId: string;
+      readonly targetIndex: number;
+    }
+  ) {}
+}
+
 class QueryTracks1DRequest implements HiCTAPIRequest {
   requestPath = "/tracks/query_1d";
 
@@ -580,6 +591,7 @@ export {
   ListTracksRequest,
   UpdateTrackRequest,
   RemoveTrackRequest,
+  ReorderTrackRequest,
   QueryTracks1DRequest,
   SearchTrackFeaturesRequest,
   GetTrackFeatureContextRequest,

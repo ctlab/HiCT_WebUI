@@ -198,6 +198,7 @@ const searchResults = ref<
     id: number | string;
     name: string;
     originalName?: string;
+    trackId?: string;
     trackName?: string;
     featureStartBp?: number;
     featureEndBp?: number;
@@ -400,6 +401,7 @@ function buildSearchResults(): void {
       type: "Feature",
       id: feature.key,
       name: feature.label,
+      trackId: feature.trackId,
       originalName: feature.featureType ?? undefined,
       trackName: feature.trackName,
       featureStartBp: feature.startBp,
@@ -469,7 +471,7 @@ function goToSelection(): void {
   ) {
     props.mapManager.linearTrackManager.centerOnFeature({
       key: String(item.id),
-      trackId: "",
+      trackId: item.trackId ?? "",
       trackName: item.trackName ?? "",
       label: item.name,
       featureType: item.featureType ?? null,
@@ -540,6 +542,7 @@ function appendRemoteSearchResults(
   remote: {
     key: string;
     label: string;
+    trackId?: string;
     trackName: string;
     featureType: string | null;
     strand: string | null;
@@ -563,6 +566,7 @@ function appendRemoteSearchResults(
       type: "Feature",
       id: feature.key,
       name: feature.label,
+      trackId: feature.trackId,
       originalName: feature.featureType ?? undefined,
       trackName: feature.trackName,
       featureStartBp: feature.startBp,

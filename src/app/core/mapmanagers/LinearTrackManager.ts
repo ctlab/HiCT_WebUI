@@ -27,6 +27,7 @@ import { useStyleStore } from "@/app/stores/styleStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import type {
   FileEntryResponse,
+  TrackBinBlockResponse,
   TrackFeatureSearchHitResponse,
   TrackBinResponse,
   TrackCompatibilityReportResponse,
@@ -98,6 +99,7 @@ class LinearTrackManager {
     vertical: null,
   };
   private readonly featureSearchCache = new Map<string, FeatureSearchEntry>();
+  private selectedFeature: SelectedTrackFeature | null = null;
 
   constructor(private readonly mapManager: ContactMapManager) {
     const map = this.mapManager.getMap();
@@ -250,6 +252,17 @@ class LinearTrackManager {
   public async removeTrack(trackId: string): Promise<void> {
     await this.mapManager.networkManager.requestManager.removeTrack(trackId);
     await this.refreshTrackList();
+  }
+
+  public async reorderTrack(trackId: string, targetIndex: number): Promise<void> {
+    this.tracks = await this.mapManager.networkManager.requestManager.reorderTrack(
+      trackId,
+      targetIndex
+    );
+    this.syncTrackRenderSettings();
+    this.invalidateQueryCache();
+    this.notifyTrackListChanged();
+    await this.render({ allowFetch: true });
   }
 
   public async updateTrack(
@@ -536,37 +549,90 @@ class LinearTrackManager {
     const currentResolution = view.getResolution() ?? 1;
     const mapSize = map.getSize() ?? [1200, 900];
     const spanBp = Math.max(1, entry.endBp - entry.startBp);
-    const targetSpanPx = Math.max(80, Math.min(mapSize[0], mapSize[1]) * 0.35);
-    const targetBpPerPx = Math.max(1, spanBp / targetSpanPx);
     const tuples = this.mapManager.getLayersManager().resolutionTuples;
-    let selectedBpResolution =
-      this.mapManager.getLayersManager().currentViewState.resolutionDesciptor.bpResolution;
-    let bestScore = Number.POSITIVE_INFINITY;
-    for (const tuple of tuples) {
-      const widthPx = spanBp / Math.max(1, tuple.bpResolution);
-      const score = Math.abs(widthPx - targetSpanPx) + (widthPx < 32 ? 300 : 0);
-      if (score < bestScore) {
-        bestScore = score;
-        selectedBpResolution = tuple.bpResolution;
-      }
-      if (tuple.bpResolution <= targetBpPerPx) {
-        selectedBpResolution = tuple.bpResolution;
-        break;
-      }
-    }
-    const pixelResolution =
+    const finestBpResolution = tuples.reduce(
+      (acc, tuple) => Math.min(acc, tuple.bpResolution),
+      Number.POSITIVE_INFINITY
+    );
+    const safeFinestBpResolution =
+      Number.isFinite(finestBpResolution) && finestBpResolution > 0
+        ? finestBpResolution
+        : this.mapManager.getLayersManager().currentViewState.resolutionDesciptor
+            .bpResolution;
+    const finestPixelResolution =
       this.mapManager.getLayersManager().resolutionToPixelResolution.get(
-        selectedBpResolution
+        safeFinestBpResolution
       ) ?? currentResolution;
+    const targetSpanPx = Math.max(180, Math.min(mapSize[0], mapSize[1]) * 0.52);
+    const spanPxAtFinest = spanBp / Math.max(1, safeFinestBpResolution);
+    const minViewResolution = view.getMinResolution() ?? 0;
+    const desiredScaleFactor =
+      spanPxAtFinest > 0 ? Math.min(1, spanPxAtFinest / targetSpanPx) : 1;
+    const pixelResolution = Math.max(
+      minViewResolution,
+      finestPixelResolution * desiredScaleFactor
+    );
     const midpointBp = (entry.startBp + entry.endBp) / 2;
     const midpointPx = this.mapManager
       .getContigDimensionHolder()
-      .getPxContainingBp(Math.max(0, Math.round(midpointBp)), selectedBpResolution);
+      .getPxContainingBp(
+        Math.max(0, Math.round(midpointBp)),
+        safeFinestBpResolution
+      );
+    this.setSelectedFeature(entry);
     view.animate({
       center: [midpointPx, -midpointPx],
       resolution: pixelResolution,
-      duration: 180,
+      duration: 220,
     });
+  }
+
+  public setSelectedFeature(entry: {
+    trackId: string;
+    label: string;
+    featureType: string | null;
+    startBp: number;
+    endBp: number;
+  }): void {
+    const startBp = Math.min(entry.startBp, entry.endBp);
+    const endBp = Math.max(entry.startBp, entry.endBp);
+    this.selectedFeature = {
+      trackId: entry.trackId,
+      label: (entry.label ?? "").trim(),
+      featureType: (entry.featureType ?? "").trim() || null,
+      startBp,
+      endBp,
+    };
+    void this.render({ allowFetch: false });
+  }
+
+  public clearSelectedFeature(): void {
+    this.selectedFeature = null;
+    void this.render({ allowFetch: false });
+  }
+
+  public toggleFeatureSelectionAt(
+    orientation: Orientation,
+    axisOffsetPx: number,
+    crossOffsetPx: number
+  ): void {
+    const hit = this.getFeatureHoverAt(orientation, axisOffsetPx, crossOffsetPx);
+    if (!hit) {
+      return;
+    }
+    const next: SelectedTrackFeature = {
+      trackId: hit.trackId,
+      label: (hit.label ?? "").trim(),
+      featureType: (hit.featureType ?? "").trim() || null,
+      startBp: Math.min(hit.startBp, hit.endBp),
+      endBp: Math.max(hit.startBp, hit.endBp),
+    };
+    if (this.isSameSelectedFeature(this.selectedFeature, next)) {
+      this.selectedFeature = null;
+    } else {
+      this.selectedFeature = next;
+    }
+    void this.render({ allowFetch: false });
   }
 
   public async prefetchFeatureContextAround(
@@ -875,6 +941,10 @@ class LinearTrackManager {
         const startPx = interval.startPx;
         const endPx = interval.endPx;
 
+        const isSelectedFeature =
+          renderStyle === "FEATURE" &&
+          this.matchesSelectedFeature(track.trackId, bin);
+
         if (orientation === "horizontal") {
           const x0ByPx = Math.floor(viewport.pxToScreen(startPx));
           const x1ByPx = Math.max(
@@ -892,65 +962,17 @@ class LinearTrackManager {
             const y = laneInnerEnd - barHeight;
             ctx.fillRect(x0, y, x1 - x0, Math.max(1, barHeight));
           } else {
-            const laneCenter = (laneInnerStart + laneInnerEnd) / 2;
-            const thinHeight = Math.max(
-              1,
-              Math.round((laneInnerEnd - laneInnerStart) * 0.16)
+            this.drawHorizontalFeatureBin(
+              ctx,
+              bin,
+              viewport,
+              laneInnerStart,
+              laneInnerEnd,
+              canvas.width,
+              x0,
+              x1,
+              isSelectedFeature
             );
-            const thickHeight = Math.max(
-              thinHeight + 1,
-              Math.round((laneInnerEnd - laneInnerStart) * 0.48)
-            );
-            const thinY = Math.floor(laneCenter - thinHeight / 2);
-            const thickY = Math.floor(laneCenter - thickHeight / 2);
-            ctx.fillRect(x0, thinY, x1 - x0, thinHeight);
-            const hasThickPx =
-              typeof bin.thickStartPx === "number" &&
-              Number.isFinite(bin.thickStartPx) &&
-              typeof bin.thickEndPx === "number" &&
-              Number.isFinite(bin.thickEndPx);
-            let thickX0 = x0;
-            let thickX1 = x1;
-            if (hasThickPx) {
-              const thickStartPx = Math.max(
-                0,
-                Math.min(bin.thickStartPx ?? 0, bin.thickEndPx ?? 0)
-              );
-              const thickEndPx = Math.max(
-                thickStartPx + 1,
-                Math.max(bin.thickStartPx ?? thickStartPx, bin.thickEndPx ?? thickStartPx)
-              );
-              const thickX0ByPx = Math.floor(viewport.pxToScreen(thickStartPx));
-              const thickX1ByPx = Math.max(
-                thickX0ByPx + 1,
-                Math.ceil(viewport.pxToScreen(thickEndPx))
-              );
-              thickX0 = Math.max(x0, Math.min(canvas.width - 1, thickX0ByPx));
-              thickX1 = Math.max(thickX0 + 1, Math.min(x1, thickX1ByPx));
-            }
-            ctx.fillRect(thickX0, thickY, Math.max(1, thickX1 - thickX0), thickHeight);
-
-            const strand = bin.strand;
-            if ((strand === "+" || strand === "-") && x1 - x0 > 8) {
-              const arrowSpacing = 14;
-              const arrowSize = 3;
-              const arrowY = Math.floor(laneCenter);
-              ctx.beginPath();
-              if (strand === "+") {
-                for (let x = x0 + 4; x < x1 - 2; x += arrowSpacing) {
-                  ctx.moveTo(x - arrowSize, arrowY - arrowSize);
-                  ctx.lineTo(x + arrowSize, arrowY);
-                  ctx.lineTo(x - arrowSize, arrowY + arrowSize);
-                }
-              } else {
-                for (let x = x1 - 4; x > x0 + 2; x -= arrowSpacing) {
-                  ctx.moveTo(x + arrowSize, arrowY - arrowSize);
-                  ctx.lineTo(x - arrowSize, arrowY);
-                  ctx.lineTo(x + arrowSize, arrowY + arrowSize);
-                }
-              }
-              ctx.fill();
-            }
           }
         } else {
           const y0ByPx = Math.floor(viewport.pxToScreen(startPx));
@@ -969,65 +991,17 @@ class LinearTrackManager {
             const x = laneInnerEnd - Math.max(1, barWidth);
             ctx.fillRect(x, y0, Math.max(1, barWidth), y1 - y0);
           } else {
-            const laneCenter = (laneInnerStart + laneInnerEnd) / 2;
-            const thinWidth = Math.max(
-              1,
-              Math.round((laneInnerEnd - laneInnerStart) * 0.16)
+            this.drawVerticalFeatureBin(
+              ctx,
+              bin,
+              viewport,
+              laneInnerStart,
+              laneInnerEnd,
+              canvas.height,
+              y0,
+              y1,
+              isSelectedFeature
             );
-            const thickWidth = Math.max(
-              thinWidth + 1,
-              Math.round((laneInnerEnd - laneInnerStart) * 0.48)
-            );
-            const thinX = Math.floor(laneCenter - thinWidth / 2);
-            const thickX = Math.floor(laneCenter - thickWidth / 2);
-            ctx.fillRect(thinX, y0, thinWidth, y1 - y0);
-            const hasThickPx =
-              typeof bin.thickStartPx === "number" &&
-              Number.isFinite(bin.thickStartPx) &&
-              typeof bin.thickEndPx === "number" &&
-              Number.isFinite(bin.thickEndPx);
-            let thickY0 = y0;
-            let thickY1 = y1;
-            if (hasThickPx) {
-              const thickStartPx = Math.max(
-                0,
-                Math.min(bin.thickStartPx ?? 0, bin.thickEndPx ?? 0)
-              );
-              const thickEndPx = Math.max(
-                thickStartPx + 1,
-                Math.max(bin.thickStartPx ?? thickStartPx, bin.thickEndPx ?? thickStartPx)
-              );
-              const thickY0ByPx = Math.floor(viewport.pxToScreen(thickStartPx));
-              const thickY1ByPx = Math.max(
-                thickY0ByPx + 1,
-                Math.ceil(viewport.pxToScreen(thickEndPx))
-              );
-              thickY0 = Math.max(y0, Math.min(canvas.height - 1, thickY0ByPx));
-              thickY1 = Math.max(thickY0 + 1, Math.min(y1, thickY1ByPx));
-            }
-            ctx.fillRect(thickX, thickY0, thickWidth, Math.max(1, thickY1 - thickY0));
-
-            const strand = bin.strand;
-            if ((strand === "+" || strand === "-") && y1 - y0 > 8) {
-              const arrowSpacing = 14;
-              const arrowSize = 3;
-              const arrowX = Math.floor(laneCenter);
-              ctx.beginPath();
-              if (strand === "+") {
-                for (let y = y0 + 4; y < y1 - 2; y += arrowSpacing) {
-                  ctx.moveTo(arrowX - arrowSize, y - arrowSize);
-                  ctx.lineTo(arrowX, y + arrowSize);
-                  ctx.lineTo(arrowX + arrowSize, y - arrowSize);
-                }
-              } else {
-                for (let y = y1 - 4; y > y0 + 2; y -= arrowSpacing) {
-                  ctx.moveTo(arrowX - arrowSize, y + arrowSize);
-                  ctx.lineTo(arrowX, y - arrowSize);
-                  ctx.lineTo(arrowX + arrowSize, y + arrowSize);
-                }
-              }
-              ctx.fill();
-            }
           }
         }
       }
@@ -1266,6 +1240,393 @@ class LinearTrackManager {
       }
       drawnCount += 1;
     }
+  }
+
+  private drawHorizontalFeatureBin(
+    ctx: CanvasRenderingContext2D,
+    bin: TrackBinResponse,
+    viewport: ViewportGeometry,
+    laneInnerStart: number,
+    laneInnerEnd: number,
+    canvasWidth: number,
+    x0: number,
+    x1: number,
+    isSelectedFeature: boolean
+  ): void {
+    const laneCenter = (laneInnerStart + laneInnerEnd) / 2;
+    const laneHeight = Math.max(1, laneInnerEnd - laneInnerStart);
+    const connectorHeight = Math.max(1, Math.round(laneHeight * 0.12));
+    const exonHeight = Math.max(2, Math.round(laneHeight * 0.34));
+    const codingHeight = Math.max(exonHeight + 1, Math.round(laneHeight * 0.5));
+    const connectorY = Math.floor(laneCenter - connectorHeight / 2);
+    const exonY = Math.floor(laneCenter - exonHeight / 2);
+    const codingY = Math.floor(laneCenter - codingHeight / 2);
+    const projectedBlocks = this.resolveFeatureBlocksIntervals(
+      bin,
+      viewport.bpResolution
+    )
+      .filter(
+        (block) =>
+          block.visible &&
+          block.endPx > viewport.startPx &&
+          block.startPx < viewport.endPx
+      )
+      .map((block) => ({
+        coding: block.coding,
+        x0: Math.max(
+          x0,
+          Math.min(canvasWidth - 1, Math.floor(viewport.pxToScreen(block.startPx)))
+        ),
+        x1: Math.max(
+          x0 + 1,
+          Math.min(canvasWidth, Math.ceil(viewport.pxToScreen(block.endPx)))
+        ),
+      }))
+      .filter((block) => block.x1 > block.x0);
+    if (projectedBlocks.length > 0) {
+      ctx.fillRect(x0, connectorY, Math.max(1, x1 - x0), connectorHeight);
+      for (const block of projectedBlocks) {
+        const blockY = block.coding ? codingY : exonY;
+        const blockHeight = block.coding ? codingHeight : exonHeight;
+        ctx.fillRect(block.x0, blockY, Math.max(1, block.x1 - block.x0), blockHeight);
+      }
+    } else {
+      const thinHeight = Math.max(1, Math.round(laneHeight * 0.16));
+      const thickHeight = Math.max(thinHeight + 1, Math.round(laneHeight * 0.48));
+      const thinY = Math.floor(laneCenter - thinHeight / 2);
+      const thickY = Math.floor(laneCenter - thickHeight / 2);
+      ctx.fillRect(x0, thinY, x1 - x0, thinHeight);
+      const hasThickPx =
+        typeof bin.thickStartPx === "number" &&
+        Number.isFinite(bin.thickStartPx) &&
+        typeof bin.thickEndPx === "number" &&
+        Number.isFinite(bin.thickEndPx);
+      let thickX0 = x0;
+      let thickX1 = x1;
+      if (hasThickPx) {
+        const thickStartPx = Math.max(
+          0,
+          Math.min(bin.thickStartPx ?? 0, bin.thickEndPx ?? 0)
+        );
+        const thickEndPx = Math.max(
+          thickStartPx + 1,
+          Math.max(bin.thickStartPx ?? thickStartPx, bin.thickEndPx ?? thickStartPx)
+        );
+        const thickX0ByPx = Math.floor(viewport.pxToScreen(thickStartPx));
+        const thickX1ByPx = Math.max(
+          thickX0ByPx + 1,
+          Math.ceil(viewport.pxToScreen(thickEndPx))
+        );
+        thickX0 = Math.max(x0, Math.min(canvasWidth - 1, thickX0ByPx));
+        thickX1 = Math.max(thickX0 + 1, Math.min(x1, thickX1ByPx));
+      }
+      ctx.fillRect(thickX0, thickY, Math.max(1, thickX1 - thickX0), thickHeight);
+    }
+    this.drawFeatureDirectionArrowsHorizontal(ctx, bin.strand, x0, x1, laneCenter);
+    this.drawFeatureTerminalTriangleHorizontal(
+      ctx,
+      bin.strand,
+      x0,
+      x1,
+      laneCenter,
+      laneInnerStart,
+      laneInnerEnd
+    );
+    if (isSelectedFeature) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255, 218, 66, 0.98)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        x0 + 0.5,
+        laneInnerStart + 0.5,
+        Math.max(1, x1 - x0 - 1),
+        Math.max(1, laneInnerEnd - laneInnerStart - 1)
+      );
+      ctx.restore();
+    }
+  }
+
+  private drawVerticalFeatureBin(
+    ctx: CanvasRenderingContext2D,
+    bin: TrackBinResponse,
+    viewport: ViewportGeometry,
+    laneInnerStart: number,
+    laneInnerEnd: number,
+    canvasHeight: number,
+    y0: number,
+    y1: number,
+    isSelectedFeature: boolean
+  ): void {
+    const laneCenter = (laneInnerStart + laneInnerEnd) / 2;
+    const laneWidth = Math.max(1, laneInnerEnd - laneInnerStart);
+    const connectorWidth = Math.max(1, Math.round(laneWidth * 0.12));
+    const exonWidth = Math.max(2, Math.round(laneWidth * 0.34));
+    const codingWidth = Math.max(exonWidth + 1, Math.round(laneWidth * 0.5));
+    const connectorX = Math.floor(laneCenter - connectorWidth / 2);
+    const exonX = Math.floor(laneCenter - exonWidth / 2);
+    const codingX = Math.floor(laneCenter - codingWidth / 2);
+    const projectedBlocks = this.resolveFeatureBlocksIntervals(
+      bin,
+      viewport.bpResolution
+    )
+      .filter(
+        (block) =>
+          block.visible &&
+          block.endPx > viewport.startPx &&
+          block.startPx < viewport.endPx
+      )
+      .map((block) => ({
+        coding: block.coding,
+        y0: Math.max(
+          y0,
+          Math.min(canvasHeight - 1, Math.floor(viewport.pxToScreen(block.startPx)))
+        ),
+        y1: Math.max(
+          y0 + 1,
+          Math.min(canvasHeight, Math.ceil(viewport.pxToScreen(block.endPx)))
+        ),
+      }))
+      .filter((block) => block.y1 > block.y0);
+    if (projectedBlocks.length > 0) {
+      ctx.fillRect(connectorX, y0, connectorWidth, Math.max(1, y1 - y0));
+      for (const block of projectedBlocks) {
+        const blockX = block.coding ? codingX : exonX;
+        const blockWidth = block.coding ? codingWidth : exonWidth;
+        ctx.fillRect(blockX, block.y0, blockWidth, Math.max(1, block.y1 - block.y0));
+      }
+    } else {
+      const thinWidth = Math.max(1, Math.round(laneWidth * 0.16));
+      const thickWidth = Math.max(thinWidth + 1, Math.round(laneWidth * 0.48));
+      const thinX = Math.floor(laneCenter - thinWidth / 2);
+      const thickX = Math.floor(laneCenter - thickWidth / 2);
+      ctx.fillRect(thinX, y0, thinWidth, y1 - y0);
+      const hasThickPx =
+        typeof bin.thickStartPx === "number" &&
+        Number.isFinite(bin.thickStartPx) &&
+        typeof bin.thickEndPx === "number" &&
+        Number.isFinite(bin.thickEndPx);
+      let thickY0 = y0;
+      let thickY1 = y1;
+      if (hasThickPx) {
+        const thickStartPx = Math.max(
+          0,
+          Math.min(bin.thickStartPx ?? 0, bin.thickEndPx ?? 0)
+        );
+        const thickEndPx = Math.max(
+          thickStartPx + 1,
+          Math.max(bin.thickStartPx ?? thickStartPx, bin.thickEndPx ?? thickStartPx)
+        );
+        const thickY0ByPx = Math.floor(viewport.pxToScreen(thickStartPx));
+        const thickY1ByPx = Math.max(
+          thickY0ByPx + 1,
+          Math.ceil(viewport.pxToScreen(thickEndPx))
+        );
+        thickY0 = Math.max(y0, Math.min(canvasHeight - 1, thickY0ByPx));
+        thickY1 = Math.max(thickY0 + 1, Math.min(y1, thickY1ByPx));
+      }
+      ctx.fillRect(thickX, thickY0, thickWidth, Math.max(1, thickY1 - thickY0));
+    }
+    this.drawFeatureDirectionArrowsVertical(ctx, bin.strand, y0, y1, laneCenter);
+    this.drawFeatureTerminalTriangleVertical(
+      ctx,
+      bin.strand,
+      y0,
+      y1,
+      laneCenter,
+      laneInnerStart,
+      laneInnerEnd
+    );
+    if (isSelectedFeature) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255, 218, 66, 0.98)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        laneInnerStart + 0.5,
+        y0 + 0.5,
+        Math.max(1, laneInnerEnd - laneInnerStart - 1),
+        Math.max(1, y1 - y0 - 1)
+      );
+      ctx.restore();
+    }
+  }
+
+  private drawFeatureDirectionArrowsHorizontal(
+    ctx: CanvasRenderingContext2D,
+    strand: string | null,
+    x0: number,
+    x1: number,
+    laneCenter: number
+  ): void {
+    if ((strand !== "+" && strand !== "-") || x1 - x0 <= 12) {
+      return;
+    }
+    const arrowSpacing = 16;
+    const arrowSize = 3;
+    const arrowY = Math.floor(laneCenter);
+    ctx.beginPath();
+    if (strand === "+") {
+      for (let x = x0 + 6; x < x1 - 4; x += arrowSpacing) {
+        ctx.moveTo(x - arrowSize, arrowY - arrowSize);
+        ctx.lineTo(x + arrowSize, arrowY);
+        ctx.lineTo(x - arrowSize, arrowY + arrowSize);
+      }
+    } else {
+      for (let x = x1 - 6; x > x0 + 4; x -= arrowSpacing) {
+        ctx.moveTo(x + arrowSize, arrowY - arrowSize);
+        ctx.lineTo(x - arrowSize, arrowY);
+        ctx.lineTo(x + arrowSize, arrowY + arrowSize);
+      }
+    }
+    ctx.fill();
+  }
+
+  private drawFeatureDirectionArrowsVertical(
+    ctx: CanvasRenderingContext2D,
+    strand: string | null,
+    y0: number,
+    y1: number,
+    laneCenter: number
+  ): void {
+    if ((strand !== "+" && strand !== "-") || y1 - y0 <= 12) {
+      return;
+    }
+    const arrowSpacing = 16;
+    const arrowSize = 3;
+    const arrowX = Math.floor(laneCenter);
+    ctx.beginPath();
+    if (strand === "+") {
+      for (let y = y0 + 6; y < y1 - 4; y += arrowSpacing) {
+        ctx.moveTo(arrowX - arrowSize, y - arrowSize);
+        ctx.lineTo(arrowX, y + arrowSize);
+        ctx.lineTo(arrowX + arrowSize, y - arrowSize);
+      }
+    } else {
+      for (let y = y1 - 6; y > y0 + 4; y -= arrowSpacing) {
+        ctx.moveTo(arrowX - arrowSize, y + arrowSize);
+        ctx.lineTo(arrowX, y - arrowSize);
+        ctx.lineTo(arrowX + arrowSize, y + arrowSize);
+      }
+    }
+    ctx.fill();
+  }
+
+  private drawFeatureTerminalTriangleHorizontal(
+    ctx: CanvasRenderingContext2D,
+    strand: string | null,
+    x0: number,
+    x1: number,
+    laneCenter: number,
+    laneInnerStart: number,
+    laneInnerEnd: number
+  ): void {
+    if ((strand !== "+" && strand !== "-") || x1 - x0 <= 8) {
+      return;
+    }
+    const triangleSize = Math.max(3, Math.round((laneInnerEnd - laneInnerStart) * 0.22));
+    const y = Math.floor(laneCenter);
+    ctx.beginPath();
+    if (strand === "+") {
+      const x = x1 - 1;
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - triangleSize, y - triangleSize);
+      ctx.lineTo(x - triangleSize, y + triangleSize);
+    } else {
+      const x = x0 + 1;
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + triangleSize, y - triangleSize);
+      ctx.lineTo(x + triangleSize, y + triangleSize);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  private drawFeatureTerminalTriangleVertical(
+    ctx: CanvasRenderingContext2D,
+    strand: string | null,
+    y0: number,
+    y1: number,
+    laneCenter: number,
+    laneInnerStart: number,
+    laneInnerEnd: number
+  ): void {
+    if ((strand !== "+" && strand !== "-") || y1 - y0 <= 8) {
+      return;
+    }
+    const triangleSize = Math.max(3, Math.round((laneInnerEnd - laneInnerStart) * 0.22));
+    const x = Math.floor(laneCenter);
+    ctx.beginPath();
+    if (strand === "+") {
+      const y = y1 - 1;
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - triangleSize, y - triangleSize);
+      ctx.lineTo(x + triangleSize, y - triangleSize);
+    } else {
+      const y = y0 + 1;
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - triangleSize, y + triangleSize);
+      ctx.lineTo(x + triangleSize, y + triangleSize);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  private resolveFeatureBlocksIntervals(
+    bin: TrackBinResponse,
+    bpResolution: number
+  ): FeatureBlockInterval[] {
+    if (!Array.isArray(bin.blocks) || bin.blocks.length === 0) {
+      return [];
+    }
+    return bin.blocks
+      .map((block) => this.resolveFeatureBlockIntervalPx(block, bpResolution))
+      .filter((block) => block.endPx > block.startPx);
+  }
+
+  private resolveFeatureBlockIntervalPx(
+    block: TrackBinBlockResponse,
+    bpResolution: number
+  ): FeatureBlockInterval {
+    const hasProjectedPx =
+      typeof block.startPx === "number" &&
+      Number.isFinite(block.startPx) &&
+      typeof block.endPx === "number" &&
+      Number.isFinite(block.endPx);
+    const contigDimensionHolder = this.mapManager.getContigDimensionHolder();
+    const startPx = hasProjectedPx
+      ? Math.max(0, Math.min(block.startPx ?? 0, block.endPx ?? 0))
+      : contigDimensionHolder.getPxContainingBp(
+          Math.max(0, Math.min(block.startBp, block.endBp)),
+          bpResolution
+        );
+    const endPx = hasProjectedPx
+      ? Math.max(startPx + 1, Math.max(block.startPx ?? startPx, block.endPx ?? startPx))
+      : contigDimensionHolder.getPxContainingBp(
+          Math.max(
+            Math.max(0, Math.min(block.startBp, block.endBp)),
+            Math.max(0, Math.max(block.startBp, block.endBp) - 1)
+          ),
+          bpResolution
+        ) + 1;
+    if (hasProjectedPx) {
+      return {
+        startPx,
+        endPx,
+        visible: true,
+        coding: !!block.coding,
+      };
+    }
+    const intervalStart = Math.max(0, Math.min(block.startBp, block.endBp));
+    const intervalEnd = Math.max(intervalStart + 1, Math.max(block.startBp, block.endBp));
+    const intervalProbeEnd = Math.max(intervalStart, intervalEnd - 1);
+    const visible =
+      contigDimensionHolder.isBpVisibleAtResolution(intervalStart, bpResolution) ||
+      contigDimensionHolder.isBpVisibleAtResolution(intervalProbeEnd, bpResolution);
+    return {
+      startPx,
+      endPx,
+      visible,
+      coding: !!block.coding,
+    };
   }
 
   private getVisibleSignalMax(
@@ -1892,6 +2253,49 @@ class LinearTrackManager {
       visibleWidthPx: viewport.visibleWidthPx,
     };
   }
+
+  private matchesSelectedFeature(
+    trackId: string,
+    bin: TrackBinResponse
+  ): boolean {
+    const selected = this.selectedFeature;
+    if (!selected) {
+      return false;
+    }
+    if (selected.trackId.trim().length > 0 && selected.trackId !== trackId) {
+      return false;
+    }
+    const startBp = Math.min(bin.startBp, bin.endBp);
+    const endBp = Math.max(bin.startBp, bin.endBp);
+    if (startBp !== selected.startBp || endBp !== selected.endBp) {
+      return false;
+    }
+    const label = (bin.label ?? "").trim();
+    if (selected.label.length > 0 && label !== selected.label) {
+      return false;
+    }
+    const featureType = (bin.featureType ?? "").trim();
+    if (selected.featureType && featureType !== selected.featureType) {
+      return false;
+    }
+    return true;
+  }
+
+  private isSameSelectedFeature(
+    current: SelectedTrackFeature | null,
+    next: SelectedTrackFeature
+  ): boolean {
+    if (!current) {
+      return false;
+    }
+    return (
+      current.trackId === next.trackId &&
+      current.startBp === next.startBp &&
+      current.endBp === next.endBp &&
+      current.label === next.label &&
+      current.featureType === next.featureType
+    );
+  }
 }
 
 export { LinearTrackManager, type Orientation };
@@ -1955,4 +2359,19 @@ type FeatureHoverInfo = {
   startBp: number;
   endBp: number;
   value: number;
+};
+
+type SelectedTrackFeature = {
+  trackId: string;
+  label: string;
+  featureType: string | null;
+  startBp: number;
+  endBp: number;
+};
+
+type FeatureBlockInterval = {
+  startPx: number;
+  endPx: number;
+  visible: boolean;
+  coding: boolean;
 };

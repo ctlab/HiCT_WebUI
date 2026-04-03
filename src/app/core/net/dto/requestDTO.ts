@@ -58,6 +58,7 @@ import {
   ListTracksRequest,
   UpdateTrackRequest,
   RemoveTrackRequest,
+  ReorderTrackRequest,
   QueryTracks1DRequest,
   SearchTrackFeaturesRequest,
   GetTrackFeatureContextRequest,
@@ -160,6 +161,8 @@ abstract class HiCTAPIRequestDTO<
         return new UpdateTrackRequestDTO(entity as UpdateTrackRequest);
       case entity instanceof RemoveTrackRequest:
         return new RemoveTrackRequestDTO(entity as RemoveTrackRequest);
+      case entity instanceof ReorderTrackRequest:
+        return new ReorderTrackRequestDTO(entity as ReorderTrackRequest);
       case entity instanceof QueryTracks1DRequest:
         return new QueryTracks1DRequestDTO(entity as QueryTracks1DRequest);
       case entity instanceof SearchTrackFeaturesRequest:
@@ -285,6 +288,8 @@ abstract class HiCTAPIRequestDTO<
         return new GetTrackFeatureContextRequestDTO(
           entity as GetTrackFeatureContextRequest
         );
+      case "/tracks/reorder":
+        return new ReorderTrackRequestDTO(entity as ReorderTrackRequest);
       default:
         throw new Error(
           `Unknown HiCTAPIRequest type: ${typeof entity}, constructor ${
@@ -654,6 +659,15 @@ class RemoveTrackRequestDTO extends HiCTAPIRequestDTO<RemoveTrackRequest> {
   }
 }
 
+class ReorderTrackRequestDTO extends HiCTAPIRequestDTO<ReorderTrackRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      trackId: this.entity.options.trackId,
+      targetIndex: this.entity.options.targetIndex,
+    };
+  }
+}
+
 class QueryTracks1DRequestDTO extends HiCTAPIRequestDTO<QueryTracks1DRequest> {
   toDTO(): Record<string, unknown> {
     const dto: Record<string, unknown> = {
@@ -820,6 +834,7 @@ export {
   ListTracksRequestDTO,
   UpdateTrackRequestDTO,
   RemoveTrackRequestDTO,
+  ReorderTrackRequestDTO,
   QueryTracks1DRequestDTO,
   SearchTrackFeaturesRequestDTO,
   GetTrackFeatureContextRequestDTO,
