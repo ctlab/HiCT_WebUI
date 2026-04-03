@@ -413,12 +413,16 @@ function getEventManager(): CommonEventManager | undefined {
   right: 0px;
   top: 109px;
 
-  /* Global/07. Light */
-  background: #f8f9fa;
+  background: var(--hict-ui-bg, #f8f9fa);
+  color: var(--hict-ui-fg, #1f2937);
   /* background-color: green; */
 
   /* Shadows/02. Regular */
   box-shadow: 0px 8px 16px rgba(0, 0, 0, 0.15);
+}
+
+.sidebar :deep(*) {
+  text-shadow: 0 0 1px var(--hict-ui-outline, rgba(255, 255, 255, 0.9));
 }
 
 #upper-block {
@@ -447,8 +451,7 @@ function getEventManager(): CommonEventManager | undefined {
 
   height: fit-content;
 
-  /* Global/09. White */
-  background: #ffffff;
+  background: var(--hict-ui-bg, #ffffff);
 
   /* Shadows/01. Small */
   box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.075);
@@ -495,7 +498,7 @@ function getEventManager(): CommonEventManager | undefined {
 
   height: fit-content;
 
-  background: #ffffff;
+  background: var(--hict-ui-bg, #ffffff);
 
   box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.075);
 
@@ -519,8 +522,7 @@ function getEventManager(): CommonEventManager | undefined {
 
   height: fit-content;
 
-  /* Global/09. White */
-  background: #ffffff;
+  background: var(--hict-ui-bg, #ffffff);
 
   /* Shadows/01. Small */
   box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.075);

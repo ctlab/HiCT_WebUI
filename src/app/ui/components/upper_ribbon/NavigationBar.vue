@@ -20,7 +20,7 @@
  -->
 
 <template>
-  <nav class="navbar-bar navbar navbar-expand navbar-light bg-light">
+  <nav class="navbar-bar navbar navbar-expand">
     <div class="container-fluid">
       <!-- Logo -->
       <a class="navbar-brand" href="#">HiCT</a>
@@ -96,14 +96,24 @@
                   >Tracks and layers...</a
                 >
               </li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onOpenRenderingPipeline"
+                  >Rendering pipeline...</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onOpenApiDocs"
+                  >API docs...</a
+                >
+              </li>
             </ul>
           </li>
           <!-- Bookmarks -->
-          <li class="nav-item">
+          <!-- <li class="nav-item">
             <a aria-current="page" class="nav-link active" href="#"
               >Bookmarks</a
             >
-          </li>
+          </li> -->
           <!-- Assembly -->
           <li class="nav-item dropdown">
             <a
@@ -189,6 +199,17 @@
                   Use custom ZoomSlider
                 </label>
               </li>
+              <li class="form-check mt-2">
+                <input
+                  id="toggle-binary-tiles"
+                  class="form-check-input"
+                  type="checkbox"
+                  v-model="binaryTileTransportEnabled"
+                />
+                <label class="form-check-label" for="toggle-binary-tiles">
+                  Render tiles from binary signal (experimental)
+                </label>
+              </li>
               <li><hr class="dropdown-divider" /></li>
               <li>
                 <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenWorkerDiagnostics">
@@ -259,6 +280,10 @@
     @selected="onFileSelected"
     @dismissed="onFileDismissed"
     :error-message="errorMessage"
+    :title="'Open Hi-C dataset'"
+    :file-type="'.hict.hdf5, .cool, .mcool'"
+    :note="'Cooler files have to be converted into HiCT internal format before opening.'"
+    :file-name-predicate="isOpenableAssemblyFilename"
   ></UniversalFileSelector>
   <UniversalFileSelector
     :network-manager="props.networkManager"
@@ -279,6 +304,7 @@
   ></UniversalFileSelector>
   <CoolerConverter
     :network-manager="networkManager"
+    :initial-cooler-filename="coolerToConvert"
     v-if="convertingCoolers"
     @dismissed="onConvertCoolersDismissed"
   >
@@ -287,6 +313,11 @@
     v-if="trackManagerOpen"
     :map-manager="props.mapManager"
     @dismissed="trackManagerOpen = false"
+  />
+  <RenderingPipelineModal
+    v-if="renderingPipelineOpen"
+    :map-manager="props.mapManager"
+    @dismissed="renderingPipelineOpen = false"
   />
   <WorkerDiagnosticsModal
     v-if="workerDiagnosticsOpen"
@@ -327,7 +358,7 @@
 
 <script setup lang="ts">
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
-import { Ref, ref, watch } from "vue";
+import { defineAsyncComponent, Ref, ref, watch } from "vue";
 import {
   GetAGPForAssemblyRequest,
   GetFastaForAssemblyRequest,
@@ -350,7 +381,9 @@ const openingFile = ref(false);
 const openingFASTAFile = ref(false);
 const openingAGPFile = ref(false);
 const convertingCoolers = ref(false);
+const coolerToConvert = ref<string | undefined>(undefined);
 const trackManagerOpen = ref(false);
+const renderingPipelineOpen = ref(false);
 const workerDiagnosticsOpen = ref(false);
 const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
@@ -360,6 +393,9 @@ const fastaLinkReport = ref<FastaLinkResponse | null>(null);
 const backendVersion = ref("loading...");
 const webuiVersion = ref(String((pkg as { version?: string })?.version ?? "unknown"));
 const webuiCommit = ref("unknown");
+const RenderingPipelineModal = defineAsyncComponent(
+  () => import("@/app/ui/components/upper_ribbon/RenderingPipelineModal.vue")
+);
 const licenseText = `MIT License
 
 Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
@@ -402,7 +438,8 @@ const errorToastStore = useErrorToastStore();
 const uiSettingsStore = useUiSettingsStore();
 const { requestErrorToastsEnabled, webuiErrorToastsEnabled } =
   storeToRefs(errorToastStore);
-const { customZoomSliderEnabled } = storeToRefs(uiSettingsStore);
+const { customZoomSliderEnabled, binaryTileTransportEnabled } =
+  storeToRefs(uiSettingsStore);
 
 function onOpenFile() {
   openingFile.value = true;
@@ -412,8 +449,17 @@ function onOpenTrackManager() {
   trackManagerOpen.value = true;
 }
 
+function onOpenRenderingPipeline() {
+  renderingPipelineOpen.value = true;
+}
+
 function onOpenWorkerDiagnostics() {
   workerDiagnosticsOpen.value = true;
+}
+
+function onOpenApiDocs(): void {
+  const base = props.networkManager.host.replace(/\/+$/, "");
+  window.open(`${base}/api/v1/`, "_blank", "noopener,noreferrer");
 }
 
 function onLoadAGP() {
@@ -463,10 +509,12 @@ function onSessionFileSelected(event: Event): void {
 }
 
 function onConvertCoolersClicked(): void {
+  coolerToConvert.value = undefined;
   convertingCoolers.value = true;
 }
 
 function onConvertCoolersDismissed(): void {
+  coolerToConvert.value = undefined;
   convertingCoolers.value = false;
 }
 
@@ -508,18 +556,32 @@ function onAGPFileDismissed() {
 
 function onFileSelected(filename: string) {
   if (filename && filename !== "") {
-    if (filename.endsWith(".hict") || filename.endsWith(".hict.hdf5")) {
+    const lowered = filename.toLowerCase();
+    if (lowered.endsWith(".hict") || lowered.endsWith(".hict.hdf5")) {
       openingFile.value = false;
       emit("selected", filename);
-    } else if (filename.endsWith(".agp")) {
+    } else if (lowered.endsWith(".cool") || lowered.endsWith(".mcool")) {
+      openingFile.value = false;
+      coolerToConvert.value = filename;
+      convertingCoolers.value = true;
+    } else if (lowered.endsWith(".agp")) {
       openAGP(filename);
-    } else if (filename.endsWith(".fasta") || filename.endsWith(".fa")) {
+    } else if (lowered.endsWith(".fasta") || lowered.endsWith(".fa")) {
       linkFASTA(filename);
     } else {
       errorMessage.value = "Unknown type of file to be opened: " + filename;
-      toast.error("errorMessage.value");
+      toast.error(String(errorMessage.value));
     }
   }
+}
+
+function isOpenableAssemblyFilename(name: string): boolean {
+  const lowered = name.toLowerCase();
+  return (
+    lowered.endsWith(".hict.hdf5") ||
+    lowered.endsWith(".cool") ||
+    lowered.endsWith(".mcool")
+  );
 }
 
 function openAGP(filename: string) {
@@ -606,6 +668,13 @@ watch(
   }
 );
 
+watch(
+  () => binaryTileTransportEnabled.value,
+  () => {
+    props.mapManager?.reloadTiles();
+  }
+);
+
 function onFASTAFileSelected() {
   openingFASTAFile.value = false;
 }
@@ -660,8 +729,8 @@ function onAssemblyAGPRequest() {
   width: 100%;
   height: 56px;
 
-  /* Global/07. Light */
-  background: #f8f9fa;
+  background: var(--hict-ui-bg, #f8f9fa) !important;
+  color: var(--hict-ui-fg, #1f2937);
 
   /* Shadows/02. Regular */
   box-shadow: 0px 8px 16px rgba(0, 0, 0, 0.15);
@@ -670,6 +739,21 @@ function onAssemblyAGPRequest() {
   flex: none;
   order: 0;
   flex-grow: 0;
+}
+
+.navbar-bar :deep(.navbar-brand),
+.navbar-bar :deep(.nav-link),
+.navbar-bar :deep(.dropdown-item),
+.navbar-bar :deep(.form-check-label),
+.navbar-bar :deep(#set-gateway-btn),
+.navbar-bar :deep(button),
+.navbar-bar :deep(input) {
+  color: var(--hict-ui-fg, #1f2937) !important;
+  text-shadow: 0 0 1px var(--hict-ui-outline, rgba(255, 255, 255, 0.9));
+}
+
+.navbar-bar :deep(.dropdown-menu) {
+  border-color: var(--hict-ui-border, rgba(15, 23, 38, 0.22));
 }
 
 #connection-settings-menu-dropdown {

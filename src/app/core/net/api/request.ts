@@ -57,6 +57,10 @@ class ListFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_files";
 }
 
+class ListFilesDetailedRequest implements HiCTAPIRequest {
+  requestPath = "/list_files_detailed";
+}
+
 class ListFASTAFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_fasta_files";
 }
@@ -156,6 +160,7 @@ class StartConversionJobRequest implements HiCTAPIRequest {
     public readonly options: {
       readonly filename: string;
       readonly direction?: string;
+      readonly overwrite?: boolean;
       readonly resolutions?: string;
       readonly compression?: number;
       readonly compressionAlgorithm?: string;
@@ -173,6 +178,7 @@ class StartBatchConversionJobsRequest implements HiCTAPIRequest {
       readonly files: string[];
       readonly parallelJobs: number;
       readonly parallelism: number;
+      readonly overwrite?: boolean;
       readonly resolutions?: string;
       readonly compression?: number;
       readonly compressionAlgorithm?: string;
@@ -318,8 +324,53 @@ class OpenProgressRequest implements HiCTAPIRequest {
   public constructor() {}
 }
 
+class OpenSecondarySourceRequest implements HiCTAPIRequest {
+  requestPath = "/secondary/open";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+      readonly allowMismatch?: boolean;
+    }
+  ) {}
+}
+
+class CloseSecondarySourceRequest implements HiCTAPIRequest {
+  requestPath = "/secondary/close";
+}
+
+class GetSecondarySourceStatusRequest implements HiCTAPIRequest {
+  requestPath = "/secondary/status";
+}
+
+class SetAssemblyInfoSourceRequest implements HiCTAPIRequest {
+  requestPath = "/secondary/set_assembly_source";
+
+  public constructor(
+    public readonly options: {
+      readonly assemblySource: "PRIMARY" | "SECONDARY";
+    }
+  ) {}
+}
+
 class GetWorkerDiagnosticsRequest implements HiCTAPIRequest {
   requestPath = "/diagnostics/workers";
+}
+
+class GetRenderPipelineRequest implements HiCTAPIRequest {
+  requestPath = "/render_pipeline/get";
+}
+
+class SetRenderPipelineRequest implements HiCTAPIRequest {
+  requestPath = "/render_pipeline/set";
+
+  public constructor(
+    public readonly options: Record<string, unknown>
+  ) {}
+}
+
+class ResetRenderPipelineRequest implements HiCTAPIRequest {
+  requestPath = "/render_pipeline/reset";
 }
 
 class GetVisualizationOptionsRequest implements HiCTAPIRequest {
@@ -350,6 +401,27 @@ class OpenTrackRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class OpenCoolerWeightsTrackRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/open_cooler_weights";
+
+  public constructor(
+    public readonly options: {
+      readonly name?: string;
+      readonly color?: string;
+    } = {}
+  ) {}
+}
+
+class ProbeTrackCompatibilityRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/probe";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+    }
+  ) {}
+}
+
 class ListTracksRequest implements HiCTAPIRequest {
   requestPath = "/tracks/list";
 }
@@ -365,6 +437,7 @@ class UpdateTrackRequest implements HiCTAPIRequest {
       readonly name?: string;
       readonly renderMode?: string;
       readonly aggregationMode?: string;
+      readonly logScale?: boolean;
     }
   ) {}
 }
@@ -379,15 +452,63 @@ class RemoveTrackRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class ReorderTrackRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/reorder";
+
+  public constructor(
+    public readonly options: {
+      readonly trackId: string;
+      readonly targetIndex: number;
+    }
+  ) {}
+}
+
 class QueryTracks1DRequest implements HiCTAPIRequest {
   requestPath = "/tracks/query_1d";
 
   public constructor(
     public readonly options: {
-      readonly startPx: number;
-      readonly endPx: number;
+      readonly startPx?: number;
+      readonly endPx?: number;
+      readonly startBin?: number;
+      readonly endBin?: number;
+      readonly startBP?: number;
+      readonly endBP?: number;
+      readonly unit?: "PIXELS" | "BINS" | "BP";
       readonly widthPx: number;
       readonly bpResolution: number;
+    }
+  ) {}
+}
+
+class SearchTrackFeaturesRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/search_features";
+
+  public constructor(
+    public readonly options: {
+      readonly query: string;
+      readonly limit?: number;
+      readonly offset?: number;
+      readonly trackId?: string;
+    }
+  ) {}
+}
+
+class GetTrackFeatureContextRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/feature_context";
+
+  public constructor(
+    public readonly options: {
+      readonly startPx?: number;
+      readonly endPx?: number;
+      readonly startBin?: number;
+      readonly endBin?: number;
+      readonly startBP?: number;
+      readonly endBP?: number;
+      readonly unit?: "PIXELS" | "BINS" | "BP";
+      readonly widthPx: number;
+      readonly bpResolution: number;
+      readonly marginScreens?: number;
     }
   ) {}
 }
@@ -439,6 +560,7 @@ export {
   GetAGPForAssemblyRequest,
   OpenFileRequest,
   ListFilesRequest,
+  ListFilesDetailedRequest,
   GroupContigsIntoScaffoldRequest,
   UngroupContigsFromScaffoldRequest,
   ReverseSelectionRangeRequest,
@@ -448,6 +570,10 @@ export {
   ListAGPFilesRequest,
   LoadAGPRequest,
   OpenProgressRequest,
+  OpenSecondarySourceRequest,
+  CloseSecondarySourceRequest,
+  GetSecondarySourceStatusRequest,
+  SetAssemblyInfoSourceRequest,
   GetFastaForSelectionRequest,
   SetNormalizationRequest,
   SetContrastRangeRequest,
@@ -460,11 +586,19 @@ export {
   SetVisualizationOptionsRequest,
   ListTrackFilesRequest,
   OpenTrackRequest,
+  OpenCoolerWeightsTrackRequest,
+  ProbeTrackCompatibilityRequest,
   ListTracksRequest,
   UpdateTrackRequest,
   RemoveTrackRequest,
+  ReorderTrackRequest,
   QueryTracks1DRequest,
+  SearchTrackFeaturesRequest,
+  GetTrackFeatureContextRequest,
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
   GetWorkerDiagnosticsRequest,
+  GetRenderPipelineRequest,
+  SetRenderPipelineRequest,
+  ResetRenderPipelineRequest,
 };

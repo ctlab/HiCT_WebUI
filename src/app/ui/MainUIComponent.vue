@@ -90,7 +90,7 @@ import {
   ContactMapManager,
   // type ContactMapManagerOptions,
 } from "@/app/core/mapmanagers/ContactMapManager";
-import { ref, watch, type Ref } from "vue";
+import { onMounted, ref, watch, type Ref } from "vue";
 import { NetworkManager } from "@/app/core/net/NetworkManager";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
@@ -182,6 +182,29 @@ function safeColorTranslator(value: unknown, fallback: string): ColorTranslator 
   } catch {
     return new ColorTranslator(fallback, { legacyCSS: true });
   }
+}
+
+function syncUiChromePalette(): void {
+  const root = document.documentElement;
+  const background = mapBackgroundColor.value;
+  const dark = background.L <= 55;
+  root.style.setProperty("--hict-ui-bg", background.RGB);
+  root.style.setProperty(
+    "--hict-ui-fg",
+    dark ? "rgba(246,248,252,0.96)" : "rgba(24,30,38,0.95)"
+  );
+  root.style.setProperty(
+    "--hict-ui-outline",
+    dark ? "rgba(0,0,0,0.84)" : "rgba(255,255,255,0.92)"
+  );
+  root.style.setProperty(
+    "--hict-ui-muted",
+    dark ? "rgba(220,226,236,0.88)" : "rgba(75,82,92,0.86)"
+  );
+  root.style.setProperty(
+    "--hict-ui-border",
+    dark ? "rgba(248,250,255,0.42)" : "rgba(15,23,38,0.26)"
+  );
 }
 
 function resetState() {
@@ -604,6 +627,17 @@ watch(
     }
   }
 );
+
+watch(
+  () => mapBackgroundColor.value.RGB,
+  () => {
+    syncUiChromePalette();
+  }
+);
+
+onMounted(() => {
+  syncUiChromePalette();
+});
 
 function onFileSelected(newFilename: string) {
   if (newFilename !== filename.value) {

@@ -22,13 +22,19 @@
 import {
   ConversionJobResponse,
   CurrentSignalRangeResponse,
+  FileEntryResponse,
   FastaLinkCompatibilityResponse,
   FastaLinkMismatchResponse,
   FastaLinkResponse,
   NameMappingResponse,
+  TrackCompatibilityReportResponse,
   TrackPrecomputeTrackStatusResponse,
   TracksPrecomputeStatusResponse,
+  TrackBinBlockResponse,
   TrackBinResponse,
+  TrackFeatureContextResponse,
+  TrackFeatureSearchHitResponse,
+  TrackFeatureSearchResponse,
   TrackQueryResponse,
   TrackRenderResponse,
   TrackSummaryResponse,
@@ -131,8 +137,10 @@ class TrackSummaryResponseDTO extends InboundDTO<TrackSummaryResponse> {
       this.json["color"] as string,
       this.json["visible"] as boolean,
       this.json["featureCount"] as number,
+      (this.json["renderStyle"] as string) ?? "SIGNAL",
       (this.json["renderMode"] as string) ?? "COVERAGE",
-      (this.json["aggregationMode"] as string) ?? "MAX"
+      (this.json["aggregationMode"] as string) ?? "MAX",
+      (this.json["logScale"] as boolean) ?? false
     );
   }
 }
@@ -146,7 +154,28 @@ class TrackBinResponseDTO extends InboundDTO<TrackBinResponse> {
       this.json["count"] as number,
       (this.json["label"] as string) ?? null,
       (this.json["startPx"] as number) ?? null,
-      (this.json["endPx"] as number) ?? null
+      (this.json["endPx"] as number) ?? null,
+      (this.json["strand"] as string) ?? null,
+      (this.json["thickStartBp"] as number) ?? null,
+      (this.json["thickEndBp"] as number) ?? null,
+      (this.json["thickStartPx"] as number) ?? null,
+      (this.json["thickEndPx"] as number) ?? null,
+      (this.json["featureType"] as string) ?? null,
+      ((this.json["blocks"] as Record<string, unknown>[]) ?? []).map(
+        (block) => new TrackBinBlockResponseDTO(block).toEntity()
+      )
+    );
+  }
+}
+
+class TrackBinBlockResponseDTO extends InboundDTO<TrackBinBlockResponse> {
+  public toEntity(): TrackBinBlockResponse {
+    return new TrackBinBlockResponse(
+      (this.json["startBp"] as number) ?? 0,
+      (this.json["endBp"] as number) ?? 0,
+      (this.json["startPx"] as number) ?? 0,
+      (this.json["endPx"] as number) ?? 0,
+      Boolean(this.json["coding"] ?? false)
     );
   }
 }
@@ -158,6 +187,7 @@ class TrackRenderResponseDTO extends InboundDTO<TrackRenderResponse> {
       this.json["name"] as string,
       this.json["type"] as string,
       this.json["color"] as string,
+      (this.json["renderStyle"] as string) ?? "SIGNAL",
       ((this.json["bins"] as Record<string, unknown>[]) ?? []).map((bin) =>
         new TrackBinResponseDTO(bin).toEntity()
       ),
@@ -179,6 +209,52 @@ class TrackQueryResponseDTO extends InboundDTO<TrackQueryResponse> {
       ((this.json["tracks"] as Record<string, unknown>[]) ?? []).map((track) =>
         new TrackRenderResponseDTO(track).toEntity()
       )
+    );
+  }
+}
+
+class TrackFeatureSearchHitResponseDTO extends InboundDTO<TrackFeatureSearchHitResponse> {
+  public toEntity(): TrackFeatureSearchHitResponse {
+    return new TrackFeatureSearchHitResponse(
+      (this.json["trackId"] as string) ?? "",
+      (this.json["trackName"] as string) ?? "",
+      (this.json["sourceName"] as string) ?? "",
+      (this.json["label"] as string) ?? "",
+      (this.json["featureType"] as string) ?? null,
+      (this.json["strand"] as string) ?? null,
+      (this.json["startBp"] as number) ?? 0,
+      (this.json["endBp"] as number) ?? 0
+    );
+  }
+}
+
+class TrackFeatureSearchResponseDTO extends InboundDTO<TrackFeatureSearchResponse> {
+  public toEntity(): TrackFeatureSearchResponse {
+    return new TrackFeatureSearchResponse(
+      (this.json["query"] as string) ?? "",
+      (this.json["limit"] as number) ?? 0,
+      (this.json["offset"] as number) ?? 0,
+      Boolean(this.json["hasMore"] ?? false),
+      ((this.json["hits"] as Record<string, unknown>[]) ?? []).map((item) =>
+        new TrackFeatureSearchHitResponseDTO(item).toEntity()
+      )
+    );
+  }
+}
+
+class TrackFeatureContextResponseDTO extends InboundDTO<TrackFeatureContextResponse> {
+  public toEntity(): TrackFeatureContextResponse {
+    return new TrackFeatureContextResponse(
+      (this.json["startBp"] as number) ?? 0,
+      (this.json["endBp"] as number) ?? 1,
+      (this.json["contextStartBp"] as number) ?? 0,
+      (this.json["contextEndBp"] as number) ?? 1,
+      (this.json["marginScreens"] as number) ?? 1,
+      (this.json["contextWidthPx"] as number) ?? 0,
+      (this.json["bpResolution"] as number) ?? 1,
+      new TrackQueryResponseDTO(
+        (this.json["query"] as Record<string, unknown>) ?? {}
+      ).toEntity()
     );
   }
 }
@@ -207,6 +283,35 @@ class TracksPrecomputeStatusResponseDTO extends InboundDTO<TracksPrecomputeStatu
       ),
       (this.json["runningJobs"] as number) ?? 0,
       (this.json["processedDirectory"] as string) ?? ""
+    );
+  }
+}
+
+class TrackCompatibilityReportResponseDTO extends InboundDTO<TrackCompatibilityReportResponse> {
+  public toEntity(): TrackCompatibilityReportResponse {
+    return new TrackCompatibilityReportResponse(
+      (this.json["filename"] as string) ?? "",
+      (this.json["trackType"] as string) ?? "",
+      (this.json["status"] as string) ?? "ok",
+      (this.json["totalNames"] as number) ?? 0,
+      (this.json["matchedSourceNames"] as number) ?? 0,
+      (this.json["matchedAssemblyNames"] as number) ?? 0,
+      (this.json["matchedAnyNames"] as number) ?? 0,
+      (this.json["unknownNames"] as string[]) ?? [],
+      (this.json["recommendation"] as string) ?? "SOURCE",
+      (this.json["message"] as string) ?? ""
+    );
+  }
+}
+
+class FileEntryResponseDTO extends InboundDTO<FileEntryResponse> {
+  public toEntity(): FileEntryResponse {
+    return new FileEntryResponse(
+      (this.json["path"] as string) ?? "",
+      (this.json["name"] as string) ?? "",
+      (this.json["sizeBytes"] as number) ?? -1,
+      (this.json["modifiedAtMs"] as number) ?? 0,
+      (this.json["extension"] as string) ?? ""
     );
   }
 }
@@ -319,7 +424,11 @@ export {
   NameMappingResponseDTO,
   TrackSummaryResponseDTO,
   TrackQueryResponseDTO,
+  TrackFeatureSearchResponseDTO,
+  TrackFeatureContextResponseDTO,
   TracksPrecomputeStatusResponseDTO,
+  TrackCompatibilityReportResponseDTO,
+  FileEntryResponseDTO,
   WorkerSchedulerDiagnosticsResponseDTO,
   FastaLinkResponseDTO,
 };

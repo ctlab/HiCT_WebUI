@@ -80,8 +80,20 @@ class TrackSummaryResponse {
     public readonly color: string,
     public readonly visible: boolean,
     public readonly featureCount: number,
+    public readonly renderStyle: string,
     public readonly renderMode: string,
-    public readonly aggregationMode: string
+    public readonly aggregationMode: string,
+    public readonly logScale: boolean
+  ) {}
+}
+
+class TrackBinBlockResponse {
+  public constructor(
+    public readonly startBp: number,
+    public readonly endBp: number,
+    public readonly startPx: number,
+    public readonly endPx: number,
+    public readonly coding: boolean
   ) {}
 }
 
@@ -93,7 +105,14 @@ class TrackBinResponse {
     public readonly count: number,
     public readonly label: string | null,
     public readonly startPx: number | null,
-    public readonly endPx: number | null
+    public readonly endPx: number | null,
+    public readonly strand: string | null,
+    public readonly thickStartBp: number | null,
+    public readonly thickEndBp: number | null,
+    public readonly thickStartPx: number | null,
+    public readonly thickEndPx: number | null,
+    public readonly featureType: string | null,
+    public readonly blocks: TrackBinBlockResponse[]
   ) {}
 }
 
@@ -103,6 +122,7 @@ class TrackRenderResponse {
     public readonly name: string,
     public readonly type: string,
     public readonly color: string,
+    public readonly renderStyle: string,
     public readonly bins: TrackBinResponse[],
     public readonly maxValue: number,
     public readonly error: string | null
@@ -118,6 +138,42 @@ class TrackQueryResponse {
     public readonly widthPx: number,
     public readonly bpResolution: number,
     public readonly tracks: TrackRenderResponse[]
+  ) {}
+}
+
+class TrackFeatureSearchHitResponse {
+  public constructor(
+    public readonly trackId: string,
+    public readonly trackName: string,
+    public readonly sourceName: string,
+    public readonly label: string,
+    public readonly featureType: string | null,
+    public readonly strand: string | null,
+    public readonly startBp: number,
+    public readonly endBp: number
+  ) {}
+}
+
+class TrackFeatureSearchResponse {
+  public constructor(
+    public readonly query: string,
+    public readonly limit: number,
+    public readonly offset: number,
+    public readonly hasMore: boolean,
+    public readonly hits: TrackFeatureSearchHitResponse[]
+  ) {}
+}
+
+class TrackFeatureContextResponse {
+  public constructor(
+    public readonly startBp: number,
+    public readonly endBp: number,
+    public readonly contextStartBp: number,
+    public readonly contextEndBp: number,
+    public readonly marginScreens: number,
+    public readonly contextWidthPx: number,
+    public readonly bpResolution: number,
+    public readonly query: TrackQueryResponse
   ) {}
 }
 
@@ -140,6 +196,31 @@ class TracksPrecomputeStatusResponse {
     public readonly tracks: TrackPrecomputeTrackStatusResponse[],
     public readonly runningJobs: number,
     public readonly processedDirectory: string
+  ) {}
+}
+
+class TrackCompatibilityReportResponse {
+  public constructor(
+    public readonly filename: string,
+    public readonly trackType: string,
+    public readonly status: string,
+    public readonly totalNames: number,
+    public readonly matchedSourceNames: number,
+    public readonly matchedAssemblyNames: number,
+    public readonly matchedAnyNames: number,
+    public readonly unknownNames: string[],
+    public readonly recommendation: string,
+    public readonly message: string
+  ) {}
+}
+
+class FileEntryResponse {
+  public constructor(
+    public readonly path: string,
+    public readonly name: string,
+    public readonly sizeBytes: number,
+    public readonly modifiedAtMs: number,
+    public readonly extension: string
   ) {}
 }
 
@@ -222,11 +303,17 @@ export {
   ConversionJobResponse,
   NameMappingResponse,
   TrackSummaryResponse,
+  TrackBinBlockResponse,
   TrackBinResponse,
   TrackRenderResponse,
   TrackQueryResponse,
+  TrackFeatureSearchHitResponse,
+  TrackFeatureSearchResponse,
+  TrackFeatureContextResponse,
   TrackPrecomputeTrackStatusResponse,
   TracksPrecomputeStatusResponse,
+  TrackCompatibilityReportResponse,
+  FileEntryResponse,
   WorkerPoolDiagnosticsResponse,
   WorkerCancellationDomainDiagnosticsResponse,
   WorkerSchedulerDiagnosticsResponse,

@@ -162,6 +162,14 @@
         <hr class="dropdown-divider" />
       </li>
       <li>
+        <button type="button" class="btn btn-sm btn-outline-primary w-100" @click="openRenderingPipeline">
+          Rendering pipeline...
+        </button>
+      </li>
+      <li>
+        <hr class="dropdown-divider" />
+      </li>
+      <li>
         <div class="btn-group" role="group" id="normalization-apply-group">
           <button type="button" class="btn btn-success" @click="applySettings">
             Apply
@@ -173,14 +181,22 @@
       </li>
     </ul>
   </div>
+  <RenderingPipelineModal
+    v-if="pipelineModalOpen"
+    :map-manager="props.mapManager"
+    @dismissed="pipelineModalOpen = false"
+  />
 </template>
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { Ref, ref, watch } from "vue";
+import { defineAsyncComponent, Ref, ref, watch } from "vue";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import { toast } from "vue-sonner";
+const RenderingPipelineModal = defineAsyncComponent(
+  () => import("./RenderingPipelineModal.vue")
+);
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const {
   preLogBase,
@@ -200,6 +216,7 @@ const applyPreLog: Ref<boolean> = ref(false);
 // const applyCoolerWeights: Ref<boolean> = ref(false);
 
 const applyPostLog: Ref<boolean> = ref(true);
+const pipelineModalOpen = ref(false);
 
 // const preLogBase: Ref<number> = ref(10);
 
@@ -263,6 +280,10 @@ function postLogCheckChange() {
   // toast.message(
   //   `Apply pre log: ${applyPostLog.value}, preLogBase: ${postLogBase.value}`
   // );
+}
+
+function openRenderingPipeline(): void {
+  pipelineModalOpen.value = true;
 }
 </script>
 

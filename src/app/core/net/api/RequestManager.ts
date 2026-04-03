@@ -37,6 +37,10 @@ import {
   FastaLinkResponseDTO,
   NameMappingResponseDTO,
   TracksPrecomputeStatusResponseDTO,
+  TrackCompatibilityReportResponseDTO,
+  FileEntryResponseDTO,
+  TrackFeatureContextResponseDTO,
+  TrackFeatureSearchResponseDTO,
   TrackQueryResponseDTO,
   TrackSummaryResponseDTO,
   TilePOSTResponseDTO,
@@ -53,6 +57,7 @@ import {
   LinkFASTARequest,
   ListAGPFilesRequest,
   ListCoolerFilesRequest,
+  ListFilesDetailedRequest,
   ListFASTAFilesRequest,
   ListFilesRequest,
   LoadAGPRequest,
@@ -79,21 +84,37 @@ import {
   AttachSessionRequest,
   CloseFileRequest,
   OpenProgressRequest,
+  OpenSecondarySourceRequest,
+  CloseSecondarySourceRequest,
+  GetSecondarySourceStatusRequest,
+  SetAssemblyInfoSourceRequest,
   ListTrackFilesRequest,
   OpenTrackRequest,
+  OpenCoolerWeightsTrackRequest,
+  ProbeTrackCompatibilityRequest,
   ListTracksRequest,
   UpdateTrackRequest,
   RemoveTrackRequest,
+  ReorderTrackRequest,
   QueryTracks1DRequest,
+  SearchTrackFeaturesRequest,
+  GetTrackFeatureContextRequest,
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
   GetWorkerDiagnosticsRequest,
+  GetRenderPipelineRequest,
+  SetRenderPipelineRequest,
+  ResetRenderPipelineRequest,
 } from "./request";
 import {
   ConversionJobResponse,
   CurrentSignalRangeResponse,
   FastaLinkResponse,
+  FileEntryResponse,
   NameMappingResponse,
+  TrackCompatibilityReportResponse,
+  TrackFeatureContextResponse,
+  TrackFeatureSearchResponse,
   TracksPrecomputeStatusResponse,
   TrackQueryResponse,
   TrackSummaryResponse,
@@ -103,12 +124,82 @@ import { toast } from "vue-sonner";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 
+export type SecondarySourceCompatibility = {
+  sameResolutions: boolean;
+  sameMatrixSizes: boolean;
+  exactMatch: boolean;
+  primaryMaxBins: number;
+  secondaryMaxBins: number;
+  primaryBinsByResolution: number[];
+  secondaryBinsByResolution: number[];
+  mismatchedResolutionOrders: number[];
+};
+
+export type SecondarySourceStatusResponse = {
+  attached: boolean;
+  filename: string;
+  assemblySource: "PRIMARY" | "SECONDARY";
+  requiresConfirmation: boolean;
+  requestedFilename?: string;
+  warnings: string[];
+  compatibility?: SecondarySourceCompatibility;
+};
+
 class RequestManager {
   constructor(public readonly networkManager: NetworkManager) {}
 
   private normalizeAssemblyInfo(json: Record<string, unknown>): Record<string, unknown> {
     const assemblyInfo = json["assemblyInfo"] as Record<string, unknown> | undefined;
     return assemblyInfo ?? json;
+  }
+
+  private parseSecondarySourceStatus(json: Record<string, unknown>): SecondarySourceStatusResponse {
+    if (typeof json.error === "string" && json.error.trim().length > 0) {
+      throw new Error(json.error);
+    }
+    const compatibilityRaw =
+      (json.compatibility as Record<string, unknown> | undefined) ?? undefined;
+    const compatibility: SecondarySourceCompatibility | undefined = compatibilityRaw
+      ? {
+          sameResolutions: Boolean(compatibilityRaw.sameResolutions ?? false),
+          sameMatrixSizes: Boolean(compatibilityRaw.sameMatrixSizes ?? false),
+          exactMatch: Boolean(compatibilityRaw.exactMatch ?? false),
+          primaryMaxBins: Number(compatibilityRaw.primaryMaxBins ?? 0),
+          secondaryMaxBins: Number(compatibilityRaw.secondaryMaxBins ?? 0),
+          primaryBinsByResolution: Array.isArray(compatibilityRaw.primaryBinsByResolution)
+            ? (compatibilityRaw.primaryBinsByResolution as unknown[]).map((value) =>
+                Number(value ?? 0)
+              )
+            : [],
+          secondaryBinsByResolution: Array.isArray(compatibilityRaw.secondaryBinsByResolution)
+            ? (compatibilityRaw.secondaryBinsByResolution as unknown[]).map((value) =>
+                Number(value ?? 0)
+              )
+            : [],
+          mismatchedResolutionOrders: Array.isArray(compatibilityRaw.mismatchedResolutionOrders)
+            ? (compatibilityRaw.mismatchedResolutionOrders as unknown[]).map((value) =>
+                Number(value ?? 0)
+              )
+            : [],
+        }
+      : undefined;
+    return {
+      attached: Boolean(json.attached ?? false),
+      filename: String(json.filename ?? ""),
+      assemblySource:
+        String(json.assemblySource ?? "PRIMARY").toUpperCase() === "SECONDARY"
+          ? "SECONDARY"
+          : "PRIMARY",
+      requiresConfirmation: Boolean(json.requiresConfirmation ?? false),
+      requestedFilename:
+        typeof json.requestedFilename === "string"
+          ? json.requestedFilename
+          : undefined,
+      warnings: Array.isArray(json.warnings)
+        ? (json.warnings as unknown[]).map((value) => String(value))
+        : [],
+      compatibility,
+    };
   }
 
   public async sendRequest(
@@ -196,6 +287,46 @@ class RequestManager {
       });
   }
 
+  public async getSecondarySourceStatus(): Promise<SecondarySourceStatusResponse> {
+    return this.sendRequest(new GetSecondarySourceStatusRequest())
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => this.parseSecondarySourceStatus(json));
+  }
+
+  public async openSecondarySource(
+    filename: string,
+    allowMismatch = false
+  ): Promise<SecondarySourceStatusResponse> {
+    return this.sendRequest(new OpenSecondarySourceRequest({ filename, allowMismatch }))
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => this.parseSecondarySourceStatus(json));
+  }
+
+  public async closeSecondarySource(): Promise<SecondarySourceStatusResponse> {
+    return this.sendRequest(new CloseSecondarySourceRequest())
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => this.parseSecondarySourceStatus(json));
+  }
+
+  public async setAssemblyInfoSource(
+    assemblySource: "PRIMARY" | "SECONDARY"
+  ): Promise<{
+    assemblySource: "PRIMARY" | "SECONDARY";
+    assemblyInfo: AssemblyInfo;
+  }> {
+    return this.sendRequest(new SetAssemblyInfoSourceRequest({ assemblySource }))
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => ({
+        assemblySource:
+          String(json.assemblySource ?? "PRIMARY").toUpperCase() === "SECONDARY"
+            ? "SECONDARY"
+            : "PRIMARY",
+        assemblyInfo: new AssemblyInfoDTO(
+          (json.assemblyInfo ?? {}) as Record<string, unknown>
+        ).toEntity(),
+      }));
+  }
+
   public async closeFile(): Promise<void> {
     await this.sendRequest(new CloseFileRequest());
   }
@@ -231,6 +362,12 @@ class RequestManager {
     return response.data as string[];
   }
 
+  public async listFilesDetailed(): Promise<FileEntryResponse[]> {
+    return this.sendRequest(new ListFilesDetailedRequest())
+      .then((response) => response.data as Record<string, unknown>[])
+      .then((items) => items.map((item) => new FileEntryResponseDTO(item).toEntity()));
+  }
+
   public async listCoolers(): Promise<string[]> {
     const response = await this.sendRequest(new ListCoolerFilesRequest());
     return response.data as string[];
@@ -251,6 +388,23 @@ class RequestManager {
       .then((json) => new TrackSummaryResponseDTO(json).toEntity());
   }
 
+  public async openCoolerWeightsTrack(
+    name?: string,
+    color?: string
+  ): Promise<TrackSummaryResponse> {
+    return this.sendRequest(new OpenCoolerWeightsTrackRequest({ name, color }))
+      .then((response) => response.data)
+      .then((json) => new TrackSummaryResponseDTO(json).toEntity());
+  }
+
+  public async probeTrackCompatibility(
+    filename: string
+  ): Promise<TrackCompatibilityReportResponse> {
+    return this.sendRequest(new ProbeTrackCompatibilityRequest({ filename }))
+      .then((response) => response.data)
+      .then((json) => new TrackCompatibilityReportResponseDTO(json).toEntity());
+  }
+
   public async listTracks(): Promise<TrackSummaryResponse[]> {
     return this.sendRequest(new ListTracksRequest())
       .then((response) => response.data as Record<string, unknown>[])
@@ -265,6 +419,7 @@ class RequestManager {
       name?: string;
       renderMode?: string;
       aggregationMode?: string;
+      logScale?: boolean;
     }
   ): Promise<TrackSummaryResponse> {
     return this.sendRequest(
@@ -275,6 +430,7 @@ class RequestManager {
         name: options.name,
         renderMode: options.renderMode,
         aggregationMode: options.aggregationMode,
+        logScale: options.logScale,
       })
     )
       .then((response) => response.data)
@@ -285,15 +441,129 @@ class RequestManager {
     await this.sendRequest(new RemoveTrackRequest({ trackId }));
   }
 
+  public async reorderTrack(
+    trackId: string,
+    targetIndex: number
+  ): Promise<TrackSummaryResponse[]> {
+    return this.sendRequest(new ReorderTrackRequest({ trackId, targetIndex }))
+      .then((response) => response.data as Record<string, unknown>[])
+      .then((items) =>
+        items.map((item) => new TrackSummaryResponseDTO(item).toEntity())
+      );
+  }
+
   public async queryTracks1D(
     startPx: number,
     endPx: number,
     widthPx: number,
     bpResolution: number
   ): Promise<TrackQueryResponse> {
-    return this.sendRequest(new QueryTracks1DRequest({ startPx, endPx, widthPx, bpResolution }))
+    return this.sendRequest(
+      new QueryTracks1DRequest({
+        unit: "PIXELS",
+        startPx,
+        endPx,
+        widthPx,
+        bpResolution,
+      })
+    )
       .then((response) => response.data)
       .then((json) => new TrackQueryResponseDTO(json).toEntity());
+  }
+
+  public async queryTracks1DByUnits(options: {
+    unit: "PIXELS" | "BINS" | "BP";
+    start: number;
+    end: number;
+    widthPx: number;
+    bpResolution: number;
+  }): Promise<TrackQueryResponse> {
+    const payload: {
+      unit: "PIXELS" | "BINS" | "BP";
+      widthPx: number;
+      bpResolution: number;
+      startPx?: number;
+      endPx?: number;
+      startBin?: number;
+      endBin?: number;
+      startBP?: number;
+      endBP?: number;
+    } = {
+      unit: options.unit,
+      widthPx: options.widthPx,
+      bpResolution: options.bpResolution,
+    };
+    if (options.unit === "PIXELS") {
+      payload.startPx = options.start;
+      payload.endPx = options.end;
+    } else if (options.unit === "BINS") {
+      payload.startBin = options.start;
+      payload.endBin = options.end;
+    } else {
+      payload.startBP = options.start;
+      payload.endBP = options.end;
+    }
+    return this.sendRequest(new QueryTracks1DRequest(payload))
+      .then((response) => response.data)
+      .then((json) => new TrackQueryResponseDTO(json).toEntity());
+  }
+
+  public async searchTrackFeatures(options: {
+    query: string;
+    limit?: number;
+    offset?: number;
+    trackId?: string;
+  }): Promise<TrackFeatureSearchResponse> {
+    return this.sendRequest(
+      new SearchTrackFeaturesRequest({
+        query: options.query,
+        limit: options.limit,
+        offset: options.offset,
+        trackId: options.trackId,
+      })
+    )
+      .then((response) => response.data)
+      .then((json) => new TrackFeatureSearchResponseDTO(json).toEntity());
+  }
+
+  public async getTrackFeatureContext(options: {
+    unit: "PIXELS" | "BINS" | "BP";
+    start: number;
+    end: number;
+    widthPx: number;
+    bpResolution: number;
+    marginScreens?: number;
+  }): Promise<TrackFeatureContextResponse> {
+    const payload: {
+      unit: "PIXELS" | "BINS" | "BP";
+      widthPx: number;
+      bpResolution: number;
+      marginScreens?: number;
+      startPx?: number;
+      endPx?: number;
+      startBin?: number;
+      endBin?: number;
+      startBP?: number;
+      endBP?: number;
+    } = {
+      unit: options.unit,
+      widthPx: options.widthPx,
+      bpResolution: options.bpResolution,
+      marginScreens: options.marginScreens,
+    };
+    if (options.unit === "PIXELS") {
+      payload.startPx = options.start;
+      payload.endPx = options.end;
+    } else if (options.unit === "BINS") {
+      payload.startBin = options.start;
+      payload.endBin = options.end;
+    } else {
+      payload.startBP = options.start;
+      payload.endBP = options.end;
+    }
+    return this.sendRequest(new GetTrackFeatureContextRequest(payload))
+      .then((response) => response.data)
+      .then((json) => new TrackFeatureContextResponseDTO(json).toEntity());
   }
 
   public async startTracksPrecompute(
@@ -315,6 +585,23 @@ class RequestManager {
     return this.sendRequest(new GetWorkerDiagnosticsRequest())
       .then((response) => response.data)
       .then((json) => new WorkerSchedulerDiagnosticsResponseDTO(json).toEntity());
+  }
+
+  public async getRenderPipelineConfig(): Promise<Record<string, unknown>> {
+    return this.sendRequest(new GetRenderPipelineRequest())
+      .then((response) => response.data as Record<string, unknown>);
+  }
+
+  public async setRenderPipelineConfig(
+    config: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    return this.sendRequest(new SetRenderPipelineRequest(config))
+      .then((response) => response.data as Record<string, unknown>);
+  }
+
+  public async resetRenderPipelineConfig(): Promise<Record<string, unknown>> {
+    return this.sendRequest(new ResetRenderPipelineRequest())
+      .then((response) => response.data as Record<string, unknown>);
   }
 
   public async listFASTAFiles(): Promise<string[]> {

@@ -64,6 +64,7 @@
             <div v-if="!jobId" class="convert-section">
               <CoolerFileSelector
                 :network-manager="networkManager"
+                :initial-filename="initialCoolerFilename"
                 @selected="onCoolerFileSelected"
               />
               <div class="mt-3 d-flex gap-2">
@@ -207,6 +208,22 @@
             Dismiss
           </button>
         </div>
+        <div v-if="overwriteConfirmVisible" class="overwrite-confirm-backdrop">
+          <div class="overwrite-confirm card shadow">
+            <div class="card-body">
+              <h6 class="card-title mb-2">Overwrite converted output?</h6>
+              <p class="card-text mb-3">{{ overwriteConfirmMessage }}</p>
+              <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary" @click="resolveOverwriteConfirm(false)">
+                  Cancel
+                </button>
+                <button type="button" class="btn btn-danger" @click="resolveOverwriteConfirm(true)">
+                  Overwrite
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -230,6 +247,7 @@ const emit = defineEmits<{
 
 const props = defineProps<{
   networkManager: NetworkManager;
+  initialCoolerFilename?: string;
 }>();
 
 const selectedCoolerFilename: Ref<string | null> = ref(null);
@@ -239,7 +257,7 @@ const modal: Ref<Modal | null> = ref(null);
 const convertCoolerModal = ref<HTMLElement | null>(null);
 const jobId: Ref<string | null> = ref(null);
 const jobs: Ref<ConversionJobResponse[]> = ref([]);
-const mode: Ref<"single" | "batch"> = ref("single");
+const mode: Ref<"single" | "batch"> = ref("batch");
 const batchStep: Ref<"select" | "settings" | "progress"> = ref("select");
 const batchFiles: Ref<string[]> = ref([]);
 const batchSelection: Ref<Set<string>> = ref(new Set<string>());
@@ -250,8 +268,39 @@ const batchStatusMap: Ref<Map<string, string>> = ref(new Map());
 const batchProgressMap: Ref<Map<string, number>> = ref(new Map());
 const allFiles: Ref<Set<string>> = ref(new Set<string>());
 const lastSelectedIndex: Ref<number | null> = ref(null);
+const overwriteConfirmVisible: Ref<boolean> = ref(false);
+const overwriteConfirmMessage: Ref<string> = ref("");
+let overwriteConfirmResolver: ((approved: boolean) => void) | null = null;
+
+function cancelPendingOverwriteConfirm(): void {
+  overwriteConfirmVisible.value = false;
+  overwriteConfirmMessage.value = "";
+  if (overwriteConfirmResolver) {
+    overwriteConfirmResolver(false);
+    overwriteConfirmResolver = null;
+  }
+}
+
+function askOverwriteConfirmation(message: string): Promise<boolean> {
+  cancelPendingOverwriteConfirm();
+  overwriteConfirmMessage.value = message;
+  overwriteConfirmVisible.value = true;
+  return new Promise((resolve) => {
+    overwriteConfirmResolver = resolve;
+  });
+}
+
+function resolveOverwriteConfirm(approved: boolean): void {
+  overwriteConfirmVisible.value = false;
+  overwriteConfirmMessage.value = "";
+  if (overwriteConfirmResolver) {
+    overwriteConfirmResolver(approved);
+    overwriteConfirmResolver = null;
+  }
+}
 
 function resetState(): void {
+  cancelPendingOverwriteConfirm();
   try {
     modal.value?.dispose();
   } catch (e: unknown) {
@@ -263,7 +312,7 @@ function resetState(): void {
     selectedCoolerFilename.value = null;
     jobId.value = null;
     jobs.value = [];
-    mode.value = "single";
+    mode.value = "batch";
     batchStep.value = "select";
     batchFiles.value = [];
     batchSelection.value = new Set<string>();
@@ -284,31 +333,49 @@ function onCoolerFileSelected(coolerFilename: string): void {
   selectedCoolerFilename.value = coolerFilename;
 }
 
-function convertCooler(): void {
+async function convertCooler(): Promise<void> {
   const filename = selectedCoolerFilename.value;
-  if (filename) {
-    props.networkManager.requestManager
-      .startConversionJob(
-        new StartConversionJobRequest({
-          filename: filename,
-          direction: "mcool-to-hict",
-        })
-      )
-      .then((resp) => {
-        jobId.value = resp.jobId;
-      })
-      .catch((e) => {
-        errorMessage.value = e;
-      })
-      .finally(() => {
-        converting.value = false;
-      });
-    converting.value = true;
+  if (!filename) {
+    return;
   }
+  const overwriteExisting = isConverted(filename);
+  if (overwriteExisting) {
+    const output = deriveOutputFilename(filename);
+    const approved = await askOverwriteConfirmation(
+      `Converted file already exists (${output}). Overwrite it with a new conversion?`
+    );
+    if (!approved) {
+      return;
+    }
+  }
+  converting.value = true;
+  props.networkManager.requestManager
+    .startConversionJob(
+      new StartConversionJobRequest({
+        filename: filename,
+        direction: "mcool-to-hict",
+        overwrite: overwriteExisting,
+      })
+    )
+    .then((resp) => {
+      jobId.value = resp.jobId;
+    })
+    .catch((e) => {
+      errorMessage.value = e;
+    })
+    .finally(() => {
+      converting.value = false;
+    });
 }
 
 onMounted(() => {
   converting.value = false;
+  if (props.initialCoolerFilename && props.initialCoolerFilename.trim().length > 0) {
+    selectedCoolerFilename.value = props.initialCoolerFilename;
+  }
+  mode.value = "batch";
+  batchStep.value = "select";
+  loadBatchFiles();
   modal.value = new Modal(convertCoolerModal.value ?? "loadAGPModal", {
     backdrop: "static",
     keyboard: false,
@@ -347,7 +414,14 @@ function loadBatchFiles(): void {
     .then(([coolers, files]) => {
       batchFiles.value = coolers;
       allFiles.value = new Set(files);
-      batchSelection.value = new Set<string>();
+      if (
+        props.initialCoolerFilename &&
+        coolers.includes(props.initialCoolerFilename)
+      ) {
+        batchSelection.value = new Set<string>([props.initialCoolerFilename]);
+      } else {
+        batchSelection.value = new Set<string>();
+      }
     })
     .catch((e) => {
       errorMessage.value = e;
@@ -436,8 +510,18 @@ function proceedBatchSettings(): void {
   batchStep.value = "settings";
 }
 
-function startBatchConversion(): void {
+async function startBatchConversion(): Promise<void> {
   const files = Array.from(batchSelection.value);
+  const alreadyConverted = files.filter((file) => isConverted(file));
+  const overwriteExisting = alreadyConverted.length > 0;
+  if (overwriteExisting) {
+    const approved = await askOverwriteConfirmation(
+      `${alreadyConverted.length} selected file(s) already have converted outputs. Overwrite existing outputs?`
+    );
+    if (!approved) {
+      return;
+    }
+  }
   batchStatusMap.value.clear();
   batchProgressMap.value.clear();
   props.networkManager.requestManager
@@ -446,6 +530,7 @@ function startBatchConversion(): void {
         files,
         parallelJobs: batchParallelJobs.value,
         parallelism: batchParallelism.value,
+        overwrite: overwriteExisting,
       })
     )
     .then((resp) => {
@@ -591,5 +676,24 @@ const overallBatchStatusClass = computed(() => {
 .status-pill.cancelled {
   background: #e5e7eb;
   color: #374151;
+}
+
+.modal-content {
+  position: relative;
+}
+
+.overwrite-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(17, 24, 39, 0.45);
+}
+
+.overwrite-confirm {
+  width: min(460px, calc(100% - 32px));
+  border: 1px solid #d1d5db;
 }
 </style>

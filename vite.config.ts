@@ -31,6 +31,28 @@ import vueJsx from "@vitejs/plugin-vue-jsx";
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
+    {
+      name: "sanitize-litegraph-eval",
+      enforce: "pre",
+      transform(code, id) {
+        if (!id.includes("node_modules/litegraph.js/build/litegraph.js")) {
+          return null;
+        }
+        let patched = code;
+        patched = patched.replace(
+          /var _foo = eval;\s*eval = null;\s*\(new Function\("with\(this\) \{ " \+ code \+ "\}"\)\)\.call\(this\);\s*eval = _foo;/g,
+          '(new Function("with(this) { " + code + "}")).call(this);'
+        );
+        patched = patched.replace(/v = eval\(v\);/g, "v = Number(v);");
+        if (patched === code) {
+          return null;
+        }
+        return {
+          code: patched,
+          map: null,
+        };
+      },
+    },
     vue({
       template: {
         compilerOptions: {
@@ -50,5 +72,18 @@ export default defineConfig({
     port: 8080,
     strictPort: true,
     // https: true,
+  },
+  build: {
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-vue": ["vue", "pinia"],
+          "vendor-ol": ["ol"],
+          "vendor-ui": ["bootstrap", "@popperjs/core", "axios"],
+          "vendor-export": ["jspdf", "html2canvas"],
+        },
+      },
+    },
   },
 });

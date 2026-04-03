@@ -4,7 +4,7 @@
   "private": true,
   "author": "Aleksandr Serdiukov, Anton Zamyatin and CT Lab ITMO University team",
   "main": "dist/electron/electron/main/main.js",
-  "license":"MIT",
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "run-p type-check build-only && tsc",
@@ -30,14 +30,17 @@
     "binary-search-bounds": "2.0.5",
     "bootstrap": "^5.2.2",
     "bootstrap-icons": "^1.9.1",
+    "colortranslator": "^4.1.0",
     "core-js": "^3.25.5",
+    "display-si": "^1.0.7",
     "igv": "^2.13.3",
+    "jspdf": "^2.5.1",
+    "litegraph.js": "^0.7.18",
     "mobx": "^6.6.2",
     "mobx-vue-lite": "^0.3.1",
     "multi-range-slider-vue": "^1.1.4",
     "normalize.css": "^8.0.1",
     "ol": "^9.1.0",
-    "display-si": "^1.0.7",
     "path-browserify": "^1.0.1",
     "pinia": "^2.1.6",
     "primeflex": "^3.3.1",
@@ -48,9 +51,7 @@
     "vanilla-picker": "^2.12.2",
     "vue": "^3.2.41",
     "vue-color-kit": "^1.0.6",
-    "vue-sonner": "^0.4.2",
-    "colortranslator": "^4.1.0",
-    "jspdf": "^2.5.1"
+    "vue-sonner": "^0.4.2"
   },
   "devDependencies": {
     "@rushstack/eslint-patch": "^1.2.0",

@@ -21,3 +21,10 @@ Visit [releases page](https://github.com/ctlab/HiCT_WebUI/releases) to obtain bi
 Make [HiCT server](https://github.com/ctlab/HiCT_Server) available at `http://localhost:5000` either by starting it locally or by using port forwarding from remote server. Put HiCT files into server's data directory (you can convert Coolers using [HiCT_Utils](https://github.com/ctlab/HiCT_Utils)). Start Electron-based Web UI by unzipping binary distribution and launching `.exe` file (Windows) or by launching `.AppImage` file (linux, make sure you've made `chmod +x` for it). 
 Click File -> Open and select HiCT file you want to interact with. Tiles should start loading on a contact map. Use single clicks or Shift+dragging at any time to perform range selection. Click tool buttons on the left side to perform actions with selection range.
 After you've done, you can either save state using File -> Save in HiCT format, or export assembly info using Assembly menu in navigation bar at the top of the window.
+
+## API documentation integration
+
+WebUI now links directly to backend API docs via **View → API v1 docs...**.
+
+- Interactive Swagger UI: `http://localhost:5000/api/v1/`
+- OpenAPI source: `http://localhost:5000/api/v1/openapi.yaml`

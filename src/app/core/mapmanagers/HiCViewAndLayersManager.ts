@@ -898,15 +898,24 @@ class HiCViewAndLayersManager {
     });
     try {
       const map = this.mapManager.getMap();
-      map.on("moveend", (event) => {
-        rulerH.render(event);
-      });
-      map.on("moveend", (event) => {
-        rulerV.render(event);
-      });
+      const view = map.getView();
+      let framePending = false;
+      const scheduleRulerRender = () => {
+        if (framePending) {
+          return;
+        }
+        framePending = true;
+        window.requestAnimationFrame(() => {
+          framePending = false;
+          rulerH.render({ map } as never);
+          rulerV.render({ map } as never);
+        });
+      };
+      map.on("moveend", scheduleRulerRender);
+      view.on("change:center", scheduleRulerRender);
+      view.on("change:resolution", scheduleRulerRender);
       map.once("postrender", () => {
-        rulerH.render({ map } as never);
-        rulerV.render({ map } as never);
+        scheduleRulerRender();
       });
     } catch (e: unknown) {
       console.log("Error while adding rulers", e);

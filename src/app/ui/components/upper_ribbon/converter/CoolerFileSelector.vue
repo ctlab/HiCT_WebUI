@@ -51,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { type Ref, ref, onMounted } from "vue";
+import { type Ref, ref, onMounted, watch } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 
 const emit = defineEmits<{
@@ -60,6 +60,7 @@ const emit = defineEmits<{
 
 const props = defineProps<{
   networkManager: NetworkManager;
+  initialFilename?: string;
 }>();
 
 const selectedCoolerFilename: Ref<string | null> = ref(null);
@@ -73,11 +74,45 @@ function onSelectClicked(): void {
   }
 }
 
+const normalizePath = (path: string): string => path.replaceAll("\\", "/");
+
+const chooseInitialFilename = (
+  initialFilename: string | undefined,
+  availableFilenames: string[]
+): string | null => {
+  if (!initialFilename || !initialFilename.trim()) {
+    return null;
+  }
+  const normalizedInitial = normalizePath(initialFilename.trim());
+  const exactMatch = availableFilenames.find(
+    (filename) => normalizePath(filename) === normalizedInitial
+  );
+  if (exactMatch) {
+    return exactMatch;
+  }
+  const initialBasename = normalizedInitial.split("/").pop();
+  if (!initialBasename) {
+    return null;
+  }
+  const basenameMatches = availableFilenames.filter(
+    (filename) => normalizePath(filename).split("/").pop() === initialBasename
+  );
+  if (basenameMatches.length === 1) {
+    return basenameMatches[0];
+  }
+  return null;
+};
+
 onMounted(() => {
   props.networkManager.requestManager
     .listCoolers()
     .then((lst) => {
       filenames.value = lst;
+      const initial = chooseInitialFilename(props.initialFilename, lst);
+      if (initial) {
+        selectedCoolerFilename.value = initial;
+        emit("selected", initial);
+      }
     })
     .catch((e) => {
       errorMessage.value = e;
@@ -86,6 +121,16 @@ onMounted(() => {
       loading.value = false;
     });
 });
+
+watch(
+  selectedCoolerFilename,
+  (filename) => {
+    if (filename) {
+      emit("selected", filename);
+    }
+  },
+  { flush: "post" }
+);
 </script>
 
 <style scoped>
