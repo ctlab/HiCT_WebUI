@@ -296,6 +296,20 @@ class ContactMapManager {
     this.scheduleMinimapViewportSync();
   }
 
+  private resolveExportMapSizePx(
+    bpResolution: number,
+    configuredMapSizePx: number
+  ): number {
+    const safeConfiguredSize = Math.max(1, Math.round(configuredMapSizePx || 1));
+    const prefixPx = this.contigDimensionHolder.prefix_sum_px.get(bpResolution);
+    const assemblyMapSizePx =
+      prefixPx?.[this.contigDimensionHolder.contig_count] ?? safeConfiguredSize;
+    return Math.max(
+      1,
+      Math.min(safeConfiguredSize, Math.round(assemblyMapSizePx))
+    );
+  }
+
   private async buildCurrentMapSvg(
     progressCallback?: (progress: number) => void,
     options?: {
@@ -331,8 +345,10 @@ class ContactMapManager {
 
     const descriptor =
       this.viewAndLayersManager.currentViewState.resolutionDesciptor;
-    const imageSize =
-      this.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex];
+    const mapSizePx = this.resolveExportMapSizePx(
+      descriptor.bpResolution,
+      this.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex] ?? 1
+    );
     const tileSize = this.options.tileSize;
 
     const layer =
@@ -352,7 +368,7 @@ class ContactMapManager {
     const tileUrlFn = source.getTileUrlFunction();
     const projection = this.map.getView().getProjection();
     const pixelRatio = window.devicePixelRatio ?? 1;
-    const tilesPerSide = Math.ceil(imageSize / tileSize);
+    const tilesPerSide = Math.ceil(mapSizePx / tileSize);
     const tiles: { col: number; row: number; url: string }[] = [];
     for (let row = 0; row < tilesPerSide; row++) {
       for (let col = 0; col < tilesPerSide; col++) {
@@ -365,8 +381,8 @@ class ContactMapManager {
       }
     }
 
-    const width = imageSize;
-    const height = imageSize;
+    const width = mapSizePx;
+    const height = mapSizePx;
     const backgroundColor = options?.backgroundColor ?? "rgba(255,255,255,0)";
     const escapeAttr = ContactMapManager.escapeXml;
     const svgImages: string[] = [];
@@ -756,12 +772,9 @@ class ContactMapManager {
     const bpResolution = descriptor.bpResolution;
     const configuredMapSizePx =
       this.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex] ?? 1;
-    const prefixPx = this.contigDimensionHolder.prefix_sum_px.get(bpResolution);
-    const assemblyMapSizePx =
-      prefixPx?.[this.contigDimensionHolder.contig_count] ?? configuredMapSizePx;
-    const mapSizePx = Math.max(
-      1,
-      Math.min(configuredMapSizePx, assemblyMapSizePx)
+    const mapSizePx = this.resolveExportMapSizePx(
+      bpResolution,
+      configuredMapSizePx
     );
     const visibleTrackCount = this.linearTrackManager
       .getTracksSnapshot()

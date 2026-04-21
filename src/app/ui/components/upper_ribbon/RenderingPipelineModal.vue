@@ -56,6 +56,26 @@
                 <input id="pipeline-swap" v-model="swapUpperLower" class="form-check-input" type="checkbox" />
                 <label class="form-check-label" for="pipeline-swap">Swap upper/lower diagonal branches</label>
               </div>
+              <select
+                v-model="selectedPresetId"
+                class="form-select form-select-sm pipeline-preset-select"
+                :disabled="loading || saving"
+              >
+                <option
+                  v-for="preset in RENDERING_PRESETS"
+                  :key="preset.id"
+                  :value="preset.id"
+                >
+                  {{ preset.label }}
+                </option>
+              </select>
+              <button
+                class="btn btn-sm btn-outline-primary"
+                :disabled="loading || saving"
+                @click="loadSelectedPreset"
+              >
+                Load preset
+              </button>
               <button class="btn btn-sm btn-outline-secondary ms-auto" :disabled="loading || saving" @click="loadConfig">
                 Reload
               </button>
@@ -69,7 +89,7 @@
               </div>
             </div>
             <small class="text-muted d-block mb-2">
-              Right-click to add HiCT nodes only. Upper/Lower sinks accept color outputs; keep a colormap node before each sink.
+              Right-click to add HiCT nodes only. Upper/Lower sinks accept color outputs; use the same full-map graph on both sinks for overlays.
             </small>
 
             <div v-if="loading" class="py-2">
@@ -95,6 +115,17 @@
               Import graph
             </button>
             <button class="btn btn-secondary" @click="dismissModal">Close</button>
+            <button
+              class="btn btn-outline-primary"
+              :disabled="saving || previewing"
+              @click="previewConfig"
+            >
+              <span
+                v-if="previewing"
+                class="spinner-border spinner-border-sm me-2"
+              ></span>
+              Preview
+            </button>
             <button class="btn btn-primary" :disabled="saving" @click="saveConfig">
               <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>
               Apply
@@ -110,6 +141,9 @@
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { VisualizationManager } from "@/app/core/mapmanagers/VisualizationManager";
 import type { TrackSummaryResponse } from "@/app/core/net/api/response";
+import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
+import { useStyleStore } from "@/app/stores/styleStore";
+import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
 import { LGraph, LGraphCanvas, LGraphNode, LiteGraph } from "litegraph.js";
@@ -135,6 +169,16 @@ type DynamicField =
   | "BP_RESOLUTION";
 type TrackAxis = "ROW" | "COL";
 type ColorSpaceNodeType = "rgb" | "hsl" | "hsv";
+type PixelBlendMode =
+  | "OVER"
+  | "ADD"
+  | "SUBTRACT"
+  | "MULTIPLY"
+  | "SCREEN"
+  | "DIFFERENCE"
+  | "LIGHTEN"
+  | "DARKEN"
+  | "XOR";
 
 type PipelineExpression =
   | { type: "source"; source: SourceName }
@@ -179,6 +223,14 @@ type PipelineExpression =
       c2: PipelineExpression;
       c3: PipelineExpression;
       alpha: PipelineExpression;
+    }
+  | {
+      type: "pixel_blend";
+      mode: PixelBlendMode;
+      top: PipelineExpression;
+      bottom: PipelineExpression;
+      topOpacity: number;
+      bottomOpacity: number;
     };
 
 const SOURCE_NODE_TYPE = "hict/source";
@@ -194,6 +246,7 @@ const COLORMAP_NODE_TYPE = "hict/colormap";
 const RGB_NODE_TYPE = "hict/rgb";
 const HSL_NODE_TYPE = "hict/hsl";
 const HSV_NODE_TYPE = "hict/hsv";
+const PIXEL_BLEND_NODE_TYPE = "hict/pixel_blend";
 const SINK_NODE_TYPE = "hict/sink";
 
 const DYNAMIC_FIELDS: DynamicField[] = [
@@ -215,6 +268,17 @@ const DYNAMIC_FIELDS: DynamicField[] = [
 
 const UNARY_OPS: UnaryOp[] = ["ABS", "LOG1P", "EXP", "NEG"];
 const BINARY_OPS: BinaryOp[] = ["ADD", "SUB", "MUL", "DIV", "MAX", "MIN"];
+const PIXEL_BLEND_MODES: PixelBlendMode[] = [
+  "OVER",
+  "ADD",
+  "SUBTRACT",
+  "MULTIPLY",
+  "SCREEN",
+  "DIFFERENCE",
+  "LIGHTEN",
+  "DARKEN",
+  "XOR",
+];
 const HICT_PIPELINE_FILTER = "hict_pipeline_graph";
 const BUILTIN_COOLER_WEIGHTS_TRACK_ID = "__builtin_cooler_weights__";
 const NODE_MENU_CATEGORY_ORDER = [
@@ -222,6 +286,7 @@ const NODE_MENU_CATEGORY_ORDER = [
   "Constants",
   "Math",
   "Colormaps",
+  "Compositing",
   "Outputs",
 ] as const;
 const NODE_MENU_NODE_TYPES_BY_CATEGORY: Record<(typeof NODE_MENU_CATEGORY_ORDER)[number], string[]> = {
@@ -229,8 +294,15 @@ const NODE_MENU_NODE_TYPES_BY_CATEGORY: Record<(typeof NODE_MENU_CATEGORY_ORDER)
   Constants: [CONSTANT_NODE_TYPE],
   Math: [UNARY_NODE_TYPE, LOG_NODE_TYPE, LOG_INPUT_NODE_TYPE, BINARY_NODE_TYPE, CLAMP_NODE_TYPE],
   Colormaps: [COLORMAP_NODE_TYPE, RGB_NODE_TYPE, HSL_NODE_TYPE, HSV_NODE_TYPE],
+  Compositing: [PIXEL_BLEND_NODE_TYPE],
   Outputs: [SINK_NODE_TYPE],
 };
+
+const RENDERING_PRESETS = [
+  { id: "primary_only", label: "Default Primary only" },
+  { id: "dotplot_overlay", label: "Dotplot overlay" },
+] as const;
+type RenderingPresetId = (typeof RENDERING_PRESETS)[number]["id"];
 
 const emit = defineEmits<{
   (e: "dismissed"): void;
@@ -244,7 +316,9 @@ const enabled = ref(false);
 const swapUpperLower = ref(false);
 const loading = ref(false);
 const saving = ref(false);
+const previewing = ref(false);
 const previewMode = ref(false);
+const selectedPresetId = ref<RenderingPresetId>("primary_only");
 const graphHost = ref<HTMLDivElement | null>(null);
 const graphCanvasRef = ref<HTMLCanvasElement | null>(null);
 const importInputRef = ref<HTMLInputElement | null>(null);
@@ -270,6 +344,9 @@ let originalGetNodeTypesInCategory:
   | ((category: string, filter?: string) => Array<{ type: string }>)
   | null = null;
 
+const visualizationOptionsStore = useVisualizationOptionsStore();
+const styleStore = useStyleStore();
+
 const defaultSignalExpression = (): PipelineExpression => ({
   type: "source",
   source: "PRIMARY",
@@ -292,6 +369,9 @@ const defaultColorExpression = (input?: PipelineExpression): PipelineExpression 
   maxSignal: 1,
 });
 
+const cloneExpression = <T extends PipelineExpression>(expression: T): T =>
+  JSON.parse(JSON.stringify(expression)) as T;
+
 const ensureMapManager = (): ContactMapManager => {
   if (!props.mapManager) {
     throw new Error("Map manager is unavailable");
@@ -305,6 +385,202 @@ const sanitizeColor = (value: unknown, fallback: string): string => {
     return text;
   }
   return fallback;
+};
+
+const toPixelBlendMode = (value: unknown): PixelBlendMode => {
+  const normalized = String(value ?? "OVER").trim().toUpperCase();
+  return PIXEL_BLEND_MODES.includes(normalized as PixelBlendMode)
+    ? (normalized as PixelBlendMode)
+    : "OVER";
+};
+
+const getVisualizationGradient = (): SimpleLinearGradient | null => {
+  const gradient = visualizationOptionsStore.colormap;
+  return gradient instanceof SimpleLinearGradient ? gradient : null;
+};
+
+const buildSignalExpressionFromVisualizationOptions = (
+  source: SourceName,
+  overrides?: {
+    preLogBase?: number;
+    postLogBase?: number;
+    applyCoolerWeights?: boolean;
+    resolutionScaling?: boolean;
+    resolutionLinearScaling?: boolean;
+  }
+): PipelineExpression => {
+  const preLogBase =
+    overrides?.preLogBase ?? visualizationOptionsStore.preLogBase;
+  const postLogBase =
+    overrides?.postLogBase ?? visualizationOptionsStore.postLogBase;
+  const applyCoolerWeights =
+    overrides?.applyCoolerWeights ??
+    visualizationOptionsStore.applyCoolerWeights;
+  const resolutionScaling =
+    overrides?.resolutionScaling ??
+    visualizationOptionsStore.resolutionScaling;
+  const resolutionLinearScaling =
+    overrides?.resolutionLinearScaling ??
+    visualizationOptionsStore.resolutionLinearScaling;
+
+  let expression: PipelineExpression = {
+    type: "source",
+    source,
+  };
+  if (Number.isFinite(preLogBase) && preLogBase > 0 && Math.abs(preLogBase - 1) > 1e-9) {
+    expression = {
+      type: "log",
+      input: expression,
+      base: preLogBase,
+    };
+  }
+  if (resolutionScaling) {
+    expression = {
+      type: "binary",
+      op: "MUL",
+      left: expression,
+      right: { type: "dynamic", field: "RESOLUTION_SCALING_COEFF" },
+    };
+  }
+  if (resolutionLinearScaling) {
+    expression = {
+      type: "binary",
+      op: "MUL",
+      left: expression,
+      right: { type: "dynamic", field: "RESOLUTION_LINEAR_SCALING_COEFF" },
+    };
+  }
+  if (applyCoolerWeights) {
+    expression = {
+      type: "binary",
+      op: "MUL",
+      left: expression,
+      right: {
+        type: "binary",
+        op: "MUL",
+        left: {
+          type: "track1d",
+          trackId: BUILTIN_COOLER_WEIGHTS_TRACK_ID,
+          axis: "ROW",
+        },
+        right: {
+          type: "track1d",
+          trackId: BUILTIN_COOLER_WEIGHTS_TRACK_ID,
+          axis: "COL",
+        },
+      },
+    };
+  }
+  if (Number.isFinite(postLogBase) && postLogBase > 0 && Math.abs(postLogBase - 1) > 1e-9) {
+    expression = {
+      type: "log",
+      input: expression,
+      base: postLogBase,
+    };
+  }
+  return expression;
+};
+
+const buildColorExpressionFromVisualizationOptions = (
+  source: SourceName,
+  overrides?: {
+    preLogBase?: number;
+    postLogBase?: number;
+    applyCoolerWeights?: boolean;
+    resolutionScaling?: boolean;
+    resolutionLinearScaling?: boolean;
+    startColor?: string;
+    endColor?: string;
+    minSignal?: number;
+    maxSignal?: number;
+  }
+): PipelineExpression => {
+  const gradient = getVisualizationGradient();
+  const minSignal = gradient?.minSignal;
+  const maxSignal = gradient?.maxSignal;
+  return {
+    type: "colormap",
+    mode: "LINEAR",
+    input: buildSignalExpressionFromVisualizationOptions(source, overrides),
+    startColor: sanitizeColor(
+      overrides?.startColor ?? gradient?.startColorRGBA?.HEXA,
+      "#ffffff00"
+    ),
+    endColor: sanitizeColor(
+      overrides?.endColor ?? gradient?.endColorRGBA?.HEXA,
+      "#006000ff"
+    ),
+    minSignal:
+      overrides?.minSignal ??
+      (typeof minSignal === "number" && Number.isFinite(minSignal)
+        ? minSignal
+        : 0),
+    maxSignal:
+      overrides?.maxSignal ??
+      (typeof maxSignal === "number" && Number.isFinite(maxSignal)
+        ? maxSignal
+        : 1),
+  };
+};
+
+const buildPrimaryOnlyPreset = (): {
+  enabled: boolean;
+  swapUpperLower: boolean;
+  upperExpression: PipelineExpression;
+  lowerExpression: PipelineExpression;
+} => {
+  const expression = buildColorExpressionFromVisualizationOptions("PRIMARY");
+  return {
+    enabled: true,
+    swapUpperLower: false,
+    upperExpression: expression,
+    lowerExpression: cloneExpression(expression),
+  };
+};
+
+const buildDotplotOverlayPreset = (): {
+  enabled: boolean;
+  swapUpperLower: boolean;
+  upperExpression: PipelineExpression;
+  lowerExpression: PipelineExpression;
+} => {
+  const darkBackground = styleStore.mapBackgroundColor.L <= 55;
+  const top = buildColorExpressionFromVisualizationOptions("PRIMARY", {
+    preLogBase: -1,
+    postLogBase: -1,
+    applyCoolerWeights: true,
+    resolutionScaling: false,
+    resolutionLinearScaling: false,
+    startColor: "#ffffffff",
+    endColor: "#e80000ff",
+    minSignal: 0,
+    maxSignal: 0.003,
+  });
+  const bottom = buildColorExpressionFromVisualizationOptions("SECONDARY", {
+    preLogBase: -1,
+    postLogBase: -1,
+    applyCoolerWeights: false,
+    resolutionScaling: false,
+    resolutionLinearScaling: false,
+    startColor: "#00000000",
+    endColor: darkBackground ? "#00ff66ff" : "#000000ff",
+    minSignal: 0,
+    maxSignal: 200,
+  });
+  const overlay: PipelineExpression = {
+    type: "pixel_blend",
+    mode: "OVER",
+    top,
+    bottom,
+    topOpacity: 0.4,
+    bottomOpacity: 1,
+  };
+  return {
+    enabled: true,
+    swapUpperLower: false,
+    upperExpression: overlay,
+    lowerExpression: cloneExpression(overlay),
+  };
 };
 
 const normalizeHexaColor = (value: unknown, fallback: string): string => {
@@ -420,7 +696,8 @@ const isColorExpression = (expression: PipelineExpression): boolean => {
     expression.type === "colormap" ||
     expression.type === "rgb" ||
     expression.type === "hsl" ||
-    expression.type === "hsv"
+    expression.type === "hsv" ||
+    expression.type === "pixel_blend"
   );
 };
 
@@ -514,6 +791,18 @@ const parseExpression = (raw: unknown): PipelineExpression => {
       c2: parseExpression(node.c2 ?? node.g ?? node.s ?? { type: "constant", value: 1 }),
       c3: parseExpression(node.c3 ?? node.b ?? node.l ?? node.v ?? { type: "constant", value: 1 }),
       alpha: parseExpression(node.alpha ?? node.a ?? { type: "constant", value: 255 }),
+    };
+  }
+  if (type === "pixel_blend") {
+    return {
+      type: "pixel_blend",
+      mode: toPixelBlendMode(node.mode),
+      top: ensureColorRootExpression(parseExpression(node.top ?? node.foreground ?? node.upper)),
+      bottom: ensureColorRootExpression(
+        parseExpression(node.bottom ?? node.background ?? node.lower ?? { type: "source", source: "SECONDARY" })
+      ),
+      topOpacity: toFiniteNumber(node.topOpacity ?? node.topOpacityValue ?? 1, 1),
+      bottomOpacity: toFiniteNumber(node.bottomOpacity ?? node.bottomOpacityValue ?? 1, 1),
     };
   }
   return {
@@ -919,6 +1208,42 @@ const ensureNodeTypesRegistered = (): void => {
     }
   }
 
+  class PixelBlendNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "Pixel Blend";
+      this.addInput("top", "color");
+      this.addInput("bottom", "color");
+      this.addOutput("color", "color");
+      this.properties = {
+        mode: "OVER",
+        topOpacity: 1,
+        bottomOpacity: 1,
+      };
+      this.addWidget(
+        "combo",
+        "mode",
+        this.properties.mode,
+        (value: unknown) => {
+          this.properties.mode = toPixelBlendMode(value);
+        },
+        { values: PIXEL_BLEND_MODES }
+      );
+      this.addWidget("number", "top opacity", this.properties.topOpacity, (value: unknown) => {
+        this.properties.topOpacity = toFiniteNumber(value, 1);
+      });
+      this.addWidget(
+        "number",
+        "bottom opacity",
+        this.properties.bottomOpacity,
+        (value: unknown) => {
+          this.properties.bottomOpacity = toFiniteNumber(value, 1);
+        }
+      );
+      this.size = [232, 120];
+    }
+  }
+
   class SinkNode extends LGraphNode {
     constructor() {
       super();
@@ -945,6 +1270,7 @@ const ensureNodeTypesRegistered = (): void => {
     [RGBNode, "RGB", "Colormaps"],
     [HSLNode, "HSL", "Colormaps"],
     [HSVNode, "HSV", "Colormaps"],
+    [PixelBlendNode, "Pixel Blend", "Compositing"],
     [SinkNode, "Sink", "Outputs"],
   ] as Array<[unknown, string, string]>) {
     (ctor as { filter?: string }).filter = HICT_PIPELINE_FILTER;
@@ -990,6 +1316,12 @@ const ensureNodeTypesRegistered = (): void => {
   }
   if (!LiteGraph.registered_node_types[HSV_NODE_TYPE]) {
     LiteGraph.registerNodeType(HSV_NODE_TYPE, HSVNode as unknown as { new (): LGraphNode });
+  }
+  if (!LiteGraph.registered_node_types[PIXEL_BLEND_NODE_TYPE]) {
+    LiteGraph.registerNodeType(
+      PIXEL_BLEND_NODE_TYPE,
+      PixelBlendNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[SINK_NODE_TYPE]) {
     LiteGraph.registerNodeType(SINK_NODE_TYPE, SinkNode as unknown as { new (): LGraphNode });
@@ -1057,6 +1389,16 @@ const syncNodeWidgetsFromProperties = (node: LGraphNode): void => {
     setWidgetValue(node, "c2", toFiniteNumber(node.properties?.c2, 1));
     setWidgetValue(node, "c3", toFiniteNumber(node.properties?.c3, 1));
     setWidgetValue(node, "alpha", toFiniteNumber(node.properties?.alpha, 255));
+    return;
+  }
+  if (node.type === PIXEL_BLEND_NODE_TYPE) {
+    setWidgetValue(node, "mode", toPixelBlendMode(node.properties?.mode));
+    setWidgetValue(node, "top opacity", toFiniteNumber(node.properties?.topOpacity, 1));
+    setWidgetValue(
+      node,
+      "bottom opacity",
+      toFiniteNumber(node.properties?.bottomOpacity, 1)
+    );
   }
 };
 
@@ -1176,6 +1518,7 @@ const GRAPH_TOP_PADDING = 44;
 const GRAPH_BRANCH_GAP = 150;
 const GRAPH_LEFT_PADDING = 60;
 const GRAPH_RIGHT_PADDING = 120;
+const GRAPH_SINK_STACK_GAP = 18;
 
 const estimateNodeHeight = (expression: PipelineExpression): number => {
   switch (expression.type) {
@@ -1201,6 +1544,8 @@ const estimateNodeHeight = (expression: PipelineExpression): number => {
     case "hsl":
     case "hsv":
       return 148;
+    case "pixel_blend":
+      return 120;
     case "source":
     default:
       return 72;
@@ -1247,6 +1592,10 @@ const measureExpressionHeight = (
         GRAPH_VERTICAL_GAP +
         alphaHeight
     );
+  } else if (expression.type === "pixel_blend") {
+    const topHeight = measureExpressionHeight(expression.top, cache);
+    const bottomHeight = measureExpressionHeight(expression.bottom, cache);
+    height = Math.max(height, topHeight + GRAPH_VERTICAL_GAP + bottomHeight);
   }
 
   cache.set(expression as object, height);
@@ -1291,6 +1640,13 @@ const measureExpressionDepth = (
         measureExpressionDepth(expression.c2, cache),
         measureExpressionDepth(expression.c3, cache),
         measureExpressionDepth(expression.alpha, cache)
+      );
+  } else if (expression.type === "pixel_blend") {
+    depth =
+      1 +
+      Math.max(
+        measureExpressionDepth(expression.top, cache),
+        measureExpressionDepth(expression.bottom, cache)
       );
   }
 
@@ -1380,6 +1736,14 @@ const createNodeForExpression = (expression: PipelineExpression): LGraphNode | n
       break;
     case "hsv":
       node = LiteGraph.createNode(HSV_NODE_TYPE) as LGraphNode | null;
+      break;
+    case "pixel_blend":
+      node = LiteGraph.createNode(PIXEL_BLEND_NODE_TYPE) as LGraphNode | null;
+      if (node) {
+        node.properties.mode = expression.mode;
+        node.properties.topOpacity = expression.topOpacity;
+        node.properties.bottomOpacity = expression.bottomOpacity;
+      }
       break;
   }
   if (graph && node) {
@@ -1526,6 +1890,29 @@ const positionExpressionTree = (
     alphaNode?.connect(0, node, 3);
   }
 
+  if (expression.type === "pixel_blend") {
+    const topHeight = measureExpressionHeight(expression.top, heightCache);
+    const bottomHeight = measureExpressionHeight(expression.bottom, heightCache);
+    const childrenTop =
+      topY + Math.max(0, (subtreeHeight - (topHeight + GRAPH_VERTICAL_GAP + bottomHeight)) / 2);
+    const topNode = positionExpressionTree(
+      expression.top,
+      depth + 1,
+      childrenTop,
+      sinkX,
+      heightCache
+    );
+    const bottomNode = positionExpressionTree(
+      expression.bottom,
+      depth + 1,
+      childrenTop + topHeight + GRAPH_VERTICAL_GAP,
+      sinkX,
+      heightCache
+    );
+    topNode?.connect(0, node, 0);
+    bottomNode?.connect(0, node, 1);
+  }
+
   return node;
 };
 
@@ -1543,6 +1930,8 @@ const buildGraphFromExpressions = (
   const lowerSink = lowerSinkId != null ? graph.getNodeById(lowerSinkId) : null;
   const upperColorExpression = ensureColorRootExpression(upperExpression);
   const lowerColorExpression = ensureColorRootExpression(lowerExpression);
+  const sharedPipeline =
+    JSON.stringify(upperColorExpression) === JSON.stringify(lowerColorExpression);
   const heightCache = new WeakMap<object, number>();
   const depthCache = new WeakMap<object, number>();
 
@@ -1559,33 +1948,62 @@ const buildGraphFromExpressions = (
 
   if (upperSink) {
     const sinkHeight = Number(upperSink.size?.[1] ?? 62);
-    upperSink.pos = [sinkX, upperCenterY - sinkHeight * 0.5];
+    if (sharedPipeline) {
+      const sharedCenterY = GRAPH_TOP_PADDING + upperHeight * 0.5;
+      upperSink.pos = [
+        sinkX,
+        sharedCenterY - sinkHeight - GRAPH_SINK_STACK_GAP * 0.5,
+      ];
+    } else {
+      upperSink.pos = [sinkX, upperCenterY - sinkHeight * 0.5];
+    }
   }
   if (lowerSink) {
     const sinkHeight = Number(lowerSink.size?.[1] ?? 62);
-    lowerSink.pos = [sinkX, lowerCenterY - sinkHeight * 0.5];
+    if (sharedPipeline) {
+      const sharedCenterY = GRAPH_TOP_PADDING + upperHeight * 0.5;
+      lowerSink.pos = [sinkX, sharedCenterY + GRAPH_SINK_STACK_GAP * 0.5];
+    } else {
+      lowerSink.pos = [sinkX, lowerCenterY - sinkHeight * 0.5];
+    }
   }
 
-  const upperNode = positionExpressionTree(
-    upperColorExpression,
-    0,
-    GRAPH_TOP_PADDING,
-    sinkX,
-    heightCache
-  );
-  const lowerNode = positionExpressionTree(
-    lowerColorExpression,
-    0,
-    lowerTopY,
-    sinkX,
-    heightCache
-  );
+  if (sharedPipeline) {
+    const sharedNode = positionExpressionTree(
+      upperColorExpression,
+      0,
+      GRAPH_TOP_PADDING,
+      sinkX,
+      heightCache
+    );
+    if (sharedNode && upperSink) {
+      sharedNode.connect(0, upperSink, 0);
+    }
+    if (sharedNode && lowerSink) {
+      sharedNode.connect(0, lowerSink, 0);
+    }
+  } else {
+    const upperNode = positionExpressionTree(
+      upperColorExpression,
+      0,
+      GRAPH_TOP_PADDING,
+      sinkX,
+      heightCache
+    );
+    const lowerNode = positionExpressionTree(
+      lowerColorExpression,
+      0,
+      lowerTopY,
+      sinkX,
+      heightCache
+    );
 
-  if (upperNode && upperSink) {
-    upperNode.connect(0, upperSink, 0);
-  }
-  if (lowerNode && lowerSink) {
-    lowerNode.connect(0, lowerSink, 0);
+    if (upperNode && upperSink) {
+      upperNode.connect(0, upperSink, 0);
+    }
+    if (lowerNode && lowerSink) {
+      lowerNode.connect(0, lowerSink, 0);
+    }
   }
 
   updateTrackNodeWidgets();
@@ -1595,7 +2013,9 @@ const buildGraphFromExpressions = (
     Number(lowerSink?.size?.[0] ?? 190)
   );
   const totalWidth = sinkX + sinkWidth + GRAPH_RIGHT_PADDING;
-  const totalHeight = lowerTopY + lowerHeight + GRAPH_TOP_PADDING;
+  const totalHeight = sharedPipeline
+    ? GRAPH_TOP_PADDING + upperHeight + GRAPH_TOP_PADDING
+    : lowerTopY + lowerHeight + GRAPH_TOP_PADDING;
   fitGraphView(totalWidth, totalHeight);
   graphCanvas?.draw(true, true);
 };
@@ -1729,6 +2149,26 @@ const expressionFromNode = (
     return { type: "hsv", c1, c2, c3, alpha };
   }
 
+  if (node.type === PIXEL_BLEND_NODE_TYPE) {
+    const topFallback = defaultColorExpression();
+    const bottomFallback = defaultColorExpression({
+      type: "source",
+      source: "SECONDARY",
+    });
+    return {
+      type: "pixel_blend",
+      mode: toPixelBlendMode(node.properties?.mode),
+      top: node.getInputNode(0)
+        ? ensureColorRootExpression(expressionFromNode(node.getInputNode(0), visited))
+        : topFallback,
+      bottom: node.getInputNode(1)
+        ? ensureColorRootExpression(expressionFromNode(node.getInputNode(1), visited))
+        : bottomFallback,
+      topOpacity: toFiniteNumber(node.properties?.topOpacity, 1),
+      bottomOpacity: toFiniteNumber(node.properties?.bottomOpacity, 1),
+    };
+  }
+
   return defaultSignalExpression();
 };
 
@@ -1803,6 +2243,24 @@ const buildConfigPayload = (): Record<string, unknown> => ({
   upperExpression: expressionFromSink("UPPER"),
   lowerExpression: expressionFromSink("LOWER"),
 });
+
+const loadSelectedPreset = (): void => {
+  if (!graph) {
+    return;
+  }
+  const preset =
+    selectedPresetId.value === "dotplot_overlay"
+      ? buildDotplotOverlayPreset()
+      : buildPrimaryOnlyPreset();
+  enabled.value = preset.enabled;
+  swapUpperLower.value = preset.swapUpperLower;
+  buildGraphFromExpressions(preset.upperExpression, preset.lowerExpression);
+  toast.success(
+    selectedPresetId.value === "dotplot_overlay"
+      ? "Dotplot overlay preset loaded"
+      : "Primary-only preset loaded"
+  );
+};
 
 const persistConfig = async (
   reloadTiles: boolean,
@@ -1898,6 +2356,28 @@ const togglePreviewMode = (): void => {
   void restoreGraphRuntime();
 };
 
+const previewConfig = async (): Promise<void> => {
+  if (!graph || previewMode.value) {
+    return;
+  }
+  previewing.value = true;
+  try {
+    previewSnapshot.value = {
+      enabled: enabled.value,
+      swapUpperLower: swapUpperLower.value,
+      upperExpression: expressionFromSink("UPPER"),
+      lowerExpression: expressionFromSink("LOWER"),
+    };
+    await persistConfig(true);
+    previewMode.value = true;
+    destroyGraphRuntime();
+  } catch (error) {
+    toast.error(String(error));
+  } finally {
+    previewing.value = false;
+  }
+};
+
 const onVisualizationOptionsUpdated = (): void => {
   if (previewMode.value || loading.value || saving.value) {
     pendingVisualizationSync.value = true;
@@ -1982,7 +2462,7 @@ onMounted(() => {
   window.addEventListener("resize", fitGraphCanvas);
   window.addEventListener(
     VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
-    onVisualizationOptionsUpdated as EventListener
+    onVisualizationOptionsUpdated
   );
   void loadConfig();
 });
@@ -1993,7 +2473,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", fitGraphCanvas);
   window.removeEventListener(
     VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
-    onVisualizationOptionsUpdated as EventListener
+    onVisualizationOptionsUpdated
   );
   restoreNodeTypeFilterOverrides();
   destroyGraphRuntime();
@@ -2022,6 +2502,10 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+}
+
+.pipeline-preset-select {
+  max-width: 240px;
 }
 
 .pipeline-root .modal-content {
