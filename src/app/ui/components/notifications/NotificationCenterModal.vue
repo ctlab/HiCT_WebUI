@@ -122,6 +122,10 @@ const formatLevel = (level: NotificationLevel): string => {
   z-index: 2060;
 }
 
+.modal-content {
+  color: var(--hict-surface-fg);
+}
+
 .notification-center-toolbar {
   display: flex;
   align-items: center;
@@ -149,6 +153,7 @@ const formatLevel = (level: NotificationLevel): string => {
   border-radius: 8px;
   padding: 10px 12px;
   background: #f8f9fa;
+  color: rgba(18, 25, 35, 0.95);
 }
 
 .notification-entry_error {
@@ -182,6 +187,7 @@ const formatLevel = (level: NotificationLevel): string => {
 
 .notification-level {
   font-weight: 700;
+  color: inherit;
 }
 
 .notification-time {
@@ -192,6 +198,7 @@ const formatLevel = (level: NotificationLevel): string => {
 .notification-message {
   white-space: pre-wrap;
   word-break: break-word;
+  color: inherit;
 }
 
 .notification-empty-state {

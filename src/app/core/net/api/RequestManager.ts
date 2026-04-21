@@ -19,14 +19,10 @@
  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-import assert from "assert";
 import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
-import { ImageTile, Tile } from "ol";
-import TileState from "ol/TileState";
 import type { AssemblyInfo } from "../../domain/AssemblyInfo";
 import {
   AssemblyInfoDTO,
-  InboundDTO,
   OpenFileResponseDTO,
   VisualizationOptionsDTO,
 } from "../dto/dto";
@@ -43,7 +39,6 @@ import {
   TrackFeatureSearchResponseDTO,
   TrackQueryResponseDTO,
   TrackSummaryResponseDTO,
-  TilePOSTResponseDTO,
   WorkerSchedulerDiagnosticsResponseDTO,
 } from "../dto/responseDTO";
 import type { OpenFileResponse } from "../netcommon";
@@ -148,41 +143,78 @@ export type SecondarySourceStatusResponse = {
 class RequestManager {
   constructor(public readonly networkManager: NetworkManager) {}
 
-  private normalizeAssemblyInfo(json: Record<string, unknown>): Record<string, unknown> {
-    const assemblyInfo = json["assemblyInfo"] as Record<string, unknown> | undefined;
+  private notifyInboundPayload(payload: unknown): void {
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+    const json = payload as Record<string, unknown>;
+    if (typeof json.error === "string" && json.error.trim().length > 0) {
+      toast.error(json.error);
+    }
+    if (typeof json.info === "string" && json.info.trim().length > 0) {
+      toast.success(json.info);
+    }
+    if (typeof json.message === "string" && json.message.trim().length > 0) {
+      toast(json.message);
+    }
+    if (typeof json.warning === "string" && json.warning.trim().length > 0) {
+      toast(json.warning, {
+        style: {
+          "background-color": "lightyellow",
+          color: "black",
+        },
+      });
+    }
+  }
+
+  private normalizeAssemblyInfo(
+    json: Record<string, unknown>
+  ): Record<string, unknown> {
+    const assemblyInfo = json["assemblyInfo"] as
+      | Record<string, unknown>
+      | undefined;
     return assemblyInfo ?? json;
   }
 
-  private parseSecondarySourceStatus(json: Record<string, unknown>): SecondarySourceStatusResponse {
+  private parseSecondarySourceStatus(
+    json: Record<string, unknown>
+  ): SecondarySourceStatusResponse {
     if (typeof json.error === "string" && json.error.trim().length > 0) {
       throw new Error(json.error);
     }
     const compatibilityRaw =
       (json.compatibility as Record<string, unknown> | undefined) ?? undefined;
-    const compatibility: SecondarySourceCompatibility | undefined = compatibilityRaw
-      ? {
-          sameResolutions: Boolean(compatibilityRaw.sameResolutions ?? false),
-          sameMatrixSizes: Boolean(compatibilityRaw.sameMatrixSizes ?? false),
-          exactMatch: Boolean(compatibilityRaw.exactMatch ?? false),
-          primaryMaxBins: Number(compatibilityRaw.primaryMaxBins ?? 0),
-          secondaryMaxBins: Number(compatibilityRaw.secondaryMaxBins ?? 0),
-          primaryBinsByResolution: Array.isArray(compatibilityRaw.primaryBinsByResolution)
-            ? (compatibilityRaw.primaryBinsByResolution as unknown[]).map((value) =>
-                Number(value ?? 0)
-              )
-            : [],
-          secondaryBinsByResolution: Array.isArray(compatibilityRaw.secondaryBinsByResolution)
-            ? (compatibilityRaw.secondaryBinsByResolution as unknown[]).map((value) =>
-                Number(value ?? 0)
-              )
-            : [],
-          mismatchedResolutionOrders: Array.isArray(compatibilityRaw.mismatchedResolutionOrders)
-            ? (compatibilityRaw.mismatchedResolutionOrders as unknown[]).map((value) =>
-                Number(value ?? 0)
-              )
-            : [],
-        }
-      : undefined;
+    const compatibility: SecondarySourceCompatibility | undefined =
+      compatibilityRaw
+        ? {
+            sameResolutions: Boolean(compatibilityRaw.sameResolutions ?? false),
+            sameMatrixSizes: Boolean(compatibilityRaw.sameMatrixSizes ?? false),
+            exactMatch: Boolean(compatibilityRaw.exactMatch ?? false),
+            primaryMaxBins: Number(compatibilityRaw.primaryMaxBins ?? 0),
+            secondaryMaxBins: Number(compatibilityRaw.secondaryMaxBins ?? 0),
+            primaryBinsByResolution: Array.isArray(
+              compatibilityRaw.primaryBinsByResolution
+            )
+              ? (compatibilityRaw.primaryBinsByResolution as unknown[]).map(
+                  (value) => Number(value ?? 0)
+                )
+              : [],
+            secondaryBinsByResolution: Array.isArray(
+              compatibilityRaw.secondaryBinsByResolution
+            )
+              ? (compatibilityRaw.secondaryBinsByResolution as unknown[]).map(
+                  (value) => Number(value ?? 0)
+                )
+              : [],
+            mismatchedResolutionOrders: Array.isArray(
+              compatibilityRaw.mismatchedResolutionOrders
+            )
+              ? (compatibilityRaw.mismatchedResolutionOrders as unknown[]).map(
+                  (value) => Number(value ?? 0)
+                )
+              : [],
+          }
+        : undefined;
     return {
       attached: Boolean(json.attached ?? false),
       filename: String(json.filename ?? ""),
@@ -227,38 +259,21 @@ class RequestManager {
             req.data = JSON.parse(req.data);
           } catch (e) {
             throw new Error(
-              `Invalid response from ${request.requestPath}: ${req.data.slice(0, 200)}`
+              `Invalid response from ${request.requestPath}: ${req.data.slice(
+                0,
+                200
+              )}`
             );
           }
         }
-        if (req instanceof InboundDTO) {
-          if (req.error) {
-            toast.error(req.error);
-          }
-          if (req.info) {
-            toast.success(req.info);
-          }
-          if (req.message) {
-            toast(req.message);
-          }
-          if (req.warning) {
-            toast(req.warning, {
-              style: {
-                "background-color": "lightyellow",
-                color: "black",
-              },
-            });
-          }
-        }
+        this.notifyInboundPayload(req.data);
         return req;
       })
       .catch((err) => {
         const errorToastStore = useErrorToastStore();
         if (errorToastStore.requestErrorToastsEnabled) {
           const message =
-            err?.response?.data?.error ??
-            err?.message ??
-            "Request failed";
+            err?.response?.data?.error ?? err?.message ?? "Request failed";
           toast.error(message);
         }
         throw err;
@@ -297,7 +312,9 @@ class RequestManager {
     filename: string,
     allowMismatch = false
   ): Promise<SecondarySourceStatusResponse> {
-    return this.sendRequest(new OpenSecondarySourceRequest({ filename, allowMismatch }))
+    return this.sendRequest(
+      new OpenSecondarySourceRequest({ filename, allowMismatch })
+    )
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => this.parseSecondarySourceStatus(json));
   }
@@ -314,7 +331,9 @@ class RequestManager {
     assemblySource: "PRIMARY" | "SECONDARY";
     assemblyInfo: AssemblyInfo;
   }> {
-    return this.sendRequest(new SetAssemblyInfoSourceRequest({ assemblySource }))
+    return this.sendRequest(
+      new SetAssemblyInfoSourceRequest({ assemblySource })
+    )
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => ({
         assemblySource:
@@ -331,7 +350,11 @@ class RequestManager {
     await this.sendRequest(new CloseFileRequest());
   }
 
-  public async attachSession(): Promise<{ filename: string; fastaFilename: string; response: OpenFileResponse }> {
+  public async attachSession(): Promise<{
+    filename: string;
+    fastaFilename: string;
+    response: OpenFileResponse;
+  }> {
     return this.sendRequest(new AttachSessionRequest())
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => {
@@ -365,7 +388,9 @@ class RequestManager {
   public async listFilesDetailed(): Promise<FileEntryResponse[]> {
     return this.sendRequest(new ListFilesDetailedRequest())
       .then((response) => response.data as Record<string, unknown>[])
-      .then((items) => items.map((item) => new FileEntryResponseDTO(item).toEntity()));
+      .then((items) =>
+        items.map((item) => new FileEntryResponseDTO(item).toEntity())
+      );
   }
 
   public async listCoolers(): Promise<string[]> {
@@ -408,7 +433,9 @@ class RequestManager {
   public async listTracks(): Promise<TrackSummaryResponse[]> {
     return this.sendRequest(new ListTracksRequest())
       .then((response) => response.data as Record<string, unknown>[])
-      .then((items) => items.map((item) => new TrackSummaryResponseDTO(item).toEntity()));
+      .then((items) =>
+        items.map((item) => new TrackSummaryResponseDTO(item).toEntity())
+      );
   }
 
   public async updateTrack(
@@ -570,7 +597,9 @@ class RequestManager {
     trackId?: string,
     force = false
   ): Promise<TracksPrecomputeStatusResponse> {
-    return this.sendRequest(new StartTracksPrecomputeRequest({ trackId, force }))
+    return this.sendRequest(
+      new StartTracksPrecomputeRequest({ trackId, force })
+    )
       .then((response) => response.data)
       .then((json) => new TracksPrecomputeStatusResponseDTO(json).toEntity());
   }
@@ -584,24 +613,29 @@ class RequestManager {
   public async getWorkerDiagnostics(): Promise<WorkerSchedulerDiagnosticsResponse> {
     return this.sendRequest(new GetWorkerDiagnosticsRequest())
       .then((response) => response.data)
-      .then((json) => new WorkerSchedulerDiagnosticsResponseDTO(json).toEntity());
+      .then((json) =>
+        new WorkerSchedulerDiagnosticsResponseDTO(json).toEntity()
+      );
   }
 
   public async getRenderPipelineConfig(): Promise<Record<string, unknown>> {
-    return this.sendRequest(new GetRenderPipelineRequest())
-      .then((response) => response.data as Record<string, unknown>);
+    return this.sendRequest(new GetRenderPipelineRequest()).then(
+      (response) => response.data as Record<string, unknown>
+    );
   }
 
   public async setRenderPipelineConfig(
     config: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    return this.sendRequest(new SetRenderPipelineRequest(config))
-      .then((response) => response.data as Record<string, unknown>);
+    return this.sendRequest(new SetRenderPipelineRequest(config)).then(
+      (response) => response.data as Record<string, unknown>
+    );
   }
 
   public async resetRenderPipelineConfig(): Promise<Record<string, unknown>> {
-    return this.sendRequest(new ResetRenderPipelineRequest())
-      .then((response) => response.data as Record<string, unknown>);
+    return this.sendRequest(new ResetRenderPipelineRequest()).then(
+      (response) => response.data as Record<string, unknown>
+    );
   }
 
   public async listFASTAFiles(): Promise<string[]> {
@@ -609,7 +643,9 @@ class RequestManager {
     return response.data as string[];
   }
 
-  public async linkFASTA(request: LinkFASTARequest): Promise<FastaLinkResponse> {
+  public async linkFASTA(
+    request: LinkFASTARequest
+  ): Promise<FastaLinkResponse> {
     return this.sendRequest(request)
       .then((response) => response.data)
       .then((json) => new FastaLinkResponseDTO(json).toEntity())
@@ -667,9 +703,7 @@ class RequestManager {
     scaffoldId: number,
     newName: string | null
   ): Promise<AssemblyInfo> {
-    return this.sendRequest(
-      new RenameScaffoldRequest({ scaffoldId, newName })
-    )
+    return this.sendRequest(new RenameScaffoldRequest({ scaffoldId, newName }))
       .then((response) => response.data)
       .then((json) =>
         new AssemblyInfoDTO(this.normalizeAssemblyInfo(json)).toEntity()
@@ -701,7 +735,9 @@ class RequestManager {
       .then((json) => Number(json.version ?? 0));
   }
 
-  public async getBackendVersion(): Promise<{ version: string; webuiVersion?: string } | string> {
+  public async getBackendVersion(): Promise<
+    { version: string; webuiVersion?: string } | string
+  > {
     const host = this.networkManager.host.replace(/\/+$/, "");
     return axios
       .get(`${host}/version`)

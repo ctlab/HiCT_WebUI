@@ -147,7 +147,10 @@
             <button class="btn btn-sm btn-success" @click="applyStyle">
               Apply
             </button>
-            <button class="btn btn-sm btn-outline-secondary" @click="resetStyle">
+            <button
+              class="btn btn-sm btn-outline-secondary"
+              @click="resetStyle"
+            >
               Reset
             </button>
           </div>
@@ -183,9 +186,9 @@ function getBaseColor(): ColorTranslator {
   try {
     if (props.getDefaultColor) {
       const style = props.getDefaultColor();
-      const olColorString = style
-        ?.getStroke()
-        ?.getColor() as ColorLike as string | undefined;
+      const olColorString = style?.getStroke()?.getColor() as ColorLike as
+        | string
+        | undefined;
       if (olColorString) {
         return new ColorTranslator(olColorString, { legacyCSS: true });
       }
@@ -344,7 +347,7 @@ function resetStyle() {
   height: 20px;
 
   /* Body/Small */
-  font-family: "Roboto", ui-sans-serif;
+  font-family: var(--hict-font-sans);
   font-style: normal;
   font-weight: 400;
   font-size: 13px;

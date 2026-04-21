@@ -35,7 +35,11 @@
           <div class="modal-content">
             <div class="modal-header">
               <h5 class="modal-title">Opening file</h5>
-              <button type="button" class="btn-close" @click="closeOpenProgress"></button>
+              <button
+                type="button"
+                class="btn-close"
+                @click="closeOpenProgress"
+              ></button>
             </div>
             <div class="modal-body">
               <div class="mb-2">{{ openProgressStage }}</div>
@@ -53,7 +57,11 @@
               </div>
             </div>
             <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" @click="closeOpenProgress">
+              <button
+                type="button"
+                class="btn btn-secondary"
+                @click="closeOpenProgress"
+              >
                 Hide
               </button>
             </div>
@@ -90,7 +98,7 @@ import {
   ContactMapManager,
   // type ContactMapManagerOptions,
 } from "@/app/core/mapmanagers/ContactMapManager";
-import { onMounted, ref, watch, type Ref } from "vue";
+import { onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import { NetworkManager } from "@/app/core/net/NetworkManager";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
@@ -132,7 +140,7 @@ const { mapBackgroundColor } = storeToRefs(stylesStore);
 const sessionStore = useSessionStore();
 
 const htmlElementReferencesStore = usehtmlElementReferencesStore();
-const { mapTarget, miniMapTarget } = storeToRefs(htmlElementReferencesStore);
+const { miniMapTarget } = storeToRefs(htmlElementReferencesStore);
 const lastAgpFilename: Ref<string> = ref("");
 let openProgressTimer: number | undefined;
 const openProgressVisible = ref(false);
@@ -144,6 +152,8 @@ function startOpenProgress() {
   if (openProgressTimer !== undefined) {
     return;
   }
+  openProgressStage.value = "starting";
+  openProgressPct.value = 0;
   openProgressVisible.value = true;
   openProgressTimer = window.setInterval(() => {
     if (openProgressInFlight) return;
@@ -152,7 +162,10 @@ function startOpenProgress() {
       .getOpenProgress()
       .then((p) => {
         openProgressStage.value = p.stage ?? "working";
-        openProgressPct.value = Math.max(0, Math.min(100, Math.round((p.progress ?? 0) * 100)));
+        openProgressPct.value = Math.max(
+          0,
+          Math.min(100, Math.round((p.progress ?? 0) * 100))
+        );
       })
       .catch(() => undefined)
       .finally(() => {
@@ -166,6 +179,7 @@ function stopOpenProgress() {
     window.clearInterval(openProgressTimer);
     openProgressTimer = undefined;
   }
+  openProgressInFlight = false;
   openProgressVisible.value = false;
 }
 
@@ -173,7 +187,10 @@ function closeOpenProgress() {
   openProgressVisible.value = false;
 }
 
-function safeColorTranslator(value: unknown, fallback: string): ColorTranslator {
+function safeColorTranslator(
+  value: unknown,
+  fallback: string
+): ColorTranslator {
   if (typeof value !== "string" || value.length > 128) {
     return new ColorTranslator(fallback, { legacyCSS: true });
   }
@@ -224,29 +241,35 @@ function onClosed() {
 function onAttached() {
   networkManager.requestManager
     .attachSession()
-    .then(({ filename: attachedName, fastaFilename: attachedFastaName, response }) => {
-      if (!attachedName) {
-        toast.error("No active session to attach");
-        return;
-      }
-      mapManager.value?.dispose();
-      filename.value = attachedName;
-      fastaFilename.value = attachedFastaName ?? "";
-      const newManager = new ContactMapManager({
-        response,
+    .then(
+      ({
         filename: attachedName,
-        fastaFilename: attachedFastaName ?? "",
-        tileSize: tileSize.value,
-        contigBorderColor: contigBorderColor.value,
-        mapTargetSelector: "hic-contact-map",
-        networkManager: networkManager,
-        minimapTarget: miniMapTarget,
-      });
-      mapManager.value = newManager;
-      networkManager.mapManager = mapManager.value;
-      newManager.initializeMap();
-      toast.success("Attached to session " + attachedName);
-    })
+        fastaFilename: attachedFastaName,
+        response,
+      }) => {
+        if (!attachedName) {
+          toast.error("No active session to attach");
+          return;
+        }
+        mapManager.value?.dispose();
+        filename.value = attachedName;
+        fastaFilename.value = attachedFastaName ?? "";
+        const newManager = new ContactMapManager({
+          response,
+          filename: attachedName,
+          fastaFilename: attachedFastaName ?? "",
+          tileSize: tileSize.value,
+          contigBorderColor: contigBorderColor.value,
+          mapTargetSelector: "hic-contact-map",
+          networkManager: networkManager,
+          minimapTarget: miniMapTarget,
+        });
+        mapManager.value = newManager;
+        networkManager.mapManager = mapManager.value;
+        newManager.initializeMap();
+        toast.success("Attached to session " + attachedName);
+      }
+    )
     .catch((err) => {
       const message =
         err?.response?.data?.error ??
@@ -261,44 +284,47 @@ async function openFileWithOptions(
   ffname: string | undefined
 ): Promise<void> {
   startOpenProgress();
-  const openFileResponse = await networkManager.requestManager.openFile(
-    fname,
-    ffname
-  );
-  mapManager.value?.dispose();
-  const newManager = new ContactMapManager({
-    response: openFileResponse,
-    filename: fname,
-    fastaFilename: ffname ?? "",
-    tileSize: tileSize.value,
-    contigBorderColor: contigBorderColor.value,
-    mapTargetSelector: "hic-contact-map",
-    networkManager: networkManager,
-    minimapTarget: miniMapTarget,
-  });
-  mapManager.value = newManager;
-  networkManager.mapManager = mapManager.value;
-  newManager.initializeMap();
-  applyDefaultVisualizationPreset();
-  if (ffname && ffname.trim() !== "") {
-    try {
-      const linkResponse = await networkManager.requestManager.linkFASTA(
-        new LinkFASTARequest({ fastaFilename: ffname, allowMismatch: true })
-      );
-      linkResponse.warnings.forEach((warning) =>
-        toast(warning, {
-          style: {
-            "background-color": "lightyellow",
-            color: "black",
-          },
-        })
-      );
-    } catch (error) {
-      console.error(error);
-      toast.error("Failed to link FASTA file " + ffname);
+  try {
+    const openFileResponse = await networkManager.requestManager.openFile(
+      fname,
+      ffname
+    );
+    mapManager.value?.dispose();
+    const newManager = new ContactMapManager({
+      response: openFileResponse,
+      filename: fname,
+      fastaFilename: ffname ?? "",
+      tileSize: tileSize.value,
+      contigBorderColor: contigBorderColor.value,
+      mapTargetSelector: "hic-contact-map",
+      networkManager: networkManager,
+      minimapTarget: miniMapTarget,
+    });
+    mapManager.value = newManager;
+    networkManager.mapManager = mapManager.value;
+    newManager.initializeMap();
+    applyDefaultVisualizationPreset();
+    if (ffname && ffname.trim() !== "") {
+      try {
+        const linkResponse = await networkManager.requestManager.linkFASTA(
+          new LinkFASTARequest({ fastaFilename: ffname, allowMismatch: true })
+        );
+        linkResponse.warnings.forEach((warning) =>
+          toast(warning, {
+            style: {
+              "background-color": "lightyellow",
+              color: "black",
+            },
+          })
+        );
+      } catch (error) {
+        console.error(error);
+        toast.error("Failed to link FASTA file " + ffname);
+      }
     }
+  } finally {
+    stopOpenProgress();
   }
-  stopOpenProgress();
 }
 
 function displayNewMap() {
@@ -326,12 +352,19 @@ function displayNewMap() {
 
 function applyDefaultVisualizationPreset() {
   const presets =
-    (defaultOptions as unknown as {
-      data?: { savedLocations?: unknown[]; savedVisualizationPresets?: unknown[] };
-    }).data?.savedLocations ??
-    (defaultOptions as unknown as {
-      data?: { savedVisualizationPresets?: unknown[] };
-    }).data?.savedVisualizationPresets ??
+    (
+      defaultOptions as unknown as {
+        data?: {
+          savedLocations?: unknown[];
+          savedVisualizationPresets?: unknown[];
+        };
+      }
+    ).data?.savedLocations ??
+    (
+      defaultOptions as unknown as {
+        data?: { savedVisualizationPresets?: unknown[] };
+      }
+    ).data?.savedVisualizationPresets ??
     [];
   if (!presets || presets.length === 0) {
     return;
@@ -341,9 +374,12 @@ function applyDefaultVisualizationPreset() {
   const signalThresholds = first["signalThresholds"] as
     | { lowerSignalBound?: number; upperSignalBound?: number }
     | undefined;
-  const trackStyles = first["trackStyles"] as Record<string, unknown> | undefined;
+  const trackStyles = first["trackStyles"] as
+    | Record<string, unknown>
+    | undefined;
   const cmap = (opt["colormap"] as Record<string, unknown>) ?? {};
-  const startColor = (cmap["startColorRGBAString"] as string) ?? "rgba(0,255,0,0.0)";
+  const startColor =
+    (cmap["startColorRGBAString"] as string) ?? "rgba(0,255,0,0.0)";
   const endColor = (cmap["endColorRGBAString"] as string) ?? "rgba(0,96,0,1.0)";
   const minSignal = (cmap["minSignal"] as number) ?? 0;
   const maxSignal = (cmap["maxSignal"] as number) ?? 1;
@@ -360,7 +396,10 @@ function applyDefaultVisualizationPreset() {
     maxSignal
   );
   let finalCmap = cmapObj;
-  if (signalThresholds && typeof signalThresholds.lowerSignalBound === "number") {
+  if (
+    signalThresholds &&
+    typeof signalThresholds.lowerSignalBound === "number"
+  ) {
     finalCmap = new SimpleLinearGradient(
       cmapObj.startColorRGBA,
       cmapObj.endColorRGBA,
@@ -381,15 +420,17 @@ function applyDefaultVisualizationPreset() {
     )
   );
   const bg = (first["backgroundColor"] as string) ?? "rgba(255,255,255,1)";
-  stylesStore.setMapBackground(
-    safeColorTranslator(bg, "rgba(255,255,255,1)")
-  );
+  stylesStore.setMapBackground(safeColorTranslator(bg, "rgba(255,255,255,1)"));
   if (trackStyles && mapManager.value) {
-    mapManager.value.getLayersManager().applyTrackStylePreset(trackStyles as never);
+    mapManager.value
+      .getLayersManager()
+      .applyTrackStylePreset(trackStyles as never);
   }
-  mapManager.value?.visualizationManager.sendVisualizationOptionsToServer().then(() => {
-    mapManager.value?.reloadTiles();
-  });
+  mapManager.value?.visualizationManager
+    .sendVisualizationOptionsToServer()
+    .then(() => {
+      mapManager.value?.reloadTiles();
+    });
 }
 
 function onAgpLoaded(filename: string): void {
@@ -637,6 +678,10 @@ watch(
 
 onMounted(() => {
   syncUiChromePalette();
+});
+
+onUnmounted(() => {
+  stopOpenProgress();
 });
 
 function onFileSelected(newFilename: string) {

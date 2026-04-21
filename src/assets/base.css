@@ -21,6 +21,13 @@
 
 /* color palette from <https://github.com/vuejs/theme> */
 :root {
+  --hict-font-sans: Avenir, Helvetica, "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif;
+  --hict-surface-bg: rgba(255, 255, 255, 0.98);
+  --hict-surface-bg-muted: rgba(248, 250, 252, 0.98);
+  --hict-surface-fg: rgba(18, 25, 35, 0.96);
+  --hict-surface-muted: rgba(73, 84, 99, 0.88);
+  --hict-surface-border: rgba(15, 23, 38, 0.18);
+  --hict-surface-shadow: 0 20px 55px rgba(15, 23, 38, 0.18);
   --vt-c-white: #ffffff;
   --vt-c-white-soft: #f8f8f8;
   --vt-c-white-mute: #f2f2f2;
@@ -86,10 +93,84 @@ body {
   background: var(--color-background);
   transition: color 0.5s, background-color 0.5s;
   line-height: 1.6;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu,
-    Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-family: var(--hict-font-sans);
   font-size: 15px;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.modal-content,
+.dropdown-menu,
+.popover,
+.offcanvas,
+.card:not(.pipeline-graph) {
+  background: var(--hict-surface-bg);
+  color: var(--hict-surface-fg);
+  border-color: var(--hict-surface-border);
+  box-shadow: var(--hict-surface-shadow);
+}
+
+.modal-header,
+.modal-footer,
+.dropdown-divider {
+  border-color: var(--hict-surface-border);
+}
+
+.modal-title,
+.modal-body,
+.modal-footer,
+.dropdown-item,
+.dropdown-header,
+.form-label,
+.form-check-label,
+.card-title,
+.card-text,
+.popover-body,
+.offcanvas-title,
+.offcanvas-body {
+  color: var(--hict-surface-fg);
+}
+
+.text-muted,
+.modal-content .text-muted,
+.dropdown-menu .text-muted,
+.card .text-muted {
+  color: var(--hict-surface-muted) !important;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus,
+.dropdown-item.active,
+.dropdown-item:active {
+  color: var(--hict-surface-fg);
+  background: var(--hict-surface-bg-muted);
+}
+
+.form-control,
+.form-select {
+  background: rgba(255, 255, 255, 0.98);
+  color: var(--hict-surface-fg);
+  border-color: var(--hict-surface-border);
+}
+
+.form-control::placeholder {
+  color: var(--hict-surface-muted);
+}
+
+.form-control:focus,
+.form-select:focus {
+  background: rgba(255, 255, 255, 1);
+  color: var(--hict-surface-fg);
+  border-color: rgba(37, 99, 235, 0.42);
+  box-shadow: 0 0 0 0.25rem rgba(37, 99, 235, 0.16);
+}
+
+.form-select option {
+  background: #ffffff;
+  color: var(--hict-surface-fg);
+}
+
+.btn-close {
+  filter: none;
 }

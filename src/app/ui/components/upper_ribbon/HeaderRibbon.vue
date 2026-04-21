@@ -42,11 +42,18 @@
           </button>
         </div>
         <div
-          v-if="(searchResults.length > 0 || searchLoadingRemote) && searchQuery.length >= 3"
+          v-if="
+            (searchResults.length > 0 || searchLoadingRemote) &&
+            searchQuery.length >= 3
+          "
           class="search-dropdown"
         >
           <div v-if="searchLoadingRemote" class="search-loading">
-            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+            <span
+              class="spinner-border spinner-border-sm me-2"
+              role="status"
+              aria-hidden="true"
+            ></span>
             Searching genome features...
           </div>
           <button
@@ -133,7 +140,9 @@
           @click="exportSvg"
           title="Export full map as SVG"
         >
-          <span v-if="exportingType !== 'svg'"><i class="bi bi-box-arrow-up"></i> SVG</span>
+          <span v-if="exportingType !== 'svg'"
+            ><i class="bi bi-box-arrow-up"></i> SVG</span
+          >
           <span v-else>
             <span class="spinner-border spinner-border-sm me-2"></span>
             {{ Math.round(svgProgress * 100) }}%
@@ -147,7 +156,9 @@
           @click="exportPng"
           title="Export full map as PNG"
         >
-          <span v-if="exportingType !== 'png'"><i class="bi bi-box-arrow-up"></i> PNG</span>
+          <span v-if="exportingType !== 'png'"
+            ><i class="bi bi-box-arrow-up"></i> PNG</span
+          >
           <span v-else>
             <span class="spinner-border spinner-border-sm me-2"></span>
             {{ Math.round(svgProgress * 100) }}%
@@ -161,7 +172,9 @@
           @click="exportPdf"
           title="Export full map as PDF"
         >
-          <span v-if="exportingType !== 'pdf'"><i class="bi bi-box-arrow-up"></i> PDF</span>
+          <span v-if="exportingType !== 'pdf'"
+            ><i class="bi bi-box-arrow-up"></i> PDF</span
+          >
           <span v-else>
             <span class="spinner-border spinner-border-sm me-2"></span>
             {{ Math.round(svgProgress * 100) }}%
@@ -429,7 +442,8 @@ function selectResult(idx: number): void {
 
 function goToSelection(): void {
   if (!props.mapManager) return;
-  const item = searchResults.value[selectedIndex.value] ?? searchResults.value[0];
+  const item =
+    searchResults.value[selectedIndex.value] ?? searchResults.value[0];
   if (!item) return;
   if (item.type === "Contig") {
     const contig =
@@ -453,7 +467,9 @@ function goToSelection(): void {
     view.animate({ center: [midPx, -midPx] });
     scheduleFeatureContextPrefetch(startBp, endBp);
   } else if (item.type === "Scaffold") {
-    const scaffold = props.mapManager.scaffoldHolder.getScaffoldById(Number(item.id));
+    const scaffold = props.mapManager.scaffoldHolder.getScaffoldById(
+      Number(item.id)
+    );
     const borders = scaffold.scaffoldBordersBP;
     if (!borders) {
       toast.error("Scaffold has no borders in the current assembly");
@@ -756,7 +772,7 @@ function onNormalizationChanged() {
   gap: 16px;
 
   width: auto;
-  height: 29px;
+  height: 30px;
 
   /* Inside auto layout */
   flex: 1 1 auto;
@@ -782,7 +798,7 @@ function onNormalizationChanged() {
   gap: 10px;
 
   width: 216px;
-  height: 29px;
+  height: 30px;
 
   /* Inside auto layout */
   flex: none;
@@ -803,7 +819,7 @@ function onNormalizationChanged() {
   padding: 0px;
 
   width: 200px;
-  height: 29px;
+  height: 30px;
 
   /* Global/09. White */
   /*background: #FFFFFF;*/
@@ -887,7 +903,7 @@ function onNormalizationChanged() {
   align-items: center;
   padding: 4px 8px;
 
-  font-family: "Roboto", ui-sans-serif;
+  font-family: var(--hict-font-sans);
   font-style: normal;
   font-weight: 100;
   font-size: 14px;
@@ -895,8 +911,8 @@ function onNormalizationChanged() {
 
   text-align: center;
 
-  width: 90px;
-  height: 29px;
+  width: 115px;
+  height: 30px;
 
   /* Global/07. Light */
   border: 1px solid #f8f9fa;
@@ -923,7 +939,7 @@ function onNormalizationChanged() {
   padding: 4px 8px;
 
   min-width: 140px;
-  height: 29px;
+  height: 30px;
 
   /* Global/07. Light */
   border: 1px solid #f8f9fa;
