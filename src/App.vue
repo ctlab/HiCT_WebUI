@@ -35,11 +35,11 @@ import MainUIComponent from "@/app/ui/MainUIComponent.vue";
 
 <style>
 #app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: var(--hict-font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-align: center;
-  color: #2c3e50;
+  color: var(--hict-ui-fg, #2c3e50);
   /* margin-top: 60px; */
 }
 </style>
