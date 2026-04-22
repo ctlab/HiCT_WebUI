@@ -31,6 +31,7 @@
       @openSession="onOpenSession"
       @agpLoaded="onAgpLoaded"
       @fastaLinked="onFastaLinked"
+      @wizardRequested="onWizardRequested"
     ></NavigationBar>
     <HeaderRibbon :mapManager="props.mapManager"></HeaderRibbon>
   </div>
@@ -49,6 +50,7 @@ const emit = defineEmits<{
   (e: "openSession", file: File): void;
   (e: "agpLoaded", filename: string): void;
   (e: "fastaLinked", filename: string): void;
+  (e: "wizardRequested"): void;
 }>();
 
 const props = defineProps<{
@@ -82,6 +84,10 @@ function onAgpLoaded(filename: string): void {
 
 function onFastaLinked(filename: string): void {
   emit("fastaLinked", filename);
+}
+
+function onWizardRequested(): void {
+  emit("wizardRequested");
 }
 </script>
 

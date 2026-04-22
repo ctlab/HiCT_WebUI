@@ -162,6 +162,44 @@
         <hr class="dropdown-divider" />
       </li>
       <li>
+        <div class="form-check">
+          <input
+            id="checkbox-normalization-auto-threshold"
+            v-model="autoThresholdEnabled"
+            class="form-check-input"
+            type="checkbox"
+          />
+          <label
+            class="form-check-label"
+            for="checkbox-normalization-auto-threshold"
+          >
+            Auto upper threshold
+          </label>
+        </div>
+      </li>
+      <li v-if="autoThresholdEnabled">
+        <div class="mt-1">
+          <label for="normalization-auto-threshold-quantile">
+            Visible quantile:
+          </label>
+          <input
+            id="normalization-auto-threshold-quantile"
+            v-model.number="autoThresholdQuantile"
+            class="form-check-input number-input"
+            type="number"
+            min="0.5"
+            max="0.999999"
+            step="0.001"
+          />
+          <small class="text-muted d-block mt-1">
+            Recomputes the colormap upper bound from the current viewport.
+          </small>
+        </div>
+      </li>
+      <li>
+        <hr class="dropdown-divider" />
+      </li>
+      <li>
         <button type="button" class="btn btn-sm btn-outline-primary w-100" @click="openRenderingPipeline">
           Rendering pipeline...
         </button>
@@ -190,10 +228,12 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { defineAsyncComponent, Ref, ref, watch } from "vue";
+import { defineAsyncComponent, onUnmounted, Ref, ref, watch } from "vue";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import { toast } from "vue-sonner";
+import type { EventsKey } from "ol/events";
+import { unByKey } from "ol/Observable";
 const RenderingPipelineModal = defineAsyncComponent(
   () => import("./RenderingPipelineModal.vue")
 );
@@ -204,6 +244,8 @@ const {
   resolutionScaling,
   resolutionLinearScaling,
   postLogBase,
+  autoThresholdEnabled,
+  autoThresholdQuantile,
   colormap,
 } = storeToRefs(visualizationOptionsStore);
 
@@ -217,6 +259,8 @@ const applyPreLog: Ref<boolean> = ref(false);
 
 const applyPostLog: Ref<boolean> = ref(true);
 const pipelineModalOpen = ref(false);
+let autoThresholdMoveEndKey: EventsKey | undefined;
+let autoThresholdTimer: number | undefined;
 
 // const preLogBase: Ref<number> = ref(10);
 
@@ -230,6 +274,8 @@ function resetAttributes(): void {
   applyCoolerWeights.value = false;
   resolutionScaling.value = false;
   resolutionLinearScaling.value = false;
+  autoThresholdEnabled.value = false;
+  autoThresholdQuantile.value = 0.995;
   applySettings();
 }
 
@@ -248,14 +294,11 @@ watch(
 );
 
 function applySettings(): void {
-  // props.mapManager?.eventManager.onNormalizationChanged({
-  //   applyCoolerWeights: applyCoolerWeights.value,
-  //   preLogBase: applyPreLog.value ? preLogBase.value : -1,
-  //   postLogBase: applyPostLog.value ? postLogBase.value : -1,
-  // });
   props.mapManager?.visualizationManager
-    .sendVisualizationOptionsToServer()
-    .then(() => props.mapManager?.reloadTiles());
+    .sendVisualizationOptionsAndReload()
+    .catch((error) => {
+      toast.error(String(error ?? "Failed to apply normalization settings"));
+    });
 }
 
 function preLogCheckChange() {
@@ -285,6 +328,70 @@ function postLogCheckChange() {
 function openRenderingPipeline(): void {
   pipelineModalOpen.value = true;
 }
+
+function clearAutoThresholdTimer(): void {
+  if (autoThresholdTimer !== undefined) {
+    window.clearTimeout(autoThresholdTimer);
+    autoThresholdTimer = undefined;
+  }
+}
+
+function scheduleAutoThresholdRefresh(): void {
+  clearAutoThresholdTimer();
+  if (!autoThresholdEnabled.value || !props.mapManager) {
+    return;
+  }
+  autoThresholdTimer = window.setTimeout(() => {
+    props.mapManager?.visualizationManager
+      .refreshAutoThresholdAndReload()
+      .catch(() => undefined);
+  }, 180);
+}
+
+function detachAutoThresholdMoveListener(): void {
+  if (autoThresholdMoveEndKey) {
+    unByKey(autoThresholdMoveEndKey);
+    autoThresholdMoveEndKey = undefined;
+  }
+}
+
+watch(
+  () => props.mapManager,
+  (manager) => {
+    detachAutoThresholdMoveListener();
+    clearAutoThresholdTimer();
+    if (!manager) {
+      return;
+    }
+    autoThresholdMoveEndKey = manager.getMap().on("moveend", () => {
+      scheduleAutoThresholdRefresh();
+    });
+  },
+  { immediate: true }
+);
+
+watch(
+  () => autoThresholdEnabled.value,
+  (enabled) => {
+    if (enabled) {
+      scheduleAutoThresholdRefresh();
+    }
+  }
+);
+
+watch(
+  () => autoThresholdQuantile.value,
+  () => {
+    if (autoThresholdEnabled.value) {
+      scheduleAutoThresholdRefresh();
+    }
+  }
+);
+
+onUnmounted(() => {
+  detachAutoThresholdMoveListener();
+  clearAutoThresholdTimer();
+});
 </script>
 
 <style scoped>

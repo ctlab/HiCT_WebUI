@@ -402,6 +402,9 @@ function serializeVisualizationOptions(options: VisualizationOptions): Record<st
       applyCoolerWeights: options.applyCoolerWeights ?? false,
       resolutionScaling: options.resolutionScaling ?? false,
       resolutionLinearScaling: options.resolutionLinearScaling ?? false,
+      autoThresholdEnabled: options.autoThresholdEnabled ?? false,
+      autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
+      signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
       colormap: {
         colormapType: cmap.colormapType,
         startColorRGBAString: cmap.startColorRGBA.RGBA,
@@ -417,6 +420,9 @@ function serializeVisualizationOptions(options: VisualizationOptions): Record<st
     applyCoolerWeights: options.applyCoolerWeights ?? false,
     resolutionScaling: options.resolutionScaling ?? false,
     resolutionLinearScaling: options.resolutionLinearScaling ?? false,
+    autoThresholdEnabled: options.autoThresholdEnabled ?? false,
+    autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
+    signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
     colormap: {
       colormapType: options.colormap?.colormapType ?? "Unknown",
     },
@@ -473,7 +479,17 @@ function deserializeVisualizationOptions(raw: Record<string, unknown>): Visualiz
     applyCoolerWeights,
     resolutionScaling,
     resolutionLinearScaling,
-    cmap
+    cmap,
+    typeof raw.autoThresholdEnabled === "boolean"
+      ? raw.autoThresholdEnabled
+      : false,
+    typeof raw.autoThresholdQuantile === "number"
+      ? raw.autoThresholdQuantile
+      : 0.995,
+    raw.signalDisplayMode === "EXPECTED" ||
+      raw.signalDisplayMode === "OBSERVED_OVER_EXPECTED"
+      ? raw.signalDisplayMode
+      : "OBSERVED"
   );
 }
 

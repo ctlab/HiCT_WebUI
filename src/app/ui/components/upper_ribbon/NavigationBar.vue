@@ -46,6 +46,11 @@
                 <div v-if="saving" class="spinner-border ms-auto" role="status"></div>
               </li> -->
               <li>
+                <a class="dropdown-item" href="#" @click="onOpenWizard"
+                  >Wizard...</a
+                >
+              </li>
+              <li>
                 <a class="dropdown-item" href="#" @click="onCloseClicked"
                   >Close</a
                 >
@@ -78,6 +83,11 @@
                   href="#"
                   @click="onConvertCoolersClicked"
                   >Convert matrices</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onDropCachesClicked"
+                  >Drop caches</a
                 >
               </li>
             </ul>
@@ -426,6 +436,7 @@ const emit = defineEmits<{
   (e: "openSession", file: File): void;
   (e: "agpLoaded", filename: string): void;
   (e: "fastaLinked", filename: string): void;
+  (e: "wizardRequested"): void;
 }>();
 
 const props = defineProps<{
@@ -443,6 +454,10 @@ const { customZoomSliderEnabled, binaryTileTransportEnabled } =
 
 function onOpenFile() {
   openingFile.value = true;
+}
+
+function onOpenWizard(): void {
+  emit("wizardRequested");
 }
 
 function onOpenTrackManager() {
@@ -513,6 +528,17 @@ function onConvertCoolersClicked(): void {
   convertingCoolers.value = true;
 }
 
+async function onDropCachesClicked(): Promise<void> {
+  try {
+    const result = await props.networkManager.requestManager.dropAllCaches();
+    toast.success(
+      `Dropped caches: ${result.matrixMetadataDeleted} matrix metadata entries, ${result.trackCacheEntriesDeleted} track cache files`
+    );
+  } catch (error) {
+    errorMessage.value = error;
+  }
+}
+
 function onConvertCoolersDismissed(): void {
   coolerToConvert.value = undefined;
   convertingCoolers.value = false;
@@ -554,7 +580,7 @@ function onAGPFileDismissed() {
   openingAGPFile.value = false;
 }
 
-function onFileSelected(filename: string) {
+async function onFileSelected(filename: string) {
   if (filename && filename !== "") {
     const lowered = filename.toLowerCase();
     if (lowered.endsWith(".hict") || lowered.endsWith(".hict.hdf5")) {
@@ -565,9 +591,31 @@ function onFileSelected(filename: string) {
       lowered.endsWith(".cool") ||
       lowered.endsWith(".mcool")
     ) {
-      openingFile.value = false;
-      coolerToConvert.value = filename;
-      convertingCoolers.value = true;
+      try {
+        const resolution =
+          await props.networkManager.requestManager.resolveMatrixSource(
+            filename
+          );
+        if (resolution.action === "REUSE_CONVERTED") {
+          openingFile.value = false;
+          resolution.warnings.forEach((warning) => toast(warning));
+          emit("selected", resolution.resolvedFilename);
+          return;
+        }
+        openingFile.value = false;
+        coolerToConvert.value = filename;
+        convertingCoolers.value = true;
+        resolution.warnings.forEach((warning) =>
+          toast(warning, {
+            style: {
+              "background-color": "lightyellow",
+              color: "black",
+            },
+          })
+        );
+      } catch (error) {
+        errorMessage.value = error;
+      }
     } else if (lowered.endsWith(".agp")) {
       openAGP(filename);
     } else if (lowered.endsWith(".fasta") || lowered.endsWith(".fa")) {

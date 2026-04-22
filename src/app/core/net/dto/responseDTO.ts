@@ -23,12 +23,15 @@ import {
   ConversionJobResponse,
   ConversionToolchainStatusResponse,
   CurrentSignalRangeResponse,
+  FileFingerprintResponse,
   FileEntryResponse,
   FastaLinkCompatibilityResponse,
   FastaLinkMismatchResponse,
   FastaLinkResponse,
+  MatrixSourceResolutionResponse,
   NameMappingResponse,
   TrackCompatibilityReportResponse,
+  TrackPrecomputeCacheProbeResponse,
   TrackPrecomputeTrackStatusResponse,
   TracksPrecomputeStatusResponse,
   TrackBinBlockResponse,
@@ -346,6 +349,65 @@ class FileEntryResponseDTO extends InboundDTO<FileEntryResponse> {
   }
 }
 
+class FileFingerprintResponseDTO extends InboundDTO<FileFingerprintResponse> {
+  public toEntity(): FileFingerprintResponse {
+    return new FileFingerprintResponse(
+      (this.json["sizeBytes"] as number) ?? -1,
+      (this.json["modifiedAtMs"] as number) ?? 0,
+      (this.json["sha256"] as string) ?? "",
+      (this.json["sha512"] as string) ?? ""
+    );
+  }
+}
+
+class MatrixSourceResolutionResponseDTO extends InboundDTO<MatrixSourceResolutionResponse> {
+  public toEntity(): MatrixSourceResolutionResponse {
+    return new MatrixSourceResolutionResponse(
+      (this.json["inputFilename"] as string) ?? "",
+      (this.json["inputKind"] as string) ?? "UNKNOWN",
+      (this.json["action"] as string) ?? "UNSUPPORTED",
+      (this.json["resolvedFilename"] as string) ?? "",
+      (this.json["expectedOutputFilename"] as string) ?? null,
+      (this.json["conversionDirection"] as string) ?? null,
+      Boolean(this.json["cachedOutputExists"] ?? false),
+      Boolean(this.json["cacheCurrent"] ?? false),
+      (this.json["warnings"] as string[]) ?? [],
+      this.json["sourceFingerprint"]
+        ? new FileFingerprintResponseDTO(
+            this.json["sourceFingerprint"] as Record<string, unknown>
+          ).toEntity()
+        : null,
+      this.json["outputFingerprint"]
+        ? new FileFingerprintResponseDTO(
+            this.json["outputFingerprint"] as Record<string, unknown>
+          ).toEntity()
+        : null
+    );
+  }
+}
+
+class TrackPrecomputeCacheProbeResponseDTO extends InboundDTO<TrackPrecomputeCacheProbeResponse> {
+  public toEntity(): TrackPrecomputeCacheProbeResponse {
+    return new TrackPrecomputeCacheProbeResponse(
+      (this.json["filename"] as string) ?? "",
+      (this.json["trackType"] as string) ?? "UNSUPPORTED",
+      Boolean(this.json["supported"] ?? false),
+      Boolean(this.json["cacheAvailable"] ?? false),
+      Boolean(this.json["cacheCurrent"] ?? false),
+      (this.json["cacheSidecarPath"] as string) ?? "",
+      (this.json["warnings"] as string[]) ?? [],
+      this.json["sourceFingerprint"]
+        ? new FileFingerprintResponseDTO(
+            this.json["sourceFingerprint"] as Record<string, unknown>
+          ).toEntity()
+        : null,
+      new FileFingerprintResponseDTO(
+        (this.json["hictFingerprint"] as Record<string, unknown>) ?? {}
+      ).toEntity()
+    );
+  }
+}
+
 class WorkerPoolDiagnosticsResponseDTO extends InboundDTO<WorkerPoolDiagnosticsResponse> {
   public toEntity(): WorkerPoolDiagnosticsResponse {
     return new WorkerPoolDiagnosticsResponse(
@@ -460,6 +522,8 @@ export {
   TracksPrecomputeStatusResponseDTO,
   TrackCompatibilityReportResponseDTO,
   FileEntryResponseDTO,
+  MatrixSourceResolutionResponseDTO,
+  TrackPrecomputeCacheProbeResponseDTO,
   WorkerSchedulerDiagnosticsResponseDTO,
   FastaLinkResponseDTO,
 };

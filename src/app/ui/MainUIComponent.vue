@@ -79,12 +79,20 @@
       @openSession="onOpenSession"
       @agpLoaded="onAgpLoaded"
       @fastaLinked="onFastaLinked"
+      @wizardRequested="wizardOpen = true"
     ></UpperFrame>
     <WorkspaceComponent
       :mapManager="mapManager"
       :filename="filename"
     ></WorkspaceComponent>
     <NotificationCenterModal></NotificationCenterModal>
+    <FileWizardModal
+      v-if="wizardOpen"
+      :network-manager="networkManager"
+      :map-manager="mapManager"
+      :open-primary-dataset="openPrimaryDatasetFromWizard"
+      @dismissed="wizardOpen = false"
+    />
     <div
       class="toast-container position-absolute top-0 end-0 p-3"
       id="toasts-container"
@@ -109,6 +117,7 @@ import { ColorTranslator } from "colortranslator";
 import { LoadAGPRequest } from "@/app/core/net/api/request";
 import { LinkFASTARequest } from "@/app/core/net/api/request";
 import NotificationCenterModal from "@/app/ui/components/notifications/NotificationCenterModal.vue";
+import FileWizardModal from "@/app/ui/components/upper_ribbon/FileWizardModal.vue";
 
 import WorkspaceComponent from "@/app/ui/components/workspace/WorkspaceComponent.vue";
 import { Toaster, toast } from "vue-sonner";
@@ -119,6 +128,7 @@ import {
   type SessionSavedLocation,
   type SessionVisualizationPreset,
 } from "@/app/stores/sessionStore";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 
 // Reactively use these refs only inside component
 // Pass them to Map Manager on creation as values, not Refs as objects
@@ -138,6 +148,7 @@ const visualizationOptionsStore = useVisualizationOptionsStore();
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const sessionStore = useSessionStore();
+const matrixViewStore = useMatrixViewStore();
 
 const htmlElementReferencesStore = usehtmlElementReferencesStore();
 const { miniMapTarget } = storeToRefs(htmlElementReferencesStore);
@@ -147,6 +158,7 @@ const openProgressVisible = ref(false);
 const openProgressStage = ref("starting");
 const openProgressPct = ref(0);
 let openProgressInFlight = false;
+const wizardOpen = ref(false);
 
 function startOpenProgress() {
   if (openProgressTimer !== undefined) {
@@ -229,6 +241,7 @@ function resetState() {
   filename.value = "";
   fastaFilename.value = "";
   mapManager.value = undefined;
+  matrixViewStore.reset();
 }
 
 function onClosed() {
@@ -281,7 +294,8 @@ function onAttached() {
 
 async function openFileWithOptions(
   fname: string,
-  ffname: string | undefined
+  ffname: string | undefined,
+  options?: { applyDefaultPreset?: boolean }
 ): Promise<void> {
   startOpenProgress();
   try {
@@ -303,7 +317,9 @@ async function openFileWithOptions(
     mapManager.value = newManager;
     networkManager.mapManager = mapManager.value;
     newManager.initializeMap();
-    applyDefaultVisualizationPreset();
+    if (options?.applyDefaultPreset !== false) {
+      applyDefaultVisualizationPreset();
+    }
     if (ffname && ffname.trim() !== "") {
       try {
         const linkResponse = await networkManager.requestManager.linkFASTA(
@@ -325,6 +341,14 @@ async function openFileWithOptions(
   } finally {
     stopOpenProgress();
   }
+}
+
+async function openPrimaryDatasetFromWizard(
+  fname: string,
+  ffname?: string,
+  options?: { applyDefaultPreset?: boolean }
+): Promise<void> {
+  await openFileWithOptions(fname, ffname, options);
 }
 
 function displayNewMap() {
@@ -389,6 +413,15 @@ function applyDefaultVisualizationPreset() {
   const resolutionScaling = (opt["resolutionScaling"] as boolean) ?? false;
   const resolutionLinearScaling =
     (opt["resolutionLinearScaling"] as boolean) ?? false;
+  const autoThresholdEnabled =
+    (opt["autoThresholdEnabled"] as boolean) ?? false;
+  const autoThresholdQuantile =
+    (opt["autoThresholdQuantile"] as number) ?? 0.995;
+  const signalDisplayMode =
+    opt["signalDisplayMode"] === "EXPECTED" ||
+    opt["signalDisplayMode"] === "OBSERVED_OVER_EXPECTED"
+      ? (opt["signalDisplayMode"] as "EXPECTED" | "OBSERVED_OVER_EXPECTED")
+      : "OBSERVED";
   const cmapObj = new SimpleLinearGradient(
     safeColorTranslator(startColor, "rgba(0,255,0,0.0)"),
     safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
@@ -416,7 +449,10 @@ function applyDefaultVisualizationPreset() {
       applyCoolerWeights,
       resolutionScaling,
       resolutionLinearScaling,
-      finalCmap
+      finalCmap,
+      autoThresholdEnabled,
+      autoThresholdQuantile,
+      signalDisplayMode
     )
   );
   const bg = (first["backgroundColor"] as string) ?? "rgba(255,255,255,1)";
@@ -452,6 +488,9 @@ function serializeCurrentVisualizationOptions(): Record<string, unknown> {
       applyCoolerWeights: options.applyCoolerWeights ?? false,
       resolutionScaling: options.resolutionScaling ?? false,
       resolutionLinearScaling: options.resolutionLinearScaling ?? false,
+      autoThresholdEnabled: options.autoThresholdEnabled ?? false,
+      autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
+      signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
       colormap: {
         colormapType: cmap.colormapType,
         startColorRGBAString: cmap.startColorRGBA.RGBA,
@@ -467,6 +506,9 @@ function serializeCurrentVisualizationOptions(): Record<string, unknown> {
     applyCoolerWeights: options.applyCoolerWeights ?? false,
     resolutionScaling: options.resolutionScaling ?? false,
     resolutionLinearScaling: options.resolutionLinearScaling ?? false,
+    autoThresholdEnabled: options.autoThresholdEnabled ?? false,
+    autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
+    signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
     colormap: {
       colormapType: options.colormap?.colormapType ?? "Unknown",
     },
@@ -585,6 +627,15 @@ async function onOpenSession(file: File): Promise<void> {
         (visRaw["resolutionScaling"] as boolean) ?? false;
       const resolutionLinearScaling =
         (visRaw["resolutionLinearScaling"] as boolean) ?? false;
+      const autoThresholdEnabled =
+        (visRaw["autoThresholdEnabled"] as boolean) ?? false;
+      const autoThresholdQuantile =
+        (visRaw["autoThresholdQuantile"] as number) ?? 0.995;
+      const signalDisplayMode =
+        visRaw["signalDisplayMode"] === "EXPECTED" ||
+        visRaw["signalDisplayMode"] === "OBSERVED_OVER_EXPECTED"
+          ? (visRaw["signalDisplayMode"] as "EXPECTED" | "OBSERVED_OVER_EXPECTED")
+          : "OBSERVED";
       const cmapObj = new SimpleLinearGradient(
         safeColorTranslator(startColor, "rgba(0,255,0,0.0)"),
         safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
@@ -598,7 +649,10 @@ async function onOpenSession(file: File): Promise<void> {
           applyCoolerWeights,
           resolutionScaling,
           resolutionLinearScaling,
-          cmapObj
+          cmapObj,
+          autoThresholdEnabled,
+          autoThresholdQuantile,
+          signalDisplayMode
         )
       );
     }

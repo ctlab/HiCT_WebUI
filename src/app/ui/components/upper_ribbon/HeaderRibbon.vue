@@ -107,9 +107,15 @@
         </select>
       </div>
       <div class="mb-3">
-        <select class="form-select form-select-sm">
-          <option selected value="0">Show Observed</option>
-          <option value="1">Show Expected</option>
+        <select
+          v-model="signalDisplayMode"
+          class="form-select form-select-sm"
+          title="Expected and O/E use the standard renderer and will disable a custom pixel pipeline for this view."
+          @change="onSignalDisplayModeChanged"
+        >
+          <option value="OBSERVED">Show Observed</option>
+          <option value="EXPECTED">Show Expected</option>
+          <option value="OBSERVED_OVER_EXPECTED">Show O/E</option>
         </select>
       </div>
       <div class="mb-3">
@@ -232,6 +238,7 @@ const {
   applyCoolerWeights,
   resolutionScaling,
   resolutionLinearScaling,
+  signalDisplayMode,
   colormap,
 } = storeToRefs(visualizationOptionsStore);
 
@@ -248,6 +255,7 @@ async function exportSvg() {
       applyCoolerWeights: applyCoolerWeights.value,
       resolutionScaling: resolutionScaling.value,
       resolutionLinearScaling: resolutionLinearScaling.value,
+      signalDisplayMode: signalDisplayMode.value,
       colormap:
         cmap instanceof SimpleLinearGradient
           ? {
@@ -689,6 +697,15 @@ async function reloadTiles() {
   } catch (e) {
     toast.error("Failed to reload tiles");
     console.error(e);
+  }
+}
+
+async function onSignalDisplayModeChanged() {
+  try {
+    await props.mapManager?.visualizationManager.sendVisualizationOptionsAndReload();
+  } catch (error) {
+    toast.error("Failed to update signal display mode");
+    console.error(error);
   }
 }
 

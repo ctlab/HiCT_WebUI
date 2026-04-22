@@ -81,6 +81,20 @@ class ListTrackFilesRequest implements HiCTAPIRequest {
   requestPath = "/tracks/list_files";
 }
 
+class ResolveMatrixSourceRequest implements HiCTAPIRequest {
+  requestPath = "/resolve_matrix_source";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+    }
+  ) {}
+}
+
+class DropAllCachesRequest implements HiCTAPIRequest {
+  requestPath = "/cache/drop_all";
+}
+
 class CloseFileRequest implements HiCTAPIRequest {
   requestPath = "/close";
 }
@@ -91,6 +105,12 @@ class AttachSessionRequest implements HiCTAPIRequest {
 
 class GetFastaForAssemblyRequest implements HiCTAPIRequest {
   requestPath = "/get_fasta_for_assembly";
+
+  public constructor(
+    public readonly options: {
+      readonly source?: "PRIMARY" | "SECONDARY";
+    } = {}
+  ) {}
 }
 
 class GetAGPForAssemblyRequest implements HiCTAPIRequest {
@@ -302,6 +322,8 @@ class GetFastaForSelectionRequest implements HiCTAPIRequest {
       readonly fromBpY: number;
       readonly toBpX: number;
       readonly toBpY: number;
+      readonly horizontalSource?: "PRIMARY" | "SECONDARY";
+      readonly verticalSource?: "PRIMARY" | "SECONDARY";
     }
   ) {}
 }
@@ -313,6 +335,7 @@ class LinkFASTARequest implements HiCTAPIRequest {
     public readonly options: {
       readonly fastaFilename: string;
       readonly allowMismatch?: boolean;
+      readonly source?: "PRIMARY" | "SECONDARY";
     }
   ) {}
 }
@@ -323,6 +346,7 @@ class LoadAGPRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       readonly agpFilename: string;
+      readonly source?: "PRIMARY" | "SECONDARY";
     }
   ) {}
 }
@@ -536,6 +560,16 @@ class GetTracksPrecomputeStatusRequest implements HiCTAPIRequest {
   requestPath = "/tracks/precompute/status";
 }
 
+class ProbeTrackPrecomputeCacheRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/precompute/probe";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+    }
+  ) {}
+}
+
 // class TileLoadPOSTRequest implements HiCTAPIRequest {
 //   requestPath = "/get_tile";
 
@@ -555,6 +589,8 @@ export {
   CloseFileRequest,
   ListCoolerFilesRequest,
   ListConvertibleMatrixFilesRequest,
+  ResolveMatrixSourceRequest,
+  DropAllCachesRequest,
   StartConversionJobRequest,
   StartBatchConversionJobsRequest,
   ListConversionJobsRequest,
@@ -607,6 +643,7 @@ export {
   GetTrackFeatureContextRequest,
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
+  ProbeTrackPrecomputeCacheRequest,
   GetWorkerDiagnosticsRequest,
   GetRenderPipelineRequest,
   SetRenderPipelineRequest,

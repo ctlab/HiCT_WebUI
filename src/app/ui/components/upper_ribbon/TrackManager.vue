@@ -673,12 +673,35 @@ const onTrackFileSelected = (filename: string) => {
   }
 };
 
-const onSecondaryFileSelected = (filename: string) => {
+const onSecondaryFileSelected = async (filename: string) => {
   const lowered = filename.toLowerCase();
   if (lowered.endsWith(".cool") || lowered.endsWith(".mcool")) {
-    secondaryFileSelectorOpen.value = false;
-    secondaryCoolerToConvert.value = filename;
-    convertingSecondaryCooler.value = true;
+    try {
+      const resolution =
+        await props.mapManager?.networkManager.requestManager.resolveMatrixSource(
+          filename
+        );
+      if (resolution?.action === "REUSE_CONVERTED") {
+        selectedSecondaryFile.value = resolution.resolvedFilename;
+        secondaryFileSelectorOpen.value = false;
+        resolution.warnings.forEach((warning) => toast(warning));
+        return;
+      }
+      secondaryFileSelectorOpen.value = false;
+      secondaryCoolerToConvert.value = filename;
+      convertingSecondaryCooler.value = true;
+      resolution?.warnings.forEach((warning) =>
+        toast(warning, {
+          style: {
+            "background-color": "lightyellow",
+            color: "black",
+          },
+        })
+      );
+    } catch (error) {
+      toast.error(String(error));
+      secondaryFileSelectorOpen.value = false;
+    }
     return;
   }
   selectedSecondaryFile.value = filename;

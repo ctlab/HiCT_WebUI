@@ -251,6 +251,45 @@ class FileEntryResponse {
   ) {}
 }
 
+class FileFingerprintResponse {
+  public constructor(
+    public readonly sizeBytes: number,
+    public readonly modifiedAtMs: number,
+    public readonly sha256: string,
+    public readonly sha512: string
+  ) {}
+}
+
+class MatrixSourceResolutionResponse {
+  public constructor(
+    public readonly inputFilename: string,
+    public readonly inputKind: string,
+    public readonly action: string,
+    public readonly resolvedFilename: string,
+    public readonly expectedOutputFilename: string | null,
+    public readonly conversionDirection: string | null,
+    public readonly cachedOutputExists: boolean,
+    public readonly cacheCurrent: boolean,
+    public readonly warnings: string[],
+    public readonly sourceFingerprint: FileFingerprintResponse | null,
+    public readonly outputFingerprint: FileFingerprintResponse | null
+  ) {}
+}
+
+class TrackPrecomputeCacheProbeResponse {
+  public constructor(
+    public readonly filename: string,
+    public readonly trackType: string,
+    public readonly supported: boolean,
+    public readonly cacheAvailable: boolean,
+    public readonly cacheCurrent: boolean,
+    public readonly cacheSidecarPath: string,
+    public readonly warnings: string[],
+    public readonly sourceFingerprint: FileFingerprintResponse | null,
+    public readonly hictFingerprint: FileFingerprintResponse
+  ) {}
+}
+
 class WorkerPoolDiagnosticsResponse {
   public constructor(
     public readonly corePoolSize: number,
@@ -342,6 +381,9 @@ export {
   TracksPrecomputeStatusResponse,
   TrackCompatibilityReportResponse,
   FileEntryResponse,
+  FileFingerprintResponse,
+  MatrixSourceResolutionResponse,
+  TrackPrecomputeCacheProbeResponse,
   WorkerPoolDiagnosticsResponse,
   WorkerCancellationDomainDiagnosticsResponse,
   WorkerSchedulerDiagnosticsResponse,
