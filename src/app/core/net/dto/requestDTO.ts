@@ -81,6 +81,7 @@ import {
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
+  SetViewportExpectedProfileRequest,
 } from "../api/request";
 import { ColormapDTO, OutboundDTO, VisualizationOptionsDTO } from "./dto";
 
@@ -266,6 +267,10 @@ abstract class HiCTAPIRequestDTO<
         return new SetVisualizationOptionsRequestDTO(
           entity as SetVisualizationOptionsRequest
         );
+      case entity instanceof SetViewportExpectedProfileRequest:
+        return new SetViewportExpectedProfileRequestDTO(
+          entity as SetViewportExpectedProfileRequest
+        );
       default:
         return HiCTAPIRequestDTO.toDTOByRequestPath(entity);
     }
@@ -394,6 +399,18 @@ class SetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<SetVisualizati
         this.entity.options.preserveRenderPipeline ?? false,
       colormap: ColormapDTO.fromEntity(this.entity.options.options.colormap)
         .json,
+    };
+  }
+}
+
+class SetViewportExpectedProfileRequestDTO extends HiCTAPIRequestDTO<SetViewportExpectedProfileRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      bpResolution: this.entity.options.bpResolution,
+      startRowPx: this.entity.options.startRowPx,
+      endRowPx: this.entity.options.endRowPx,
+      startColPx: this.entity.options.startColPx,
+      endColPx: this.entity.options.endColPx,
     };
   }
 }
@@ -894,5 +911,6 @@ export {
   MoveSelectionToDebrisRequestDTO,
   GetVisualizationOptionsRequestDTO,
   SetVisualizationOptionsRequestDTO,
+  SetViewportExpectedProfileRequestDTO,
   GetWorkerDiagnosticsRequestDTO,
 };

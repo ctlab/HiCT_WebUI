@@ -296,6 +296,8 @@ const rulerPanelCssSize = "44px";
   box-sizing: border-box;
   border: 1px solid rgba(31, 41, 55, 0.55);
   background: inherit;
+  cursor: grab;
+  touch-action: none;
 }
 
 .interactive-workspace_corner_minimap :deep(.ol-viewport) {

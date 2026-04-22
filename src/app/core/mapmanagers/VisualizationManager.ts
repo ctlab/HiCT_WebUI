@@ -366,23 +366,36 @@ class VisualizationManager {
     ) {
       return null;
     }
+    const rawMapSizePx = Number(
+      this.mapManager.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex] ?? NaN
+    );
+    if (!Number.isFinite(rawMapSizePx) || rawMapSizePx <= 0) {
+      return null;
+    }
+    const mapSizePx = Math.max(1, Math.round(rawMapSizePx));
     const extent = this.mapManager.getView().calculateExtent(size);
     const pad = Math.max(0, Math.round(paddingPx));
-    const startColPx = Math.max(
-      0,
+    const clampLowerBound = (value: number): number =>
+      Math.max(0, Math.min(mapSizePx - 1, value));
+    const clampUpperBound = (value: number): number =>
+      Math.max(0, Math.min(mapSizePx, value));
+    const startColPx = clampLowerBound(
       Math.floor((extent[0] ?? 0) / descriptor.pixelResolution) - pad
     );
-    const endColPx = Math.max(
-      startColPx + 1,
-      Math.ceil((extent[2] ?? 0) / descriptor.pixelResolution) + pad
+    const endColPx = Math.min(
+      mapSizePx,
+      Math.max(startColPx + 1, clampUpperBound(
+        Math.ceil((extent[2] ?? 0) / descriptor.pixelResolution) + pad
+      ))
     );
-    const startRowPx = Math.max(
-      0,
+    const startRowPx = clampLowerBound(
       Math.floor(-(extent[3] ?? 0) / descriptor.pixelResolution) - pad
     );
-    const endRowPx = Math.max(
-      startRowPx + 1,
-      Math.ceil(-(extent[1] ?? 0) / descriptor.pixelResolution) + pad
+    const endRowPx = Math.min(
+      mapSizePx,
+      Math.max(startRowPx + 1, clampUpperBound(
+        Math.ceil(-(extent[1] ?? 0) / descriptor.pixelResolution) + pad
+      ))
     );
     return {
       bpResolution: descriptor.bpResolution,

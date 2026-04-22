@@ -27,7 +27,6 @@ import VectorLayer from "ol/layer/Vector";
 import VectorSource from "ol/source/Vector";
 import Feature from "ol/Feature";
 import Polygon, { fromExtent } from "ol/geom/Polygon";
-import Fill from "ol/style/Fill";
 import Stroke from "ol/style/Stroke";
 import Style from "ol/style/Style";
 import { transform, transformExtent } from "ol/proj";
@@ -65,6 +64,8 @@ class ContactMapManager {
   private minimapViewportFeature: Feature<Polygon> | null;
   private minimapResizeObserver: ResizeObserver | null;
   private minimapSyncListeners: EventsKey[];
+  private minimapPointerCleanup: (() => void)[];
+  private minimapDragPointerId: number | null;
   private minimapRenderFramePending: boolean;
 
   constructor(
@@ -109,6 +110,8 @@ class ContactMapManager {
     this.minimapViewportFeature = null;
     this.minimapResizeObserver = null;
     this.minimapSyncListeners = [];
+    this.minimapPointerCleanup = [];
+    this.minimapDragPointerId = null;
     this.minimapRenderFramePending = false;
   }
 
@@ -182,17 +185,14 @@ class ContactMapManager {
       style: [
         new Style({
           stroke: new Stroke({
-            color: "rgba(255,255,255,0.97)",
-            width: 4,
+            color: "rgba(34, 211, 238, 0.98)",
+            width: 5,
           }),
         }),
         new Style({
           stroke: new Stroke({
-            color: "rgba(220,38,38,0.98)",
+            color: "rgba(217, 70, 239, 0.98)",
             width: 2,
-          }),
-          fill: new Fill({
-            color: "rgba(220,38,38,0.10)",
           }),
         }),
       ],
@@ -215,6 +215,7 @@ class ContactMapManager {
     this.minimap = minimap;
     this.minimapViewportFeature = viewportFeature;
     this.fitMinimapToFullExtent();
+    this.bindMinimapPointerInteractions(resolvedTarget);
     this.minimapResizeObserver = new ResizeObserver(() => {
       this.minimap?.updateSize();
       this.fitMinimapToFullExtent();
@@ -238,6 +239,7 @@ class ContactMapManager {
   public clearOverviewMapTarget(): void {
     this.minimapResizeObserver?.disconnect();
     this.minimapResizeObserver = null;
+    this.teardownMinimapPointerInteractions();
     if (this.minimapSyncListeners.length > 0) {
       unByKey(this.minimapSyncListeners);
       this.minimapSyncListeners = [];
@@ -1282,6 +1284,103 @@ class ContactMapManager {
     view.setResolution(this.estimateMinimapResolution(extentTuple, target));
   }
 
+  private bindMinimapPointerInteractions(target: HTMLElement): void {
+    this.teardownMinimapPointerInteractions();
+    target.style.cursor = "grab";
+    target.style.touchAction = "none";
+
+    const stopDragging = (pointerId?: number): void => {
+      if (
+        pointerId != null &&
+        this.minimapDragPointerId != null &&
+        pointerId !== this.minimapDragPointerId
+      ) {
+        return;
+      }
+      if (pointerId != null && target.hasPointerCapture?.(pointerId)) {
+        try {
+          target.releasePointerCapture(pointerId);
+        } catch {
+          // Ignore stale pointer capture state during teardown.
+        }
+      }
+      this.minimapDragPointerId = null;
+      target.style.cursor = "grab";
+    };
+
+    const onPointerDown = (event: PointerEvent): void => {
+      if (event.button !== 0 || !this.minimap) {
+        return;
+      }
+      this.minimapDragPointerId = event.pointerId;
+      target.style.cursor = "grabbing";
+      try {
+        target.setPointerCapture?.(event.pointerId);
+      } catch {
+        // Some browsers may reject capture during rapid target swaps.
+      }
+      event.preventDefault();
+      this.recenterMainViewFromMinimapEvent(event);
+    };
+
+    const onPointerMove = (event: PointerEvent): void => {
+      if (this.minimapDragPointerId !== event.pointerId) {
+        return;
+      }
+      event.preventDefault();
+      this.recenterMainViewFromMinimapEvent(event);
+    };
+
+    const onPointerUp = (event: PointerEvent): void => {
+      if (this.minimapDragPointerId !== event.pointerId) {
+        return;
+      }
+      event.preventDefault();
+      stopDragging(event.pointerId);
+    };
+
+    const onPointerCancel = (event: PointerEvent): void => {
+      stopDragging(event.pointerId);
+    };
+
+    const onWheel = (event: WheelEvent): void => {
+      if (!this.minimap) {
+        return;
+      }
+      event.preventDefault();
+      this.zoomMainViewFromMinimapEvent(event);
+    };
+
+    target.addEventListener("pointerdown", onPointerDown);
+    target.addEventListener("pointermove", onPointerMove);
+    target.addEventListener("pointerup", onPointerUp);
+    target.addEventListener("pointercancel", onPointerCancel);
+    target.addEventListener("wheel", onWheel, { passive: false });
+
+    this.minimapPointerCleanup = [
+      () => target.removeEventListener("pointerdown", onPointerDown),
+      () => target.removeEventListener("pointermove", onPointerMove),
+      () => target.removeEventListener("pointerup", onPointerUp),
+      () => target.removeEventListener("pointercancel", onPointerCancel),
+      () => target.removeEventListener("wheel", onWheel),
+      () => stopDragging(),
+      () => {
+        target.style.removeProperty("cursor");
+        target.style.removeProperty("touch-action");
+      },
+    ];
+  }
+
+  private teardownMinimapPointerInteractions(): void {
+    if (this.minimapPointerCleanup.length === 0) {
+      this.minimapDragPointerId = null;
+      return;
+    }
+    this.minimapPointerCleanup.forEach((cleanup) => cleanup());
+    this.minimapPointerCleanup = [];
+    this.minimapDragPointerId = null;
+  }
+
   private scheduleMinimapViewportSync(): void {
     if (this.minimapRenderFramePending) {
       return;
@@ -1291,6 +1390,74 @@ class ContactMapManager {
       this.minimapRenderFramePending = false;
       this.syncMinimapViewport();
     });
+  }
+
+  private resolveMainCoordinateFromMinimapEvent(
+    event: MouseEvent | PointerEvent | WheelEvent
+  ): [number, number] | null {
+    if (!this.minimap) {
+      return null;
+    }
+    const minimapView = this.minimap.getView();
+    const minimapProjection = minimapView.getProjection();
+    const minimapBounds = minimapProjection.getExtent();
+    if (!minimapBounds) {
+      return null;
+    }
+    const minimapCoordinate = this.minimap.getEventCoordinate(event);
+    if (
+      !Array.isArray(minimapCoordinate) ||
+      minimapCoordinate.length < 2 ||
+      !minimapCoordinate.every((value) => Number.isFinite(value))
+    ) {
+      return null;
+    }
+    const clampedCoordinate = this.clampCoordinateToBounds(
+      minimapCoordinate as [number, number],
+      this.getMinimapVisibleBounds(
+        minimapBounds as [number, number, number, number]
+      )
+    );
+    const mainProjection = this.map.getView().getProjection();
+    const transformedCoordinate = transform(
+      clampedCoordinate,
+      minimapProjection,
+      mainProjection
+    ) as [number, number];
+    if (!transformedCoordinate.every((value) => Number.isFinite(value))) {
+      return null;
+    }
+    return transformedCoordinate;
+  }
+
+  private recenterMainViewFromMinimapEvent(
+    event: MouseEvent | PointerEvent | WheelEvent
+  ): boolean {
+    const nextCenter = this.resolveMainCoordinateFromMinimapEvent(event);
+    if (!nextCenter) {
+      return false;
+    }
+    this.map.getView().setCenter(nextCenter);
+    return true;
+  }
+
+  private zoomMainViewFromMinimapEvent(event: WheelEvent): void {
+    const mainView = this.map.getView();
+    const nextCenter = this.resolveMainCoordinateFromMinimapEvent(event);
+    const currentResolution = mainView.getResolution();
+    if (!nextCenter || !Number.isFinite(currentResolution ?? NaN)) {
+      return;
+    }
+    const resolutionRatio = event.deltaY > 0 ? 1.25 : 0.8;
+    const minResolution = mainView.getMinResolution() ?? currentResolution ?? 1;
+    const maxResolution = mainView.getMaxResolution() ?? currentResolution ?? 1;
+    const nextResolution = Math.max(
+      minResolution,
+      Math.min(maxResolution, (currentResolution ?? 1) * resolutionRatio)
+    );
+    mainView.cancelAnimations();
+    mainView.setCenter(nextCenter);
+    mainView.setResolution(nextResolution);
   }
 
   private syncMinimapViewport(): void {
@@ -1333,28 +1500,73 @@ class ContactMapManager {
     target.style.backgroundColor = color;
   }
 
+  private getMinimapVisibleBounds(
+    bounds: [number, number, number, number]
+  ): [number, number, number, number] {
+    const minimapResolution = this.minimap?.getView().getResolution() ?? 1;
+    const inset = Math.max(1e-6, Math.abs(minimapResolution) * 3);
+    const maxInsetX = Math.max(0, (getWidth(bounds) - 1e-6) / 2);
+    const maxInsetY = Math.max(0, (getHeight(bounds) - 1e-6) / 2);
+    const insetX = Math.min(inset, maxInsetX);
+    const insetY = Math.min(inset, maxInsetY);
+    return [
+      bounds[0] + insetX,
+      bounds[1] + insetY,
+      bounds[2] - insetX,
+      bounds[3] - insetY,
+    ];
+  }
+
+  private clampCoordinateToBounds(
+    coordinate: [number, number],
+    bounds: [number, number, number, number]
+  ): [number, number] {
+    return [
+      Math.max(bounds[0], Math.min(bounds[2], coordinate[0])),
+      Math.max(bounds[1], Math.min(bounds[3], coordinate[1])),
+    ];
+  }
+
   private clampExtentToBounds(
     extent: [number, number, number, number],
     bounds: [number, number, number, number]
   ): [number, number, number, number] {
+    const visibleBounds = this.getMinimapVisibleBounds(bounds);
     if (!intersects(extent, bounds)) {
-      return bounds;
+      return visibleBounds;
     }
+    const visibleWidth = Math.max(1e-6, getWidth(visibleBounds));
+    const visibleHeight = Math.max(1e-6, getHeight(visibleBounds));
+    const minimapResolution = Math.abs(this.minimap?.getView().getResolution() ?? 1);
+    const minimumVisibleSize = Math.max(1e-6, minimapResolution * 4);
+    const requestedWidth = Math.max(1e-6, extent[2] - extent[0]);
+    const requestedHeight = Math.max(1e-6, extent[3] - extent[1]);
+    const width = Math.min(
+      visibleWidth,
+      Math.max(requestedWidth, minimumVisibleSize)
+    );
+    const height = Math.min(
+      visibleHeight,
+      Math.max(requestedHeight, minimumVisibleSize)
+    );
     const clamp = (value: number, minValue: number, maxValue: number): number =>
       Math.max(minValue, Math.min(maxValue, value));
-    let left = clamp(extent[0], bounds[0], bounds[2]);
-    let right = clamp(extent[2], bounds[0], bounds[2]);
-    let bottom = clamp(extent[1], bounds[1], bounds[3]);
-    let top = clamp(extent[3], bounds[1], bounds[3]);
-    if (right <= left) {
-      right = Math.min(bounds[2], left + 1);
-      left = Math.max(bounds[0], right - 1);
-    }
-    if (top <= bottom) {
-      top = Math.min(bounds[3], bottom + 1);
-      bottom = Math.max(bounds[1], top - 1);
-    }
-    return [left, bottom, right, top];
+    const centerX = clamp(
+      (extent[0] + extent[2]) / 2,
+      visibleBounds[0] + width / 2,
+      visibleBounds[2] - width / 2
+    );
+    const centerY = clamp(
+      (extent[1] + extent[3]) / 2,
+      visibleBounds[1] + height / 2,
+      visibleBounds[3] - height / 2
+    );
+    return [
+      centerX - width / 2,
+      centerY - height / 2,
+      centerX + width / 2,
+      centerY + height / 2,
+    ];
   }
 }
 
