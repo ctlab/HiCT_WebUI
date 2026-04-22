@@ -108,5 +108,6 @@ function onWizardRequested(): void {
   height: 109px;
   left: 0px;
   top: 0px;
+  box-shadow: inset 0 -1px 0 #000000;
 }
 </style>

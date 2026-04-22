@@ -759,8 +759,11 @@ function onNormalizationChanged() {
   width: 100%;
   height: 53px;
 
-  background: var(--hict-ui-bg, #6c757d);
-  color: var(--hict-ui-fg, #1f2937);
+  background: linear-gradient(180deg, #909aa4 0%, #7f8993 42%, #6d7781 100%);
+  color: rgba(24, 30, 38, 0.95);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28);
 
   /* Inside auto layout */
   flex: none;
@@ -770,6 +773,29 @@ function onNormalizationChanged() {
 
 .header-ribbon .mb-3 {
   margin-bottom: 0 !important;
+}
+
+.header-ribbon :deep(.form-control),
+.header-ribbon :deep(.form-select),
+.header-ribbon :deep(.btn),
+.header-ribbon :deep(.dropdown-toggle) {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(243, 245, 247, 0.96) 100%
+  );
+  color: rgba(24, 30, 38, 0.95) !important;
+  border-color: rgba(15, 23, 38, 0.18) !important;
+  text-shadow: none;
+}
+
+.header-ribbon :deep(.form-control:focus),
+.header-ribbon :deep(.form-select:focus),
+.header-ribbon :deep(.btn:hover),
+.header-ribbon :deep(.btn:focus-visible),
+.header-ribbon :deep(.dropdown-toggle:hover),
+.header-ribbon :deep(.dropdown-toggle:focus-visible) {
+  background: rgba(255, 255, 255, 1);
 }
 
 #left-header-block,
@@ -933,10 +959,10 @@ function onNormalizationChanged() {
   height: 30px;
 
   /* Global/07. Light */
-  border: 1px solid var(--hict-ui-border, #f8f9fa);
+  border: 1px solid rgba(15, 23, 38, 0.18);
   border-radius: 4px;
-  color: var(--hict-ui-fg, #1f2937);
-  background: transparent;
+  color: rgba(24, 30, 38, 0.95);
+  background: rgba(255, 255, 255, 0.94);
 
   /* Inside auto layout */
   flex: none;
@@ -962,10 +988,10 @@ function onNormalizationChanged() {
   height: 30px;
 
   /* Global/07. Light */
-  border: 1px solid var(--hict-ui-border, #f8f9fa);
+  border: 1px solid rgba(15, 23, 38, 0.18);
   border-radius: 4px;
-  color: var(--hict-ui-fg, #1f2937);
-  background: transparent;
+  color: rgba(24, 30, 38, 0.95);
+  background: rgba(255, 255, 255, 0.94);
 
   /* Inside auto layout */
   flex: none;
@@ -979,7 +1005,8 @@ function onNormalizationChanged() {
 }
 
 #global-search-button {
-  border-color: var(--hict-ui-border, #f8f9fa);
-  color: var(--hict-ui-fg, #1f2937);
+  border-color: rgba(15, 23, 38, 0.18);
+  color: rgba(24, 30, 38, 0.95);
+  background: rgba(255, 255, 255, 0.94);
 }
 </style>
