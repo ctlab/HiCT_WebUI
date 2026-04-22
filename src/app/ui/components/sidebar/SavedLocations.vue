@@ -20,7 +20,7 @@
  -->
 
 <template>
-  <p class="w-100 m-0"><b>Locations:</b></p>
+  <p class="w-100 m-0 text-lg-center"><b>Locations</b></p>
   <div class="pills w-100">
     <div class="btn-group" role="group">
       <input

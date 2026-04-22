@@ -34,6 +34,11 @@ export const useVisualizationOptionsStore = defineStore(
     const resolutionScaling = ref(false);
     const resolutionLinearScaling = ref(false);
     const postLogBase = ref(10);
+    const autoThresholdEnabled = ref(false);
+    const autoThresholdQuantile = ref(0.995);
+    const signalDisplayMode = ref<VisualizationOptions["signalDisplayMode"]>(
+      "OBSERVED"
+    );
     const colormap: Ref<Colormap> = ref(
       new SimpleLinearGradient(
         new ColorTranslator("rgba(0,255,0,0.0)", { legacyCSS: true }),
@@ -50,7 +55,10 @@ export const useVisualizationOptionsStore = defineStore(
         applyCoolerWeights.value,
         resolutionScaling.value,
         resolutionLinearScaling.value,
-        colormap.value
+        colormap.value,
+        autoThresholdEnabled.value,
+        autoThresholdQuantile.value,
+        signalDisplayMode.value
       );
     }
 
@@ -60,6 +68,9 @@ export const useVisualizationOptionsStore = defineStore(
       applyCoolerWeights.value = options.applyCoolerWeights ?? false;
       resolutionScaling.value = options.resolutionScaling ?? false;
       resolutionLinearScaling.value = options.resolutionLinearScaling ?? false;
+      autoThresholdEnabled.value = options.autoThresholdEnabled ?? false;
+      autoThresholdQuantile.value = options.autoThresholdQuantile ?? 0.995;
+      signalDisplayMode.value = options.signalDisplayMode ?? "OBSERVED";
       colormap.value = options.colormap;
     }
 
@@ -69,6 +80,9 @@ export const useVisualizationOptionsStore = defineStore(
       resolutionScaling,
       resolutionLinearScaling,
       postLogBase,
+      autoThresholdEnabled,
+      autoThresholdQuantile,
+      signalDisplayMode,
       colormap,
       asVisualizationOptions,
       setVisualizationOptions,

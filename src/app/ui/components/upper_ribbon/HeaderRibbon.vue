@@ -107,9 +107,15 @@
         </select>
       </div>
       <div class="mb-3">
-        <select class="form-select form-select-sm">
-          <option selected value="0">Show Observed</option>
-          <option value="1">Show Expected</option>
+        <select
+          v-model="signalDisplayMode"
+          class="form-select form-select-sm"
+          title="Expected and O/E use the standard renderer and will disable a custom pixel pipeline for this view."
+          @change="onSignalDisplayModeChanged"
+        >
+          <option value="OBSERVED">Show Observed</option>
+          <option value="EXPECTED">Show Expected</option>
+          <option value="OBSERVED_OVER_EXPECTED">Show O/E</option>
         </select>
       </div>
       <div class="mb-3">
@@ -232,6 +238,7 @@ const {
   applyCoolerWeights,
   resolutionScaling,
   resolutionLinearScaling,
+  signalDisplayMode,
   colormap,
 } = storeToRefs(visualizationOptionsStore);
 
@@ -248,6 +255,7 @@ async function exportSvg() {
       applyCoolerWeights: applyCoolerWeights.value,
       resolutionScaling: resolutionScaling.value,
       resolutionLinearScaling: resolutionLinearScaling.value,
+      signalDisplayMode: signalDisplayMode.value,
       colormap:
         cmap instanceof SimpleLinearGradient
           ? {
@@ -692,6 +700,15 @@ async function reloadTiles() {
   }
 }
 
+async function onSignalDisplayModeChanged() {
+  try {
+    await props.mapManager?.visualizationManager.sendVisualizationOptionsAndReload();
+  } catch (error) {
+    toast.error("Failed to update signal display mode");
+    console.error(error);
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 // const emit = defineEmits<{
 //   (e: "reloadTiles"): void;
@@ -742,7 +759,11 @@ function onNormalizationChanged() {
   width: 100%;
   height: 53px;
 
-  background: #6c757d;
+  background: linear-gradient(180deg, #909aa4 0%, #7f8993 42%, #6d7781 100%);
+  color: rgba(24, 30, 38, 0.95);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28);
 
   /* Inside auto layout */
   flex: none;
@@ -752,6 +773,29 @@ function onNormalizationChanged() {
 
 .header-ribbon .mb-3 {
   margin-bottom: 0 !important;
+}
+
+.header-ribbon :deep(.form-control),
+.header-ribbon :deep(.form-select),
+.header-ribbon :deep(.btn),
+.header-ribbon :deep(.dropdown-toggle) {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(243, 245, 247, 0.96) 100%
+  );
+  color: rgba(24, 30, 38, 0.95) !important;
+  border-color: rgba(15, 23, 38, 0.18) !important;
+  text-shadow: none;
+}
+
+.header-ribbon :deep(.form-control:focus),
+.header-ribbon :deep(.form-select:focus),
+.header-ribbon :deep(.btn:hover),
+.header-ribbon :deep(.btn:focus-visible),
+.header-ribbon :deep(.dropdown-toggle:hover),
+.header-ribbon :deep(.dropdown-toggle:focus-visible) {
+  background: rgba(255, 255, 255, 1);
 }
 
 #left-header-block,
@@ -841,10 +885,10 @@ function onNormalizationChanged() {
   width: 320px;
   max-height: 240px;
   overflow: auto;
-  background: #ffffff;
-  border: 1px solid #ced4da;
+  background: var(--hict-surface-bg, #ffffff);
+  border: 1px solid var(--hict-surface-border, #ced4da);
   border-radius: 6px;
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--hict-surface-shadow, 0 8px 16px rgba(0, 0, 0, 0.12));
   z-index: 30;
   padding: 4px;
 }
@@ -863,7 +907,7 @@ function onNormalizationChanged() {
 
 .search-result:hover,
 .search-result.active {
-  background: #f1f3f5;
+  background: var(--hict-surface-bg-muted, #f1f3f5);
 }
 
 .search-loading {
@@ -871,24 +915,24 @@ function onNormalizationChanged() {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #495057;
+  color: var(--hict-surface-muted, #495057);
   padding: 6px 8px;
 }
 
 .search-type {
   font-size: 11px;
-  color: #6c757d;
+  color: var(--hict-surface-muted, #6c757d);
   min-width: 52px;
 }
 
 .search-name {
   font-weight: 600;
-  color: #212529;
+  color: var(--hict-surface-fg, #212529);
 }
 
 .search-original {
   font-size: 11px;
-  color: #6c757d;
+  color: var(--hict-surface-muted, #6c757d);
 }
 
 #reload-tiles-button {
@@ -915,8 +959,10 @@ function onNormalizationChanged() {
   height: 30px;
 
   /* Global/07. Light */
-  border: 1px solid #f8f9fa;
+  border: 1px solid rgba(15, 23, 38, 0.18);
   border-radius: 4px;
+  color: rgba(24, 30, 38, 0.95);
+  background: rgba(255, 255, 255, 0.94);
 
   /* Inside auto layout */
   flex: none;
@@ -942,8 +988,10 @@ function onNormalizationChanged() {
   height: 30px;
 
   /* Global/07. Light */
-  border: 1px solid #f8f9fa;
+  border: 1px solid rgba(15, 23, 38, 0.18);
   border-radius: 4px;
+  color: rgba(24, 30, 38, 0.95);
+  background: rgba(255, 255, 255, 0.94);
 
   /* Inside auto layout */
   flex: none;
@@ -954,5 +1002,11 @@ function onNormalizationChanged() {
 .export-group {
   display: flex;
   gap: 6px;
+}
+
+#global-search-button {
+  border-color: rgba(15, 23, 38, 0.18);
+  color: rgba(24, 30, 38, 0.95);
+  background: rgba(255, 255, 255, 0.94);
 }
 </style>

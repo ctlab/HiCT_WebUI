@@ -21,6 +21,11 @@
 
 import Colormap from "./colormap/Colormap";
 
+export type SignalDisplayMode =
+  | "OBSERVED"
+  | "EXPECTED"
+  | "OBSERVED_OVER_EXPECTED";
+
 export default class VisualizationOptions {
   public constructor(
     public readonly preLogBase: number,
@@ -28,6 +33,9 @@ export default class VisualizationOptions {
     public readonly applyCoolerWeights: boolean | undefined,
     public readonly resolutionScaling: boolean | undefined,
     public readonly resolutionLinearScaling: boolean | undefined,
-    public readonly colormap: Colormap
+    public readonly colormap: Colormap,
+    public readonly autoThresholdEnabled: boolean = false,
+    public readonly autoThresholdQuantile: number = 0.995,
+    public readonly signalDisplayMode: SignalDisplayMode = "OBSERVED"
   ) {}
 }

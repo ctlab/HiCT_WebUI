@@ -21,13 +21,17 @@
 
 import {
   ConversionJobResponse,
+  ConversionToolchainStatusResponse,
   CurrentSignalRangeResponse,
+  FileFingerprintResponse,
   FileEntryResponse,
   FastaLinkCompatibilityResponse,
   FastaLinkMismatchResponse,
   FastaLinkResponse,
+  MatrixSourceResolutionResponse,
   NameMappingResponse,
   TrackCompatibilityReportResponse,
+  TrackPrecomputeCacheProbeResponse,
   TrackPrecomputeTrackStatusResponse,
   TracksPrecomputeStatusResponse,
   TrackBinBlockResponse,
@@ -95,6 +99,10 @@ class ConversionJobResponseDTO extends InboundDTO<ConversionJobResponse> {
       this.json["sourceFilename"] as string,
       this.json["outputFilename"] as string,
       this.json["direction"] as string,
+      (this.json["currentStage"] as string) ?? "",
+      (this.json["currentStageLabel"] as string) ?? "",
+      (this.json["stageDetail"] as string) ?? "",
+      (this.json["stageProgress"] as number) ?? 0,
       this.json["overallProgress"] as number,
       this.json["resolutionProgress"] as number,
       this.json["currentResolution"] as number,
@@ -104,8 +112,33 @@ class ConversionJobResponseDTO extends InboundDTO<ConversionJobResponse> {
       this.json["resolutionEtaMillis"] as number,
       this.json["inputSizeBytes"] as number,
       this.json["outputSizeBytes"] as number,
+      (this.json["toolchainSource"] as string) ?? "",
+      (this.json["toolchainSummary"] as string) ?? "",
+      (this.json["toolchainNotices"] as string[]) ?? [],
+      (this.json["toolchainCitations"] as string[]) ?? [],
       (this.json["logs"] as string[]) ?? [],
       (this.json["error"] as string) ?? ""
+    );
+  }
+}
+
+class ConversionToolchainStatusResponseDTO extends InboundDTO<ConversionToolchainStatusResponse> {
+  public toEntity(): ConversionToolchainStatusResponse {
+    return new ConversionToolchainStatusResponse(
+      (this.json["platform"] as string) ?? "unknown",
+      (this.json["source"] as string) ?? "unknown",
+      Boolean(this.json["supportedPlatform"] ?? false),
+      Boolean(this.json["hicConversionAvailable"] ?? false),
+      Boolean(this.json["hictkAvailable"] ?? false),
+      (this.json["hictkCommand"] as string) ?? null,
+      Boolean(this.json["coolerAvailable"] ?? false),
+      (this.json["coolerCommand"] as string) ?? null,
+      Boolean(this.json["pythonAvailable"] ?? false),
+      (this.json["pythonCommand"] as string) ?? null,
+      (this.json["summary"] as string) ?? "",
+      (this.json["notices"] as string[]) ?? [],
+      (this.json["citations"] as string[]) ?? [],
+      (this.json["limitations"] as string[]) ?? []
     );
   }
 }
@@ -316,6 +349,65 @@ class FileEntryResponseDTO extends InboundDTO<FileEntryResponse> {
   }
 }
 
+class FileFingerprintResponseDTO extends InboundDTO<FileFingerprintResponse> {
+  public toEntity(): FileFingerprintResponse {
+    return new FileFingerprintResponse(
+      (this.json["sizeBytes"] as number) ?? -1,
+      (this.json["modifiedAtMs"] as number) ?? 0,
+      (this.json["sha256"] as string) ?? "",
+      (this.json["sha512"] as string) ?? ""
+    );
+  }
+}
+
+class MatrixSourceResolutionResponseDTO extends InboundDTO<MatrixSourceResolutionResponse> {
+  public toEntity(): MatrixSourceResolutionResponse {
+    return new MatrixSourceResolutionResponse(
+      (this.json["inputFilename"] as string) ?? "",
+      (this.json["inputKind"] as string) ?? "UNKNOWN",
+      (this.json["action"] as string) ?? "UNSUPPORTED",
+      (this.json["resolvedFilename"] as string) ?? "",
+      (this.json["expectedOutputFilename"] as string) ?? null,
+      (this.json["conversionDirection"] as string) ?? null,
+      Boolean(this.json["cachedOutputExists"] ?? false),
+      Boolean(this.json["cacheCurrent"] ?? false),
+      (this.json["warnings"] as string[]) ?? [],
+      this.json["sourceFingerprint"]
+        ? new FileFingerprintResponseDTO(
+            this.json["sourceFingerprint"] as Record<string, unknown>
+          ).toEntity()
+        : null,
+      this.json["outputFingerprint"]
+        ? new FileFingerprintResponseDTO(
+            this.json["outputFingerprint"] as Record<string, unknown>
+          ).toEntity()
+        : null
+    );
+  }
+}
+
+class TrackPrecomputeCacheProbeResponseDTO extends InboundDTO<TrackPrecomputeCacheProbeResponse> {
+  public toEntity(): TrackPrecomputeCacheProbeResponse {
+    return new TrackPrecomputeCacheProbeResponse(
+      (this.json["filename"] as string) ?? "",
+      (this.json["trackType"] as string) ?? "UNSUPPORTED",
+      Boolean(this.json["supported"] ?? false),
+      Boolean(this.json["cacheAvailable"] ?? false),
+      Boolean(this.json["cacheCurrent"] ?? false),
+      (this.json["cacheSidecarPath"] as string) ?? "",
+      (this.json["warnings"] as string[]) ?? [],
+      this.json["sourceFingerprint"]
+        ? new FileFingerprintResponseDTO(
+            this.json["sourceFingerprint"] as Record<string, unknown>
+          ).toEntity()
+        : null,
+      new FileFingerprintResponseDTO(
+        (this.json["hictFingerprint"] as Record<string, unknown>) ?? {}
+      ).toEntity()
+    );
+  }
+}
+
 class WorkerPoolDiagnosticsResponseDTO extends InboundDTO<WorkerPoolDiagnosticsResponse> {
   public toEntity(): WorkerPoolDiagnosticsResponse {
     return new WorkerPoolDiagnosticsResponse(
@@ -421,6 +513,7 @@ export {
   CurrentSignalRangeResponseDTO,
   TilePOSTResponseDTO,
   ConversionJobResponseDTO,
+  ConversionToolchainStatusResponseDTO,
   NameMappingResponseDTO,
   TrackSummaryResponseDTO,
   TrackQueryResponseDTO,
@@ -429,6 +522,8 @@ export {
   TracksPrecomputeStatusResponseDTO,
   TrackCompatibilityReportResponseDTO,
   FileEntryResponseDTO,
+  MatrixSourceResolutionResponseDTO,
+  TrackPrecomputeCacheProbeResponseDTO,
   WorkerSchedulerDiagnosticsResponseDTO,
   FastaLinkResponseDTO,
 };

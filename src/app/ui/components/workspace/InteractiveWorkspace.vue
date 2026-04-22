@@ -26,14 +26,24 @@
     :style="iwcStyle"
   >
     <div class="interactive-workspace_corner_track">
-      <div ref="cornerMiniMapTarget" class="interactive-workspace_corner_minimap"></div>
+      <div
+        v-if="visibleTrackCount > 0"
+        ref="cornerMiniMapTarget"
+        class="interactive-workspace_corner_minimap"
+      ></div>
     </div>
     <div class="interactive-workspace_corner_tracks_ruler"></div>
     <div class="interactive-workspace_horizontal_tracks">
       <HorizontalIGVTrack :map-manager="props.mapManager"></HorizontalIGVTrack>
     </div>
     <div class="interactive-workspace_corner_ruler_tracks"></div>
-    <div class="interactive-workspace_corner_ruler"></div>
+    <div class="interactive-workspace_corner_ruler">
+      <div
+        v-if="visibleTrackCount <= 0"
+        ref="cornerMiniMapFallbackTarget"
+        class="interactive-workspace_corner_minimap interactive-workspace_corner_minimap--compact"
+      ></div>
+    </div>
     <div class="interactive-workspace_horizontal_ruler" id="horizontal-ruler-div"></div>
     <div class="interactive-workspace_vertical_tracks">
       <VerticalIGVTrack :map-manager="props.mapManager"></VerticalIGVTrack>
@@ -92,6 +102,7 @@ const props = defineProps<{
 }>();
 const workspaceRoot = ref<HTMLElement | null>(null);
 const cornerMiniMapTarget = ref<HTMLElement | null>(null);
+const cornerMiniMapFallbackTarget = ref<HTMLElement | null>(null);
 
 const visibleTrackCount = ref(0);
 let unsubscribeTrackList: (() => void) | undefined;
@@ -125,11 +136,15 @@ const bindTrackVisibility = () => {
 };
 
 const bindCornerMinimap = () => {
-  if (!props.mapManager || !cornerMiniMapTarget.value || visibleTrackCount.value <= 0) {
+  const target =
+    visibleTrackCount.value > 0
+      ? cornerMiniMapTarget.value
+      : cornerMiniMapFallbackTarget.value;
+  if (!props.mapManager || !target) {
     props.mapManager?.clearOverviewMapTarget();
     return;
   }
-  props.mapManager.addOverviewMapTarget(cornerMiniMapTarget.value);
+  props.mapManager.addOverviewMapTarget(target);
 };
 
 onMounted(() => {
@@ -281,6 +296,8 @@ const rulerPanelCssSize = "44px";
   box-sizing: border-box;
   border: 1px solid rgba(31, 41, 55, 0.55);
   background: inherit;
+  cursor: grab;
+  touch-action: none;
 }
 
 .interactive-workspace_corner_minimap :deep(.ol-viewport) {
@@ -309,9 +326,16 @@ const rulerPanelCssSize = "44px";
 
 .interactive-workspace_corner_ruler {
   grid-area: corner-ruler;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
   background: inherit;
   border-right: 1px solid black;
   border-bottom: 1px solid black;
+}
+
+.interactive-workspace_corner_minimap--compact {
+  padding: 1px;
 }
 
 .interactive-workspace_horizontal_tracks {

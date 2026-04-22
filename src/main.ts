@@ -28,7 +28,7 @@ import "primeflex/primeflex.css";
 import "primevue/resources/themes/lara-light-teal/theme.css";
 import "primevue/resources/primevue.min.css"; /* Deprecated */
 import "primeicons/primeicons.css";
-// import "./assets/main.css";
+import "./assets/base.css";
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";

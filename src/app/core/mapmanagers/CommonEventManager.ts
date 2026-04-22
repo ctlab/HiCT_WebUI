@@ -38,6 +38,7 @@ import {
   MoveSelectionToDebrisRequest,
 } from "../net/api/request";
 import { ContactMapManager } from "./ContactMapManager";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 import { ActiveTool } from "./HiCViewAndLayersManager";
 import { BorderStyle, NamePlacement } from "@/app/core/tracks/Track2DSymmetric";
 import { Coordinate } from "ol/coordinate";
@@ -681,6 +682,7 @@ class CommonEventManager {
   }
 
   public onExportFASTAForSelectionClicked(): void {
+    const matrixViewStore = useMatrixViewStore();
     this.mapManager.deactivateTranslocation();
     const [fromPx, toPx] = [
       this.mapManager.viewAndLayersManager.currentViewState.selectionBorders
@@ -713,6 +715,8 @@ class CommonEventManager {
           fromBpY: fromBpY,
           toBpX: toBpX,
           toBpY: toBpY,
+          horizontalSource: matrixViewStore.horizontalFastaSource,
+          verticalSource: matrixViewStore.verticalFastaSource,
         })
       )
       .then((data) => {

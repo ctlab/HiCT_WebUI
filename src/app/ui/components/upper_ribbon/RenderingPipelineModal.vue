@@ -45,7 +45,7 @@
           </div>
           <div v-if="!previewMode" class="modal-body">
             <div class="alert alert-warning py-2 mb-3">
-              Normalization dropdown updates this pipeline, but pipeline edits are not fully back-synced to checkbox controls.
+              Normalization dropdown updates this pipeline, but pipeline edits are not fully back-synced to checkbox controls. Expected and O/E views fall back to the standard renderer because custom pipelines operate on per-pixel signals.
             </div>
             <div class="d-flex gap-3 align-items-center mb-3">
               <div class="form-check">
@@ -572,7 +572,7 @@ const buildDotplotOverlayPreset = (): {
     mode: "OVER",
     top,
     bottom,
-    topOpacity: 0.4,
+    topOpacity: 0.5,
     bottomOpacity: 1,
   };
   return {

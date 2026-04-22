@@ -251,6 +251,9 @@ class VisualizationOptionsDTO extends InboundDTO<VisualizationOptions> {
       applyCoolerWeights: e.applyCoolerWeights,
       resolutionScaling: e.resolutionScaling,
       resolutionLinearScaling: e.resolutionLinearScaling,
+      autoThresholdEnabled: e.autoThresholdEnabled,
+      autoThresholdQuantile: e.autoThresholdQuantile,
+      signalDisplayMode: e.signalDisplayMode,
       colormap: ColormapDTO.fromEntity(e.colormap),
     });
   }
@@ -265,7 +268,14 @@ class VisualizationOptionsDTO extends InboundDTO<VisualizationOptions> {
       this.json["resolutionLinearScaling"] as boolean,
       new ColormapDTO(
         this.json["colormap"] as Record<string, unknown>
-      ).toEntity()
+      ).toEntity(),
+      Boolean(this.json["autoThresholdEnabled"] ?? false),
+      typeof this.json["autoThresholdQuantile"] === "number"
+        ? (this.json["autoThresholdQuantile"] as number)
+        : 0.995,
+      typeof this.json["signalDisplayMode"] === "string"
+        ? (this.json["signalDisplayMode"] as VisualizationOptions["signalDisplayMode"])
+        : "OBSERVED"
     );
   }
 }

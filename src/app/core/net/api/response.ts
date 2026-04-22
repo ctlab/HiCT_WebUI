@@ -42,6 +42,10 @@ class ConversionJobResponse {
     public readonly sourceFilename: string,
     public readonly outputFilename: string,
     public readonly direction: string,
+    public readonly currentStage: string,
+    public readonly currentStageLabel: string,
+    public readonly stageDetail: string,
+    public readonly stageProgress: number,
     public readonly overallProgress: number,
     public readonly resolutionProgress: number,
     public readonly currentResolution: number,
@@ -51,8 +55,31 @@ class ConversionJobResponse {
     public readonly resolutionEtaMillis: number,
     public readonly inputSizeBytes: number,
     public readonly outputSizeBytes: number,
+    public readonly toolchainSource: string,
+    public readonly toolchainSummary: string,
+    public readonly toolchainNotices: string[],
+    public readonly toolchainCitations: string[],
     public readonly logs: string[],
     public readonly error: string
+  ) {}
+}
+
+class ConversionToolchainStatusResponse {
+  public constructor(
+    public readonly platform: string,
+    public readonly source: string,
+    public readonly supportedPlatform: boolean,
+    public readonly hicConversionAvailable: boolean,
+    public readonly hictkAvailable: boolean,
+    public readonly hictkCommand: string | null,
+    public readonly coolerAvailable: boolean,
+    public readonly coolerCommand: string | null,
+    public readonly pythonAvailable: boolean,
+    public readonly pythonCommand: string | null,
+    public readonly summary: string,
+    public readonly notices: string[],
+    public readonly citations: string[],
+    public readonly limitations: string[]
   ) {}
 }
 
@@ -224,6 +251,45 @@ class FileEntryResponse {
   ) {}
 }
 
+class FileFingerprintResponse {
+  public constructor(
+    public readonly sizeBytes: number,
+    public readonly modifiedAtMs: number,
+    public readonly sha256: string,
+    public readonly sha512: string
+  ) {}
+}
+
+class MatrixSourceResolutionResponse {
+  public constructor(
+    public readonly inputFilename: string,
+    public readonly inputKind: string,
+    public readonly action: string,
+    public readonly resolvedFilename: string,
+    public readonly expectedOutputFilename: string | null,
+    public readonly conversionDirection: string | null,
+    public readonly cachedOutputExists: boolean,
+    public readonly cacheCurrent: boolean,
+    public readonly warnings: string[],
+    public readonly sourceFingerprint: FileFingerprintResponse | null,
+    public readonly outputFingerprint: FileFingerprintResponse | null
+  ) {}
+}
+
+class TrackPrecomputeCacheProbeResponse {
+  public constructor(
+    public readonly filename: string,
+    public readonly trackType: string,
+    public readonly supported: boolean,
+    public readonly cacheAvailable: boolean,
+    public readonly cacheCurrent: boolean,
+    public readonly cacheSidecarPath: string,
+    public readonly warnings: string[],
+    public readonly sourceFingerprint: FileFingerprintResponse | null,
+    public readonly hictFingerprint: FileFingerprintResponse
+  ) {}
+}
+
 class WorkerPoolDiagnosticsResponse {
   public constructor(
     public readonly corePoolSize: number,
@@ -301,6 +367,7 @@ export {
   CurrentSignalRangeResponse,
   TilePOSTResponse,
   ConversionJobResponse,
+  ConversionToolchainStatusResponse,
   NameMappingResponse,
   TrackSummaryResponse,
   TrackBinBlockResponse,
@@ -314,6 +381,9 @@ export {
   TracksPrecomputeStatusResponse,
   TrackCompatibilityReportResponse,
   FileEntryResponse,
+  FileFingerprintResponse,
+  MatrixSourceResolutionResponse,
+  TrackPrecomputeCacheProbeResponse,
   WorkerPoolDiagnosticsResponse,
   WorkerCancellationDomainDiagnosticsResponse,
   WorkerSchedulerDiagnosticsResponse,

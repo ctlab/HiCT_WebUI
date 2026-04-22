@@ -73,8 +73,26 @@ class ListCoolerFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_coolers";
 }
 
+class ListConvertibleMatrixFilesRequest implements HiCTAPIRequest {
+  requestPath = "/list_convertible_matrices";
+}
+
 class ListTrackFilesRequest implements HiCTAPIRequest {
   requestPath = "/tracks/list_files";
+}
+
+class ResolveMatrixSourceRequest implements HiCTAPIRequest {
+  requestPath = "/resolve_matrix_source";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+    }
+  ) {}
+}
+
+class DropAllCachesRequest implements HiCTAPIRequest {
+  requestPath = "/cache/drop_all";
 }
 
 class CloseFileRequest implements HiCTAPIRequest {
@@ -87,6 +105,12 @@ class AttachSessionRequest implements HiCTAPIRequest {
 
 class GetFastaForAssemblyRequest implements HiCTAPIRequest {
   requestPath = "/get_fasta_for_assembly";
+
+  public constructor(
+    public readonly options: {
+      readonly source?: "PRIMARY" | "SECONDARY";
+    } = {}
+  ) {}
 }
 
 class GetAGPForAssemblyRequest implements HiCTAPIRequest {
@@ -205,6 +229,10 @@ class StopConversionJobRequest implements HiCTAPIRequest {
   }
 }
 
+class GetConversionToolchainStatusRequest implements HiCTAPIRequest {
+  requestPath = "/convert/toolchain";
+}
+
 class SetContrastRangeRequest implements HiCTAPIRequest {
   requestPath = "/set_contrast_range";
 
@@ -294,6 +322,8 @@ class GetFastaForSelectionRequest implements HiCTAPIRequest {
       readonly fromBpY: number;
       readonly toBpX: number;
       readonly toBpY: number;
+      readonly horizontalSource?: "PRIMARY" | "SECONDARY";
+      readonly verticalSource?: "PRIMARY" | "SECONDARY";
     }
   ) {}
 }
@@ -305,6 +335,7 @@ class LinkFASTARequest implements HiCTAPIRequest {
     public readonly options: {
       readonly fastaFilename: string;
       readonly allowMismatch?: boolean;
+      readonly source?: "PRIMARY" | "SECONDARY";
     }
   ) {}
 }
@@ -315,6 +346,7 @@ class LoadAGPRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       readonly agpFilename: string;
+      readonly source?: "PRIMARY" | "SECONDARY";
     }
   ) {}
 }
@@ -385,6 +417,21 @@ class SetVisualizationOptionsRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       options: VisualizationOptions;
+      preserveRenderPipeline?: boolean;
+    }
+  ) {}
+}
+
+class SetViewportExpectedProfileRequest implements HiCTAPIRequest {
+  requestPath = "/visualization/expected_profile";
+
+  public constructor(
+    public readonly options: {
+      readonly bpResolution: number;
+      readonly startRowPx: number;
+      readonly endRowPx: number;
+      readonly startColPx: number;
+      readonly endColPx: number;
     }
   ) {}
 }
@@ -528,6 +575,16 @@ class GetTracksPrecomputeStatusRequest implements HiCTAPIRequest {
   requestPath = "/tracks/precompute/status";
 }
 
+class ProbeTrackPrecomputeCacheRequest implements HiCTAPIRequest {
+  requestPath = "/tracks/precompute/probe";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+    }
+  ) {}
+}
+
 // class TileLoadPOSTRequest implements HiCTAPIRequest {
 //   requestPath = "/get_tile";
 
@@ -546,11 +603,15 @@ export {
   AttachSessionRequest,
   CloseFileRequest,
   ListCoolerFilesRequest,
+  ListConvertibleMatrixFilesRequest,
+  ResolveMatrixSourceRequest,
+  DropAllCachesRequest,
   StartConversionJobRequest,
   StartBatchConversionJobsRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
   StopConversionJobRequest,
+  GetConversionToolchainStatusRequest,
   RenameContigRequest,
   RenameScaffoldRequest,
   ExportNameMappingRequest,
@@ -584,6 +645,7 @@ export {
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
+  SetViewportExpectedProfileRequest,
   ListTrackFilesRequest,
   OpenTrackRequest,
   OpenCoolerWeightsTrackRequest,
@@ -597,6 +659,7 @@ export {
   GetTrackFeatureContextRequest,
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
+  ProbeTrackPrecomputeCacheRequest,
   GetWorkerDiagnosticsRequest,
   GetRenderPipelineRequest,
   SetRenderPipelineRequest,

@@ -46,6 +46,11 @@
                 <div v-if="saving" class="spinner-border ms-auto" role="status"></div>
               </li> -->
               <li>
+                <a class="dropdown-item" href="#" @click="onOpenWizard"
+                  >Wizard...</a
+                >
+              </li>
+              <li>
                 <a class="dropdown-item" href="#" @click="onCloseClicked"
                   >Close</a
                 >
@@ -77,7 +82,12 @@
                   class="dropdown-item"
                   href="#"
                   @click="onConvertCoolersClicked"
-                  >Convert Coolers</a
+                  >Convert matrices</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onDropCachesClicked"
+                  >Drop caches</a
                 >
               </li>
             </ul>
@@ -281,8 +291,8 @@
     @dismissed="onFileDismissed"
     :error-message="errorMessage"
     :title="'Open Hi-C dataset'"
-    :file-type="'.hict.hdf5, .cool, .mcool'"
-    :note="'Cooler files have to be converted into HiCT internal format before opening.'"
+    :file-type="'.hict.hdf5, .hic, .cool, .mcool'"
+    :note="'Files in .hic, .cool, and .mcool formats must be converted into HiCT internal format before opening.'"
     :file-name-predicate="isOpenableAssemblyFilename"
   ></UniversalFileSelector>
   <UniversalFileSelector
@@ -426,6 +436,7 @@ const emit = defineEmits<{
   (e: "openSession", file: File): void;
   (e: "agpLoaded", filename: string): void;
   (e: "fastaLinked", filename: string): void;
+  (e: "wizardRequested"): void;
 }>();
 
 const props = defineProps<{
@@ -443,6 +454,10 @@ const { customZoomSliderEnabled, binaryTileTransportEnabled } =
 
 function onOpenFile() {
   openingFile.value = true;
+}
+
+function onOpenWizard(): void {
+  emit("wizardRequested");
 }
 
 function onOpenTrackManager() {
@@ -513,6 +528,17 @@ function onConvertCoolersClicked(): void {
   convertingCoolers.value = true;
 }
 
+async function onDropCachesClicked(): Promise<void> {
+  try {
+    const result = await props.networkManager.requestManager.dropAllCaches();
+    toast.success(
+      `Dropped caches: ${result.matrixMetadataDeleted} matrix metadata entries, ${result.trackCacheEntriesDeleted} track cache files`
+    );
+  } catch (error) {
+    errorMessage.value = error;
+  }
+}
+
 function onConvertCoolersDismissed(): void {
   coolerToConvert.value = undefined;
   convertingCoolers.value = false;
@@ -554,16 +580,42 @@ function onAGPFileDismissed() {
   openingAGPFile.value = false;
 }
 
-function onFileSelected(filename: string) {
+async function onFileSelected(filename: string) {
   if (filename && filename !== "") {
     const lowered = filename.toLowerCase();
     if (lowered.endsWith(".hict") || lowered.endsWith(".hict.hdf5")) {
       openingFile.value = false;
       emit("selected", filename);
-    } else if (lowered.endsWith(".cool") || lowered.endsWith(".mcool")) {
-      openingFile.value = false;
-      coolerToConvert.value = filename;
-      convertingCoolers.value = true;
+    } else if (
+      lowered.endsWith(".hic") ||
+      lowered.endsWith(".cool") ||
+      lowered.endsWith(".mcool")
+    ) {
+      try {
+        const resolution =
+          await props.networkManager.requestManager.resolveMatrixSource(
+            filename
+          );
+        if (resolution.action === "REUSE_CONVERTED") {
+          openingFile.value = false;
+          resolution.warnings.forEach((warning) => toast(warning));
+          emit("selected", resolution.resolvedFilename);
+          return;
+        }
+        openingFile.value = false;
+        coolerToConvert.value = filename;
+        convertingCoolers.value = true;
+        resolution.warnings.forEach((warning) =>
+          toast(warning, {
+            style: {
+              "background-color": "lightyellow",
+              color: "black",
+            },
+          })
+        );
+      } catch (error) {
+        errorMessage.value = error;
+      }
     } else if (lowered.endsWith(".agp")) {
       openAGP(filename);
     } else if (lowered.endsWith(".fasta") || lowered.endsWith(".fa")) {
@@ -579,6 +631,7 @@ function isOpenableAssemblyFilename(name: string): boolean {
   const lowered = name.toLowerCase();
   return (
     lowered.endsWith(".hict.hdf5") ||
+    lowered.endsWith(".hic") ||
     lowered.endsWith(".cool") ||
     lowered.endsWith(".mcool")
   );
@@ -775,12 +828,14 @@ function onAssemblyAGPRequest() {
 }
 
 .about-modal {
-  background: #ffffff;
+  background: var(--hict-surface-bg, #ffffff);
+  color: var(--hict-surface-fg, #1f2937);
+  border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.18));
   border-radius: 10px;
   width: min(720px, 90vw);
   max-height: 90vh;
   overflow: auto;
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--hict-surface-shadow, 0 24px 48px rgba(0, 0, 0, 0.2));
   padding: 20px 24px;
 }
 

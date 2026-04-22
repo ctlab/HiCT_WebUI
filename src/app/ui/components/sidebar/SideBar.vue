@@ -411,10 +411,11 @@ function getEventManager(): CommonEventManager | undefined {
   width: 350px;
 
   right: 0px;
-  top: 109px;
+  top: 0px;
 
-  background: var(--hict-ui-bg, #f8f9fa);
-  color: var(--hict-ui-fg, #1f2937);
+  background: var(--hict-surface-bg-muted, #f8f9fa);
+  color: var(--hict-surface-fg, #1f2937);
+  border-left: 1px solid #000000;
   /* background-color: green; */
 
   /* Shadows/02. Regular */
@@ -437,6 +438,7 @@ function getEventManager(): CommonEventManager | undefined {
   flex: none;
   order: 0;
   flex-grow: 0;
+  width: 100%;
 }
 
 #layers-block {
@@ -451,7 +453,7 @@ function getEventManager(): CommonEventManager | undefined {
 
   height: fit-content;
 
-  background: var(--hict-ui-bg, #ffffff);
+  background: var(--hict-surface-bg, #ffffff);
 
   /* Shadows/01. Small */
   box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.075);
@@ -460,6 +462,7 @@ function getEventManager(): CommonEventManager | undefined {
   flex: none;
   order: 0;
   flex-grow: 0;
+  width: 100%;
 }
 
 #minimap {
@@ -498,7 +501,7 @@ function getEventManager(): CommonEventManager | undefined {
 
   height: fit-content;
 
-  background: var(--hict-ui-bg, #ffffff);
+  background: var(--hict-surface-bg, #ffffff);
 
   box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.075);
 
@@ -522,7 +525,7 @@ function getEventManager(): CommonEventManager | undefined {
 
   height: fit-content;
 
-  background: var(--hict-ui-bg, #ffffff);
+  background: var(--hict-surface-bg, #ffffff);
 
   /* Shadows/01. Small */
   box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.075);

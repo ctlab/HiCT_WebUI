@@ -22,12 +22,18 @@
 /* color palette from <https://github.com/vuejs/theme> */
 :root {
   --hict-font-sans: Avenir, Helvetica, "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif;
-  --hict-surface-bg: rgba(255, 255, 255, 0.98);
-  --hict-surface-bg-muted: rgba(248, 250, 252, 0.98);
-  --hict-surface-fg: rgba(18, 25, 35, 0.96);
-  --hict-surface-muted: rgba(73, 84, 99, 0.88);
-  --hict-surface-border: rgba(15, 23, 38, 0.18);
+  --hict-ui-bg: rgba(255, 255, 255, 0.98);
+  --hict-ui-fg: rgba(18, 25, 35, 0.96);
+  --hict-ui-muted: rgba(73, 84, 99, 0.88);
+  --hict-ui-border: rgba(15, 23, 38, 0.18);
+  --hict-ui-outline: rgba(255, 255, 255, 0.92);
+  --hict-surface-bg: var(--hict-ui-bg);
+  --hict-surface-bg-muted: var(--hict-ui-bg);
+  --hict-surface-fg: var(--hict-ui-fg);
+  --hict-surface-muted: var(--hict-ui-muted);
+  --hict-surface-border: var(--hict-ui-border);
   --hict-surface-shadow: 0 20px 55px rgba(15, 23, 38, 0.18);
+  --hict-surface-close-filter: none;
   --vt-c-white: #ffffff;
   --vt-c-white-soft: #f8f8f8;
   --vt-c-white-mute: #f2f2f2;
@@ -109,6 +115,7 @@ body {
   color: var(--hict-surface-fg);
   border-color: var(--hict-surface-border);
   box-shadow: var(--hict-surface-shadow);
+  text-align: left;
 }
 
 .modal-header,
@@ -149,7 +156,7 @@ body {
 
 .form-control,
 .form-select {
-  background: rgba(255, 255, 255, 0.98);
+  background: var(--hict-surface-bg-muted);
   color: var(--hict-surface-fg);
   border-color: var(--hict-surface-border);
 }
@@ -160,17 +167,18 @@ body {
 
 .form-control:focus,
 .form-select:focus {
-  background: rgba(255, 255, 255, 1);
+  background: var(--hict-surface-bg-muted);
   color: var(--hict-surface-fg);
   border-color: rgba(37, 99, 235, 0.42);
   box-shadow: 0 0 0 0.25rem rgba(37, 99, 235, 0.16);
 }
 
 .form-select option {
-  background: #ffffff;
+  background: var(--hict-surface-bg);
   color: var(--hict-surface-fg);
 }
 
 .btn-close {
-  filter: none;
+  filter: var(--hict-surface-close-filter);
+  opacity: 0.82;
 }

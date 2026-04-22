@@ -52,6 +52,8 @@ import {
   GetAGPForAssemblyRequest,
   ListCoolerFilesRequest,
   ListTrackFilesRequest,
+  ResolveMatrixSourceRequest,
+  DropAllCachesRequest,
   OpenTrackRequest,
   OpenCoolerWeightsTrackRequest,
   ProbeTrackCompatibilityRequest,
@@ -64,6 +66,7 @@ import {
   GetTrackFeatureContextRequest,
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
+  ProbeTrackPrecomputeCacheRequest,
   StartConversionJobRequest,
   StartBatchConversionJobsRequest,
   ListConversionJobsRequest,
@@ -78,6 +81,7 @@ import {
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
+  SetViewportExpectedProfileRequest,
 } from "../api/request";
 import { ColormapDTO, OutboundDTO, VisualizationOptionsDTO } from "./dto";
 
@@ -147,6 +151,12 @@ abstract class HiCTAPIRequestDTO<
         return new ListCoolerFilesRequestDTO(entity);
       case entity instanceof ListTrackFilesRequest:
         return new ListTrackFilesRequestDTO(entity);
+      case entity instanceof ResolveMatrixSourceRequest:
+        return new ResolveMatrixSourceRequestDTO(
+          entity as ResolveMatrixSourceRequest
+        );
+      case entity instanceof DropAllCachesRequest:
+        return new DropAllCachesRequestDTO(entity as DropAllCachesRequest);
       case entity instanceof OpenTrackRequest:
         return new OpenTrackRequestDTO(entity as OpenTrackRequest);
       case entity instanceof OpenCoolerWeightsTrackRequest:
@@ -177,6 +187,10 @@ abstract class HiCTAPIRequestDTO<
         return new StartTracksPrecomputeRequestDTO(entity as StartTracksPrecomputeRequest);
       case entity instanceof GetTracksPrecomputeStatusRequest:
         return new GetTracksPrecomputeStatusRequestDTO(entity as GetTracksPrecomputeStatusRequest);
+      case entity instanceof ProbeTrackPrecomputeCacheRequest:
+        return new ProbeTrackPrecomputeCacheRequestDTO(
+          entity as ProbeTrackPrecomputeCacheRequest
+        );
       case entity instanceof ListConversionJobsRequest:
         return new ListConversionJobsRequestDTO(entity);
       case entity instanceof GetConversionJobRequest:
@@ -252,6 +266,10 @@ abstract class HiCTAPIRequestDTO<
       case entity instanceof SetVisualizationOptionsRequest:
         return new SetVisualizationOptionsRequestDTO(
           entity as SetVisualizationOptionsRequest
+        );
+      case entity instanceof SetViewportExpectedProfileRequest:
+        return new SetViewportExpectedProfileRequestDTO(
+          entity as SetViewportExpectedProfileRequest
         );
       default:
         return HiCTAPIRequestDTO.toDTOByRequestPath(entity);
@@ -374,8 +392,25 @@ class SetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<SetVisualizati
       resolutionScaling: this.entity.options.options.resolutionScaling,
       resolutionLinearScaling:
         this.entity.options.options.resolutionLinearScaling,
+      autoThresholdEnabled: this.entity.options.options.autoThresholdEnabled,
+      autoThresholdQuantile: this.entity.options.options.autoThresholdQuantile,
+      signalDisplayMode: this.entity.options.options.signalDisplayMode,
+      preserveRenderPipeline:
+        this.entity.options.preserveRenderPipeline ?? false,
       colormap: ColormapDTO.fromEntity(this.entity.options.options.colormap)
         .json,
+    };
+  }
+}
+
+class SetViewportExpectedProfileRequestDTO extends HiCTAPIRequestDTO<SetViewportExpectedProfileRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      bpResolution: this.entity.options.bpResolution,
+      startRowPx: this.entity.options.startRowPx,
+      endRowPx: this.entity.options.endRowPx,
+      startColPx: this.entity.options.startColPx,
+      endColPx: this.entity.options.endColPx,
     };
   }
 }
@@ -516,6 +551,7 @@ class LinkFASTARequestDTO extends HiCTAPIRequestDTO<LinkFASTARequest> {
     return {
       fastaFilename: this.entity.options.fastaFilename,
       allowMismatch: this.entity.options.allowMismatch,
+      source: this.entity.options.source,
     };
   }
 }
@@ -523,6 +559,7 @@ class LoadAGPRequestDTO extends HiCTAPIRequestDTO<LoadAGPRequest> {
   toDTO(): Record<string, unknown> {
     return {
       agpFilename: this.entity.options.agpFilename,
+      source: this.entity.options.source,
     };
   }
 }
@@ -599,6 +636,20 @@ class ListCoolerFilesRequestDTO extends HiCTAPIRequestDTO<ListCoolerFilesRequest
 }
 
 class ListTrackFilesRequestDTO extends HiCTAPIRequestDTO<ListTrackFilesRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class ResolveMatrixSourceRequestDTO extends HiCTAPIRequestDTO<ResolveMatrixSourceRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      filename: this.entity.options.filename,
+    };
+  }
+}
+
+class DropAllCachesRequestDTO extends HiCTAPIRequestDTO<DropAllCachesRequest> {
   toDTO(): Record<string, unknown> {
     return {};
   }
@@ -757,6 +808,14 @@ class GetTracksPrecomputeStatusRequestDTO extends HiCTAPIRequestDTO<GetTracksPre
   }
 }
 
+class ProbeTrackPrecomputeCacheRequestDTO extends HiCTAPIRequestDTO<ProbeTrackPrecomputeCacheRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      filename: this.entity.options.filename,
+    };
+  }
+}
+
 class ListFASTAFilesRequestDTO extends HiCTAPIRequestDTO<ListFASTAFilesRequest> {
   toDTO(): Record<string, unknown> {
     return {};
@@ -782,10 +841,12 @@ class AttachSessionRequestDTO extends HiCTAPIRequestDTO<AttachSessionRequest> {
 
 class GetFastaForAssemblyRequestDTO extends HiCTAPIRequestDTO<GetFastaForAssemblyRequest> {
   toDTO(): Record<string, unknown> {
-    return {};
+    return {
+      source: this.entity.options.source,
+    };
   }
 }
-class GetAGPForAssemblyRequestDTO extends HiCTAPIRequestDTO<GetFastaForAssemblyRequest> {
+class GetAGPForAssemblyRequestDTO extends HiCTAPIRequestDTO<GetAGPForAssemblyRequest> {
   toDTO(): Record<string, unknown> {
     return {};
   }
@@ -798,6 +859,8 @@ class GetFastaForSelectionRequestDTO extends HiCTAPIRequestDTO<GetFastaForSelect
       fromBpY: this.entity.options.fromBpY,
       toBpX: this.entity.options.toBpX,
       toBpY: this.entity.options.toBpY,
+      horizontalSource: this.entity.options.horizontalSource,
+      verticalSource: this.entity.options.verticalSource,
     };
   }
 }
@@ -809,6 +872,8 @@ export {
   ListFilesDetailedRequestDTO,
   CloseFileRequestDTO,
   AttachSessionRequestDTO,
+  ResolveMatrixSourceRequestDTO,
+  DropAllCachesRequestDTO,
   StartConversionJobRequestDTO,
   StartBatchConversionJobsRequestDTO,
   ListConversionJobsRequestDTO,
@@ -840,10 +905,12 @@ export {
   GetTrackFeatureContextRequestDTO,
   StartTracksPrecomputeRequestDTO,
   GetTracksPrecomputeStatusRequestDTO,
+  ProbeTrackPrecomputeCacheRequestDTO,
   ListCoolerFilesRequestDTO,
   SplitContigRequestDTO,
   MoveSelectionToDebrisRequestDTO,
   GetVisualizationOptionsRequestDTO,
   SetVisualizationOptionsRequestDTO,
+  SetViewportExpectedProfileRequestDTO,
   GetWorkerDiagnosticsRequestDTO,
 };

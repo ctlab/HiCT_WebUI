@@ -29,14 +29,17 @@ import {
 import { HiCTAPIRequestDTO } from "../dto/requestDTO";
 import {
   ConversionJobResponseDTO,
+  ConversionToolchainStatusResponseDTO,
   CurrentSignalRangeResponseDTO,
   FastaLinkResponseDTO,
   NameMappingResponseDTO,
   TracksPrecomputeStatusResponseDTO,
   TrackCompatibilityReportResponseDTO,
   FileEntryResponseDTO,
+  MatrixSourceResolutionResponseDTO,
   TrackFeatureContextResponseDTO,
   TrackFeatureSearchResponseDTO,
+  TrackPrecomputeCacheProbeResponseDTO,
   TrackQueryResponseDTO,
   TrackSummaryResponseDTO,
   WorkerSchedulerDiagnosticsResponseDTO,
@@ -52,9 +55,12 @@ import {
   LinkFASTARequest,
   ListAGPFilesRequest,
   ListCoolerFilesRequest,
+  ListConvertibleMatrixFilesRequest,
   ListFilesDetailedRequest,
   ListFASTAFilesRequest,
   ListFilesRequest,
+  ResolveMatrixSourceRequest,
+  DropAllCachesRequest,
   LoadAGPRequest,
   MoveSelectionRangeRequest,
   OpenFileRequest,
@@ -66,10 +72,12 @@ import {
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
+  SetViewportExpectedProfileRequest,
   StartBatchConversionJobsRequest,
   StartConversionJobRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
+  GetConversionToolchainStatusRequest,
   StopConversionJobRequest,
   RenameContigRequest,
   RenameScaffoldRequest,
@@ -96,6 +104,7 @@ import {
   GetTrackFeatureContextRequest,
   StartTracksPrecomputeRequest,
   GetTracksPrecomputeStatusRequest,
+  ProbeTrackPrecomputeCacheRequest,
   GetWorkerDiagnosticsRequest,
   GetRenderPipelineRequest,
   SetRenderPipelineRequest,
@@ -103,13 +112,16 @@ import {
 } from "./request";
 import {
   ConversionJobResponse,
+  ConversionToolchainStatusResponse,
   CurrentSignalRangeResponse,
   FastaLinkResponse,
   FileEntryResponse,
+  MatrixSourceResolutionResponse,
   NameMappingResponse,
   TrackCompatibilityReportResponse,
   TrackFeatureContextResponse,
   TrackFeatureSearchResponse,
+  TrackPrecomputeCacheProbeResponse,
   TracksPrecomputeStatusResponse,
   TrackQueryResponse,
   TrackSummaryResponse,
@@ -236,7 +248,8 @@ class RequestManager {
 
   public async sendRequest(
     request: HiCTAPIRequest,
-    axiosConfig?: AxiosRequestConfig | undefined
+    axiosConfig?: AxiosRequestConfig | undefined,
+    options?: { suppressErrorToast?: boolean }
   ): Promise<AxiosResponse> {
     const host = this.networkManager.host.replace(/\/+$/, "");
     const path = request.requestPath.replace(/^\/+/, "");
@@ -271,7 +284,7 @@ class RequestManager {
       })
       .catch((err) => {
         const errorToastStore = useErrorToastStore();
-        if (errorToastStore.requestErrorToastsEnabled) {
+        if (!options?.suppressErrorToast && errorToastStore.requestErrorToastsEnabled) {
           const message =
             err?.response?.data?.error ?? err?.message ?? "Request failed";
           toast.error(message);
@@ -398,9 +411,38 @@ class RequestManager {
     return response.data as string[];
   }
 
+  public async listConvertibleMatrices(): Promise<string[]> {
+    const response = await this.sendRequest(
+      new ListConvertibleMatrixFilesRequest()
+    );
+    return response.data as string[];
+  }
+
   public async listTrackFiles(): Promise<string[]> {
     const response = await this.sendRequest(new ListTrackFilesRequest());
     return response.data as string[];
+  }
+
+  public async resolveMatrixSource(
+    filename: string
+  ): Promise<MatrixSourceResolutionResponse> {
+    return this.sendRequest(new ResolveMatrixSourceRequest({ filename }))
+      .then((response) => response.data)
+      .then((json) => new MatrixSourceResolutionResponseDTO(json).toEntity());
+  }
+
+  public async dropAllCaches(): Promise<{
+    status: string;
+    matrixMetadataDeleted: number;
+    trackCacheEntriesDeleted: number;
+  }> {
+    return this.sendRequest(new DropAllCachesRequest())
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => ({
+        status: String(json.status ?? "unknown"),
+        matrixMetadataDeleted: Number(json.matrixMetadataDeleted ?? 0),
+        trackCacheEntriesDeleted: Number(json.trackCacheEntriesDeleted ?? 0),
+      }));
   }
 
   public async openTrack(
@@ -423,9 +465,14 @@ class RequestManager {
   }
 
   public async probeTrackCompatibility(
-    filename: string
+    filename: string,
+    options?: { suppressErrorToast?: boolean }
   ): Promise<TrackCompatibilityReportResponse> {
-    return this.sendRequest(new ProbeTrackCompatibilityRequest({ filename }))
+    return this.sendRequest(
+      new ProbeTrackCompatibilityRequest({ filename }),
+      undefined,
+      options
+    )
       .then((response) => response.data)
       .then((json) => new TrackCompatibilityReportResponseDTO(json).toEntity());
   }
@@ -610,6 +657,21 @@ class RequestManager {
       .then((json) => new TracksPrecomputeStatusResponseDTO(json).toEntity());
   }
 
+  public async probeTrackPrecomputeCache(
+    filename: string,
+    options?: { suppressErrorToast?: boolean }
+  ): Promise<TrackPrecomputeCacheProbeResponse> {
+    return this.sendRequest(
+      new ProbeTrackPrecomputeCacheRequest({ filename }),
+      undefined,
+      options
+    )
+      .then((response) => response.data)
+      .then((json) =>
+        new TrackPrecomputeCacheProbeResponseDTO(json).toEntity()
+      );
+  }
+
   public async getWorkerDiagnostics(): Promise<WorkerSchedulerDiagnosticsResponse> {
     return this.sendRequest(new GetWorkerDiagnosticsRequest())
       .then((response) => response.data)
@@ -688,6 +750,13 @@ class RequestManager {
     );
   }
 
+  public async getConversionToolchainStatus(): Promise<ConversionToolchainStatusResponse> {
+    return this.sendRequest(new GetConversionToolchainStatusRequest()).then(
+      (response) =>
+        new ConversionToolchainStatusResponseDTO(response.data).toEntity()
+    );
+  }
+
   public async renameContig(
     contigId: number,
     newName: string | null
@@ -743,6 +812,56 @@ class RequestManager {
       .get(`${host}/version`)
       .then((resp) => resp.data ?? { version: "unknown" })
       .catch(() => "unknown");
+  }
+
+  public async queryMatrixFloat32(options: {
+    bpResolution: number;
+    startRowPx: number;
+    endRowPx: number;
+    startColPx: number;
+    endColPx: number;
+    source?: "PRIMARY" | "SECONDARY";
+    signalMode?: "RAW_COUNTS" | "COOLER_WEIGHTED" | "TRADITIONAL_NORMALIZED" | "PIPELINE_SIGNAL";
+  }): Promise<{
+    rows: number;
+    cols: number;
+    values: Float32Array;
+  }> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    const response = await axios.post(
+      `${host}/matrix/query`,
+      {
+        unit: "PIXELS",
+        bpResolution: options.bpResolution,
+        startRowPx: options.startRowPx,
+        endRowPx: options.endRowPx,
+        startColPx: options.startColPx,
+        endColPx: options.endColPx,
+        source: options.source ?? "PRIMARY",
+        signalMode: options.signalMode ?? "TRADITIONAL_NORMALIZED",
+        format: "BINARY_FLOAT32",
+      },
+      {
+        responseType: "arraybuffer",
+        headers: {
+          Accept: "application/octet-stream",
+        },
+      }
+    );
+    const rows = Number.parseInt(response.headers["x-hict-rows"] || "0", 10);
+    const cols = Number.parseInt(response.headers["x-hict-cols"] || "0", 10);
+    const buffer = response.data as ArrayBuffer;
+    const count = Math.max(0, Math.floor(buffer.byteLength / 4));
+    const view = new DataView(buffer);
+    const values = new Float32Array(count);
+    for (let index = 0; index < count; index += 1) {
+      values[index] = view.getFloat32(index * 4, true);
+    }
+    return {
+      rows,
+      cols,
+      values,
+    };
   }
 
   public async listAGPFiles(): Promise<string[]> {
@@ -878,6 +997,16 @@ class RequestManager {
     return this.sendRequest(request)
       .then((response) => response.data)
       .then((json) => new VisualizationOptionsDTO(json).toEntity());
+  }
+
+  public async setViewportExpectedProfile(options: {
+    bpResolution: number;
+    startRowPx: number;
+    endRowPx: number;
+    startColPx: number;
+    endColPx: number;
+  }): Promise<void> {
+    await this.sendRequest(new SetViewportExpectedProfileRequest(options));
   }
 
   /*
