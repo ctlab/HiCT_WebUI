@@ -422,6 +422,20 @@ class SetVisualizationOptionsRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class SetViewportExpectedProfileRequest implements HiCTAPIRequest {
+  requestPath = "/visualization/expected_profile";
+
+  public constructor(
+    public readonly options: {
+      readonly bpResolution: number;
+      readonly startRowPx: number;
+      readonly endRowPx: number;
+      readonly startColPx: number;
+      readonly endColPx: number;
+    }
+  ) {}
+}
+
 class OpenTrackRequest implements HiCTAPIRequest {
   requestPath = "/tracks/open";
 
@@ -631,6 +645,7 @@ export {
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
+  SetViewportExpectedProfileRequest,
   ListTrackFilesRequest,
   OpenTrackRequest,
   OpenCoolerWeightsTrackRequest,

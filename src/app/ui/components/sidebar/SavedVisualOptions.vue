@@ -20,7 +20,7 @@
  -->
 
 <template>
-  <p class="w-100 m-0"><b>Visualization presets:</b></p>
+  <p class="w-100 m-0 text-lg-center"><b>Visualization presets:</b></p>
   <div
     class="btn-group w-100 p-2"
     role="group"

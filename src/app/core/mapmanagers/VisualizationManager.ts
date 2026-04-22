@@ -27,6 +27,8 @@ import { ContactMapManager } from "./ContactMapManager";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import VisualizationOptions from "../visualization/VisualizationOptions";
 import SimpleLinearGradient from "../visualization/colormap/SimpleLinearGradient";
+import type { EventsKey } from "ol/events";
+import { unByKey } from "ol/Observable";
 
 type ViewportPixelBounds = {
   bpResolution: number;
@@ -274,7 +276,21 @@ class VisualizationManager {
   public static readonly VISUALIZATION_OPTIONS_UPDATED_EVENT =
     "hict:visualization-options-updated";
   public readonly visualizationOptionsStore = useVisualizationOptionsStore();
-  public constructor(public readonly mapManager: ContactMapManager) {}
+  private readonly moveEndListener?: EventsKey;
+  private expectedProfileSyncInFlight = false;
+  private pendingExpectedProfileRefresh = false;
+
+  public constructor(public readonly mapManager: ContactMapManager) {
+    this.moveEndListener = this.mapManager.getMap().on("moveend", () => {
+      void this.refreshExpectedProfileOnMoveEnd();
+    });
+  }
+
+  public dispose(): void {
+    if (this.moveEndListener) {
+      unByKey(this.moveEndListener);
+    }
+  }
 
   public fetchVisualizationOptions(): Promise<VisualizationOptions> {
     return this.mapManager.networkManager.requestManager
@@ -336,7 +352,7 @@ class VisualizationManager {
     };
   }
 
-  private resolveViewportPixelBounds(): ViewportPixelBounds | null {
+  private resolveViewportPixelBounds(paddingPx = 0): ViewportPixelBounds | null {
     const size = this.mapManager.map.getSize();
     if (!size || size.length < 2 || size[0] <= 0 || size[1] <= 0) {
       return null;
@@ -351,21 +367,22 @@ class VisualizationManager {
       return null;
     }
     const extent = this.mapManager.getView().calculateExtent(size);
+    const pad = Math.max(0, Math.round(paddingPx));
     const startColPx = Math.max(
       0,
-      Math.floor((extent[0] ?? 0) / descriptor.pixelResolution)
+      Math.floor((extent[0] ?? 0) / descriptor.pixelResolution) - pad
     );
     const endColPx = Math.max(
       startColPx + 1,
-      Math.ceil((extent[2] ?? 0) / descriptor.pixelResolution)
+      Math.ceil((extent[2] ?? 0) / descriptor.pixelResolution) + pad
     );
     const startRowPx = Math.max(
       0,
-      Math.floor(-(extent[3] ?? 0) / descriptor.pixelResolution)
+      Math.floor(-(extent[3] ?? 0) / descriptor.pixelResolution) - pad
     );
     const endRowPx = Math.max(
       startRowPx + 1,
-      Math.ceil(-(extent[1] ?? 0) / descriptor.pixelResolution)
+      Math.ceil(-(extent[1] ?? 0) / descriptor.pixelResolution) + pad
     );
     return {
       bpResolution: descriptor.bpResolution,
@@ -374,6 +391,53 @@ class VisualizationManager {
       startColPx,
       endColPx,
     };
+  }
+
+  private resolveExpectedProfileBounds(): ViewportPixelBounds | null {
+    return this.resolveViewportPixelBounds(
+      Math.max(0, Math.round(this.mapManager.getOptions().tileSize || 0))
+    );
+  }
+
+  public async syncExpectedProfileToViewport(): Promise<boolean> {
+    const options = this.visualizationOptionsStore.asVisualizationOptions();
+    if (options.signalDisplayMode === "OBSERVED") {
+      return false;
+    }
+    const bounds = this.resolveExpectedProfileBounds();
+    if (!bounds) {
+      return false;
+    }
+    await this.mapManager.networkManager.requestManager.setViewportExpectedProfile(
+      bounds
+    );
+    return true;
+  }
+
+  private async refreshExpectedProfileOnMoveEnd(): Promise<void> {
+    const options = this.visualizationOptionsStore.asVisualizationOptions();
+    if (options.signalDisplayMode === "OBSERVED") {
+      return;
+    }
+    if (this.expectedProfileSyncInFlight) {
+      this.pendingExpectedProfileRefresh = true;
+      return;
+    }
+    this.expectedProfileSyncInFlight = true;
+    try {
+      const updated = await this.syncExpectedProfileToViewport();
+      if (updated) {
+        this.mapManager.reloadTiles();
+      }
+    } catch {
+      // Keep the current view visible even if viewport-profile refresh fails.
+    } finally {
+      this.expectedProfileSyncInFlight = false;
+      if (this.pendingExpectedProfileRefresh) {
+        this.pendingExpectedProfileRefresh = false;
+        void this.refreshExpectedProfileOnMoveEnd();
+      }
+    }
   }
 
   public async syncAutoThresholdToViewport(): Promise<number | null> {
@@ -523,6 +587,12 @@ class VisualizationManager {
           })
         );
         return options;
+      })
+      .then(async (updatedOptions) => {
+        if (updatedOptions.signalDisplayMode !== "OBSERVED") {
+          await this.syncExpectedProfileToViewport();
+        }
+        return updatedOptions;
       });
   }
 

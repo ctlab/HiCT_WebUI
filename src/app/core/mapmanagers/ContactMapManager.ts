@@ -1156,6 +1156,7 @@ class ContactMapManager {
   }
 
   public dispose() {
+    this.visualizationManager.dispose();
     this.linearTrackManager.dispose();
     this.clearOverviewMapTarget();
     this.viewAndLayersManager?.dispose?.();

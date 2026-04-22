@@ -215,53 +215,27 @@ function safeColorTranslator(
 
 function syncUiChromePalette(): void {
   const root = document.documentElement;
-  const background = mapBackgroundColor.value;
-  const dark = background.L <= 55;
-  root.style.setProperty("--hict-ui-bg", background.RGB);
-  root.style.setProperty(
-    "--hict-ui-fg",
-    dark ? "rgba(246,248,252,0.96)" : "rgba(24,30,38,0.95)"
-  );
-  root.style.setProperty(
-    "--hict-ui-outline",
-    dark ? "rgba(0,0,0,0.84)" : "rgba(255,255,255,0.92)"
-  );
-  root.style.setProperty(
-    "--hict-ui-muted",
-    dark ? "rgba(220,226,236,0.88)" : "rgba(75,82,92,0.86)"
-  );
-  root.style.setProperty(
-    "--hict-ui-border",
-    dark ? "rgba(248,250,255,0.42)" : "rgba(15,23,38,0.26)"
-  );
-  root.style.setProperty(
-    "--hict-surface-bg",
-    dark ? "rgba(18,24,32,0.96)" : "rgba(255,255,255,0.98)"
-  );
+  root.style.setProperty("--hict-ui-bg", "rgba(243, 246, 250, 0.98)");
+  root.style.setProperty("--hict-ui-fg", "rgba(24, 30, 38, 0.95)");
+  root.style.setProperty("--hict-ui-outline", "rgba(255, 255, 255, 0.92)");
+  root.style.setProperty("--hict-ui-muted", "rgba(75, 82, 92, 0.86)");
+  root.style.setProperty("--hict-ui-border", "rgba(15, 23, 38, 0.22)");
+  root.style.setProperty("--hict-surface-bg", "rgba(255, 255, 255, 0.98)");
   root.style.setProperty(
     "--hict-surface-bg-muted",
-    dark ? "rgba(26,34,44,0.98)" : "rgba(248,250,252,0.98)"
+    "rgba(248, 250, 252, 0.98)"
   );
-  root.style.setProperty(
-    "--hict-surface-fg",
-    dark ? "rgba(246,248,252,0.96)" : "rgba(18,25,35,0.96)"
-  );
-  root.style.setProperty(
-    "--hict-surface-muted",
-    dark ? "rgba(220,226,236,0.84)" : "rgba(73,84,99,0.88)"
-  );
+  root.style.setProperty("--hict-surface-fg", "rgba(18, 25, 35, 0.96)");
+  root.style.setProperty("--hict-surface-muted", "rgba(73, 84, 99, 0.88)");
   root.style.setProperty(
     "--hict-surface-border",
-    dark ? "rgba(248,250,255,0.2)" : "rgba(15,23,38,0.18)"
+    "rgba(15, 23, 38, 0.18)"
   );
   root.style.setProperty(
     "--hict-surface-shadow",
-    dark ? "0 24px 60px rgba(0,0,0,0.52)" : "0 20px 55px rgba(15,23,38,0.18)"
+    "0 20px 55px rgba(15, 23, 38, 0.18)"
   );
-  root.style.setProperty(
-    "--hict-surface-close-filter",
-    dark ? "invert(1) grayscale(1)" : "none"
-  );
+  root.style.setProperty("--hict-surface-close-filter", "none");
 }
 
 function resetState() {

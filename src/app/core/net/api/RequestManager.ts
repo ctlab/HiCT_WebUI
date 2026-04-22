@@ -72,6 +72,7 @@ import {
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
+  SetViewportExpectedProfileRequest,
   StartBatchConversionJobsRequest,
   StartConversionJobRequest,
   ListConversionJobsRequest,
@@ -996,6 +997,16 @@ class RequestManager {
     return this.sendRequest(request)
       .then((response) => response.data)
       .then((json) => new VisualizationOptionsDTO(json).toEntity());
+  }
+
+  public async setViewportExpectedProfile(options: {
+    bpResolution: number;
+    startRowPx: number;
+    endRowPx: number;
+    startColPx: number;
+    endColPx: number;
+  }): Promise<void> {
+    await this.sendRequest(new SetViewportExpectedProfileRequest(options));
   }
 
   /*
