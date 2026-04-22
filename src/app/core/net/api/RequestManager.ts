@@ -247,7 +247,8 @@ class RequestManager {
 
   public async sendRequest(
     request: HiCTAPIRequest,
-    axiosConfig?: AxiosRequestConfig | undefined
+    axiosConfig?: AxiosRequestConfig | undefined,
+    options?: { suppressErrorToast?: boolean }
   ): Promise<AxiosResponse> {
     const host = this.networkManager.host.replace(/\/+$/, "");
     const path = request.requestPath.replace(/^\/+/, "");
@@ -282,7 +283,7 @@ class RequestManager {
       })
       .catch((err) => {
         const errorToastStore = useErrorToastStore();
-        if (errorToastStore.requestErrorToastsEnabled) {
+        if (!options?.suppressErrorToast && errorToastStore.requestErrorToastsEnabled) {
           const message =
             err?.response?.data?.error ?? err?.message ?? "Request failed";
           toast.error(message);
@@ -463,9 +464,14 @@ class RequestManager {
   }
 
   public async probeTrackCompatibility(
-    filename: string
+    filename: string,
+    options?: { suppressErrorToast?: boolean }
   ): Promise<TrackCompatibilityReportResponse> {
-    return this.sendRequest(new ProbeTrackCompatibilityRequest({ filename }))
+    return this.sendRequest(
+      new ProbeTrackCompatibilityRequest({ filename }),
+      undefined,
+      options
+    )
       .then((response) => response.data)
       .then((json) => new TrackCompatibilityReportResponseDTO(json).toEntity());
   }
@@ -651,9 +657,14 @@ class RequestManager {
   }
 
   public async probeTrackPrecomputeCache(
-    filename: string
+    filename: string,
+    options?: { suppressErrorToast?: boolean }
   ): Promise<TrackPrecomputeCacheProbeResponse> {
-    return this.sendRequest(new ProbeTrackPrecomputeCacheRequest({ filename }))
+    return this.sendRequest(
+      new ProbeTrackPrecomputeCacheRequest({ filename }),
+      undefined,
+      options
+    )
       .then((response) => response.data)
       .then((json) =>
         new TrackPrecomputeCacheProbeResponseDTO(json).toEntity()
@@ -808,6 +819,7 @@ class RequestManager {
     endRowPx: number;
     startColPx: number;
     endColPx: number;
+    source?: "PRIMARY" | "SECONDARY";
     signalMode?: "RAW_COUNTS" | "COOLER_WEIGHTED" | "TRADITIONAL_NORMALIZED" | "PIPELINE_SIGNAL";
   }): Promise<{
     rows: number;
@@ -824,6 +836,7 @@ class RequestManager {
         endRowPx: options.endRowPx,
         startColPx: options.startColPx,
         endColPx: options.endColPx,
+        source: options.source ?? "PRIMARY",
         signalMode: options.signalMode ?? "TRADITIONAL_NORMALIZED",
         format: "BINARY_FLOAT32",
       },

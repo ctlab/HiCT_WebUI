@@ -295,7 +295,7 @@ watch(
 
 function applySettings(): void {
   props.mapManager?.visualizationManager
-    .sendVisualizationOptionsAndReload()
+    .applyVisualizationSettingsAndReload()
     .catch((error) => {
       toast.error(String(error ?? "Failed to apply normalization settings"));
     });

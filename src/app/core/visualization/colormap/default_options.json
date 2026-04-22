@@ -393,6 +393,55 @@
             "labelColor": "rgba(255, 255, 0, 1)"
           }
         }
+      },
+      {
+        "option_id": 8,
+        "options": {
+          "preLogBase": 10,
+          "postLogBase": 0,
+          "applyCoolerWeights": false,
+          "colormap": {
+            "colormapType": "SimpleLinearGradient",
+            "startColorRGBAString": "rgba(255,255,255,1.000000)",
+            "endColorRGBAString": "rgba(0,0,0,1.000000)",
+            "minSignal": 0,
+            "maxSignal": 1
+          }
+        },
+        "name": "Dotplot black",
+        "backgroundColor": "rgb(255,255,255)",
+        "signalThresholds": {
+          "lowerSignalBound": 0,
+          "upperSignalBound": 1
+        },
+        "trackStyles": {
+          "contigs": {
+            "borderColor": "rgba(255, 64, 64, 1.0)",
+            "fillColor": "rgba(0, 127, 127, 0.0)",
+            "width": 2,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 64, 64, 1.0)"
+          },
+          "scaffolds": {
+            "borderColor": "rgba(255, 255, 0, 1)",
+            "fillColor": "rgba(64, 64, 255, 0.0)",
+            "width": 4,
+            "labelSize": 12,
+            "borderStyle": 0,
+            "namePlacement": "TOP",
+            "labelBold": true,
+            "labelOutline": true,
+            "labelOutlineWidth": 2,
+            "labelOffsetMultiplier": 1.25,
+            "labelColor": "rgba(255, 255, 0, 1)"
+          }
+        }
       }
     ]
   }

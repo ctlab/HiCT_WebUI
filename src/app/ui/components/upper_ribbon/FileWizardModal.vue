@@ -141,6 +141,11 @@
                     </div>
                   </div>
                 </div>
+                <div v-if="requiresSecondarySource" class="alert alert-warning mt-3 mb-0">
+                  Two-source sessions are intended for comparative viewing. If matrix sizes, contig sets, or scaffold
+                  composition differ, scaffolding edits, AGP imports, and FASTA export should be treated as
+                  primary-source, view-only operations.
+                </div>
               </div>
 
               <div v-else-if="currentStep?.id === 'visualization'" class="wizard-section">
@@ -316,6 +321,11 @@
                     </div>
                   </div>
                 </div>
+                <div v-if="requiresSecondarySource" class="alert alert-warning mt-3 mb-0">
+                  Prefer the primary AGP as the authoritative assembly input. Loading AGPs for both sources is supported
+                  for comparison, but it can make layered views diverge and should not be treated as a coupled
+                  scaffolding workflow.
+                </div>
               </div>
 
               <div v-else-if="currentStep?.id === 'conversion'" class="wizard-section">
@@ -456,11 +466,11 @@
             </button>
             <button
               v-else
-              class="btn btn-primary"
+              class="btn btn-success"
               :disabled="runState.running || !canRunWizard"
-              @click="runWizard"
+              @click="onFinishClicked"
             >
-              {{ runState.completed ? "Run again" : "Run wizard" }}
+              Finish
             </button>
           </div>
         </div>
@@ -625,13 +635,13 @@ const primarySource = reactive<SourceDraft>({
   filename: "",
   resolution: null,
   forceConversion: false,
-  presetId: "builtin:0",
+  presetId: "",
 });
 const secondarySource = reactive<SourceDraft>({
   filename: "",
   resolution: null,
   forceConversion: false,
-  presetId: "builtin:0",
+  presetId: "",
 });
 const primaryFasta = ref("");
 const secondaryFasta = ref("");
@@ -642,7 +652,7 @@ const precomputeTracks = ref(true);
 const forceTrackPrecompute = ref(false);
 const dropCachesBeforeRun = ref(false);
 const blendMode = ref<WizardBlendMode>("OVER");
-const topOpacity = ref(0.75);
+const topOpacity = ref(0.5);
 const bottomOpacity = ref(1.0);
 const toolchainStatus = ref<ConversionToolchainStatusResponse | null>(null);
 
@@ -717,6 +727,11 @@ const currentRunStepLabel = computed(
   () => steps.find((step) => step.id === runState.currentStepId)?.label ?? "Running"
 );
 
+const findPresetIdByName = (name: string): string =>
+  availablePresets.value.find((preset) => preset.preset.name === name)?.id ??
+  availablePresets.value[0]?.id ??
+  "";
+
 const canRunWizard = computed(() => wizardBlockingIssues.value.length === 0);
 const wizardBlockingIssues = computed(() => {
   const issues: string[] = [];
@@ -778,6 +793,21 @@ const wizardNotes = computed(() => {
   if (viewMode.value === "split") {
     notes.push(
       "Selection FASTA export will use primary source coordinates on the horizontal axis and secondary source coordinates on the vertical axis."
+    );
+  }
+  if (requiresSecondarySource.value) {
+    notes.push(
+      "Two-source overlay and split views are intended for comparative inspection. If sizes, contig lists, or scaffold composition differ, treat scaffolding operations as view-only and keep the primary source authoritative."
+    );
+  }
+  if (requiresSecondarySource.value && secondaryAgp.value) {
+    notes.push(
+      "Secondary AGP input is best treated as comparative metadata. Use the primary AGP as the authoritative assembly when scaffolding operations are expected."
+    );
+  }
+  if (primaryAgp.value && secondaryAgp.value) {
+    notes.push(
+      "Both AGPs are selected. This is supported for comparison, but the resulting two-source view may become intentionally unaligned after assembly edits."
     );
   }
   return Array.from(new Set(notes));
@@ -955,10 +985,10 @@ const addTrack = async (filename: string): Promise<void> => {
   }
   const [compatibility, precomputeProbe] = await Promise.all([
     props.networkManager.requestManager
-      .probeTrackCompatibility(filename)
+      .probeTrackCompatibility(filename, { suppressErrorToast: true })
       .catch(() => null),
     props.networkManager.requestManager
-      .probeTrackPrecomputeCache(filename)
+      .probeTrackPrecomputeCache(filename, { suppressErrorToast: true })
       .catch(() => null),
   ]);
   selectedTracks.value = [
@@ -1112,6 +1142,14 @@ const goNext = (): void => {
     visibleSteps.value.length - 1,
     currentStepIndex.value + 1
   );
+};
+
+const onFinishClicked = async (): Promise<void> => {
+  if (runState.completed && !runState.running) {
+    emit("dismissed");
+    return;
+  }
+  await runWizard();
 };
 
 const runWizard = async (): Promise<void> => {
@@ -1281,6 +1319,8 @@ const runWizard = async (): Promise<void> => {
 };
 
 onMounted(() => {
+  primarySource.presetId = findPresetIdByName("Mosquitoes Demo");
+  secondarySource.presetId = findPresetIdByName("Dotplot black");
   props.networkManager.requestManager
     .getConversionToolchainStatus()
     .then((status) => {

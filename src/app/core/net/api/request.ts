@@ -417,6 +417,7 @@ class SetVisualizationOptionsRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       options: VisualizationOptions;
+      preserveRenderPipeline?: boolean;
     }
   ) {}
 }

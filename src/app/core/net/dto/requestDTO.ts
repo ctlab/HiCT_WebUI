@@ -387,6 +387,11 @@ class SetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<SetVisualizati
       resolutionScaling: this.entity.options.options.resolutionScaling,
       resolutionLinearScaling:
         this.entity.options.options.resolutionLinearScaling,
+      autoThresholdEnabled: this.entity.options.options.autoThresholdEnabled,
+      autoThresholdQuantile: this.entity.options.options.autoThresholdQuantile,
+      signalDisplayMode: this.entity.options.options.signalDisplayMode,
+      preserveRenderPipeline:
+        this.entity.options.preserveRenderPipeline ?? false,
       colormap: ColormapDTO.fromEntity(this.entity.options.options.colormap)
         .json,
     };

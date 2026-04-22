@@ -828,12 +828,14 @@ function onAssemblyAGPRequest() {
 }
 
 .about-modal {
-  background: #ffffff;
+  background: var(--hict-surface-bg, #ffffff);
+  color: var(--hict-surface-fg, #1f2937);
+  border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.18));
   border-radius: 10px;
   width: min(720px, 90vw);
   max-height: 90vh;
   overflow: auto;
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--hict-surface-shadow, 0 24px 48px rgba(0, 0, 0, 0.2));
   padding: 20px 24px;
 }
 

@@ -217,7 +217,7 @@ export const buildWizardRenderPipelineConfig = (options: {
       top: primary,
       bottom: secondary,
       topOpacity:
-        typeof options.topOpacity === "number" ? options.topOpacity : 0.75,
+        typeof options.topOpacity === "number" ? options.topOpacity : 0.5,
       bottomOpacity:
         typeof options.bottomOpacity === "number"
           ? options.bottomOpacity

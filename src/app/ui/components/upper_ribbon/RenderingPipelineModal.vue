@@ -572,7 +572,7 @@ const buildDotplotOverlayPreset = (): {
     mode: "OVER",
     top,
     bottom,
-    topOpacity: 0.4,
+    topOpacity: 0.5,
     bottomOpacity: 1,
   };
   return {

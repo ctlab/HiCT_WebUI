@@ -32,7 +32,7 @@ import MainUIComponent from "@/app/ui/MainUIComponent.vue";
   font-family: var(--hict-font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-align: center;
+  text-align: left;
   color: var(--hict-ui-fg, #2c3e50);
   /* margin-top: 60px; */
 }

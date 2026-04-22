@@ -20,7 +20,7 @@
  -->
 
 <template>
-  <Toaster position="bottom-right" />
+  <Toaster position="bottom-right" richColors closeButton />
   <!-- <button @click="() => toast('My first toast')">Render a toast</button> -->
   <div class="main-ui-component">
     <div v-if="openProgressVisible">
@@ -233,6 +233,34 @@ function syncUiChromePalette(): void {
   root.style.setProperty(
     "--hict-ui-border",
     dark ? "rgba(248,250,255,0.42)" : "rgba(15,23,38,0.26)"
+  );
+  root.style.setProperty(
+    "--hict-surface-bg",
+    dark ? "rgba(18,24,32,0.96)" : "rgba(255,255,255,0.98)"
+  );
+  root.style.setProperty(
+    "--hict-surface-bg-muted",
+    dark ? "rgba(26,34,44,0.98)" : "rgba(248,250,252,0.98)"
+  );
+  root.style.setProperty(
+    "--hict-surface-fg",
+    dark ? "rgba(246,248,252,0.96)" : "rgba(18,25,35,0.96)"
+  );
+  root.style.setProperty(
+    "--hict-surface-muted",
+    dark ? "rgba(220,226,236,0.84)" : "rgba(73,84,99,0.88)"
+  );
+  root.style.setProperty(
+    "--hict-surface-border",
+    dark ? "rgba(248,250,255,0.2)" : "rgba(15,23,38,0.18)"
+  );
+  root.style.setProperty(
+    "--hict-surface-shadow",
+    dark ? "0 24px 60px rgba(0,0,0,0.52)" : "0 20px 55px rgba(15,23,38,0.18)"
+  );
+  root.style.setProperty(
+    "--hict-surface-close-filter",
+    dark ? "invert(1) grayscale(1)" : "none"
   );
 }
 

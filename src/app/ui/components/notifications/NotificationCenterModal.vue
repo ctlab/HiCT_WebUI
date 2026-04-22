@@ -47,10 +47,25 @@
                 :class="`notification-entry_${entry.level}`"
               >
                 <div class="notification-entry-header">
-                  <span class="notification-level">{{ formatLevel(entry.level) }}</span>
-                  <span class="notification-time">{{ formatTimestamp(entry.createdAt) }}</span>
+                  <div class="notification-entry-meta">
+                    <span class="notification-level">{{ formatLevel(entry.level) }}</span>
+                    <span class="notification-time">{{ formatTimestamp(entry.createdAt) }}</span>
+                  </div>
+                  <button
+                    v-if="hasExpandableBody(entry.message)"
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary notification-expand-toggle"
+                    @click="toggleExpanded(entry.id)"
+                  >
+                    {{ isExpanded(entry.id) ? "Collapse" : "Expand" }}
+                  </button>
                 </div>
-                <div class="notification-message">{{ entry.message }}</div>
+                <div class="notification-message-preview">
+                  {{ previewMessage(entry.message) }}
+                </div>
+                <pre v-if="isExpanded(entry.id)" class="notification-message-body">{{
+                  expandedBody(entry.message)
+                }}</pre>
               </div>
               <div
                 v-if="orderedEntries.length === 0"
@@ -76,13 +91,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import {
   useNotificationCenterStore,
   type NotificationLevel,
 } from "@/app/stores/notificationCenterStore";
 
 const notificationStore = useNotificationCenterStore();
+const expandedEntryIds = ref<number[]>([]);
 
 const orderedEntries = computed(() =>
   notificationStore.entries.slice().reverse()
@@ -110,6 +126,31 @@ const formatLevel = (level: NotificationLevel): string => {
     default:
       return "Message";
   }
+};
+
+const normalizeMessage = (message: string): string =>
+  message.replace(/\s+/g, " ").trim();
+
+const previewMessage = (message: string): string => {
+  const compact = normalizeMessage(message);
+  if (compact.length <= 200) {
+    return compact || "(empty message)";
+  }
+  return `${compact.slice(0, 200).trimEnd()}…`;
+};
+
+const expandedBody = (message: string): string => message;
+
+const hasExpandableBody = (message: string): boolean =>
+  normalizeMessage(message).length > 200 || message.includes("\n");
+
+const isExpanded = (entryId: number): boolean =>
+  expandedEntryIds.value.includes(entryId);
+
+const toggleExpanded = (entryId: number): void => {
+  expandedEntryIds.value = isExpanded(entryId)
+    ? expandedEntryIds.value.filter((value) => value !== entryId)
+    : [...expandedEntryIds.value, entryId];
 };
 </script>
 
@@ -154,6 +195,7 @@ const formatLevel = (level: NotificationLevel): string => {
   padding: 10px 12px;
   background: #f8f9fa;
   color: rgba(18, 25, 35, 0.95);
+  text-align: left;
 }
 
 .notification-entry_error {
@@ -185,6 +227,13 @@ const formatLevel = (level: NotificationLevel): string => {
   margin-bottom: 4px;
 }
 
+.notification-entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
 .notification-level {
   font-weight: 700;
   color: inherit;
@@ -195,10 +244,28 @@ const formatLevel = (level: NotificationLevel): string => {
   font-size: 12px;
 }
 
-.notification-message {
+.notification-expand-toggle {
+  flex: 0 0 auto;
+}
+
+.notification-message-preview,
+.notification-message-body {
   white-space: pre-wrap;
   word-break: break-word;
   color: inherit;
+}
+
+.notification-message-preview {
+  font-weight: 600;
+}
+
+.notification-message-body {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(15, 23, 38, 0.06);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
 }
 
 .notification-empty-state {
