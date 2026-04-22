@@ -32,7 +32,7 @@
       class="form-select form-select-lg mb-3"
       v-model="selectedCoolerFilename"
     >
-      <option selected>Select Cooler file from the list below...</option>
+      <option selected>Select .hic/.cool/.mcool file from the list below...</option>
       <option v-for="(filename, idx) in filenames" :key="idx" :value="filename">
         {{ filename }}
       </option>
@@ -105,7 +105,7 @@ const chooseInitialFilename = (
 
 onMounted(() => {
   props.networkManager.requestManager
-    .listCoolers()
+    .listConvertibleMatrices()
     .then((lst) => {
       filenames.value = lst;
       const initial = chooseInitialFilename(props.initialFilename, lst);

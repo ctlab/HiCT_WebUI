@@ -29,9 +29,9 @@
     data-backdrop="static"
   >
     <div class="modal-dialog">
-      <div class="modal-content">
+        <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">Convert Coolers for HiCT</h5>
+          <h5 class="modal-title">Convert matrix files for HiCT</h5>
           <button
             type="button"
             class="btn-close"
@@ -60,6 +60,42 @@
           <div class="d-flex align-items-center" v-if="errorMessage">
             <p class="error-message">Error: {{ errorMessage }}</p>
           </div>
+          <div class="toolchain-card" v-if="toolchainStatus || toolchainLoading">
+            <div class="toolchain-header">
+              <strong>External .hic conversion toolchain</strong>
+              <span
+                class="status-pill"
+                :class="
+                  toolchainStatus?.hicConversionAvailable
+                    ? 'finished'
+                    : 'failed'
+                "
+                v-if="toolchainStatus"
+              >
+                {{
+                  toolchainStatus.hicConversionAvailable
+                    ? "available"
+                    : "unavailable"
+                }}
+              </span>
+              <span v-else>loading…</span>
+            </div>
+            <p v-if="toolchainStatus">{{ toolchainStatus.summary }}</p>
+            <p
+              v-for="(limitation, index) in toolchainStatus?.limitations ?? []"
+              :key="'limitation-' + index"
+              class="toolchain-limitation"
+            >
+              {{ limitation }}
+            </p>
+            <p
+              v-for="(notice, index) in toolchainStatus?.notices ?? []"
+              :key="'notice-' + index"
+              class="toolchain-note"
+            >
+              {{ notice }}
+            </p>
+          </div>
           <div v-if="mode === 'single'">
             <div v-if="!jobId" class="convert-section">
               <CoolerFileSelector
@@ -67,11 +103,17 @@
                 :initial-filename="initialCoolerFilename"
                 @selected="onCoolerFileSelected"
               />
+              <p v-if="selectedCoolerFilename" class="helper-text">
+                Output: {{ deriveOutputFilename(selectedCoolerFilename) }}
+              </p>
+              <p v-if="singleBlockedMessage" class="error-message">
+                {{ singleBlockedMessage }}
+              </p>
               <div class="mt-3 d-flex gap-2">
                 <button
                   type="button"
                   class="btn btn-primary"
-                  :disabled="!selectedCoolerFilename || converting"
+                  :disabled="!canConvertSelectedFile || converting"
                   @click="convertCooler"
                 >
                   Convert
@@ -153,13 +195,20 @@
                 </div>
               </div>
               <div class="mt-3 d-flex gap-2">
-                <button class="btn btn-primary" @click="proceedBatchSettings" :disabled="batchSelection.size === 0">
+                <button
+                  class="btn btn-primary"
+                  @click="proceedBatchSettings"
+                  :disabled="batchSelection.size === 0 || Boolean(batchBlockedMessage)"
+                >
                   Continue
                 </button>
                 <button class="btn btn-secondary" @click="onDismissClicked">
                   Dismiss
                 </button>
               </div>
+              <p v-if="batchBlockedMessage" class="error-message mt-2">
+                {{ batchBlockedMessage }}
+              </p>
             </div>
             <div v-if="batchStep === 'settings'">
               <div class="mb-3">
@@ -171,13 +220,20 @@
                 <input type="number" class="form-control" v-model.number="batchParallelism" min="1" />
               </div>
               <div class="mt-3 d-flex gap-2">
-                <button class="btn btn-primary" @click="startBatchConversion">
+                <button
+                  class="btn btn-primary"
+                  @click="startBatchConversion"
+                  :disabled="Boolean(batchBlockedMessage)"
+                >
                   Start
                 </button>
                 <button class="btn btn-secondary" @click="batchStep = 'select'">
                   Back
                 </button>
               </div>
+              <p v-if="batchBlockedMessage" class="error-message mt-2">
+                {{ batchBlockedMessage }}
+              </p>
             </div>
             <div v-if="batchStep === 'progress'">
               <h6>Batch progress</h6>
@@ -237,7 +293,10 @@ import {
   StartBatchConversionJobsRequest,
   StartConversionJobRequest,
 } from "@/app/core/net/api/request";
-import { ConversionJobResponse } from "@/app/core/net/api/response";
+import {
+  ConversionJobResponse,
+  ConversionToolchainStatusResponse,
+} from "@/app/core/net/api/response";
 import CoolerFileSelector from "./converter/CoolerFileSelector.vue";
 import ConverterStatusChecker from "./converter/ConverterStatusChecker.vue";
 
@@ -270,6 +329,8 @@ const allFiles: Ref<Set<string>> = ref(new Set<string>());
 const lastSelectedIndex: Ref<number | null> = ref(null);
 const overwriteConfirmVisible: Ref<boolean> = ref(false);
 const overwriteConfirmMessage: Ref<string> = ref("");
+const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> = ref(null);
+const toolchainLoading: Ref<boolean> = ref(true);
 let overwriteConfirmResolver: ((approved: boolean) => void) | null = null;
 
 function cancelPendingOverwriteConfirm(): void {
@@ -321,6 +382,8 @@ function resetState(): void {
     batchProgressMap.value.clear();
     allFiles.value = new Set<string>();
     lastSelectedIndex.value = null;
+    toolchainStatus.value = null;
+    toolchainLoading.value = true;
   }
 }
 
@@ -331,6 +394,21 @@ function onDismissClicked(): void {
 
 function onCoolerFileSelected(coolerFilename: string): void {
   selectedCoolerFilename.value = coolerFilename;
+}
+
+function requiresHicToolchain(filename: string | null | undefined): boolean {
+  return filename?.toLowerCase().endsWith(".hic") ?? false;
+}
+
+function deriveDirection(filename: string): string {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".hic")) {
+    return "hic-to-hict";
+  }
+  if (lower.endsWith(".hict") || lower.endsWith(".hict.hdf5")) {
+    return "hict-to-mcool";
+  }
+  return "mcool-to-hict";
 }
 
 async function convertCooler(): Promise<void> {
@@ -353,7 +431,7 @@ async function convertCooler(): Promise<void> {
     .startConversionJob(
       new StartConversionJobRequest({
         filename: filename,
-        direction: "mcool-to-hict",
+        direction: deriveDirection(filename),
         overwrite: overwriteExisting,
       })
     )
@@ -375,6 +453,7 @@ onMounted(() => {
   }
   mode.value = "batch";
   batchStep.value = "select";
+  loadToolchainStatus();
   loadBatchFiles();
   modal.value = new Modal(convertCoolerModal.value ?? "loadAGPModal", {
     backdrop: "static",
@@ -408,7 +487,7 @@ function switchToBatch(): void {
 
 function loadBatchFiles(): void {
   Promise.all([
-    props.networkManager.requestManager.listCoolers(),
+    props.networkManager.requestManager.listConvertibleMatrices(),
     props.networkManager.requestManager.listFiles(),
   ])
     .then(([coolers, files]) => {
@@ -428,6 +507,22 @@ function loadBatchFiles(): void {
     });
 }
 
+function loadToolchainStatus(): void {
+  toolchainLoading.value = true;
+  props.networkManager.requestManager
+    .getConversionToolchainStatus()
+    .then((status) => {
+      toolchainStatus.value = status;
+    })
+    .catch((e) => {
+      errorMessage.value = e;
+      toolchainStatus.value = null;
+    })
+    .finally(() => {
+      toolchainLoading.value = false;
+    });
+}
+
 function isConverted(file: string): boolean {
   const output = deriveOutputFilename(file);
   return allFiles.value.has(output);
@@ -435,6 +530,9 @@ function isConverted(file: string): boolean {
 
 function deriveOutputFilename(file: string): string {
   const lower = file.toLowerCase();
+  if (lower.endsWith(".hic")) {
+    return file.slice(0, -".hic".length) + ".hict.hdf5";
+  }
   if (lower.endsWith(".mcool")) {
     return file.slice(0, -".mcool".length) + ".hict.hdf5";
   }
@@ -576,6 +674,55 @@ const overallBatchStatusClass = computed(() => {
       return "running";
   }
 });
+
+const selectedRequiresHicToolchain = computed(() =>
+  requiresHicToolchain(selectedCoolerFilename.value)
+);
+
+const canConvertSelectedFile = computed(() => {
+  if (!selectedCoolerFilename.value) {
+    return false;
+  }
+  if (!selectedRequiresHicToolchain.value) {
+    return true;
+  }
+  return toolchainStatus.value?.hicConversionAvailable === true;
+});
+
+const singleBlockedMessage = computed(() => {
+  if (!selectedRequiresHicToolchain.value) {
+    return "";
+  }
+  if (toolchainLoading.value) {
+    return "Inspecting .hic conversion toolchain...";
+  }
+  if (toolchainStatus.value?.hicConversionAvailable) {
+    return "";
+  }
+  return (
+    toolchainStatus.value?.summary ??
+    "No external .hic conversion toolchain is available in this build."
+  );
+});
+
+const batchBlockedMessage = computed(() => {
+  const hasHicSelection = Array.from(batchSelection.value).some((file) =>
+    requiresHicToolchain(file)
+  );
+  if (!hasHicSelection) {
+    return "";
+  }
+  if (toolchainLoading.value) {
+    return "Inspecting .hic conversion toolchain...";
+  }
+  if (toolchainStatus.value?.hicConversionAvailable) {
+    return "";
+  }
+  return (
+    toolchainStatus.value?.summary ??
+    "No external .hic conversion toolchain is available in this build."
+  );
+});
 </script>
 
 <style scoped>
@@ -601,6 +748,33 @@ const overallBatchStatusClass = computed(() => {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+}
+.toolchain-card {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.toolchain-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.toolchain-note {
+  margin-bottom: 4px;
+  color: #374151;
+}
+.toolchain-limitation {
+  margin-bottom: 4px;
+  color: #991b1b;
+}
+.helper-text {
+  margin-top: 8px;
+  margin-bottom: 0;
+  color: #4b5563;
 }
 .batch-actions {
   display: flex;

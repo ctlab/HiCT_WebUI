@@ -77,7 +77,7 @@
                   class="dropdown-item"
                   href="#"
                   @click="onConvertCoolersClicked"
-                  >Convert Coolers</a
+                  >Convert matrices</a
                 >
               </li>
             </ul>
@@ -281,8 +281,8 @@
     @dismissed="onFileDismissed"
     :error-message="errorMessage"
     :title="'Open Hi-C dataset'"
-    :file-type="'.hict.hdf5, .cool, .mcool'"
-    :note="'Cooler files have to be converted into HiCT internal format before opening.'"
+    :file-type="'.hict.hdf5, .hic, .cool, .mcool'"
+    :note="'Files in .hic, .cool, and .mcool formats must be converted into HiCT internal format before opening.'"
     :file-name-predicate="isOpenableAssemblyFilename"
   ></UniversalFileSelector>
   <UniversalFileSelector
@@ -560,7 +560,11 @@ function onFileSelected(filename: string) {
     if (lowered.endsWith(".hict") || lowered.endsWith(".hict.hdf5")) {
       openingFile.value = false;
       emit("selected", filename);
-    } else if (lowered.endsWith(".cool") || lowered.endsWith(".mcool")) {
+    } else if (
+      lowered.endsWith(".hic") ||
+      lowered.endsWith(".cool") ||
+      lowered.endsWith(".mcool")
+    ) {
       openingFile.value = false;
       coolerToConvert.value = filename;
       convertingCoolers.value = true;
@@ -579,6 +583,7 @@ function isOpenableAssemblyFilename(name: string): boolean {
   const lowered = name.toLowerCase();
   return (
     lowered.endsWith(".hict.hdf5") ||
+    lowered.endsWith(".hic") ||
     lowered.endsWith(".cool") ||
     lowered.endsWith(".mcool")
   );

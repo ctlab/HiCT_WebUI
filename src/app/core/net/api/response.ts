@@ -42,6 +42,10 @@ class ConversionJobResponse {
     public readonly sourceFilename: string,
     public readonly outputFilename: string,
     public readonly direction: string,
+    public readonly currentStage: string,
+    public readonly currentStageLabel: string,
+    public readonly stageDetail: string,
+    public readonly stageProgress: number,
     public readonly overallProgress: number,
     public readonly resolutionProgress: number,
     public readonly currentResolution: number,
@@ -51,8 +55,31 @@ class ConversionJobResponse {
     public readonly resolutionEtaMillis: number,
     public readonly inputSizeBytes: number,
     public readonly outputSizeBytes: number,
+    public readonly toolchainSource: string,
+    public readonly toolchainSummary: string,
+    public readonly toolchainNotices: string[],
+    public readonly toolchainCitations: string[],
     public readonly logs: string[],
     public readonly error: string
+  ) {}
+}
+
+class ConversionToolchainStatusResponse {
+  public constructor(
+    public readonly platform: string,
+    public readonly source: string,
+    public readonly supportedPlatform: boolean,
+    public readonly hicConversionAvailable: boolean,
+    public readonly hictkAvailable: boolean,
+    public readonly hictkCommand: string | null,
+    public readonly coolerAvailable: boolean,
+    public readonly coolerCommand: string | null,
+    public readonly pythonAvailable: boolean,
+    public readonly pythonCommand: string | null,
+    public readonly summary: string,
+    public readonly notices: string[],
+    public readonly citations: string[],
+    public readonly limitations: string[]
   ) {}
 }
 
@@ -301,6 +328,7 @@ export {
   CurrentSignalRangeResponse,
   TilePOSTResponse,
   ConversionJobResponse,
+  ConversionToolchainStatusResponse,
   NameMappingResponse,
   TrackSummaryResponse,
   TrackBinBlockResponse,

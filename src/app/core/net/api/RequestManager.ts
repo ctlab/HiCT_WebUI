@@ -29,6 +29,7 @@ import {
 import { HiCTAPIRequestDTO } from "../dto/requestDTO";
 import {
   ConversionJobResponseDTO,
+  ConversionToolchainStatusResponseDTO,
   CurrentSignalRangeResponseDTO,
   FastaLinkResponseDTO,
   NameMappingResponseDTO,
@@ -52,6 +53,7 @@ import {
   LinkFASTARequest,
   ListAGPFilesRequest,
   ListCoolerFilesRequest,
+  ListConvertibleMatrixFilesRequest,
   ListFilesDetailedRequest,
   ListFASTAFilesRequest,
   ListFilesRequest,
@@ -70,6 +72,7 @@ import {
   StartConversionJobRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
+  GetConversionToolchainStatusRequest,
   StopConversionJobRequest,
   RenameContigRequest,
   RenameScaffoldRequest,
@@ -103,6 +106,7 @@ import {
 } from "./request";
 import {
   ConversionJobResponse,
+  ConversionToolchainStatusResponse,
   CurrentSignalRangeResponse,
   FastaLinkResponse,
   FileEntryResponse,
@@ -398,6 +402,13 @@ class RequestManager {
     return response.data as string[];
   }
 
+  public async listConvertibleMatrices(): Promise<string[]> {
+    const response = await this.sendRequest(
+      new ListConvertibleMatrixFilesRequest()
+    );
+    return response.data as string[];
+  }
+
   public async listTrackFiles(): Promise<string[]> {
     const response = await this.sendRequest(new ListTrackFilesRequest());
     return response.data as string[];
@@ -685,6 +696,13 @@ class RequestManager {
   ): Promise<{ status: string; jobId: string }> {
     return this.sendRequest(new StopConversionJobRequest(jobId)).then(
       (response) => response.data
+    );
+  }
+
+  public async getConversionToolchainStatus(): Promise<ConversionToolchainStatusResponse> {
+    return this.sendRequest(new GetConversionToolchainStatusRequest()).then(
+      (response) =>
+        new ConversionToolchainStatusResponseDTO(response.data).toEntity()
     );
   }
 

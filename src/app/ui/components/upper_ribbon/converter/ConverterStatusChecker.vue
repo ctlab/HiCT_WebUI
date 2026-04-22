@@ -40,8 +40,17 @@
             formatBytes(job.outputSizeBytes)
           }})
         </p>
+        <p v-if="job.currentStageLabel">
+          <strong>Current stage:</strong> {{ job.currentStageLabel }}
+          <span v-if="job.stageDetail" class="stage-detail">
+            {{ job.stageDetail }}
+          </span>
+        </p>
         <p v-if="job.currentResolution">
           <strong>Current resolution:</strong> {{ job.currentResolution }}
+        </p>
+        <p v-if="job.toolchainSummary">
+          <strong>Toolchain:</strong> {{ job.toolchainSummary }}
         </p>
       </div>
       <div class="actions">
@@ -59,18 +68,17 @@
     <div class="progress-wrapper">
       <div class="some-progress">
         <p>
-          Progress in current resolution:
-          {{ formatPercent(resolutionProgressValue) }}
-          <span class="progress-meta">
-            (elapsed {{ formatDuration(job.resolutionElapsedMillis) }}, eta
-            {{ formatDuration(job.resolutionEtaMillis) }})
+          {{ primaryProgressLabel }}:
+          {{ formatPercent(primaryProgressValue) }}
+          <span class="progress-meta" v-if="primaryProgressMeta">
+            {{ primaryProgressMeta }}
           </span>
         </p>
         <div class="progress hict-progress">
           <div
             class="progress-bar bg-info"
             role="progressbar"
-            :style="{ width: formatPercent(resolutionProgressValue) }"
+            :style="{ width: formatPercent(primaryProgressValue) }"
           ></div>
         </div>
       </div>
@@ -96,11 +104,35 @@
     <div v-if="job.error" class="error-message">
       Error: {{ job.error }}
     </div>
+    <div
+      v-if="job.toolchainNotices.length || job.toolchainCitations.length"
+      class="toolchain-meta"
+    >
+      <p
+        v-for="(notice, index) in job.toolchainNotices"
+        :key="'notice-' + index"
+      >
+        <strong>Notice:</strong> {{ notice }}
+      </p>
+      <p
+        v-for="(citation, index) in job.toolchainCitations"
+        :key="'citation-' + index"
+      >
+        <strong>Citation:</strong> {{ citation }}
+      </p>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { type Ref, ref, onMounted, computed, withDefaults } from "vue";
+import {
+  type Ref,
+  ref,
+  onMounted,
+  onBeforeUnmount,
+  computed,
+  withDefaults,
+} from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { ConversionJobResponse } from "@/app/core/net/api/response";
 
@@ -204,6 +236,27 @@ const resolutionProgressValue = computed(() => {
   return job.value?.resolutionProgress ?? 0;
 });
 
+const primaryProgressValue = computed(() => {
+  if (job.value?.currentStageLabel) {
+    return job.value?.stageProgress ?? 0;
+  }
+  return resolutionProgressValue.value;
+});
+
+const primaryProgressLabel = computed(() => {
+  if (job.value?.currentStageLabel) {
+    return `Progress in ${job.value.currentStageLabel}`;
+  }
+  return "Progress in current resolution";
+});
+
+const primaryProgressMeta = computed(() => {
+  if (job.value?.currentStageLabel && job.value?.stageDetail) {
+    return `(${job.value.stageDetail})`;
+  }
+  return `(elapsed ${formatDuration(job.value?.resolutionElapsedMillis)}, eta ${formatDuration(job.value?.resolutionEtaMillis)})`;
+});
+
 function formatPercent(value: number | undefined): string {
   if (value === undefined || Number.isNaN(value)) {
     return "0%";
@@ -250,6 +303,10 @@ onMounted(() => {
   timerId.value = setInterval(updateState, 3000);
   updateState();
 });
+
+onBeforeUnmount(() => {
+  stopTimer();
+});
 </script>
 
 <style scoped>
@@ -259,6 +316,11 @@ onMounted(() => {
 
 .progress-wrapper {
   width: 100%;
+}
+.stage-detail {
+  display: inline-block;
+  margin-left: 0.5rem;
+  color: #6b7280;
 }
 .some-progress {
   width: 100%;
@@ -313,5 +375,10 @@ onMounted(() => {
   color: #6c757d;
   font-size: 0.85em;
   margin-left: 6px;
+}
+.toolchain-meta {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e5e7eb;
 }
 </style>

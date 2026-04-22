@@ -21,6 +21,7 @@
 
 import {
   ConversionJobResponse,
+  ConversionToolchainStatusResponse,
   CurrentSignalRangeResponse,
   FileEntryResponse,
   FastaLinkCompatibilityResponse,
@@ -95,6 +96,10 @@ class ConversionJobResponseDTO extends InboundDTO<ConversionJobResponse> {
       this.json["sourceFilename"] as string,
       this.json["outputFilename"] as string,
       this.json["direction"] as string,
+      (this.json["currentStage"] as string) ?? "",
+      (this.json["currentStageLabel"] as string) ?? "",
+      (this.json["stageDetail"] as string) ?? "",
+      (this.json["stageProgress"] as number) ?? 0,
       this.json["overallProgress"] as number,
       this.json["resolutionProgress"] as number,
       this.json["currentResolution"] as number,
@@ -104,8 +109,33 @@ class ConversionJobResponseDTO extends InboundDTO<ConversionJobResponse> {
       this.json["resolutionEtaMillis"] as number,
       this.json["inputSizeBytes"] as number,
       this.json["outputSizeBytes"] as number,
+      (this.json["toolchainSource"] as string) ?? "",
+      (this.json["toolchainSummary"] as string) ?? "",
+      (this.json["toolchainNotices"] as string[]) ?? [],
+      (this.json["toolchainCitations"] as string[]) ?? [],
       (this.json["logs"] as string[]) ?? [],
       (this.json["error"] as string) ?? ""
+    );
+  }
+}
+
+class ConversionToolchainStatusResponseDTO extends InboundDTO<ConversionToolchainStatusResponse> {
+  public toEntity(): ConversionToolchainStatusResponse {
+    return new ConversionToolchainStatusResponse(
+      (this.json["platform"] as string) ?? "unknown",
+      (this.json["source"] as string) ?? "unknown",
+      Boolean(this.json["supportedPlatform"] ?? false),
+      Boolean(this.json["hicConversionAvailable"] ?? false),
+      Boolean(this.json["hictkAvailable"] ?? false),
+      (this.json["hictkCommand"] as string) ?? null,
+      Boolean(this.json["coolerAvailable"] ?? false),
+      (this.json["coolerCommand"] as string) ?? null,
+      Boolean(this.json["pythonAvailable"] ?? false),
+      (this.json["pythonCommand"] as string) ?? null,
+      (this.json["summary"] as string) ?? "",
+      (this.json["notices"] as string[]) ?? [],
+      (this.json["citations"] as string[]) ?? [],
+      (this.json["limitations"] as string[]) ?? []
     );
   }
 }
@@ -421,6 +451,7 @@ export {
   CurrentSignalRangeResponseDTO,
   TilePOSTResponseDTO,
   ConversionJobResponseDTO,
+  ConversionToolchainStatusResponseDTO,
   NameMappingResponseDTO,
   TrackSummaryResponseDTO,
   TrackQueryResponseDTO,

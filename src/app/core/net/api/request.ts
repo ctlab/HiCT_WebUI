@@ -73,6 +73,10 @@ class ListCoolerFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_coolers";
 }
 
+class ListConvertibleMatrixFilesRequest implements HiCTAPIRequest {
+  requestPath = "/list_convertible_matrices";
+}
+
 class ListTrackFilesRequest implements HiCTAPIRequest {
   requestPath = "/tracks/list_files";
 }
@@ -203,6 +207,10 @@ class StopConversionJobRequest implements HiCTAPIRequest {
   public constructor(public readonly jobId: string) {
     this.requestPath = `/convert/jobs/${jobId}/stop`;
   }
+}
+
+class GetConversionToolchainStatusRequest implements HiCTAPIRequest {
+  requestPath = "/convert/toolchain";
 }
 
 class SetContrastRangeRequest implements HiCTAPIRequest {
@@ -546,11 +554,13 @@ export {
   AttachSessionRequest,
   CloseFileRequest,
   ListCoolerFilesRequest,
+  ListConvertibleMatrixFilesRequest,
   StartConversionJobRequest,
   StartBatchConversionJobsRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
   StopConversionJobRequest,
+  GetConversionToolchainStatusRequest,
   RenameContigRequest,
   RenameScaffoldRequest,
   ExportNameMappingRequest,
