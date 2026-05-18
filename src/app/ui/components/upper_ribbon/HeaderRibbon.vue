@@ -110,7 +110,7 @@
         <select
           v-model="signalDisplayMode"
           class="form-select form-select-sm"
-          title="Expected and O/E use the standard renderer and will disable a custom pixel pipeline for this view."
+          title="Expected and O/E use the standard renderer and are computed within scaffolds; if no scaffolds are present, each contig is treated as its own scaffold."
           @change="onSignalDisplayModeChanged"
         >
           <option value="OBSERVED">Show Observed</option>

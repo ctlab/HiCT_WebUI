@@ -203,6 +203,10 @@
                     </div>
                   </div>
                 </div>
+                <div v-if="usesExpectedPreset" class="alert alert-info mt-3 mb-0">
+                  Expected and O/E are computed independently inside each scaffold. If the opened assembly has no
+                  scaffolds yet, each contig is treated as its own scaffold for expected-value estimation.
+                </div>
               </div>
 
               <div v-else-if="currentStep?.id === 'blending'" class="wizard-section">
@@ -732,6 +736,13 @@ const findPresetIdByName = (name: string): string =>
   availablePresets.value[0]?.id ??
   "";
 
+const usesExpectedPreset = computed(
+  () =>
+    primaryPreset.value?.preset.options.signalDisplayMode !== "OBSERVED" ||
+    (requiresSecondarySource.value &&
+      secondaryPreset.value?.preset.options.signalDisplayMode !== "OBSERVED")
+);
+
 const canRunWizard = computed(() => wizardBlockingIssues.value.length === 0);
 const wizardBlockingIssues = computed(() => {
   const issues: string[] = [];
@@ -762,11 +773,7 @@ const wizardBlockingIssues = computed(() => {
       "Bundled/external hictk toolchain is required for .hic conversion but is currently unavailable."
     );
   }
-  const usesExpectedPreset =
-    primaryPreset.value?.preset.options.signalDisplayMode !== "OBSERVED" ||
-    (requiresSecondarySource.value &&
-      secondaryPreset.value?.preset.options.signalDisplayMode !== "OBSERVED");
-  if (viewMode.value !== "single" && usesExpectedPreset) {
+  if (viewMode.value !== "single" && usesExpectedPreset.value) {
     issues.push(
       "Expected and O/E presets are currently supported only in single-map mode. Use Observed presets for overlay and upper/lower rendering."
     );
@@ -808,6 +815,11 @@ const wizardNotes = computed(() => {
   if (primaryAgp.value && secondaryAgp.value) {
     notes.push(
       "Both AGPs are selected. This is supported for comparison, but the resulting two-source view may become intentionally unaligned after assembly edits."
+    );
+  }
+  if (usesExpectedPreset.value) {
+    notes.push(
+      "Expected and O/E are computed inside each scaffold. If the assembly has no scaffolds yet, each contig is treated as its own scaffold."
     );
   }
   return Array.from(new Set(notes));
