@@ -350,17 +350,76 @@
         <h2>HiCT</h2>
         <button class="btn-close" @click="aboutOpen = false"></button>
       </div>
-      <div class="about-body">
-        <p class="about-authors">
-          Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii
-          Dravgelis and Computer Technologies Laboratory ITMO University team.
-        </p>
-        <pre class="about-license">{{ licenseText }}</pre>
+      <div class="about-tabs" role="tablist" aria-label="About HiCT">
+        <button
+          type="button"
+          class="about-tab"
+          :class="{ active: aboutActiveTab === 'about' }"
+          @click="aboutActiveTab = 'about'"
+        >
+          About
+        </button>
+        <button
+          type="button"
+          class="about-tab"
+          :class="{ active: aboutActiveTab === 'attribution' }"
+          @click="aboutActiveTab = 'attribution'"
+        >
+          Attribution
+        </button>
+      </div>
+      <div v-if="aboutActiveTab === 'about'" class="about-body">
+        <p class="about-authors">{{ projectAttribution.authors }}</p>
+        <p class="about-note">{{ projectAttribution.note }}</p>
         <div class="about-versions">
           <div><strong>Backend:</strong> {{ backendVersion }}</div>
           <div><strong>WebUI:</strong> {{ webuiVersion }}</div>
           <div><strong>Commit:</strong> {{ webuiCommit }}</div>
         </div>
+        <pre class="about-license">{{ licenseText }}</pre>
+      </div>
+      <div v-else class="about-body attribution-panel">
+        <section class="attribution-section">
+          <h3>Project</h3>
+          <article class="attribution-card">
+            <div class="attribution-title">{{ projectAttribution.name }}</div>
+            <div>{{ projectAttribution.authors }}</div>
+            <div><strong>License:</strong> {{ projectAttribution.license }}</div>
+            <div v-if="projectAttribution.note">{{ projectAttribution.note }}</div>
+          </article>
+        </section>
+        <section class="attribution-section">
+          <h3>Runtime and Conversion</h3>
+          <article
+            v-for="entry in runtimeAttributions"
+            :key="entry.name"
+            class="attribution-card"
+          >
+            <div class="attribution-title">{{ entry.name }}</div>
+            <div>{{ entry.authors }}</div>
+            <div><strong>License:</strong> {{ entry.license }}</div>
+            <div v-if="entry.note">{{ entry.note }}</div>
+          </article>
+        </section>
+        <section class="attribution-section">
+          <h3>WebUI</h3>
+          <article
+            v-for="entry in webAttributions"
+            :key="entry.name"
+            class="attribution-card"
+          >
+            <div class="attribution-title">{{ entry.name }}</div>
+            <div>{{ entry.authors }}</div>
+            <div><strong>License:</strong> {{ entry.license }}</div>
+            <div v-if="entry.note">{{ entry.note }}</div>
+          </article>
+        </section>
+        <section class="attribution-section">
+          <h3>Redistribution Notes</h3>
+          <ul class="attribution-notes">
+            <li v-for="note in redistributionNotes" :key="note">{{ note }}</li>
+          </ul>
+        </section>
       </div>
     </div>
   </div>
@@ -386,6 +445,13 @@ import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import type { FastaLinkResponse } from "@/app/core/net/api/response";
+import {
+  licenseText,
+  projectAttribution,
+  redistributionNotes,
+  runtimeAttributions,
+  webAttributions,
+} from "@/app/core/attribution";
 import pkg from "../../../../../package.json";
 const openingFile = ref(false);
 const openingFASTAFile = ref(false);
@@ -398,6 +464,7 @@ const workerDiagnosticsOpen = ref(false);
 const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
+const aboutActiveTab = ref<"about" | "attribution">("about");
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
 const backendVersion = ref("loading...");
@@ -406,28 +473,6 @@ const webuiCommit = ref("unknown");
 const RenderingPipelineModal = defineAsyncComponent(
   () => import("@/app/ui/components/upper_ribbon/RenderingPipelineModal.vue")
 );
-const licenseText = `MIT License
-
-Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.`;
-
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
   (e: "closed"): void;
@@ -546,6 +591,7 @@ function onConvertCoolersDismissed(): void {
 
 function openAbout(): void {
   aboutOpen.value = true;
+  aboutActiveTab.value = "about";
   backendVersion.value = "loading...";
   props.networkManager.requestManager
     .getBackendVersion()
@@ -832,7 +878,7 @@ function onAssemblyAGPRequest() {
   color: var(--hict-surface-fg, #1f2937);
   border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.18));
   border-radius: 10px;
-  width: min(720px, 90vw);
+  width: min(840px, 90vw);
   max-height: 90vh;
   overflow: auto;
   box-shadow: var(--hict-surface-shadow, 0 24px 48px rgba(0, 0, 0, 0.2));
@@ -849,21 +895,93 @@ function onAssemblyAGPRequest() {
   margin-top: 12px;
 }
 
+.about-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  border-bottom: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.18));
+}
+
+.about-tab {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--hict-surface-fg, #1f2937);
+  cursor: pointer;
+  font-weight: 600;
+  padding: 8px 12px;
+  position: relative;
+}
+
+.about-tab.active::after {
+  background: #0d6efd;
+  border-radius: 999px;
+  bottom: -1px;
+  content: "";
+  height: 3px;
+  left: 10px;
+  position: absolute;
+  right: 10px;
+}
+
 .about-authors {
+  margin-bottom: 8px;
+}
+
+.about-note {
+  color: var(--hict-surface-muted, #6b7280);
   margin-bottom: 12px;
 }
 
 .about-license {
-  background: #f8f9fa;
+  background: var(--hict-control-bg, #f8f9fa);
+  border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.12));
+  color: var(--hict-surface-fg, #1f2937);
   padding: 12px;
   border-radius: 6px;
   white-space: pre-wrap;
   font-size: 12px;
+  margin-top: 12px;
 }
 
 .about-versions {
   margin-top: 12px;
   display: grid;
   gap: 4px;
+}
+
+.attribution-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.attribution-section h3 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+.attribution-card {
+  background: var(--hict-control-bg, rgba(248, 249, 250, 0.88));
+  border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.12));
+  border-radius: 8px;
+  color: var(--hict-surface-fg, #1f2937);
+  display: grid;
+  font-size: 13px;
+  gap: 3px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+}
+
+.attribution-title {
+  font-weight: 700;
+}
+
+.attribution-notes {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.attribution-notes li {
+  margin-bottom: 6px;
 }
 </style>
