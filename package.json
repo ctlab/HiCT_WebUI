@@ -7,7 +7,8 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite",
-    "build": "run-p type-check build-only && tsc",
+    "build": "run-p type-check test:api-dto build-only && tsc",
+    "test:api-dto": "node scripts/check-api-dto-regressions.mjs",
     "preview": "vite preview --port 4173",
     "build-only": "vite build",
     "type-check": "vue-tsc --noEmit",

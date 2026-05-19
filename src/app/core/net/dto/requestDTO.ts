@@ -316,12 +316,21 @@ abstract class HiCTAPIRequestDTO<
           entity as ListConvertibleMatrixFilesRequest
         );
       default:
+        if (!("options" in entity)) {
+          return new EmptyRequestDTO(entity);
+        }
         throw new Error(
           `Unknown HiCTAPIRequest type: ${typeof entity}, constructor ${
             entity.constructor
           } cannot be transformed to DTO class.`
         );
     }
+  }
+}
+
+class EmptyRequestDTO extends HiCTAPIRequestDTO<HiCTAPIRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
   }
 }
 
