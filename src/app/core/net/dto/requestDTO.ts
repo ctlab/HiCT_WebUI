@@ -51,6 +51,7 @@ import {
   SaveFileRequest,
   GetAGPForAssemblyRequest,
   ListCoolerFilesRequest,
+  ListConvertibleMatrixFilesRequest,
   ListTrackFilesRequest,
   ResolveMatrixSourceRequest,
   DropAllCachesRequest,
@@ -149,6 +150,8 @@ abstract class HiCTAPIRequestDTO<
         return new ListFilesDetailedRequestDTO(entity);
       case entity instanceof ListCoolerFilesRequest:
         return new ListCoolerFilesRequestDTO(entity);
+      case entity instanceof ListConvertibleMatrixFilesRequest:
+        return new ListConvertibleMatrixFilesRequestDTO(entity);
       case entity instanceof ListTrackFilesRequest:
         return new ListTrackFilesRequestDTO(entity);
       case entity instanceof ResolveMatrixSourceRequest:
@@ -308,6 +311,10 @@ abstract class HiCTAPIRequestDTO<
         );
       case "/tracks/reorder":
         return new ReorderTrackRequestDTO(entity as ReorderTrackRequest);
+      case "/list_convertible_matrices":
+        return new ListConvertibleMatrixFilesRequestDTO(
+          entity as ListConvertibleMatrixFilesRequest
+        );
       default:
         throw new Error(
           `Unknown HiCTAPIRequest type: ${typeof entity}, constructor ${
@@ -630,6 +637,12 @@ class ListFilesDetailedRequestDTO extends HiCTAPIRequestDTO<ListFilesDetailedReq
 }
 
 class ListCoolerFilesRequestDTO extends HiCTAPIRequestDTO<ListCoolerFilesRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class ListConvertibleMatrixFilesRequestDTO extends HiCTAPIRequestDTO<ListConvertibleMatrixFilesRequest> {
   toDTO(): Record<string, unknown> {
     return {};
   }
