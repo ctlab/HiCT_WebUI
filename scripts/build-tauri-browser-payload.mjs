@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoDir = resolve(scriptDir, "..");
 const tauriDir = resolve(repoDir, "src-tauri");
+const tauriConfigPath = resolve(tauriDir, "tauri.conf.json");
 const args = parseArgs(process.argv.slice(2));
 const platform = args.platform ?? detectPlatform();
 const outputDir = resolve(args.output ?? join(repoDir, "..", "HiCT_JVM", "browsers-dist", platform, "tauri"));
@@ -43,6 +44,7 @@ if (!["linux_x86_64", "windows_x86_64"].includes(platform)) {
 if (!existsSync(resolve(repoDir, "dist", "index.html"))) {
   throw new Error("HiCT_WebUI dist/index.html was not found. Run npm run build first.");
 }
+validateTauriIconConfig(platform);
 if (!args.skipBuild) {
   run("cargo", ["build", "--release", "--locked", "--manifest-path", resolve(tauriDir, "Cargo.toml")], repoDir);
 }
@@ -157,6 +159,22 @@ function run(command, commandArgs, cwd) {
   }
   if (result.status !== 0) {
     throw new Error(`${command} ${commandArgs.join(" ")} failed with exit code ${result.status}`);
+  }
+}
+
+function validateTauriIconConfig(currentPlatform) {
+  const config = JSON.parse(readFileSync(tauriConfigPath, "utf8"));
+  const icons = config.bundle?.icon ?? [];
+  if (!Array.isArray(icons) || icons.length === 0) {
+    throw new Error("src-tauri/tauri.conf.json must define bundle.icon; Windows Tauri builds require an .ico resource.");
+  }
+  const resolvedIcons = icons.map((icon) => resolve(tauriDir, icon));
+  const missingIcons = resolvedIcons.filter((iconPath) => !existsSync(iconPath));
+  if (missingIcons.length > 0) {
+    throw new Error(`Tauri icon file(s) do not exist: ${missingIcons.join(", ")}`);
+  }
+  if (currentPlatform === "windows_x86_64" && !resolvedIcons.some((iconPath) => iconPath.toLowerCase().endsWith(".ico"))) {
+    throw new Error("Windows Tauri payload builds require at least one .ico path in bundle.icon.");
   }
 }
 

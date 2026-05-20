@@ -16,6 +16,9 @@
   "bundle": {
     "active": false,
     "category": "Science",
+    "icon": [
+      "../public/favicon.ico"
+    ],
     "targets": "all"
   }
 }
