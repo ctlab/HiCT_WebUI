@@ -1,12 +1,12 @@
 {
   "include": [
-    "src/electron/**/*",
     "src/**/*.vue",
     "src/**/*",
     "env.d.ts",
   ],
   "exclude": [
     "node_modules",
+    "src/electron/**/*",
   ],
   "compilerOptions": {
     "baseUrl": ".",
