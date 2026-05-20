@@ -1,0 +1,16 @@
+[package]
+name = "hict-tauri-browser"
+version = "0.1.1"
+description = "Small Tauri WebView wrapper for the local HiCT WebUI"
+authors = ["Computer Technologies Laboratory ITMO University team"]
+license = "MIT"
+repository = "https://github.com/ctlab/HiCT_WebUI"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+url = "2"

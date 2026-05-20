@@ -32,7 +32,7 @@ const repoDir = resolve(scriptDir, "..");
 
 const args = parseArgs(process.argv.slice(2));
 const platform = args.platform ?? detectPlatform();
-const outputDir = resolve(args.output ?? join(repoDir, "..", "HiCT_JVM", "browsers-dist", platform));
+const outputDir = resolve(args.output ?? join(repoDir, "..", "HiCT_JVM", "browsers-dist", platform, "electron"));
 const electronDist = resolve(repoDir, "node_modules", "electron", "dist");
 const electronPackage = JSON.parse(readFileSync(resolve(repoDir, "node_modules", "electron", "package.json"), "utf8"));
 const electronVersion = String(electronPackage.version);
@@ -62,6 +62,7 @@ const manifest = {
   name: `HiCT Electron ${electronVersion}`,
   engine: "electron-chromium",
   version: electronVersion,
+  priority: 50,
   command,
   arguments: ["app"],
   license: "Electron MIT; Chromium and bundled third-party components under their upstream licenses",

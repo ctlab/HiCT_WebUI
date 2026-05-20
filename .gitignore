@@ -28,3 +28,4 @@ electron
 *.sw?
 
 release
+src-tauri/target
