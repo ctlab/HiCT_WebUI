@@ -58,13 +58,14 @@ const command = platform === "windows_x86_64" ? "electron/electron.exe" : "elect
 await chmodExecutableIfPresent(join(outputDir, command));
 await flipSecurityFuses(join(outputDir, command));
 
+const launchArguments = platform === "linux_x86_64" ? ["--no-sandbox", "app"] : ["app"];
 const manifest = {
   name: `HiCT Electron ${electronVersion}`,
   engine: "electron-chromium",
   version: electronVersion,
   priority: 50,
   command,
-  arguments: ["app"],
+  arguments: launchArguments,
   license: "Electron MIT; Chromium and bundled third-party components under their upstream licenses",
   notices: [
     "electron/LICENSE",

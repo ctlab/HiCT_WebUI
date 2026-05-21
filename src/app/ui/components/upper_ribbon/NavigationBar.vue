@@ -90,6 +90,12 @@
                   >Drop caches</a
                 >
               </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a class="dropdown-item" href="#" @click.prevent="onQuitClicked"
+                  >Quit</a
+                >
+              </li>
             </ul>
           </li>
           <!-- View -->
@@ -497,6 +503,18 @@ const { requestErrorToastsEnabled, webuiErrorToastsEnabled } =
 const { customZoomSliderEnabled, binaryTileTransportEnabled } =
   storeToRefs(uiSettingsStore);
 
+type HictDesktopBridge = {
+  platform?: string;
+  quit?: () => Promise<unknown> | unknown;
+};
+
+type TauriBridge = {
+  core?: {
+    invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+  };
+  invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+};
+
 function onOpenFile() {
   openingFile.value = true;
 }
@@ -520,6 +538,33 @@ function onOpenWorkerDiagnostics() {
 function onOpenApiDocs(): void {
   const base = props.networkManager.host.replace(/\/+$/, "");
   window.open(`${base}/api/v1/`, "_blank", "noopener,noreferrer");
+}
+
+function onQuitClicked(): void {
+  const desktopBridge = (window as unknown as { hictDesktop?: HictDesktopBridge })
+    .hictDesktop;
+  if (typeof desktopBridge?.quit === "function") {
+    void Promise.resolve(desktopBridge.quit()).catch((error) => {
+      console.error("Failed to close Electron HiCT WebUI", error);
+      toast.error("Failed to close bundled WebUI: " + String(error));
+    });
+    return;
+  }
+
+  const tauriBridge = (window as unknown as { __TAURI__?: TauriBridge }).__TAURI__;
+  const invoke = tauriBridge?.core?.invoke ?? tauriBridge?.invoke;
+  if (typeof invoke === "function") {
+    void invoke("quit_app").catch((error) => {
+      console.error("Failed to close Tauri HiCT WebUI", error);
+      toast.error("Failed to close bundled WebUI: " + String(error));
+    });
+    return;
+  }
+
+  const message =
+    "File -> Quit closes only bundled Electron/Tauri WebUI windows. Use the browser tab/window controls here.";
+  console.info(message);
+  toast(message);
 }
 
 function onLoadAGP() {

@@ -20,9 +20,11 @@
  SOFTWARE.
  */
 
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("hictDesktop", {
+  platform: "electron",
   electron: process.versions.electron,
   chromium: process.versions.chrome,
+  quit: () => ipcRenderer.invoke("hict:quit"),
 });

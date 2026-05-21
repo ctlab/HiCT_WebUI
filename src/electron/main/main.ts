@@ -20,7 +20,8 @@
  SOFTWARE.
  */
 
-import { app, BrowserWindow, Menu, shell, session } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, shell, session } from "electron";
+import { isIP } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -51,12 +52,33 @@ function normalizeAllowedUrl(rawUrl: string): URL {
 
 function isLocalHost(url: URL): boolean {
   const hostname = url.hostname.toLowerCase();
-  return (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "::1" ||
-    hostname === "[::1]"
-  );
+  if (hostname === "localhost") {
+    return true;
+  }
+  const normalized = hostname.startsWith("[") && hostname.endsWith("]")
+    ? hostname.slice(1, -1)
+    : hostname;
+  const parsed = isIP(normalized);
+  if (parsed === 4) {
+    const parts = normalized.split(".").map((part) => Number.parseInt(part, 10));
+    const [first = -1, second = -1] = parts;
+    return (
+      first === 127 ||
+      first === 10 ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168) ||
+      (first === 169 && second === 254)
+    );
+  }
+  if (parsed === 6) {
+    return (
+      normalized === "::1" ||
+      normalized.toLowerCase().startsWith("fc") ||
+      normalized.toLowerCase().startsWith("fd") ||
+      normalized.toLowerCase().startsWith("fe80:")
+    );
+  }
+  return false;
 }
 
 function isAllowedHiCTUrl(rawUrl: string, baseUrl: URL): boolean {
@@ -148,6 +170,9 @@ async function openExternalUrl(url: string): Promise<void> {
 
 function configureSecurity(baseUrl: URL): void {
   Menu.setApplicationMenu(null);
+  ipcMain.handle("hict:quit", () => {
+    app.quit();
+  });
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(false);
   });
@@ -156,15 +181,22 @@ function configureSecurity(baseUrl: URL): void {
       callback({ responseHeaders: details.responseHeaders });
       return;
     }
+    const httpOrigin = baseUrl.origin;
+    const cspHostname = baseUrl.hostname.includes(":") && !baseUrl.hostname.startsWith("[")
+      ? `[${baseUrl.hostname}]`
+      : baseUrl.hostname;
+    const httpSameHostAllPorts = `${baseUrl.protocol}//${cspHostname}:*`;
+    const wsOrigin = httpOrigin.replace(/^http/i, "ws");
+    const wsSameHostAllPorts = httpSameHostAllPorts.replace(/^http/i, "ws");
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         "Content-Security-Policy": [
-          "default-src 'self' http://127.0.0.1:* http://localhost:* data: blob:; " +
+          `default-src 'self' ${httpOrigin} ${httpSameHostAllPorts} http://127.0.0.1:* http://localhost:* data: blob:; ` +
             "script-src 'self' 'unsafe-eval' 'unsafe-inline'; " +
             "style-src 'self' 'unsafe-inline'; " +
-            "img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; " +
-            "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; " +
+            `img-src 'self' data: blob: ${httpOrigin} ${httpSameHostAllPorts} http://127.0.0.1:* http://localhost:*; ` +
+            `connect-src 'self' ${httpOrigin} ${httpSameHostAllPorts} ${wsOrigin} ${wsSameHostAllPorts} http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; ` +
             "font-src 'self' data:;"
         ],
       },
@@ -174,6 +206,9 @@ function configureSecurity(baseUrl: URL): void {
 
 app.commandLine.appendSwitch("no-first-run");
 app.commandLine.appendSwitch("disable-component-update");
+if (process.platform === "linux") {
+  app.commandLine.appendSwitch("no-sandbox");
+}
 app.setName(APP_NAME);
 if (process.platform === "win32") {
   app.setAppUserModelId("ru.itmo.ctlab.hict");

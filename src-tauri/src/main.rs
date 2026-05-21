@@ -6,6 +6,11 @@ use url::Url;
 
 const DEFAULT_HICT_URL: &str = "http://127.0.0.1:8080/";
 
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 fn requested_url() -> String {
     env::args()
         .skip(1)
@@ -63,6 +68,7 @@ fn main() {
     };
 
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![quit_app])
         .setup(move |app| {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::External(webui_url.clone()))
                 .title("HiCT")

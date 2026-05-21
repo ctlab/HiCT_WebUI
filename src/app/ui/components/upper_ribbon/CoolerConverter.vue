@@ -28,7 +28,7 @@
     data-keyboard="false"
     data-backdrop="static"
   >
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable converter-dialog">
         <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Convert matrix files for HiCT</h5>
@@ -62,39 +62,52 @@
           </div>
           <div class="toolchain-card" v-if="toolchainStatus || toolchainLoading">
             <div class="toolchain-header">
-              <strong>External .hic conversion toolchain</strong>
+              <strong>.hic conversion</strong>
               <span
                 class="status-pill"
-                :class="
-                  toolchainStatus?.hicConversionAvailable
-                    ? 'finished'
-                    : 'failed'
-                "
+                :class="hictkAvailabilityClass"
                 v-if="toolchainStatus"
               >
-                {{
-                  toolchainStatus.hicConversionAvailable
-                    ? "available"
-                    : "unavailable"
-                }}
+                {{ hictkAvailabilityLabel }}
               </span>
               <span v-else>loading…</span>
             </div>
-            <p v-if="toolchainStatus">{{ toolchainStatus.summary }}</p>
-            <p
-              v-for="(limitation, index) in toolchainStatus?.limitations ?? []"
-              :key="'limitation-' + index"
-              class="toolchain-limitation"
-            >
-              {{ limitation }}
+            <p class="toolchain-summary">
+              .hic files are handled by
+              <a href="https://github.com/paulsengroup/hictk" target="_blank" rel="noopener noreferrer">hictk</a>.
+              Availability depends on whether hictk was bundled into this HiCT package or configured externally.
             </p>
-            <p
-              v-for="(notice, index) in toolchainStatus?.notices ?? []"
-              :key="'notice-' + index"
-              class="toolchain-note"
-            >
-              {{ notice }}
-            </p>
+            <details v-if="toolchainStatus" class="toolchain-details">
+              <summary>Toolchain details</summary>
+              <p>{{ toolchainStatus.summary }}</p>
+              <p v-if="toolchainStatus.hictkCommand">
+                <strong>hictk:</strong> {{ toolchainStatus.hictkCommand }}
+              </p>
+              <p v-if="toolchainStatus.source">
+                <strong>source:</strong> {{ toolchainStatus.source }}
+              </p>
+              <p
+                v-for="(limitation, index) in toolchainStatus.limitations"
+                :key="'limitation-' + index"
+                class="toolchain-limitation"
+              >
+                {{ limitation }}
+              </p>
+              <p
+                v-for="(notice, index) in toolchainStatus.notices"
+                :key="'notice-' + index"
+                class="toolchain-note"
+              >
+                {{ notice }}
+              </p>
+              <p
+                v-for="(citation, index) in toolchainStatus.citations"
+                :key="'citation-' + index"
+                class="toolchain-note"
+              >
+                {{ citation }}
+              </p>
+            </details>
           </div>
           <div v-if="mode === 'single'">
             <div v-if="!jobId" class="convert-section">
@@ -723,6 +736,14 @@ const batchBlockedMessage = computed(() => {
     "No external .hic conversion toolchain is available in this build."
   );
 });
+
+const hictkAvailabilityLabel = computed(() =>
+  toolchainStatus.value?.hicConversionAvailable ? "hictk available" : "hictk unavailable"
+);
+
+const hictkAvailabilityClass = computed(() =>
+  toolchainStatus.value?.hicConversionAvailable ? "finished" : "failed"
+);
 </script>
 
 <style scoped>
@@ -754,7 +775,8 @@ const batchBlockedMessage = computed(() => {
   padding: 12px;
   border: 1px solid #d1d5db;
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--hict-surface-bg-muted, #f8fafc);
+  color: var(--hict-surface-fg, #111827);
 }
 .toolchain-header {
   display: flex;
@@ -763,9 +785,20 @@ const batchBlockedMessage = computed(() => {
   gap: 12px;
   margin-bottom: 8px;
 }
+.toolchain-summary {
+  margin-bottom: 6px;
+}
+.toolchain-details {
+  margin-top: 6px;
+}
+.toolchain-details summary {
+  cursor: pointer;
+  color: #2563eb;
+  font-weight: 600;
+}
 .toolchain-note {
   margin-bottom: 4px;
-  color: #374151;
+  color: var(--hict-surface-muted, #374151);
 }
 .toolchain-limitation {
   margin-bottom: 4px;
@@ -774,7 +807,7 @@ const batchBlockedMessage = computed(() => {
 .helper-text {
   margin-top: 8px;
   margin-bottom: 0;
-  color: #4b5563;
+  color: var(--hict-surface-muted, #4b5563);
 }
 .batch-actions {
   display: flex;
@@ -854,6 +887,10 @@ const batchBlockedMessage = computed(() => {
 
 .modal-content {
   position: relative;
+}
+
+.converter-dialog .modal-content {
+  max-height: min(92vh, 980px);
 }
 
 .overwrite-confirm-backdrop {
