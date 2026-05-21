@@ -392,6 +392,17 @@
             <div>{{ projectAttribution.authors }}</div>
             <div><strong>License:</strong> {{ projectAttribution.license }}</div>
             <div v-if="projectAttribution.note">{{ projectAttribution.note }}</div>
+            <div v-if="projectAttribution.links?.length" class="attribution-links">
+              <a
+                v-for="link in projectAttribution.links"
+                :key="link.href"
+                :href="link.href"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {{ link.label }}
+              </a>
+            </div>
           </article>
         </section>
         <section class="attribution-section">
@@ -405,6 +416,17 @@
             <div>{{ entry.authors }}</div>
             <div><strong>License:</strong> {{ entry.license }}</div>
             <div v-if="entry.note">{{ entry.note }}</div>
+            <div v-if="entry.links?.length" class="attribution-links">
+              <a
+                v-for="link in entry.links"
+                :key="link.href"
+                :href="link.href"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {{ link.label }}
+              </a>
+            </div>
           </article>
         </section>
         <section class="attribution-section">
@@ -418,6 +440,17 @@
             <div>{{ entry.authors }}</div>
             <div><strong>License:</strong> {{ entry.license }}</div>
             <div v-if="entry.note">{{ entry.note }}</div>
+            <div v-if="entry.links?.length" class="attribution-links">
+              <a
+                v-for="link in entry.links"
+                :key="link.href"
+                :href="link.href"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {{ link.label }}
+              </a>
+            </div>
           </article>
         </section>
         <section class="attribution-section">
@@ -1021,6 +1054,23 @@ function onAssemblyAGPRequest() {
 
 .attribution-title {
   font-weight: 700;
+}
+
+.attribution-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 4px;
+}
+
+.attribution-links a {
+  color: #0d6efd;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.attribution-links a:hover {
+  text-decoration: underline;
 }
 
 .attribution-notes {

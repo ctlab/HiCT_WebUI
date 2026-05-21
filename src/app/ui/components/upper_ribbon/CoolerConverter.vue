@@ -75,10 +75,12 @@
             <p class="toolchain-summary">
               .hic files are handled by
               <a href="https://github.com/paulsengroup/hictk" target="_blank" rel="noopener noreferrer">hictk</a>.
-              Availability depends on whether hictk was bundled into this HiCT package or configured externally.
+              <span :class="hictkAvailabilityClass">
+                {{ hictkAvailabilityLabel }}.
+              </span>
             </p>
             <details v-if="toolchainStatus" class="toolchain-details">
-              <summary>Toolchain details</summary>
+              <summary>Notices, attribution and diagnostics</summary>
               <p>{{ toolchainStatus.summary }}</p>
               <p v-if="toolchainStatus.hictkCommand">
                 <strong>hictk:</strong> {{ toolchainStatus.hictkCommand }}
@@ -788,6 +790,14 @@ const hictkAvailabilityClass = computed(() =>
 .toolchain-summary {
   margin-bottom: 6px;
 }
+.toolchain-summary .finished {
+  color: #047857;
+  font-weight: 700;
+}
+.toolchain-summary .failed {
+  color: #b91c1c;
+  font-weight: 700;
+}
 .toolchain-details {
   margin-top: 6px;
 }
@@ -889,8 +899,20 @@ const hictkAvailabilityClass = computed(() =>
   position: relative;
 }
 
+.converter-dialog {
+  max-width: 80vw;
+  width: 80vw;
+}
+
 .converter-dialog .modal-content {
   max-height: min(92vh, 980px);
+}
+
+@media (max-width: 768px) {
+  .converter-dialog {
+    max-width: calc(100vw - 1rem);
+    width: calc(100vw - 1rem);
+  }
 }
 
 .overwrite-confirm-backdrop {
