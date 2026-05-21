@@ -37,6 +37,9 @@ const outputDir = resolve(args.output ?? join(repoDir, "..", "HiCT_JVM", "browse
 const executableName = platform === "windows_x86_64" ? "hict-tauri-browser.exe" : "hict-tauri-browser";
 const cargoTargetDir = process.env.CARGO_TARGET_DIR ? resolve(process.env.CARGO_TARGET_DIR) : resolve(tauriDir, "target");
 const builtExecutable = resolve(cargoTargetDir, "release", executableName);
+const generatedIconPngBase64 = [
+  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAD6ElEQVR4nM2WQWhUVxSGv/vuezOTmcnMaMSaEBJFEUQSNKVoceWqs6oLSxcVunDRRTfqypWbum1JQ0u7sIiU0oWkENw0WagFQagBwXRjcROkVtq0kCBhJibvni7ezeS+926SSSi0PwyEe879//+ce+ZM4D+GOjt9vQZI+hRWZv7g9dwiKgrSoTBoy6pZnZ3+NnX+VvNDVBREsmZK7rmsGqLRBqV33siqJHTAp8AoYDaOFXq4jPr1FZjULS1GJsP+8menzl80P/9wE4BT5y8S1ArB2p+ty8B7QNyhKmrC4TIoBZLiCoC5ELgLvA/UN2wLeqiM7i8R/9YC5ZYkg/Ff7Z/EyOzbH30MwNqLZeR1+01ELgMDG7mg+0vooXJWHGAJGA+AKWAyFRJQlZBobA+qkH4ChAExcino0aV4oUW80CLo0SUxcglxxAFVCBKOSuhr/yQwFQArwBfA81TYCOFwGX24mr9s5Jxpx01pxUgrxrTjJkbOZYvQh6tJ+01O/bnVXFkv7wnwDVmpUFE42UBVcxVUMVxRJd2nSroPwxWg6oqrakjhZANCRQZitZ4ABPeb19YDN4HH2dRgf5HoeC09BwAiZ2TNXJA1cwGRM6mYguh4jWB/0df6x1aL+81ruA/8ApggeZI02UidYF+OTGPkKkauAjplel+RaKSeN51wT1gtIPkq4HRhCpjJdkH12nbqDKMwkB08tH22Xu/gzViNjmZmxHkFjAN/Z03oI1XCIe9AbcAI4VAZfcQzuAnnuNXooGPA6cID4PvsbVUMiMYaqB7tI0861aOTnGK2LrCcDzJa6Q7YQAx8BTzLCujBMuHRXh85AOHRXvRg2WfwmeWMXfGcAQdPga9xVup6dnSiQVCP0iICQT0iOtHwMcaW66lPKJfuOPwOeJgKCgR9BaLRzIQriEbrBH0FX/UPLRfZ6r0GHCwAnwPL2UB4rIY+UErEBPSBEuGxmo9j2XIsbCbiNeA4/RG4kwoKqIomGtuTbLlQ2X3vHc47lsNb/aYGHLRIFsfLrInwUIXwoP0cqvjEX9q7ra0ENjXgOH4E3MolRIrC6b0UTu+FKL/y7J1HGa4cvDddnJ2+DnCQpJ0j3tv56n8B3gXmtxKH7Z9gHfPAl8Bq6lS84qs2d74b4m0NOBXcBu51wXnP5m7Z+q4NOFgk+UotbZGzZHMWuyXtyoBTyV1sdZvgts3pqvquDTjY6n3n8c3Jv2XAqWgOuEHu14AbNtZ19TsykCG+Bcw6oVl7tiPxHRtw8DvJlmvbz4Q92zG2XUQ+2OVUYeMflw+A5Z1WDxDuxoDFMvCJ8/eusKsOQKcLHeym+v8F/gEnK0D2mS+qQgAAAABJRU5ErkJggg=="
+].join("");
 
 if (!["linux_x86_64", "windows_x86_64"].includes(platform)) {
   throw new Error(`Unsupported Tauri browser payload platform: ${platform}`);
@@ -44,6 +47,7 @@ if (!["linux_x86_64", "windows_x86_64"].includes(platform)) {
 if (!existsSync(resolve(repoDir, "dist", "index.html"))) {
   throw new Error("HiCT_WebUI dist/index.html was not found. Run npm run build first.");
 }
+ensureTauriConventionalIcons();
 validateTauriIconConfig(platform);
 if (!args.skipBuild) {
   run("cargo", ["build", "--release", "--locked", "--manifest-path", resolve(tauriDir, "Cargo.toml")], repoDir);
@@ -160,6 +164,38 @@ function run(command, commandArgs, cwd) {
   if (result.status !== 0) {
     throw new Error(`${command} ${commandArgs.join(" ")} failed with exit code ${result.status}`);
   }
+}
+
+function ensureTauriConventionalIcons() {
+  const iconsDir = resolve(tauriDir, "icons");
+  const pngPath = resolve(iconsDir, "icon.png");
+  const icoPath = resolve(iconsDir, "icon.ico");
+  const faviconPath = resolve(repoDir, "public", "favicon.ico");
+  const pngBuffer = Buffer.from(generatedIconPngBase64, "base64");
+
+  mkdirSync(iconsDir, { recursive: true });
+  writeFileSync(pngPath, pngBuffer);
+  if (existsSync(faviconPath)) {
+    cpSync(faviconPath, icoPath);
+  } else {
+    writeFileSync(icoPath, icoBufferFromPng(pngBuffer));
+  }
+}
+
+function icoBufferFromPng(pngBuffer) {
+  const header = Buffer.alloc(22);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(1, 4);
+  header.writeUInt8(32, 6);
+  header.writeUInt8(32, 7);
+  header.writeUInt8(0, 8);
+  header.writeUInt8(0, 9);
+  header.writeUInt16LE(1, 10);
+  header.writeUInt16LE(32, 12);
+  header.writeUInt32LE(pngBuffer.length, 14);
+  header.writeUInt32LE(header.length, 18);
+  return Buffer.concat([header, pngBuffer]);
 }
 
 function validateTauriIconConfig(currentPlatform) {
