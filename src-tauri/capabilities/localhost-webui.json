@@ -10,5 +10,5 @@
       "http://[::1]:*"
     ]
   },
-  "permissions": ["quit_app"]
+  "permissions": ["allow-quit-app"]
 }

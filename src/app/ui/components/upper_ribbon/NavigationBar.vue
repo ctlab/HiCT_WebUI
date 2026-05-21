@@ -554,10 +554,12 @@ function onQuitClicked(): void {
   const tauriBridge = (window as unknown as { __TAURI__?: TauriBridge }).__TAURI__;
   const invoke = tauriBridge?.core?.invoke ?? tauriBridge?.invoke;
   if (typeof invoke === "function") {
-    void invoke("quit_app").catch((error) => {
-      console.error("Failed to close Tauri HiCT WebUI", error);
-      toast.error("Failed to close bundled WebUI: " + String(error));
-    });
+    void invoke("quit_app")
+      .catch(() => invoke("quit-app"))
+      .catch((error) => {
+        console.error("Failed to close Tauri HiCT WebUI", error);
+        toast.error("Failed to close bundled WebUI: " + String(error));
+      });
     return;
   }
 
