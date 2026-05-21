@@ -49,6 +49,7 @@ if (!existsSync(resolve(repoDir, "dist", "index.html"))) {
 }
 ensureTauriConventionalIcons();
 validateTauriIconConfig(platform);
+validateTauriCapabilities();
 if (!args.skipBuild) {
   run("cargo", ["build", "--release", "--locked", "--manifest-path", resolve(tauriDir, "Cargo.toml")], repoDir);
 }
@@ -211,6 +212,68 @@ function validateTauriIconConfig(currentPlatform) {
   }
   if (currentPlatform === "windows_x86_64" && !resolvedIcons.some((iconPath) => iconPath.toLowerCase().endsWith(".ico"))) {
     throw new Error("Windows Tauri payload builds require at least one .ico path in bundle.icon.");
+  }
+}
+
+function validateTauriCapabilities() {
+  const capabilitiesDir = resolve(tauriDir, "capabilities");
+  if (!existsSync(capabilitiesDir)) {
+    return;
+  }
+
+  for (const entry of readdirSync(capabilitiesDir)) {
+    if (!entry.endsWith(".json")) {
+      continue;
+    }
+    const capabilityPath = resolve(capabilitiesDir, entry);
+    const capability = JSON.parse(readFileSync(capabilityPath, "utf8"));
+    validateTauriPermissionIdentifiers(capabilityPath, capability.permissions ?? []);
+    validateTauriRemoteUrlPatterns(capabilityPath, capability.remote?.urls ?? []);
+  }
+}
+
+function validateTauriPermissionIdentifiers(capabilityPath, permissions) {
+  if (!Array.isArray(permissions)) {
+    throw new Error(`${capabilityPath}: permissions must be an array.`);
+  }
+
+  const identifierPattern = /^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*:)?[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+  for (const permission of permissions) {
+    if (typeof permission === "string") {
+      if (!identifierPattern.test(permission)) {
+        throw new Error(
+          `${capabilityPath}: invalid Tauri permission identifier '${permission}'. ` +
+            "Use lowercase kebab-case, for example 'allow-quit-app'."
+        );
+      }
+    } else if (permission && typeof permission === "object" && typeof permission.identifier === "string") {
+      if (!identifierPattern.test(permission.identifier)) {
+        throw new Error(
+          `${capabilityPath}: invalid Tauri permission identifier '${permission.identifier}'. ` +
+            "Use lowercase kebab-case, for example 'allow-quit-app'."
+        );
+      }
+    } else {
+      throw new Error(`${capabilityPath}: unsupported Tauri permission entry: ${JSON.stringify(permission)}`);
+    }
+  }
+}
+
+function validateTauriRemoteUrlPatterns(capabilityPath, urls) {
+  if (!Array.isArray(urls)) {
+    throw new Error(`${capabilityPath}: remote.urls must be an array.`);
+  }
+
+  for (const url of urls) {
+    if (typeof url !== "string") {
+      throw new Error(`${capabilityPath}: remote URL patterns must be strings.`);
+    }
+    if (/\[[^\]]+\]/.test(url)) {
+      throw new Error(
+        `${capabilityPath}: Tauri's URLPattern parser rejects bracketed IPv6 remote URL patterns ('${url}'). ` +
+          "Use 'http://localhost:*' and 'http://127.0.0.1:*' for the bundled HiCT WebUI."
+      );
+    }
   }
 }
 
