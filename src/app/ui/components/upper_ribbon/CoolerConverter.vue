@@ -182,33 +182,20 @@
                   Select All Unconverted
                 </button>
               </div>
-              <div class="batch-table">
-                <div class="batch-row batch-header">
-                  <span></span>
-                  <span>File</span>
-                  <span>Status</span>
-                </div>
-                <div
-                  v-for="(file, index) in batchFiles"
-                  :key="file"
-                  class="batch-row"
-                  @click="toggleSelection(file, index, $event)"
-                >
-                  <input
-                    type="checkbox"
-                    :checked="batchSelection.has(file)"
-                    @click.stop="toggleSelection(file, index, $event)"
-                    @change="toggleSelection(file, index, $event)"
-                  />
-                  <span>{{ file }}</span>
-                  <span
-                    class="status-pill"
-                    :class="isConverted(file) ? 'converted' : 'unconverted'"
-                  >
-                    {{ isConverted(file) ? "Converted" : "Unconverted" }}
-                  </span>
-                </div>
-              </div>
+              <FileSelectionTable
+                :entries="batchFileEntries"
+                :multi-select="true"
+                :selected-path="null"
+                :selected-paths="batchSelectedPaths"
+                :show-modified="false"
+                :show-size="false"
+                :show-status="true"
+                :status-class="batchFileStatusClass"
+                :status-label="batchFileStatusLabel"
+                empty-message="No convertible matrix files found"
+                scroll-height="44vh"
+                @update:selected-paths="onBatchSelectionUpdated"
+              />
               <div class="mt-3 d-flex gap-2">
                 <button
                   class="btn btn-primary"
@@ -314,6 +301,8 @@ import {
 } from "@/app/core/net/api/response";
 import CoolerFileSelector from "./converter/CoolerFileSelector.vue";
 import ConverterStatusChecker from "./converter/ConverterStatusChecker.vue";
+import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
+import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
 
 const emit = defineEmits<{
   (e: "dismissed"): void;
@@ -341,7 +330,6 @@ const batchJobIds: Ref<string[]> = ref([]);
 const batchStatusMap: Ref<Map<string, string>> = ref(new Map());
 const batchProgressMap: Ref<Map<string, number>> = ref(new Map());
 const allFiles: Ref<Set<string>> = ref(new Set<string>());
-const lastSelectedIndex: Ref<number | null> = ref(null);
 const overwriteConfirmVisible: Ref<boolean> = ref(false);
 const overwriteConfirmMessage: Ref<string> = ref("");
 const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> = ref(null);
@@ -396,7 +384,6 @@ function resetState(): void {
     batchStatusMap.value.clear();
     batchProgressMap.value.clear();
     allFiles.value = new Set<string>();
-    lastSelectedIndex.value = null;
     toolchainStatus.value = null;
     toolchainLoading.value = true;
   }
@@ -543,6 +530,20 @@ function isConverted(file: string): boolean {
   return allFiles.value.has(output);
 }
 
+const batchFileEntries = computed<FileSelectionTableEntry[]>(() =>
+  batchFiles.value.map((filename) => ({
+    path: filename,
+  }))
+);
+
+const batchSelectedPaths = computed(() => Array.from(batchSelection.value));
+
+const batchFileStatusLabel = (filename: string): string =>
+  isConverted(filename) ? "Converted" : "Unconverted";
+
+const batchFileStatusClass = (filename: string): string =>
+  isConverted(filename) ? "converted" : "unconverted";
+
 function deriveOutputFilename(file: string): string {
   const lower = file.toLowerCase();
   if (lower.endsWith(".hic")) {
@@ -557,28 +558,8 @@ function deriveOutputFilename(file: string): string {
   return file + ".hict.hdf5";
 }
 
-function toggleSelection(file: string, index: number, event: Event): void {
-  const isShift = (event as MouseEvent).shiftKey;
-  if (isShift && lastSelectedIndex.value !== null) {
-    const start = Math.min(lastSelectedIndex.value, index);
-    const end = Math.max(lastSelectedIndex.value, index);
-    const shouldSelect = !batchSelection.value.has(file);
-    for (let i = start; i <= end; i++) {
-      const name = batchFiles.value[i];
-      if (shouldSelect) {
-        batchSelection.value.add(name);
-      } else {
-        batchSelection.value.delete(name);
-      }
-    }
-  } else {
-    if (batchSelection.value.has(file)) {
-      batchSelection.value.delete(file);
-    } else {
-      batchSelection.value.add(file);
-    }
-  }
-  lastSelectedIndex.value = index;
+function onBatchSelectionUpdated(files: string[]): void {
+  batchSelection.value = new Set(files);
 }
 
 function selectAll(): void {
@@ -824,28 +805,6 @@ const hictkAvailabilityClass = computed(() =>
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 12px;
-}
-.batch-table {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 280px;
-  overflow: auto;
-  border: 1px solid #e5e7eb;
-  padding: 8px;
-  border-radius: 6px;
-}
-.batch-row {
-  display: grid;
-  grid-template-columns: 24px 1fr 120px;
-  gap: 8px;
-  align-items: center;
-}
-.batch-header {
-  font-weight: 600;
-  border-bottom: 1px solid #e5e7eb;
-  padding-bottom: 4px;
-  margin-bottom: 4px;
 }
 .status-pill {
   padding: 2px 8px;

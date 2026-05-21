@@ -28,15 +28,16 @@
     <div class="spinner-border ms-auto" role="status"></div>
   </div>
   <div v-if="!loading">
-    <select
-      class="form-select form-select-lg mb-3"
-      v-model="selectedCoolerFilename"
-    >
-      <option selected>Select .hic/.cool/.mcool file from the list below...</option>
-      <option v-for="(filename, idx) in filenames" :key="idx" :value="filename">
-        {{ filename }}
-      </option>
-    </select>
+    <FileSelectionTable
+      :entries="fileEntries"
+      :selected-path="selectedCoolerFilename"
+      empty-message="No .hic/.cool/.mcool files found"
+      scroll-height="42vh"
+      :show-size="false"
+      :show-modified="false"
+      @update:selected-path="onCoolerFilenameUpdated"
+      @activate="onTableActivated"
+    />
   </div>
   <div>
     <button
@@ -51,8 +52,10 @@
 </template>
 
 <script setup lang="ts">
-import { type Ref, ref, onMounted, watch } from "vue";
+import { type Ref, computed, ref, onMounted } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
+import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
+import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
 
 const emit = defineEmits<{
   (e: "selected", coolerFilename: string): void;
@@ -68,10 +71,25 @@ const filenames: Ref<string[]> = ref([]);
 const loading: Ref<boolean> = ref(true);
 const errorMessage: Ref<unknown | null> = ref(null);
 
+const fileEntries = computed<FileSelectionTableEntry[]>(() =>
+  filenames.value.map((filename) => ({
+    path: filename,
+  }))
+);
+
 function onSelectClicked(): void {
   if (selectedCoolerFilename.value) {
     emit("selected", selectedCoolerFilename.value);
   }
+}
+
+function onCoolerFilenameUpdated(filename: string): void {
+  selectedCoolerFilename.value = filename;
+  emit("selected", filename);
+}
+
+function onTableActivated(filename: string): void {
+  selectedCoolerFilename.value = filename;
 }
 
 const normalizePath = (path: string): string => path.replaceAll("\\", "/");
@@ -122,15 +140,6 @@ onMounted(() => {
     });
 });
 
-watch(
-  selectedCoolerFilename,
-  (filename) => {
-    if (filename) {
-      emit("selected", filename);
-    }
-  },
-  { flush: "post" }
-);
 </script>
 
 <style scoped>

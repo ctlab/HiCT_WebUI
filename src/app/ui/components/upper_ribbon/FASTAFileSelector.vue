@@ -28,7 +28,7 @@
     data-keyboard="false"
     data-backdrop="static"
   >
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Select FASTA file</h5>
@@ -47,19 +47,15 @@
             <div class="spinner-border ms-auto" role="status"></div>
           </div>
           <div v-if="!loading">
-            <select
-              class="form-select form-select-lg mb-3"
-              v-model="selectedFASTAFilename"
-            >
-              <option selected>Select FASTA file from the list below...</option>
-              <option
-                v-for="(filename, idx) in filenames"
-                :key="idx"
-                :value="filename"
-              >
-                {{ filename }}
-              </option>
-            </select>
+            <FileSelectionTable
+              v-model:selected-path="selectedFASTAFilename"
+              :entries="fileEntries"
+              empty-message="No FASTA files found"
+              scroll-height="45vh"
+              :show-size="false"
+              :show-modified="false"
+              @activate="onTableActivated"
+            />
           </div>
           <div class="modal-footer">
             <button
@@ -84,10 +80,12 @@
 </template>
 
 <script setup lang="ts">
-import { type Ref, ref, onMounted } from "vue";
+import { type Ref, computed, ref, onMounted } from "vue";
 import { Modal } from "bootstrap";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { LinkFASTARequest } from "@/app/core/net/api/request";
+import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
+import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
 
 const emit = defineEmits<{
   (e: "selected", fastaFilename: string): void;
@@ -105,6 +103,12 @@ const errorMessage: Ref<unknown | null> = ref(null);
 const modal: Ref<Modal | null> = ref(null);
 
 const openFASTAModal = ref<HTMLElement | null>(null);
+
+const fileEntries = computed<FileSelectionTableEntry[]>(() =>
+  (filenames.value ?? []).map((filename) => ({
+    path: filename,
+  }))
+);
 
 function getFASTAFilenamesList(): void {
   loading.value = true;
@@ -153,6 +157,11 @@ function onSelectClicked(): void {
     .catch((e) => {
       errorMessage.value = e;
     });
+}
+
+function onTableActivated(filename: string): void {
+  selectedFASTAFilename.value = filename;
+  onSelectClicked();
 }
 
 onMounted(() => {

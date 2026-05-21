@@ -28,7 +28,7 @@
     data-keyboard="false"
     data-backdrop="static"
   >
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Select file to be opened</h5>
@@ -47,19 +47,15 @@
             Error: {{ errorMessage }}
           </div>
           <div v-if="!loading">
-            <select
-              class="form-select form-select-lg mb-3"
-              v-model="selected_filename"
-            >
-              <option selected>Select file from the list below...</option>
-              <option
-                v-for="(filename, idx) in filenames"
-                :key="idx"
-                :value="filename"
-              >
-                {{ filename }}
-              </option>
-            </select>
+            <FileSelectionTable
+              v-model:selected-path="selected_filename"
+              :entries="fileEntries"
+              empty-message="No files found"
+              scroll-height="50vh"
+              :show-size="false"
+              :show-modified="false"
+              @activate="onTableActivated"
+            />
           </div>
           <div class="modal-footer">
             <button
@@ -84,10 +80,12 @@
 </template>
 
 <script setup lang="ts">
-import { type Ref, ref, onMounted } from "vue";
+import { type Ref, computed, ref, onMounted } from "vue";
 import { Modal } from "bootstrap";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { toast } from "vue-sonner";
+import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
+import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
 
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
@@ -104,6 +102,12 @@ const loading: Ref<boolean> = ref(true);
 const modal: Ref<Modal | null> = ref(null);
 const openFileModal = ref<HTMLElement | null>(null);
 const errorMessage: Ref<unknown | null> = ref(null);
+
+const fileEntries = computed<FileSelectionTableEntry[]>(() =>
+  filenames.value.map((filename) => ({
+    path: filename,
+  }))
+);
 
 function resetState(): void {
   try {
@@ -131,6 +135,11 @@ function onSelectClicked(): void {
   }
   emit("selected", selectedFilename);
   resetState();
+}
+
+function onTableActivated(filename: string): void {
+  selected_filename.value = filename;
+  onSelectClicked();
 }
 
 onMounted(() => {

@@ -85,36 +85,13 @@
             </div>
 
             <div v-else-if="selectorMode === 'explorer'" class="table-host">
-              <table class="table table-sm table-hover align-middle mb-0 file-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Path</th>
-                    <th class="text-end">Size</th>
-                    <th class="text-end">Modified</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="entry in filteredEntries"
-                    :key="entry.path"
-                    :class="{ selected: selectedFilename === entry.path }"
-                    @click="onRowClicked(entry.path)"
-                    @dblclick="onSelectClicked"
-                  >
-                    <td>
-                      <i :class="getIconForEntry(entry.path, false)" aria-hidden="true"></i>
-                      <span class="ms-2">{{ entry.name }}</span>
-                    </td>
-                    <td><code>{{ entry.path }}</code></td>
-                    <td class="text-end">{{ formatBytes(entry.sizeBytes) }}</td>
-                    <td class="text-end">{{ formatTimestamp(entry.modifiedAtMs) }}</td>
-                  </tr>
-                  <tr v-if="filteredEntries.length === 0">
-                    <td colspan="4" class="text-muted">No files found for current filter</td>
-                  </tr>
-                </tbody>
-              </table>
+              <FileSelectionTable
+                v-model:selected-path="selectedFilename"
+                :entries="filteredEntries"
+                empty-message="No files found for current filter"
+                scroll-height="58vh"
+                @activate="onExplorerRowActivated"
+              />
             </div>
             <div v-else class="tree-host">
               <Tree
@@ -173,6 +150,7 @@
 <script setup lang="ts">
 import type { FileEntryResponse } from "@/app/core/net/api/response";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
+import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { storeToRefs } from "pinia";
 import Tree from "primevue/tree";
@@ -222,6 +200,10 @@ watch(selectorMode, (mode) => {
       ? { [fileSelectionKey(currentPath)]: true }
       : {};
   }
+});
+
+watch(selectedFilename, (path) => {
+  treeSelectionKeys.value = path ? { [fileSelectionKey(path)]: true } : {};
 });
 
 const filteredEntries = computed(() => {
@@ -425,9 +407,10 @@ const onSelectClicked = (): void => {
   emit("selected", selectedPath);
 };
 
-const onRowClicked = (path: string): void => {
+const onExplorerRowActivated = (path: string): void => {
   selectedFilename.value = path;
   treeSelectionKeys.value = { [fileSelectionKey(path)]: true };
+  onSelectClicked();
 };
 
 const onTreeNodeSelect = (event: { node?: PrimeTreeNode }): void => {
@@ -511,10 +494,6 @@ onMounted(async () => {
 }
 
 .table-host {
-  max-height: 58vh;
-  overflow: auto;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
   text-align: left;
 }
 
@@ -542,19 +521,4 @@ onMounted(async () => {
   gap: 0.35rem;
 }
 
-.file-table td,
-.file-table th {
-  white-space: nowrap;
-  vertical-align: middle;
-  text-align: left;
-}
-
-.file-table td:nth-child(2),
-.file-table th:nth-child(2) {
-  width: 56%;
-}
-
-.file-table tr.selected {
-  background: rgba(56, 132, 255, 0.14);
-}
 </style>
