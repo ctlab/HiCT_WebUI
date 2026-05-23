@@ -37,6 +37,11 @@
             >
             <ul class="dropdown-menu">
               <li>
+                <a class="dropdown-item" href="#" @click="onOpenWizard"
+                  >Wizard...</a
+                >
+              </li>
+              <li>
                 <a class="dropdown-item" href="#" @click="onOpenFile"
                   >Open...</a
                 >
@@ -45,11 +50,6 @@
                 <a class="dropdown-item" href="#" @click="onSaveClicked">Save</a>
                 <div v-if="saving" class="spinner-border ms-auto" role="status"></div>
               </li> -->
-              <li>
-                <a class="dropdown-item" href="#" @click="onOpenWizard"
-                  >Wizard...</a
-                >
-              </li>
               <li>
                 <a class="dropdown-item" href="#" @click="onCloseClicked"
                   >Close</a

@@ -77,6 +77,41 @@ class ScaffoldHolder {
       throw new Error(`Unknown scaffold with id=${scaffoldId}`);
     }
   }
+
+  public getScaffoldLocusByBp(bp: number): {
+    scaffoldId: ScaffoldId;
+    scaffoldName: string;
+    inScaffoldBp: number;
+    startBp: number;
+    endBp: number;
+  } | null {
+    let left = 0;
+    let right = this.scaffoldBordersSorted.length - 1;
+    while (left <= right) {
+      const middle = Math.floor((left + right) / 2);
+      const [borders, scaffoldId] = this.scaffoldBordersSorted[middle];
+      if (bp < borders.startBP) {
+        right = middle - 1;
+        continue;
+      }
+      if (bp >= borders.endBP) {
+        left = middle + 1;
+        continue;
+      }
+      const descriptor = this.scaffoldTable.get(scaffoldId);
+      if (!descriptor) {
+        return null;
+      }
+      return {
+        scaffoldId,
+        scaffoldName: descriptor.scaffoldName,
+        inScaffoldBp: bp - borders.startBP,
+        startBp: borders.startBP,
+        endBp: borders.endBP,
+      };
+    }
+    return null;
+  }
 }
 
 export { type ScaffoldId, ScaffoldHolder };

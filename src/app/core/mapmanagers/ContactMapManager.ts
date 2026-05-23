@@ -33,7 +33,6 @@ import { transform, transformExtent } from "ol/proj";
 import { getCenter, getHeight, getWidth, intersects } from "ol/extent";
 import { unByKey } from "ol/Observable";
 import type { EventsKey } from "ol/events";
-import { toSI } from "display-si";
 import ContigDimensionHolder from "./ContigDimensionHolder";
 import { ScaffoldHolder } from "./ScaffoldHolder";
 import { HiCViewAndLayersManager } from "./HiCViewAndLayersManager";
@@ -529,12 +528,12 @@ class ContactMapManager {
     previousRawLabel: string | null,
     previousBpValue: number | null
   ): { text: string; compact: boolean; rawLabel: string } {
-    const rawLabel = toSI(Math.max(0, Math.round(bpValue)));
+    const rawLabel = this.formatBpLabel(bpValue, 0);
     if (previousRawLabel === rawLabel && previousBpValue !== null) {
       const delta = Math.max(0, Math.round(bpValue - previousBpValue));
       if (delta > 0) {
         return {
-          text: `+${toSI(delta)}`,
+          text: this.formatBpLabel(bpValue, 1),
           compact: true,
           rawLabel,
         };
@@ -545,6 +544,20 @@ class ContactMapManager {
       compact: false,
       rawLabel,
     };
+  }
+
+  private formatBpLabel(bpValue: number, precision: number): string {
+    const value = Math.max(0, Math.round(bpValue));
+    const units: Array<[number, string]> = [
+      [1_000_000_000, "G"],
+      [1_000_000, "M"],
+      [1_000, "K"],
+    ];
+    const [scale, suffix] =
+      units.find(([candidate]) => value >= candidate) ?? [1, ""];
+    const scaled = value / scale;
+    const digits = precision > 0 && scaled < 100 ? precision : 0;
+    return `${scaled.toFixed(digits).replace(/\.0+$/, "")}${suffix}`;
   }
 
   private drawFullExtentExportRulers(

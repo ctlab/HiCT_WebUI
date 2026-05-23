@@ -881,6 +881,7 @@ class HiCViewAndLayersManager {
       new BinMousePosition({
         projection: this.pixelProjection,
         dimension_holder: this.mapManager.getContigDimensionHolder(),
+        scaffold_holder: this.mapManager.scaffoldHolder,
         layers: this.layersHolder.hicDataLayers,
       })
     );
@@ -973,7 +974,11 @@ class HiCViewAndLayersManager {
     this.deferredInitializationInteractions.scissorsGuideInteraction =
       new SplitRulesInteraction({
         mapManager: this.mapManager,
-        selectionCallback: this.mapManager.eventManager.onClickInScissorsMode,
+        selectionCallback: (coordinatePx, bpResolution) =>
+          this.mapManager.eventManager.onClickInScissorsMode(
+            coordinatePx,
+            bpResolution
+          ),
         wrapX: false,
         zIndex: this.layersZIndices.TRACK_2D_LAYER_Z_INDEX * 2 + 1,
       });

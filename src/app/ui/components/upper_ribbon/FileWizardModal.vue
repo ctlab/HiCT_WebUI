@@ -812,6 +812,14 @@ const wizardNotes = computed(() => {
       "Secondary AGP input is best treated as comparative metadata. Use the primary AGP as the authoritative assembly when scaffolding operations are expected."
     );
   }
+  const selectedHicSources = [primarySource, secondarySource]
+    .filter((source, index) => index === 0 || requiresSecondarySource.value)
+    .filter((source) => source.filename.toLowerCase().endsWith(".hic"));
+  if (selectedHicSources.length > 0) {
+    notes.push(
+      ".hic sources do not reliably carry Juicebox/JBAT scaffold layout. Select the matching AGP after conversion; if the project only has a .assembly file, convert it to AGP before scaffolding-sensitive work."
+    );
+  }
   if (primaryAgp.value && secondaryAgp.value) {
     notes.push(
       "Both AGPs are selected. This is supported for comparison, but the resulting two-source view may become intentionally unaligned after assembly edits."

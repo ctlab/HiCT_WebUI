@@ -480,6 +480,39 @@ export default class ContigDimensionHolder {
     return this.contigDescriptors[contig_ord].contigName;
   }
 
+  public getContigLocusByBp(bp: number): {
+    contigId: number;
+    contigName: string;
+    inContigBp: number;
+    contigLengthBp: number;
+  } {
+    const contigOrd = this.getContigOrderByBp_internal(bp);
+    const descriptor = this.contigDescriptors[contigOrd];
+    const contigStartBp = this.prefix_sum_bp[contigOrd];
+    return {
+      contigId: descriptor.contigId,
+      contigName: descriptor.contigName,
+      inContigBp: CommonUtils.clamp(
+        bp - contigStartBp,
+        0,
+        Math.max(0, descriptor.contigLengthBp - 1)
+      ),
+      contigLengthBp: descriptor.contigLengthBp,
+    };
+  }
+
+  public getContigLocusByPx(
+    px: number,
+    resolution: number
+  ): {
+    contigId: number;
+    contigName: string;
+    inContigBp: number;
+    contigLengthBp: number;
+  } {
+    return this.getContigLocusByBp(this.getStartBpOfPx(px, resolution));
+  }
+
   public isBpVisibleAtResolution(bp: number, resolution: number): boolean {
     if (this.contig_count <= 0) {
       return false;

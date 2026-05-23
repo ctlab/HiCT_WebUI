@@ -39,6 +39,9 @@ export default class BinMousePosition extends MousePosition {
     if (opt_options.layers) {
       this.layers = opt_options.layers;
     }
+    if (opt_options.scaffold_holder) {
+      this.scaffold_holder = opt_options.scaffold_holder;
+    }
   }
 
   updateHTML_(pixel) {
@@ -154,6 +157,44 @@ export default class BinMousePosition extends MousePosition {
             html = html + "<";
             html = html + "br/>";
             html = html + "Contigs: ctg1=" + ctg1 + " ctg2=" + ctg2;
+            if (this.dimension_holder.getContigLocusByPx) {
+              const locus1 = this.dimension_holder.getContigLocusByPx(
+                int_coordinates_px[0],
+                bpResolution
+              );
+              const locus2 = this.dimension_holder.getContigLocusByPx(
+                int_coordinates_px[1],
+                bpResolution
+              );
+              html = html + "<";
+              html = html + "br/>";
+              html =
+                html +
+                "In-contig bp: ctg1=+" +
+                locus1.inContigBp +
+                " ctg2=+" +
+                locus2.inContigBp;
+            }
+            if (this.scaffold_holder?.getScaffoldLocusByBp) {
+              const scaffold1 = this.scaffold_holder.getScaffoldLocusByBp(bp1);
+              const scaffold2 = this.scaffold_holder.getScaffoldLocusByBp(bp2);
+              html = html + "<";
+              html = html + "br/>";
+              html =
+                html +
+                "Scaffolds: scf1=" +
+                (scaffold1 ? scaffold1.scaffoldName : "unscaffolded") +
+                " scf2=" +
+                (scaffold2 ? scaffold2.scaffoldName : "unscaffolded");
+              html = html + "<";
+              html = html + "br/>";
+              html =
+                html +
+                "In-scaffold bp: scf1=" +
+                (scaffold1 ? "+" + scaffold1.inScaffoldBp : "n/a") +
+                " scf2=" +
+                (scaffold2 ? "+" + scaffold2.inScaffoldBp : "n/a");
+            }
           }
 
           html += "</div>";

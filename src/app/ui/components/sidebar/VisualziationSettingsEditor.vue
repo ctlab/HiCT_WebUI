@@ -71,6 +71,39 @@
         </ul>
       </li>
     </ul>
+    <div class="threshold-range-slider" aria-label="Threshold range">
+      <div class="threshold-range-track" :style="thresholdTrackStyle"></div>
+      <input
+        class="threshold-range-input threshold-range-input_lower"
+        type="range"
+        :min="sliderMin"
+        :max="sliderMax"
+        :step="sliderStep"
+        :value="lowerBound"
+        aria-label="Lower threshold"
+        @input="onLowerRangeInput"
+      />
+      <input
+        class="threshold-range-input threshold-range-input_upper"
+        type="range"
+        :min="sliderMin"
+        :max="sliderMax"
+        :step="sliderStep"
+        :value="upperBound"
+        aria-label="Upper threshold"
+        @input="onUpperRangeInput"
+      />
+      <div class="threshold-range-labels">
+        <span>{{ formatSignal(sliderMin) }}</span>
+        <span>{{ formatSignal(lowerBound) }} - {{ formatSignal(upperBound) }}</span>
+        <span>{{ formatSignal(sliderMax) }}</span>
+      </div>
+    </div>
+    <div v-if="applyCoolerWeights" class="cooler-weights-hint">
+      Cooler weights are active. Bins with missing or near-zero weights can
+      appear as white stripes; compare with an unweighted/raw preset before
+      treating those regions as absent signal.
+    </div>
     <div class="w-100">
       <button
         type="button"
@@ -86,7 +119,7 @@
 </template>
 
 <script setup lang="ts">
-import { Ref, onMounted, ref, unref, watch } from "vue";
+import { computed, Ref, onMounted, ref, unref, watch } from "vue";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import { toast } from "vue-sonner";
@@ -94,6 +127,7 @@ import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsS
 import { storeToRefs } from "pinia";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import { ColorTranslator } from "colortranslator";
+import type { CurrentSignalRangeResponse } from "@/app/core/net/api/response";
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
   visualizationOptionsStore
@@ -116,6 +150,7 @@ const toColor = ref(
 const lowerBound: Ref<number> = ref(signalMin.value);
 const upperBound: Ref<number> = ref(signalMax.value);
 const syncingFromColormap: Ref<boolean> = ref(false);
+let registeredRangeMapManager: ContactMapManager | undefined;
 
 const fromColorFn: Ref<() => ColorTranslator> = ref(
   () => fromColor.value
@@ -135,6 +170,37 @@ const gradstyle = ref({
     toColor.value.RGBA +
     ")",
   color: "#ffffff",
+});
+
+const sliderMin = computed(() =>
+  Math.min(
+    finiteOr(signalMin.value, 0),
+    finiteOr(lowerBound.value, 0),
+    finiteOr(upperBound.value, 1)
+  )
+);
+const sliderMax = computed(() => {
+  const max = Math.max(
+    finiteOr(signalMax.value, 1),
+    finiteOr(lowerBound.value, 0),
+    finiteOr(upperBound.value, 1)
+  );
+  return max <= sliderMin.value ? sliderMin.value + 1 : max;
+});
+const sliderStep = computed(() =>
+  Math.max((sliderMax.value - sliderMin.value) / 1000, Number.EPSILON)
+);
+const thresholdTrackStyle = computed(() => {
+  const span = Math.max(sliderMax.value - sliderMin.value, Number.EPSILON);
+  const left =
+    ((Math.min(lowerBound.value, upperBound.value) - sliderMin.value) / span) *
+    100;
+  const right =
+    ((Math.max(lowerBound.value, upperBound.value) - sliderMin.value) / span) *
+    100;
+  return {
+    "background-image": `linear-gradient(to right, #e9ecef 0%, #e9ecef ${left}%, ${fromColor.value.RGBA} ${left}%, ${toColor.value.RGBA} ${right}%, #e9ecef ${right}%, #e9ecef 100%)`,
+  };
 });
 
 watch(
@@ -234,6 +300,7 @@ watch(
   () => props.mapManager,
   () => {
     if (props.mapManager) {
+      registerSignalRangeCallback(props.mapManager);
       props.mapManager?.visualizationManager
         .fetchVisualizationOptions()
         .then(() => updateFromStore());
@@ -242,10 +309,30 @@ watch(
 );
 
 onMounted(() => {
+  if (props.mapManager) {
+    registerSignalRangeCallback(props.mapManager);
+  }
   props.mapManager?.visualizationManager
     .fetchVisualizationOptions()
     .then(() => updateFromStore());
 });
+
+function registerSignalRangeCallback(mapManager: ContactMapManager): void {
+  if (registeredRangeMapManager === mapManager) {
+    return;
+  }
+  registeredRangeMapManager = mapManager;
+  mapManager.addContrastSliderCallback(updateSignalRange);
+}
+
+function updateSignalRange(ranges: CurrentSignalRangeResponse): void {
+  const nextMin = finiteOr(ranges.globalMinSignal, signalMin.value);
+  const nextMax = finiteOr(ranges.globalMaxSignal, signalMax.value);
+  if (nextMax > nextMin) {
+    signalMin.value = nextMin;
+    signalMax.value = nextMax;
+  }
+}
 
 function updateFromStore() {
   // props.mapManager?.visualizationManager.fetchVisualizationOptions();
@@ -274,11 +361,47 @@ function updateFromStore() {
 }
 
 function applySettings() {
+  if (!(upperBound.value > lowerBound.value)) {
+    toast.error("Signal range must be positive: lower threshold must be below upper threshold.");
+    return;
+  }
   props.mapManager?.visualizationManager
     .sendVisualizationOptionsToServer()
     .then(() => {
       props.mapManager?.reloadTiles();
     });
+}
+
+function onLowerRangeInput(event: Event): void {
+  const value = Number((event.target as HTMLInputElement).value);
+  if (!Number.isFinite(value)) {
+    return;
+  }
+  lowerBound.value = Math.min(value, upperBound.value - sliderStep.value);
+}
+
+function onUpperRangeInput(event: Event): void {
+  const value = Number((event.target as HTMLInputElement).value);
+  if (!Number.isFinite(value)) {
+    return;
+  }
+  upperBound.value = Math.max(value, lowerBound.value + sliderStep.value);
+}
+
+function finiteOr(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function formatSignal(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "n/a";
+  }
+  if (Math.abs(value) >= 1000 || (Math.abs(value) > 0 && Math.abs(value) < 0.01)) {
+    return value.toExponential(2);
+  }
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: 4,
+  });
 }
 </script>
 
@@ -302,5 +425,89 @@ function applySettings() {
     0 0 2px #000,
     0 0 1px #000;
   border: none;
+}
+
+.threshold-range-slider {
+  position: relative;
+  padding: 0.75rem 0.75rem 0.35rem;
+}
+
+.threshold-range-track {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  top: 1.15rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+}
+
+.threshold-range-input {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  top: 0.75rem;
+  width: calc(100% - 1.5rem);
+  pointer-events: none;
+  appearance: none;
+  background: transparent;
+}
+
+.threshold-range-input::-webkit-slider-thumb {
+  appearance: none;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #0d6efd;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+}
+
+.threshold-range-input::-moz-range-thumb {
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #0d6efd;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+}
+
+.threshold-range-input_lower::-webkit-slider-thumb {
+  background: #198754;
+}
+
+.threshold-range-input_lower::-moz-range-thumb {
+  background: #198754;
+}
+
+.threshold-range-input_upper::-webkit-slider-thumb {
+  background: #dc3545;
+}
+
+.threshold-range-input_upper::-moz-range-thumb {
+  background: #dc3545;
+}
+
+.threshold-range-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 1.35rem;
+  font-size: 0.75rem;
+  color: #5c6773;
+}
+
+.cooler-weights-hint {
+  margin: 0.15rem 0.5rem 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border-left: 3px solid #f0ad4e;
+  border-radius: 0.35rem;
+  background: rgba(240, 173, 78, 0.12);
+  color: var(--hict-surface-fg, #343a40);
+  font-size: 0.75rem;
+  line-height: 1.25;
 }
 </style>

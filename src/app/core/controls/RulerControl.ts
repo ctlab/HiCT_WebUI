@@ -29,7 +29,6 @@ import {
 } from "../mapmanagers/HiCViewAndLayersManager";
 import ContigDimensionHolder from "../mapmanagers/ContigDimensionHolder";
 import { transform, transformExtent } from "ol/proj";
-import { toSI } from "display-si";
 import { storeToRefs } from "pinia";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
@@ -564,15 +563,14 @@ class RulerControl extends Control {
     })();
 
     const fillBackground = this.opt_options.direction === "horizontal";
-    const absoluteLabel = toSI(preBP);
+    const absoluteLabel = this.formatBpLabel(preBP, 0);
     const useDeltaLabel =
       tickIndex > 0 &&
       previousAbsoluteLabel !== null &&
       previousAbsoluteBp !== null &&
       previousAbsoluteLabel === absoluteLabel &&
       preBP > previousAbsoluteBp;
-    const deltaLabel = "+" + toSI(Math.max(0, preBP - (previousAbsoluteBp ?? preBP)));
-    const label = useDeltaLabel ? deltaLabel : absoluteLabel;
+    const label = useDeltaLabel ? this.formatBpLabel(preBP, 1) : absoluteLabel;
     const fontSize = useDeltaLabel
       ? Math.max(9, FONT_SIZE_PX - 2)
       : Math.max(11, FONT_SIZE_PX + 2);
@@ -599,6 +597,20 @@ class RulerControl extends Control {
       absoluteLabel,
       absoluteBp: preBP,
     };
+  }
+
+  private formatBpLabel(bp: number, precision: number): string {
+    const value = Math.max(0, Math.round(bp));
+    const units: Array<[number, string]> = [
+      [1_000_000_000, "G"],
+      [1_000_000, "M"],
+      [1_000, "K"],
+    ];
+    const [scale, suffix] =
+      units.find(([candidate]) => value >= candidate) ?? [1, ""];
+    const scaled = value / scale;
+    const digits = precision > 0 && scaled < 100 ? precision : 0;
+    return `${scaled.toFixed(digits).replace(/\.0+$/, "")}${suffix}`;
   }
 
   protected drawRotatedText(

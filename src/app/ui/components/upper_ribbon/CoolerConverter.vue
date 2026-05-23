@@ -121,6 +121,16 @@
               <p v-if="selectedCoolerFilename" class="helper-text">
                 Output: {{ deriveOutputFilename(selectedCoolerFilename) }}
               </p>
+              <div
+                v-if="selectedCoolerFilename && requiresHicToolchain(selectedCoolerFilename)"
+                class="alert alert-warning py-2"
+              >
+                <strong>.hic assembly layout:</strong>
+                .hic files do not reliably encode the contig/scaffold layout used by
+                Juicebox Assembly Tool. Keep the matching <code>.assembly</code>
+                or AGP file next to the dataset; load an AGP after conversion
+                when scaffolding coordinates are required.
+              </div>
               <p v-if="singleBlockedMessage" class="error-message">
                 {{ singleBlockedMessage }}
               </p>
