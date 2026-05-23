@@ -219,11 +219,11 @@
                     </select>
                   </div>
                   <div class="col-md-3">
-                    <label class="form-label">Top opacity</label>
+                    <label class="form-label">Top opacity (secondary)</label>
                     <input v-model.number="topOpacity" class="form-control" type="number" min="0" max="1" step="0.05" />
                   </div>
                   <div class="col-md-3">
-                    <label class="form-label">Bottom opacity</label>
+                    <label class="form-label">Bottom opacity (primary)</label>
                     <input v-model.number="bottomOpacity" class="form-control" type="number" min="0" max="1" step="0.05" />
                   </div>
                 </div>

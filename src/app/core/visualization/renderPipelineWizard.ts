@@ -226,8 +226,8 @@ export const buildWizardRenderPipelineConfig = (options: {
     const overlay: PipelineExpression = {
       type: "pixel_blend",
       mode: options.blendMode ?? "OVER",
-      top: withTransparentMinimumColor(primary),
-      bottom: withTransparentMinimumColor(secondary),
+      top: withTransparentMinimumColor(secondary),
+      bottom: primary,
       topOpacity:
         typeof options.topOpacity === "number" ? options.topOpacity : 0.5,
       bottomOpacity:
