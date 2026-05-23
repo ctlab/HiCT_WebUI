@@ -494,6 +494,9 @@ class RequestManager {
       renderMode?: string;
       aggregationMode?: string;
       logScale?: boolean;
+      rangeAuto?: boolean;
+      rangeMin?: number;
+      rangeMax?: number;
     }
   ): Promise<TrackSummaryResponse> {
     return this.sendRequest(
@@ -505,6 +508,9 @@ class RequestManager {
         renderMode: options.renderMode,
         aggregationMode: options.aggregationMode,
         logScale: options.logScale,
+        rangeAuto: options.rangeAuto,
+        rangeMin: options.rangeMin,
+        rangeMax: options.rangeMax,
       })
     )
       .then((response) => response.data)

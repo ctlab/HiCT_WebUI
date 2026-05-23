@@ -20,7 +20,8 @@
  SOFTWARE.
  */
 
-import { app, BrowserWindow, ipcMain, Menu, shell, session } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, session } from "electron";
+import { writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -173,6 +174,28 @@ function configureSecurity(baseUrl: URL): void {
   ipcMain.handle("hict:quit", () => {
     app.quit();
   });
+  ipcMain.handle(
+    "hict:save-export",
+    async (
+      _event,
+      payload: { filename?: string; bytes?: number[] }
+    ): Promise<{ saved: boolean; path?: string }> => {
+      const filename =
+        typeof payload.filename === "string" && payload.filename.trim().length > 0
+          ? payload.filename.trim()
+          : "hict-export.bin";
+      const result = await dialog.showSaveDialog({
+        title: "Save HiCT export",
+        defaultPath: filename,
+      });
+      if (result.canceled || !result.filePath) {
+        return { saved: false };
+      }
+      const bytes = Array.isArray(payload.bytes) ? payload.bytes : [];
+      await writeFile(result.filePath, Buffer.from(bytes));
+      return { saved: true, path: result.filePath };
+    }
+  );
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(false);
   });

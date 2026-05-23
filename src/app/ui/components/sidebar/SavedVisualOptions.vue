@@ -21,6 +21,27 @@
 
 <template>
   <p class="w-100 m-0 text-lg-center"><b>Visualization presets:</b></p>
+  <div v-if="hasTwoSources" class="visualization-source-selector px-2 pt-2">
+    <label class="form-label small mb-1">Preset target</label>
+    <div class="btn-group w-100" role="group" aria-label="Visualization preset source">
+      <button
+        type="button"
+        class="btn btn-sm"
+        :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="matrixViewStore.setActiveVisualizationSource('PRIMARY')"
+      >
+        PRIMARY
+      </button>
+      <button
+        type="button"
+        class="btn btn-sm"
+        :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
+        @click="matrixViewStore.setActiveVisualizationSource('SECONDARY')"
+      >
+        SECONDARY
+      </button>
+    </div>
+  </div>
   <div
     class="btn-group w-100 p-2"
     role="group"
@@ -77,7 +98,7 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { Ref, ref, shallowRef, triggerRef, onMounted, watch } from "vue";
+import { computed, Ref, ref, shallowRef, triggerRef, onMounted, watch } from "vue";
 import SavedVisualOptionsElement from "./SavedVisualOptionsElement.vue";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
@@ -90,6 +111,7 @@ import { useStyleStore } from "@/app/stores/styleStore";
 import { ColorTranslator } from "colortranslator";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
 import { useSessionStore } from "@/app/stores/sessionStore";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
   visualizationOptionsStore
@@ -103,6 +125,9 @@ onMounted(() => {
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const sessionStore = useSessionStore();
+const matrixViewStore = useMatrixViewStore();
+const { presentationMode, activeVisualizationSource } = storeToRefs(matrixViewStore);
+const hasTwoSources = computed(() => presentationMode.value !== "single");
 
 const props = defineProps<{
   mapManager?: ContactMapManager;

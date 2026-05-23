@@ -74,6 +74,7 @@ import { storeToRefs } from "pinia";
 import { useStyleStore } from "@/app/stores/styleStore";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import { ColorTranslator } from "colortranslator";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
@@ -82,6 +83,8 @@ const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
 
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
+const matrixViewStore = useMatrixViewStore();
+const { presentationMode, activeVisualizationSource } = storeToRefs(matrixViewStore);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -133,9 +136,20 @@ function setOptionsPreset() {
     if (props.trackStyles) {
       props.mapManager.getLayersManager().applyTrackStylePreset(props.trackStyles);
     }
-    props.mapManager?.visualizationManager
-      .sendVisualizationOptionsToServer()
-      .then(() => props.mapManager?.reloadTiles());
+    const source =
+      presentationMode.value === "single" ? undefined : activeVisualizationSource.value;
+    const action = source
+      ? props.mapManager?.visualizationManager.applyVisualizationSettingsForSourceAndReload(
+          source
+        )
+      : props.mapManager
+        ? props.mapManager.visualizationManager
+            .sendVisualizationOptionsToServer()
+            .then(() => props.mapManager?.reloadTiles())
+        : undefined;
+    action?.catch((error) => {
+      console.error("Failed to apply visualization preset", error);
+    });
   }
 }
 

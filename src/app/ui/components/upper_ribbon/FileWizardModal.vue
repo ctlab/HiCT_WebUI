@@ -1089,10 +1089,21 @@ const waitForConversionJob = async (jobId: string): Promise<ConversionJobRespons
     const job = await props.networkManager.requestManager.getConversionJob(jobId);
     runState.currentConversion = job;
     runState.currentMessage = job.currentStageLabel || job.status;
-    if (job.status === "COMPLETED") {
+    const normalizedStatus = (job.status ?? "").toLowerCase();
+    if (
+      normalizedStatus === "completed" ||
+      normalizedStatus === "complete" ||
+      normalizedStatus === "finished" ||
+      normalizedStatus === "success" ||
+      normalizedStatus === "succeeded"
+    ) {
       return job;
     }
-    if (job.status === "FAILED" || job.status === "CANCELLED") {
+    if (
+      normalizedStatus === "failed" ||
+      normalizedStatus === "cancelled" ||
+      normalizedStatus === "canceled"
+    ) {
       throw new Error(job.error || `Conversion job ${jobId} ended with status ${job.status}`);
     }
     await sleep(750);
@@ -1329,6 +1340,8 @@ const runWizard = async (): Promise<void> => {
     runState.currentMessage = "Done";
     runState.completed = true;
     toast.success("Wizard completed");
+    await nextTick();
+    emit("dismissed");
   } catch (error) {
     runState.error = String(error ?? "Wizard failed");
     runState.completed = false;

@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{env, net::IpAddr, process};
+use std::{env, fs, net::IpAddr, path::PathBuf, process};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use url::Url;
 
@@ -9,6 +9,45 @@ const DEFAULT_HICT_URL: &str = "http://127.0.0.1:8080/";
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+fn save_export(filename: String, bytes: Vec<u8>) -> Result<String, String> {
+    let safe_filename = sanitize_export_filename(&filename);
+    let export_dir = export_directory()?;
+    fs::create_dir_all(&export_dir)
+        .map_err(|error| format!("failed to create export directory {export_dir:?}: {error}"))?;
+    let output_path = export_dir.join(safe_filename);
+    fs::write(&output_path, bytes)
+        .map_err(|error| format!("failed to write export {output_path:?}: {error}"))?;
+    Ok(output_path.to_string_lossy().to_string())
+}
+
+fn export_directory() -> Result<PathBuf, String> {
+    let base = env::var("HICT_EXPORT_DIR")
+        .ok()
+        .or_else(|| env::var("HICT_DATA_DIR").ok())
+        .map(PathBuf::from)
+        .or_else(|| env::current_dir().ok())
+        .ok_or_else(|| "failed to resolve export directory".to_string())?;
+    Ok(base.join("hict-export"))
+}
+
+fn sanitize_export_filename(filename: &str) -> String {
+    let candidate = filename
+        .trim()
+        .chars()
+        .map(|character| match character {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ if character.is_control() => '_',
+            _ => character,
+        })
+        .collect::<String>();
+    if candidate.is_empty() {
+        "hict-export.bin".to_string()
+    } else {
+        candidate
+    }
 }
 
 fn requested_url() -> String {
@@ -68,7 +107,7 @@ fn main() {
     };
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![quit_app])
+        .invoke_handler(tauri::generate_handler![quit_app, save_export])
         .setup(move |app| {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::External(webui_url.clone()))
                 .title("HiCT")

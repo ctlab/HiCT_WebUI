@@ -110,7 +110,10 @@ class TrackSummaryResponse {
     public readonly renderStyle: string,
     public readonly renderMode: string,
     public readonly aggregationMode: string,
-    public readonly logScale: boolean
+    public readonly logScale: boolean,
+    public readonly rangeAuto: boolean,
+    public readonly rangeMin: number,
+    public readonly rangeMax: number
   ) {}
 }
 

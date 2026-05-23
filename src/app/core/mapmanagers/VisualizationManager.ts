@@ -29,6 +29,10 @@ import VisualizationOptions from "../visualization/VisualizationOptions";
 import SimpleLinearGradient from "../visualization/colormap/SimpleLinearGradient";
 import type { EventsKey } from "ol/events";
 import { unByKey } from "ol/Observable";
+import {
+  buildColorExpression,
+  type SourceName,
+} from "../visualization/renderPipelineWizard";
 
 type ViewportPixelBounds = {
   bpResolution: number;
@@ -37,8 +41,6 @@ type ViewportPixelBounds = {
   startColPx: number;
   endColPx: number;
 };
-
-type SourceName = "PRIMARY" | "SECONDARY";
 
 type PipelineSignalProfile = {
   source: SourceName;
@@ -237,6 +239,69 @@ const collectColormapTargets = (
   });
 };
 
+const cloneRecord = <T>(value: T): T =>
+  JSON.parse(JSON.stringify(value)) as T;
+
+const isTransparentMinimumColor = (color: unknown): boolean =>
+  typeof color === "string" &&
+  /^#[0-9a-f]{8}$/i.test(color.trim()) &&
+  color.trim().slice(7).toLowerCase() === "00";
+
+const preserveMinimumAlpha = (
+  nextColor: unknown,
+  previousColor: unknown
+): unknown => {
+  if (
+    typeof nextColor !== "string" ||
+    !/^#[0-9a-f]{8}$/i.test(nextColor.trim()) ||
+    !isTransparentMinimumColor(previousColor)
+  ) {
+    return nextColor;
+  }
+  return `${nextColor.trim().slice(0, 7)}00`;
+};
+
+const replaceColormapNode = (
+  target: ColormapTarget,
+  replacement: Record<string, unknown>
+): void => {
+  const previousStartColor = target.node.startColor;
+  target.node.type = "colormap";
+  target.node.mode = replacement.mode ?? "LINEAR";
+  target.node.input = cloneRecord(replacement.input);
+  target.node.startColor = preserveMinimumAlpha(
+    replacement.startColor,
+    previousStartColor
+  );
+  target.node.endColor = replacement.endColor;
+  target.node.minSignal = replacement.minSignal;
+  target.node.maxSignal = replacement.maxSignal;
+};
+
+const swapPixelBlendLayers = (expression: unknown): boolean => {
+  if (!isRecord(expression)) {
+    return false;
+  }
+  let changed = false;
+  if (String(expression.type ?? "").trim().toLowerCase() === "pixel_blend") {
+    const top = expression.top;
+    expression.top = expression.bottom;
+    expression.bottom = top;
+    const topOpacity = expression.topOpacity;
+    expression.topOpacity = expression.bottomOpacity;
+    expression.bottomOpacity = topOpacity;
+    changed = true;
+  }
+  ["input", "left", "right", "top", "bottom", "c1", "c2", "c3", "alpha"].forEach(
+    (key) => {
+      if (key in expression && swapPixelBlendLayers(expression[key])) {
+        changed = true;
+      }
+    }
+  );
+  return changed;
+};
+
 const transformSignalsForProfile = (
   values: Float32Array,
   profile: PipelineSignalProfile,
@@ -312,6 +377,28 @@ class VisualizationManager {
         .getRenderPipelineConfig()
         .catch(() => null);
     return isRecord(config) && Boolean(config.enabled ?? false) ? config : null;
+  }
+
+  private updateRenderPipelineSource(
+    config: Record<string, unknown>,
+    source: SourceName,
+    options: VisualizationOptions
+  ): boolean {
+    const targets: ColormapTarget[] = [];
+    collectColormapTargets(config.upperExpression, targets);
+    collectColormapTargets(config.lowerExpression, targets);
+    const replacement = buildColorExpression(source, options) as unknown as Record<
+      string,
+      unknown
+    >;
+    let changed = false;
+    for (const target of targets) {
+      if (target.profile.source === source) {
+        replaceColormapNode(target, replacement);
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   private resolveResolutionScalingCoefficients(): {
@@ -507,7 +594,8 @@ class VisualizationManager {
   }
 
   private async syncPipelineAutoThresholdToViewport(
-    config?: Record<string, unknown>
+    config?: Record<string, unknown>,
+    sourceFilter?: SourceName
   ): Promise<boolean> {
     const options = this.visualizationOptionsStore.asVisualizationOptions();
     if (!options.autoThresholdEnabled) {
@@ -525,7 +613,10 @@ class VisualizationManager {
     const targets: ColormapTarget[] = [];
     collectColormapTargets(activeConfig.upperExpression, targets);
     collectColormapTargets(activeConfig.lowerExpression, targets);
-    if (targets.length === 0) {
+    const filteredTargets = sourceFilter
+      ? targets.filter((target) => target.profile.source === sourceFilter)
+      : targets;
+    if (filteredTargets.length === 0) {
       return false;
     }
 
@@ -533,7 +624,7 @@ class VisualizationManager {
     const thresholdCache = new Map<string, number | null>();
     let changed = false;
 
-    for (const target of targets) {
+    for (const target of filteredTargets) {
       const cacheKey = JSON.stringify(target.profile);
       let nextUpperBound = thresholdCache.get(cacheKey);
       if (nextUpperBound === undefined) {
@@ -632,10 +723,64 @@ class VisualizationManager {
     return result;
   }
 
-  public async refreshAutoThresholdAndReload(): Promise<number | null> {
+  public async applyVisualizationSettingsForSourceAndReload(
+    source: SourceName
+  ): Promise<VisualizationOptions> {
+    const pipelineConfig = await this.getActiveRenderPipelineConfig();
+    if (!pipelineConfig) {
+      return this.applyVisualizationSettingsAndReload();
+    }
+
+    const options = this.visualizationOptionsStore.asVisualizationOptions();
+    const updated = await this.sendVisualizationOptionsToServer({
+      skipAutoThresholdRefresh: true,
+      preserveCustomPipeline: true,
+    });
+    const changed = this.updateRenderPipelineSource(pipelineConfig, source, options);
+    if (!changed) {
+      await this.mapManager.reloadTilesFromBackend();
+      return updated;
+    }
+
+    await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
+      pipelineConfig
+    );
+    if (options.autoThresholdEnabled) {
+      await this.syncPipelineAutoThresholdToViewport(pipelineConfig, source).catch(
+        () => false
+      );
+    }
+    await this.mapManager.reloadTilesFromBackend();
+    return updated;
+  }
+
+  public async swapRenderPipelineLayersAndReload(): Promise<boolean> {
+    const pipelineConfig = await this.getActiveRenderPipelineConfig();
+    if (!pipelineConfig) {
+      return false;
+    }
+    let changed = false;
+    changed = swapPixelBlendLayers(pipelineConfig.upperExpression) || changed;
+    changed = swapPixelBlendLayers(pipelineConfig.lowerExpression) || changed;
+    if (!changed) {
+      const upperExpression = pipelineConfig.upperExpression;
+      pipelineConfig.upperExpression = pipelineConfig.lowerExpression;
+      pipelineConfig.lowerExpression = upperExpression;
+      changed = true;
+    }
+    await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
+      pipelineConfig
+    );
+    await this.mapManager.reloadTilesFromBackend();
+    return changed;
+  }
+
+  public async refreshAutoThresholdAndReload(
+    source?: SourceName
+  ): Promise<number | null> {
     const pipelineConfig = await this.getActiveRenderPipelineConfig();
     if (pipelineConfig) {
-      await this.syncPipelineAutoThresholdToViewport(pipelineConfig);
+      await this.syncPipelineAutoThresholdToViewport(pipelineConfig, source);
       return null;
     }
     const nextUpperBound = await this.syncAutoThresholdToViewport();

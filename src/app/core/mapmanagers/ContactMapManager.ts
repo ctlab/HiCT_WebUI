@@ -948,11 +948,7 @@ class ContactMapManager {
         `</svg>`;
     }
     const blob = new Blob([svg], { type: "image/svg+xml" });
-    const a = document.createElement("a");
-    a.download = `${this.options.filename}.svg`;
-    a.href = URL.createObjectURL(blob);
-    a.click();
-    URL.revokeObjectURL(a.href);
+    await this.saveExportBlob(blob, `${this.options.filename}.svg`);
   }
 
   public async exportCurrentMapPng(
@@ -973,18 +969,15 @@ class ContactMapManager {
     if (options?.includeWorkspaceComposite === true) {
       progressCallback?.(1);
     }
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
       canvas.toBlob((blob) => {
         if (!blob) {
           resolve();
           return;
         }
-        const a = document.createElement("a");
-        a.download = `${this.options.filename}.png`;
-        a.href = URL.createObjectURL(blob);
-        a.click();
-        URL.revokeObjectURL(a.href);
-        resolve();
+        this.saveExportBlob(blob, `${this.options.filename}.png`)
+          .then(resolve)
+          .catch(reject);
       }, "image/png");
     });
   }
@@ -1016,7 +1009,53 @@ class ContactMapManager {
       format: [canvas.width, canvas.height],
     });
     pdf.addImage(dataUrl, "PNG", 0, 0, canvas.width, canvas.height);
-    pdf.save(`${this.options.filename}.pdf`);
+    const blob = pdf.output("blob");
+    await this.saveExportBlob(blob, `${this.options.filename}.pdf`);
+  }
+
+  private async saveExportBlob(blob: Blob, filename: string): Promise<void> {
+    const sanitizedFilename = ContactMapManager.sanitizeDownloadFilename(filename);
+    const desktopBridge = (window as unknown as {
+      hictDesktop?: {
+        saveExport?: (payload: {
+          filename: string;
+          bytes: number[];
+        }) => Promise<unknown> | unknown;
+      };
+    }).hictDesktop;
+    if (typeof desktopBridge?.saveExport === "function") {
+      const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+      await Promise.resolve(
+        desktopBridge.saveExport({ filename: sanitizedFilename, bytes })
+      );
+      return;
+    }
+
+    const tauriBridge = (window as unknown as {
+      __TAURI__?: {
+        core?: {
+          invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+        };
+        invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+      };
+    }).__TAURI__;
+    const invoke = tauriBridge?.core?.invoke ?? tauriBridge?.invoke;
+    if (typeof invoke === "function") {
+      const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+      await invoke("save_export", { filename: sanitizedFilename, bytes });
+      return;
+    }
+
+    const a = document.createElement("a");
+    a.download = sanitizedFilename;
+    a.href = URL.createObjectURL(blob);
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  private static sanitizeDownloadFilename(filename: string): string {
+    const safe = filename.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim();
+    return safe.length > 0 ? safe : "hict-export.bin";
   }
 
   private exportTracksSvg(bpResolution: number): string {

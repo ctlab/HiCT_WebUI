@@ -485,6 +485,9 @@ class UpdateTrackRequest implements HiCTAPIRequest {
       readonly renderMode?: string;
       readonly aggregationMode?: string;
       readonly logScale?: boolean;
+      readonly rangeAuto?: boolean;
+      readonly rangeMin?: number;
+      readonly rangeMax?: number;
     }
   ) {}
 }

@@ -34,6 +34,42 @@
       Normalization settings
     </button>
     <ul id="normalization-dropdown-menu" class="dropdown-menu p-3">
+      <li v-if="hasTwoSources">
+        <div class="mb-2">
+          <label class="form-label small mb-1">Configure source</label>
+          <div class="btn-group w-100" role="group" aria-label="Visualization source">
+            <button
+              type="button"
+              class="btn btn-sm"
+              :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
+              @click="matrixViewStore.setActiveVisualizationSource('PRIMARY')"
+            >
+              PRIMARY
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm"
+              :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
+              @click="matrixViewStore.setActiveVisualizationSource('SECONDARY')"
+            >
+              SECONDARY
+            </button>
+          </div>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary w-100 mt-2"
+            @click="swapLayers"
+          >
+            Swap layers
+          </button>
+          <small class="text-muted d-block mt-1">
+            Applies normalization and thresholds only to the selected layer.
+          </small>
+        </div>
+      </li>
+      <li v-if="hasTwoSources">
+        <hr class="dropdown-divider" />
+      </li>
       <li>
         <div class="form-check">
           <input
@@ -228,12 +264,13 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { defineAsyncComponent, onUnmounted, Ref, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onUnmounted, Ref, ref, watch } from "vue";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import { toast } from "vue-sonner";
 import type { EventsKey } from "ol/events";
 import { unByKey } from "ol/Observable";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 const RenderingPipelineModal = defineAsyncComponent(
   () => import("./RenderingPipelineModal.vue")
 );
@@ -248,6 +285,8 @@ const {
   autoThresholdQuantile,
   colormap,
 } = storeToRefs(visualizationOptionsStore);
+const matrixViewStore = useMatrixViewStore();
+const { presentationMode, activeVisualizationSource } = storeToRefs(matrixViewStore);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -261,6 +300,8 @@ const applyPostLog: Ref<boolean> = ref(true);
 const pipelineModalOpen = ref(false);
 let autoThresholdMoveEndKey: EventsKey | undefined;
 let autoThresholdTimer: number | undefined;
+
+const hasTwoSources = computed(() => presentationMode.value !== "single");
 
 // const preLogBase: Ref<number> = ref(10);
 
@@ -294,11 +335,15 @@ watch(
 );
 
 function applySettings(): void {
-  props.mapManager?.visualizationManager
-    .applyVisualizationSettingsAndReload()
-    .catch((error) => {
-      toast.error(String(error ?? "Failed to apply normalization settings"));
-    });
+  const source = hasTwoSources.value ? activeVisualizationSource.value : undefined;
+  const action = source
+    ? props.mapManager?.visualizationManager.applyVisualizationSettingsForSourceAndReload(
+        source
+      )
+    : props.mapManager?.visualizationManager.applyVisualizationSettingsAndReload();
+  action?.catch((error) => {
+    toast.error(String(error ?? "Failed to apply normalization settings"));
+  });
 }
 
 function preLogCheckChange() {
@@ -329,6 +374,19 @@ function openRenderingPipeline(): void {
   pipelineModalOpen.value = true;
 }
 
+function swapLayers(): void {
+  props.mapManager?.visualizationManager
+    .swapRenderPipelineLayersAndReload()
+    .then((swapped) => {
+      if (!swapped) {
+        toast("No active two-layer rendering pipeline to swap");
+      }
+    })
+    .catch((error) => {
+      toast.error(String(error ?? "Failed to swap rendering layers"));
+    });
+}
+
 function clearAutoThresholdTimer(): void {
   if (autoThresholdTimer !== undefined) {
     window.clearTimeout(autoThresholdTimer);
@@ -343,7 +401,9 @@ function scheduleAutoThresholdRefresh(): void {
   }
   autoThresholdTimer = window.setTimeout(() => {
     props.mapManager?.visualizationManager
-      .refreshAutoThresholdAndReload()
+      .refreshAutoThresholdAndReload(
+        hasTwoSources.value ? activeVisualizationSource.value : undefined
+      )
       .catch(() => undefined);
   }, 180);
 }
@@ -381,6 +441,15 @@ watch(
 
 watch(
   () => autoThresholdQuantile.value,
+  () => {
+    if (autoThresholdEnabled.value) {
+      scheduleAutoThresholdRefresh();
+    }
+  }
+);
+
+watch(
+  () => activeVisualizationSource.value,
   () => {
     if (autoThresholdEnabled.value) {
       scheduleAutoThresholdRefresh();

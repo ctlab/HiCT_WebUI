@@ -260,6 +260,39 @@
                       @change="onChangeLogBase(track.trackId, Number(($event.target as HTMLInputElement).value))"
                       title="Log base for log(1+x)"
                     />
+                    <div class="form-check form-switch m-0 ms-2">
+                      <input
+                        :id="`track-range-auto-${track.trackId}`"
+                        class="form-check-input"
+                        type="checkbox"
+                        :checked="track.rangeAuto"
+                        @change="onChangeRangeAuto(track.trackId, ($event.target as HTMLInputElement).checked)"
+                      />
+                      <label
+                        class="form-check-label small"
+                        :for="`track-range-auto-${track.trackId}`"
+                      >
+                        auto range
+                      </label>
+                    </div>
+                    <input
+                      type="number"
+                      class="form-control form-control-sm track-range-input"
+                      :value="track.rangeMin"
+                      :disabled="track.rangeAuto"
+                      step="any"
+                      title="Signal range minimum"
+                      @change="onChangeRangeBound(track.trackId, 'rangeMin', Number(($event.target as HTMLInputElement).value))"
+                    />
+                    <input
+                      type="number"
+                      class="form-control form-control-sm track-range-input"
+                      :value="track.rangeMax"
+                      :disabled="track.rangeAuto"
+                      step="any"
+                      title="Signal range maximum"
+                      @change="onChangeRangeBound(track.trackId, 'rangeMax', Number(($event.target as HTMLInputElement).value))"
+                    />
                   </div>
                   <select
                     v-if="track.type === 'BAM'"
@@ -920,6 +953,40 @@ const onChangeLogScale = async (trackId: string, logScale: boolean) => {
   }
 };
 
+const onChangeRangeAuto = async (trackId: string, rangeAuto: boolean) => {
+  if (!props.mapManager) {
+    return;
+  }
+  try {
+    await props.mapManager.linearTrackManager.updateTrack(trackId, {
+      rangeAuto,
+    });
+    await refreshTracks();
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
+const onChangeRangeBound = async (
+  trackId: string,
+  field: "rangeMin" | "rangeMax",
+  value: number
+) => {
+  if (!props.mapManager || !Number.isFinite(value)) {
+    return;
+  }
+  try {
+    const options =
+      field === "rangeMin"
+        ? { rangeAuto: false, rangeMin: value }
+        : { rangeAuto: false, rangeMax: value };
+    await props.mapManager.linearTrackManager.updateTrack(trackId, options);
+    await refreshTracks();
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
 const getTrackLogBase = (trackId: string): number => {
   return props.mapManager?.linearTrackManager.getTrackLogBase(trackId) ?? 10;
 };
@@ -1008,6 +1075,11 @@ onBeforeUnmount(() => {
 .track-log-base-input {
   min-width: 4rem;
   max-width: 5.4rem;
+}
+
+.track-range-input {
+  min-width: 5rem;
+  max-width: 6.2rem;
 }
 
 .precompute-list {

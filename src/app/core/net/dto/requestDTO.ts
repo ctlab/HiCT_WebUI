@@ -720,6 +720,9 @@ class UpdateTrackRequestDTO extends HiCTAPIRequestDTO<UpdateTrackRequest> {
       renderMode: this.entity.options.renderMode,
       aggregationMode: this.entity.options.aggregationMode,
       logScale: this.entity.options.logScale,
+      rangeAuto: this.entity.options.rangeAuto,
+      rangeMin: this.entity.options.rangeMin,
+      rangeMax: this.entity.options.rangeMax,
     };
   }
 }

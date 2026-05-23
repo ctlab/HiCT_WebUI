@@ -173,7 +173,10 @@ class TrackSummaryResponseDTO extends InboundDTO<TrackSummaryResponse> {
       (this.json["renderStyle"] as string) ?? "SIGNAL",
       (this.json["renderMode"] as string) ?? "COVERAGE",
       (this.json["aggregationMode"] as string) ?? "MAX",
-      (this.json["logScale"] as boolean) ?? false
+      (this.json["logScale"] as boolean) ?? false,
+      (this.json["rangeAuto"] as boolean) ?? true,
+      Number(this.json["rangeMin"] ?? 0),
+      Number(this.json["rangeMax"] ?? 1)
     );
   }
 }

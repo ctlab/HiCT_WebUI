@@ -8,6 +8,7 @@ export const useMatrixViewStore = defineStore("matrixViewStore", () => {
   const presentationMode = ref<MatrixPresentationMode>("single");
   const horizontalFastaSource = ref<MatrixSourceName>("PRIMARY");
   const verticalFastaSource = ref<MatrixSourceName>("PRIMARY");
+  const activeVisualizationSource = ref<MatrixSourceName>("PRIMARY");
 
   function setPresentationMode(mode: MatrixPresentationMode) {
     presentationMode.value = mode;
@@ -21,18 +22,25 @@ export const useMatrixViewStore = defineStore("matrixViewStore", () => {
     verticalFastaSource.value = vertical;
   }
 
+  function setActiveVisualizationSource(source: MatrixSourceName) {
+    activeVisualizationSource.value = source;
+  }
+
   function reset() {
     presentationMode.value = "single";
     horizontalFastaSource.value = "PRIMARY";
     verticalFastaSource.value = "PRIMARY";
+    activeVisualizationSource.value = "PRIMARY";
   }
 
   return {
     presentationMode,
     horizontalFastaSource,
     verticalFastaSource,
+    activeVisualizationSource,
     setPresentationMode,
     setSelectionFastaSources,
+    setActiveVisualizationSource,
     reset,
   };
 });

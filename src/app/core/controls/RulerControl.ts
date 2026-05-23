@@ -318,8 +318,8 @@ class RulerControl extends Control {
       const FONT_STRING = `bold ${FONT_SIZE_PX}px serif`;
       const LAST_TICK_MARGIN = Math.round(tickInterval / 2);
       let tickIndex = 0;
-      let previousAbsoluteLabel: string | null = null;
-      let previousAbsoluteBp: number | null = null;
+      let previousAnchorLabel: string | null = null;
+      let previousAnchorBp: number | null = null;
       for (
         let coord: [number, number] = [start[0], start[1]];
         coord[0] < end[0] - LAST_TICK_MARGIN ||
@@ -342,11 +342,11 @@ class RulerControl extends Control {
           FONT_SIZE_PX,
           FONT_STRING,
           tickIndex,
-          previousAbsoluteLabel,
-          previousAbsoluteBp
+          previousAnchorLabel,
+          previousAnchorBp
         );
-        previousAbsoluteLabel = tickState.absoluteLabel;
-        previousAbsoluteBp = tickState.absoluteBp;
+        previousAnchorLabel = tickState.anchorLabel;
+        previousAnchorBp = tickState.anchorBp;
         tickIndex++;
       }
       this.drawTickAtPxOffset(
@@ -364,8 +364,8 @@ class RulerControl extends Control {
         FONT_SIZE_PX,
         FONT_STRING,
         tickIndex,
-        previousAbsoluteLabel,
-        previousAbsoluteBp
+        previousAnchorLabel,
+        previousAnchorBp
       );
     }
     // Actually, if false, allows drawing smaller grid, currently disabled
@@ -466,9 +466,9 @@ class RulerControl extends Control {
     FONT_SIZE_PX: number,
     FONT_STRING: string,
     tickIndex: number,
-    previousAbsoluteLabel: string | null,
-    previousAbsoluteBp: number | null
-  ): { absoluteLabel: string; absoluteBp: number } {
+    previousAnchorLabel: string | null,
+    previousAnchorBp: number | null
+  ): { anchorLabel: string; anchorBp: number } {
     coord = coord.map(Math.round) as [number, number];
 
     const dPx = (() => {
@@ -563,14 +563,22 @@ class RulerControl extends Control {
     })();
 
     const fillBackground = this.opt_options.direction === "horizontal";
+    const isLastTick = Math.abs(coord[0] - end[0]) <= 1 && Math.abs(coord[1] - end[1]) <= 1;
     const absoluteLabel = this.formatBpLabel(preBP, 0);
+    const absoluteAnchorBp = this.labelAnchorBp(preBP);
     const useDeltaLabel =
+      !isLastTick &&
       tickIndex > 0 &&
-      previousAbsoluteLabel !== null &&
-      previousAbsoluteBp !== null &&
-      previousAbsoluteLabel === absoluteLabel &&
-      preBP > previousAbsoluteBp;
-    const label = useDeltaLabel ? this.formatBpLabel(preBP, 1) : absoluteLabel;
+      previousAnchorLabel !== null &&
+      previousAnchorBp !== null &&
+      preBP > previousAnchorBp;
+    const label = useDeltaLabel
+      ? `+${this.formatBpLabel(preBP - previousAnchorBp, 0)}`
+      : absoluteLabel;
+    const nextAnchorLabel = useDeltaLabel ? previousAnchorLabel : absoluteLabel;
+    const nextAnchorBp = useDeltaLabel
+      ? previousAnchorBp ?? absoluteAnchorBp
+      : absoluteAnchorBp;
     const fontSize = useDeltaLabel
       ? Math.max(9, FONT_SIZE_PX - 2)
       : Math.max(11, FONT_SIZE_PX + 2);
@@ -594,8 +602,8 @@ class RulerControl extends Control {
       fillBackground
     );
     return {
-      absoluteLabel,
-      absoluteBp: preBP,
+      anchorLabel: nextAnchorLabel,
+      anchorBp: nextAnchorBp,
     };
   }
 
@@ -611,6 +619,20 @@ class RulerControl extends Control {
     const scaled = value / scale;
     const digits = precision > 0 && scaled < 100 ? precision : 0;
     return `${scaled.toFixed(digits).replace(/\.0+$/, "")}${suffix}`;
+  }
+
+  private labelAnchorBp(bp: number): number {
+    const value = Math.max(0, Math.round(bp));
+    if (value >= 1_000_000_000) {
+      return Math.floor(value / 1_000_000_000) * 1_000_000_000;
+    }
+    if (value >= 1_000_000) {
+      return Math.floor(value / 1_000_000) * 1_000_000;
+    }
+    if (value >= 1_000) {
+      return Math.floor(value / 1_000) * 1_000;
+    }
+    return value;
   }
 
   protected drawRotatedText(

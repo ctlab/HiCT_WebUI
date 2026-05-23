@@ -135,7 +135,7 @@ const onMouseMoveFeature = (event: MouseEvent): void => {
     hideFeatureTooltip();
     return;
   }
-  const hit = props.mapManager.linearTrackManager.getFeatureHoverAt(
+  const hit = props.mapManager.linearTrackManager.getTrackHoverAt(
     "horizontal",
     event.offsetX,
     event.offsetY
@@ -158,18 +158,38 @@ const onMouseMoveFeature = (event: MouseEvent): void => {
     top: `${Math.round(desiredTop)}px`,
   };
   featureTooltipTitle.value =
-    hit.label ?? hit.featureType ?? hit.trackName;
+    hit.kind === "feature"
+      ? hit.label ?? hit.featureType ?? hit.trackName
+      : hit.trackName;
   featureTooltipRange.value = `${hit.startBp.toLocaleString()}-${hit.endBp.toLocaleString()} bp`;
   const secondaryParts: string[] = [];
-  if (hit.featureType) {
-    secondaryParts.push(hit.featureType);
+  if (hit.kind === "feature") {
+    if (hit.featureType) {
+      secondaryParts.push(hit.featureType);
+    }
+    if (hit.strand) {
+      secondaryParts.push(`strand ${hit.strand}`);
+    }
+    secondaryParts.push(hit.trackName);
+  } else {
+    secondaryParts.push(`value ${formatTrackValue(hit.value)}`);
+    if (hit.count > 1) {
+      secondaryParts.push(`${hit.count.toLocaleString()} bins/items`);
+    }
+    secondaryParts.push(hit.trackType);
   }
-  if (hit.strand) {
-    secondaryParts.push(`strand ${hit.strand}`);
-  }
-  secondaryParts.push(hit.trackName);
   featureTooltipSecondary.value = secondaryParts.join(" | ");
   featureTooltipVisible.value = true;
+};
+
+const formatTrackValue = (value: number): string => {
+  if (!Number.isFinite(value)) {
+    return "n/a";
+  }
+  if (Math.abs(value) >= 1000 || (value !== 0 && Math.abs(value) < 0.01)) {
+    return value.toExponential(3);
+  }
+  return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
 };
 
 const onMouseLeaveFeature = (): void => {
