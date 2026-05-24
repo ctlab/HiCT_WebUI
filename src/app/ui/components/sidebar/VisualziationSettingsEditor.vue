@@ -152,7 +152,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, Ref, onMounted, ref, unref, watch } from "vue";
+import { computed, Ref, onMounted, ref, watch } from "vue";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import { toast } from "vue-sonner";
@@ -200,18 +200,13 @@ const toColorFn: Ref<() => ColorTranslator> = ref(() => toColor.value) as Ref<
   () => ColorTranslator
 >;
 
-const gradstyle = ref({
+const gradstyle = computed<Record<string, string>>(() => ({
   width: "100%",
   height: "1.8rem",
   margin: "0",
-  "background-image":
-    "linear-gradient(to right," +
-    fromColor.value.RGBA +
-    " , " +
-    toColor.value.RGBA +
-    ")",
+  "background-image": `linear-gradient(to right, ${fromColor.value.RGBA}, ${toColor.value.RGBA})`,
   color: "#ffffff",
-});
+}));
 
 const sliderMin = computed(() =>
   Math.min(
@@ -328,12 +323,6 @@ watch(
     if (syncingFromColormap.value) {
       return;
     }
-    gradstyle.value["background-image"] =
-      "linear-gradient(to right," +
-      fromColor.value.RGBA +
-      " , " +
-      toColor.value.RGBA +
-      ")";
     fromColorFn.value = () => fromColor.value;
     toColorFn.value = () => toColor.value;
     const nextMin = lowerBound.value;
@@ -552,11 +541,16 @@ function formatSignal(value: number): string {
 
 .gradient-apply-button {
   text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.9),
+    1px -1px 0 rgba(0, 0, 0, 0.9),
+    -1px 1px 0 rgba(0, 0, 0, 0.9),
+    1px 1px 0 rgba(0, 0, 0, 0.9),
     0 0 2px #000,
     0 0 1px #000;
   border: none;
   border-radius: 0.45rem;
   font-weight: 600;
+  color: #ffffff !important;
 }
 
 .threshold-compact-card {
