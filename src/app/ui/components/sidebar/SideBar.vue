@@ -74,6 +74,7 @@
       <div v-if="props.mapManager" class="sidebar-panel-content">
         <template v-if="activeSidebarPanel === 'visualization'">
           <div v-if="hasTwoSources" class="visualization-source-selector px-2 pt-2">
+            <div class="source-selection-label">Source selection</div>
             <div class="visualization-source-row">
               <div
                 class="btn-group flex-grow-1"
@@ -84,7 +85,7 @@
                   type="button"
                   class="btn btn-sm"
                   :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
-                  @click="matrixViewStore.setActiveVisualizationSource('PRIMARY')"
+                  @click="selectVisualizationSource('PRIMARY')"
                 >
                   PRIMARY
                 </button>
@@ -92,7 +93,7 @@
                   type="button"
                   class="btn btn-sm"
                   :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
-                  @click="matrixViewStore.setActiveVisualizationSource('SECONDARY')"
+                  @click="selectVisualizationSource('SECONDARY')"
                 >
                   SECONDARY
                 </button>
@@ -471,6 +472,10 @@ function swapLayers(): void {
       toast.error(String(error ?? "Failed to swap rendering layers"));
     });
 }
+
+function selectVisualizationSource(source: "PRIMARY" | "SECONDARY"): void {
+  matrixViewStore.setActiveVisualizationSource(source);
+}
 </script>
 
 <style scoped>
@@ -580,6 +585,13 @@ function swapLayers(): void {
   display: flex;
   align-items: stretch;
   gap: 0.45rem;
+}
+
+.source-selection-label {
+  color: #5c6773;
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
 }
 
 .visualization-source-row .btn-group .btn:first-child {

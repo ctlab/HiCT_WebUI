@@ -29,6 +29,7 @@
       class="btn btn-sm btn-light dropdown-toggle"
       type="button"
       data-bs-toggle="dropdown"
+      data-bs-auto-close="false"
       aria-expanded="false"
     >
       Normalization settings
@@ -36,22 +37,24 @@
     <ul id="normalization-dropdown-menu" class="dropdown-menu p-3">
       <li v-if="hasTwoSources">
         <div class="mb-2 normalization-source-block">
-          <label class="form-label small mb-1">Configure source</label>
+          <label class="form-label small mb-1">Source selection</label>
           <div class="normalization-source-row">
             <div class="btn-group flex-grow-1" role="group" aria-label="Visualization source">
               <button
                 type="button"
-                class="btn btn-sm"
-                :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
-                @click="matrixViewStore.setActiveVisualizationSource('PRIMARY')"
+                class="btn btn-sm normalization-source-button"
+                :class="{ 'is-active': activeVisualizationSource === 'PRIMARY' }"
+                :aria-pressed="activeVisualizationSource === 'PRIMARY'"
+                @click.stop.prevent="selectVisualizationSource('PRIMARY')"
               >
                 PRIMARY
               </button>
               <button
                 type="button"
-                class="btn btn-sm"
-                :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
-                @click="matrixViewStore.setActiveVisualizationSource('SECONDARY')"
+                class="btn btn-sm normalization-source-button"
+                :class="{ 'is-active': activeVisualizationSource === 'SECONDARY' }"
+                :aria-pressed="activeVisualizationSource === 'SECONDARY'"
+                @click.stop.prevent="selectVisualizationSource('SECONDARY')"
               >
                 SECONDARY
               </button>
@@ -62,7 +65,7 @@
               :class="layersSwapped ? 'btn-secondary active' : 'btn-outline-secondary'"
               title="Swap Layers"
               aria-label="Swap Layers"
-              @click="swapLayers"
+              @click.stop.prevent="swapLayers"
             >
               <i class="bi bi-shuffle"></i>
             </button>
@@ -250,10 +253,10 @@
       </li>
       <li>
         <div class="btn-group" role="group" id="normalization-apply-group">
-          <button type="button" class="btn btn-success" @click="applySettings">
+          <button type="button" class="btn btn-success normalization-action-apply" @click="applySettings">
             Apply
           </button>
-          <button type="button" class="btn btn-danger" @click="resetAttributes">
+          <button type="button" class="btn btn-danger normalization-action-reset" @click="resetAttributes">
             Reset
           </button>
         </div>
@@ -269,7 +272,7 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { computed, defineAsyncComponent, onUnmounted, Ref, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, onUnmounted, Ref, ref, watch } from "vue";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import { toast } from "vue-sonner";
@@ -323,6 +326,29 @@ function resetAttributes(): void {
   autoThresholdEnabled.value = false;
   autoThresholdQuantile.value = 0.995;
   applySettings();
+}
+
+function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
+  return hasTwoSources.value ? activeVisualizationSource.value : undefined;
+}
+
+function syncLocalLogFlags(): void {
+  applyPreLog.value = preLogBase.value > 0;
+  applyPostLog.value = postLogBase.value > 0;
+}
+
+async function refreshOptionsForActiveSource(): Promise<void> {
+  if (!props.mapManager) {
+    return;
+  }
+  await props.mapManager.visualizationManager
+    .loadVisualizationOptionsForSource(activeSourceForOptions())
+    .then(syncLocalLogFlags)
+    .catch(() => undefined);
+}
+
+function selectVisualizationSource(source: "PRIMARY" | "SECONDARY"): void {
+  matrixViewStore.setActiveVisualizationSource(source);
 }
 
 watch(
@@ -458,11 +484,25 @@ watch(
 watch(
   () => activeVisualizationSource.value,
   () => {
+    void refreshOptionsForActiveSource();
     if (autoThresholdEnabled.value) {
       scheduleAutoThresholdRefresh();
     }
   }
 );
+
+watch(
+  () => [props.mapManager, presentationMode.value] as const,
+  () => {
+    void refreshOptionsForActiveSource();
+  },
+  { immediate: true }
+);
+
+onMounted(() => {
+  syncLocalLogFlags();
+  void refreshOptionsForActiveSource();
+});
 
 onUnmounted(() => {
   detachAutoThresholdMoveListener();
@@ -493,6 +533,19 @@ onUnmounted(() => {
   gap: 0.5rem;
 }
 
+.normalization-source-button {
+  color: #0d6efd !important;
+  background: #ffffff !important;
+  border-color: #0d6efd !important;
+}
+
+.normalization-source-button.is-active {
+  color: #ffffff !important;
+  background: #0d6efd !important;
+  border-color: #0d6efd !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
 .layer-swap-button {
   width: 2.35rem;
   min-width: 2.35rem;
@@ -501,5 +554,17 @@ onUnmounted(() => {
 
 .layer-swap-button.active {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.normalization-action-apply {
+  color: #ffffff !important;
+  background: #198754 !important;
+  border-color: #198754 !important;
+}
+
+.normalization-action-reset {
+  color: #ffffff !important;
+  background: #dc3545 !important;
+  border-color: #dc3545 !important;
 }
 </style>

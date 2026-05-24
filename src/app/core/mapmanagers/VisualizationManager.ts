@@ -33,6 +33,7 @@ import {
   buildColorExpression,
   type SourceName,
 } from "../visualization/renderPipelineWizard";
+import { ColorTranslator } from "colortranslator";
 
 type ViewportPixelBounds = {
   bpResolution: number;
@@ -125,6 +126,37 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const toFiniteNumber = (value: unknown, fallback: number): number => {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
+};
+
+const safeColorTranslator = (value: unknown, fallback: string): ColorTranslator => {
+  if (typeof value !== "string" || value.length > 128) {
+    return new ColorTranslator(fallback, { legacyCSS: true });
+  }
+  try {
+    return new ColorTranslator(value, { legacyCSS: true });
+  } catch {
+    return new ColorTranslator(fallback, { legacyCSS: true });
+  }
+};
+
+const withAlphaZero = (value: unknown, fallback: string): string => {
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (/^#[0-9a-f]{8}$/i.test(normalized)) {
+      return `${normalized.slice(0, 7)}00`;
+    }
+    if (/^#[0-9a-f]{6}$/i.test(normalized)) {
+      return `${normalized}00`;
+    }
+  }
+  try {
+    const translated = new ColorTranslator(String(value ?? fallback), {
+      legacyCSS: true,
+    });
+    return `${translated.HEXA.slice(0, 7)}00`;
+  } catch {
+    return fallback;
+  }
 };
 
 const normalizePositiveLogBase = (value: unknown): number | null => {
@@ -273,6 +305,27 @@ const collectColormapTargets = (
   });
 };
 
+const collectTopLayerSources = (
+  expression: unknown,
+  output: Set<SourceName>
+): void => {
+  if (!isRecord(expression)) {
+    return;
+  }
+  if (String(expression.type ?? "").trim().toLowerCase() === "pixel_blend") {
+    const topTargets: ColormapTarget[] = [];
+    collectColormapTargets(expression.top, topTargets);
+    topTargets.forEach((target) => output.add(target.profile.source));
+  }
+  ["input", "left", "right", "top", "bottom", "c1", "c2", "c3", "alpha"].forEach(
+    (key) => {
+      if (key in expression) {
+        collectTopLayerSources(expression[key], output);
+      }
+    }
+  );
+};
+
 const cloneRecord = <T>(value: T): T =>
   JSON.parse(JSON.stringify(value)) as T;
 
@@ -311,6 +364,33 @@ const replaceColormapNode = (
   target.node.minSignal = replacement.minSignal;
   target.node.maxSignal = replacement.maxSignal;
 };
+
+const visualizationOptionsFromTarget = (
+  target: ColormapTarget,
+  currentOptions: VisualizationOptions,
+  forceTransparentMinimum = false
+): VisualizationOptions =>
+  new VisualizationOptions(
+    target.profile.preLogBase ?? -1,
+    target.profile.postLogBase ?? -1,
+    target.profile.applyCoolerWeights,
+    target.profile.resolutionScaling,
+    target.profile.resolutionLinearScaling,
+    new SimpleLinearGradient(
+      safeColorTranslator(
+        forceTransparentMinimum
+          ? withAlphaZero(target.node.startColor, "#ffffff00")
+          : target.node.startColor,
+        "#ffffff00"
+      ),
+      safeColorTranslator(target.node.endColor, "#006000ff"),
+      target.minSignal,
+      target.maxSignal
+    ),
+    currentOptions.autoThresholdEnabled,
+    currentOptions.autoThresholdQuantile,
+    currentOptions.signalDisplayMode
+  );
 
 const forceMinimumAlphaZero = (target: ColormapTarget): void => {
   const color = target.node.startColor;
@@ -442,6 +522,40 @@ class VisualizationManager {
         );
         return options;
       });
+  }
+
+  public async loadVisualizationOptionsForSource(
+    source?: SourceName
+  ): Promise<VisualizationOptions> {
+    if (!source) {
+      return this.fetchVisualizationOptions();
+    }
+    const pipelineConfig = await this.getActiveRenderPipelineConfig();
+    if (!pipelineConfig) {
+      return this.fetchVisualizationOptions();
+    }
+    const targets: ColormapTarget[] = [];
+    collectColormapTargets(pipelineConfig.upperExpression, targets);
+    collectColormapTargets(pipelineConfig.lowerExpression, targets);
+    const topLayerSources = new Set<SourceName>();
+    collectTopLayerSources(pipelineConfig.upperExpression, topLayerSources);
+    collectTopLayerSources(pipelineConfig.lowerExpression, topLayerSources);
+    const target = targets.find((candidate) => candidate.profile.source === source);
+    if (!target) {
+      return this.fetchVisualizationOptions();
+    }
+    const options = visualizationOptionsFromTarget(
+      target,
+      this.visualizationOptionsStore.asVisualizationOptions(),
+      topLayerSources.has(source)
+    );
+    this.visualizationOptionsStore.setVisualizationOptions(options);
+    window.dispatchEvent(
+      new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
+        detail: { source: "pipeline_source_fetch", options },
+      })
+    );
+    return options;
   }
 
   private async getActiveRenderPipelineConfig(): Promise<Record<string, unknown> | null> {

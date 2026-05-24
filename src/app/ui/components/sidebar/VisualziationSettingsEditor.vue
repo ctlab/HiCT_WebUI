@@ -25,6 +25,7 @@
   </div>
   <div class="w-100">
     <div class="threshold-compact-card">
+      <div class="threshold-card-title">Range / Thresholds</div>
       <div class="threshold-input-grid">
         <label class="threshold-field">
           <span>Lower</span>
@@ -177,7 +178,7 @@ const props = defineProps<{
 const signalMin: Ref<number> = ref(0);
 const signalMax: Ref<number> = ref(1);
 const fromColor: Ref<ColorTranslator> = ref(
-  new ColorTranslator("rgba(0,255,0,0.1)", { legacyCSS: true })
+  new ColorTranslator("rgba(0,255,0,0.0)", { legacyCSS: true })
 ) as Ref<ColorTranslator>;
 const toColor = ref(
   new ColorTranslator("rgba(0,96,0,1.0)", { legacyCSS: true })
@@ -363,10 +364,20 @@ watch(
   () => {
     if (props.mapManager) {
       registerSignalRangeCallback(props.mapManager);
-      props.mapManager?.visualizationManager
-        .fetchVisualizationOptions()
+      props.mapManager.visualizationManager
+        .loadVisualizationOptionsForSource(activeSourceForOptions())
         .then(() => updateFromStore());
     }
+  }
+);
+
+watch(
+  () => [activeVisualizationSource.value, presentationMode.value] as const,
+  () => {
+    props.mapManager?.visualizationManager
+      .loadVisualizationOptionsForSource(activeSourceForOptions())
+      .then(() => updateFromStore())
+      .catch(() => undefined);
   }
 );
 
@@ -375,9 +386,13 @@ onMounted(() => {
     registerSignalRangeCallback(props.mapManager);
   }
   props.mapManager?.visualizationManager
-    .fetchVisualizationOptions()
+    .loadVisualizationOptionsForSource(activeSourceForOptions())
     .then(() => updateFromStore());
 });
+
+function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
+  return presentationMode.value !== "single" ? activeVisualizationSource.value : undefined;
+}
 
 function registerSignalRangeCallback(mapManager: ContactMapManager): void {
   if (registeredRangeMapManager === mapManager) {
@@ -550,13 +565,22 @@ function formatSignal(value: number): string {
   padding: 0.45rem 0.55rem 0.55rem;
   background: var(--hict-surface-bg, #ffffff);
   position: relative;
-  z-index: 2;
+  z-index: 30;
 }
 
 .threshold-input-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.45rem;
+}
+
+.threshold-card-title {
+  color: #5c6773;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .threshold-field {
