@@ -925,14 +925,15 @@ class VisualizationManager {
     }
 
     const options = this.visualizationOptionsStore.asVisualizationOptions();
-    const updated = await this.sendVisualizationOptionsToServer({
+    await this.sendVisualizationOptionsToServer({
       skipAutoThresholdRefresh: true,
       preserveCustomPipeline: true,
     });
     const changed = this.updateRenderPipelineSource(pipelineConfig, source, options);
     if (!changed) {
+      const hydrated = await this.loadVisualizationOptionsForSource(source);
       await this.mapManager.reloadTilesFromBackend();
-      return updated;
+      return hydrated;
     }
 
     await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
@@ -943,8 +944,9 @@ class VisualizationManager {
         () => false
       );
     }
+    const hydrated = await this.loadVisualizationOptionsForSource(source);
     await this.mapManager.reloadTilesFromBackend();
-    return updated;
+    return hydrated;
   }
 
   public async swapRenderPipelineLayersAndReload(): Promise<boolean> {

@@ -537,9 +537,6 @@ onUnmounted(() => {
   color: #0d6efd !important;
   background: #ffffff !important;
   border-color: #0d6efd !important;
-  box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.96),
-    0 1px 2px rgba(0, 0, 0, 0.14);
   text-shadow:
     -1px -1px 0 rgba(255, 255, 255, 0.9),
     1px -1px 0 rgba(255, 255, 255, 0.9),
@@ -551,10 +548,6 @@ onUnmounted(() => {
   color: #ffffff !important;
   background: #0d6efd !important;
   border-color: #0d6efd !important;
-  box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.96),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.38),
-    0 1px 2px rgba(0, 0, 0, 0.18);
   text-shadow:
     -1px -1px 0 rgba(0, 0, 0, 0.65),
     1px -1px 0 rgba(0, 0, 0, 0.65),
@@ -576,10 +569,6 @@ onUnmounted(() => {
   color: #ffffff !important;
   background: #198754 !important;
   border-color: #198754 !important;
-  box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.96),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
-    0 1px 2px rgba(0, 0, 0, 0.18);
   text-shadow:
     -1px -1px 0 rgba(0, 0, 0, 0.7),
     1px -1px 0 rgba(0, 0, 0, 0.7),
@@ -591,10 +580,6 @@ onUnmounted(() => {
   color: #ffffff !important;
   background: #dc3545 !important;
   border-color: #dc3545 !important;
-  box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.96),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
-    0 1px 2px rgba(0, 0, 0, 0.18);
   text-shadow:
     -1px -1px 0 rgba(0, 0, 0, 0.7),
     1px -1px 0 rgba(0, 0, 0, 0.7),
