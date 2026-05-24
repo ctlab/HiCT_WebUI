@@ -92,10 +92,16 @@
                       id="cooler-weights-secondary"
                       class="form-check-input"
                       type="checkbox"
-                      disabled
-                      title="Secondary source weight tracks are not exposed by the current backend API yet."
+                      :checked="secondaryCoolerWeightsVisible"
+                      :disabled="!secondaryStatus.attached"
+                      :title="secondaryStatus.attached ? 'Show or hide Cooler balancing weights for the secondary source.' : 'Attach a secondary source first.'"
+                      @change="onToggleSecondaryCoolerWeights(($event.target as HTMLInputElement).checked)"
                     />
-                    <label class="form-check-label text-muted" for="cooler-weights-secondary">
+                    <label
+                      class="form-check-label"
+                      :class="{ 'text-muted': !secondaryStatus.attached }"
+                      for="cooler-weights-secondary"
+                    >
                       Secondary source
                     </label>
                   </div>
@@ -573,13 +579,26 @@ const onTrackBackgroundColorChanged = (value: string): void => {
 };
 
 const trackBackgroundHex = computed(() => rgbaLikeToHex(trackBackgroundColor.value));
+const COOLER_WEIGHTS_PRIMARY_SOURCE_FILE = "__internal__/cooler_weights/PRIMARY";
+const COOLER_WEIGHTS_SECONDARY_SOURCE_FILE = "__internal__/cooler_weights/SECONDARY";
 const primaryCoolerWeightsTrackIds = computed(() =>
   tracks.value
-    .filter((track) => track.sourceFile === "__internal__/cooler_weights")
+    .filter((track) =>
+      track.sourceFile === COOLER_WEIGHTS_PRIMARY_SOURCE_FILE ||
+      track.sourceFile === "__internal__/cooler_weights"
+    )
     .map((track) => track.trackId)
 );
 const primaryCoolerWeightsVisible = computed(
   () => primaryCoolerWeightsTrackIds.value.length > 0
+);
+const secondaryCoolerWeightsTrackIds = computed(() =>
+  tracks.value
+    .filter((track) => track.sourceFile === COOLER_WEIGHTS_SECONDARY_SOURCE_FILE)
+    .map((track) => track.trackId)
+);
+const secondaryCoolerWeightsVisible = computed(
+  () => secondaryCoolerWeightsTrackIds.value.length > 0
 );
 
 const TRACK_SUFFIXES = [
@@ -702,11 +721,40 @@ const onTogglePrimaryCoolerWeights = async (visible: boolean) => {
     if (visible) {
       if (primaryCoolerWeightsTrackIds.value.length === 0) {
         await props.mapManager.linearTrackManager.openCoolerWeightsTrack(
-          "Cooler weights"
+          "Cooler weights - Primary",
+          "PRIMARY"
         );
       }
     } else {
       for (const trackId of primaryCoolerWeightsTrackIds.value) {
+        await props.mapManager.linearTrackManager.removeTrack(trackId);
+      }
+    }
+    await refreshTracks();
+    await refreshPrecomputeStatus();
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
+const onToggleSecondaryCoolerWeights = async (visible: boolean) => {
+  if (!props.mapManager) {
+    return;
+  }
+  try {
+    if (visible) {
+      if (!secondaryStatus.value.attached) {
+        toast.error("Attach a secondary source before showing its Cooler weights.");
+        return;
+      }
+      if (secondaryCoolerWeightsTrackIds.value.length === 0) {
+        await props.mapManager.linearTrackManager.openCoolerWeightsTrack(
+          "Cooler weights - Secondary",
+          "SECONDARY"
+        );
+      }
+    } else {
+      for (const trackId of secondaryCoolerWeightsTrackIds.value) {
         await props.mapManager.linearTrackManager.removeTrack(trackId);
       }
     }

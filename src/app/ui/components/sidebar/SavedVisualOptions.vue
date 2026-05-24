@@ -642,12 +642,9 @@ function importOptionsFromFile() {
   align-items: flex-start;
 
   /* Inside auto layout */
-  flex: none;
+  flex: 1 1 auto;
   order: 2;
-  flex-grow: 0;
-
-  height: 90%;
-  max-height: 180px;
+  min-height: 0;
   overflow-y: scroll;
   overflow-x: hidden;
   width: 100%;

@@ -242,9 +242,14 @@ class LinearTrackManager {
     await this.refreshTrackList();
   }
 
-  public async openCoolerWeightsTrack(name?: string): Promise<void> {
+  public async openCoolerWeightsTrack(
+    name?: string,
+    source: "PRIMARY" | "SECONDARY" = "PRIMARY"
+  ): Promise<void> {
     await this.mapManager.networkManager.requestManager.openCoolerWeightsTrack(
-      name
+      name,
+      undefined,
+      source
     );
     await this.refreshTrackList();
   }

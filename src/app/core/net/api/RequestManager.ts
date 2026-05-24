@@ -457,9 +457,10 @@ class RequestManager {
 
   public async openCoolerWeightsTrack(
     name?: string,
-    color?: string
+    color?: string,
+    source?: "PRIMARY" | "SECONDARY"
   ): Promise<TrackSummaryResponse> {
-    return this.sendRequest(new OpenCoolerWeightsTrackRequest({ name, color }))
+    return this.sendRequest(new OpenCoolerWeightsTrackRequest({ name, color, source }))
       .then((response) => response.data)
       .then((json) => new TrackSummaryResponseDTO(json).toEntity());
   }

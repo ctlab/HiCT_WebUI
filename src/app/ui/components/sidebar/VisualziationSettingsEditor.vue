@@ -121,7 +121,7 @@
             role="switch"
           />
           <label class="form-check-label" for="threshold-log-scale">
-            log2(1+x)
+            log10 scale
           </label>
         </div>
         <details v-if="applyCoolerWeights" class="cooler-weights-hint">
@@ -190,6 +190,7 @@ const sliderBoundsManual: Ref<boolean> = ref(false);
 const sliderLogScale: Ref<boolean> = ref(false);
 const syncingFromColormap: Ref<boolean> = ref(false);
 let registeredRangeMapManager: ContactMapManager | undefined;
+const LOG_SLIDER_FLOOR_FRACTION = 1e-10;
 
 const fromColorFn: Ref<() => ColorTranslator> = ref(
   () => fromColor.value
@@ -231,6 +232,9 @@ const sliderPositionMax = computed(() => toSliderPosition(sliderMax.value));
 const lowerSliderValue = computed(() => toSliderPosition(lowerBound.value));
 const upperSliderValue = computed(() => toSliderPosition(upperBound.value));
 const sliderStep = computed(() => {
+  if (sliderLogScale.value) {
+    return 0.001;
+  }
   const span = Math.max(
     sliderPositionMax.value - sliderPositionMin.value,
     Number.EPSILON
@@ -472,7 +476,14 @@ function toSliderPosition(value: number): number {
   if (!sliderLogScale.value) {
     return clamped;
   }
-  return Math.log2(1 + Math.max(0, clamped - min));
+  const span = Math.max(max - min, Number.EPSILON);
+  const normalized = (clamped - min) / span;
+  if (normalized <= 0) {
+    return 0;
+  }
+  const floorLog = Math.log10(LOG_SLIDER_FLOOR_FRACTION);
+  const valueLog = Math.log10(Math.max(LOG_SLIDER_FLOOR_FRACTION, normalized));
+  return Math.max(0, Math.min(1, (valueLog - floorLog) / -floorLog));
 }
 
 function fromSliderPosition(value: number): number {
@@ -481,7 +492,14 @@ function fromSliderPosition(value: number): number {
   if (!sliderLogScale.value) {
     return Math.max(min, Math.min(max, finiteOr(value, min)));
   }
-  const actual = min + Math.pow(2, Math.max(0, finiteOr(value, 0))) - 1;
+  const position = Math.max(0, Math.min(1, finiteOr(value, 0)));
+  if (position <= 0) {
+    return min;
+  }
+  const span = Math.max(max - min, Number.EPSILON);
+  const floorLog = Math.log10(LOG_SLIDER_FLOOR_FRACTION);
+  const normalized = Math.pow(10, floorLog + position * -floorLog);
+  const actual = min + normalized * span;
   return Math.max(min, Math.min(max, actual));
 }
 
@@ -531,6 +549,8 @@ function formatSignal(value: number): string {
   gap: 0.45rem;
   padding: 0.45rem 0.55rem 0.55rem;
   background: var(--hict-surface-bg, #ffffff);
+  position: relative;
+  z-index: 2;
 }
 
 .threshold-input-grid {
@@ -711,5 +731,14 @@ function formatSignal(value: number): string {
 
 .cooler-weights-hint[open] summary {
   margin-bottom: 0.25rem;
+}
+
+:deep(.picker_wrapper) {
+  z-index: 1080 !important;
+  max-width: min(18rem, calc(100vw - 1.5rem));
+}
+
+:deep(.picker_wrapper button) {
+  pointer-events: auto;
 }
 </style>

@@ -85,6 +85,40 @@ const computeFiniteQuantile = (values: Float32Array, quantile: number): number |
   return filtered[position] ?? filtered[filtered.length - 1] ?? null;
 };
 
+const computeFinitePositiveMax = (values: Float32Array): number | null => {
+  let maxValue: number | null = null;
+  for (const value of values) {
+    if (Number.isFinite(value) && value > 0) {
+      maxValue = maxValue == null ? value : Math.max(maxValue, value);
+    }
+  }
+  return maxValue;
+};
+
+const resolveSafeAutoUpperBound = (
+  values: Float32Array,
+  quantile: number,
+  minSignal: number,
+  currentMaxSignal: number
+): number | null => {
+  const quantileValue = computeFiniteQuantile(values, quantile);
+  const maxValue = computeFinitePositiveMax(values);
+  const minGap = Math.max(Math.abs(minSignal) * 1e-6, 1e-12);
+  const candidate =
+    quantileValue != null && quantileValue > minSignal + minGap
+      ? quantileValue
+      : maxValue != null && maxValue > minSignal + minGap
+        ? maxValue
+        : null;
+  if (candidate == null || !Number.isFinite(candidate)) {
+    return null;
+  }
+  if (Math.abs(candidate - currentMaxSignal) < 1e-9) {
+    return currentMaxSignal;
+  }
+  return candidate;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
@@ -599,9 +633,11 @@ class VisualizationManager {
         signalMode: "TRADITIONAL_NORMALIZED",
       }
     );
-    const nextUpperBound = computeFiniteQuantile(
+    const nextUpperBound = resolveSafeAutoUpperBound(
       response.values,
-      options.autoThresholdQuantile
+      options.autoThresholdQuantile,
+      options.colormap.minSignal,
+      options.colormap.maxSignal
     );
     if (
       nextUpperBound == null ||
@@ -677,13 +713,15 @@ class VisualizationManager {
               ? "COOLER_WEIGHTED"
               : "RAW_COUNTS",
           });
-        nextUpperBound = computeFiniteQuantile(
+        nextUpperBound = resolveSafeAutoUpperBound(
           transformSignalsForProfile(
             response.values,
             target.profile,
             scalingCoefficients
           ),
-          options.autoThresholdQuantile
+          options.autoThresholdQuantile,
+          target.minSignal,
+          target.maxSignal
         );
         thresholdCache.set(cacheKey, nextUpperBound);
       }

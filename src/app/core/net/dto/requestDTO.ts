@@ -692,6 +692,7 @@ class OpenCoolerWeightsTrackRequestDTO extends HiCTAPIRequestDTO<OpenCoolerWeigh
     return {
       name: this.entity.options.name,
       color: this.entity.options.color,
+      source: this.entity.options.source,
     };
   }
 }

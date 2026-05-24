@@ -455,6 +455,7 @@ class OpenCoolerWeightsTrackRequest implements HiCTAPIRequest {
     public readonly options: {
       readonly name?: string;
       readonly color?: string;
+      readonly source?: "PRIMARY" | "SECONDARY";
     } = {}
   ) {}
 }

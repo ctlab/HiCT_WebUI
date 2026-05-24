@@ -565,6 +565,7 @@ function swapLayers(): void {
   flex-direction: column;
   gap: 4px;
   min-height: 0;
+  flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: hidden;
   width: 100%;
@@ -639,8 +640,9 @@ function swapLayers(): void {
 
   box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.075);
 
-  max-height: 260px;
-  /* overflow-y: scroll; */
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
   overflow-x: hidden;
   width: 100%;
   padding-top: 8px;
