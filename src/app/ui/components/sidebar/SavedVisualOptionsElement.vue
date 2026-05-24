@@ -24,14 +24,14 @@
     <div class="input-group">
       <input
         type="text"
-        class="form-control m-0"
+        class="form-control form-control-sm m-0"
         placeholder="Preset name"
         aria-label="Name of visualization preset"
         v-model="name"
         @change="() => (showRenameButton = true)"
       />
       <button
-        class="btn btn-outline-success"
+        class="btn btn-sm btn-outline-success"
         type="button"
         title="Rename preset"
         data-bs-toggle="tooltip"
@@ -42,7 +42,7 @@
         <i class="bi bi-check-square-fill"></i>
       </button>
       <button
-        class="btn btn-outline-primary"
+        class="btn btn-sm btn-outline-primary"
         type="button"
         title="Load visualization preset"
         data-bs-toggle="tooltip"
@@ -52,7 +52,7 @@
         <i class="bi bi-brush"></i>
       </button>
       <button
-        class="btn btn-outline-danger"
+        class="btn btn-sm btn-outline-danger"
         type="button"
         title="Remove visualization preset"
         data-bs-toggle="tooltip"
@@ -171,9 +171,9 @@ function renamePreset() {
   /* gap: 20px; */
 
   width: 100%;
-  height: 40px;
-  margin-left: 10px;
-  margin-right: 10px;
+  height: 32px;
+  margin-left: 8px;
+  margin-right: 8px;
 
   /* Inside auto layout */
   flex: none;

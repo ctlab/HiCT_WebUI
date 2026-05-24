@@ -20,48 +20,15 @@
  -->
 
 <template>
-  <p class="w-100 m-0 text-lg-center"><b>Visualization presets:</b></p>
-  <div v-if="hasTwoSources" class="visualization-source-selector px-2 pt-2">
-    <label class="form-label small mb-1">Preset target</label>
-    <div class="visualization-source-row">
-      <div class="btn-group flex-grow-1" role="group" aria-label="Visualization preset source">
-        <button
-          type="button"
-          class="btn btn-sm"
-          :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
-          @click="matrixViewStore.setActiveVisualizationSource('PRIMARY')"
-        >
-          PRIMARY
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm"
-          :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
-          @click="matrixViewStore.setActiveVisualizationSource('SECONDARY')"
-        >
-          SECONDARY
-        </button>
-      </div>
-      <button
-        type="button"
-        class="btn btn-sm layer-swap-button"
-        :class="layersSwapped ? 'btn-secondary active' : 'btn-outline-secondary'"
-        title="Swap Layers"
-        aria-label="Swap Layers"
-        @click="swapLayers"
-      >
-        <i class="bi bi-shuffle"></i>
-      </button>
-    </div>
-  </div>
+  <p class="w-100 m-0 text-lg-center saved-visual-title"><b>Visualization presets:</b></p>
   <div
-    class="btn-group w-100 p-2"
+    class="btn-group w-100 px-2 py-1"
     role="group"
     aria-label="Visualization presets"
   >
     <button
       type="button"
-      class="btn btn-outline-primary"
+      class="btn btn-sm btn-outline-primary"
       data-bs-toggle="tooltip"
       data-bs-placement="bottom"
       title="Save current visualization options"
@@ -71,14 +38,14 @@
     </button>
     <button
       type="button"
-      class="btn btn-outline-primary"
+      class="btn btn-sm btn-outline-primary"
       @click="exportOptions"
     >
       Export
     </button>
     <button
       type="button"
-      class="btn btn-outline-primary"
+      class="btn btn-sm btn-outline-primary"
       @click="importFileBtn?.click()"
     >
       Import
@@ -110,7 +77,7 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { computed, Ref, ref, shallowRef, triggerRef, onMounted, watch } from "vue";
+import { Ref, ref, shallowRef, triggerRef, onMounted, watch } from "vue";
 import SavedVisualOptionsElement from "./SavedVisualOptionsElement.vue";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
@@ -123,7 +90,6 @@ import { useStyleStore } from "@/app/stores/styleStore";
 import { ColorTranslator } from "colortranslator";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
 import { useSessionStore } from "@/app/stores/sessionStore";
-import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
   visualizationOptionsStore
@@ -137,9 +103,6 @@ onMounted(() => {
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const sessionStore = useSessionStore();
-const matrixViewStore = useMatrixViewStore();
-const { presentationMode, activeVisualizationSource, layersSwapped } = storeToRefs(matrixViewStore);
-const hasTwoSources = computed(() => presentationMode.value !== "single");
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -207,21 +170,6 @@ function saveOptions() {
     ),
   });
   bumpSavedOptions();
-}
-
-function swapLayers(): void {
-  props.mapManager?.visualizationManager
-    .swapRenderPipelineLayersAndReload()
-    .then((swapped) => {
-      if (!swapped) {
-        toast("No active two-layer rendering pipeline to swap");
-        return;
-      }
-      matrixViewStore.toggleLayersSwapped();
-    })
-    .catch((error) => {
-      toast.error(String(error ?? "Failed to swap rendering layers"));
-    });
 }
 
 function removeOption(option_id: number) {
@@ -699,27 +647,15 @@ function importOptionsFromFile() {
   flex-grow: 0;
 
   height: 90%;
-  max-height: 200px;
+  max-height: 180px;
   overflow-y: scroll;
   overflow-x: hidden;
   width: 100%;
   /* padding-top: 15px; */
-  padding-right: 20px;
+  padding-right: 10px;
 }
 
-.visualization-source-row {
-  display: flex;
-  align-items: stretch;
-  gap: 0.45rem;
-}
-
-.layer-swap-button {
-  width: 2.35rem;
-  min-width: 2.35rem;
-  border-radius: 0.55rem;
-}
-
-.layer-swap-button.active {
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+.saved-visual-title {
+  font-size: 0.92rem;
 }
 </style>

@@ -24,129 +24,123 @@
     Error: {{ errorMessage }}
   </div>
   <div class="w-100">
-    <!-- <div id="gradsample" :style="gradstyle"></div> -->
-    <ul class="list-group list-group-horizontal w-100 m-0 p-0">
-      <li class="list-group-item w-100 m-0 p-2">
-        <p class="m-0 p-0 w-100"><b>Lower threshold</b></p>
-        <ul class="list-group">
-          <li class="list-group-item w-100 h-100">
+    <div class="threshold-compact-card">
+      <div class="threshold-input-grid">
+        <label class="threshold-field">
+          <span>Lower</span>
+          <div class="threshold-field-row">
             <input
-              class="form-check-input number-input w-100 h-100 m-0"
+              class="form-control form-control-sm threshold-number-input"
               type="number"
               lang="en"
+              step="any"
               v-model.number="lowerBound"
               @keydown.enter="applySettings"
             />
-          </li>
-          <li class="list-group-item w-100 h-100">
             <ColorPickerRectangle
               :position="'left'"
               :getDefaultColor="fromColorFn"
               @onColorChanged="(nc: ColorTranslator) => (fromColor = nc)"
-            >
-            </ColorPickerRectangle>
-          </li>
-        </ul>
-      </li>
-      <li class="list-group-item w-100 m-0 p-2">
-        <p class="m-0 p-0 w-100"><b>Upper threshold</b></p>
-        <ul class="list-group">
-          <li class="list-group-item w-100 h-100">
+            />
+          </div>
+        </label>
+        <label class="threshold-field">
+          <span>Upper</span>
+          <div class="threshold-field-row">
             <input
-              class="form-check-input number-input w-100 h-100 m-0"
+              class="form-control form-control-sm threshold-number-input"
               type="number"
               lang="en"
+              step="any"
               v-model.number="upperBound"
               @keydown.enter="applySettings"
             />
-          </li>
-          <li class="list-group-item w-100 h-100">
             <ColorPickerRectangle
               :position="'left'"
               :getDefaultColor="toColorFn"
               @onColorChanged="(nc: ColorTranslator) => (toColor = nc)"
-            >
-            </ColorPickerRectangle>
-          </li>
-        </ul>
-      </li>
-    </ul>
-    <div
-      class="threshold-range-slider"
-      aria-label="Threshold range"
-      :style="thresholdSliderVars"
-    >
-      <div class="threshold-range-track" :style="thresholdTrackStyle"></div>
-      <input
-        class="threshold-range-input threshold-range-input_lower"
-        type="range"
-        :min="sliderPositionMin"
-        :max="sliderPositionMax"
-        :step="sliderStep"
-        :value="lowerSliderValue"
-        aria-label="Lower threshold"
-        @input="onLowerRangeInput"
-      />
-      <input
-        class="threshold-range-input threshold-range-input_upper"
-        type="range"
-        :min="sliderPositionMin"
-        :max="sliderPositionMax"
-        :step="sliderStep"
-        :value="upperSliderValue"
-        aria-label="Upper threshold"
-        @input="onUpperRangeInput"
-      />
-      <div class="threshold-range-labels">
-        <span>{{ formatSignal(sliderLowerLimit) }}</span>
-        <span>{{ formatSignal(lowerBound) }} - {{ formatSignal(upperBound) }}</span>
-        <span>{{ formatSignal(sliderUpperLimit) }}</span>
-      </div>
-    </div>
-    <div class="threshold-range-options">
-      <label class="threshold-range-bound">
-        <span>Slider min</span>
-        <input
-          v-model.number="sliderLowerLimit"
-          type="number"
-          class="form-control form-control-sm"
-          step="any"
-          @change="onSliderLimitChanged"
-        />
-      </label>
-      <label class="threshold-range-bound">
-        <span>Slider max</span>
-        <input
-          v-model.number="sliderUpperLimit"
-          type="number"
-          class="form-control form-control-sm"
-          step="any"
-          @change="onSliderLimitChanged"
-        />
-      </label>
-      <div class="form-check form-switch threshold-log-switch">
-        <input
-          id="threshold-log-scale"
-          v-model="sliderLogScale"
-          class="form-check-input"
-          type="checkbox"
-          role="switch"
-        />
-        <label class="form-check-label" for="threshold-log-scale">
-          log2(1+x)
+            />
+          </div>
         </label>
       </div>
-    </div>
-    <div v-if="applyCoolerWeights" class="cooler-weights-hint">
-      Cooler weights are active. Bins with missing or near-zero weights can
-      appear as white stripes; compare with an unweighted/raw preset before
-      treating those regions as absent signal.
-    </div>
-    <div class="w-100">
+
+      <div
+        class="threshold-range-slider"
+        aria-label="Threshold range"
+        :style="thresholdSliderVars"
+      >
+        <div class="threshold-range-track" :style="thresholdTrackStyle"></div>
+        <input
+          class="threshold-range-input threshold-range-input_lower"
+          type="range"
+          :min="sliderPositionMin"
+          :max="sliderPositionMax"
+          :step="sliderStep"
+          :value="lowerSliderValue"
+          aria-label="Lower threshold"
+          @input="onLowerRangeInput"
+        />
+        <input
+          class="threshold-range-input threshold-range-input_upper"
+          type="range"
+          :min="sliderPositionMin"
+          :max="sliderPositionMax"
+          :step="sliderStep"
+          :value="upperSliderValue"
+          aria-label="Upper threshold"
+          @input="onUpperRangeInput"
+        />
+        <div class="threshold-range-labels">
+          <input
+            v-model.number="sliderLowerLimit"
+            type="number"
+            class="threshold-edge-input"
+            step="any"
+            aria-label="Slider minimum signal"
+            @change="onSliderLimitChanged"
+          />
+          <span>{{ formatSignal(lowerBound) }} - {{ formatSignal(upperBound) }}</span>
+          <input
+            v-model.number="sliderUpperLimit"
+            type="number"
+            class="threshold-edge-input text-end"
+            step="any"
+            aria-label="Slider maximum signal"
+            @change="onSliderLimitChanged"
+          />
+        </div>
+      </div>
+
+      <div class="threshold-toolbar">
+        <div class="form-check form-switch threshold-log-switch">
+          <input
+            id="threshold-log-scale"
+            v-model="sliderLogScale"
+            class="form-check-input"
+            type="checkbox"
+            role="switch"
+          />
+          <label class="form-check-label" for="threshold-log-scale">
+            log2(1+x)
+          </label>
+        </div>
+        <details v-if="applyCoolerWeights" class="cooler-weights-hint">
+          <summary title="Cooler weights warning">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            Cooler weights
+          </summary>
+          <div>
+            Bins with missing or near-zero weights can appear as white stripes;
+            compare with an unweighted/raw preset before treating those regions
+            as absent signal.
+          </div>
+        </details>
+      </div>
+
       <button
         type="button"
         id="gradient-apply-button"
-        class="btn m-1 gradient-apply-button"
+        class="btn gradient-apply-button"
         :style="gradstyle"
         @click="applySettings"
       >
@@ -205,9 +199,9 @@ const toColorFn: Ref<() => ColorTranslator> = ref(() => toColor.value) as Ref<
 >;
 
 const gradstyle = ref({
-  width: "98%",
-  height: "2rem",
-  margin: "1%",
+  width: "100%",
+  height: "1.8rem",
+  margin: "0",
   "background-image":
     "linear-gradient(to right," +
     fromColor.value.RGBA +
@@ -331,9 +325,9 @@ watch(
     }
     gradstyle.value["background-image"] =
       "linear-gradient(to right," +
-      fromColor.value +
+      fromColor.value.RGBA +
       " , " +
-      toColor.value +
+      toColor.value.RGBA +
       ")";
     fromColorFn.value = () => fromColor.value;
     toColorFn.value = () => toColor.value;
@@ -519,8 +513,8 @@ function formatSignal(value: number): string {
 }
 
 #gradient-apply-button {
-  width: 250px;
-  margin: 15px;
+  width: 100%;
+  margin: 0;
 }
 
 .gradient-apply-button {
@@ -528,19 +522,57 @@ function formatSignal(value: number): string {
     0 0 2px #000,
     0 0 1px #000;
   border: none;
+  border-radius: 0.45rem;
+  font-weight: 600;
+}
+
+.threshold-compact-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.45rem 0.55rem 0.55rem;
+  background: var(--hict-surface-bg, #ffffff);
+}
+
+.threshold-input-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+}
+
+.threshold-field {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  color: #4b5563;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.threshold-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.45rem;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.threshold-number-input {
+  min-height: 1.7rem;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.82rem;
 }
 
 .threshold-range-slider {
   position: relative;
-  padding: 0.75rem 0.75rem 0.35rem;
+  padding: 0.48rem 0.35rem 0;
+  min-height: 2.75rem;
 }
 
 .threshold-range-track {
   position: absolute;
-  left: 0.75rem;
-  right: 0.75rem;
-  top: 1.15rem;
-  height: 0.45rem;
+  left: 0.35rem;
+  right: 0.35rem;
+  top: 0.83rem;
+  height: 0.34rem;
   border-radius: 999px;
   border: 1px solid rgba(0, 0, 0, 0.15);
   pointer-events: none;
@@ -548,10 +580,10 @@ function formatSignal(value: number): string {
 
 .threshold-range-input {
   position: absolute;
-  left: 0.75rem;
-  right: 0.75rem;
-  top: 0.75rem;
-  width: calc(100% - 1.5rem);
+  left: 0.35rem;
+  right: 0.35rem;
+  top: 0.42rem;
+  width: calc(100% - 0.7rem);
   pointer-events: none;
   appearance: none;
   background: transparent;
@@ -559,8 +591,8 @@ function formatSignal(value: number): string {
 
 .threshold-range-input::-webkit-slider-thumb {
   appearance: none;
-  width: 0.95rem;
-  height: 0.95rem;
+  width: 0.82rem;
+  height: 0.82rem;
   border-radius: 50%;
   border: 2px solid #fff;
   background: #0d6efd;
@@ -569,8 +601,8 @@ function formatSignal(value: number): string {
 }
 
 .threshold-range-input::-moz-range-thumb {
-  width: 0.95rem;
-  height: 0.95rem;
+  width: 0.82rem;
+  height: 0.82rem;
   border-radius: 50%;
   border: 2px solid #fff;
   background: #0d6efd;
@@ -595,43 +627,89 @@ function formatSignal(value: number): string {
 }
 
 .threshold-range-labels {
+  display: grid;
+  grid-template-columns: 4.4rem minmax(0, 1fr) 4.4rem;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 1.2rem;
+  font-size: 0.75rem;
+  color: #5c6773;
+}
+
+.threshold-range-labels > span {
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.threshold-edge-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px dotted rgba(92, 103, 115, 0.65);
+  border-radius: 0;
+  background: transparent;
+  color: #5c6773;
+  font-size: 0.75rem;
+  line-height: 1.1;
+  padding: 0 0.1rem;
+}
+
+.threshold-edge-input:focus {
+  outline: 1px solid rgba(13, 110, 253, 0.4);
+  background: rgba(13, 110, 253, 0.06);
+}
+
+.threshold-toolbar {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  margin-top: 1.35rem;
-  font-size: 0.75rem;
-  color: #5c6773;
-}
-
-.cooler-weights-hint {
-  margin: 0.15rem 0.5rem 0.5rem;
-  padding: 0.45rem 0.55rem;
-  border-left: 3px solid #f0ad4e;
-  border-radius: 0.35rem;
-  background: rgba(240, 173, 78, 0.12);
-  color: var(--hict-surface-fg, #343a40);
-  font-size: 0.75rem;
-  line-height: 1.25;
-}
-
-.threshold-range-options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.45rem 0.6rem;
-  padding: 0 0.5rem 0.45rem;
-}
-
-.threshold-range-bound {
-  display: grid;
-  gap: 0.2rem;
-  margin: 0;
-  font-size: 0.72rem;
-  color: #5c6773;
+  gap: 0.35rem;
+  min-height: 1.45rem;
 }
 
 .threshold-log-switch {
-  grid-column: 1 / -1;
   margin: 0;
-  font-size: 0.78rem;
+  min-height: 0;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.threshold-log-switch .form-check-input {
+  margin-top: 0.12rem;
+}
+
+.cooler-weights-hint {
+  min-width: 0;
+  margin: 0;
+  color: var(--hict-surface-fg, #343a40);
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.cooler-weights-hint summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+  color: #8a5a05;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.cooler-weights-hint summary::-webkit-details-marker {
+  display: none;
+}
+
+.cooler-weights-hint[open] {
+  padding: 0.35rem 0.45rem;
+  border-left: 3px solid #f0ad4e;
+  border-radius: 0.35rem;
+  background: rgba(240, 173, 78, 0.12);
+}
+
+.cooler-weights-hint[open] summary {
+  margin-bottom: 0.25rem;
 }
 </style>

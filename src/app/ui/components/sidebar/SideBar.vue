@@ -73,6 +73,42 @@
 
       <div v-if="props.mapManager" class="sidebar-panel-content">
         <template v-if="activeSidebarPanel === 'visualization'">
+          <div v-if="hasTwoSources" class="visualization-source-selector px-2 pt-2">
+            <div class="visualization-source-row">
+              <div
+                class="btn-group flex-grow-1"
+                role="group"
+                aria-label="Visualization source"
+              >
+                <button
+                  type="button"
+                  class="btn btn-sm"
+                  :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
+                  @click="matrixViewStore.setActiveVisualizationSource('PRIMARY')"
+                >
+                  PRIMARY
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm"
+                  :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
+                  @click="matrixViewStore.setActiveVisualizationSource('SECONDARY')"
+                >
+                  SECONDARY
+                </button>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm layer-swap-button"
+                :class="layersSwapped ? 'btn-secondary active' : 'btn-outline-secondary'"
+                title="Swap Layers"
+                aria-label="Swap Layers"
+                @click="swapLayers"
+              >
+                <i class="bi bi-shuffle"></i>
+              </button>
+            </div>
+          </div>
           <VisualziationSettingsEditor :map-manager="props.mapManager" />
 
           <!-- <div id="color-range" v-if="props.mapManager">
@@ -98,7 +134,7 @@
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import LayerComponent from "@/app/ui/components/sidebar/LayerComponent.vue";
 import SavedLocations from "@/app/ui/components/sidebar/SavedLocations.vue";
-import { ref, watch, type Ref } from "vue";
+import { computed, ref, watch, type Ref } from "vue";
 import { CommonEventManager } from "@/app/core/mapmanagers/CommonEventManager";
 import { BorderStyle } from "@/app/core/tracks/Track2DSymmetric";
 import Style from "ol/style/Style";
@@ -110,11 +146,16 @@ import VisualziationSettingsEditor from "./VisualziationSettingsEditor.vue";
 import SavedVisualOptions from "./SavedVisualOptions.vue";
 import { storeToRefs } from "pinia";
 import { ColorTranslator } from "colortranslator";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 
 const stylesStore = useStyleStore();
+const matrixViewStore = useMatrixViewStore();
 const activeSidebarPanel = ref<"visualization" | "entities">("visualization");
 
 const { mapBackgroundColor } = storeToRefs(stylesStore);
+const { presentationMode, activeVisualizationSource, layersSwapped } =
+  storeToRefs(matrixViewStore);
+const hasTwoSources = computed(() => presentationMode.value !== "single");
 /// @ts-expect-error "Style objects are not cloneable"
 const backgroundColorStyle: Ref<Style> = ref(
   new Style({
@@ -415,6 +456,21 @@ function getEventManager(): CommonEventManager | undefined {
     ? new CommonEventManager(props.mapManager)
     : undefined;
 }
+
+function swapLayers(): void {
+  props.mapManager?.visualizationManager
+    .swapRenderPipelineLayersAndReload()
+    .then((swapped) => {
+      if (!swapped) {
+        toast("No active two-layer rendering pipeline to swap");
+        return;
+      }
+      matrixViewStore.toggleLayersSwapped();
+    })
+    .catch((error) => {
+      toast.error(String(error ?? "Failed to swap rendering layers"));
+    });
+}
 </script>
 
 <style scoped>
@@ -514,6 +570,37 @@ function getEventManager(): CommonEventManager | undefined {
   width: 100%;
 }
 
+.visualization-source-selector {
+  background: var(--hict-surface-bg, #ffffff);
+  box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.075);
+}
+
+.visualization-source-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.45rem;
+}
+
+.visualization-source-row .btn-group .btn:first-child {
+  border-top-left-radius: 0.55rem;
+  border-bottom-left-radius: 0.55rem;
+}
+
+.visualization-source-row .btn-group .btn:last-child {
+  border-top-right-radius: 0.55rem;
+  border-bottom-right-radius: 0.55rem;
+}
+
+.layer-swap-button {
+  width: 2.35rem;
+  min-width: 2.35rem;
+  border-radius: 0.55rem;
+}
+
+.layer-swap-button.active {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
 #minimap {
   height: 200px;
   background-color: grey;
@@ -545,19 +632,19 @@ function getEventManager(): CommonEventManager | undefined {
 #saved-visual-settings {
   display: flex;
   flex-direction: column;
-  padding: 16px 0px;
-  gap: 8px;
+  padding: 8px 0px;
+  gap: 4px;
 
   background: var(--hict-surface-bg, #ffffff);
 
   box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.075);
 
-  max-height: 320px;
+  max-height: 260px;
   /* overflow-y: scroll; */
   overflow-x: hidden;
   width: 100%;
-  padding-top: 15px;
-  padding-right: 20px;
+  padding-top: 8px;
+  padding-right: 10px;
 }
 
 #saved-locations {

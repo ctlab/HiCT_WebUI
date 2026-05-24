@@ -405,8 +405,16 @@ class ContactMapManager {
             const y = tile.row * tileSize;
             const tileWidth = Math.min(tileSize, width - x);
             const tileHeight = Math.min(tileSize, height - y);
+            const imageHref =
+              tileWidth < tileSize || tileHeight < tileSize
+                ? await this.cropTileImageDataUrl(
+                    String(data.image),
+                    tileWidth,
+                    tileHeight
+                  )
+                : String(data.image);
             svgImages.push(
-              `<image x=\"${x}\" y=\"${y}\" width=\"${tileWidth}\" height=\"${tileHeight}\" href=\"${escapeAttr(data.image)}\" />`
+              `<image x=\"${x}\" y=\"${y}\" width=\"${tileWidth}\" height=\"${tileHeight}\" href=\"${escapeAttr(imageHref)}\" />`
             );
           }
           completed += 1;
@@ -473,16 +481,58 @@ class ContactMapManager {
     const blob = new Blob([svg], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
     try {
-      const image = new Image();
-      await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve();
-        image.onerror = (error) => reject(error);
-        image.src = url;
-      });
-      return image;
+      return await this.loadImageUrl(url);
     } finally {
       URL.revokeObjectURL(url);
     }
+  }
+
+  private async loadImageUrl(url: string): Promise<HTMLImageElement> {
+    const image = new Image();
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = (error) => reject(error);
+      image.src = url;
+    });
+    return image;
+  }
+
+  private async cropTileImageDataUrl(
+    dataUrl: string,
+    targetWidth: number,
+    targetHeight: number
+  ): Promise<string> {
+    const width = Math.max(1, Math.round(targetWidth));
+    const height = Math.max(1, Math.round(targetHeight));
+    const image = await this.loadImageUrl(dataUrl);
+    const naturalWidth = image.naturalWidth || image.width;
+    const naturalHeight = image.naturalHeight || image.height;
+    if (naturalWidth === width && naturalHeight === height) {
+      return dataUrl;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return dataUrl;
+    }
+    context.clearRect(0, 0, width, height);
+    const sourceWidth = Math.min(width, Math.max(1, naturalWidth));
+    const sourceHeight = Math.min(height, Math.max(1, naturalHeight));
+    context.drawImage(
+      image,
+      0,
+      0,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      sourceWidth,
+      sourceHeight
+    );
+    return canvas.toDataURL("image/png");
   }
 
   private drawOutlinedCanvasText(
