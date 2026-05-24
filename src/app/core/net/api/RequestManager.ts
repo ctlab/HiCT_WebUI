@@ -106,6 +106,8 @@ import {
   GetTracksPrecomputeStatusRequest,
   ProbeTrackPrecomputeCacheRequest,
   GetWorkerDiagnosticsRequest,
+  GetNativeProcessingStatusRequest,
+  SetNativeProcessingEnabledRequest,
   GetRenderPipelineRequest,
   SetRenderPipelineRequest,
   ResetRenderPipelineRequest,
@@ -150,6 +152,16 @@ export type SecondarySourceStatusResponse = {
   requestedFilename?: string;
   warnings: string[];
   compatibility?: SecondarySourceCompatibility;
+};
+
+export type NativeProcessingStatusResponse = {
+  requested: boolean;
+  enabled: boolean;
+  available: boolean;
+  version: string;
+  source: string;
+  reason: string;
+  lastFailure: string;
 };
 
 class RequestManager {
@@ -243,6 +255,20 @@ class RequestManager {
         ? (json.warnings as unknown[]).map((value) => String(value))
         : [],
       compatibility,
+    };
+  }
+
+  private parseNativeProcessingStatus(
+    json: Record<string, unknown>
+  ): NativeProcessingStatusResponse {
+    return {
+      requested: Boolean(json.requested ?? false),
+      enabled: Boolean(json.enabled ?? false),
+      available: Boolean(json.available ?? false),
+      version: String(json.version ?? "unknown"),
+      source: String(json.source ?? ""),
+      reason: String(json.reason ?? ""),
+      lastFailure: String(json.lastFailure ?? ""),
     };
   }
 
@@ -685,6 +711,20 @@ class RequestManager {
       .then((json) =>
         new WorkerSchedulerDiagnosticsResponseDTO(json).toEntity()
       );
+  }
+
+  public async getNativeProcessingStatus(): Promise<NativeProcessingStatusResponse> {
+    return this.sendRequest(new GetNativeProcessingStatusRequest())
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => this.parseNativeProcessingStatus(json));
+  }
+
+  public async setNativeProcessingEnabled(
+    enabled: boolean
+  ): Promise<NativeProcessingStatusResponse> {
+    return this.sendRequest(new SetNativeProcessingEnabledRequest({ enabled }))
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => this.parseNativeProcessingStatus(json));
   }
 
   public async getRenderPipelineConfig(): Promise<Record<string, unknown>> {

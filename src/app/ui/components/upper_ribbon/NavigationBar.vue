@@ -226,6 +226,22 @@
                   Render tiles from binary signal (experimental)
                 </label>
               </li>
+              <li class="form-check mt-2">
+                <input
+                  id="toggle-native-processing"
+                  class="form-check-input"
+                  type="checkbox"
+                  v-model="nativeProcessingRequested"
+                  :disabled="nativeProcessingBusy"
+                  @change="onNativeProcessingChanged"
+                />
+                <label class="form-check-label" for="toggle-native-processing">
+                  Use native code processing
+                </label>
+                <div class="native-processing-status" :class="nativeProcessingStatusClass">
+                  {{ nativeProcessingStatusText }}
+                </div>
+              </li>
               <li><hr class="dropdown-divider" /></li>
               <li>
                 <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenWorkerDiagnostics">
@@ -466,7 +482,7 @@
 
 <script setup lang="ts">
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
-import { defineAsyncComponent, Ref, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, Ref, ref, watch } from "vue";
 import {
   GetAGPForAssemblyRequest,
   GetFastaForAssemblyRequest,
@@ -484,6 +500,7 @@ import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import type { FastaLinkResponse } from "@/app/core/net/api/response";
+import type { NativeProcessingStatusResponse } from "@/app/core/net/api/RequestManager";
 import {
   licenseText,
   projectAttribution,
@@ -506,6 +523,9 @@ const aboutOpen = ref(false);
 const aboutActiveTab = ref<"about" | "attribution">("about");
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
+const nativeProcessingStatus = ref<NativeProcessingStatusResponse | null>(null);
+const nativeProcessingRequested = ref(false);
+const nativeProcessingBusy = ref(false);
 const backendVersion = ref("loading...");
 const webuiVersion = ref(String((pkg as { version?: string })?.version ?? "unknown"));
 const webuiCommit = ref("unknown");
@@ -535,6 +555,32 @@ const { requestErrorToastsEnabled, webuiErrorToastsEnabled } =
   storeToRefs(errorToastStore);
 const { customZoomSliderEnabled, binaryTileTransportEnabled } =
   storeToRefs(uiSettingsStore);
+
+const nativeProcessingStatusClass = computed(() => ({
+  "text-success": nativeProcessingStatus.value?.enabled,
+  "text-warning":
+    nativeProcessingStatus.value?.requested && !nativeProcessingStatus.value?.enabled,
+  "text-muted": !nativeProcessingStatus.value?.requested,
+}));
+
+const nativeProcessingStatusText = computed(() => {
+  const status = nativeProcessingStatus.value;
+  if (!status) {
+    return "Status is not loaded yet.";
+  }
+  if (status.enabled) {
+    return `Native backend active (${status.version}).`;
+  }
+  if (status.requested && !status.available) {
+    return `Native backend unavailable: ${status.reason}`;
+  }
+  if (status.requested) {
+    return `Native backend disabled: ${status.reason}`;
+  }
+  return status.available
+    ? `Available (${status.version}), currently disabled.`
+    : "Not bundled; Java backend is active.";
+});
 
 type HictDesktopBridge = {
   platform?: string;
@@ -566,6 +612,58 @@ function onOpenRenderingPipeline() {
 
 function onOpenWorkerDiagnostics() {
   workerDiagnosticsOpen.value = true;
+}
+
+async function refreshNativeProcessingStatus(): Promise<void> {
+  nativeProcessingBusy.value = true;
+  try {
+    const status =
+      await props.networkManager.requestManager.getNativeProcessingStatus();
+    nativeProcessingStatus.value = status;
+    nativeProcessingRequested.value = status.requested;
+  } catch (error) {
+    nativeProcessingStatus.value = {
+      requested: false,
+      enabled: false,
+      available: false,
+      version: "unknown",
+      source: "",
+      reason: "Failed to query native backend status: " + String(error),
+      lastFailure: "",
+    };
+  } finally {
+    nativeProcessingBusy.value = false;
+  }
+}
+
+async function onNativeProcessingChanged(): Promise<void> {
+  nativeProcessingBusy.value = true;
+  try {
+    const status =
+      await props.networkManager.requestManager.setNativeProcessingEnabled(
+        nativeProcessingRequested.value
+      );
+    nativeProcessingStatus.value = status;
+    nativeProcessingRequested.value = status.requested;
+    if (status.enabled) {
+      toast.success("Native code processing enabled.");
+    } else if (status.requested) {
+      toast("Native code processing is unavailable; Java backend remains active.", {
+        style: {
+          "background-color": "lightyellow",
+          color: "black",
+        },
+      });
+    } else {
+      toast("Native code processing disabled; Java backend is active.");
+    }
+    props.mapManager?.reloadTiles();
+  } catch (error) {
+    toast.error("Failed to update native processing setting: " + String(error));
+    await refreshNativeProcessingStatus();
+  } finally {
+    nativeProcessingBusy.value = false;
+  }
 }
 
 function onOpenApiDocs(): void {
@@ -854,6 +952,10 @@ watch(
   }
 );
 
+onMounted(() => {
+  void refreshNativeProcessingStatus();
+});
+
 function onFASTAFileSelected() {
   openingFASTAFile.value = false;
 }
@@ -1080,5 +1182,14 @@ function onAssemblyAGPRequest() {
 
 .attribution-notes li {
   margin-bottom: 6px;
+}
+
+.native-processing-status {
+  font-size: 12px;
+  line-height: 1.25;
+  margin-left: 0;
+  margin-top: 2px;
+  max-width: 260px;
+  white-space: normal;
 }
 </style>

@@ -389,6 +389,20 @@ class GetWorkerDiagnosticsRequest implements HiCTAPIRequest {
   requestPath = "/diagnostics/workers";
 }
 
+class GetNativeProcessingStatusRequest implements HiCTAPIRequest {
+  requestPath = "/native_processing/status";
+}
+
+class SetNativeProcessingEnabledRequest implements HiCTAPIRequest {
+  requestPath = "/native_processing/enabled";
+
+  public constructor(
+    public readonly options: {
+      readonly enabled: boolean;
+    }
+  ) {}
+}
+
 class GetRenderPipelineRequest implements HiCTAPIRequest {
   requestPath = "/render_pipeline/get";
 }
@@ -665,6 +679,8 @@ export {
   GetTracksPrecomputeStatusRequest,
   ProbeTrackPrecomputeCacheRequest,
   GetWorkerDiagnosticsRequest,
+  GetNativeProcessingStatusRequest,
+  SetNativeProcessingEnabledRequest,
   GetRenderPipelineRequest,
   SetRenderPipelineRequest,
   ResetRenderPipelineRequest,

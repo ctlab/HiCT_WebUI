@@ -41,6 +41,8 @@ import {
   GetSecondarySourceStatusRequest,
   SetAssemblyInfoSourceRequest,
   GetWorkerDiagnosticsRequest,
+  GetNativeProcessingStatusRequest,
+  SetNativeProcessingEnabledRequest,
   GetRenderPipelineRequest,
   SetRenderPipelineRequest,
   ResetRenderPipelineRequest,
@@ -240,6 +242,12 @@ abstract class HiCTAPIRequestDTO<
         );
       case entity instanceof GetWorkerDiagnosticsRequest:
         return new GetWorkerDiagnosticsRequestDTO(entity);
+      case entity instanceof GetNativeProcessingStatusRequest:
+        return new GetNativeProcessingStatusRequestDTO(entity);
+      case entity instanceof SetNativeProcessingEnabledRequest:
+        return new SetNativeProcessingEnabledRequestDTO(
+          entity as SetNativeProcessingEnabledRequest
+        );
       case entity instanceof GetRenderPipelineRequest:
         return new GetRenderPipelineRequestDTO(entity);
       case entity instanceof SetRenderPipelineRequest:
@@ -315,6 +323,14 @@ abstract class HiCTAPIRequestDTO<
         return new ListConvertibleMatrixFilesRequestDTO(
           entity as ListConvertibleMatrixFilesRequest
         );
+      case "/native_processing/status":
+        return new GetNativeProcessingStatusRequestDTO(
+          entity as GetNativeProcessingStatusRequest
+        );
+      case "/native_processing/enabled":
+        return new SetNativeProcessingEnabledRequestDTO(
+          entity as SetNativeProcessingEnabledRequest
+        );
       default:
         if (!("options" in entity)) {
           return new EmptyRequestDTO(entity);
@@ -378,6 +394,20 @@ class SetAssemblyInfoSourceRequestDTO extends HiCTAPIRequestDTO<SetAssemblyInfoS
 class GetWorkerDiagnosticsRequestDTO extends HiCTAPIRequestDTO<GetWorkerDiagnosticsRequest> {
   toDTO(): Record<string, unknown> {
     return {};
+  }
+}
+
+class GetNativeProcessingStatusRequestDTO extends HiCTAPIRequestDTO<GetNativeProcessingStatusRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class SetNativeProcessingEnabledRequestDTO extends HiCTAPIRequestDTO<SetNativeProcessingEnabledRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      enabled: this.entity.options.enabled,
+    };
   }
 }
 
@@ -939,4 +969,6 @@ export {
   SetVisualizationOptionsRequestDTO,
   SetViewportExpectedProfileRequestDTO,
   GetWorkerDiagnosticsRequestDTO,
+  GetNativeProcessingStatusRequestDTO,
+  SetNativeProcessingEnabledRequestDTO,
 };
