@@ -442,6 +442,52 @@
             "labelColor": "rgba(255, 255, 0, 1)"
           }
         }
+      },
+      {
+        "option_id": 9,
+        "options": {
+          "preLogBase": 10,
+          "postLogBase": 5,
+          "applyCoolerWeights": true,
+          "autoThresholdEnabled": true,
+          "autoThresholdQuantile": 0.995,
+          "colormap": {
+            "colormapType": "SimpleLinearGradient",
+            "startColorRGBAString": "rgba(255,255,255,1.000000)",
+            "endColorRGBAString": "rgba(232,0,0,1.000000)",
+            "minSignal": 0,
+            "maxSignal": 0.003
+          }
+        },
+        "name": "Hi-C balanced red auto",
+        "backgroundColor": "rgb(255,255,255)",
+        "signalThresholds": {
+          "lowerSignalBound": 0,
+          "upperSignalBound": 0.003
+        }
+      },
+      {
+        "option_id": 10,
+        "options": {
+          "preLogBase": 10,
+          "postLogBase": 0,
+          "applyCoolerWeights": false,
+          "autoThresholdEnabled": true,
+          "autoThresholdQuantile": 0.995,
+          "colormap": {
+            "colormapType": "SimpleLinearGradient",
+            "startColorRGBAString": "rgba(255,255,255,0.000000)",
+            "endColorRGBAString": "rgba(0,0,0,1.000000)",
+            "minSignal": 0,
+            "maxSignal": 1
+          }
+        },
+        "name": "Dotplot overlay black",
+        "backgroundColor": "rgb(255,255,255)",
+        "signalThresholds": {
+          "lowerSignalBound": 0,
+          "upperSignalBound": 1
+        }
       }
     ]
   }

@@ -50,27 +50,45 @@
         </LayerComponent>
       </div>
 
-      <VisualziationSettingsEditor
-        :map-manager="props.mapManager"
-        v-if="props.mapManager"
-      />
-
-      <!-- <div id="color-range" v-if="props.mapManager">
-        <ContrastSelector :map-manager="props.mapManager" />
-      </div> -->
-
-      <div id="saved-visual-settings">
-        <SavedVisualOptions
-          :map-manager="props.mapManager"
-          v-if="props.mapManager"
-        ></SavedVisualOptions>
+      <div v-if="props.mapManager" class="sidebar-panel-selector px-2 py-2">
+        <div class="btn-group w-100" role="group" aria-label="Sidebar content">
+          <button
+            type="button"
+            class="btn btn-sm"
+            :class="activeSidebarPanel === 'visualization' ? 'btn-primary' : 'btn-outline-primary'"
+            @click="activeSidebarPanel = 'visualization'"
+          >
+            Visualization
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            :class="activeSidebarPanel === 'entities' ? 'btn-primary' : 'btn-outline-primary'"
+            @click="activeSidebarPanel = 'entities'"
+          >
+            Entities
+          </button>
+        </div>
       </div>
 
-      <div id="saved-locations">
-        <SavedLocations
-          :map-manager="props.mapManager"
-          v-if="props.mapManager"
-        ></SavedLocations>
+      <div v-if="props.mapManager" class="sidebar-panel-content">
+        <template v-if="activeSidebarPanel === 'visualization'">
+          <VisualziationSettingsEditor :map-manager="props.mapManager" />
+
+          <!-- <div id="color-range" v-if="props.mapManager">
+            <ContrastSelector :map-manager="props.mapManager" />
+          </div> -->
+
+          <div id="saved-visual-settings">
+            <SavedVisualOptions :map-manager="props.mapManager"></SavedVisualOptions>
+          </div>
+        </template>
+
+        <template v-else>
+          <div id="saved-locations">
+            <SavedLocations :map-manager="props.mapManager"></SavedLocations>
+          </div>
+        </template>
       </div>
     </div>
   </aside>
@@ -84,7 +102,6 @@ import { ref, watch, type Ref } from "vue";
 import { CommonEventManager } from "@/app/core/mapmanagers/CommonEventManager";
 import { BorderStyle } from "@/app/core/tracks/Track2DSymmetric";
 import Style from "ol/style/Style";
-import MiniMap from "@/app/ui/components/sidebar/MiniMap.vue";
 import { toast } from "vue-sonner";
 import Stroke from "ol/style/Stroke";
 import { useStyleStore } from "@/app/stores/styleStore";
@@ -95,6 +112,7 @@ import { storeToRefs } from "pinia";
 import { ColorTranslator } from "colortranslator";
 
 const stylesStore = useStyleStore();
+const activeSidebarPanel = ref<"visualization" | "entities">("visualization");
 
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 /// @ts-expect-error "Style objects are not cloneable"
@@ -409,6 +427,10 @@ function getEventManager(): CommonEventManager | undefined {
   gap: 1px;
 
   width: 350px;
+  min-width: 350px;
+  max-width: 350px;
+  max-height: 100%;
+  min-height: 0;
 
   right: 0px;
   top: 0px;
@@ -435,10 +457,12 @@ function getEventManager(): CommonEventManager | undefined {
   gap: 4px;
 
   /* Inside auto layout */
-  flex: none;
+  flex: 1 1 auto;
   order: 0;
-  flex-grow: 0;
+  flex-grow: 1;
   width: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 #layers-block {
@@ -448,7 +472,7 @@ function getEventManager(): CommonEventManager | undefined {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 16px;
+  padding: 12px 16px;
   gap: 8px;
 
   height: fit-content;
@@ -462,6 +486,31 @@ function getEventManager(): CommonEventManager | undefined {
   flex: none;
   order: 0;
   flex-grow: 0;
+  width: 100%;
+}
+
+.sidebar-panel-selector {
+  background: var(--hict-surface-bg, #ffffff);
+  box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.075);
+}
+
+.sidebar-panel-selector .btn:first-child {
+  border-top-left-radius: 0.6rem;
+  border-bottom-left-radius: 0.6rem;
+}
+
+.sidebar-panel-selector .btn:last-child {
+  border-top-right-radius: 0.6rem;
+  border-bottom-right-radius: 0.6rem;
+}
+
+.sidebar-panel-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   width: 100%;
 }
 
@@ -499,14 +548,11 @@ function getEventManager(): CommonEventManager | undefined {
   padding: 16px 0px;
   gap: 8px;
 
-  height: fit-content;
-
   background: var(--hict-surface-bg, #ffffff);
 
   box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.075);
 
-  height: 50%;
-  max-height: 350px;
+  max-height: 320px;
   /* overflow-y: scroll; */
   overflow-x: hidden;
   width: 100%;
@@ -523,7 +569,8 @@ function getEventManager(): CommonEventManager | undefined {
   padding: 16px 0px;
   gap: 8px;
 
-  height: fit-content;
+  min-height: 0;
+  flex: 1 1 auto;
 
   background: var(--hict-surface-bg, #ffffff);
 

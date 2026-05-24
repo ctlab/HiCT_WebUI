@@ -35,33 +35,38 @@
     </button>
     <ul id="normalization-dropdown-menu" class="dropdown-menu p-3">
       <li v-if="hasTwoSources">
-        <div class="mb-2">
+        <div class="mb-2 normalization-source-block">
           <label class="form-label small mb-1">Configure source</label>
-          <div class="btn-group w-100" role="group" aria-label="Visualization source">
+          <div class="normalization-source-row">
+            <div class="btn-group flex-grow-1" role="group" aria-label="Visualization source">
+              <button
+                type="button"
+                class="btn btn-sm"
+                :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
+                @click="matrixViewStore.setActiveVisualizationSource('PRIMARY')"
+              >
+                PRIMARY
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm"
+                :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
+                @click="matrixViewStore.setActiveVisualizationSource('SECONDARY')"
+              >
+                SECONDARY
+              </button>
+            </div>
             <button
               type="button"
-              class="btn btn-sm"
-              :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
-              @click="matrixViewStore.setActiveVisualizationSource('PRIMARY')"
+              class="btn btn-sm layer-swap-button"
+              :class="layersSwapped ? 'btn-secondary active' : 'btn-outline-secondary'"
+              title="Swap Layers"
+              aria-label="Swap Layers"
+              @click="swapLayers"
             >
-              PRIMARY
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm"
-              :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
-              @click="matrixViewStore.setActiveVisualizationSource('SECONDARY')"
-            >
-              SECONDARY
+              <i class="bi bi-shuffle"></i>
             </button>
           </div>
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-secondary w-100 mt-2"
-            @click="swapLayers"
-          >
-            Swap layers
-          </button>
           <small class="text-muted d-block mt-1">
             Applies normalization and thresholds only to the selected layer.
           </small>
@@ -286,7 +291,7 @@ const {
   colormap,
 } = storeToRefs(visualizationOptionsStore);
 const matrixViewStore = useMatrixViewStore();
-const { presentationMode, activeVisualizationSource } = storeToRefs(matrixViewStore);
+const { presentationMode, activeVisualizationSource, layersSwapped } = storeToRefs(matrixViewStore);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -380,7 +385,9 @@ function swapLayers(): void {
     .then((swapped) => {
       if (!swapped) {
         toast("No active two-layer rendering pipeline to swap");
+        return;
       }
+      matrixViewStore.toggleLayersSwapped();
     })
     .catch((error) => {
       toast.error(String(error ?? "Failed to swap rendering layers"));
@@ -465,15 +472,34 @@ onUnmounted(() => {
 
 <style scoped>
 #normalization-dropdown-menu {
-  white-space: nowrap;
+  min-width: min(34rem, calc(100vw - 2rem));
+  max-width: min(36rem, calc(100vw - 2rem));
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .number-input {
-  width: 100px;
+  width: 7.25rem;
   float: right;
 }
 
 #normalization-apply-group {
   width: 100%;
+}
+
+.normalization-source-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.layer-swap-button {
+  width: 2.35rem;
+  min-width: 2.35rem;
+  border-radius: 0.55rem;
+}
+
+.layer-swap-button.active {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 </style>

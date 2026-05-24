@@ -1157,6 +1157,7 @@ const waitForTrackPrecompute = async (): Promise<TracksPrecomputeStatusResponse>
 
 const applyWizardPresentationState = (): void => {
   matrixViewStore.setPresentationMode(viewMode.value);
+  matrixViewStore.setLayersSwapped(false);
   if (viewMode.value === "split") {
     matrixViewStore.setSelectionFastaSources("PRIMARY", "SECONDARY");
   } else {

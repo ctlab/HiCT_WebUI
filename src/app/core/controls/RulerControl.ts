@@ -50,6 +50,7 @@ class RulerControl extends Control {
   protected readonly mapManager: ContactMapManager;
   protected readonly viewAndLayersManager: HiCViewAndLayersManager;
   protected readonly contigDimensionHolder: ContigDimensionHolder;
+  protected readonly tooltip: HTMLDivElement;
 
   protected readonly mapBackgroundColor: Ref<ColorTranslator>;
   protected readonly colormap: Ref<Colormap>;
@@ -59,6 +60,23 @@ class RulerControl extends Control {
 
   public constructor(public readonly opt_options: Options) {
     const canvas = document.createElement("canvas");
+    const tooltip = document.createElement("div");
+    tooltip.className = "hict-ruler-tooltip";
+    Object.assign(tooltip.style, {
+      position: "absolute",
+      zIndex: "18",
+      maxWidth: "250px",
+      padding: "6px 8px",
+      borderRadius: "6px",
+      border: "1px solid rgba(17, 24, 39, 0.35)",
+      background: "rgba(17, 24, 39, 0.9)",
+      color: "rgba(244, 247, 252, 0.98)",
+      fontSize: "11px",
+      lineHeight: "1.25",
+      pointerEvents: "none",
+      boxShadow: "0 6px 20px rgba(0, 0, 0, 0.28)",
+      display: "none",
+    });
     let canvasSize: number[];
 
     if (opt_options.target) {
@@ -69,6 +87,8 @@ class RulerControl extends Control {
           : (opt_options.target as HTMLElement);
       if (parent) {
         parent.appendChild(canvas);
+        parent.appendChild(tooltip);
+        parent.style.position ||= "relative";
       } else {
         throw new Error(
           "Cannot find parent element for RulerControl with target " +
@@ -99,6 +119,7 @@ class RulerControl extends Control {
     };
     super(newOptions);
     this.canvas = canvas;
+    this.tooltip = tooltip;
     this.mapManager = opt_options.mapManager;
     this.viewAndLayersManager = this.mapManager.getLayersManager();
     this.contigDimensionHolder = this.mapManager.getContigDimensionHolder();
@@ -113,6 +134,10 @@ class RulerControl extends Control {
     this.mapBackgroundColor = mapBackgroundColor as Ref<ColorTranslator>;
 
     this.canvasSize = canvasSize;
+    this.canvas.addEventListener("mousemove", (event) =>
+      this.showRulerTooltip(event)
+    );
+    this.canvas.addEventListener("mouseleave", () => this.hideRulerTooltip());
   }
 
   render(mapEvent: MapEvent) {
@@ -439,6 +464,122 @@ class RulerControl extends Control {
       this.canvasSize[0] = mapSize[0];
       this.canvasSize[1] = DEFAULT_CANVAS_SIZE;
     }
+  }
+
+  private showRulerTooltip(event: MouseEvent): void {
+    const details = this.resolveRulerHoverDetails(event.offsetX, event.offsetY);
+    if (!details) {
+      this.hideRulerTooltip();
+      return;
+    }
+    const parent = this.canvas.parentElement;
+    if (!parent) {
+      return;
+    }
+    const left = Math.min(
+      Math.max(6, event.offsetX + 12),
+      Math.max(6, parent.clientWidth - 260)
+    );
+    const top = Math.min(
+      Math.max(6, event.offsetY + 12),
+      Math.max(6, parent.clientHeight - 86)
+    );
+    this.tooltip.innerHTML = details;
+    this.tooltip.style.left = `${Math.round(left)}px`;
+    this.tooltip.style.top = `${Math.round(top)}px`;
+    this.tooltip.style.display = "block";
+  }
+
+  private hideRulerTooltip(): void {
+    this.tooltip.style.display = "none";
+  }
+
+  private resolveRulerHoverDetails(offsetX: number, offsetY: number): string | null {
+    const map = this.mapManager.getMap();
+    const mapSize = map.getSize();
+    if (!mapSize) {
+      return null;
+    }
+    const mapView = map.getView();
+    const resolutionDescriptor =
+      this.viewAndLayersManager.currentViewState.resolutionDesciptor;
+    const activeHiCLayer = this.viewAndLayersManager.getActiveHiCDataLayer();
+    const targetProjection =
+      activeHiCLayer.getSource()?.getProjection() ?? mapView.getProjection();
+    const pixelResolution = mapView.getResolution() ?? 1;
+    const ps = this.contigDimensionHolder.prefix_sum_px.get(
+      resolutionDescriptor.bpResolution
+    );
+    if (!ps) {
+      return null;
+    }
+    const pixelMapSize = ps[ps.length - 1];
+    const fixed = transform(
+      mapView.calculateExtent(mapSize),
+      mapView.getProjection(),
+      targetProjection
+    ).map((coordinate) => coordinate / pixelResolution);
+    const layerPixelResolution = Number.isFinite(
+      resolutionDescriptor.pixelResolution
+    )
+      ? resolutionDescriptor.pixelResolution
+      : 1;
+    const fraction =
+      layerPixelResolution > 0 ? pixelResolution / layerPixelResolution : 1;
+    const mapBoxPixelCoordinates = {
+      left: Math.round(-fixed[0]),
+      top: Math.round(fixed[3]),
+    };
+    const visibleStart =
+      this.direction === "horizontal"
+        ? Math.round(Math.max(0, -fixed[0]))
+        : Math.round(Math.max(0, fixed[3]));
+    const axisOffset = this.direction === "horizontal" ? offsetX : offsetY;
+    const unclampedPx =
+      Math.round(
+        axisOffset -
+          visibleStart -
+          Math.min(
+            0,
+            this.direction === "horizontal"
+              ? mapBoxPixelCoordinates.left
+              : mapBoxPixelCoordinates.top
+          )
+      ) * fraction;
+    const px = Math.max(0, Math.min(pixelMapSize - 1, Math.round(unclampedPx)));
+    const bp = this.contigDimensionHolder.getStartBpOfPx(
+      px,
+      resolutionDescriptor.bpResolution
+    );
+    const bin = this.contigDimensionHolder.pixelToBin(
+      px,
+      resolutionDescriptor.bpResolution
+    );
+    const contig = this.contigDimensionHolder.getContigLocusByBp(bp);
+    const scaffold = this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp);
+    const scaffoldLine = scaffold
+      ? `Scaffold: ${this.escapeHtml(scaffold.scaffoldName)} +${this.formatInteger(scaffold.inScaffoldBp)} bp`
+      : "Scaffold: n/a";
+    const source = this.contigDimensionHolder.getSourceLocusByBp(bp);
+    return [
+      `<strong>${this.direction === "horizontal" ? "Horizontal" : "Vertical"} ruler</strong>`,
+      `Assembly: ${this.formatInteger(bp)} bp, bin ${this.formatInteger(bin)}, px ${this.formatInteger(px)}`,
+      `Contig: ${this.escapeHtml(contig.contigName)} +${this.formatInteger(contig.inContigBp)} bp`,
+      scaffoldLine,
+      `Source: ${this.escapeHtml(source.sourceContig)}:${this.formatInteger(source.sourceBp)} bp`,
+    ].join("<br />");
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  private formatInteger(value: number): string {
+    return Math.round(value).toLocaleString();
   }
 
   protected drawTickAtPxOffset(

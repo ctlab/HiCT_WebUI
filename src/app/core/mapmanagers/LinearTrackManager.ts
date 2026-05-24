@@ -495,6 +495,8 @@ class LinearTrackManager {
           trackType: track.type,
           startBp: Math.min(bin.startBp, bin.endBp),
           endBp: Math.max(bin.startBp, bin.endBp),
+          startPx: interval.startPx,
+          endPx: interval.endPx,
           value: Number.isFinite(bin.value) ? bin.value : 0,
           count: bin.count,
         };
@@ -510,7 +512,10 @@ class LinearTrackManager {
         strand: bin.strand,
         startBp: Math.min(bin.startBp, bin.endBp),
         endBp: Math.max(bin.startBp, bin.endBp),
+        startPx: interval.startPx,
+        endPx: interval.endPx,
         value: bin.value,
+        attributes: bin.attributes,
       };
     }
     return null;
@@ -2488,7 +2493,10 @@ type FeatureHoverInfo = {
   strand: string | null;
   startBp: number;
   endBp: number;
+  startPx: number;
+  endPx: number;
   value: number;
+  attributes: Record<string, string>;
 };
 
 type SignalHoverInfo = {
@@ -2498,6 +2506,8 @@ type SignalHoverInfo = {
   trackType: string;
   startBp: number;
   endBp: number;
+  startPx: number;
+  endPx: number;
   value: number;
   count: number;
 };

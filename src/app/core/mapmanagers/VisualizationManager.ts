@@ -278,6 +278,45 @@ const replaceColormapNode = (
   target.node.maxSignal = replacement.maxSignal;
 };
 
+const forceMinimumAlphaZero = (target: ColormapTarget): void => {
+  const color = target.node.startColor;
+  if (typeof color === "string" && /^#[0-9a-f]{8}$/i.test(color.trim())) {
+    target.node.startColor = `${color.trim().slice(0, 7)}00`;
+  }
+};
+
+const applyTopLayerTransparency = (
+  expression: unknown,
+  source: SourceName
+): void => {
+  if (!isRecord(expression)) {
+    return;
+  }
+  if (expression.type === "pixel_blend") {
+    const topTargets: ColormapTarget[] = [];
+    collectColormapTargets(expression.top, topTargets);
+    topTargets
+      .filter((target) => target.profile.source === source)
+      .forEach(forceMinimumAlphaZero);
+  }
+  [
+    "input",
+    "left",
+    "right",
+    "upper",
+    "lower",
+    "bottom",
+    "c1",
+    "c2",
+    "c3",
+    "alpha",
+  ].forEach((key) => {
+    if (key in expression) {
+      applyTopLayerTransparency(expression[key], source);
+    }
+  });
+};
+
 const swapPixelBlendLayers = (expression: unknown): boolean => {
   if (!isRecord(expression)) {
     return false;
@@ -398,6 +437,8 @@ class VisualizationManager {
         changed = true;
       }
     }
+    applyTopLayerTransparency(config.upperExpression, source);
+    applyTopLayerTransparency(config.lowerExpression, source);
     return changed;
   }
 

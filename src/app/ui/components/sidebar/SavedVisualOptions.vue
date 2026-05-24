@@ -23,22 +23,34 @@
   <p class="w-100 m-0 text-lg-center"><b>Visualization presets:</b></p>
   <div v-if="hasTwoSources" class="visualization-source-selector px-2 pt-2">
     <label class="form-label small mb-1">Preset target</label>
-    <div class="btn-group w-100" role="group" aria-label="Visualization preset source">
+    <div class="visualization-source-row">
+      <div class="btn-group flex-grow-1" role="group" aria-label="Visualization preset source">
+        <button
+          type="button"
+          class="btn btn-sm"
+          :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
+          @click="matrixViewStore.setActiveVisualizationSource('PRIMARY')"
+        >
+          PRIMARY
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
+          @click="matrixViewStore.setActiveVisualizationSource('SECONDARY')"
+        >
+          SECONDARY
+        </button>
+      </div>
       <button
         type="button"
-        class="btn btn-sm"
-        :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
-        @click="matrixViewStore.setActiveVisualizationSource('PRIMARY')"
+        class="btn btn-sm layer-swap-button"
+        :class="layersSwapped ? 'btn-secondary active' : 'btn-outline-secondary'"
+        title="Swap Layers"
+        aria-label="Swap Layers"
+        @click="swapLayers"
       >
-        PRIMARY
-      </button>
-      <button
-        type="button"
-        class="btn btn-sm"
-        :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
-        @click="matrixViewStore.setActiveVisualizationSource('SECONDARY')"
-      >
-        SECONDARY
+        <i class="bi bi-shuffle"></i>
       </button>
     </div>
   </div>
@@ -126,7 +138,7 @@ const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const sessionStore = useSessionStore();
 const matrixViewStore = useMatrixViewStore();
-const { presentationMode, activeVisualizationSource } = storeToRefs(matrixViewStore);
+const { presentationMode, activeVisualizationSource, layersSwapped } = storeToRefs(matrixViewStore);
 const hasTwoSources = computed(() => presentationMode.value !== "single");
 
 const props = defineProps<{
@@ -195,6 +207,21 @@ function saveOptions() {
     ),
   });
   bumpSavedOptions();
+}
+
+function swapLayers(): void {
+  props.mapManager?.visualizationManager
+    .swapRenderPipelineLayersAndReload()
+    .then((swapped) => {
+      if (!swapped) {
+        toast("No active two-layer rendering pipeline to swap");
+        return;
+      }
+      matrixViewStore.toggleLayersSwapped();
+    })
+    .catch((error) => {
+      toast.error(String(error ?? "Failed to swap rendering layers"));
+    });
 }
 
 function removeOption(option_id: number) {
@@ -678,5 +705,21 @@ function importOptionsFromFile() {
   width: 100%;
   /* padding-top: 15px; */
   padding-right: 20px;
+}
+
+.visualization-source-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.45rem;
+}
+
+.layer-swap-button {
+  width: 2.35rem;
+  min-width: 2.35rem;
+  border-radius: 0.55rem;
+}
+
+.layer-swap-button.active {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 </style>

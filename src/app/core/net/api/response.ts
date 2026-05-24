@@ -142,7 +142,8 @@ class TrackBinResponse {
     public readonly thickStartPx: number | null,
     public readonly thickEndPx: number | null,
     public readonly featureType: string | null,
-    public readonly blocks: TrackBinBlockResponse[]
+    public readonly blocks: TrackBinBlockResponse[],
+    public readonly attributes: Record<string, string>
   ) {}
 }
 

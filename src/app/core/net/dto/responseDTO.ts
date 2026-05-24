@@ -199,7 +199,21 @@ class TrackBinResponseDTO extends InboundDTO<TrackBinResponse> {
       (this.json["featureType"] as string) ?? null,
       ((this.json["blocks"] as Record<string, unknown>[]) ?? []).map(
         (block) => new TrackBinBlockResponseDTO(block).toEntity()
-      )
+      ),
+      this.parseAttributes(this.json["attributes"])
+    );
+  }
+
+  private parseAttributes(value: unknown): Record<string, string> {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter((entry): entry is [string, string | number | boolean] =>
+          ["string", "number", "boolean"].includes(typeof entry[1])
+        )
+        .map(([key, rawValue]) => [key, String(rawValue)])
     );
   }
 }

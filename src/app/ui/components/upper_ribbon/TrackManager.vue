@@ -67,9 +67,38 @@
                   <button class="btn btn-primary" @click="onAddTrack" :disabled="!selectedFile">
                     Add file
                   </button>
-                  <button class="btn btn-outline-primary btn-sm" @click="onAddCoolerWeights">
-                    Add weights
-                  </button>
+                </div>
+              </div>
+
+              <div class="alert alert-light border py-2 mb-3">
+                <strong class="small d-block mb-2">Show Cooler weights track</strong>
+                <div class="d-flex flex-wrap gap-3">
+                  <div class="form-check form-switch m-0">
+                    <input
+                      id="cooler-weights-primary"
+                      class="form-check-input"
+                      type="checkbox"
+                      :checked="primaryCoolerWeightsVisible"
+                      :disabled="!props.mapManager"
+                      :title="props.mapManager ? 'Show or hide Cooler balancing weights for the primary source.' : 'Open a map first.'"
+                      @change="onTogglePrimaryCoolerWeights(($event.target as HTMLInputElement).checked)"
+                    />
+                    <label class="form-check-label" for="cooler-weights-primary">
+                      Primary source
+                    </label>
+                  </div>
+                  <div class="form-check form-switch m-0">
+                    <input
+                      id="cooler-weights-secondary"
+                      class="form-check-input"
+                      type="checkbox"
+                      disabled
+                      title="Secondary source weight tracks are not exposed by the current backend API yet."
+                    />
+                    <label class="form-check-label text-muted" for="cooler-weights-secondary">
+                      Secondary source
+                    </label>
+                  </div>
                 </div>
               </div>
 
@@ -326,25 +355,6 @@
                 </div>
                 <div v-if="tracks.length === 0" class="text-muted">No tracks loaded</div>
               </div>
-
-              <hr />
-              <div class="d-flex align-items-center gap-2">
-                <button class="btn btn-outline-primary" @click="addMarkerAtCenter">
-                  Add marker at center
-                </button>
-                <button
-                  class="btn btn-outline-primary"
-                  @click="addRectangleFromSelection"
-                >
-                  Add rectangle from selection
-                </button>
-                <button class="btn btn-outline-danger" @click="clearAnnotations">
-                  Clear annotations
-                </button>
-              </div>
-              <small class="text-muted">
-                Rectangles use current selection. Markers and rectangles stay aligned after scaffolding operations.
-              </small>
             </template>
           </div>
           <div class="modal-footer">
@@ -563,6 +573,14 @@ const onTrackBackgroundColorChanged = (value: string): void => {
 };
 
 const trackBackgroundHex = computed(() => rgbaLikeToHex(trackBackgroundColor.value));
+const primaryCoolerWeightsTrackIds = computed(() =>
+  tracks.value
+    .filter((track) => track.sourceFile === "__internal__/cooler_weights")
+    .map((track) => track.trackId)
+);
+const primaryCoolerWeightsVisible = computed(
+  () => primaryCoolerWeightsTrackIds.value.length > 0
+);
 
 const TRACK_SUFFIXES = [
   ".bed",
@@ -676,15 +694,22 @@ const onAddTrack = async () => {
   }
 };
 
-const onAddCoolerWeights = async () => {
+const onTogglePrimaryCoolerWeights = async (visible: boolean) => {
   if (!props.mapManager) {
     return;
   }
   try {
-    await props.mapManager.linearTrackManager.openCoolerWeightsTrack(
-      trackDisplayName.value.trim() || undefined
-    );
-    trackDisplayName.value = "";
+    if (visible) {
+      if (primaryCoolerWeightsTrackIds.value.length === 0) {
+        await props.mapManager.linearTrackManager.openCoolerWeightsTrack(
+          "Cooler weights"
+        );
+      }
+    } else {
+      for (const trackId of primaryCoolerWeightsTrackIds.value) {
+        await props.mapManager.linearTrackManager.removeTrack(trackId);
+      }
+    }
     await refreshTracks();
     await refreshPrecomputeStatus();
   } catch (err) {
@@ -996,18 +1021,6 @@ const onChangeLogBase = (trackId: string, value: number): void => {
     return;
   }
   props.mapManager.linearTrackManager.setTrackLogBase(trackId, value);
-};
-
-const addMarkerAtCenter = () => {
-  props.mapManager?.getLayersManager().addAnnotationMarkerAtCenter();
-};
-
-const addRectangleFromSelection = () => {
-  props.mapManager?.getLayersManager().addAnnotationRectangleFromSelection();
-};
-
-const clearAnnotations = () => {
-  props.mapManager?.getLayersManager().clearAnnotations();
 };
 
 const onStartPrecomputeAll = async () => {

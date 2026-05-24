@@ -9,6 +9,7 @@ export const useMatrixViewStore = defineStore("matrixViewStore", () => {
   const horizontalFastaSource = ref<MatrixSourceName>("PRIMARY");
   const verticalFastaSource = ref<MatrixSourceName>("PRIMARY");
   const activeVisualizationSource = ref<MatrixSourceName>("PRIMARY");
+  const layersSwapped = ref(false);
 
   function setPresentationMode(mode: MatrixPresentationMode) {
     presentationMode.value = mode;
@@ -26,11 +27,20 @@ export const useMatrixViewStore = defineStore("matrixViewStore", () => {
     activeVisualizationSource.value = source;
   }
 
+  function setLayersSwapped(value: boolean) {
+    layersSwapped.value = value;
+  }
+
+  function toggleLayersSwapped() {
+    layersSwapped.value = !layersSwapped.value;
+  }
+
   function reset() {
     presentationMode.value = "single";
     horizontalFastaSource.value = "PRIMARY";
     verticalFastaSource.value = "PRIMARY";
     activeVisualizationSource.value = "PRIMARY";
+    layersSwapped.value = false;
   }
 
   return {
@@ -38,9 +48,12 @@ export const useMatrixViewStore = defineStore("matrixViewStore", () => {
     horizontalFastaSource,
     verticalFastaSource,
     activeVisualizationSource,
+    layersSwapped,
     setPresentationMode,
     setSelectionFastaSources,
     setActiveVisualizationSource,
+    setLayersSwapped,
+    toggleLayersSwapped,
     reset,
   };
 });

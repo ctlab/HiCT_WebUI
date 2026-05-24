@@ -1556,7 +1556,9 @@ class ContactMapManager {
     bounds: [number, number, number, number]
   ): [number, number, number, number] {
     const minimapResolution = this.minimap?.getView().getResolution() ?? 1;
-    const inset = Math.max(1e-6, Math.abs(minimapResolution) * 3);
+    // Keep the viewport stroke inside the minimap projection. Vector strokes
+    // clipped exactly at the projection boundary become invisible at map edges.
+    const inset = Math.max(1e-6, Math.abs(minimapResolution) * 5);
     const maxInsetX = Math.max(0, (getWidth(bounds) - 1e-6) / 2);
     const maxInsetY = Math.max(0, (getHeight(bounds) - 1e-6) / 2);
     const insetX = Math.min(inset, maxInsetX);
