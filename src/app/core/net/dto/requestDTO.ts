@@ -73,6 +73,7 @@ import {
   StartConversionJobRequest,
   StartBatchConversionJobsRequest,
   StartDotplotJobsRequest,
+  SetDotplotAlignerPreferenceRequest,
   ListDotplotJobsRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
@@ -131,6 +132,10 @@ abstract class HiCTAPIRequestDTO<
       case entity instanceof StartDotplotJobsRequest:
         return new StartDotplotJobsRequestDTO(
           entity as StartDotplotJobsRequest
+        );
+      case entity instanceof SetDotplotAlignerPreferenceRequest:
+        return new SetDotplotAlignerPreferenceRequestDTO(
+          entity as SetDotplotAlignerPreferenceRequest
         );
       case entity instanceof ListDotplotJobsRequest:
         return new ListDotplotJobsRequestDTO(entity as ListDotplotJobsRequest);
@@ -525,9 +530,18 @@ class StartDotplotJobsRequestDTO extends HiCTAPIRequestDTO<StartDotplotJobsReque
       sampleBp: this.entity.options.sampleBp,
       minAlignmentLength: this.entity.options.minAlignmentLength,
       extraMinimap2Args: this.entity.options.extraMinimap2Args,
+      alignerPreference: this.entity.options.alignerPreference,
       alignmentThreads: this.entity.options.alignmentThreads,
       conversionThreads: this.entity.options.conversionThreads,
       overwrite: this.entity.options.overwrite,
+    };
+  }
+}
+
+class SetDotplotAlignerPreferenceRequestDTO extends HiCTAPIRequestDTO<SetDotplotAlignerPreferenceRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      alignerPreference: this.entity.alignerPreference,
     };
   }
 }
@@ -972,6 +986,7 @@ export {
   StartConversionJobRequestDTO,
   StartBatchConversionJobsRequestDTO,
   StartDotplotJobsRequestDTO,
+  SetDotplotAlignerPreferenceRequestDTO,
   ListDotplotJobsRequestDTO,
   ListConversionJobsRequestDTO,
   GetConversionJobRequestDTO,

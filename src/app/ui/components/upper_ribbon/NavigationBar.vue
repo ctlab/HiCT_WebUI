@@ -250,6 +250,33 @@
                   {{ nativeProcessingStatusText }}
                 </div>
               </li>
+              <li class="mt-3" @click.stop>
+                <label class="form-label mb-1" for="dotplot-aligner-preference">
+                  Dotplot aligner
+                </label>
+                <select
+                  id="dotplot-aligner-preference"
+                  v-model="dotplotAlignerPreference"
+                  class="form-select form-select-sm"
+                  :disabled="dotplotAlignerBusy"
+                  @change="onDotplotAlignerPreferenceChanged"
+                >
+                  <option value="auto">Auto (mm2-plus AVX-512 -> AVX2 -> minimap2)</option>
+                  <option value="mm2plus">mm2-plus best available</option>
+                  <option value="mm2plus-avx512" :disabled="!toolchainStatus?.mm2PlusAvx512Available">
+                    mm2-plus AVX-512{{ toolchainStatus?.mm2PlusAvx512Available ? "" : " (not bundled)" }}
+                  </option>
+                  <option value="mm2plus-avx2" :disabled="!toolchainStatus?.mm2PlusAvx2Available">
+                    mm2-plus AVX2{{ toolchainStatus?.mm2PlusAvx2Available ? "" : " (not bundled)" }}
+                  </option>
+                  <option value="minimap2" :disabled="!toolchainStatus?.minimap2Available">
+                    minimap2{{ toolchainStatus?.minimap2Available ? "" : " (not bundled)" }}
+                  </option>
+                </select>
+                <div class="native-processing-status" :class="dotplotAlignerStatusClass">
+                  {{ dotplotAlignerStatusText }}
+                </div>
+              </li>
               <li><hr class="dropdown-divider" /></li>
               <li>
                 <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenWorkerDiagnostics">
@@ -514,7 +541,10 @@ import { toast } from "vue-sonner";
 import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
-import type { FastaLinkResponse } from "@/app/core/net/api/response";
+import type {
+  ConversionToolchainStatusResponse,
+  FastaLinkResponse,
+} from "@/app/core/net/api/response";
 import type { NativeProcessingStatusResponse } from "@/app/core/net/api/RequestManager";
 import {
   licenseText,
@@ -543,6 +573,9 @@ const fastaLinkReport = ref<FastaLinkResponse | null>(null);
 const nativeProcessingStatus = ref<NativeProcessingStatusResponse | null>(null);
 const nativeProcessingRequested = ref(false);
 const nativeProcessingBusy = ref(false);
+const toolchainStatus = ref<ConversionToolchainStatusResponse | null>(null);
+const dotplotAlignerPreference = ref("auto");
+const dotplotAlignerBusy = ref(false);
 const backendVersion = ref("loading...");
 const webuiVersion = ref(String((pkg as { version?: string })?.version ?? "unknown"));
 const webuiCommit = ref("unknown");
@@ -597,6 +630,23 @@ const nativeProcessingStatusText = computed(() => {
   return status.available
     ? `Available (${status.version}), currently disabled.`
     : "Not bundled; Java backend is active.";
+});
+
+const dotplotAlignerStatusClass = computed(() => ({
+  "text-success": toolchainStatus.value?.selectedDotplotAligner !== "none",
+  "text-warning": toolchainStatus.value?.selectedDotplotAligner === "none",
+  "text-muted": !toolchainStatus.value,
+}));
+
+const dotplotAlignerStatusText = computed(() => {
+  const status = toolchainStatus.value;
+  if (!status) {
+    return "Toolchain status is not loaded yet.";
+  }
+  if (!status.selectedDotplotAlignerCommand) {
+    return "No usable dotplot aligner for this preference.";
+  }
+  return `Selected: ${status.selectedDotplotAligner}.`;
 });
 
 type HictDesktopBridge = {
@@ -688,6 +738,48 @@ async function onNativeProcessingChanged(): Promise<void> {
     await refreshNativeProcessingStatus();
   } finally {
     nativeProcessingBusy.value = false;
+  }
+}
+
+async function refreshConversionToolchainStatus(): Promise<void> {
+  dotplotAlignerBusy.value = true;
+  try {
+    const status =
+      await props.networkManager.requestManager.getConversionToolchainStatus();
+    toolchainStatus.value = status;
+    dotplotAlignerPreference.value = status.dotplotAlignerPreference || "auto";
+  } catch (error) {
+    toolchainStatus.value = null;
+    console.error("Failed to query conversion toolchain status", error);
+  } finally {
+    dotplotAlignerBusy.value = false;
+  }
+}
+
+async function onDotplotAlignerPreferenceChanged(): Promise<void> {
+  dotplotAlignerBusy.value = true;
+  try {
+    const status =
+      await props.networkManager.requestManager.setDotplotAlignerPreference(
+        dotplotAlignerPreference.value
+      );
+    toolchainStatus.value = status;
+    dotplotAlignerPreference.value = status.dotplotAlignerPreference || "auto";
+    if (status.selectedDotplotAlignerCommand) {
+      toast.success(`Dotplot aligner set to ${status.selectedDotplotAligner}.`);
+    } else {
+      toast("No usable dotplot aligner for this preference.", {
+        style: {
+          "background-color": "lightyellow",
+          color: "black",
+        },
+      });
+    }
+  } catch (error) {
+    toast.error("Failed to update dotplot aligner: " + String(error));
+    await refreshConversionToolchainStatus();
+  } finally {
+    dotplotAlignerBusy.value = false;
   }
 }
 
@@ -980,6 +1072,7 @@ watch(
 
 onMounted(() => {
   void refreshNativeProcessingStatus();
+  void refreshConversionToolchainStatus();
 });
 
 function onFASTAFileSelected() {

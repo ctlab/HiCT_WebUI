@@ -80,6 +80,7 @@ import {
   ListConversionJobsRequest,
   GetConversionJobRequest,
   GetConversionToolchainStatusRequest,
+  SetDotplotAlignerPreferenceRequest,
   StopConversionJobRequest,
   RenameContigRequest,
   RenameScaffoldRequest,
@@ -817,6 +818,16 @@ class RequestManager {
     return this.sendRequest(new GetConversionToolchainStatusRequest()).then(
       (response) =>
         new ConversionToolchainStatusResponseDTO(response.data).toEntity()
+    );
+  }
+
+  public async setDotplotAlignerPreference(
+    alignerPreference: string
+  ): Promise<ConversionToolchainStatusResponse> {
+    return this.sendRequest(
+      new SetDotplotAlignerPreferenceRequest(alignerPreference)
+    ).then((response) =>
+      new ConversionToolchainStatusResponseDTO(response.data).toEntity()
     );
   }
 

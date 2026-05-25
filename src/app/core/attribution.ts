@@ -73,6 +73,20 @@ export const runtimeAttributions: AttributionEntry[] = [
     links: [{ label: "hictk", href: "https://github.com/paulsengroup/hictk" }],
   },
   {
+    name: "minimap2",
+    authors: "Heng Li and minimap2 contributors.",
+    license: "MIT License",
+    note: "Optional FASTA self-alignment engine for dotplot generation.",
+    links: [{ label: "minimap2", href: "https://github.com/lh3/minimap2" }],
+  },
+  {
+    name: "mm2-plus",
+    authors: "Ghanshyam Chandra, Md Vasimuddin, Sanchit Misra, Chirag Jain and contributors.",
+    license: "See bundled upstream license file.",
+    note: "Optional accelerated minimap2-compatible self-alignment engine for dotplot generation. Cite the 2024 bioRxiv preprint when this path is used.",
+    links: [{ label: "mm2-plus", href: "https://github.com/at-cg/mm2-plus" }],
+  },
+  {
     name: "HTSJDK and IGV BigWig",
     authors: "Broad Institute, IGV team and contributors.",
     license: "See upstream license metadata.",
@@ -173,7 +187,7 @@ export const webAttributions: AttributionEntry[] = [
 
 export const redistributionNotes = [
   "Portable packages keep HiCT, WebUI, Java runtime and optional hictk notices with the release artifact.",
-  "When hictk is bundled, its license and citation files are available under toolchains/<platform>/share.",
+  "When hictk, minimap2 or mm2-plus are bundled, their license and citation files are available under toolchains/<platform>/share.",
   "The Java runtime legal notices are kept under runtime/legal in portable packages.",
   "For exhaustive third-party details, inspect npm package metadata, Gradle dependency metadata and the bundled license folders.",
 ];

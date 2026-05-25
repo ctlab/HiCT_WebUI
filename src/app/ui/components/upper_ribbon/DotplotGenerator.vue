@@ -77,7 +77,7 @@
                 <input v-model.number="minimizerWindow" type="number" min="1" class="form-control" />
               </div>
               <div class="col-md-3">
-                <label class="form-label">minimap2 -m chain score</label>
+                <label class="form-label">Aligner -m chain score</label>
                 <input v-model.number="minChainScore" type="number" min="0" class="form-control" />
               </div>
               <div class="col-md-3">
@@ -93,7 +93,7 @@
                 <input v-model.number="minAlignmentLength" type="number" min="0" class="form-control" />
               </div>
               <div class="col-md-3">
-                <label class="form-label">minimap2 threads</label>
+                <label class="form-label">Aligner threads</label>
                 <input v-model.number="alignmentThreads" type="number" min="1" class="form-control" />
               </div>
               <div class="col-md-3">
@@ -101,7 +101,17 @@
                 <input v-model.number="conversionThreads" type="number" min="1" class="form-control" />
               </div>
               <div class="col-md-6">
-                <label class="form-label">Extra minimap2 arguments</label>
+                <label class="form-label">Self-alignment engine</label>
+                <select v-model="alignerPreference" class="form-select">
+                  <option value="auto">Auto (mm2-plus AVX-512 -> AVX2 -> minimap2)</option>
+                  <option value="mm2plus">mm2-plus best available</option>
+                  <option value="mm2plus-avx512">mm2-plus AVX-512</option>
+                  <option value="mm2plus-avx2">mm2-plus AVX2</option>
+                  <option value="minimap2">minimap2</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Extra aligner arguments</label>
                 <input v-model.trim="extraMinimap2Args" type="text" class="form-control" placeholder="e.g. -f 0.0002" />
                 <small class="text-muted">Passed as separate arguments without a shell; leave empty for HiCT defaults.</small>
               </div>
@@ -119,7 +129,7 @@
               </div>
             </div>
             <div class="alert alert-info mt-3 mb-0">
-              Packaged builds use HiCT's integrated Java minimizer writer plus hictk <code>load</code>/<code>zoomify</code>.
+              Packaged builds use mm2-plus or minimap2 for self-alignment, HiCT's integrated Java/native PAF writer, and hictk <code>load</code>/<code>zoomify</code>.
               Python, Cooler and <code>selfdot_mcool.sh</code> are not required for this workflow.
             </div>
           </div>
@@ -206,6 +216,7 @@ const dropNearDiagonalBins = ref(0);
 const sampleBp = ref(250);
 const minAlignmentLength = ref(50);
 const extraMinimap2Args = ref("");
+const alignerPreference = ref("auto");
 const alignmentThreads = ref(Math.max(1, Math.min(12, navigator.hardwareConcurrency || 4)));
 const conversionThreads = ref(Math.max(1, Math.min(12, navigator.hardwareConcurrency || 4)));
 const overwrite = ref(false);
@@ -267,6 +278,7 @@ async function startDotplots(): Promise<void> {
         sampleBp: Math.max(1, Math.trunc(sampleBp.value || 250)),
         minAlignmentLength: Math.max(0, Math.trunc(minAlignmentLength.value || 50)),
         extraMinimap2Args: extraMinimap2Args.value.trim() || undefined,
+        alignerPreference: alignerPreference.value,
         alignmentThreads: Math.max(1, Math.trunc(alignmentThreads.value || 1)),
         conversionThreads: Math.max(1, Math.trunc(conversionThreads.value || 1)),
         overwrite: overwrite.value,

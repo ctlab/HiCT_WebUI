@@ -236,6 +236,12 @@ class GetConversionToolchainStatusRequest implements HiCTAPIRequest {
   requestPath = "/convert/toolchain";
 }
 
+class SetDotplotAlignerPreferenceRequest implements HiCTAPIRequest {
+  requestPath = "/convert/toolchain/dotplot-aligner";
+
+  public constructor(public readonly alignerPreference: string) {}
+}
+
 class StartDotplotJobsRequest implements HiCTAPIRequest {
   requestPath = "/dotplot/jobs";
 
@@ -253,6 +259,7 @@ class StartDotplotJobsRequest implements HiCTAPIRequest {
       readonly sampleBp?: number;
       readonly minAlignmentLength?: number;
       readonly extraMinimap2Args?: string;
+      readonly alignerPreference?: string;
       readonly alignmentThreads: number;
       readonly conversionThreads: number;
       readonly overwrite?: boolean;
@@ -661,6 +668,7 @@ export {
   GetConversionJobRequest,
   StopConversionJobRequest,
   GetConversionToolchainStatusRequest,
+  SetDotplotAlignerPreferenceRequest,
   StartDotplotJobsRequest,
   ListDotplotJobsRequest,
   RenameContigRequest,
