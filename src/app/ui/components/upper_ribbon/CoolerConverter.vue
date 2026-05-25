@@ -39,24 +39,6 @@
           ></button>
         </div>
         <div class="modal-body">
-          <div class="mode-tabs">
-            <button
-              type="button"
-              class="btn"
-              :class="mode === 'single' ? 'btn-primary' : 'btn-outline-primary'"
-              @click="mode = 'single'"
-            >
-              Single
-            </button>
-            <button
-              type="button"
-              class="btn"
-              :class="mode === 'batch' ? 'btn-primary' : 'btn-outline-primary'"
-              @click="switchToBatch"
-            >
-              Batch
-            </button>
-          </div>
           <div class="d-flex align-items-center" v-if="errorMessage">
             <p class="error-message">Error: {{ errorMessage }}</p>
           </div>
@@ -111,69 +93,7 @@
               </p>
             </details>
           </div>
-          <div v-if="mode === 'single'">
-            <div v-if="!jobId" class="convert-section">
-              <CoolerFileSelector
-                :network-manager="networkManager"
-                :initial-filename="initialCoolerFilename"
-                @selected="onCoolerFileSelected"
-              />
-              <p v-if="selectedCoolerFilename" class="helper-text">
-                Output: {{ deriveOutputFilename(selectedCoolerFilename) }}
-              </p>
-              <div
-                v-if="selectedCoolerFilename && requiresHicToolchain(selectedCoolerFilename)"
-                class="alert alert-warning py-2"
-              >
-                <strong>.hic assembly layout:</strong>
-                .hic files do not reliably encode the contig/scaffold layout used by
-                Juicebox Assembly Tool. Keep the matching <code>.assembly</code>
-                or AGP file next to the dataset; load an AGP after conversion
-                when scaffolding coordinates are required.
-              </div>
-              <p v-if="singleBlockedMessage" class="error-message">
-                {{ singleBlockedMessage }}
-              </p>
-              <div class="mt-3 d-flex gap-2">
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  :disabled="!canConvertSelectedFile || converting"
-                  @click="convertCooler"
-                >
-                  Convert
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary"
-                  @click="refreshJobs"
-                >
-                  View current conversion jobs
-                </button>
-              </div>
-            </div>
-            <ConverterStatusChecker
-              v-if="jobId"
-              :network-manager="networkManager"
-              :job-id="jobId"
-            ></ConverterStatusChecker>
-            <div v-if="jobs.length && !jobId" class="mt-3">
-              <h6>Running jobs</h6>
-              <ul class="job-list">
-                <li v-for="job in jobs" :key="job.jobId">
-                  <span>{{ job.sourceFilename }} → {{ job.outputFilename }}</span>
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-primary"
-                    @click="openJob(job.jobId)"
-                  >
-                    Open
-                  </button>
-                </li>
-              </ul>
-            </div>
-          </div>
-          <div v-if="mode === 'batch'">
+          <div>
             <div v-if="batchStep === 'select'">
               <div class="batch-actions">
                 <button class="btn btn-sm btn-outline-primary" @click="selectAll">
@@ -190,6 +110,9 @@
                 </button>
                 <button class="btn btn-sm btn-outline-success" @click="selectAllUnconverted">
                   Select All Unconverted
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" @click="viewCurrentJobs">
+                  View current conversion jobs
                 </button>
               </div>
               <FileSelectionTable
@@ -223,6 +146,30 @@
               </p>
             </div>
             <div v-if="batchStep === 'settings'">
+              <div class="mb-3">
+                <label class="form-label">Optional .assembly for selected .hic files</label>
+                <div class="input-group">
+                  <input
+                    class="form-control"
+                    type="text"
+                    readonly
+                    :value="batchAssemblyFilename || 'No Juicebox .assembly selected'"
+                  />
+                  <button class="btn btn-outline-secondary" @click="assemblySelectorOpen = true">
+                    Browse…
+                  </button>
+                  <button
+                    class="btn btn-outline-danger"
+                    :disabled="!batchAssemblyFilename"
+                    @click="batchAssemblyFilename = ''"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <small class="text-muted">
+                  The assembly file is passed only to .hic conversions. Leave empty to keep the sealed single-contig conversion layout.
+                </small>
+              </div>
               <div class="mb-3">
                 <label class="form-label">Parallel jobs</label>
                 <input type="number" class="form-control" v-model.number="batchParallelJobs" min="1" />
@@ -294,6 +241,16 @@
         </div>
       </div>
     </div>
+    <UniversalFileSelector
+      v-if="assemblySelectorOpen"
+      :network-manager="networkManager"
+      title="Select optional Juicebox assembly file"
+      file-type=".assembly"
+      note="Used for selected .hic conversions only. Non-.hic conversions ignore this field."
+      :file-name-predicate="isAssemblyFilename"
+      @selected="onAssemblySelected"
+      @dismissed="assemblySelectorOpen = false"
+    />
   </div>
 </template>
 
@@ -303,16 +260,12 @@ import { Modal } from "bootstrap";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import {
   StartBatchConversionJobsRequest,
-  StartConversionJobRequest,
 } from "@/app/core/net/api/request";
-import {
-  ConversionJobResponse,
-  ConversionToolchainStatusResponse,
-} from "@/app/core/net/api/response";
-import CoolerFileSelector from "./converter/CoolerFileSelector.vue";
+import { ConversionToolchainStatusResponse } from "@/app/core/net/api/response";
 import ConverterStatusChecker from "./converter/ConverterStatusChecker.vue";
 import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
 import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
+import UniversalFileSelector from "./UniversalFileSelector.vue";
 
 const emit = defineEmits<{
   (e: "dismissed"): void;
@@ -323,17 +276,14 @@ const props = defineProps<{
   initialCoolerFilename?: string;
 }>();
 
-const selectedCoolerFilename: Ref<string | null> = ref(null);
-const converting: Ref<boolean> = ref(false);
 const errorMessage: Ref<unknown | null> = ref(null);
 const modal: Ref<Modal | null> = ref(null);
 const convertCoolerModal = ref<HTMLElement | null>(null);
-const jobId: Ref<string | null> = ref(null);
-const jobs: Ref<ConversionJobResponse[]> = ref([]);
-const mode: Ref<"single" | "batch"> = ref("batch");
 const batchStep: Ref<"select" | "settings" | "progress"> = ref("select");
 const batchFiles: Ref<string[]> = ref([]);
 const batchSelection: Ref<Set<string>> = ref(new Set<string>());
+const batchAssemblyFilename: Ref<string> = ref("");
+const assemblySelectorOpen: Ref<boolean> = ref(false);
 const batchParallelJobs: Ref<number> = ref(2);
 const batchParallelism: Ref<number> = ref(4);
 const batchJobIds: Ref<string[]> = ref([]);
@@ -382,11 +332,6 @@ function resetState(): void {
   } finally {
     modal.value = null;
     errorMessage.value = null;
-    converting.value = false;
-    selectedCoolerFilename.value = null;
-    jobId.value = null;
-    jobs.value = [];
-    mode.value = "batch";
     batchStep.value = "select";
     batchFiles.value = [];
     batchSelection.value = new Set<string>();
@@ -404,66 +349,20 @@ function onDismissClicked(): void {
   emit("dismissed");
 }
 
-function onCoolerFileSelected(coolerFilename: string): void {
-  selectedCoolerFilename.value = coolerFilename;
-}
-
 function requiresHicToolchain(filename: string | null | undefined): boolean {
   return filename?.toLowerCase().endsWith(".hic") ?? false;
 }
 
-function deriveDirection(filename: string): string {
-  const lower = filename.toLowerCase();
-  if (lower.endsWith(".hic")) {
-    return "hic-to-hict";
-  }
-  if (lower.endsWith(".hict") || lower.endsWith(".hict.hdf5")) {
-    return "hict-to-mcool";
-  }
-  return "mcool-to-hict";
+function isAssemblyFilename(name: string): boolean {
+  return name.toLowerCase().endsWith(".assembly");
 }
 
-async function convertCooler(): Promise<void> {
-  const filename = selectedCoolerFilename.value;
-  if (!filename) {
-    return;
-  }
-  const overwriteExisting = isConverted(filename);
-  if (overwriteExisting) {
-    const output = deriveOutputFilename(filename);
-    const approved = await askOverwriteConfirmation(
-      `Converted file already exists (${output}). Overwrite it with a new conversion?`
-    );
-    if (!approved) {
-      return;
-    }
-  }
-  converting.value = true;
-  props.networkManager.requestManager
-    .startConversionJob(
-      new StartConversionJobRequest({
-        filename: filename,
-        direction: deriveDirection(filename),
-        overwrite: overwriteExisting,
-      })
-    )
-    .then((resp) => {
-      jobId.value = resp.jobId;
-    })
-    .catch((e) => {
-      errorMessage.value = e;
-    })
-    .finally(() => {
-      converting.value = false;
-    });
+function onAssemblySelected(filename: string): void {
+  batchAssemblyFilename.value = filename;
+  assemblySelectorOpen.value = false;
 }
 
 onMounted(() => {
-  converting.value = false;
-  if (props.initialCoolerFilename && props.initialCoolerFilename.trim().length > 0) {
-    selectedCoolerFilename.value = props.initialCoolerFilename;
-  }
-  mode.value = "batch";
   batchStep.value = "select";
   loadToolchainStatus();
   loadBatchFiles();
@@ -474,27 +373,19 @@ onMounted(() => {
   modal.value.show();
 });
 
-function openJob(id: string): void {
-  jobId.value = id;
-}
-
-function refreshJobs(): void {
+function viewCurrentJobs(): void {
   props.networkManager.requestManager
     .listConversionJobs()
     .then((items) => {
-      jobs.value = items.filter(
-        (job) => job.status === "running" || job.status === "queued"
+      const active = items.filter((job) =>
+        ["queued", "running"].includes((job.status ?? "").toLowerCase())
       );
+      batchJobIds.value = active.map((job) => job.jobId);
+      batchStep.value = "progress";
     })
     .catch((e) => {
       errorMessage.value = e;
     });
-}
-
-function switchToBatch(): void {
-  mode.value = "batch";
-  batchStep.value = "select";
-  loadBatchFiles();
 }
 
 function loadBatchFiles(): void {
@@ -632,6 +523,7 @@ async function startBatchConversion(): Promise<void> {
     .startBatchConversionJobs(
       new StartBatchConversionJobsRequest({
         files,
+        assemblyFilename: batchAssemblyFilename.value || undefined,
         parallelJobs: batchParallelJobs.value,
         parallelism: batchParallelism.value,
         overwrite: overwriteExisting,
@@ -679,36 +571,6 @@ const overallBatchStatusClass = computed(() => {
     default:
       return "running";
   }
-});
-
-const selectedRequiresHicToolchain = computed(() =>
-  requiresHicToolchain(selectedCoolerFilename.value)
-);
-
-const canConvertSelectedFile = computed(() => {
-  if (!selectedCoolerFilename.value) {
-    return false;
-  }
-  if (!selectedRequiresHicToolchain.value) {
-    return true;
-  }
-  return toolchainStatus.value?.hicConversionAvailable === true;
-});
-
-const singleBlockedMessage = computed(() => {
-  if (!selectedRequiresHicToolchain.value) {
-    return "";
-  }
-  if (toolchainLoading.value) {
-    return "Inspecting .hic conversion toolchain...";
-  }
-  if (toolchainStatus.value?.hicConversionAvailable) {
-    return "";
-  }
-  return (
-    toolchainStatus.value?.summary ??
-    "No external .hic conversion toolchain is available in this build."
-  );
 });
 
 const batchBlockedMessage = computed(() => {

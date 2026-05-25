@@ -72,6 +72,8 @@ import {
   ProbeTrackPrecomputeCacheRequest,
   StartConversionJobRequest,
   StartBatchConversionJobsRequest,
+  StartDotplotJobsRequest,
+  ListDotplotJobsRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
   StopConversionJobRequest,
@@ -126,6 +128,12 @@ abstract class HiCTAPIRequestDTO<
         return new StartBatchConversionJobsRequestDTO(
           entity as StartBatchConversionJobsRequest
         );
+      case entity instanceof StartDotplotJobsRequest:
+        return new StartDotplotJobsRequestDTO(
+          entity as StartDotplotJobsRequest
+        );
+      case entity instanceof ListDotplotJobsRequest:
+        return new ListDotplotJobsRequestDTO(entity as ListDotplotJobsRequest);
       case entity instanceof UngroupContigsFromScaffoldRequest:
         return new UngroupContigsFromScaffoldRequestDTO(
           entity as UngroupContigsFromScaffoldRequest
@@ -473,6 +481,7 @@ class StartConversionJobRequestDTO extends HiCTAPIRequestDTO<StartConversionJobR
   toDTO(): Record<string, unknown> {
     return {
       filename: this.entity.options.filename,
+      assemblyFilename: this.entity.options.assemblyFilename,
       direction: this.entity.options.direction,
       overwrite: this.entity.options.overwrite,
       resolutions: this.entity.options.resolutions,
@@ -488,6 +497,8 @@ class StartBatchConversionJobsRequestDTO extends HiCTAPIRequestDTO<StartBatchCon
   toDTO(): Record<string, unknown> {
     return {
       files: this.entity.options.files,
+      assemblyFilename: this.entity.options.assemblyFilename,
+      assemblyFilenameByFile: this.entity.options.assemblyFilenameByFile,
       parallelJobs: this.entity.options.parallelJobs,
       parallelism: this.entity.options.parallelism,
       overwrite: this.entity.options.overwrite,
@@ -496,6 +507,31 @@ class StartBatchConversionJobsRequestDTO extends HiCTAPIRequestDTO<StartBatchCon
       compressionAlgorithm: this.entity.options.compressionAlgorithm,
       chunkSize: this.entity.options.chunkSize,
     };
+  }
+}
+
+class StartDotplotJobsRequestDTO extends HiCTAPIRequestDTO<StartDotplotJobsRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      fastaFiles: this.entity.options.fastaFiles,
+      outputDirectory: this.entity.options.outputDirectory,
+      binSize: this.entity.options.binSize,
+      resolutions: this.entity.options.resolutions,
+      minimizerK: this.entity.options.minimizerK,
+      minimizerWindow: this.entity.options.minimizerWindow,
+      minChainScore: this.entity.options.minChainScore,
+      skipDiagonal: this.entity.options.skipDiagonal,
+      dropNearDiagonalBins: this.entity.options.dropNearDiagonalBins,
+      alignmentThreads: this.entity.options.alignmentThreads,
+      conversionThreads: this.entity.options.conversionThreads,
+      overwrite: this.entity.options.overwrite,
+    };
+  }
+}
+
+class ListDotplotJobsRequestDTO extends HiCTAPIRequestDTO<ListDotplotJobsRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
   }
 }
 
@@ -932,6 +968,8 @@ export {
   DropAllCachesRequestDTO,
   StartConversionJobRequestDTO,
   StartBatchConversionJobsRequestDTO,
+  StartDotplotJobsRequestDTO,
+  ListDotplotJobsRequestDTO,
   ListConversionJobsRequestDTO,
   GetConversionJobRequestDTO,
   StopConversionJobRequestDTO,

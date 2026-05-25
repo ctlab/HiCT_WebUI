@@ -183,6 +183,7 @@ class StartConversionJobRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       readonly filename: string;
+      readonly assemblyFilename?: string;
       readonly direction?: string;
       readonly overwrite?: boolean;
       readonly resolutions?: string;
@@ -200,6 +201,8 @@ class StartBatchConversionJobsRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       readonly files: string[];
+      readonly assemblyFilename?: string;
+      readonly assemblyFilenameByFile?: Record<string, string>;
       readonly parallelJobs: number;
       readonly parallelism: number;
       readonly overwrite?: boolean;
@@ -231,6 +234,31 @@ class StopConversionJobRequest implements HiCTAPIRequest {
 
 class GetConversionToolchainStatusRequest implements HiCTAPIRequest {
   requestPath = "/convert/toolchain";
+}
+
+class StartDotplotJobsRequest implements HiCTAPIRequest {
+  requestPath = "/dotplot/jobs";
+
+  public constructor(
+    public readonly options: {
+      readonly fastaFiles: string[];
+      readonly outputDirectory?: string;
+      readonly binSize: number;
+      readonly resolutions?: string;
+      readonly minimizerK: number;
+      readonly minimizerWindow: number;
+      readonly minChainScore: number;
+      readonly skipDiagonal: boolean;
+      readonly dropNearDiagonalBins: number;
+      readonly alignmentThreads: number;
+      readonly conversionThreads: number;
+      readonly overwrite?: boolean;
+    }
+  ) {}
+}
+
+class ListDotplotJobsRequest implements HiCTAPIRequest {
+  requestPath = "/dotplot/jobs/list";
 }
 
 class SetContrastRangeRequest implements HiCTAPIRequest {
@@ -630,6 +658,8 @@ export {
   GetConversionJobRequest,
   StopConversionJobRequest,
   GetConversionToolchainStatusRequest,
+  StartDotplotJobsRequest,
+  ListDotplotJobsRequest,
   RenameContigRequest,
   RenameScaffoldRequest,
   ExportNameMappingRequest,

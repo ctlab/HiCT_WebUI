@@ -207,24 +207,27 @@
                   Expected and O/E are computed independently inside each scaffold. If the opened assembly has no
                   scaffolds yet, each contig is treated as its own scaffold for expected-value estimation.
                 </div>
-              </div>
-
-              <div v-else-if="currentStep?.id === 'blending'" class="wizard-section">
-                <h6>Blending mode</h6>
-                <div class="row g-3">
-                  <div class="col-md-6">
-                    <label class="form-label">Pixel blend mode</label>
-                    <select v-model="blendMode" class="form-select">
-                      <option v-for="mode in BLEND_MODES" :key="mode" :value="mode">{{ mode }}</option>
-                    </select>
+                <div v-if="requiresSecondarySource" class="wizard-card mt-3">
+                  <div class="wizard-card-header">
+                    <strong>Blending mode</strong>
                   </div>
-                  <div class="col-md-3">
-                    <label class="form-label">Top opacity (secondary)</label>
-                    <input v-model.number="topOpacity" class="form-control" type="number" min="0" max="1" step="0.05" />
-                  </div>
-                  <div class="col-md-3">
-                    <label class="form-label">Bottom opacity (primary)</label>
-                    <input v-model.number="bottomOpacity" class="form-control" type="number" min="0" max="1" step="0.05" />
+                  <div class="wizard-card-body">
+                    <div class="row g-3">
+                      <div class="col-md-6">
+                        <label class="form-label">Pixel blend mode</label>
+                        <select v-model="blendMode" class="form-select">
+                          <option v-for="mode in BLEND_MODES" :key="mode" :value="mode">{{ mode }}</option>
+                        </select>
+                      </div>
+                      <div class="col-md-3">
+                        <label class="form-label">Top opacity (secondary)</label>
+                        <input v-model.number="topOpacity" class="form-control" type="number" min="0" max="1" step="0.05" />
+                      </div>
+                      <div class="col-md-3">
+                        <label class="form-label">Bottom opacity (primary)</label>
+                        <input v-model.number="bottomOpacity" class="form-control" type="number" min="0" max="1" step="0.05" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -300,26 +303,30 @@
               </div>
 
               <div v-else-if="currentStep?.id === 'agp'" class="wizard-section">
-                <h6>AGP assembly</h6>
+                <h6>Assembly file</h6>
                 <div class="wizard-source-grid">
                   <div class="wizard-card">
                     <div class="wizard-card-header">
-                      <strong>Primary AGP</strong>
+                      <strong>Primary assembly</strong>
                     </div>
                     <div class="wizard-card-body">
                       <div class="input-group">
-                        <input class="form-control" type="text" readonly :value="primaryAgp || 'Optional AGP for primary source'" />
+                        <input class="form-control" type="text" readonly :value="primaryAgp || 'Optional .agp or Juicebox .assembly for primary source'" />
                         <button class="btn btn-outline-secondary" @click="openSelector('primary-agp')">Browse…</button>
                       </div>
+                      <small class="text-muted d-block mt-2">
+                        .agp is loaded after opening. .assembly is passed to .hic conversion; for already converted
+                        matrices it must be converted to AGP before applying layout.
+                      </small>
                     </div>
                   </div>
                   <div v-if="requiresSecondarySource" class="wizard-card">
                     <div class="wizard-card-header">
-                      <strong>Secondary AGP</strong>
+                      <strong>Secondary assembly</strong>
                     </div>
                     <div class="wizard-card-body">
                       <div class="input-group">
-                        <input class="form-control" type="text" readonly :value="secondaryAgp || 'Optional AGP for secondary source'" />
+                        <input class="form-control" type="text" readonly :value="secondaryAgp || 'Optional .agp or Juicebox .assembly for secondary source'" />
                         <button class="btn btn-outline-secondary" @click="openSelector('secondary-agp')">Browse…</button>
                       </div>
                     </div>
@@ -333,7 +340,7 @@
               </div>
 
               <div v-else-if="currentStep?.id === 'conversion'" class="wizard-section">
-                <h6>File conversion</h6>
+                <h6>Map files conversion</h6>
                 <div class="wizard-card mb-3">
                   <div class="wizard-card-body">
                     <div class="form-check">
@@ -410,23 +417,62 @@
 
               <div v-else-if="currentStep?.id === 'notes'" class="wizard-section">
                 <h6>Notes and warnings</h6>
-                <div v-if="wizardNotes.length === 0" class="alert alert-success">
-                  No blocking issues detected. The wizard can run with the current configuration.
+                <div class="wizard-check-list">
+                  <div
+                    v-for="item in wizardCheckItems"
+                    :key="item.id"
+                    class="alert wizard-check"
+                    :class="item.kind === 'pass' ? 'alert-success' : item.kind === 'warning' ? 'alert-warning' : 'alert-danger'"
+                  >
+                    <div class="d-flex align-items-start gap-2">
+                      <div v-if="item.kind === 'pending'" class="spinner-border spinner-border-sm mt-1" role="status"></div>
+                      <div class="flex-grow-1">
+                        <strong>{{ item.title }}</strong>
+                        <div>{{ item.message }}</div>
+                        <div v-if="item.fixable" class="btn-group btn-group-sm mt-2">
+                          <button
+                            type="button"
+                            class="btn"
+                            :class="fixableIssuePolicy[item.id] !== 'discard' ? 'btn-primary' : 'btn-outline-primary'"
+                            @click="fixableIssuePolicy[item.id] = 'ignore'"
+                          >
+                            Ignore
+                          </button>
+                          <button
+                            type="button"
+                            class="btn"
+                            :class="fixableIssuePolicy[item.id] === 'discard' ? 'btn-warning' : 'btn-outline-warning'"
+                            @click="fixableIssuePolicy[item.id] = 'discard'"
+                          >
+                            Discard
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <ul v-else class="list-group">
-                  <li v-for="note in wizardNotes" :key="note" class="list-group-item">
-                    {{ note }}
-                  </li>
-                </ul>
               </div>
 
               <div v-else-if="currentStep?.id === 'finish'" class="wizard-section">
-                <h6>Finish</h6>
+                <h6>Final checks</h6>
                 <div class="alert alert-light border">
                   <div><strong>View mode:</strong> {{ currentViewModeLabel }}</div>
                   <div><strong>Primary source:</strong> {{ primarySource.filename || "not selected" }}</div>
                   <div v-if="requiresSecondarySource"><strong>Secondary source:</strong> {{ secondarySource.filename || "not selected" }}</div>
                   <div><strong>Tracks:</strong> {{ selectedTracks.length }}</div>
+                  <div><strong>Primary assembly:</strong> {{ primaryAgp || "not selected" }}</div>
+                  <div v-if="requiresSecondarySource"><strong>Secondary assembly:</strong> {{ secondaryAgp || "not selected" }}</div>
+                </div>
+                <div class="wizard-check-list mb-3">
+                  <div
+                    v-for="item in wizardCheckItems"
+                    :key="`final-${item.id}`"
+                    class="alert wizard-check"
+                    :class="item.kind === 'pass' ? 'alert-success' : item.kind === 'warning' ? 'alert-warning' : 'alert-danger'"
+                  >
+                    <strong>{{ item.title }}</strong>
+                    <div>{{ item.message }}</div>
+                  </div>
                 </div>
                 <div v-if="runState.running" class="alert alert-info">
                   <div class="d-flex justify-content-between align-items-center">
@@ -532,7 +578,6 @@ type WizardStepId =
   | "view-mode"
   | "sources"
   | "visualization"
-  | "blending"
   | "tracks"
   | "fasta"
   | "agp"
@@ -555,6 +600,14 @@ type SelectedTrack = {
   displayName: string;
   compatibility: TrackCompatibilityReportResponse | null;
   precomputeProbe: TrackPrecomputeCacheProbeResponse | null;
+};
+
+type WizardCheckItem = {
+  id: string;
+  kind: "pending" | "pass" | "warning" | "error";
+  title: string;
+  message: string;
+  fixable?: boolean;
 };
 
 type SelectorKind =
@@ -600,15 +653,14 @@ const matrixViewStore = useMatrixViewStore();
 const steps: Array<{ id: WizardStepId; label: string }> = [
   { id: "view-mode", label: "View mode" },
   { id: "sources", label: "Sources selection" },
+  { id: "agp", label: "Assembly file" },
+  { id: "conversion", label: "Map files conversion" },
   { id: "visualization", label: "Visualization options" },
-  { id: "blending", label: "Blending mode" },
   { id: "tracks", label: "1D tracks" },
   { id: "fasta", label: "FASTA file" },
-  { id: "agp", label: "AGP assembly" },
-  { id: "conversion", label: "File Conversion" },
-  { id: "track-precompute", label: "Track Precomputing" },
-  { id: "notes", label: "Notes and Warnings" },
-  { id: "finish", label: "Finish" },
+  { id: "notes", label: "Notes and warnings" },
+  { id: "track-precompute", label: "Track precomputing" },
+  { id: "finish", label: "Final checks" },
 ];
 
 const viewModeCards: Array<{
@@ -652,6 +704,7 @@ const secondaryFasta = ref("");
 const primaryAgp = ref("");
 const secondaryAgp = ref("");
 const selectedTracks = ref<SelectedTrack[]>([]);
+const fixableIssuePolicy = reactive<Record<string, "ignore" | "discard">>({});
 const precomputeTracks = ref(true);
 const forceTrackPrecompute = ref(false);
 const dropCachesBeforeRun = ref(false);
@@ -692,9 +745,7 @@ const runState = reactive<{
   trackPrecomputeStatus: null,
 });
 
-const visibleSteps = computed(() =>
-  steps.filter((step) => step.id !== "blending" || viewMode.value === "overlay")
-);
+const visibleSteps = computed(() => steps);
 
 const currentStep = computed(() => visibleSteps.value[currentStepIndex.value]);
 const requiresSecondarySource = computed(() => viewMode.value !== "single");
@@ -833,6 +884,117 @@ const wizardNotes = computed(() => {
   return Array.from(new Set(notes));
 });
 
+const wizardCheckItems = computed<WizardCheckItem[]>(() => {
+  const items: WizardCheckItem[] = [];
+  if (primarySource.filename) {
+    items.push({
+      id: "primary-source",
+      kind: "pass",
+      title: "Primary source",
+      message: describeConversionPlan(primarySource),
+    });
+  } else {
+    items.push({
+      id: "primary-source",
+      kind: "error",
+      title: "Primary source",
+      message: "Primary matrix source is required.",
+    });
+  }
+  if (requiresSecondarySource.value) {
+    items.push(
+      secondarySource.filename
+        ? {
+            id: "secondary-source",
+            kind: "pass",
+            title: "Secondary source",
+            message: describeConversionPlan(secondarySource),
+          }
+        : {
+            id: "secondary-source",
+            kind: "error",
+            title: "Secondary source",
+            message: "Secondary matrix source is required for this view mode.",
+          }
+    );
+  }
+  if (primaryAgp.value) {
+    items.push({
+      id: "primary-assembly",
+      kind: primaryAgp.value.toLowerCase().endsWith(".agp") || primarySource.filename.toLowerCase().endsWith(".hic")
+        ? "pass"
+        : "warning",
+      title: "Primary assembly",
+      message: primaryAgp.value.toLowerCase().endsWith(".assembly")
+        ? "Juicebox .assembly will be passed to .hic conversion. For already converted matrices, convert it to AGP before applying layout."
+        : "AGP will be loaded after the primary matrix is opened.",
+      fixable: primaryAgp.value.toLowerCase().endsWith(".assembly") && !primarySource.filename.toLowerCase().endsWith(".hic"),
+    });
+  }
+  if (secondaryAgp.value && requiresSecondarySource.value) {
+    items.push({
+      id: "secondary-assembly",
+      kind: secondaryAgp.value.toLowerCase().endsWith(".agp") || secondarySource.filename.toLowerCase().endsWith(".hic")
+        ? "pass"
+        : "warning",
+      title: "Secondary assembly",
+      message: secondaryAgp.value.toLowerCase().endsWith(".assembly")
+        ? "Juicebox .assembly will be passed to .hic conversion. For already converted matrices, convert it to AGP before applying layout."
+        : "AGP will be loaded after the secondary matrix is opened.",
+      fixable: secondaryAgp.value.toLowerCase().endsWith(".assembly") && !secondarySource.filename.toLowerCase().endsWith(".hic"),
+    });
+  }
+  if (selectedTracks.value.length === 0) {
+    items.push({
+      id: "tracks",
+      kind: "pass",
+      title: "1D tracks",
+      message: "No tracks selected. This optional step will be skipped.",
+    });
+  } else {
+    for (const track of selectedTracks.value) {
+      const status = track.compatibility?.status ?? "ok";
+      items.push({
+        id: `track-${track.filename}`,
+        kind: status === "error" ? "warning" : status === "warning" ? "warning" : "pass",
+        title: `Track: ${track.displayName || track.filename}`,
+        message: track.compatibility?.message ?? "Track will be opened and precomputed.",
+        fixable: status === "error" || status === "warning",
+      });
+    }
+  }
+  if (primaryFasta.value) {
+    items.push({
+      id: "primary-fasta",
+      kind: "pass",
+      title: "Primary FASTA",
+      message: "FASTA will be linked to the primary source.",
+    });
+  }
+  if (requiresSecondarySource.value && secondaryFasta.value) {
+    items.push({
+      id: "secondary-fasta",
+      kind: "pass",
+      title: "Secondary FASTA",
+      message: "FASTA will be linked to the secondary source.",
+    });
+  }
+  if (toolchainStatus.value && !toolchainStatus.value.hicConversionAvailable) {
+    const hasHicConversion = [primarySource, secondarySource]
+      .filter((source, index) => index === 0 || requiresSecondarySource.value)
+      .some((source) => source.filename.toLowerCase().endsWith(".hic") && !isResolvedDirectly(source));
+    if (hasHicConversion) {
+      items.push({
+        id: "hictk",
+        kind: "error",
+        title: ".hic conversion",
+        message: toolchainStatus.value.summary,
+      });
+    }
+  }
+  return items;
+});
+
 const canAdvanceFromCurrentStep = computed(() => {
   switch (currentStep.value?.id) {
     case "view-mode":
@@ -892,7 +1054,10 @@ const isFastaFilename = (name: string): boolean => {
   ].some((suffix) => lowered.endsWith(suffix));
 };
 
-const isAgpFilename = (name: string): boolean => name.toLowerCase().endsWith(".agp");
+const isAssemblyLayoutFilename = (name: string): boolean => {
+  const lowered = name.toLowerCase();
+  return lowered.endsWith(".agp") || lowered.endsWith(".assembly");
+};
 
 const isResolvedDirectly = (source: SourceDraft): boolean =>
   source.resolution?.action === "OPEN_DIRECT";
@@ -969,10 +1134,10 @@ const openSelector = (kind: SelectorKind): void => {
     return;
   }
   selectorState.title =
-    kind === "primary-agp" ? "Select primary AGP" : "Select secondary AGP";
-  selectorState.fileType = ".agp";
-  selectorState.note = "AGP loading is optional and will be applied after the corresponding source is opened.";
-  selectorState.predicate = isAgpFilename;
+    kind === "primary-agp" ? "Select primary assembly file" : "Select secondary assembly file";
+  selectorState.fileType = ".agp, .assembly";
+  selectorState.note = ".agp files are loaded after opening. Juicebox .assembly files are passed into .hic conversion when selected for a .hic source.";
+  selectorState.predicate = isAssemblyLayoutFilename;
 };
 
 const closeSelector = (): void => {
@@ -1132,9 +1297,12 @@ const ensureOpenedFilename = async (source: SourceDraft): Promise<string> => {
   }
   runState.currentStepId = "conversion";
   runState.currentMessage = `Converting ${source.filename}`;
+  const assemblyFilename =
+    source === primarySource ? primaryAgp.value : secondaryAgp.value;
   const started = await props.networkManager.requestManager.startConversionJob(
     new StartConversionJobRequest({
       filename: source.filename,
+      assemblyFilename: assemblyFilename || undefined,
       direction: resolution.conversionDirection ?? undefined,
       overwrite: true,
     })
@@ -1295,7 +1463,7 @@ const runWizard = async (): Promise<void> => {
       );
     }
 
-    if (primaryAgp.value) {
+    if (primaryAgp.value && primaryAgp.value.toLowerCase().endsWith(".agp")) {
       runState.currentStepId = "agp";
       runState.currentMessage = `Loading ${primaryAgp.value}`;
       await props.networkManager.requestManager.loadAGP(
@@ -1305,7 +1473,7 @@ const runWizard = async (): Promise<void> => {
         })
       );
     }
-    if (secondaryAgp.value && requiresSecondarySource.value) {
+    if (secondaryAgp.value && requiresSecondarySource.value && secondaryAgp.value.toLowerCase().endsWith(".agp")) {
       runState.currentStepId = "agp";
       runState.currentMessage = `Loading ${secondaryAgp.value}`;
       await props.networkManager.requestManager.loadAGP(

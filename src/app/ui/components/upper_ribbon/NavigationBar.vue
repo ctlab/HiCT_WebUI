@@ -38,12 +38,12 @@
             <ul class="dropdown-menu">
               <li>
                 <a class="dropdown-item" href="#" @click="onOpenWizard"
-                  >Wizard...</a
+                  >Open Wizard...</a
                 >
               </li>
               <li>
                 <a class="dropdown-item" href="#" @click="onOpenFile"
-                  >Open...</a
+                  >Manual Open...</a
                 >
               </li>
               <!-- <li>
@@ -83,6 +83,14 @@
                   href="#"
                   @click="onConvertCoolersClicked"
                   >Convert matrices</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click="onGenerateDotplotClicked"
+                  >Generate dotplot</a
                 >
               </li>
               <li>
@@ -341,6 +349,12 @@
     @dismissed="onConvertCoolersDismissed"
   >
   </CoolerConverter>
+  <DotplotGenerator
+    v-if="generatingDotplots"
+    :network-manager="networkManager"
+    :initial-fasta-filename="lastLinkedFastaFilename"
+    @dismissed="onGenerateDotplotDismissed"
+  />
   <TrackManager
     v-if="trackManagerOpen"
     :map-manager="props.mapManager"
@@ -491,6 +505,7 @@ import {
 } from "@/app/core/net/api/request";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import CoolerConverter from "./CoolerConverter.vue";
+import DotplotGenerator from "./DotplotGenerator.vue";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
 import TrackManager from "@/app/ui/components/upper_ribbon/TrackManager.vue";
 import FastaLinkWarningModal from "@/app/ui/components/upper_ribbon/FastaLinkWarningModal.vue";
@@ -513,7 +528,9 @@ const openingFile = ref(false);
 const openingFASTAFile = ref(false);
 const openingAGPFile = ref(false);
 const convertingCoolers = ref(false);
+const generatingDotplots = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
+const lastLinkedFastaFilename = ref<string | undefined>(undefined);
 const trackManagerOpen = ref(false);
 const renderingPipelineOpen = ref(false);
 const workerDiagnosticsOpen = ref(false);
@@ -600,6 +617,14 @@ function onOpenFile() {
 
 function onOpenWizard(): void {
   emit("wizardRequested");
+}
+
+function onGenerateDotplotClicked(): void {
+  generatingDotplots.value = true;
+}
+
+function onGenerateDotplotDismissed(): void {
+  generatingDotplots.value = false;
 }
 
 function onOpenTrackManager() {
@@ -920,6 +945,7 @@ function linkFASTA(filename: string, allowMismatch = false) {
       openingFile.value = false;
       openingFASTAFile.value = false;
       errorMessage.value = null;
+      lastLinkedFastaFilename.value = filename;
       emit("fastaLinked", filename);
       response.warnings.forEach((warning) =>
         toast(warning, {

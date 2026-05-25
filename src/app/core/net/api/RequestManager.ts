@@ -75,6 +75,8 @@ import {
   SetViewportExpectedProfileRequest,
   StartBatchConversionJobsRequest,
   StartConversionJobRequest,
+  StartDotplotJobsRequest,
+  ListDotplotJobsRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
   GetConversionToolchainStatusRequest,
@@ -773,6 +775,20 @@ class RequestManager {
     request: StartBatchConversionJobsRequest
   ): Promise<{ status: string; groupId: string; jobIds: string[] }> {
     return this.sendRequest(request).then((response) => response.data);
+  }
+
+  public async startDotplotJobs(
+    request: StartDotplotJobsRequest
+  ): Promise<{ status: string; groupId: string; jobIds: string[] }> {
+    return this.sendRequest(request).then((response) => response.data);
+  }
+
+  public async listDotplotJobs(): Promise<ConversionJobResponse[]> {
+    return this.sendRequest(new ListDotplotJobsRequest()).then((response) =>
+      (response.data as Record<string, unknown>[]).map((job) =>
+        new ConversionJobResponseDTO(job).toEntity()
+      )
+    );
   }
 
   public async listConversionJobs(): Promise<ConversionJobResponse[]> {
