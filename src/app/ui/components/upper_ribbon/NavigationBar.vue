@@ -89,7 +89,7 @@
                 <a
                   class="dropdown-item"
                   href="#"
-                  @click="onGenerateDotplotClicked"
+                  @click.prevent="onGenerateDotplotClicked"
                   >Generate dotplot</a
                 >
               </li>
