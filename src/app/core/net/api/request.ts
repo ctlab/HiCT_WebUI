@@ -250,6 +250,9 @@ class StartDotplotJobsRequest implements HiCTAPIRequest {
       readonly minChainScore: number;
       readonly skipDiagonal: boolean;
       readonly dropNearDiagonalBins: number;
+      readonly sampleBp?: number;
+      readonly minAlignmentLength?: number;
+      readonly extraMinimap2Args?: string;
       readonly alignmentThreads: number;
       readonly conversionThreads: number;
       readonly overwrite?: boolean;

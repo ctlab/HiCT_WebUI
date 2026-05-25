@@ -77,7 +77,7 @@
                 <input v-model.number="minimizerWindow" type="number" min="1" class="form-control" />
               </div>
               <div class="col-md-3">
-                <label class="form-label">Min chain score</label>
+                <label class="form-label">minimap2 -m chain score</label>
                 <input v-model.number="minChainScore" type="number" min="0" class="form-control" />
               </div>
               <div class="col-md-3">
@@ -85,17 +85,30 @@
                 <input v-model.number="dropNearDiagonalBins" type="number" min="0" class="form-control" />
               </div>
               <div class="col-md-3">
-                <label class="form-label">Alignment threads</label>
+                <label class="form-label">PAF sample step, bp</label>
+                <input v-model.number="sampleBp" type="number" min="1" class="form-control" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Minimum alignment length</label>
+                <input v-model.number="minAlignmentLength" type="number" min="0" class="form-control" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">minimap2 threads</label>
                 <input v-model.number="alignmentThreads" type="number" min="1" class="form-control" />
               </div>
               <div class="col-md-3">
                 <label class="form-label">Conversion threads</label>
                 <input v-model.number="conversionThreads" type="number" min="1" class="form-control" />
               </div>
+              <div class="col-md-6">
+                <label class="form-label">Extra minimap2 arguments</label>
+                <input v-model.trim="extraMinimap2Args" type="text" class="form-control" placeholder="e.g. -f 0.0002" />
+                <small class="text-muted">Passed as separate arguments without a shell; leave empty for HiCT defaults.</small>
+              </div>
               <div class="col-md-3 d-flex align-items-end">
                 <div class="form-check form-switch">
                   <input id="dotplot-skip-diag" v-model="skipDiagonal" class="form-check-input" type="checkbox" />
-                  <label class="form-check-label" for="dotplot-skip-diag">minimap2 -D / skip exact diagonal</label>
+                  <label class="form-check-label" for="dotplot-skip-diag">Skip exact diagonal</label>
                 </div>
               </div>
               <div class="col-md-3 d-flex align-items-end">
@@ -106,8 +119,8 @@
               </div>
             </div>
             <div class="alert alert-info mt-3 mb-0">
-              Packaged builds will use the bundled minimap2/native writer once present. Development builds may also use the legacy
-              <code>selfdot_mcool.sh</code> pipeline when explicitly configured on the backend.
+              Packaged builds use HiCT's integrated Java minimizer writer plus hictk <code>load</code>/<code>zoomify</code>.
+              Python, Cooler and <code>selfdot_mcool.sh</code> are not required for this workflow.
             </div>
           </div>
 
@@ -190,6 +203,9 @@ const minimizerWindow = ref(5);
 const minChainScore = ref(40);
 const skipDiagonal = ref(false);
 const dropNearDiagonalBins = ref(0);
+const sampleBp = ref(250);
+const minAlignmentLength = ref(50);
+const extraMinimap2Args = ref("");
 const alignmentThreads = ref(Math.max(1, Math.min(12, navigator.hardwareConcurrency || 4)));
 const conversionThreads = ref(Math.max(1, Math.min(12, navigator.hardwareConcurrency || 4)));
 const overwrite = ref(false);
@@ -248,6 +264,9 @@ async function startDotplots(): Promise<void> {
         minChainScore: Math.max(0, Math.trunc(minChainScore.value || 40)),
         skipDiagonal: skipDiagonal.value,
         dropNearDiagonalBins: Math.max(0, Math.trunc(dropNearDiagonalBins.value || 0)),
+        sampleBp: Math.max(1, Math.trunc(sampleBp.value || 250)),
+        minAlignmentLength: Math.max(0, Math.trunc(minAlignmentLength.value || 50)),
+        extraMinimap2Args: extraMinimap2Args.value.trim() || undefined,
         alignmentThreads: Math.max(1, Math.trunc(alignmentThreads.value || 1)),
         conversionThreads: Math.max(1, Math.trunc(conversionThreads.value || 1)),
         overwrite: overwrite.value,
