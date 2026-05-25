@@ -130,8 +130,7 @@
                 </div>
               </div>
               <div class="alert alert-info mt-3 mb-0">
-                Packaged builds use mm2-plus or minimap2 for self-alignment, HiCT's integrated Java/native PAF writer, and hictk <code>load</code>/<code>zoomify</code>.
-                Python, Cooler and <code>selfdot_mcool.sh</code> are not required for this workflow.
+                Packaged builds use mm2-plus or minimap2 for self-alignment, HiCT's integrated Java/native PAF writer, and hictk for <code>load</code>/<code>zoomify</code>.
               </div>
             </div>
 
