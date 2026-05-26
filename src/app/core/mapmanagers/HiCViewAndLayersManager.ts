@@ -61,6 +61,11 @@ import { CurrentSignalRangeResponse } from "../net/api/response";
 import { SplitRulesInteraction } from "../interactions/SplitRulesInteraction";
 import { OverviewMap } from "ol/control";
 import { RulerControl } from "../controls/RulerControl";
+import type { SecondarySourceCompatibility } from "../net/api/RequestManager";
+import {
+  useMatrixViewStore,
+  type MatrixSourceName,
+} from "@/app/stores/matrixViewStore";
 
 interface LayerResolutionBorders {
   minResolutionInclusive: number;
@@ -110,6 +115,15 @@ interface LayersHolder {
   readonly bpResolutionToScaffoldBordersLayer: Map<number, Layer>;
 }
 
+interface MatrixSourceResolutionModel {
+  source: MatrixSourceName;
+  bpResolution: number;
+  pixelResolution: number;
+  imageSizeBins: number;
+  minResolution?: number;
+  maxResolution?: number;
+}
+
 interface Track2DHolder {
   readonly tracks2D: Track2D[];
   readonly annotationTrack: AnnotationTrack2D;
@@ -127,6 +141,12 @@ class HiCViewAndLayersManager {
   public readonly imageSizes: number[] = [];
   public readonly layerProjections: Array<Projection> = [];
   protected readonly imageSizeScaled: number[] = [];
+  protected readonly primaryNativeResolutions: number[] = [];
+  protected readonly secondaryNativeResolutions: number[] = [];
+  protected readonly primaryNativeResolutionModels: MatrixSourceResolutionModel[] = [];
+  protected readonly secondaryNativeResolutionModels: MatrixSourceResolutionModel[] = [];
+  protected readonly primaryBaseBpResolution: number;
+  protected secondaryAttached = false;
   // protected readonly hicDataLayers: Layer[] = [];
   // protected readonly hicDataSources: Source[] = [];
   // protected readonly contigVectorLayers: Layer[] = [];
@@ -214,7 +234,18 @@ class HiCViewAndLayersManager {
     this.imageSizes = response.matrixSizesBins;
     this.pixelResolutionSet = response.pixelResolutions;
     this.resolutions = response.resolutions;
+    this.primaryBaseBpResolution = Math.min(
+      ...this.resolutions.filter((resolution) => resolution > 0)
+    );
+    this.primaryNativeResolutions.push(...this.resolutions);
     this.tileSize = mapManager.getOptions().tileSize;
+    this.primaryNativeResolutionModels.push(
+      ...this.buildSourceResolutionModels(
+        "PRIMARY",
+        this.resolutions,
+        this.imageSizes
+      )
+    );
 
     for (let i = 0; i < this.resolutions.length; ++i) {
       this.resolutionToPixelResolution.set(
@@ -263,13 +294,16 @@ class HiCViewAndLayersManager {
         b.layerResolutionBorders.minResolutionInclusive
     );
     // Calculate extents for projection:
-    const maximum_scaled_image_size = Math.max(...this.imageSizes);
-    const maximum_global_extent = [
-      0,
-      -maximum_scaled_image_size,
-      maximum_scaled_image_size,
-      0,
-    ];
+    const maximum_global_extent = this.computeMatrixGlobalExtent();
+    const maxPixelResolution = Math.max(
+      ...this.primaryNativeResolutionModels.map((model) => model.pixelResolution)
+    );
+    const minPixelResolution = Math.min(
+      ...this.primaryNativeResolutionModels.map((model) => model.pixelResolution)
+    );
+    const overzoomFactor = 1024;
+    const minResolution = minPixelResolution / overzoomFactor;
+    const maxResolution = maxPixelResolution * overzoomFactor;
     // Define projection:
     this.pixelProjection = new Projection({
       code: "pixelate",
@@ -280,11 +314,6 @@ class HiCViewAndLayersManager {
       global: false,
       getPointResolution: (resolution) => resolution,
     });
-    const minPixelResolution = Math.min(...this.pixelResolutionSet);
-    const maxPixelResolution = Math.max(...this.pixelResolutionSet);
-    const overzoomFactor = 1024;
-    const minResolution = minPixelResolution / overzoomFactor;
-    const maxResolution = maxPixelResolution * overzoomFactor;
     // Define view:
     this.view = new View({
       center: [
@@ -301,6 +330,7 @@ class HiCViewAndLayersManager {
       projection: this.pixelProjection,
       extent: maximum_global_extent,
     });
+    this.refreshProjectionAndViewLimits();
 
     this.currentViewState = {
       resolutionDesciptor: {
@@ -732,52 +762,291 @@ class HiCViewAndLayersManager {
     );
   }
 
-  public initializeMapsDataLayers() {
-    // Add layers to the view (create tile grid -> create source -> create layer -> map.addLayer):
-    for (let i = 0; i < this.imageSizes.length; ++i) {
-      // Prepare parameters:
-      const layerResolution = this.resolutions[i];
-      const layerPixelResolution = this.pixelResolutionSet[i];
-      const layer_image_size = this.imageSizes[i] * layerPixelResolution;
-      const scaled_layer_extent = [0, -layer_image_size, layer_image_size, 0];
-      const layerTileGrid = new TileGrid({
-        extent: scaled_layer_extent,
-        resolutions: [layerPixelResolution],
-        tileSize: [
-          this.mapManager.getOptions().tileSize,
-          this.mapManager.getOptions().tileSize,
-        ],
-      });
-      const layerSource = new VersionedXYZContactMapSource(
-        this,
-        i,
-        layerResolution,
-        {
-          projection: this.pixelProjection,
-          tileGrid: layerTileGrid,
-          interpolate: false,
-          cacheSize: 0,
-        }
-      );
-      layerSource.do_reload();
-      // Define layer:
-      const layer = new TileLayer({
-        source: layerSource,
-        // cacheSize: 0,
-        minResolution: this.toFiniteResolutionBound(
-          this.layerResolutionBorders.get(layerResolution)?.minResolutionInclusive
-        ),
-        maxResolution: this.toFiniteResolutionBound(
-          this.layerResolutionBorders.get(layerResolution)?.maxResolutionExclusive
-        ),
-        zIndex: this.layersZIndices.HIC_MAP_LAYER_Z_INDEX,
-      });
-      layer.set("bpResolution", layerResolution);
-      layer.set("pixelResolution", layerPixelResolution);
-      this.mapManager.getMap().addLayer(layer);
-      this.layersHolder.hicDataLayers.push(layer);
-      this.layersHolder.bpResolutionToHiCDataLayer.set(layerResolution, layer);
+  private buildSourceResolutionModels(
+    source: MatrixSourceName,
+    sourceResolutions: number[],
+    sourceImageSizes: number[]
+  ): MatrixSourceResolutionModel[] {
+    const models: MatrixSourceResolutionModel[] = sourceResolutions
+      .map((bpResolution, index) => ({
+        source,
+        bpResolution,
+        pixelResolution: bpResolution / this.primaryBaseBpResolution,
+        imageSizeBins: sourceImageSizes[index] ?? 0,
+      }))
+      .filter(
+        (model) =>
+          Number.isFinite(model.bpResolution) &&
+          model.bpResolution > 0 &&
+          Number.isFinite(model.pixelResolution) &&
+          model.pixelResolution > 0 &&
+          Number.isFinite(model.imageSizeBins) &&
+          model.imageSizeBins > 0
+      )
+      .sort((left, right) => left.pixelResolution - right.pixelResolution);
+
+    for (let index = 0; index < models.length; index += 1) {
+      models[index].minResolution =
+        index === 0 ? Number.NEGATIVE_INFINITY : models[index].pixelResolution;
+      models[index].maxResolution =
+        index === models.length - 1
+          ? Number.POSITIVE_INFINITY
+          : models[index + 1].pixelResolution;
     }
+    return models;
+  }
+
+  private getMatrixSourceResolutionModels(): MatrixSourceResolutionModel[] {
+    return [
+      ...this.primaryNativeResolutionModels,
+      ...this.secondaryNativeResolutionModels,
+    ];
+  }
+
+  private computeMatrixGlobalExtent(): [number, number, number, number] {
+    const models = this.getMatrixSourceResolutionModels();
+    const imageSize =
+      models.length > 0
+        ? Math.max(
+            ...models.map((model) => model.imageSizeBins * model.pixelResolution)
+          )
+        : 1;
+    return [0, -imageSize, imageSize, 0];
+  }
+
+  private refreshProjectionAndViewLimits(): void {
+    const models = this.getMatrixSourceResolutionModels();
+    if (models.length === 0) {
+      return;
+    }
+    const pixelResolutions = models
+      .map((model) => model.pixelResolution)
+      .filter(
+        (pixelResolution) =>
+          Number.isFinite(pixelResolution) && pixelResolution > 0
+      );
+    if (pixelResolutions.length === 0) {
+      return;
+    }
+
+    const extent = this.computeMatrixGlobalExtent();
+    this.pixelProjection.setExtent(extent);
+
+    const overzoomFactor = 1024;
+    const minResolution = Math.min(...pixelResolutions) / overzoomFactor;
+    const maxResolution = Math.max(...pixelResolutions) * overzoomFactor;
+    const viewWithPrivate = this.view as View & {
+      getUpdatedOptions_?: (
+        newOptions: Record<string, unknown>
+      ) => Record<string, unknown>;
+      applyOptions_?: (options: Record<string, unknown>) => void;
+    };
+    if (
+      typeof viewWithPrivate.getUpdatedOptions_ === "function" &&
+      typeof viewWithPrivate.applyOptions_ === "function"
+    ) {
+      viewWithPrivate.applyOptions_(
+        viewWithPrivate.getUpdatedOptions_({
+          extent,
+          maxResolution,
+          minResolution,
+          showFullExtent: true,
+        })
+      );
+      return;
+    }
+
+    const currentResolution = this.view.getResolution();
+    if (currentResolution !== undefined) {
+      this.view.setResolution(
+        Math.min(Math.max(currentResolution, minResolution), maxResolution)
+      );
+    }
+  }
+
+  private createSourceDataLayer(
+    model: MatrixSourceResolutionModel,
+    zIndexOffset = 0
+  ): Layer {
+    const layerImageSize = model.imageSizeBins * model.pixelResolution;
+    const scaledLayerExtent = [0, -layerImageSize, layerImageSize, 0];
+    const layerTileGrid = new TileGrid({
+      extent: scaledLayerExtent,
+      resolutions: [model.pixelResolution],
+      tileSize: [
+        this.mapManager.getOptions().tileSize,
+        this.mapManager.getOptions().tileSize,
+      ],
+    });
+    const layerSource = new VersionedXYZContactMapSource(
+      this,
+      0,
+      model.bpResolution,
+      model.source,
+      {
+        projection: this.pixelProjection,
+        tileGrid: layerTileGrid,
+        interpolate: false,
+        cacheSize: 0,
+        wrapX: false,
+      }
+    );
+    layerSource.do_reload();
+    const layer = new TileLayer({
+      source: layerSource,
+      extent: scaledLayerExtent,
+      minResolution: this.toFiniteResolutionBound(model.minResolution),
+      maxResolution: this.toFiniteResolutionBound(model.maxResolution),
+      zIndex: this.layersZIndices.HIC_MAP_LAYER_Z_INDEX + zIndexOffset,
+    });
+    layer.set("bpResolution", model.bpResolution);
+    layer.set("pixelResolution", model.pixelResolution);
+    layer.set("matrixSource", model.source);
+    return layer;
+  }
+
+  private registerSourceDataLayer(layer: Layer): void {
+    this.mapManager.getMap().addLayer(layer);
+    this.layersHolder.hicDataLayers.push(layer);
+    if (layer.get("matrixSource") === "PRIMARY") {
+      this.layersHolder.bpResolutionToHiCDataLayer.set(
+        layer.get("bpResolution"),
+        layer
+      );
+    }
+  }
+
+  public mergeSecondaryResolutionSupport(
+    compatibility?: SecondarySourceCompatibility
+  ): void {
+    this.removeSecondarySourceDataLayers();
+
+    const pairs = this.buildSecondaryResolutionPairs(compatibility);
+    this.secondaryNativeResolutions.length = 0;
+    this.secondaryNativeResolutionModels.length = 0;
+
+    if (pairs.length === 0) {
+      this.secondaryAttached = false;
+      this.refreshProjectionAndViewLimits();
+      this.syncLayerVisibilityForCurrentResolution();
+      this.emitMatrixResolutionMarksChanged();
+      return;
+    }
+
+    const secondaryResolutions = pairs.map((pair) => pair.bpResolution);
+    const secondaryImageSizes = pairs.map((pair) => pair.imageSizeBins);
+    this.secondaryNativeResolutions.push(...secondaryResolutions);
+    this.secondaryNativeResolutionModels.push(
+      ...this.buildSourceResolutionModels(
+        "SECONDARY",
+        secondaryResolutions,
+        secondaryImageSizes
+      )
+    );
+    this.mapManager.contigDimensionHolder.ensureResolutions(
+      secondaryResolutions
+    );
+    this.secondaryAttached = this.secondaryNativeResolutionModels.length > 0;
+    this.refreshProjectionAndViewLimits();
+    this.secondaryNativeResolutionModels.forEach((model) => {
+      this.registerSourceDataLayer(this.createSourceDataLayer(model, 1));
+    });
+    this.syncLayerVisibilityForCurrentResolution();
+    this.emitMatrixResolutionMarksChanged();
+    this.reloadTiles();
+  }
+
+  public getMatrixResolutionMarks(): {
+    source: MatrixSourceName;
+    bpResolution: number;
+    pixelResolution: number;
+  }[] {
+    return [
+      ...this.primaryNativeResolutionModels,
+      ...this.secondaryNativeResolutionModels,
+    ]
+      .map((model) => ({
+        source: model.source,
+        bpResolution: model.bpResolution,
+        pixelResolution: model.pixelResolution,
+      }))
+      .sort((left, right) => left.pixelResolution - right.pixelResolution);
+  }
+
+  public detachSecondarySourceDataLayers(): void {
+    this.removeSecondarySourceDataLayers();
+    this.secondaryNativeResolutions.length = 0;
+    this.secondaryNativeResolutionModels.length = 0;
+    this.secondaryAttached = false;
+    this.refreshProjectionAndViewLimits();
+    this.syncLayerVisibilityForCurrentResolution();
+    this.emitMatrixResolutionMarksChanged();
+  }
+
+  private removeSecondarySourceDataLayers(): void {
+    const retainedLayers: Layer[] = [];
+    for (const layer of this.layersHolder.hicDataLayers) {
+      if (layer.get("matrixSource") === "SECONDARY") {
+        this.mapManager.getMap().removeLayer(layer);
+        continue;
+      }
+      retainedLayers.push(layer);
+    }
+    this.layersHolder.hicDataLayers.length = 0;
+    this.layersHolder.hicDataLayers.push(...retainedLayers);
+  }
+
+  private buildSecondaryResolutionPairs(
+    compatibility?: SecondarySourceCompatibility
+  ): { bpResolution: number; imageSizeBins: number }[] {
+    if (!compatibility) {
+      return [];
+    }
+
+    const pairs: { bpResolution: number; imageSizeBins: number }[] = [];
+    for (
+      let index = 0;
+      index < compatibility.secondaryResolutions.length;
+      index += 1
+    ) {
+      const bpResolution = Math.round(
+        Number(compatibility.secondaryResolutions[index])
+      );
+      const imageSizeBins = Math.round(
+        Number(compatibility.secondaryBinsByResolution[index] ?? 0)
+      );
+      if (
+        Number.isFinite(bpResolution) &&
+        bpResolution > 0 &&
+        Number.isFinite(imageSizeBins) &&
+        imageSizeBins > 0
+      ) {
+        pairs.push({ bpResolution, imageSizeBins });
+      }
+    }
+
+    const deduplicated = new Map<number, number>();
+    for (const pair of pairs) {
+      deduplicated.set(pair.bpResolution, pair.imageSizeBins);
+    }
+    return [...deduplicated.entries()]
+      .map(([bpResolution, imageSizeBins]) => ({
+        bpResolution,
+        imageSizeBins,
+      }))
+      .sort((left, right) => left.bpResolution - right.bpResolution);
+  }
+
+  private emitMatrixResolutionMarksChanged(): void {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("hict:matrix-resolution-marks-changed"));
+    }
+  }
+
+  public initializeMapsDataLayers() {
+    this.primaryNativeResolutionModels.forEach((model) => {
+      this.registerSourceDataLayer(this.createSourceDataLayer(model));
+    });
   }
 
   public bpCoordinatesToGlobalCoordinates(
@@ -1145,6 +1414,12 @@ class HiCViewAndLayersManager {
 
   public getActiveHiCDataLayer(): Layer {
     const bpResolution = this.currentViewState.resolutionDesciptor.bpResolution;
+    const visibleLayer = this.layersHolder.hicDataLayers.find(
+      (candidate) => candidate.getVisible() && candidate.get("matrixSource") === "PRIMARY"
+    );
+    if (visibleLayer) {
+      return visibleLayer;
+    }
     const layer =
       this.layersHolder.bpResolutionToHiCDataLayer.get(bpResolution);
     if (!layer) {
@@ -1295,6 +1570,11 @@ class HiCViewAndLayersManager {
     this.mapManager.map.changed();
   }
 
+  public refreshMatrixLayerPresentation(): void {
+    this.syncLayerVisibilityForCurrentResolution();
+    this.mapManager.map.changed();
+  }
+
   private toFiniteResolutionBound(bound: number | undefined): number | undefined {
     return Number.isFinite(bound) ? bound : undefined;
   }
@@ -1304,10 +1584,21 @@ class HiCViewAndLayersManager {
     if (!Number.isFinite(activeResolution)) {
       return;
     }
+    const matrixViewStore = useMatrixViewStore();
+    const showSecondary =
+      this.secondaryAttached && matrixViewStore.presentationMode !== "single";
+    const primaryZIndex =
+      this.layersZIndices.HIC_MAP_LAYER_Z_INDEX +
+      (matrixViewStore.layersSwapped ? 1 : 0);
+    const secondaryZIndex =
+      this.layersZIndices.HIC_MAP_LAYER_Z_INDEX +
+      (matrixViewStore.layersSwapped ? 0 : 1);
 
     for (const layer of this.layersHolder.hicDataLayers) {
-      const layerResolution = Number(layer.get("bpResolution"));
-      layer.setVisible(layerResolution === activeResolution);
+      const matrixSource = layer.get("matrixSource");
+      const isSecondary = matrixSource === "SECONDARY";
+      layer.setVisible(!isSecondary || showSecondary);
+      layer.setZIndex(isSecondary ? secondaryZIndex : primaryZIndex);
     }
 
     for (const layer of this.layersHolder.contigBordersLayers) {

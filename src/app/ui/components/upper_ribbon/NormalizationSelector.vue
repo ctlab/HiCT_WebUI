@@ -414,6 +414,7 @@ function swapLayers(): void {
         return;
       }
       matrixViewStore.toggleLayersSwapped();
+      props.mapManager?.viewAndLayersManager.refreshMatrixLayerPresentation();
     })
     .catch((error) => {
       toast.error(String(error ?? "Failed to swap rendering layers"));

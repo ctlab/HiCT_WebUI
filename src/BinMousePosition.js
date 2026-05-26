@@ -70,7 +70,7 @@ export default class BinMousePosition extends MousePosition {
         }
         this.transform_(coordinate, coordinate);
 
-        const layers = this.layers.filter((l) => l.getData(pixel));
+        const layers = this.layers.filter((l) => l.getVisible() && l.getData(pixel));
         // map.forEachLayerAtPixel(pixel, function (layer) {
         //   layers.push(layer);
         // });
@@ -79,8 +79,11 @@ export default class BinMousePosition extends MousePosition {
             ? null
             : layers
                 .filter((l) => l instanceof TileLayer)
-                .sort((l1, l2) => l1.getZIndex() - l2.getZIndex())[0];
+                .sort((l1, l2) => (l2.getZIndex() ?? 0) - (l1.getZIndex() ?? 0))[0];
         if (hovered_layer) {
+          const visibleMatrixLayers = layers
+            .filter((l) => l instanceof TileLayer)
+            .sort((l1, l2) => (l2.getZIndex() ?? 0) - (l1.getZIndex() ?? 0));
           const layer_projection = hovered_layer.getSource().getProjection();
           const pixelResolution = hovered_layer.get("pixelResolution");
           const fixed_coordinates = transform(
@@ -114,6 +117,27 @@ export default class BinMousePosition extends MousePosition {
             html = html + "Bin resolution: 1:" + bpResolution;
             html = html + "<";
             html = html + "br/>";
+            html =
+              html +
+              "Layer: " +
+              (hovered_layer.get("matrixSource") ?? "PRIMARY");
+            html = html + "<";
+            html = html + "br/>";
+            if (visibleMatrixLayers.length > 1) {
+              html =
+                html +
+                "Visible layer resolutions: " +
+                visibleMatrixLayers
+                  .map(
+                    (layer) =>
+                      `${layer.get("matrixSource") ?? "PRIMARY"}=1:${layer.get(
+                        "bpResolution"
+                      )}`
+                  )
+                  .join(", ");
+              html = html + "<";
+              html = html + "br/>";
+            }
             html =
               html +
               "Position: px1=" +

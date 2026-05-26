@@ -672,6 +672,11 @@ const refreshSecondaryStatus = async () => {
       await props.mapManager.networkManager.requestManager.getSecondarySourceStatus();
     if (!secondaryStatus.value.attached) {
       selectedSecondaryFile.value = "";
+      props.mapManager.viewAndLayersManager.detachSecondarySourceDataLayers();
+    } else {
+      props.mapManager.viewAndLayersManager.mergeSecondaryResolutionSupport(
+        secondaryStatus.value.compatibility
+      );
     }
   } catch (err) {
     console.debug("Failed to fetch secondary source status", err);
@@ -846,6 +851,9 @@ const onAttachSecondarySource = async () => {
     }
     pendingSecondaryProbe.value = null;
     secondaryStatus.value = response;
+    props.mapManager.viewAndLayersManager.mergeSecondaryResolutionSupport(
+      response.compatibility
+    );
     await props.mapManager.reloadTilesFromBackend();
     await refreshSecondaryStatus();
     toast.success("Secondary source attached");
@@ -872,6 +880,9 @@ const onProceedSecondaryWithMismatch = async () => {
         true
       );
     selectedSecondaryFile.value = filenameToOpen;
+    props.mapManager.viewAndLayersManager.mergeSecondaryResolutionSupport(
+      secondaryStatus.value.compatibility
+    );
     await props.mapManager.reloadTilesFromBackend();
     await refreshSecondaryStatus();
     toast.success("Secondary source attached with compatibility warning");
@@ -887,6 +898,7 @@ const onDetachSecondarySource = async () => {
   try {
     secondaryStatus.value =
       await props.mapManager.networkManager.requestManager.closeSecondarySource();
+    props.mapManager.viewAndLayersManager.detachSecondarySourceDataLayers();
     await props.mapManager.reloadTilesFromBackend();
     if (secondaryStatus.value.assemblySource === "PRIMARY") {
       const result =

@@ -40,14 +40,20 @@ const minRes = ref(1);
 const maxRes = ref(1);
 const logMin = ref(0);
 const logMax = ref(1);
-const resMarks = ref<{ bp: number; pixel: number }[]>([]);
+const resMarks = ref<{ source: string; bp: number; pixel: number }[]>([]);
 let viewKey: unknown;
+
+function onMatrixResolutionMarksChanged() {
+  recomputeScale();
+  syncFromView();
+}
 
 function recomputeScale() {
   const map = props.mapManager;
   if (!map) return;
   const layersManager = map.viewAndLayersManager;
-  const pixelRes = layersManager.pixelResolutionSet;
+  const matrixMarks = layersManager.getMatrixResolutionMarks();
+  const pixelRes = matrixMarks.map((mark) => mark.pixelResolution);
   if (!pixelRes.length) return;
   const minPixel = Math.min(...pixelRes);
   const maxPixel = Math.max(...pixelRes);
@@ -56,9 +62,10 @@ function recomputeScale() {
   maxRes.value = maxPixel * factor;
   logMin.value = Math.log(minRes.value);
   logMax.value = Math.log(maxRes.value);
-  resMarks.value = layersManager.resolutions.map((bp, i) => ({
-    bp,
-    pixel: layersManager.pixelResolutionSet[i],
+  resMarks.value = matrixMarks.map((mark) => ({
+    source: mark.source,
+    bp: mark.bpResolution,
+    pixel: mark.pixelResolution,
   }));
 }
 
@@ -90,9 +97,11 @@ const marks = computed(() => {
         (logMax.value - logMin.value || 1)) *
       100;
     result.push({
-      key: `bp-${entry.bp}`,
+      key: `${entry.source}-${entry.bp}-${entry.pixel}`,
       pos,
-      label: `1:${formatBp(entry.bp)}`,
+      label: `${entry.source === "SECONDARY" ? "S " : ""}1:${formatBp(
+        entry.bp
+      )}`,
     });
   }
   result.push({ key: "max", pos: 100, label: "+Inf" });
@@ -131,6 +140,10 @@ watch(
 onMounted(() => {
   recomputeScale();
   syncFromView();
+  window.addEventListener(
+    "hict:matrix-resolution-marks-changed",
+    onMatrixResolutionMarksChanged
+  );
   const map = props.mapManager;
   if (!map) return;
   const view = map.getMap().getView();
@@ -140,6 +153,10 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener(
+    "hict:matrix-resolution-marks-changed",
+    onMatrixResolutionMarksChanged
+  );
   const map = props.mapManager;
   if (!map || !viewKey) return;
   map.getMap().getView().un("change:resolution", viewKey as never);

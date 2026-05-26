@@ -1405,6 +1405,9 @@ const runWizard = async (): Promise<void> => {
             true
           );
       }
+      mapManager.viewAndLayersManager.mergeSecondaryResolutionSupport(
+        secondaryStatus.compatibility
+      );
       secondaryStatus.warnings.forEach((warning) =>
         toast(warning, {
           style: {
