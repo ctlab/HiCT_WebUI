@@ -28,6 +28,7 @@ import { CurrentSignalRangeResponseDTO } from "./net/dto/responseDTO";
 import type { CurrentSignalRangeResponse } from "./net/api/response";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
+import { useStyleStore } from "@/app/stores/styleStore";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 
 class VersionedXYZContactMapSource extends XYZ {
@@ -37,7 +38,6 @@ class VersionedXYZContactMapSource extends XYZ {
     protected readonly layersManager: HiCViewAndLayersManager,
     protected readonly zoomLevel: number,
     protected readonly bpResolution: number,
-    protected readonly matrixSource: "PRIMARY" | "SECONDARY" = "PRIMARY",
     readonly xyzOptions?: XYZOptions
   ) {
     super(xyzOptions);
@@ -122,8 +122,7 @@ class VersionedXYZContactMapSource extends XYZ {
       endRowPx: parsed.endRowPx,
       startColPx: parsed.startColPx,
       endColPx: parsed.endColPx,
-      source: this.matrixSource,
-      signalMode: "TRADITIONAL_NORMALIZED",
+      signalMode: "PIPELINE_SIGNAL",
       format: "BINARY_FLOAT32",
     };
     const xhr = new XMLHttpRequest();
@@ -225,6 +224,7 @@ class VersionedXYZContactMapSource extends XYZ {
     }
     const imageData = context.createImageData(canvas.width, canvas.height);
     const visualizationOptionsStore = useVisualizationOptionsStore();
+    const styleStore = useStyleStore();
     const colormap = visualizationOptionsStore.colormap;
     let minSignal = 0;
     let maxSignal = 1;
@@ -236,21 +236,30 @@ class VersionedXYZContactMapSource extends XYZ {
       start = this.parseRgba(colormap.startColorRGBA?.RGBA || "rgba(0,255,0,0.0)");
       end = this.parseRgba(colormap.endColorRGBA?.RGBA || "rgba(0,96,0,1.0)");
     }
+    const backgroundColor =
+      ((styleStore.mapBackgroundColor as unknown as { RGBA?: string })?.RGBA as
+        | string
+        | undefined) ?? "rgba(255,255,255,1.0)";
+    const background = this.parseRgba(backgroundColor);
     const signalRange = Math.max(1e-9, maxSignal - minSignal);
     const pixelCount = Math.min(values.length, rows * cols);
     for (let idx = 0; idx < pixelCount; idx += 1) {
       const signal = Number.isFinite(values[idx]) ? values[idx] : 0;
       const normalized = Math.max(0, Math.min(1, (signal - minSignal) / signalRange));
       const mix = normalized;
+      const alpha =
+        (start[3] + (end[3] - start[3]) * mix) / 255.0;
       const colorR = start[0] + (end[0] - start[0]) * mix;
       const colorG = start[1] + (end[1] - start[1]) * mix;
       const colorB = start[2] + (end[2] - start[2]) * mix;
-      const alpha = start[3] + (end[3] - start[3]) * mix;
+      const dstR = Math.round(colorR * alpha + background[0] * (1 - alpha));
+      const dstG = Math.round(colorG * alpha + background[1] * (1 - alpha));
+      const dstB = Math.round(colorB * alpha + background[2] * (1 - alpha));
       const pixelIndex = idx * 4;
-      imageData.data[pixelIndex] = this.clampByte(colorR);
-      imageData.data[pixelIndex + 1] = this.clampByte(colorG);
-      imageData.data[pixelIndex + 2] = this.clampByte(colorB);
-      imageData.data[pixelIndex + 3] = this.clampByte(alpha);
+      imageData.data[pixelIndex] = dstR;
+      imageData.data[pixelIndex + 1] = dstG;
+      imageData.data[pixelIndex + 2] = dstB;
+      imageData.data[pixelIndex + 3] = 255;
     }
     context.putImageData(imageData, 0, 0);
     return canvas.toDataURL("image/png");
@@ -322,7 +331,6 @@ class VersionedXYZContactMapSource extends XYZ {
         `/get_tile?version=${this.sourceVersion}` +
         `&level=${1 + this.zoomLevel}` +
         `&bpResolution=${this.bpResolution}` +
-        `&source=${this.matrixSource}` +
         `&row=${row}` +
         `&col=${col}` +
         `&tile_size=${unref(this.layersManager.tileSize)}`

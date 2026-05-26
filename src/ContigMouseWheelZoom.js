@@ -37,8 +37,8 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
   constructor(opt_options) {
     super(opt_options);
     this.dimension_holder = opt_options.dimension_holder;
-    this.resolutions = opt_options.resolutions;
-    this.pixelResolutionSet = opt_options.pixelResolutionSet;
+    this.resolutions = [...opt_options.resolutions];
+    this.pixelResolutionSet = [...opt_options.pixelResolutionSet];
     this.global_projection = opt_options.global_projection;
     this.layers = opt_options.layers;
     this.isTrackPad = undefined;
@@ -66,13 +66,8 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     wheelEvent.preventDefault();
 
     const layers = this.layers
-      .filter(
-        (l) =>
-          l instanceof TileLayer &&
-          l.getVisible() &&
-          l.getData(mapBrowserEvent.pixel)
-      )
-      .sort((l1, l2) => (l2.getZIndex() ?? 0) - (l1.getZIndex() ?? 0)); //[];
+      .filter((l) => l instanceof TileLayer && l.getData(mapBrowserEvent.pixel))
+      .sort((l1, l2) => l1.zIndex - l2.zIndex); //[];
     // map.forEachLayerAtPixel(mapBrowserEvent.pixel, function (layer) {
     //   layers.push(layer);
     // });
@@ -227,11 +222,8 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
       maxResolution ?? newResolution
     );
 
-    const oldDescriptor = this.getClosestResolutionDescriptor(
-      view.getResolution()
-    );
-    const newDescriptor =
-      this.getClosestResolutionDescriptor(constrainedResolution);
+    const old_level_index = this.getClosestResolutionIndex(view.getResolution());
+    const new_level_index = this.getClosestResolutionIndex(constrainedResolution);
 
     if (
       this.lastMouseBps &&
@@ -239,11 +231,9 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
       this.lastMousePixel &&
       this.lastMouseCoord &&
       !isNaN(this.lastMouseCoord[0]) &&
-      oldDescriptor &&
-      newDescriptor &&
-      newDescriptor.bpResolution !== oldDescriptor.bpResolution
+      new_level_index !== old_level_index
     ) {
-      const newResolutionSeq = newDescriptor.bpResolution;
+      const newResolutionSeq = this.resolutions[new_level_index];
       if (newResolutionSeq !== undefined) {
         const finish_bin_1 = this.dimension_holder.getBinContainingBp(
           this.lastMouseBps[0],
@@ -256,7 +246,7 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
         const finish_coordinate_bins = [finish_bin_1, finish_bin_2];
         // const finish_coordinate_on_map = this.transformFromLayerToGlobalCoordinate[new_level_index].apply(null, [finish_coordinate_bins]);
         const finish_coordinate_on_map = finish_coordinate_bins.map(
-          (c) => c * newDescriptor.pixelResolution
+          (c) => c * this.pixelResolutionSet[new_level_index]
         );
         finish_coordinate_on_map[1] *= -1;
         const dx_px = this.lastCenterPixel[0] - this.lastMousePixel[0];
@@ -266,8 +256,8 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
           duration: this.duration_,
           resolution: constrainedResolution,
           center: [
-            finish_coordinate_on_map[0] + dx_px * constrainedResolution,
-            finish_coordinate_on_map[1] - dy_px * constrainedResolution,
+            finish_coordinate_on_map[0] + dx_px * newResolution,
+            finish_coordinate_on_map[1] - dy_px * newResolution,
           ],
         });
       } else {
@@ -294,71 +284,18 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
   }
 
   getClosestResolutionIndex(resolution) {
-    const descriptor = this.getClosestResolutionDescriptor(resolution);
-    if (descriptor?.index !== undefined) {
-      return descriptor.index;
-    }
-    return 0;
-  }
-
-  getClosestResolutionDescriptor(resolution) {
-    const layerDescriptors = this.layers
-      .filter((layer) => layer instanceof TileLayer && layer.getVisible())
-      .map((layer) => ({
-        bpResolution: Number(layer.get("bpResolution")),
-        pixelResolution: Number(layer.get("pixelResolution")),
-        source: layer.get("matrixSource") ?? "PRIMARY",
-      }))
-      .filter(
-        (entry) =>
-          Number.isFinite(entry.bpResolution) &&
-          entry.bpResolution > 0 &&
-          Number.isFinite(entry.pixelResolution) &&
-          entry.pixelResolution > 0
-      );
-    const deduplicatedLayerDescriptors = [
-      ...new Map(
-        layerDescriptors.map((entry) => [
-          `${entry.source}:${entry.bpResolution}:${entry.pixelResolution}`,
-          entry,
-        ])
-      ).values(),
-    ];
-    if (deduplicatedLayerDescriptors.length > 0) {
-      return this.closestDescriptorFromEntries(
-        deduplicatedLayerDescriptors,
-        resolution
-      );
-    }
-
     if (!this.pixelResolutionSet.length) {
-      return null;
+      return 0;
     }
-    return this.closestDescriptorFromEntries(
-      this.pixelResolutionSet.map((pixelResolution, index) => ({
-        bpResolution: this.resolutions[index],
-        pixelResolution,
-        index,
-        source: "PRIMARY",
-      })),
-      resolution
-    );
-  }
-
-  closestDescriptorFromEntries(entries, resolution) {
-    let bestEntry = entries[0];
-    let bestDist = Math.abs(bestEntry.pixelResolution - resolution);
-    for (let i = 1; i < entries.length; ++i) {
-      const dist = Math.abs(entries[i].pixelResolution - resolution);
-      if (
-        dist < bestDist ||
-        (dist === bestDist &&
-          entries[i].pixelResolution < bestEntry.pixelResolution)
-      ) {
-        bestEntry = entries[i];
+    let bestIdx = 0;
+    let bestDist = Math.abs(this.pixelResolutionSet[0] - resolution);
+    for (let i = 1; i < this.pixelResolutionSet.length; ++i) {
+      const dist = Math.abs(this.pixelResolutionSet[i] - resolution);
+      if (dist < bestDist) {
+        bestIdx = i;
         bestDist = dist;
       }
     }
-    return bestEntry;
+    return bestIdx;
   }
 }

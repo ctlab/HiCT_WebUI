@@ -142,8 +142,6 @@ export type SecondarySourceCompatibility = {
   exactMatch: boolean;
   primaryMaxBins: number;
   secondaryMaxBins: number;
-  primaryResolutions: number[];
-  secondaryResolutions: number[];
   primaryBinsByResolution: number[];
   secondaryBinsByResolution: number[];
   mismatchedResolutionOrders: number[];
@@ -221,20 +219,6 @@ class RequestManager {
             exactMatch: Boolean(compatibilityRaw.exactMatch ?? false),
             primaryMaxBins: Number(compatibilityRaw.primaryMaxBins ?? 0),
             secondaryMaxBins: Number(compatibilityRaw.secondaryMaxBins ?? 0),
-            primaryResolutions: Array.isArray(
-              compatibilityRaw.primaryResolutions
-            )
-              ? (compatibilityRaw.primaryResolutions as unknown[]).map(
-                  (value) => Number(value ?? 0)
-                )
-              : [],
-            secondaryResolutions: Array.isArray(
-              compatibilityRaw.secondaryResolutions
-            )
-              ? (compatibilityRaw.secondaryResolutions as unknown[]).map(
-                  (value) => Number(value ?? 0)
-                )
-              : [],
             primaryBinsByResolution: Array.isArray(
               compatibilityRaw.primaryBinsByResolution
             )

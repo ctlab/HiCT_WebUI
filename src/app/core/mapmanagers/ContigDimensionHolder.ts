@@ -63,63 +63,6 @@ export default class ContigDimensionHolder {
     console.log("Contig dimension holder: ", this);
   }
 
-  public ensureResolutions(resolutions: number[]): void {
-    const normalizedResolutions = [
-      ...new Set(
-        resolutions
-          .map((resolution) => Math.round(Number(resolution)))
-          .filter((resolution) => Number.isFinite(resolution) && resolution > 0)
-      ),
-    ].filter((resolution) => !this.resolutions.includes(resolution));
-
-    if (normalizedResolutions.length === 0) {
-      return;
-    }
-
-    this.resolutions.push(...normalizedResolutions);
-    this.resolutions.sort((left, right) => left - right);
-
-    for (const contig of this.contigDescriptors) {
-      for (const resolution of normalizedResolutions) {
-        contig.contigLengthBins.set(
-          resolution,
-          Math.max(1, Math.ceil(contig.contigLengthBp / resolution))
-        );
-        contig.presenceAtResolution.set(
-          resolution,
-          this.getClosestPresenceAtResolution(contig, resolution)
-        );
-      }
-    }
-
-    this.updatePrefixSumBins();
-    this.updatePrefixSumPixels();
-  }
-
-  private getClosestPresenceAtResolution(
-    contig: ContigDescriptor,
-    resolution: number
-  ): ContigHideType {
-    let closestPresence = ContigHideType.AUTO_SHOWN;
-    let closestDistance = Number.POSITIVE_INFINITY;
-
-    for (const [
-      candidateResolution,
-      candidatePresence,
-    ] of contig.presenceAtResolution.entries()) {
-      if (candidateResolution <= 0) {
-        continue;
-      }
-      const distance = Math.abs(Math.log(candidateResolution / resolution));
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestPresence = candidatePresence;
-      }
-    }
-
-    return closestPresence;
-  }
-
   prefix_sum_bp: number[] = [];
   prefix_sum_bins: Map<number, number[]> = new Map<number, number[]>();
   prefix_sum_px: Map<number, number[]> = new Map<number, number[]>();

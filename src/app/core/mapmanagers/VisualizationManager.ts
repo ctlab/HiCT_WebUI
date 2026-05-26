@@ -925,10 +925,6 @@ class VisualizationManager {
     }
 
     const options = this.visualizationOptionsStore.asVisualizationOptions();
-    await this.sendVisualizationOptionsToServer({
-      skipAutoThresholdRefresh: true,
-      preserveCustomPipeline: true,
-    });
     const changed = this.updateRenderPipelineSource(pipelineConfig, source, options);
     if (!changed) {
       const hydrated = await this.loadVisualizationOptionsForSource(source);
