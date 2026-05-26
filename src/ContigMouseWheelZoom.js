@@ -44,6 +44,12 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     this.isTrackPad = undefined;
   }
 
+  setResolutionModel(resolutions, pixelResolutionSet, layers) {
+    this.resolutions = [...resolutions];
+    this.pixelResolutionSet = [...pixelResolutionSet];
+    this.layers = layers;
+  }
+
   /**
    * Handles the {@link module:ol/MapBrowserEvent~MapBrowserEvent map browser event} (if it was a mousewheel-event) and eventually
    * zooms the map.
@@ -67,7 +73,7 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
 
     const layers = this.layers
       .filter((l) => l instanceof TileLayer && l.getData(mapBrowserEvent.pixel))
-      .sort((l1, l2) => l1.zIndex - l2.zIndex); //[];
+      .sort((l1, l2) => (l2.getZIndex?.() ?? 0) - (l1.getZIndex?.() ?? 0)); //[];
     // map.forEachLayerAtPixel(mapBrowserEvent.pixel, function (layer) {
     //   layers.push(layer);
     // });

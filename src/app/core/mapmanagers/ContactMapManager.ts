@@ -1123,7 +1123,8 @@ class ContactMapManager {
     const scaffoldTrack =
       this.viewAndLayersManager.track2DHolder.scaffoldBordersTrack;
     const pixelResolution =
-      this.viewAndLayersManager.resolutionToPixelResolution.get(bpResolution) ?? 1;
+      this.viewAndLayersManager.getPixelResolutionForBpResolution(bpResolution) ??
+      1;
     if (!Number.isFinite(pixelResolution) || pixelResolution <= 0) {
       return "";
     }
@@ -1580,10 +1581,22 @@ class ContactMapManager {
     if (!mainMapSize) {
       return;
     }
-    const mainExtent = this.map.getView().calculateExtent(mainMapSize);
+    const mainView = this.map.getView();
+    const mainCenter = mainView.getCenter();
+    const mainResolution = mainView.getResolution();
+    if (
+      !mainCenter ||
+      mainCenter.length < 2 ||
+      !mainCenter.every((value) => Number.isFinite(value)) ||
+      mainResolution === undefined ||
+      !Number.isFinite(mainResolution)
+    ) {
+      return;
+    }
+    const mainExtent = mainView.calculateExtent(mainMapSize);
     const transformedMainExtent = transformExtent(
       mainExtent,
-      this.map.getView().getProjection(),
+      mainView.getProjection(),
       minimapProjection
     );
     if (!transformedMainExtent.every((value) => Number.isFinite(value))) {

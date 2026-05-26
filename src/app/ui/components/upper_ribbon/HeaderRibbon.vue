@@ -681,7 +681,7 @@ function checkOptionsAndSnapToContigIntersection() {
       view.animate({
         center: centerCoordiate,
         resolution:
-          mapManager.viewAndLayersManager.resolutionToPixelResolution.get(
+          mapManager.viewAndLayersManager.getPixelResolutionForBpResolution(
             bpResolutionToSnapAt
           ),
       });

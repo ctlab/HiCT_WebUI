@@ -47,7 +47,8 @@ function recomputeScale() {
   const map = props.mapManager;
   if (!map) return;
   const layersManager = map.viewAndLayersManager;
-  const pixelRes = layersManager.pixelResolutionSet;
+  const navigationModel = layersManager.getNavigationResolutionModel();
+  const pixelRes = navigationModel.pixelResolutionSet;
   if (!pixelRes.length) return;
   const minPixel = Math.min(...pixelRes);
   const maxPixel = Math.max(...pixelRes);
@@ -56,9 +57,9 @@ function recomputeScale() {
   maxRes.value = maxPixel * factor;
   logMin.value = Math.log(minRes.value);
   logMax.value = Math.log(maxRes.value);
-  resMarks.value = layersManager.resolutions.map((bp, i) => ({
+  resMarks.value = navigationModel.resolutions.map((bp, i) => ({
     bp,
-    pixel: layersManager.pixelResolutionSet[i],
+    pixel: navigationModel.pixelResolutionSet[i],
   }));
 }
 

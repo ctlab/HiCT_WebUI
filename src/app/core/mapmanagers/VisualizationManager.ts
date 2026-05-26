@@ -649,7 +649,19 @@ class VisualizationManager {
       return null;
     }
     const mapSizePx = Math.max(1, Math.round(rawMapSizePx));
-    const extent = this.mapManager.getView().calculateExtent(size);
+    const view = this.mapManager.getView();
+    const center = view.getCenter();
+    const resolution = view.getResolution();
+    if (
+      !center ||
+      center.length < 2 ||
+      !center.every((value) => Number.isFinite(value)) ||
+      resolution === undefined ||
+      !Number.isFinite(resolution)
+    ) {
+      return null;
+    }
+    const extent = view.calculateExtent(size);
     const pad = Math.max(0, Math.round(paddingPx));
     const clampLowerBound = (value: number): number =>
       Math.max(0, Math.min(mapSizePx - 1, value));

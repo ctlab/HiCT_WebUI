@@ -167,7 +167,20 @@ class RulerControl extends Control {
       this.viewAndLayersManager.currentViewState.resolutionDesciptor;
 
     const activeHiCLayer = this.viewAndLayersManager.getActiveHiCDataLayer();
-    const extent = mapView.calculateExtent(map.getSize());
+    const mapSize = map.getSize();
+    const center = mapView.getCenter();
+    const pixelResolution = mapView.getResolution();
+    if (
+      !mapSize ||
+      !center ||
+      center.length < 2 ||
+      !center.every((value) => Number.isFinite(value)) ||
+      pixelResolution === undefined ||
+      !Number.isFinite(pixelResolution)
+    ) {
+      return;
+    }
+    const extent = mapView.calculateExtent(mapSize);
     const targetProjection = activeHiCLayer.getSource()?.getProjection();
 
     if (!targetProjection) {
@@ -181,8 +194,6 @@ class RulerControl extends Control {
       return;
     }
     const pixelMapSize = ps[ps.length - 1];
-
-    const pixelResolution = mapView.getResolution() ?? 1;
 
     const layerPixelResolution = Number.isFinite(
       resolutionDescriptor.pixelResolution
@@ -402,12 +413,22 @@ class RulerControl extends Control {
       return null;
     }
     const mapView = map.getView();
+    const center = mapView.getCenter();
+    const pixelResolution = mapView.getResolution();
+    if (
+      !center ||
+      center.length < 2 ||
+      !center.every((value) => Number.isFinite(value)) ||
+      pixelResolution === undefined ||
+      !Number.isFinite(pixelResolution)
+    ) {
+      return null;
+    }
     const resolutionDescriptor =
       this.viewAndLayersManager.currentViewState.resolutionDesciptor;
     const activeHiCLayer = this.viewAndLayersManager.getActiveHiCDataLayer();
     const targetProjection =
       activeHiCLayer.getSource()?.getProjection() ?? mapView.getProjection();
-    const pixelResolution = mapView.getResolution() ?? 1;
     const ps = this.contigDimensionHolder.prefix_sum_px.get(
       resolutionDescriptor.bpResolution
     );

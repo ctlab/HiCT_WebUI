@@ -1405,6 +1405,9 @@ const runWizard = async (): Promise<void> => {
             true
           );
       }
+      mapManager.viewAndLayersManager.setSecondaryResolutionModel(
+        secondaryStatus.compatibility
+      );
       secondaryStatus.warnings.forEach((warning) =>
         toast(warning, {
           style: {
@@ -1415,6 +1418,7 @@ const runWizard = async (): Promise<void> => {
       );
     } else {
       await props.networkManager.requestManager.closeSecondarySource().catch(() => undefined);
+      mapManager.viewAndLayersManager.setSecondaryResolutionModel(undefined);
     }
 
     const primaryPresetRecord = primaryPreset.value?.preset;

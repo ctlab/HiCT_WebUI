@@ -42,6 +42,9 @@ export default class BinMousePosition extends MousePosition {
     if (opt_options.scaffold_holder) {
       this.scaffold_holder = opt_options.scaffold_holder;
     }
+    if (opt_options.layersManager) {
+      this.layersManager = opt_options.layersManager;
+    }
   }
 
   updateHTML_(pixel) {
@@ -79,7 +82,7 @@ export default class BinMousePosition extends MousePosition {
             ? null
             : layers
                 .filter((l) => l instanceof TileLayer)
-                .sort((l1, l2) => l1.getZIndex() - l2.getZIndex())[0];
+                .sort((l1, l2) => l2.getZIndex() - l1.getZIndex())[0];
         if (hovered_layer) {
           const layer_projection = hovered_layer.getSource().getProjection();
           const pixelResolution = hovered_layer.get("pixelResolution");
@@ -114,6 +117,23 @@ export default class BinMousePosition extends MousePosition {
             html = html + "Bin resolution: 1:" + bpResolution;
             html = html + "<";
             html = html + "br/>";
+            if (this.layersManager?.getVisibleSourceResolutionDescriptors) {
+              const visible =
+                this.layersManager.getVisibleSourceResolutionDescriptors();
+              const details = [
+                visible.primary
+                  ? `Primary 1:${visible.primary.bpResolution}`
+                  : null,
+                visible.secondary
+                  ? `Secondary 1:${visible.secondary.bpResolution}`
+                  : null,
+              ].filter(Boolean);
+              if (details.length > 0) {
+                html = html + "Visible source resolutions: " + details.join("; ");
+                html = html + "<";
+                html = html + "br/>";
+              }
+            }
             html =
               html +
               "Position: px1=" +

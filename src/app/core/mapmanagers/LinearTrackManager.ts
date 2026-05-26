@@ -593,9 +593,10 @@ class LinearTrackManager {
         : this.mapManager.getLayersManager().currentViewState.resolutionDesciptor
             .bpResolution;
     const finestPixelResolution =
-      this.mapManager.getLayersManager().resolutionToPixelResolution.get(
-        safeFinestBpResolution
-      ) ?? currentResolution;
+      this.mapManager
+        .getLayersManager()
+        .getPixelResolutionForBpResolution(safeFinestBpResolution) ??
+      currentResolution;
     const targetSpanPx = Math.max(180, Math.min(mapSize[0], mapSize[1]) * 0.52);
     const spanPxAtFinest = spanBp / Math.max(1, safeFinestBpResolution);
     const minViewResolution = view.getMinResolution() ?? 0;
@@ -785,6 +786,9 @@ class LinearTrackManager {
     }
 
     const viewport = this.getViewportGeometry(orientation);
+    if (!viewport) {
+      return;
+    }
     const cacheEpoch = this.cacheEpoch;
     try {
       const prefetch = this.buildPrefetchViewport(viewport);
@@ -2135,19 +2139,30 @@ class LinearTrackManager {
     return multiplier * base;
   }
 
-  private getViewportGeometry(orientation: Orientation): ViewportGeometry {
+  private getViewportGeometry(orientation: Orientation): ViewportGeometry | null {
     const descriptor =
       this.mapManager.getLayersManager().currentViewState.resolutionDesciptor;
     const bpResolution = descriptor.bpResolution;
     const map = this.mapManager.getMap();
     const view = this.mapManager.getView();
     const mapSize = map.getSize();
+    const center = view.getCenter();
+    const pixelResolution = view.getResolution();
+    if (
+      !mapSize ||
+      !center ||
+      center.length < 2 ||
+      !center.every((value) => Number.isFinite(value)) ||
+      pixelResolution === undefined ||
+      !Number.isFinite(pixelResolution)
+    ) {
+      return null;
+    }
     const extent = view.calculateExtent(mapSize);
     const activeHiCLayer =
       this.mapManager.getLayersManager().getActiveHiCDataLayer();
     const targetProjection =
       activeHiCLayer.getSource()?.getProjection() ?? view.getProjection();
-    const pixelResolution = view.getResolution() ?? 1;
     const layerPixelResolution = Number.isFinite(descriptor.pixelResolution)
       ? descriptor.pixelResolution
       : 1;

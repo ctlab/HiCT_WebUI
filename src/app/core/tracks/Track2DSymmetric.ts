@@ -375,7 +375,7 @@ class ContigBordersTrack2D extends WithRing {
             ];
 
             const pixelResolution =
-              viewAndLayersManager.resolutionToPixelResolution.get(resolution);
+              viewAndLayersManager.getPixelResolutionForBpResolution(resolution);
             if (!pixelResolution) {
               throw new Error(
                 `Cannot get pixel resolution for bp resolution = ${resolution}`
@@ -505,7 +505,7 @@ class ScaffoldBordersTrack2D extends WithRing {
             }
 
             const pixelResolution =
-              viewAndLayersManager.resolutionToPixelResolution.get(
+              viewAndLayersManager.getPixelResolutionForBpResolution(
                 bpResolution
               );
             if (!pixelResolution) {
@@ -640,7 +640,7 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
               const multiPolygonRings = [];
 
               const pixelResolution =
-                viewAndLayersManager.resolutionToPixelResolution.get(
+                viewAndLayersManager.getPixelResolutionForBpResolution(
                   resolution
                 );
               if (!pixelResolution) {
@@ -744,7 +744,7 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
         const multiPolygonRings = [];
 
         const pixelResolution =
-          viewAndLayersManager.resolutionToPixelResolution.get(resolution);
+          viewAndLayersManager.getPixelResolutionForBpResolution(resolution);
         if (!pixelResolution) {
           throw new Error(
             `Cannot get pixel resolution for bp resolution = ${resolution}`

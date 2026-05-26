@@ -63,6 +63,32 @@ export default class ContigDimensionHolder {
     console.log("Contig dimension holder: ", this);
   }
 
+  public ensureResolution(resolution: number): void {
+    if (!Number.isFinite(resolution) || resolution <= 0) {
+      return;
+    }
+    if (!this.resolutions.includes(resolution)) {
+      this.resolutions.push(resolution);
+      this.resolutions.sort((a, b) => a - b);
+    }
+    for (const descriptor of this.contigDescriptors) {
+      if (!descriptor.contigLengthBins.has(resolution)) {
+        descriptor.contigLengthBins.set(
+          resolution,
+          Math.max(1, Math.ceil(descriptor.contigLengthBp / resolution))
+        );
+      }
+      if (!descriptor.presenceAtResolution.has(resolution)) {
+        descriptor.presenceAtResolution.set(
+          resolution,
+          ContigHideType.AUTO_SHOWN
+        );
+      }
+    }
+    this.updatePrefixSumBins();
+    this.updatePrefixSumPixels();
+  }
+
   prefix_sum_bp: number[] = [];
   prefix_sum_bins: Map<number, number[]> = new Map<number, number[]>();
   prefix_sum_px: Map<number, number[]> = new Map<number, number[]>();

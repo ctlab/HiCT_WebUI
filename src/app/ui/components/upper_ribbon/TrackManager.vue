@@ -670,6 +670,9 @@ const refreshSecondaryStatus = async () => {
   try {
     secondaryStatus.value =
       await props.mapManager.networkManager.requestManager.getSecondarySourceStatus();
+    props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
+      secondaryStatus.value.attached ? secondaryStatus.value.compatibility : undefined
+    );
     if (!secondaryStatus.value.attached) {
       selectedSecondaryFile.value = "";
     }
@@ -846,6 +849,9 @@ const onAttachSecondarySource = async () => {
     }
     pendingSecondaryProbe.value = null;
     secondaryStatus.value = response;
+    props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
+      response.compatibility
+    );
     await props.mapManager.reloadTilesFromBackend();
     await refreshSecondaryStatus();
     toast.success("Secondary source attached");
@@ -871,6 +877,9 @@ const onProceedSecondaryWithMismatch = async () => {
         filenameToOpen,
         true
       );
+    props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
+      secondaryStatus.value.compatibility
+    );
     selectedSecondaryFile.value = filenameToOpen;
     await props.mapManager.reloadTilesFromBackend();
     await refreshSecondaryStatus();
@@ -887,6 +896,7 @@ const onDetachSecondarySource = async () => {
   try {
     secondaryStatus.value =
       await props.mapManager.networkManager.requestManager.closeSecondarySource();
+    props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(undefined);
     await props.mapManager.reloadTilesFromBackend();
     if (secondaryStatus.value.assemblySource === "PRIMARY") {
       const result =
