@@ -116,6 +116,13 @@
                   <input v-model.trim="extraMinimap2Args" type="text" class="form-control" placeholder="e.g. -f 0.0002" />
                   <small class="text-muted">Passed as separate arguments without a shell; leave empty for HiCT defaults.</small>
                 </div>
+                <div class="col-12">
+                  <label class="form-label">Alignment command preview</label>
+                  <pre class="dotplot-command-preview">{{ alignerCommandPreview }}</pre>
+                  <small class="text-muted">
+                    The final PAF path is a runtime temporary file; arguments and selected aligner match the current settings.
+                  </small>
+                </div>
                 <div class="col-md-3 d-flex align-items-end">
                   <div class="form-check form-switch">
                     <input id="dotplot-skip-diag" v-model="skipDiagonal" class="form-check-input" type="checkbox" />
@@ -184,10 +191,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, type Ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
 import { StartDotplotJobsRequest } from "@/app/core/net/api/request";
-import type { ConversionJobResponse } from "@/app/core/net/api/response";
+import type { ConversionJobResponse, ConversionToolchainStatusResponse } from "@/app/core/net/api/response";
 import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
 import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
 
@@ -204,8 +211,11 @@ const step: Ref<"select" | "settings" | "progress"> = ref("select");
 const fastaFiles: Ref<string[]> = ref([]);
 const selection: Ref<Set<string>> = ref(new Set<string>());
 const jobs: Ref<ConversionJobResponse[]> = ref([]);
+const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> = ref(null);
 const errorMessage: Ref<string> = ref("");
 const submitting = ref(false);
+const refreshingJobs = ref(false);
+let refreshTimer: number | null = null;
 
 const binSize = ref(1000);
 const resolutions = ref("");
@@ -226,6 +236,57 @@ const fastaEntries = computed<FileSelectionTableEntry[]>(() =>
   fastaFiles.value.map((path) => ({ path }))
 );
 const selectedFastaPaths = computed(() => Array.from(selection.value));
+const hasActiveJobs = computed(() =>
+  jobs.value.some((job) => job.status === "queued" || job.status === "running")
+);
+const selectedAlignerCommand = computed(() => {
+  const status = toolchainStatus.value;
+  if (!status) {
+    return "<bundled minimap2/mm2-plus>";
+  }
+  switch (alignerPreference.value) {
+    case "minimap2":
+      return status.minimap2Command ?? "<minimap2 unavailable>";
+    case "mm2plus-avx2":
+      return status.mm2PlusAvx2Command ?? "<mm2-plus AVX2 unavailable>";
+    case "mm2plus-avx512":
+      return status.mm2PlusAvx512Command ?? "<mm2-plus AVX-512 unavailable>";
+    case "mm2plus":
+      return status.mm2PlusAvx512Command ?? status.mm2PlusAvx2Command ?? "<mm2-plus unavailable>";
+    default:
+      return status.selectedDotplotAlignerCommand ??
+        status.mm2PlusAvx512Command ??
+        status.mm2PlusAvx2Command ??
+        status.minimap2Command ??
+        "<no dotplot aligner available>";
+  }
+});
+const alignerCommandPreview = computed(() => {
+  const fasta = selectedFastaPaths.value[0] ?? "<selected FASTA>";
+  const prefix = stripFastaSuffix(fasta.split(/[\\/]/).pop() ?? fasta) + `.self.k${safeInteger(minimizerK.value, 17)}w${safeInteger(minimizerWindow.value, 5)}`;
+  const args = [
+    selectedAlignerCommand.value,
+    "-t",
+    String(safeInteger(alignmentThreads.value, 1)),
+    "-k",
+    String(safeInteger(minimizerK.value, 17)),
+    "-w",
+    String(safeInteger(minimizerWindow.value, 5)),
+    "-m",
+    String(safeNonNegativeInteger(minChainScore.value, 40)),
+    "-v",
+    "4",
+    "-P",
+    "--dual=no",
+    "--no-long-join",
+  ];
+  if (skipDiagonal.value) {
+    args.push("-D");
+  }
+  args.push(...parsePreviewExtraArgs(extraMinimap2Args.value));
+  args.push(fasta, fasta);
+  return `${args.map(shellQuote).join(" ")} > ${shellQuote(`<processing-dir>/${prefix}.paf`)}`;
+});
 
 function onSelectionUpdated(files: string[]): void {
   selection.value = new Set(files);
@@ -250,16 +311,23 @@ function invertSelection(): void {
 }
 
 async function refreshJobs(): Promise<void> {
+  if (refreshingJobs.value) {
+    return;
+  }
+  refreshingJobs.value = true;
   try {
     jobs.value = await props.networkManager.requestManager.listDotplotJobs();
   } catch (error) {
     errorMessage.value = String(error);
+  } finally {
+    refreshingJobs.value = false;
   }
 }
 
 async function viewCurrentJobs(): Promise<void> {
   await refreshJobs();
   step.value = "progress";
+  syncAutoRefresh();
 }
 
 async function startDotplots(): Promise<void> {
@@ -287,6 +355,7 @@ async function startDotplots(): Promise<void> {
     );
     await refreshJobs();
     step.value = "progress";
+    syncAutoRefresh();
   } catch (error) {
     errorMessage.value = String(error);
   } finally {
@@ -294,7 +363,90 @@ async function startDotplots(): Promise<void> {
   }
 }
 
+function safeInteger(value: number, fallback: number): number {
+  return Math.max(1, Math.trunc(Number.isFinite(value) ? value : fallback));
+}
+
+function safeNonNegativeInteger(value: number, fallback: number): number {
+  return Math.max(0, Math.trunc(Number.isFinite(value) ? value : fallback));
+}
+
+function stripFastaSuffix(filename: string): string {
+  let name = filename;
+  if (name.toLowerCase().endsWith(".gz")) {
+    name = name.slice(0, -3);
+  }
+  for (const suffix of [".fasta", ".fa", ".fna", ".fas"]) {
+    if (name.toLowerCase().endsWith(suffix)) {
+      return name.slice(0, -suffix.length);
+    }
+  }
+  return name;
+}
+
+function parsePreviewExtraArgs(raw: string): string[] {
+  if (!raw.trim()) {
+    return [];
+  }
+  const out: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  for (const ch of raw) {
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      } else {
+        current += ch;
+      }
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+    } else if (/\s/.test(ch)) {
+      if (current) {
+        out.push(current);
+        current = "";
+      }
+    } else {
+      current += ch;
+    }
+  }
+  if (current) {
+    out.push(current);
+  }
+  if (quote) {
+    out.push("<unterminated quote>");
+  }
+  return out;
+}
+
+function shellQuote(value: string): string {
+  if (/^<.*>$/.test(value)) {
+    return value;
+  }
+  return /^[A-Za-z0-9_./:=,+@%-]+$/.test(value)
+    ? value
+    : `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function syncAutoRefresh(): void {
+  const shouldRefresh = step.value === "progress" && hasActiveJobs.value;
+  if (shouldRefresh && refreshTimer === null) {
+    refreshTimer = window.setInterval(() => {
+      void refreshJobs().then(syncAutoRefresh);
+    }, 2500);
+  } else if (!shouldRefresh && refreshTimer !== null) {
+    window.clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+}
+
+watch(() => [step.value, hasActiveJobs.value] as const, syncAutoRefresh);
+
 onMounted(async () => {
+  try {
+    toolchainStatus.value = await props.networkManager.requestManager.getConversionToolchainStatus();
+  } catch (error) {
+    console.warn("Failed to inspect dotplot toolchain", error);
+  }
   try {
     fastaFiles.value = await props.networkManager.requestManager.listFASTAFiles();
     if (props.initialFastaFilename && fastaFiles.value.includes(props.initialFastaFilename)) {
@@ -303,6 +455,13 @@ onMounted(async () => {
     await refreshJobs();
   } catch (error) {
     errorMessage.value = String(error);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (refreshTimer !== null) {
+    window.clearInterval(refreshTimer);
+    refreshTimer = null;
   }
 });
 </script>
@@ -332,6 +491,19 @@ onMounted(async () => {
 
 .dotplot-settings code {
   font-size: 0.9em;
+}
+
+.dotplot-command-preview {
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #111827;
+  color: #d1fae5;
+  padding: 10px;
 }
 
 .dotplot-job-list {
