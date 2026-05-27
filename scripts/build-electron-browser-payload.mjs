@@ -33,15 +33,14 @@ const repoDir = resolve(scriptDir, "..");
 const args = parseArgs(process.argv.slice(2));
 const platform = args.platform ?? detectPlatform();
 const outputDir = resolve(args.output ?? join(repoDir, "..", "HiCT_JVM", "browsers-dist", platform, "electron"));
-const electronDist = resolve(repoDir, "node_modules", "electron", "dist");
-const electronPackage = JSON.parse(readFileSync(resolve(repoDir, "node_modules", "electron", "package.json"), "utf8"));
+const electronPackageDir = resolve(repoDir, "node_modules", "electron");
+const electronPackage = JSON.parse(readFileSync(resolve(electronPackageDir, "package.json"), "utf8"));
+const electronRuntimeExecutable = resolveInstalledElectronExecutable(electronPackageDir, platform);
+const electronDist = dirname(electronRuntimeExecutable);
 const electronVersion = String(electronPackage.version);
 
 if (!["linux_x86_64", "windows_x86_64"].includes(platform)) {
   throw new Error(`Unsupported Electron browser payload platform: ${platform}`);
-}
-if (!existsSync(electronDist)) {
-  throw new Error(`Electron runtime was not found at ${electronDist}. Run npm ci/install first.`);
 }
 if (!existsSync(resolve(repoDir, "dist", "electron", "main", "main.js"))) {
   throw new Error("Electron main process is not compiled. Run npm run electron:compile first.");
@@ -121,19 +120,15 @@ async function copyElectronRuntime(source, target) {
       .map((locale) => `${locale}.pak`)
   );
 
-  await cp(source, target, {
-    recursive: true,
-    dereference: true,
-    filter: (src) => {
-      if (src.includes(`${sep}locales${sep}`)) {
-        return keepLocales.has(basename(src));
-      }
-      if (src.endsWith(".pdb") || src.endsWith(".dSYM") || src.endsWith(".debug")) {
-        return false;
-      }
-      return true;
-    },
-  });
+  rmSync(target, { recursive: true, force: true });
+  mkdirSync(target, { recursive: true });
+  for (const entry of readdirSync(source)) {
+    await cp(join(source, entry), join(target, entry), {
+      recursive: true,
+      dereference: true,
+      filter: (src) => shouldCopyElectronRuntimePath(src, keepLocales),
+    });
+  }
 }
 
 async function copyElectronApp(target) {
@@ -166,8 +161,63 @@ function resolveElectronCommand(payloadRoot, targetPlatform) {
     }
   }
   throw new Error(
-    `Electron runtime executable was not found in ${payloadRoot}. Checked: ${candidates.join(", ")}`
+    [
+      `Electron runtime executable was not found in ${payloadRoot}.`,
+      `Checked: ${candidates.join(", ")}`,
+      `Installed Electron executable: ${electronRuntimeExecutable}`,
+      `Installed Electron runtime directory entries: ${describeDirectory(electronDist)}`,
+      `Payload entries: ${describeDirectory(payloadRoot)}`,
+    ].join("\n")
   );
+}
+
+function resolveInstalledElectronExecutable(packageDir, targetPlatform) {
+  const expectedExecutable = targetPlatform === "windows_x86_64" ? "electron.exe" : "electron";
+  const candidates = [];
+  const pathFile = resolve(packageDir, "path.txt");
+  if (existsSync(pathFile)) {
+    const relativeExecutable = readFileSync(pathFile, "utf8").trim();
+    if (relativeExecutable) {
+      candidates.push(resolve(packageDir, relativeExecutable));
+    }
+  }
+  candidates.push(resolve(packageDir, "dist", expectedExecutable));
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate) && statSync(candidate).isFile()) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    [
+      "Electron runtime executable was not found after npm install.",
+      `Checked: ${candidates.join(", ")}`,
+      `Electron package directory entries: ${describeDirectory(packageDir)}`,
+      `Electron dist directory entries: ${describeDirectory(resolve(packageDir, "dist"))}`,
+      "Run npm ci/install without ELECTRON_SKIP_BINARY_DOWNLOAD and ensure Electron postinstall completed.",
+    ].join("\n")
+  );
+}
+
+function shouldCopyElectronRuntimePath(path, keepLocales) {
+  if (path.includes(`${sep}locales${sep}`)) {
+    return keepLocales.has(basename(path));
+  }
+  if (path.endsWith(".pdb") || path.endsWith(".dSYM") || path.endsWith(".debug")) {
+    return false;
+  }
+  return true;
+}
+
+function describeDirectory(path) {
+  if (!existsSync(path)) {
+    return `${path} does not exist`;
+  }
+  return listFiles(path)
+    .slice(0, 80)
+    .map((filePath) => filePath.slice(path.length + 1))
+    .join(", ");
 }
 
 async function chmodExecutableIfPresent(path) {
