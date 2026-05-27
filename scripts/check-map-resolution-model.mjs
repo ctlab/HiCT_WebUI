@@ -157,15 +157,11 @@ assertVectorTuples(
   primaryCoarse,
   secondaryFine,
   [
-    [250, 1],
-    [500, 2],
     [1000, 4],
-    [2500, 10],
     [5000, 20],
     [10000, 40],
-    [20000, 80],
   ],
-  "vector layers must use the union of visible source resolutions"
+  "vector layers must use the primary assembly resolutions, not secondary-only tile resolutions"
 );
 
 assert.equal(
@@ -236,13 +232,10 @@ assertVectorTuples(
   secondaryNonDivisible,
   [
     [750, 3],
-    [1000, 4],
-    [2500, 10],
     [3000, 12],
-    [7000, 28],
     [9000, 36],
   ],
-  "vector layers must remain stable when source resolutions are not multiples"
+  "vector layers must remain stable on primary assembly resolutions when source resolutions are not multiples"
 );
 
 const equalPrimary = buildSourceResolutionDescriptorSet(

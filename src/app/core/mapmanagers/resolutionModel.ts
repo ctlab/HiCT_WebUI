@@ -136,12 +136,14 @@ export function getNavigationResolutionModel(
 
 export function getVectorResolutionTuples(
   primarySet: SourceResolutionDescriptorSet,
+  // Vector overlays describe the current assembly state, not a matrix source.
+  // Keep them on the primary assembly resolution pyramid; OpenLayers scales
+  // their coordinates correctly while secondary data layers use their own
+  // independent, possibly finer, tile pyramid.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   secondarySet?: SourceResolutionDescriptorSet
 ): LayerResolutionDescriptor[] {
-  const descriptors = [
-    ...primarySet.resolutionTuples,
-    ...(secondarySet?.resolutionTuples ?? []),
-  ];
+  const descriptors = [...primarySet.resolutionTuples];
   const byBpResolution = new Map<number, LayerResolutionDescriptor>();
   for (const descriptor of descriptors) {
     const existing = byBpResolution.get(descriptor.bpResolution);

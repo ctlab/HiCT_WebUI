@@ -1557,17 +1557,7 @@ class HiCViewAndLayersManager {
   }
 
   public getActiveVectorResolutionDescriptor(): LayerResolutionDescriptor {
-    const visibleDescriptors = this.getVisibleSourceResolutionDescriptors();
-    const candidates = [
-      visibleDescriptors.primary,
-      visibleDescriptors.secondary,
-    ].filter(
-      (descriptor): descriptor is LayerResolutionDescriptor =>
-        descriptor !== undefined && Number.isFinite(descriptor.bpResolution)
-    );
-    return candidates.reduce((best, descriptor) =>
-      descriptor.bpResolution < best.bpResolution ? descriptor : best
-    );
+    return this.getVisibleSourceResolutionDescriptors().primary;
   }
 
   private syncLayerVisibilityForCurrentResolution(): void {
