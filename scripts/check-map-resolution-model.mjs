@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import ts from "typescript";
 
-const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
+const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const require = createRequire(import.meta.url);
 const sourcePath = path.join(
   repoRoot,

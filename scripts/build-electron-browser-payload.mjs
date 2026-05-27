@@ -54,9 +54,10 @@ const electronTarget = join(outputDir, "electron");
 await copyElectronRuntime(electronDist, electronTarget);
 await copyElectronApp(join(outputDir, "app"));
 
-const command = platform === "windows_x86_64" ? "electron/electron.exe" : "electron/electron";
-await chmodExecutableIfPresent(join(outputDir, command));
-await flipSecurityFuses(join(outputDir, command));
+const command = resolveElectronCommand(outputDir, platform);
+const executablePath = join(outputDir, command);
+await chmodExecutableIfPresent(executablePath);
+await flipSecurityFuses(executablePath);
 
 const launchArguments = platform === "linux_x86_64" ? ["--no-sandbox", "app"] : ["app"];
 const manifest = {
@@ -151,6 +152,22 @@ async function copyElectronApp(target) {
     license: "MIT",
   };
   writeFileSync(join(target, "package.json"), `${JSON.stringify(appPackage, null, 2)}\n`, "utf8");
+}
+
+function resolveElectronCommand(payloadRoot, targetPlatform) {
+  const candidates =
+    targetPlatform === "windows_x86_64"
+      ? ["electron/electron.exe", "electron.exe"]
+      : ["electron/electron", "electron"];
+  for (const candidate of candidates) {
+    const candidatePath = join(payloadRoot, candidate);
+    if (existsSync(candidatePath) && statSync(candidatePath).isFile()) {
+      return candidate;
+    }
+  }
+  throw new Error(
+    `Electron runtime executable was not found in ${payloadRoot}. Checked: ${candidates.join(", ")}`
+  );
 }
 
 async function chmodExecutableIfPresent(path) {
