@@ -251,6 +251,8 @@ class StartDotplotJobsRequest implements HiCTAPIRequest {
       readonly outputDirectory?: string;
       readonly binSize: number;
       readonly resolutions?: string;
+      readonly referenceMapFilename?: string;
+      readonly assemblyAgpFilename?: string;
       readonly minimizerK: number;
       readonly minimizerWindow: number;
       readonly minChainScore: number;

@@ -522,6 +522,8 @@ class StartDotplotJobsRequestDTO extends HiCTAPIRequestDTO<StartDotplotJobsReque
       outputDirectory: this.entity.options.outputDirectory,
       binSize: this.entity.options.binSize,
       resolutions: this.entity.options.resolutions,
+      referenceMapFilename: this.entity.options.referenceMapFilename,
+      assemblyAgpFilename: this.entity.options.assemblyAgpFilename,
       minimizerK: this.entity.options.minimizerK,
       minimizerWindow: this.entity.options.minimizerWindow,
       minChainScore: this.entity.options.minChainScore,

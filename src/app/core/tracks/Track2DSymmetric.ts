@@ -261,7 +261,7 @@ class BasePairsTrack2DSymmetric extends Track2DSymmetric {
     }
     this.descriptor.bordersBp.forEach((bordersBp) => {
       for (const resolutionTuple of this.viewAndLayersManager
-        .resolutionTuples) {
+        .getVectorResolutionTuples()) {
         const [fromPx, toPx] = bordersBp.map((bp) =>
           this.contigDimensionHolder.getPxContainingBp(
             bp,

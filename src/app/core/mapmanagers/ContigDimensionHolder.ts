@@ -81,12 +81,39 @@ export default class ContigDimensionHolder {
       if (!descriptor.presenceAtResolution.has(resolution)) {
         descriptor.presenceAtResolution.set(
           resolution,
-          ContigHideType.AUTO_SHOWN
+          this.inferPresenceAtResolution(descriptor, resolution)
         );
       }
     }
     this.updatePrefixSumBins();
     this.updatePrefixSumPixels();
+  }
+
+  private inferPresenceAtResolution(
+    descriptor: ContigDescriptor,
+    resolution: number
+  ): ContigHideType {
+    let bestResolution: number | undefined = undefined;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    descriptor.presenceAtResolution.forEach((_hideType, candidate) => {
+      if (!Number.isFinite(candidate) || candidate <= 0) {
+        return;
+      }
+      const distance = Math.abs(Math.log(candidate / resolution));
+      if (
+        distance < bestDistance ||
+        (distance === bestDistance &&
+          (bestResolution === undefined || candidate < bestResolution))
+      ) {
+        bestResolution = candidate;
+        bestDistance = distance;
+      }
+    });
+
+    return bestResolution === undefined
+      ? ContigHideType.AUTO_SHOWN
+      : descriptor.presenceAtResolution.get(bestResolution) ??
+          ContigHideType.AUTO_SHOWN;
   }
 
   prefix_sum_bp: number[] = [];

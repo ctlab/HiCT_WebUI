@@ -516,6 +516,23 @@ class HiCViewAndLayersManager {
     };
   }
 
+  public getVectorResolutionTuples(): LayerResolutionDescriptor[] {
+    const descriptors = [
+      ...this.primaryResolutionSet.resolutionTuples,
+      ...(this.secondaryResolutionSet?.resolutionTuples ?? []),
+    ];
+    const byBpResolution = new Map<number, LayerResolutionDescriptor>();
+    for (const descriptor of descriptors) {
+      const existing = byBpResolution.get(descriptor.bpResolution);
+      if (!existing || descriptor.pixelResolution < existing.pixelResolution) {
+        byBpResolution.set(descriptor.bpResolution, descriptor);
+      }
+    }
+    return [...byBpResolution.values()].sort(
+      (a, b) => a.pixelResolution - b.pixelResolution
+    );
+  }
+
   private updateWheelZoomResolutionModel(): void {
     const navigationModel = this.getNavigationResolutionModel();
     this.wheelZoomInteraction?.setResolutionModel(
@@ -523,41 +540,6 @@ class HiCViewAndLayersManager {
       navigationModel.pixelResolutionSet,
       this.layersHolder.hicDataLayers
     );
-  }
-
-  private syncPrimaryTrackLayerResolutionMetadata(): void {
-    const collections = [
-      this.layersHolder.track2DLayers,
-      this.layersHolder.annotationLayers,
-      this.layersHolder.contigBordersLayers,
-      this.layersHolder.contigTranslocationArrowsLayers,
-      this.layersHolder.scaffoldBordersLayers,
-    ];
-    for (const layers of collections) {
-      for (const layer of layers) {
-        const bpResolution = Number(layer.get("bpResolution"));
-        const borders =
-          this.primaryResolutionSet.layerResolutionBorders.get(bpResolution);
-        if (!borders) {
-          continue;
-        }
-        layer.setMinResolution(
-          Number.isFinite(borders.minResolutionInclusive)
-            ? borders.minResolutionInclusive
-            : 0
-        );
-        layer.setMaxResolution(
-          Number.isFinite(borders.maxResolutionExclusive)
-            ? borders.maxResolutionExclusive
-            : Number.POSITIVE_INFINITY
-        );
-        layer.set(
-          "pixelResolution",
-          this.getPixelResolutionForBpResolution(bpResolution)
-        );
-        layer.changed();
-      }
-    }
   }
 
   public getPixelResolutionForBpResolution(
@@ -568,7 +550,10 @@ class HiCViewAndLayersManager {
       this.secondaryResolutionSet?.resolutionToPixelResolution.get(
         bpResolution
       ) ??
-      this.resolutionToPixelResolution.get(bpResolution)
+      this.resolutionToPixelResolution.get(bpResolution) ??
+      (Number.isFinite(bpResolution) && bpResolution > 0
+        ? bpResolution / this.coordinateBaseBp
+        : undefined)
     );
   }
 
@@ -934,13 +919,11 @@ class HiCViewAndLayersManager {
       " is it ContigBordersTrack2D: ",
       track instanceof ContigBordersTrack2D
     );
-    this.resolutionTuples.forEach(
-      ({ bpResolution, pixelResolution, layerResolutionBorders }) => {
+    this.getVectorResolutionTuples().forEach(
+      ({ bpResolution, pixelResolution }) => {
         const boundingBoxPolygonFeatures = track.features.get(bpResolution);
         if (!boundingBoxPolygonFeatures) {
-          throw new Error(
-            `Track ${track.trackDescriptor.name} has no features at resolution ${bpResolution}`
-          );
+          return;
         }
         const vectorSource = new VectorSource();
         vectorSource.addFeatures(boundingBoxPolygonFeatures);
@@ -950,9 +933,8 @@ class HiCViewAndLayersManager {
           source: vectorSource,
           zIndex:
             this.layersZIndices.TRACK_2D_LAYER_Z_INDEX + track.options.zIndex,
-          minResolution: layerResolutionBorders.minResolutionInclusive,
-          maxResolution: layerResolutionBorders.maxResolutionExclusive,
         });
+        vectorLayer.setVisible(false);
         vectorLayer.set("bpResolution", bpResolution);
         vectorLayer.set(
           "pixelResolution",
@@ -1142,8 +1124,6 @@ class HiCViewAndLayersManager {
       );
       this.applyPrimaryResolutionSet(this.primaryResolutionSet);
       this.addSourceHiCDataLayers(this.primaryResolutionSet);
-      this.syncPrimaryTrackLayerResolutionMetadata();
-      this.reloadTracks();
     }
     if (
       compatibility &&
@@ -1160,6 +1140,7 @@ class HiCViewAndLayersManager {
     this.updateProjectionAndViewExtent(previousBaseBp / this.coordinateBaseBp);
     this.updateWheelZoomResolutionModel();
     this.updateCurrentHiCViewState();
+    this.rebuildBuiltinVectorLayers();
     this.reloadTiles();
   }
 
@@ -1190,6 +1171,10 @@ class HiCViewAndLayersManager {
 
   public initializeTracks(): void {
     this.reloadTracks();
+    this.addBuiltinVectorLayers();
+  }
+
+  private addBuiltinVectorLayers(): void {
     this.add2DTrackSymmetric(
       this.track2DHolder.annotationTrack,
       this.layersHolder.annotationLayers
@@ -1234,6 +1219,33 @@ class HiCViewAndLayersManager {
         layer
       );
     });
+    this.syncLayerVisibilityForCurrentResolution();
+  }
+
+  private removeLayerCollection(layers: Layer[]): void {
+    for (const layer of layers) {
+      this.mapManager.getMap().removeLayer(layer);
+    }
+    layers.length = 0;
+  }
+
+  private clearBuiltinVectorLayerMaps(): void {
+    this.layersHolder.bpResolutionToAnnotationLayer.clear();
+    this.layersHolder.bpResolutionToContigBordersLayer.clear();
+    this.layersHolder.bpResolutionToContigTranslocationArrowsLayer.clear();
+    this.layersHolder.bpResolutionToScaffoldBordersLayer.clear();
+  }
+
+  private rebuildBuiltinVectorLayers(): void {
+    this.removeLayerCollection(this.layersHolder.annotationLayers);
+    this.removeLayerCollection(this.layersHolder.contigBordersLayers);
+    this.removeLayerCollection(
+      this.layersHolder.contigTranslocationArrowsLayers
+    );
+    this.removeLayerCollection(this.layersHolder.scaffoldBordersLayers);
+    this.clearBuiltinVectorLayerMaps();
+    this.reloadTracks();
+    this.addBuiltinVectorLayers();
   }
 
   public initializeMapControls(): void {
@@ -1408,16 +1420,15 @@ class HiCViewAndLayersManager {
         return;
       }
 
-      const bpResolution =
-        this.currentViewState.resolutionDesciptor.bpResolution;
+      const vectorResolutionDescriptor =
+        this.getActiveVectorResolutionDescriptor();
+      const bpResolution = vectorResolutionDescriptor.bpResolution;
 
       const [a, b, c, d] = extent;
       const [x0, y0, x1, y1] = [a, -d, c, -b];
 
       const [x0_px, y0_px, x1_px, y1_px] = [x0, y0, x1, y1].map((c) =>
-        Math.floor(
-          c / this.currentViewState.resolutionDesciptor.pixelResolution
-        )
+        Math.floor(c / vectorResolutionDescriptor.pixelResolution)
       );
 
       const [leftPxInclusive, rightPxInclusive] = [
@@ -1438,12 +1449,13 @@ class HiCViewAndLayersManager {
       if (leftPxInclusive < 0) {
         leftContigOrderInclusive = 0;
       }
-      if (
-        rightPxInclusive >
-        this.imageSizes[
-          this.currentViewState.resolutionDesciptor.imageSizeIndex
-        ]
-      ) {
+      const activePrefixSum =
+        this.mapManager.contigDimensionHolder.prefix_sum_px.get(bpResolution);
+      const activeImageSize =
+        activePrefixSum && activePrefixSum.length > 0
+          ? activePrefixSum[activePrefixSum.length - 1]
+          : Number.POSITIVE_INFINITY;
+      if (rightPxInclusive > activeImageSize) {
         rightContigOrderInclusive =
           this.mapManager.contigDimensionHolder.contig_count - 1;
       }
@@ -1517,7 +1529,7 @@ class HiCViewAndLayersManager {
   }
 
   public getActiveContigBordersLayer(): Layer<VectorSource> {
-    const bpResolution = this.currentViewState.resolutionDesciptor.bpResolution;
+    const bpResolution = this.getActiveVectorResolutionDescriptor().bpResolution;
     const layer = !isNaN(bpResolution)
       ? this.layersHolder.bpResolutionToContigBordersLayer.get(bpResolution)
       : this.layersHolder.contigBordersLayers[0];
@@ -1530,7 +1542,7 @@ class HiCViewAndLayersManager {
   }
 
   public getActiveScaffoldBordersLayer(): Layer<VectorSource> {
-    const bpResolution = this.currentViewState.resolutionDesciptor.bpResolution;
+    const bpResolution = this.getActiveVectorResolutionDescriptor().bpResolution;
     const layer =
       this.layersHolder.bpResolutionToScaffoldBordersLayer.get(bpResolution);
     if (!layer) {
@@ -1660,12 +1672,28 @@ class HiCViewAndLayersManager {
     return Number.isFinite(bound) ? bound : undefined;
   }
 
+  public getActiveVectorResolutionDescriptor(): LayerResolutionDescriptor {
+    const visibleDescriptors = this.getVisibleSourceResolutionDescriptors();
+    const candidates = [
+      visibleDescriptors.primary,
+      visibleDescriptors.secondary,
+    ].filter(
+      (descriptor): descriptor is LayerResolutionDescriptor =>
+        descriptor !== undefined && Number.isFinite(descriptor.bpResolution)
+    );
+    return candidates.reduce((best, descriptor) =>
+      descriptor.bpResolution < best.bpResolution ? descriptor : best
+    );
+  }
+
   private syncLayerVisibilityForCurrentResolution(): void {
     const visibleDescriptors = this.getVisibleSourceResolutionDescriptors();
     const activeResolution = visibleDescriptors.primary.bpResolution;
     if (!Number.isFinite(activeResolution)) {
       return;
     }
+    const activeVectorResolution =
+      this.getActiveVectorResolutionDescriptor().bpResolution;
 
     for (const layer of this.layersHolder.primaryHiCDataLayers) {
       const layerResolution = Number(layer.get("bpResolution"));
@@ -1681,25 +1709,25 @@ class HiCViewAndLayersManager {
 
     for (const layer of this.layersHolder.contigBordersLayers) {
       const layerResolution = Number(layer.get("bpResolution"));
-      layer.setVisible(layerResolution === activeResolution);
+      layer.setVisible(layerResolution === activeVectorResolution);
     }
 
     for (const layer of this.layersHolder.scaffoldBordersLayers) {
       const layerResolution = Number(layer.get("bpResolution"));
-      layer.setVisible(layerResolution === activeResolution);
+      layer.setVisible(layerResolution === activeVectorResolution);
     }
 
     for (const layer of this.layersHolder.contigTranslocationArrowsLayers) {
       const layerResolution = Number(layer.get("bpResolution"));
       layer.setVisible(
-        layerResolution === activeResolution &&
+        layerResolution === activeVectorResolution &&
           this.currentViewState.activeTool === ActiveTool.TRANSLOCATION
       );
     }
 
     for (const layer of this.layersHolder.annotationLayers) {
       const layerResolution = Number(layer.get("bpResolution"));
-      layer.setVisible(layerResolution === activeResolution);
+      layer.setVisible(layerResolution === activeVectorResolution);
     }
   }
 

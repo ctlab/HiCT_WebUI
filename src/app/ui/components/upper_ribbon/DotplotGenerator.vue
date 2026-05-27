@@ -67,7 +67,29 @@
                 <div class="col-md-8">
                   <label class="form-label">Zoom resolutions</label>
                   <input v-model.trim="resolutions" type="text" class="form-control" />
-                  <small class="text-muted">Comma-separated. Leave empty to derive a pyramid up to roughly 500 px per axis.</small>
+                  <small class="text-muted">
+                    Comma-separated. Leave empty to mirror the reference map if selected, otherwise derive a pyramid up to roughly 500 px per axis.
+                  </small>
+                </div>
+                <div class="col-md-12">
+                  <label class="form-label">Reference .hict.hdf5 map for resolution sync (optional)</label>
+                  <select v-model="referenceMapFilename" class="form-select">
+                    <option value="">No reference map: derive zoom resolutions automatically</option>
+                    <option v-for="file in referenceMapFiles" :key="file" :value="file">{{ file }}</option>
+                  </select>
+                  <small class="text-muted">
+                    When selected and zoom resolutions are empty, the dotplot reuses this map's resolutions and adds finer intermediate levels from the base dotplot resolution.
+                  </small>
+                </div>
+                <div class="col-md-12">
+                  <label class="form-label">Apply AGP to FASTA before self-alignment (optional)</label>
+                  <select v-model="assemblyAgpFilename" class="form-select">
+                    <option value="">Use FASTA as-is</option>
+                    <option v-for="file in agpFiles" :key="file" :value="file">{{ file }}</option>
+                  </select>
+                  <small class="text-muted">
+                    Use this when the dotplot should be generated for a scaffolded assembly state. The AGP-defined sequence is written to a temporary FASTA before mm2-plus/minimap2 runs.
+                  </small>
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Minimizer k-mer length</label>
@@ -209,6 +231,7 @@ const props = defineProps<{
 
 const step: Ref<"select" | "settings" | "progress"> = ref("select");
 const fastaFiles: Ref<string[]> = ref([]);
+const allFiles: Ref<string[]> = ref([]);
 const selection: Ref<Set<string>> = ref(new Set<string>());
 const jobs: Ref<ConversionJobResponse[]> = ref([]);
 const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> = ref(null);
@@ -219,6 +242,8 @@ let refreshTimer: number | null = null;
 
 const binSize = ref(1000);
 const resolutions = ref("");
+const referenceMapFilename = ref("");
+const assemblyAgpFilename = ref("");
 const minimizerK = ref(17);
 const minimizerWindow = ref(5);
 const minChainScore = ref(40);
@@ -234,6 +259,12 @@ const overwrite = ref(false);
 
 const fastaEntries = computed<FileSelectionTableEntry[]>(() =>
   fastaFiles.value.map((path) => ({ path }))
+);
+const referenceMapFiles = computed(() =>
+  allFiles.value.filter((path) => path.toLowerCase().endsWith(".hict.hdf5"))
+);
+const agpFiles = computed(() =>
+  allFiles.value.filter((path) => path.toLowerCase().endsWith(".agp"))
 );
 const selectedFastaPaths = computed(() => Array.from(selection.value));
 const hasActiveJobs = computed(() =>
@@ -264,6 +295,7 @@ const selectedAlignerCommand = computed(() => {
 const alignerCommandPreview = computed(() => {
   const fasta = selectedFastaPaths.value[0] ?? "<selected FASTA>";
   const prefix = stripFastaSuffix(fasta.split(/[\\/]/).pop() ?? fasta) + `.self.k${safeInteger(minimizerK.value, 17)}w${safeInteger(minimizerWindow.value, 5)}`;
+  const alignmentFasta = assemblyAgpFilename.value ? `<processing-dir>/${prefix}.agp-applied.fasta` : fasta;
   const args = [
     selectedAlignerCommand.value,
     "-t",
@@ -284,7 +316,7 @@ const alignerCommandPreview = computed(() => {
     args.push("-D");
   }
   args.push(...parsePreviewExtraArgs(extraMinimap2Args.value));
-  args.push(fasta, fasta);
+  args.push(alignmentFasta, alignmentFasta);
   return `${args.map(shellQuote).join(" ")} > ${shellQuote(`<processing-dir>/${prefix}.paf`)}`;
 });
 
@@ -339,6 +371,8 @@ async function startDotplots(): Promise<void> {
         fastaFiles: Array.from(selection.value),
         binSize: Math.max(1, Math.trunc(binSize.value || 1000)),
         resolutions: resolutions.value.trim() || undefined,
+        referenceMapFilename: referenceMapFilename.value || undefined,
+        assemblyAgpFilename: assemblyAgpFilename.value || undefined,
         minimizerK: Math.max(1, Math.trunc(minimizerK.value || 17)),
         minimizerWindow: Math.max(1, Math.trunc(minimizerWindow.value || 5)),
         minChainScore: Math.max(0, Math.trunc(minChainScore.value || 40)),
@@ -448,6 +482,7 @@ onMounted(async () => {
     console.warn("Failed to inspect dotplot toolchain", error);
   }
   try {
+    allFiles.value = await props.networkManager.requestManager.listFiles();
     fastaFiles.value = await props.networkManager.requestManager.listFASTAFiles();
     if (props.initialFastaFilename && fastaFiles.value.includes(props.initialFastaFilename)) {
       selection.value = new Set([props.initialFastaFilename]);
