@@ -433,6 +433,10 @@ class GetNativeProcessingStatusRequest implements HiCTAPIRequest {
   requestPath = "/native_processing/status";
 }
 
+class GetServerStatisticsRequest implements HiCTAPIRequest {
+  requestPath = "/statistics";
+}
+
 class SetNativeProcessingEnabledRequest implements HiCTAPIRequest {
   requestPath = "/native_processing/enabled";
 
@@ -723,6 +727,7 @@ export {
   ProbeTrackPrecomputeCacheRequest,
   GetWorkerDiagnosticsRequest,
   GetNativeProcessingStatusRequest,
+  GetServerStatisticsRequest,
   SetNativeProcessingEnabledRequest,
   GetRenderPipelineRequest,
   SetRenderPipelineRequest,

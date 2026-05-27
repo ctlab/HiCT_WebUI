@@ -110,6 +110,7 @@ import {
   ProbeTrackPrecomputeCacheRequest,
   GetWorkerDiagnosticsRequest,
   GetNativeProcessingStatusRequest,
+  GetServerStatisticsRequest,
   SetNativeProcessingEnabledRequest,
   GetRenderPipelineRequest,
   SetRenderPipelineRequest,
@@ -169,6 +170,38 @@ export type NativeProcessingStatusResponse = {
   source: string;
   reason: string;
   lastFailure: string;
+  nativeSessionActive?: boolean;
+  nativeOperationCount?: number;
+  nativeFailedOperationCount?: number;
+  nativeHdf5BackendAvailable?: boolean;
+};
+
+export type ServerEndpointStatisticsResponse = {
+  path: string;
+  totalRequests: number;
+  requestsPerSecondLast10s: number;
+  requestsPerSecondLast60s: number;
+};
+
+export type ServerStatisticsResponse = {
+  timestampMs: number;
+  startedMs: number;
+  uptimeSeconds: number;
+  totalRequests: number;
+  inFlightRequests: number;
+  meanRequestsPerSecond: number;
+  requestsPerSecondLast10s: number;
+  requestsPerSecondLast60s: number;
+  heapUsedBytes: number;
+  heapCommittedBytes: number;
+  heapMaxBytes: number;
+  nonHeapUsedBytes: number;
+  availableProcessors: number;
+  liveThreads: number;
+  daemonThreads: number;
+  peakThreads: number;
+  endpoints: ServerEndpointStatisticsResponse[];
+  nativeProcessing: NativeProcessingStatusResponse;
 };
 
 class RequestManager {
@@ -304,6 +337,45 @@ class RequestManager {
       source: String(json.source ?? ""),
       reason: String(json.reason ?? ""),
       lastFailure: String(json.lastFailure ?? ""),
+      nativeSessionActive: Boolean(json.nativeSessionActive ?? false),
+      nativeOperationCount: Number(json.nativeOperationCount ?? 0),
+      nativeFailedOperationCount: Number(json.nativeFailedOperationCount ?? 0),
+      nativeHdf5BackendAvailable: Boolean(json.nativeHdf5BackendAvailable ?? false),
+    };
+  }
+
+  private parseServerStatistics(
+    json: Record<string, unknown>
+  ): ServerStatisticsResponse {
+    const endpointsRaw = Array.isArray(json.endpoints)
+      ? (json.endpoints as Record<string, unknown>[])
+      : [];
+    const nativeProcessingRaw =
+      (json.nativeProcessing as Record<string, unknown> | undefined) ?? {};
+    return {
+      timestampMs: Number(json.timestampMs ?? 0),
+      startedMs: Number(json.startedMs ?? 0),
+      uptimeSeconds: Number(json.uptimeSeconds ?? 0),
+      totalRequests: Number(json.totalRequests ?? 0),
+      inFlightRequests: Number(json.inFlightRequests ?? 0),
+      meanRequestsPerSecond: Number(json.meanRequestsPerSecond ?? 0),
+      requestsPerSecondLast10s: Number(json.requestsPerSecondLast10s ?? 0),
+      requestsPerSecondLast60s: Number(json.requestsPerSecondLast60s ?? 0),
+      heapUsedBytes: Number(json.heapUsedBytes ?? 0),
+      heapCommittedBytes: Number(json.heapCommittedBytes ?? 0),
+      heapMaxBytes: Number(json.heapMaxBytes ?? 0),
+      nonHeapUsedBytes: Number(json.nonHeapUsedBytes ?? 0),
+      availableProcessors: Number(json.availableProcessors ?? 0),
+      liveThreads: Number(json.liveThreads ?? 0),
+      daemonThreads: Number(json.daemonThreads ?? 0),
+      peakThreads: Number(json.peakThreads ?? 0),
+      endpoints: endpointsRaw.map((endpoint) => ({
+        path: String(endpoint.path ?? ""),
+        totalRequests: Number(endpoint.totalRequests ?? 0),
+        requestsPerSecondLast10s: Number(endpoint.requestsPerSecondLast10s ?? 0),
+        requestsPerSecondLast60s: Number(endpoint.requestsPerSecondLast60s ?? 0),
+      })),
+      nativeProcessing: this.parseNativeProcessingStatus(nativeProcessingRaw),
     };
   }
 
@@ -752,6 +824,12 @@ class RequestManager {
     return this.sendRequest(new GetNativeProcessingStatusRequest())
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => this.parseNativeProcessingStatus(json));
+  }
+
+  public async getServerStatistics(): Promise<ServerStatisticsResponse> {
+    return this.sendRequest(new GetServerStatisticsRequest())
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => this.parseServerStatistics(json));
   }
 
   public async setNativeProcessingEnabled(

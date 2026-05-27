@@ -279,6 +279,11 @@
               </li>
               <li><hr class="dropdown-divider" /></li>
               <li>
+                <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenServerStatistics">
+                  Runtime statistics...
+                </a>
+              </li>
+              <li>
                 <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenWorkerDiagnostics">
                   Worker diagnostics...
                 </a>
@@ -396,6 +401,11 @@
     v-if="workerDiagnosticsOpen"
     :network-manager="props.networkManager"
     @dismissed="workerDiagnosticsOpen = false"
+  />
+  <ServerStatisticsModal
+    v-if="serverStatisticsOpen"
+    :network-manager="props.networkManager"
+    @dismissed="serverStatisticsOpen = false"
   />
   <FastaLinkWarningModal
     v-if="fastaLinkReport"
@@ -537,6 +547,7 @@ import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFil
 import TrackManager from "@/app/ui/components/upper_ribbon/TrackManager.vue";
 import FastaLinkWarningModal from "@/app/ui/components/upper_ribbon/FastaLinkWarningModal.vue";
 import WorkerDiagnosticsModal from "@/app/ui/components/upper_ribbon/WorkerDiagnosticsModal.vue";
+import ServerStatisticsModal from "@/app/ui/components/upper_ribbon/ServerStatisticsModal.vue";
 import { toast } from "vue-sonner";
 import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
@@ -564,6 +575,7 @@ const lastLinkedFastaFilename = ref<string | undefined>(undefined);
 const trackManagerOpen = ref(false);
 const renderingPipelineOpen = ref(false);
 const workerDiagnosticsOpen = ref(false);
+const serverStatisticsOpen = ref(false);
 const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
@@ -687,6 +699,10 @@ function onOpenRenderingPipeline() {
 
 function onOpenWorkerDiagnostics() {
   workerDiagnosticsOpen.value = true;
+}
+
+function onOpenServerStatistics() {
+  serverStatisticsOpen.value = true;
 }
 
 async function refreshNativeProcessingStatus(): Promise<void> {
