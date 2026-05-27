@@ -156,6 +156,27 @@ export function getVectorResolutionTuples(
   );
 }
 
+export function getFinestVisibleResolutionDescriptor(
+  primarySet: SourceResolutionDescriptorSet,
+  secondarySet: SourceResolutionDescriptorSet | undefined,
+  viewResolution: number
+): LayerResolutionDescriptor {
+  const primaryDescriptor = getResolutionDescriptorForViewResolution(
+    primarySet,
+    viewResolution
+  );
+  if (!secondarySet) {
+    return primaryDescriptor;
+  }
+  const secondaryDescriptor = getResolutionDescriptorForViewResolution(
+    secondarySet,
+    viewResolution
+  );
+  return secondaryDescriptor.pixelResolution < primaryDescriptor.pixelResolution
+    ? secondaryDescriptor
+    : primaryDescriptor;
+}
+
 export function getResolutionDescriptorForViewResolution(
   set: SourceResolutionDescriptorSet,
   viewResolution: number

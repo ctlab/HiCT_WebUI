@@ -32,6 +32,7 @@ vm.runInNewContext(compiled, sandbox, { filename: sourcePath });
 const {
   buildSourceResolutionDescriptorSet,
   calculateMaximumScaledImageSize,
+  getFinestVisibleResolutionDescriptor,
   getNavigationResolutionModel,
   getResolutionDescriptorForViewResolution,
   getVectorResolutionTuples,
@@ -96,6 +97,26 @@ function assertVectorTuples(primarySet, secondarySet, expected, message) {
   );
 }
 
+function assertGuidanceDescriptor(
+  primarySet,
+  secondarySet,
+  viewResolution,
+  expectedSourceName,
+  expectedBpResolution,
+  message
+) {
+  const descriptor = getFinestVisibleResolutionDescriptor(
+    primarySet,
+    secondarySet,
+    viewResolution
+  );
+  assert.deepEqual(
+    [descriptor.sourceName, descriptor.bpResolution],
+    [expectedSourceName, expectedBpResolution],
+    message
+  );
+}
+
 const primaryCoarse = buildSourceResolutionDescriptorSet(
   "PRIMARY",
   [1000, 5000, 10000],
@@ -139,8 +160,32 @@ assertResolutionDescriptor(
   500,
   "secondary source should independently use 1:500 at the same view resolution"
 );
+assertGuidanceDescriptor(
+  primaryCoarse,
+  secondaryFine,
+  0.5,
+  "SECONDARY",
+  250,
+  "guidance must use secondary when secondary is the finest visible source"
+);
+assertGuidanceDescriptor(
+  primaryCoarse,
+  secondaryFine,
+  3.9,
+  "SECONDARY",
+  500,
+  "guidance must use secondary-specific prefix sums through secondary-only zoom levels"
+);
 assertResolutionDescriptor(primaryCoarse, 30, 5000);
 assertResolutionDescriptor(secondaryFine, 30, 5000);
+assertGuidanceDescriptor(
+  primaryCoarse,
+  secondaryFine,
+  30,
+  "PRIMARY",
+  5000,
+  "guidance should be stable when both sources expose the same visible pixel resolution"
+);
 assertResolutionDescriptor(primaryCoarse, 120, 10000);
 assertResolutionDescriptor(secondaryFine, 120, 20000);
 
@@ -197,8 +242,24 @@ assertResolutionDescriptor(
   1000,
   "secondary source may be coarser and must not pretend to have primary pixels"
 );
+assertGuidanceDescriptor(
+  primaryFine,
+  secondaryCoarse,
+  0.5,
+  "PRIMARY",
+  250,
+  "guidance must also work when primary is the finer source"
+);
 assertResolutionDescriptor(primaryFine, 3.9, 500);
 assertResolutionDescriptor(secondaryCoarse, 3.9, 1000);
+assertGuidanceDescriptor(
+  primaryFine,
+  secondaryCoarse,
+  3.9,
+  "PRIMARY",
+  500,
+  "primary-only fine zoom levels must remain valid guidance layers"
+);
 assertNavigationModel(primaryFine, secondaryCoarse, {
   resolutions: [250, 500, 1000, 2000, 5000, 10000],
   pixelResolutionSet: [1, 2, 4, 8, 20, 40],

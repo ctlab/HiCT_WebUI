@@ -66,6 +66,7 @@ import {
   buildSourceResolutionDescriptorSet,
   calculateMaximumScaledImageSize as calculateMaximumScaledImageSizeForSets,
   getNavigationResolutionModel as getNavigationResolutionModelForSets,
+  getFinestVisibleResolutionDescriptor,
   getResolutionDescriptorForViewResolution,
   getVectorResolutionTuples as getVectorResolutionTuplesForSets,
   type LayerResolutionBorders,
@@ -238,8 +239,9 @@ class HiCViewAndLayersManager {
     );
     this.applyPrimaryResolutionSet(this.primaryResolutionSet);
     // Calculate extents for projection:
-    const maximum_scaled_image_size =
-      this.calculateMaximumScaledImageSize(this.primaryResolutionSet);
+    const maximum_scaled_image_size = this.calculateMaximumScaledImageSize(
+      this.primaryResolutionSet
+    );
     const maximum_global_extent = [
       0,
       -maximum_scaled_image_size,
@@ -299,12 +301,8 @@ class HiCViewAndLayersManager {
     };
     this.track2DHolder.tracks2D.push(this.track2DHolder.annotationTrack);
 
-    this.track2DHolder.contigBordersTrack.setNamePlacement(
-      NamePlacement.TOP
-    );
-    this.track2DHolder.scaffoldBordersTrack.setNamePlacement(
-      NamePlacement.TOP
-    );
+    this.track2DHolder.contigBordersTrack.setNamePlacement(NamePlacement.TOP);
+    this.track2DHolder.scaffoldBordersTrack.setNamePlacement(NamePlacement.TOP);
 
     this.deferredInitializationInteractions = {
       scissorsGuideInteraction: undefined,
@@ -522,7 +520,10 @@ class HiCViewAndLayersManager {
     const nextResolution =
       previousResolution !== undefined && Number.isFinite(previousResolution)
         ? previousResolution * scalePreservedView
-        : Math.max(...this.getNavigationResolutionModel().pixelResolutionSet, 1);
+        : Math.max(
+            ...this.getNavigationResolutionModel().pixelResolutionSet,
+            1
+          );
 
     this.view.setCenter(nextCenter);
     if (Number.isFinite(nextResolution) && nextResolution > 0) {
@@ -687,7 +688,9 @@ class HiCViewAndLayersManager {
   }
 
   public onScaffoldLabelOffsetMultiplierChanged(multiplier: number): void {
-    this.track2DHolder.scaffoldBordersTrack.setLabelOffsetMultiplier(multiplier);
+    this.track2DHolder.scaffoldBordersTrack.setLabelOffsetMultiplier(
+      multiplier
+    );
     this.reloadTracks();
   }
 
@@ -916,7 +919,10 @@ class HiCViewAndLayersManager {
       this.layersHolder.hicDataLayers.push(layer);
       resolutionMap.set(layerResolution, layer);
       if (set.sourceName === "PRIMARY") {
-        this.layersHolder.bpResolutionToHiCDataLayer.set(layerResolution, layer);
+        this.layersHolder.bpResolutionToHiCDataLayer.set(
+          layerResolution,
+          layer
+        );
       }
     }
   }
@@ -942,7 +948,10 @@ class HiCViewAndLayersManager {
   public viewResolutionToResolutionDescriptor(
     viewResolution: number
   ): LayerResolutionDescriptor {
-    return this.viewResolutionToSourceResolutionDescriptor("PRIMARY", viewResolution);
+    return this.viewResolutionToSourceResolutionDescriptor(
+      "PRIMARY",
+      viewResolution
+    );
   }
 
   public viewResolutionToSourceResolutionDescriptor(
@@ -950,7 +959,9 @@ class HiCViewAndLayersManager {
     viewResolution: number
   ): LayerResolutionDescriptor {
     const set =
-      sourceName === "SECONDARY" ? this.secondaryResolutionSet : this.primaryResolutionSet;
+      sourceName === "SECONDARY"
+        ? this.secondaryResolutionSet
+        : this.primaryResolutionSet;
     if (!set) {
       throw new Error(`No resolutions available for ${sourceName}`);
     }
@@ -974,6 +985,53 @@ class HiCViewAndLayersManager {
           )
         : undefined,
     };
+  }
+
+  public getFinestVisibleSourceResolutionDescriptor(
+    viewResolution: number = this.view.getResolution() ?? 0
+  ): LayerResolutionDescriptor {
+    return getFinestVisibleResolutionDescriptor(
+      this.primaryResolutionSet,
+      this.secondaryResolutionSet,
+      viewResolution
+    );
+  }
+
+  public getDimensionHolderForSource(
+    // Secondary maps are currently kept in the same synchronized assembly
+    // coordinate system as primary maps. Keeping source in this API makes the
+    // guidance path explicit and leaves the call site ready for separate
+    // source-specific holders.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    sourceName: MatrixSourceName = "PRIMARY"
+  ) {
+    return this.mapManager.contigDimensionHolder;
+  }
+
+  public ensureGuidanceResolutionDescriptor(
+    preferred?: LayerResolutionDescriptor
+  ): LayerResolutionDescriptor {
+    const descriptor =
+      preferred ?? this.getFinestVisibleSourceResolutionDescriptor();
+    const holder = this.getDimensionHolderForSource(descriptor.sourceName);
+    if (
+      Number.isFinite(descriptor.bpResolution) &&
+      !holder.prefix_sum_px.has(descriptor.bpResolution)
+    ) {
+      holder.ensureResolution(descriptor.bpResolution);
+    }
+    if (holder.prefix_sum_px.has(descriptor.bpResolution)) {
+      return descriptor;
+    }
+    return this.getActiveVectorResolutionDescriptor();
+  }
+
+  public getGuidanceResolutionDescriptorForViewResolution(
+    viewResolution: number
+  ): LayerResolutionDescriptor {
+    return this.ensureGuidanceResolutionDescriptor(
+      this.getFinestVisibleSourceResolutionDescriptor(viewResolution)
+    );
   }
 
   public setSecondaryResolutionModel(
@@ -1207,6 +1265,7 @@ class HiCViewAndLayersManager {
       pixelResolutionSet: navigationModel.pixelResolutionSet,
       global_projection: this.pixelProjection,
       layers: this.layersHolder.hicDataLayers,
+      layersManager: this,
     });
     this.mapManager.getMap().addInteraction(this.wheelZoomInteraction);
     this.mapManager
@@ -1413,7 +1472,8 @@ class HiCViewAndLayersManager {
   }
 
   public getActiveContigBordersLayer(): Layer<VectorSource> {
-    const bpResolution = this.getActiveVectorResolutionDescriptor().bpResolution;
+    const bpResolution =
+      this.getActiveVectorResolutionDescriptor().bpResolution;
     const layer = !isNaN(bpResolution)
       ? this.layersHolder.bpResolutionToContigBordersLayer.get(bpResolution)
       : this.layersHolder.contigBordersLayers[0];
@@ -1426,7 +1486,8 @@ class HiCViewAndLayersManager {
   }
 
   public getActiveScaffoldBordersLayer(): Layer<VectorSource> {
-    const bpResolution = this.getActiveVectorResolutionDescriptor().bpResolution;
+    const bpResolution =
+      this.getActiveVectorResolutionDescriptor().bpResolution;
     const layer =
       this.layersHolder.bpResolutionToScaffoldBordersLayer.get(bpResolution);
     if (!layer) {
@@ -1552,7 +1613,9 @@ class HiCViewAndLayersManager {
     this.mapManager.map.changed();
   }
 
-  private toFiniteResolutionBound(bound: number | undefined): number | undefined {
+  private toFiniteResolutionBound(
+    bound: number | undefined
+  ): number | undefined {
     return Number.isFinite(bound) ? bound : undefined;
   }
 
@@ -1622,7 +1685,8 @@ class HiCViewAndLayersManager {
     this.track2DHolder.annotationTrack.addMarkerFromAssemblyBp(
       xBp,
       yBp,
-      name ?? `marker_${this.track2DHolder.annotationTrack.getMarkerCount() + 1}`
+      name ??
+        `marker_${this.track2DHolder.annotationTrack.getMarkerCount() + 1}`
     );
     this.reloadTracks();
   }

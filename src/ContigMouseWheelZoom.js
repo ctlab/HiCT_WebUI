@@ -22,7 +22,6 @@
 // @no-ts-check
 import { MouseWheelZoom } from "ol/interaction";
 import { clamp } from "ol/math";
-import { transform } from "ol/proj";
 import EventType from "ol/events/EventType.js";
 import { DEVICE_PIXEL_RATIO, FIREFOX } from "ol/has.js";
 import binarySearch from "binary-search";
@@ -41,6 +40,7 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     this.pixelResolutionSet = [...opt_options.pixelResolutionSet];
     this.global_projection = opt_options.global_projection;
     this.layers = opt_options.layers;
+    this.layersManager = opt_options.layersManager;
     this.isTrackPad = undefined;
   }
 
@@ -48,6 +48,42 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     this.resolutions = [...resolutions];
     this.pixelResolutionSet = [...pixelResolutionSet];
     this.layers = layers;
+  }
+
+  getLayerResolutionDescriptor(layer) {
+    return {
+      sourceName:
+        layer?.get("sourceName") === "SECONDARY" ? "SECONDARY" : "PRIMARY",
+      bpResolution: Number(layer?.get("bpResolution")),
+      pixelResolution: Number(layer?.get("pixelResolution")),
+    };
+  }
+
+  getGuidanceResolutionDescriptorForViewResolution(
+    viewResolution,
+    fallbackDescriptor
+  ) {
+    if (
+      this.layersManager?.getGuidanceResolutionDescriptorForViewResolution &&
+      Number.isFinite(viewResolution)
+    ) {
+      return this.layersManager.getGuidanceResolutionDescriptorForViewResolution(
+        viewResolution
+      );
+    }
+    return this.layersManager?.ensureGuidanceResolutionDescriptor
+      ? this.layersManager.ensureGuidanceResolutionDescriptor(
+          fallbackDescriptor
+        )
+      : fallbackDescriptor;
+  }
+
+  getDimensionHolderForDescriptor(descriptor) {
+    return (
+      this.layersManager?.getDimensionHolderForSource?.(
+        descriptor.sourceName ?? "PRIMARY"
+      ) ?? this.dimension_holder
+    );
   }
 
   /**
@@ -91,35 +127,49 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     }
 
     if (hovered_layer) {
-      const layer_projection = hovered_layer.getSource().getProjection();
-      const pixelResolution = hovered_layer.get("pixelResolution");
-      const fixed_coordinates = transform(
-        mapBrowserEvent.coordinate,
-        map.getView().getProjection(),
-        layer_projection
-      ).map((c) => c / pixelResolution);
-      const bpResolutionString = hovered_layer.get("bpResolution");
-      const bpResolution = Number(bpResolutionString);
-      const int_coordinates_bins =
-        this.dimension_holder.clampBinCoordinatesAtResolution(
-          [Math.floor(fixed_coordinates[0]), -Math.floor(fixed_coordinates[1])],
-          bpResolutionString
+      try {
+        const fallbackDescriptor =
+          this.getLayerResolutionDescriptor(hovered_layer);
+        const guidanceDescriptor =
+          this.getGuidanceResolutionDescriptorForViewResolution(
+            map.getView().getResolution(),
+            fallbackDescriptor
+          );
+        const dimensionHolder =
+          this.getDimensionHolderForDescriptor(guidanceDescriptor);
+        const fixed_coordinates = mapBrowserEvent.coordinate.map(
+          (c) => c / guidanceDescriptor.pixelResolution
         );
-      const bp1 = this.dimension_holder.getStartBpOfBin(
-        int_coordinates_bins[0],
-        bpResolution
-      );
-      const bp2 = this.dimension_holder.getStartBpOfBin(
-        int_coordinates_bins[1],
-        bpResolution
-      );
-      const coord_bp = [bp1, bp2];
+        const int_coordinates_bins =
+          dimensionHolder.clampBinCoordinatesAtResolution(
+            [
+              Math.floor(fixed_coordinates[0]),
+              -Math.floor(fixed_coordinates[1]),
+            ],
+            guidanceDescriptor.bpResolution
+          );
+        const bp1 = dimensionHolder.getStartBpOfBin(
+          int_coordinates_bins[0],
+          guidanceDescriptor.bpResolution
+        );
+        const bp2 = dimensionHolder.getStartBpOfBin(
+          int_coordinates_bins[1],
+          guidanceDescriptor.bpResolution
+        );
+        const coord_bp = [bp1, bp2];
 
-      if (this.useAnchor_) {
-        this.lastMouseBps = coord_bp;
+        if (this.useAnchor_) {
+          this.lastMouseBps = coord_bp;
+          this.lastGuidanceDescriptor = guidanceDescriptor;
+        }
+      } catch (error) {
+        console.warn("Unable to derive zoom guidance coordinate", error);
+        this.lastMouseBps = null;
+        this.lastGuidanceDescriptor = undefined;
       }
     } else {
       this.lastMouseBps = null;
+      this.lastGuidanceDescriptor = undefined;
     }
 
     // Delta normalisation inspired by
@@ -215,8 +265,7 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     if (currentResolution === undefined) {
       return;
     }
-    const newResolution =
-      currentResolution / Math.pow(zoomFactor, delta);
+    const newResolution = currentResolution / Math.pow(zoomFactor, delta);
     if (newResolution === undefined) {
       return;
     }
@@ -228,8 +277,30 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
       maxResolution ?? newResolution
     );
 
-    const old_level_index = this.getClosestResolutionIndex(view.getResolution());
-    const new_level_index = this.getClosestResolutionIndex(constrainedResolution);
+    let oldGuidanceDescriptor;
+    let newGuidanceDescriptor;
+    try {
+      oldGuidanceDescriptor =
+        this.getGuidanceResolutionDescriptorForViewResolution(
+          currentResolution,
+          this.lastGuidanceDescriptor
+        );
+      newGuidanceDescriptor =
+        this.getGuidanceResolutionDescriptorForViewResolution(
+          constrainedResolution,
+          oldGuidanceDescriptor
+        );
+    } catch (error) {
+      console.warn("Unable to derive zoom target guidance resolution", error);
+    }
+    const guidanceResolutionChanged =
+      oldGuidanceDescriptor &&
+      newGuidanceDescriptor &&
+      (oldGuidanceDescriptor.bpResolution !==
+        newGuidanceDescriptor.bpResolution ||
+        oldGuidanceDescriptor.pixelResolution !==
+          newGuidanceDescriptor.pixelResolution ||
+        oldGuidanceDescriptor.sourceName !== newGuidanceDescriptor.sourceName);
 
     if (
       this.lastMouseBps &&
@@ -237,22 +308,24 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
       this.lastMousePixel &&
       this.lastMouseCoord &&
       !isNaN(this.lastMouseCoord[0]) &&
-      new_level_index !== old_level_index
+      guidanceResolutionChanged
     ) {
-      const newResolutionSeq = this.resolutions[new_level_index];
-      if (newResolutionSeq !== undefined) {
-        const finish_bin_1 = this.dimension_holder.getBinContainingBp(
-          this.lastMouseBps[0],
-          newResolutionSeq
+      if (newGuidanceDescriptor) {
+        const dimensionHolder = this.getDimensionHolderForDescriptor(
+          newGuidanceDescriptor
         );
-        const finish_bin_2 = this.dimension_holder.getBinContainingBp(
+        const finish_bin_1 = dimensionHolder.getBinContainingBp(
+          this.lastMouseBps[0],
+          newGuidanceDescriptor.bpResolution
+        );
+        const finish_bin_2 = dimensionHolder.getBinContainingBp(
           this.lastMouseBps[1],
-          newResolutionSeq
+          newGuidanceDescriptor.bpResolution
         );
         const finish_coordinate_bins = [finish_bin_1, finish_bin_2];
         // const finish_coordinate_on_map = this.transformFromLayerToGlobalCoordinate[new_level_index].apply(null, [finish_coordinate_bins]);
         const finish_coordinate_on_map = finish_coordinate_bins.map(
-          (c) => c * this.pixelResolutionSet[new_level_index]
+          (c) => c * newGuidanceDescriptor.pixelResolution
         );
         finish_coordinate_on_map[1] *= -1;
         const dx_px = this.lastCenterPixel[0] - this.lastMousePixel[0];
@@ -262,8 +335,8 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
           duration: this.duration_,
           resolution: constrainedResolution,
           center: [
-            finish_coordinate_on_map[0] + dx_px * newResolution,
-            finish_coordinate_on_map[1] - dy_px * newResolution,
+            finish_coordinate_on_map[0] + dx_px * constrainedResolution,
+            finish_coordinate_on_map[1] - dy_px * constrainedResolution,
           ],
         });
       } else {
