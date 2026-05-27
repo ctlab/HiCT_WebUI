@@ -141,10 +141,9 @@
                     </div>
                   </div>
                 </div>
-                <div v-if="requiresSecondarySource" class="alert alert-warning mt-3 mb-0">
-                  Two-source sessions are intended for comparative viewing. If matrix sizes, contig sets, or scaffold
-                  composition differ, scaffolding edits, AGP imports, and FASTA export should be treated as
-                  primary-source, view-only operations.
+                <div v-if="requiresSecondarySource" class="alert alert-info mt-3 mb-0">
+                  Overlay and split sessions keep one assembly source authoritative and propagate that layout to the
+                  other source by matching contig names. Choose the authoritative source on the Assembly file step.
                 </div>
               </div>
 
@@ -332,10 +331,46 @@
                     </div>
                   </div>
                 </div>
-                <div v-if="requiresSecondarySource" class="alert alert-warning mt-3 mb-0">
-                  Prefer the primary AGP as the authoritative assembly input. Loading AGPs for both sources is supported
-                  for comparison, but it can make layered views diverge and should not be treated as a coupled
-                  scaffolding workflow.
+                <div v-if="requiresSecondarySource" class="wizard-card mt-3">
+                  <div class="wizard-card-header">
+                    <strong>Overlay assembly source</strong>
+                  </div>
+                  <div class="wizard-card-body">
+                    <div class="row g-3">
+                      <div class="col-md-6">
+                        <button
+                          type="button"
+                          class="wizard-choice-card"
+                          :class="{ selected: overlayAssemblySource === 'PRIMARY' }"
+                          @click="overlayAssemblySource = 'PRIMARY'"
+                        >
+                          <strong>Primary controls overlay</strong>
+                          <small>
+                            Primary AGP/current layout is propagated to secondary; hidden contigs stay hidden in both
+                            layers.
+                          </small>
+                        </button>
+                      </div>
+                      <div class="col-md-6">
+                        <button
+                          type="button"
+                          class="wizard-choice-card"
+                          :class="{ selected: overlayAssemblySource === 'SECONDARY' }"
+                          @click="overlayAssemblySource = 'SECONDARY'"
+                        >
+                          <strong>Secondary controls overlay</strong>
+                          <small>
+                            Secondary AGP/current layout is propagated to primary when the dotplot or companion source
+                            is already scaffolded.
+                          </small>
+                        </button>
+                      </div>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                      For correctly coupled overlays, apply only the AGP for the selected authoritative source. A
+                      non-authoritative AGP is kept as metadata and is not loaded into the active map state.
+                    </small>
+                  </div>
                 </div>
               </div>
 
@@ -462,6 +497,7 @@
                   <div><strong>Tracks:</strong> {{ selectedTracks.length }}</div>
                   <div><strong>Primary assembly:</strong> {{ primaryAgp || "not selected" }}</div>
                   <div v-if="requiresSecondarySource"><strong>Secondary assembly:</strong> {{ secondaryAgp || "not selected" }}</div>
+                  <div v-if="requiresSecondarySource"><strong>Overlay assembly source:</strong> {{ overlayAssemblySource }}</div>
                 </div>
                 <div class="wizard-check-list mb-3">
                   <div
@@ -542,6 +578,7 @@
 
 <script setup lang="ts">
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import type { AssemblyInfo } from "@/app/core/domain/AssemblyInfo";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
 import {
   type ConversionJobResponse,
@@ -587,6 +624,7 @@ type WizardStepId =
   | "finish";
 
 type SourceRole = "primary" | "secondary";
+type OverlayAssemblySource = "PRIMARY" | "SECONDARY";
 
 type SourceDraft = {
   filename: string;
@@ -703,6 +741,7 @@ const primaryFasta = ref("");
 const secondaryFasta = ref("");
 const primaryAgp = ref("");
 const secondaryAgp = ref("");
+const overlayAssemblySource = ref<OverlayAssemblySource>("PRIMARY");
 const selectedTracks = ref<SelectedTrack[]>([]);
 const fixableIssuePolicy = reactive<Record<string, "ignore" | "discard">>({});
 const precomputeTracks = ref(true);
@@ -855,12 +894,14 @@ const wizardNotes = computed(() => {
   }
   if (requiresSecondarySource.value) {
     notes.push(
-      "Two-source overlay and split views are intended for comparative inspection. If sizes, contig lists, or scaffold composition differ, treat scaffolding operations as view-only and keep the primary source authoritative."
+      `${overlayAssemblySource.value} is the authoritative assembly source. Its layout and hidden-contig state will be propagated to the other source for coupled overlay rendering.`
     );
   }
   if (requiresSecondarySource.value && secondaryAgp.value) {
     notes.push(
-      "Secondary AGP input is best treated as comparative metadata. Use the primary AGP as the authoritative assembly when scaffolding operations are expected."
+      overlayAssemblySource.value === "SECONDARY"
+        ? "Secondary AGP is selected as the authoritative overlay assembly input."
+        : "Secondary AGP is not authoritative in this run and will not replace the synchronized primary-driven overlay assembly."
     );
   }
   const selectedHicSources = [primarySource, secondarySource]
@@ -873,7 +914,7 @@ const wizardNotes = computed(() => {
   }
   if (primaryAgp.value && secondaryAgp.value) {
     notes.push(
-      "Both AGPs are selected. This is supported for comparison, but the resulting two-source view may become intentionally unaligned after assembly edits."
+      `Both AGPs are selected. Only the ${overlayAssemblySource.value.toLowerCase()} AGP is applied as the coupled overlay assembly; the other AGP is ignored for this wizard run.`
     );
   }
   if (usesExpectedPreset.value) {
@@ -919,29 +960,39 @@ const wizardCheckItems = computed<WizardCheckItem[]>(() => {
     );
   }
   if (primaryAgp.value) {
+    const isAuthoritative = !requiresSecondarySource.value || overlayAssemblySource.value === "PRIMARY";
     items.push({
       id: "primary-assembly",
-      kind: primaryAgp.value.toLowerCase().endsWith(".agp") || primarySource.filename.toLowerCase().endsWith(".hic")
+      kind: !isAuthoritative
+        ? "warning"
+        : primaryAgp.value.toLowerCase().endsWith(".agp") || primarySource.filename.toLowerCase().endsWith(".hic")
         ? "pass"
         : "warning",
       title: "Primary assembly",
-      message: primaryAgp.value.toLowerCase().endsWith(".assembly")
+      message: !isAuthoritative
+        ? "Primary AGP is not authoritative in this run and will not replace the secondary-driven overlay assembly."
+        : primaryAgp.value.toLowerCase().endsWith(".assembly")
         ? "Juicebox .assembly will be passed to .hic conversion. For already converted matrices, convert it to AGP before applying layout."
         : "AGP will be loaded after the primary matrix is opened.",
-      fixable: primaryAgp.value.toLowerCase().endsWith(".assembly") && !primarySource.filename.toLowerCase().endsWith(".hic"),
+      fixable: isAuthoritative && primaryAgp.value.toLowerCase().endsWith(".assembly") && !primarySource.filename.toLowerCase().endsWith(".hic"),
     });
   }
   if (secondaryAgp.value && requiresSecondarySource.value) {
+    const isAuthoritative = overlayAssemblySource.value === "SECONDARY";
     items.push({
       id: "secondary-assembly",
-      kind: secondaryAgp.value.toLowerCase().endsWith(".agp") || secondarySource.filename.toLowerCase().endsWith(".hic")
+      kind: !isAuthoritative
+        ? "warning"
+        : secondaryAgp.value.toLowerCase().endsWith(".agp") || secondarySource.filename.toLowerCase().endsWith(".hic")
         ? "pass"
         : "warning",
       title: "Secondary assembly",
-      message: secondaryAgp.value.toLowerCase().endsWith(".assembly")
+      message: !isAuthoritative
+        ? "Secondary AGP is not authoritative in this run and will not replace the primary-driven overlay assembly."
+        : secondaryAgp.value.toLowerCase().endsWith(".assembly")
         ? "Juicebox .assembly will be passed to .hic conversion. For already converted matrices, convert it to AGP before applying layout."
         : "AGP will be loaded after the secondary matrix is opened.",
-      fixable: secondaryAgp.value.toLowerCase().endsWith(".assembly") && !secondarySource.filename.toLowerCase().endsWith(".hic"),
+      fixable: isAuthoritative && secondaryAgp.value.toLowerCase().endsWith(".assembly") && !secondarySource.filename.toLowerCase().endsWith(".hic"),
     });
   }
   if (selectedTracks.value.length === 0) {
@@ -1333,6 +1384,22 @@ const applyWizardPresentationState = (): void => {
   }
 };
 
+const applyAssemblyInfoToMap = (assemblyInfo: AssemblyInfo): void => {
+  const mapManager = props.networkManager.mapManager;
+  mapManager?.contigDimensionHolder.updateContigData(assemblyInfo.contigDescriptors);
+  mapManager?.scaffoldHolder.updateScaffoldData(assemblyInfo.scaffoldDescriptors);
+  mapManager?.reloadVisuals();
+  mapManager?.refreshOverviewMinimap();
+  void mapManager?.linearTrackManager.clearCachesAndRender();
+};
+
+const setAuthoritativeAssemblySource = async (
+  source: OverlayAssemblySource
+): Promise<void> => {
+  const result = await props.networkManager.requestManager.setAssemblyInfoSource(source);
+  applyAssemblyInfoToMap(result.assemblyInfo);
+};
+
 const goBack = (): void => {
   currentStepIndex.value = Math.max(0, currentStepIndex.value - 1);
 };
@@ -1467,23 +1534,30 @@ const runWizard = async (): Promise<void> => {
       );
     }
 
-    if (primaryAgp.value && primaryAgp.value.toLowerCase().endsWith(".agp")) {
+    if (requiresSecondarySource.value) {
+      runState.currentStepId = "agp";
+      runState.currentMessage = `Synchronizing ${overlayAssemblySource.value.toLowerCase()} assembly source`;
+      await setAuthoritativeAssemblySource(overlayAssemblySource.value);
+      const authoritativeAgp =
+        overlayAssemblySource.value === "PRIMARY"
+          ? primaryAgp.value
+          : secondaryAgp.value;
+      if (authoritativeAgp && authoritativeAgp.toLowerCase().endsWith(".agp")) {
+        runState.currentMessage = `Loading ${authoritativeAgp}`;
+        await props.networkManager.requestManager.loadAGP(
+          new LoadAGPRequest({
+            agpFilename: authoritativeAgp,
+            source: overlayAssemblySource.value,
+          })
+        );
+      }
+    } else if (primaryAgp.value && primaryAgp.value.toLowerCase().endsWith(".agp")) {
       runState.currentStepId = "agp";
       runState.currentMessage = `Loading ${primaryAgp.value}`;
       await props.networkManager.requestManager.loadAGP(
         new LoadAGPRequest({
           agpFilename: primaryAgp.value,
           source: "PRIMARY",
-        })
-      );
-    }
-    if (secondaryAgp.value && requiresSecondarySource.value && secondaryAgp.value.toLowerCase().endsWith(".agp")) {
-      runState.currentStepId = "agp";
-      runState.currentMessage = `Loading ${secondaryAgp.value}`;
-      await props.networkManager.requestManager.loadAGP(
-        new LoadAGPRequest({
-          agpFilename: secondaryAgp.value,
-          source: "SECONDARY",
         })
       );
     }

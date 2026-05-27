@@ -8,8 +8,9 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run build:web && npm run electron:compile",
-    "build:web": "run-p type-check test:api-dto build-only",
+    "build:web": "run-p type-check test:api-dto test:map-resolution build-only",
     "test:api-dto": "node scripts/check-api-dto-regressions.mjs",
+    "test:map-resolution": "node scripts/check-map-resolution-model.mjs",
     "preview": "vite preview --port 4173",
     "build-only": "vite build",
     "type-check": "vue-tsc --noEmit",

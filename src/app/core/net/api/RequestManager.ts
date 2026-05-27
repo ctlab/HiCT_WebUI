@@ -981,18 +981,24 @@ class RequestManager {
     });
   }
 
-  public async loadAGP(request: LoadAGPRequest): Promise<void> {
+  public async loadAGP(
+    request: LoadAGPRequest,
+    options: { updateAssemblyState?: boolean } = {}
+  ): Promise<AssemblyInfo> {
     return this.sendRequest(request)
       .then((response) => response.data)
       .then((json) => new AssemblyInfoDTO(json).toEntity())
       .then((asmInfo) => {
-        this.networkManager.mapManager?.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.networkManager.mapManager?.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
-        this.networkManager.mapManager?.reloadVisuals();
+        if (options.updateAssemblyState !== false) {
+          this.networkManager.mapManager?.contigDimensionHolder.updateContigData(
+            asmInfo.contigDescriptors
+          );
+          this.networkManager.mapManager?.scaffoldHolder.updateScaffoldData(
+            asmInfo.scaffoldDescriptors
+          );
+          this.networkManager.mapManager?.reloadVisuals();
+        }
+        return asmInfo;
       })
       .catch((err) => {
         throw new Error("Cannot link AGP file: " + err);
