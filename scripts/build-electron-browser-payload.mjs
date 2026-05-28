@@ -22,6 +22,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { chmod, cp } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
@@ -35,7 +36,7 @@ const platform = args.platform ?? detectPlatform();
 const outputDir = resolve(args.output ?? join(repoDir, "..", "HiCT_JVM", "browsers-dist", platform, "electron"));
 const electronPackageDir = resolve(repoDir, "node_modules", "electron");
 const electronPackage = JSON.parse(readFileSync(resolve(electronPackageDir, "package.json"), "utf8"));
-const electronRuntimeExecutable = resolveInstalledElectronExecutable(electronPackageDir, platform);
+const electronRuntimeExecutable = ensureInstalledElectronExecutable(electronPackageDir, platform);
 const electronDist = dirname(electronRuntimeExecutable);
 const electronVersion = String(electronPackage.version);
 
@@ -171,6 +172,37 @@ function resolveElectronCommand(payloadRoot, targetPlatform) {
   );
 }
 
+function ensureInstalledElectronExecutable(packageDir, targetPlatform) {
+  const executable = resolveInstalledElectronExecutable(packageDir, targetPlatform);
+  if (executable) {
+    return executable;
+  }
+
+  console.warn(
+    [
+      "Electron runtime executable was not found after npm install; attempting to repair Electron postinstall.",
+      `Electron package directory entries: ${describeDirectory(packageDir)}`,
+      `Electron dist directory entries: ${describeDirectory(resolve(packageDir, "dist"))}`,
+    ].join("\n")
+  );
+  repairElectronInstall(packageDir, targetPlatform);
+
+  const repairedExecutable = resolveInstalledElectronExecutable(packageDir, targetPlatform);
+  if (repairedExecutable) {
+    return repairedExecutable;
+  }
+
+  throw new Error(
+    [
+      "Electron runtime executable was not found after npm install and postinstall repair.",
+      `Checked package: ${packageDir}`,
+      `Electron package directory entries: ${describeDirectory(packageDir)}`,
+      `Electron dist directory entries: ${describeDirectory(resolve(packageDir, "dist"))}`,
+      "Run npm ci/install without ELECTRON_SKIP_BINARY_DOWNLOAD and ensure Electron postinstall completed.",
+    ].join("\n")
+  );
+}
+
 function resolveInstalledElectronExecutable(packageDir, targetPlatform) {
   const expectedExecutable = targetPlatform === "windows_x86_64" ? "electron.exe" : "electron";
   const candidates = [];
@@ -189,15 +221,41 @@ function resolveInstalledElectronExecutable(packageDir, targetPlatform) {
     }
   }
 
-  throw new Error(
-    [
-      "Electron runtime executable was not found after npm install.",
-      `Checked: ${candidates.join(", ")}`,
-      `Electron package directory entries: ${describeDirectory(packageDir)}`,
-      `Electron dist directory entries: ${describeDirectory(resolve(packageDir, "dist"))}`,
-      "Run npm ci/install without ELECTRON_SKIP_BINARY_DOWNLOAD and ensure Electron postinstall completed.",
-    ].join("\n")
-  );
+  return null;
+}
+
+function repairElectronInstall(packageDir, targetPlatform) {
+  const installScript = resolve(packageDir, "install.js");
+  if (!existsSync(installScript)) {
+    throw new Error(`Electron install script was not found: ${installScript}`);
+  }
+
+  rmSync(resolve(packageDir, "dist"), { recursive: true, force: true });
+  rmSync(resolve(packageDir, "path.txt"), { force: true });
+
+  const env = { ...process.env };
+  for (const key of [
+    "ELECTRON_SKIP_BINARY_DOWNLOAD",
+    "ELECTRON_OVERRIDE_DIST_PATH",
+    "npm_config_electron_skip_binary_download",
+    "npm_config_ELECTRON_SKIP_BINARY_DOWNLOAD",
+  ]) {
+    delete env[key];
+  }
+  env.npm_config_platform = targetPlatform === "windows_x86_64" ? "win32" : "linux";
+  env.npm_config_arch = "x64";
+
+  const result = spawnSync(process.execPath, [installScript], {
+    cwd: packageDir,
+    env,
+    stdio: "inherit",
+  });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error(`Electron postinstall repair failed with exit code ${result.status}`);
+  }
 }
 
 function shouldCopyElectronRuntimePath(path, keepLocales) {
