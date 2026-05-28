@@ -73,10 +73,28 @@
                 </div>
                 <div class="col-md-12">
                   <label class="form-label">Reference .hict.hdf5 map for resolution sync (optional)</label>
-                  <select v-model="referenceMapFilename" class="form-select">
-                    <option value="">No reference map: derive zoom resolutions automatically</option>
-                    <option v-for="file in referenceMapFiles" :key="file" :value="file">{{ file }}</option>
-                  </select>
+                  <div class="input-group">
+                    <input
+                      class="form-control"
+                      :value="referenceMapFilename || 'No reference map: derive zoom resolutions automatically'"
+                      readonly
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-outline-primary"
+                      @click="referenceMapSelectorOpen = true"
+                    >
+                      Browse...
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary"
+                      :disabled="!referenceMapFilename"
+                      @click="referenceMapFilename = ''"
+                    >
+                      Clear
+                    </button>
+                  </div>
                   <small class="text-muted">
                     When selected and zoom resolutions are empty, the dotplot reuses this map's resolutions and adds finer intermediate levels from the base dotplot resolution.
                   </small>
@@ -90,6 +108,14 @@
                   <small class="text-muted">
                     Use this when the dotplot should be generated for a scaffolded assembly state. The AGP-defined sequence is written to a temporary FASTA before mm2-plus/minimap2 runs.
                   </small>
+                </div>
+                <div v-if="dotplotOffsetWarnings.length" class="col-12">
+                  <div class="alert alert-warning py-2 mb-0">
+                    <strong>Overlay alignment warning.</strong>
+                    <ul class="mb-0 ps-3">
+                      <li v-for="warning in dotplotOffsetWarnings" :key="warning">{{ warning }}</li>
+                    </ul>
+                  </div>
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Minimizer k-mer length</label>
@@ -209,6 +235,17 @@
         </div>
       </div>
     </div>
+    <UniversalFileSelector
+      v-if="referenceMapSelectorOpen"
+      :network-manager="props.networkManager"
+      :title="'Select reference .hict.hdf5 map'"
+      :file-type="'.hict.hdf5'"
+      :note="'Select the HiCT map whose assembly and resolution pyramid should guide generated dotplots.'"
+      :file-name-predicate="isHictMapFilename"
+      :z-index="1080"
+      @selected="onReferenceMapSelected"
+      @dismissed="referenceMapSelectorOpen = false"
+    />
   </Teleport>
 </template>
 
@@ -219,6 +256,7 @@ import { StartDotplotJobsRequest } from "@/app/core/net/api/request";
 import type { ConversionJobResponse, ConversionToolchainStatusResponse } from "@/app/core/net/api/response";
 import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
 import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
+import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
 
 const emit = defineEmits<{
   (e: "dismissed"): void;
@@ -227,6 +265,7 @@ const emit = defineEmits<{
 const props = defineProps<{
   networkManager: NetworkManager;
   initialFastaFilename?: string;
+  initialReferenceMapFilename?: string;
 }>();
 
 const step: Ref<"select" | "settings" | "progress"> = ref("select");
@@ -243,6 +282,7 @@ let refreshTimer: number | null = null;
 const binSize = ref(1000);
 const resolutions = ref("");
 const referenceMapFilename = ref("");
+const referenceMapSelectorOpen = ref(false);
 const assemblyAgpFilename = ref("");
 const minimizerK = ref(17);
 const minimizerWindow = ref(5);
@@ -260,13 +300,24 @@ const overwrite = ref(false);
 const fastaEntries = computed<FileSelectionTableEntry[]>(() =>
   fastaFiles.value.map((path) => ({ path }))
 );
-const referenceMapFiles = computed(() =>
-  allFiles.value.filter((path) => path.toLowerCase().endsWith(".hict.hdf5"))
-);
 const agpFiles = computed(() =>
   allFiles.value.filter((path) => path.toLowerCase().endsWith(".agp"))
 );
 const selectedFastaPaths = computed(() => Array.from(selection.value));
+const dotplotOffsetWarnings = computed(() => {
+  const warnings: string[] = [];
+  if (!referenceMapFilename.value) {
+    warnings.push(
+      "Without a reference .hict.hdf5 map, generated zoom resolutions are inferred and may not align exactly with an already opened map."
+    );
+  }
+  if (!assemblyAgpFilename.value) {
+    warnings.push(
+      "Without AGP, the dotplot uses FASTA order as-is; overlay offsets are possible when the target map is already scaffolded or reordered."
+    );
+  }
+  return warnings;
+});
 const hasActiveJobs = computed(() =>
   jobs.value.some((job) => job.status === "queued" || job.status === "running")
 );
@@ -322,6 +373,15 @@ const alignerCommandPreview = computed(() => {
 
 function onSelectionUpdated(files: string[]): void {
   selection.value = new Set(files);
+}
+
+function isHictMapFilename(name: string): boolean {
+  return name.toLowerCase().endsWith(".hict.hdf5");
+}
+
+function onReferenceMapSelected(filename: string): void {
+  referenceMapFilename.value = filename;
+  referenceMapSelectorOpen.value = false;
 }
 
 function selectAll(): void {
@@ -474,6 +534,16 @@ function syncAutoRefresh(): void {
 }
 
 watch(() => [step.value, hasActiveJobs.value] as const, syncAutoRefresh);
+
+watch(
+  () => props.initialReferenceMapFilename,
+  (filename) => {
+    if (!referenceMapFilename.value && filename && isHictMapFilename(filename)) {
+      referenceMapFilename.value = filename;
+    }
+  },
+  { immediate: true }
+);
 
 onMounted(async () => {
   try {

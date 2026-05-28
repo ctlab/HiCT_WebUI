@@ -385,6 +385,7 @@
     v-if="generatingDotplots"
     :network-manager="networkManager"
     :initial-fasta-filename="lastLinkedFastaFilename"
+    :initial-reference-map-filename="currentPrimaryHictFilename"
     @dismissed="onGenerateDotplotDismissed"
   />
   <TrackManager
@@ -617,6 +618,11 @@ const { requestErrorToastsEnabled, webuiErrorToastsEnabled } =
   storeToRefs(errorToastStore);
 const { customZoomSliderEnabled, binaryTileTransportEnabled } =
   storeToRefs(uiSettingsStore);
+
+const currentPrimaryHictFilename = computed(() => {
+  const filename = props.mapManager?.getOptions().filename ?? "";
+  return filename.toLowerCase().endsWith(".hict.hdf5") ? filename : "";
+});
 
 const nativeProcessingStatusClass = computed(() => ({
   "text-success": nativeProcessingStatus.value?.enabled,

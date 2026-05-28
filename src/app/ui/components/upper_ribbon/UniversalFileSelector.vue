@@ -21,11 +21,11 @@
 
 <template>
   <div class="file-selector-root">
-    <div class="modal-backdrop fade show"></div>
+    <div class="modal-backdrop fade show" :style="backdropStyle"></div>
     <div
       class="modal fade show"
       tabindex="-1"
-      style="display: block"
+      :style="modalStyle"
       role="dialog"
     >
       <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -154,7 +154,7 @@ import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vu
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { storeToRefs } from "pinia";
 import Tree from "primevue/tree";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch, type CSSProperties } from "vue";
 
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
@@ -168,6 +168,7 @@ const props = defineProps<{
   fileType?: string;
   note?: string;
   errorMessage?: unknown;
+  zIndex?: number;
 }>();
 
 const loading = ref(true);
@@ -181,6 +182,13 @@ const uiSettingsStore = useUiSettingsStore();
 const { fileSelectorMode } = storeToRefs(uiSettingsStore);
 const selectorMode = ref<"explorer" | "tree">(fileSelectorMode.value);
 
+const modalStyle = computed<CSSProperties>(() => ({
+  display: "block",
+  ...(props.zIndex ? { zIndex: props.zIndex } : {}),
+}));
+const backdropStyle = computed<CSSProperties>(() =>
+  props.zIndex ? { zIndex: Math.max(0, props.zIndex - 5) } : {}
+);
 const hasPredicate = computed(() => typeof props.fileNamePredicate === "function");
 const fileFilterHint = computed(() => {
   if (!hasPredicate.value) {
