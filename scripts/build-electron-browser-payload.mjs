@@ -23,8 +23,9 @@
 
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { chmod, cp } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,7 +37,7 @@ const platform = args.platform ?? detectPlatform();
 const outputDir = resolve(args.output ?? join(repoDir, "..", "HiCT_JVM", "browsers-dist", platform, "electron"));
 const electronPackageDir = resolve(repoDir, "node_modules", "electron");
 const electronPackage = JSON.parse(readFileSync(resolve(electronPackageDir, "package.json"), "utf8"));
-const electronRuntimeExecutable = ensureInstalledElectronExecutable(electronPackageDir, platform);
+const electronRuntimeExecutable = await ensureInstalledElectronExecutable(electronPackageDir, platform);
 const electronDist = dirname(electronRuntimeExecutable);
 const electronVersion = String(electronPackage.version);
 
@@ -172,7 +173,7 @@ function resolveElectronCommand(payloadRoot, targetPlatform) {
   );
 }
 
-function ensureInstalledElectronExecutable(packageDir, targetPlatform) {
+async function ensureInstalledElectronExecutable(packageDir, targetPlatform) {
   const executable = resolveInstalledElectronExecutable(packageDir, targetPlatform);
   if (executable) {
     return executable;
@@ -192,13 +193,21 @@ function ensureInstalledElectronExecutable(packageDir, targetPlatform) {
     return repairedExecutable;
   }
 
+  console.warn("Electron postinstall repair did not produce a runtime executable; forcing a fresh Electron artifact download.");
+  await downloadAndExtractElectronRuntime(packageDir, targetPlatform);
+
+  const downloadedExecutable = resolveInstalledElectronExecutable(packageDir, targetPlatform);
+  if (downloadedExecutable) {
+    return downloadedExecutable;
+  }
+
   throw new Error(
     [
-      "Electron runtime executable was not found after npm install and postinstall repair.",
+      "Electron runtime executable was not found after npm install, postinstall repair, and direct artifact download.",
       `Checked package: ${packageDir}`,
       `Electron package directory entries: ${describeDirectory(packageDir)}`,
       `Electron dist directory entries: ${describeDirectory(resolve(packageDir, "dist"))}`,
-      "Run npm ci/install without ELECTRON_SKIP_BINARY_DOWNLOAD and ensure Electron postinstall completed.",
+      "Ensure network access to Electron release artifacts and that no Electron skip/override environment variables are set.",
     ].join("\n")
   );
 }
@@ -244,6 +253,8 @@ function repairElectronInstall(packageDir, targetPlatform) {
   }
   env.npm_config_platform = targetPlatform === "windows_x86_64" ? "win32" : "linux";
   env.npm_config_arch = "x64";
+  env.force_no_cache = "true";
+  env.electron_config_cache = electronCacheRoot(targetPlatform);
 
   const result = spawnSync(process.execPath, [installScript], {
     cwd: packageDir,
@@ -256,6 +267,63 @@ function repairElectronInstall(packageDir, targetPlatform) {
   if (result.status !== 0) {
     throw new Error(`Electron postinstall repair failed with exit code ${result.status}`);
   }
+}
+
+async function downloadAndExtractElectronRuntime(packageDir, targetPlatform) {
+  const packageRequire = createRequire(resolve(packageDir, "install.js"));
+  const { downloadArtifact } = packageRequire("@electron/get");
+  const extract = packageRequire("extract-zip");
+  const distPath = resolve(packageDir, "dist");
+  const pathFile = resolve(packageDir, "path.txt");
+  const electronDtsInDist = resolve(distPath, "electron.d.ts");
+  const electronDtsInPackage = resolve(packageDir, "electron.d.ts");
+  const checksumsPath = resolve(packageDir, "checksums.json");
+
+  rmSync(distPath, { recursive: true, force: true });
+  rmSync(pathFile, { force: true });
+  mkdirSync(distPath, { recursive: true });
+
+  const zipPath = await downloadArtifact({
+    version: String(electronPackage.version),
+    artifactName: "electron",
+    force: true,
+    cacheRoot: electronCacheRoot(targetPlatform),
+    checksums: existsSync(checksumsPath) ? JSON.parse(readFileSync(checksumsPath, "utf8")) : undefined,
+    platform: electronNpmPlatform(targetPlatform),
+    arch: "x64",
+  });
+
+  await extract(zipPath, { dir: distPath });
+
+  if (existsSync(electronDtsInDist)) {
+    rmSync(electronDtsInPackage, { force: true });
+    renameSync(electronDtsInDist, electronDtsInPackage);
+  }
+
+  writeFileSync(pathFile, electronPlatformPath(targetPlatform), "utf8");
+}
+
+function electronNpmPlatform(targetPlatform) {
+  if (targetPlatform === "windows_x86_64") {
+    return "win32";
+  }
+  if (targetPlatform === "linux_x86_64") {
+    return "linux";
+  }
+  throw new Error(`Unsupported Electron platform for download: ${targetPlatform}`);
+}
+
+function electronPlatformPath(targetPlatform) {
+  return targetPlatform === "windows_x86_64" ? "electron.exe" : "electron";
+}
+
+function electronCacheRoot(targetPlatform) {
+  const cacheRoot = resolve(
+    process.env.HICT_ELECTRON_CACHE_DIR ?? join(repoDir, "node_modules", ".cache", "hict-electron"),
+    targetPlatform
+  );
+  mkdirSync(cacheRoot, { recursive: true });
+  return cacheRoot;
 }
 
 function shouldCopyElectronRuntimePath(path, keepLocales) {
