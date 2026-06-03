@@ -29,6 +29,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, re
 import { chmod, cp } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, dirname, join, resolve, sep } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -289,17 +290,25 @@ async function downloadAndExtractElectronRuntime(packageDir, targetPlatform) {
   const artifactName = electronArtifactName(targetPlatform);
   const artifactUrl = electronArtifactUrl(artifactName);
   const cacheRoot = electronCacheRoot(targetPlatform);
-  const zipPath = resolve(cacheRoot, artifactName);
+  const cachedZipPath = findCachedElectronArtifact(cacheRoot, checksumsPath, artifactName);
+  const zipPath = cachedZipPath ?? resolve(cacheRoot, artifactName);
 
   rmSync(distPath, { recursive: true, force: true });
   rmSync(pathFile, { force: true });
   mkdirSync(distPath, { recursive: true });
 
-  console.warn(`Downloading Electron runtime artifact: ${artifactUrl}`);
-  await downloadFile(artifactUrl, zipPath);
+  if (cachedZipPath) {
+    console.warn(`Using cached Electron runtime artifact: ${cachedZipPath}`);
+  } else {
+    console.warn(`Downloading Electron runtime artifact: ${artifactUrl}`);
+    await downloadFile(artifactUrl, zipPath);
+  }
   verifyElectronArtifactChecksum(zipPath, checksumsPath, artifactName);
 
-  await extract(zipPath, { dir: distPath });
+  await withEventLoopKeepAlive(
+    () => extract(zipPath, { dir: distPath }),
+    `extracting Electron runtime artifact ${artifactName}`
+  );
 
   if (existsSync(electronDtsInDist)) {
     rmSync(electronDtsInPackage, { force: true });
@@ -334,56 +343,104 @@ function electronArtifactUrl(artifactName) {
   return `${baseUrl}${artifactName}`;
 }
 
-async function downloadFile(url, destination, redirectCount = 0) {
+async function downloadFile(url, destination) {
+  rmSync(destination, { force: true });
+  mkdirSync(dirname(destination), { recursive: true });
+
+  const tempDestination = `${destination}.tmp-${process.pid}`;
+  rmSync(tempDestination, { force: true });
+
+  try {
+    const response = await openDownloadResponse(url);
+    await pipeline(response, createWriteStream(tempDestination, { flags: "wx" }));
+    renameSync(tempDestination, destination);
+  } catch (error) {
+    rmSync(tempDestination, { force: true });
+    rmSync(destination, { force: true });
+    throw error;
+  }
+}
+
+async function openDownloadResponse(url, redirectCount = 0) {
   if (redirectCount > 10) {
     throw new Error(`Too many redirects while downloading ${url}`);
   }
 
-  rmSync(destination, { force: true });
-  mkdirSync(dirname(destination), { recursive: true });
-
-  await new Promise((resolvePromise, rejectPromise) => {
+  const response = await new Promise((resolvePromise, rejectPromise) => {
     const client = url.startsWith("http://") ? http : https;
-    const request = client.get(url, (response) => {
-      const statusCode = response.statusCode ?? 0;
-      if ([301, 302, 303, 307, 308].includes(statusCode)) {
-        response.resume();
-        const location = response.headers.location;
-        if (!location) {
-          rejectPromise(new Error(`Electron download redirect did not include Location header: ${url}`));
-          return;
-        }
-        const redirectUrl = new URL(location, url).toString();
-        downloadFile(redirectUrl, destination, redirectCount + 1).then(resolvePromise, rejectPromise);
-        return;
-      }
-
-      if (statusCode < 200 || statusCode >= 300) {
-        response.resume();
-        rejectPromise(new Error(`Electron download failed with HTTP ${statusCode}: ${url}`));
-        return;
-      }
-
-      const output = createWriteStream(destination, { flags: "wx" });
-      response.pipe(output);
-      output.on("finish", () => output.close(resolvePromise));
-      output.on("error", (error) => {
-        response.destroy();
-        rmSync(destination, { force: true });
-        rejectPromise(error);
-      });
-    });
-    request.on("error", (error) => {
-      rmSync(destination, { force: true });
-      rejectPromise(error);
-    });
+    const request = client.get(
+      url,
+      {
+        headers: {
+          "user-agent": "HiCT-Electron-Payload-Builder",
+        },
+      },
+      resolvePromise
+    );
+    request.on("error", rejectPromise);
     request.setTimeout(120_000, () => {
       request.destroy(new Error(`Timed out while downloading Electron runtime artifact: ${url}`));
     });
   });
+
+  const statusCode = response.statusCode ?? 0;
+  if ([301, 302, 303, 307, 308].includes(statusCode)) {
+    response.resume();
+    const location = response.headers.location;
+    if (!location) {
+      throw new Error(`Electron download redirect did not include Location header: ${url}`);
+    }
+    return openDownloadResponse(new URL(location, url).toString(), redirectCount + 1);
+  }
+
+  if (statusCode < 200 || statusCode >= 300) {
+    response.resume();
+    throw new Error(`Electron download failed with HTTP ${statusCode}: ${url}`);
+  }
+
+  return response;
 }
 
-function verifyElectronArtifactChecksum(zipPath, checksumsPath, artifactName) {
+async function withEventLoopKeepAlive(action, description) {
+  let timeout = null;
+  // Node 24 exits with code 13 if top-level await is pending with no ref'ed handles.
+  const keepAlive = setInterval(() => {}, 1_000);
+  try {
+    return await Promise.race([
+      action(),
+      new Promise((_, rejectPromise) => {
+        timeout = setTimeout(() => {
+          rejectPromise(new Error(`Timed out while ${description}`));
+        }, 300_000);
+      }),
+    ]);
+  } finally {
+    clearInterval(keepAlive);
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+function findCachedElectronArtifact(cacheRoot, checksumsPath, artifactName) {
+  if (!existsSync(cacheRoot)) {
+    return null;
+  }
+
+  const candidates = listFiles(cacheRoot).filter((filePath) => basename(filePath) === artifactName);
+  for (const candidate of candidates) {
+    try {
+      verifyElectronArtifactChecksum(candidate, checksumsPath, artifactName, { removeOnMismatch: false });
+      return candidate;
+    } catch (error) {
+      console.warn(`Ignoring cached Electron artifact ${candidate}: ${error.message}`);
+    }
+  }
+
+  return null;
+}
+
+function verifyElectronArtifactChecksum(zipPath, checksumsPath, artifactName, { removeOnMismatch = true } = {}) {
   if (!existsSync(checksumsPath)) {
     console.warn(`Electron checksums file is missing; cannot verify ${artifactName}`);
     return;
@@ -398,7 +455,9 @@ function verifyElectronArtifactChecksum(zipPath, checksumsPath, artifactName) {
 
   const actual = createHash("sha256").update(readFileSync(zipPath)).digest("hex");
   if (actual !== expected) {
-    rmSync(zipPath, { force: true });
+    if (removeOnMismatch) {
+      rmSync(zipPath, { force: true });
+    }
     throw new Error(`Electron artifact checksum mismatch for ${artifactName}: expected ${expected}, got ${actual}`);
   }
 }
