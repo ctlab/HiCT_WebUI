@@ -22,8 +22,10 @@
  */
 
 import { createHash } from "node:crypto";
+import http from "node:http";
+import https from "node:https";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { chmod, cp } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, dirname, join, resolve, sep } from "node:path";
@@ -186,11 +188,15 @@ async function ensureInstalledElectronExecutable(packageDir, targetPlatform) {
       `Electron dist directory entries: ${describeDirectory(resolve(packageDir, "dist"))}`,
     ].join("\n")
   );
-  repairElectronInstall(packageDir, targetPlatform);
+  const repairSucceeded = repairElectronInstall(packageDir, targetPlatform);
 
-  const repairedExecutable = resolveInstalledElectronExecutable(packageDir, targetPlatform);
-  if (repairedExecutable) {
-    return repairedExecutable;
+  if (repairSucceeded) {
+    const repairedExecutable = resolveInstalledElectronExecutable(packageDir, targetPlatform);
+    if (repairedExecutable) {
+      return repairedExecutable;
+    }
+  } else {
+    console.warn("Electron postinstall repair failed; continuing with direct Electron artifact download.");
   }
 
   console.warn("Electron postinstall repair did not produce a runtime executable; forcing a fresh Electron artifact download.");
@@ -262,36 +268,36 @@ function repairElectronInstall(packageDir, targetPlatform) {
     stdio: "inherit",
   });
   if (result.error) {
-    throw result.error;
+    console.warn(`Electron postinstall repair could not start: ${result.error.message}`);
+    return false;
   }
   if (result.status !== 0) {
-    throw new Error(`Electron postinstall repair failed with exit code ${result.status}`);
+    console.warn(`Electron postinstall repair failed with exit code ${result.status}`);
+    return false;
   }
+  return true;
 }
 
 async function downloadAndExtractElectronRuntime(packageDir, targetPlatform) {
   const packageRequire = createRequire(resolve(packageDir, "install.js"));
-  const { downloadArtifact } = packageRequire("@electron/get");
   const extract = packageRequire("extract-zip");
   const distPath = resolve(packageDir, "dist");
   const pathFile = resolve(packageDir, "path.txt");
   const electronDtsInDist = resolve(distPath, "electron.d.ts");
   const electronDtsInPackage = resolve(packageDir, "electron.d.ts");
   const checksumsPath = resolve(packageDir, "checksums.json");
+  const artifactName = electronArtifactName(targetPlatform);
+  const artifactUrl = electronArtifactUrl(artifactName);
+  const cacheRoot = electronCacheRoot(targetPlatform);
+  const zipPath = resolve(cacheRoot, artifactName);
 
   rmSync(distPath, { recursive: true, force: true });
   rmSync(pathFile, { force: true });
   mkdirSync(distPath, { recursive: true });
 
-  const zipPath = await downloadArtifact({
-    version: String(electronPackage.version),
-    artifactName: "electron",
-    force: true,
-    cacheRoot: electronCacheRoot(targetPlatform),
-    checksums: existsSync(checksumsPath) ? JSON.parse(readFileSync(checksumsPath, "utf8")) : undefined,
-    platform: electronNpmPlatform(targetPlatform),
-    arch: "x64",
-  });
+  console.warn(`Downloading Electron runtime artifact: ${artifactUrl}`);
+  await downloadFile(artifactUrl, zipPath);
+  verifyElectronArtifactChecksum(zipPath, checksumsPath, artifactName);
 
   await extract(zipPath, { dir: distPath });
 
@@ -303,7 +309,11 @@ async function downloadAndExtractElectronRuntime(packageDir, targetPlatform) {
   writeFileSync(pathFile, electronPlatformPath(targetPlatform), "utf8");
 }
 
-function electronNpmPlatform(targetPlatform) {
+function electronArtifactName(targetPlatform) {
+  return `electron-v${electronPackage.version}-${electronArtifactPlatform(targetPlatform)}-x64.zip`;
+}
+
+function electronArtifactPlatform(targetPlatform) {
   if (targetPlatform === "windows_x86_64") {
     return "win32";
   }
@@ -311,6 +321,86 @@ function electronNpmPlatform(targetPlatform) {
     return "linux";
   }
   throw new Error(`Unsupported Electron platform for download: ${targetPlatform}`);
+}
+
+function electronArtifactUrl(artifactName) {
+  const version = String(electronPackage.version);
+  const baseUrl = (
+    process.env.ELECTRON_MIRROR ??
+    process.env.npm_config_electron_mirror ??
+    process.env.electron_mirror ??
+    `https://github.com/electron/electron/releases/download/v${version}/`
+  ).replace(/\/?$/, "/");
+  return `${baseUrl}${artifactName}`;
+}
+
+async function downloadFile(url, destination, redirectCount = 0) {
+  if (redirectCount > 10) {
+    throw new Error(`Too many redirects while downloading ${url}`);
+  }
+
+  rmSync(destination, { force: true });
+  mkdirSync(dirname(destination), { recursive: true });
+
+  await new Promise((resolvePromise, rejectPromise) => {
+    const client = url.startsWith("http://") ? http : https;
+    const request = client.get(url, (response) => {
+      const statusCode = response.statusCode ?? 0;
+      if ([301, 302, 303, 307, 308].includes(statusCode)) {
+        response.resume();
+        const location = response.headers.location;
+        if (!location) {
+          rejectPromise(new Error(`Electron download redirect did not include Location header: ${url}`));
+          return;
+        }
+        const redirectUrl = new URL(location, url).toString();
+        downloadFile(redirectUrl, destination, redirectCount + 1).then(resolvePromise, rejectPromise);
+        return;
+      }
+
+      if (statusCode < 200 || statusCode >= 300) {
+        response.resume();
+        rejectPromise(new Error(`Electron download failed with HTTP ${statusCode}: ${url}`));
+        return;
+      }
+
+      const output = createWriteStream(destination, { flags: "wx" });
+      response.pipe(output);
+      output.on("finish", () => output.close(resolvePromise));
+      output.on("error", (error) => {
+        response.destroy();
+        rmSync(destination, { force: true });
+        rejectPromise(error);
+      });
+    });
+    request.on("error", (error) => {
+      rmSync(destination, { force: true });
+      rejectPromise(error);
+    });
+    request.setTimeout(120_000, () => {
+      request.destroy(new Error(`Timed out while downloading Electron runtime artifact: ${url}`));
+    });
+  });
+}
+
+function verifyElectronArtifactChecksum(zipPath, checksumsPath, artifactName) {
+  if (!existsSync(checksumsPath)) {
+    console.warn(`Electron checksums file is missing; cannot verify ${artifactName}`);
+    return;
+  }
+
+  const checksums = JSON.parse(readFileSync(checksumsPath, "utf8"));
+  const expected = checksums[artifactName];
+  if (!expected) {
+    console.warn(`Electron checksum is missing for ${artifactName}; cannot verify downloaded artifact.`);
+    return;
+  }
+
+  const actual = createHash("sha256").update(readFileSync(zipPath)).digest("hex");
+  if (actual !== expected) {
+    rmSync(zipPath, { force: true });
+    throw new Error(`Electron artifact checksum mismatch for ${artifactName}: expected ${expected}, got ${actual}`);
+  }
 }
 
 function electronPlatformPath(targetPlatform) {
