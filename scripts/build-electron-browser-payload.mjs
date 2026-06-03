@@ -25,7 +25,7 @@ import { createHash } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
 import { spawnSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { chmod, cp } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, dirname, join, resolve, sep } from "node:path";
@@ -281,7 +281,6 @@ function repairElectronInstall(packageDir, targetPlatform) {
 
 async function downloadAndExtractElectronRuntime(packageDir, targetPlatform) {
   const packageRequire = createRequire(resolve(packageDir, "install.js"));
-  const extract = packageRequire("extract-zip");
   const distPath = resolve(packageDir, "dist");
   const pathFile = resolve(packageDir, "path.txt");
   const electronDtsInDist = resolve(distPath, "electron.d.ts");
@@ -305,10 +304,7 @@ async function downloadAndExtractElectronRuntime(packageDir, targetPlatform) {
   }
   verifyElectronArtifactChecksum(zipPath, checksumsPath, artifactName);
 
-  await withEventLoopKeepAlive(
-    () => extract(zipPath, { dir: distPath }),
-    `extracting Electron runtime artifact ${artifactName}`
-  );
+  await extractElectronRuntimeArtifact(packageRequire, zipPath, distPath, artifactName);
 
   if (existsSync(electronDtsInDist)) {
     rmSync(electronDtsInPackage, { force: true });
@@ -316,6 +312,20 @@ async function downloadAndExtractElectronRuntime(packageDir, targetPlatform) {
   }
 
   writeFileSync(pathFile, electronPlatformPath(targetPlatform), "utf8");
+}
+
+async function extractElectronRuntimeArtifact(packageRequire, zipPath, distPath, artifactName) {
+  if (extractZipWithJar(zipPath, distPath)) {
+    console.warn(`Extracted Electron runtime artifact ${artifactName} with JDK jar.`);
+    return;
+  }
+
+  const yauzl = packageRequire("yauzl");
+  const extractedEntries = await withEventLoopKeepAlive(
+    () => extractZip(yauzl, zipPath, distPath),
+    `extracting Electron runtime artifact ${artifactName}`
+  );
+  console.warn(`Extracted ${extractedEntries} Electron runtime artifact entries with bundled yauzl.`);
 }
 
 function electronArtifactName(targetPlatform) {
@@ -411,7 +421,7 @@ async function withEventLoopKeepAlive(action, description) {
       new Promise((_, rejectPromise) => {
         timeout = setTimeout(() => {
           rejectPromise(new Error(`Timed out while ${description}`));
-        }, 300_000);
+        }, 900_000);
       }),
     ]);
   } finally {
@@ -420,6 +430,174 @@ async function withEventLoopKeepAlive(action, description) {
       clearTimeout(timeout);
     }
   }
+}
+
+function extractZipWithJar(zipPath, targetDir) {
+  for (const jarCommand of resolveJarCommands()) {
+    const result = spawnSync(jarCommand, ["xf", zipPath], {
+      cwd: targetDir,
+      stdio: "inherit",
+    });
+    if (!result.error && result.status === 0) {
+      return true;
+    }
+    if (result.error) {
+      console.warn(`Could not start ${jarCommand} to extract Electron artifact: ${result.error.message}`);
+    } else {
+      console.warn(`${jarCommand} failed to extract Electron artifact with exit code ${result.status}`);
+    }
+  }
+  return false;
+}
+
+function resolveJarCommands() {
+  const executable = process.platform === "win32" ? "jar.exe" : "jar";
+  const commands = [];
+  if (process.env.JAVA_HOME) {
+    const javaHomeJar = resolve(process.env.JAVA_HOME, "bin", executable);
+    if (existsSync(javaHomeJar)) {
+      commands.push(javaHomeJar);
+    }
+  }
+  commands.push(executable);
+  return [...new Set(commands)];
+}
+
+async function extractZip(yauzl, zipPath, targetDir) {
+  return await new Promise((resolvePromise, rejectPromise) => {
+    let extractedEntries = 0;
+    let zipfile = null;
+    let settled = false;
+
+    const rejectOnce = (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (zipfile) {
+        zipfile.close();
+      }
+      rejectPromise(error);
+    };
+
+    yauzl.open(zipPath, { lazyEntries: true }, (openError, openedZipfile) => {
+      if (openError) {
+        rejectOnce(openError);
+        return;
+      }
+
+      zipfile = openedZipfile;
+      zipfile.on("error", rejectOnce);
+      zipfile.on("end", () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        zipfile.close();
+        resolvePromise(extractedEntries);
+      });
+      zipfile.on("entry", (entry) => {
+        extractZipEntry(zipfile, entry, targetDir)
+          .then((didExtract) => {
+            if (didExtract) {
+              extractedEntries += 1;
+            }
+            zipfile.readEntry();
+          })
+          .catch(rejectOnce);
+      });
+      zipfile.readEntry();
+    });
+  });
+}
+
+async function extractZipEntry(zipfile, entry, targetDir) {
+  const entryName = entry.fileName.replace(/\\/g, "/");
+  if (entryName.startsWith("__MACOSX/")) {
+    return false;
+  }
+
+  const targetPath = resolveZipEntryPath(targetDir, entryName);
+  const mode = (entry.externalFileAttributes >>> 16) & 0xffff;
+  const fileType = mode & 0o170000;
+  let isDirectory = fileType === 0o040000 || entryName.endsWith("/");
+  const isSymlink = fileType === 0o120000;
+  const madeBy = entry.versionMadeBy >> 8;
+  if (!isDirectory && madeBy === 0 && entry.externalFileAttributes === 16) {
+    isDirectory = true;
+  }
+  const extractedMode = mode ? mode & 0o777 : isDirectory ? 0o755 : 0o644;
+
+  if (isDirectory) {
+    mkdirSync(targetPath, { recursive: true, mode: extractedMode });
+    return true;
+  }
+
+  mkdirSync(dirname(targetPath), { recursive: true });
+  if (isSymlink) {
+    const target = await readZipEntryText(zipfile, entry);
+    symlinkSync(target, targetPath);
+    return true;
+  }
+
+  await writeZipEntryFile(zipfile, entry, targetPath, extractedMode);
+  return true;
+}
+
+function resolveZipEntryPath(targetDir, entryName) {
+  const targetRoot = resolve(targetDir);
+  const targetPath = resolve(targetRoot, entryName);
+  if (targetPath !== targetRoot && !targetPath.startsWith(`${targetRoot}${sep}`)) {
+    throw new Error(`Electron artifact contains an out-of-bounds zip entry: ${entryName}`);
+  }
+  return targetPath;
+}
+
+async function writeZipEntryFile(zipfile, entry, targetPath, mode) {
+  const readStream = await openZipEntryReadStream(zipfile, entry);
+  await new Promise((resolvePromise, rejectPromise) => {
+    let settled = false;
+    const settle = (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (error) {
+        rejectPromise(error);
+      } else {
+        resolvePromise();
+      }
+    };
+
+    const writeStream = createWriteStream(targetPath, { mode });
+    readStream.on("error", settle);
+    writeStream.on("error", settle);
+    writeStream.on("finish", () => settle());
+    readStream.pipe(writeStream);
+  });
+}
+
+async function readZipEntryText(zipfile, entry) {
+  const readStream = await openZipEntryReadStream(zipfile, entry);
+  const chunks = [];
+  await new Promise((resolvePromise, rejectPromise) => {
+    readStream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    readStream.on("error", rejectPromise);
+    readStream.on("end", resolvePromise);
+  });
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function openZipEntryReadStream(zipfile, entry) {
+  return await new Promise((resolvePromise, rejectPromise) => {
+    zipfile.openReadStream(entry, (error, readStream) => {
+      if (error) {
+        rejectPromise(error);
+      } else {
+        resolvePromise(readStream);
+      }
+    });
+  });
 }
 
 function findCachedElectronArtifact(cacheRoot, checksumsPath, artifactName) {
