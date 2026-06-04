@@ -157,7 +157,7 @@ class AnnotationTrack2D extends Track2DSymmetric {
       this.features.set(resolution, []);
     }
     const viewManager = this.mapManager.getLayersManager();
-    for (const resolutionTuple of viewManager.resolutionTuples) {
+    for (const resolutionTuple of viewManager.getVectorResolutionTuples()) {
       const bpResolution = resolutionTuple.bpResolution;
       const pixelResolution = resolutionTuple.pixelResolution;
       const targetFeatures = this.features.get(bpResolution);

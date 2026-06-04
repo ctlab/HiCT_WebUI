@@ -1,0 +1,735 @@
+#!/usr/bin/env node
+/*
+ Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+
+ Permission is hereby granted, free of charge, to any person obtaining a copy of
+ this software and associated documentation files (the "Software"), to deal in
+ the Software without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ the Software, and to permit persons to whom the Software is furnished to do so,
+ subject to the following conditions:
+
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+ */
+
+import { createHash } from "node:crypto";
+import http from "node:http";
+import https from "node:https";
+import { spawnSync } from "node:child_process";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmod, cp } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { basename, dirname, join, resolve, sep } from "node:path";
+import { pipeline } from "node:stream/promises";
+import { fileURLToPath } from "node:url";
+
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const repoDir = resolve(scriptDir, "..");
+
+const args = parseArgs(process.argv.slice(2));
+const platform = args.platform ?? detectPlatform();
+const outputDir = resolve(args.output ?? join(repoDir, "..", "HiCT_JVM", "browsers-dist", platform, "electron"));
+const electronPackageDir = resolve(repoDir, "node_modules", "electron");
+const electronPackage = JSON.parse(readFileSync(resolve(electronPackageDir, "package.json"), "utf8"));
+const electronRuntimeExecutable = await ensureInstalledElectronExecutable(electronPackageDir, platform);
+const electronDist = dirname(electronRuntimeExecutable);
+const electronVersion = String(electronPackage.version);
+
+if (!["linux_x86_64", "windows_x86_64"].includes(platform)) {
+  throw new Error(`Unsupported Electron browser payload platform: ${platform}`);
+}
+if (!existsSync(resolve(repoDir, "dist", "electron", "main", "main.js"))) {
+  throw new Error("Electron main process is not compiled. Run npm run electron:compile first.");
+}
+
+rmSync(outputDir, { recursive: true, force: true });
+mkdirSync(outputDir, { recursive: true });
+
+const electronTarget = join(outputDir, "electron");
+await copyElectronRuntime(electronDist, electronTarget);
+await copyElectronApp(join(outputDir, "app"));
+
+const command = resolveElectronCommand(outputDir, platform);
+const executablePath = join(outputDir, command);
+await chmodExecutableIfPresent(executablePath);
+await flipSecurityFuses(executablePath);
+
+const launchArguments = platform === "linux_x86_64" ? ["--no-sandbox", "app"] : ["app"];
+const manifest = {
+  name: `HiCT Electron ${electronVersion}`,
+  engine: "electron-chromium",
+  version: electronVersion,
+  priority: 50,
+  command,
+  arguments: launchArguments,
+  license: "Electron MIT; Chromium and bundled third-party components under their upstream licenses",
+  notices: [
+    "electron/LICENSE",
+    "electron/LICENSES.chromium.html",
+    "app/package.json"
+  ],
+  sizeBytes: directorySize(outputDir),
+  sha256: sha256OfTree(outputDir),
+};
+writeFileSync(join(outputDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+console.log(`Prepared HiCT Electron browser payload for ${platform}`);
+console.log(`  output: ${outputDir}`);
+console.log(`  Electron: ${electronVersion}`);
+console.log(`  size: ${(manifest.sizeBytes / (1024 * 1024)).toFixed(1)} MiB`);
+
+function parseArgs(argv) {
+  const parsed = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--platform") {
+      parsed.platform = argv[++i];
+    } else if (arg.startsWith("--platform=")) {
+      parsed.platform = arg.slice("--platform=".length);
+    } else if (arg === "--output") {
+      parsed.output = argv[++i];
+    } else if (arg.startsWith("--output=")) {
+      parsed.output = arg.slice("--output=".length);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  return parsed;
+}
+
+function detectPlatform() {
+  if (process.platform === "win32") {
+    return "windows_x86_64";
+  }
+  if (process.platform === "linux") {
+    return "linux_x86_64";
+  }
+  throw new Error(`Unsupported platform for HiCT Electron browser payload: ${process.platform}`);
+}
+
+async function copyElectronRuntime(source, target) {
+  const keepLocales = new Set(
+    (process.env.HICT_ELECTRON_KEEP_LOCALES ?? "en-US")
+      .split(",")
+      .map((locale) => locale.trim())
+      .filter(Boolean)
+      .map((locale) => `${locale}.pak`)
+  );
+
+  rmSync(target, { recursive: true, force: true });
+  mkdirSync(target, { recursive: true });
+  for (const entry of readdirSync(source)) {
+    await cp(join(source, entry), join(target, entry), {
+      recursive: true,
+      dereference: true,
+      filter: (src) => shouldCopyElectronRuntimePath(src, keepLocales),
+    });
+  }
+}
+
+async function copyElectronApp(target) {
+  mkdirSync(join(target, "main"), { recursive: true });
+  mkdirSync(join(target, "preload"), { recursive: true });
+  await cp(resolve(repoDir, "dist", "electron", "main"), join(target, "main"), { recursive: true });
+  await cp(resolve(repoDir, "dist", "electron", "preload"), join(target, "preload"), { recursive: true });
+  await cp(resolve(repoDir, "dist", "index.html"), join(target, "index.html"));
+  await cp(resolve(repoDir, "dist", "assets"), join(target, "assets"), { recursive: true });
+
+  const appPackage = {
+    name: "hict-electron-browser",
+    version: JSON.parse(readFileSync(resolve(repoDir, "package.json"), "utf8")).version,
+    private: true,
+    main: "main/main.js",
+    license: "MIT",
+  };
+  writeFileSync(join(target, "package.json"), `${JSON.stringify(appPackage, null, 2)}\n`, "utf8");
+}
+
+function resolveElectronCommand(payloadRoot, targetPlatform) {
+  const candidates =
+    targetPlatform === "windows_x86_64"
+      ? ["electron/electron.exe", "electron.exe"]
+      : ["electron/electron", "electron"];
+  for (const candidate of candidates) {
+    const candidatePath = join(payloadRoot, candidate);
+    if (existsSync(candidatePath) && statSync(candidatePath).isFile()) {
+      return candidate;
+    }
+  }
+  throw new Error(
+    [
+      `Electron runtime executable was not found in ${payloadRoot}.`,
+      `Checked: ${candidates.join(", ")}`,
+      `Installed Electron executable: ${electronRuntimeExecutable}`,
+      `Installed Electron runtime directory entries: ${describeDirectory(electronDist)}`,
+      `Payload entries: ${describeDirectory(payloadRoot)}`,
+    ].join("\n")
+  );
+}
+
+async function ensureInstalledElectronExecutable(packageDir, targetPlatform) {
+  const executable = resolveInstalledElectronExecutable(packageDir, targetPlatform);
+  if (executable) {
+    return executable;
+  }
+
+  console.warn(
+    [
+      "Electron runtime executable was not found after npm install; attempting to repair Electron postinstall.",
+      `Electron package directory entries: ${describeDirectory(packageDir)}`,
+      `Electron dist directory entries: ${describeDirectory(resolve(packageDir, "dist"))}`,
+    ].join("\n")
+  );
+  const repairSucceeded = repairElectronInstall(packageDir, targetPlatform);
+
+  if (repairSucceeded) {
+    const repairedExecutable = resolveInstalledElectronExecutable(packageDir, targetPlatform);
+    if (repairedExecutable) {
+      return repairedExecutable;
+    }
+  } else {
+    console.warn("Electron postinstall repair failed; continuing with direct Electron artifact download.");
+  }
+
+  console.warn("Electron postinstall repair did not produce a runtime executable; forcing a fresh Electron artifact download.");
+  await downloadAndExtractElectronRuntime(packageDir, targetPlatform);
+
+  const downloadedExecutable = resolveInstalledElectronExecutable(packageDir, targetPlatform);
+  if (downloadedExecutable) {
+    return downloadedExecutable;
+  }
+
+  throw new Error(
+    [
+      "Electron runtime executable was not found after npm install, postinstall repair, and direct artifact download.",
+      `Checked package: ${packageDir}`,
+      `Electron package directory entries: ${describeDirectory(packageDir)}`,
+      `Electron dist directory entries: ${describeDirectory(resolve(packageDir, "dist"))}`,
+      "Ensure network access to Electron release artifacts and that no Electron skip/override environment variables are set.",
+    ].join("\n")
+  );
+}
+
+function resolveInstalledElectronExecutable(packageDir, targetPlatform) {
+  const expectedExecutable = targetPlatform === "windows_x86_64" ? "electron.exe" : "electron";
+  const candidates = [];
+  const pathFile = resolve(packageDir, "path.txt");
+  if (existsSync(pathFile)) {
+    const relativeExecutable = readFileSync(pathFile, "utf8").trim();
+    if (relativeExecutable) {
+      candidates.push(resolve(packageDir, relativeExecutable));
+    }
+  }
+  candidates.push(resolve(packageDir, "dist", expectedExecutable));
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate) && statSync(candidate).isFile()) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function repairElectronInstall(packageDir, targetPlatform) {
+  const installScript = resolve(packageDir, "install.js");
+  if (!existsSync(installScript)) {
+    throw new Error(`Electron install script was not found: ${installScript}`);
+  }
+
+  rmSync(resolve(packageDir, "dist"), { recursive: true, force: true });
+  rmSync(resolve(packageDir, "path.txt"), { force: true });
+
+  const env = { ...process.env };
+  for (const key of [
+    "ELECTRON_SKIP_BINARY_DOWNLOAD",
+    "ELECTRON_OVERRIDE_DIST_PATH",
+    "npm_config_electron_skip_binary_download",
+    "npm_config_ELECTRON_SKIP_BINARY_DOWNLOAD",
+  ]) {
+    delete env[key];
+  }
+  env.npm_config_platform = targetPlatform === "windows_x86_64" ? "win32" : "linux";
+  env.npm_config_arch = "x64";
+  env.force_no_cache = "true";
+  env.electron_config_cache = electronCacheRoot(targetPlatform);
+
+  const result = spawnSync(process.execPath, [installScript], {
+    cwd: packageDir,
+    env,
+    stdio: "inherit",
+  });
+  if (result.error) {
+    console.warn(`Electron postinstall repair could not start: ${result.error.message}`);
+    return false;
+  }
+  if (result.status !== 0) {
+    console.warn(`Electron postinstall repair failed with exit code ${result.status}`);
+    return false;
+  }
+  return true;
+}
+
+async function downloadAndExtractElectronRuntime(packageDir, targetPlatform) {
+  const packageRequire = createRequire(resolve(packageDir, "install.js"));
+  const distPath = resolve(packageDir, "dist");
+  const pathFile = resolve(packageDir, "path.txt");
+  const electronDtsInDist = resolve(distPath, "electron.d.ts");
+  const electronDtsInPackage = resolve(packageDir, "electron.d.ts");
+  const checksumsPath = resolve(packageDir, "checksums.json");
+  const artifactName = electronArtifactName(targetPlatform);
+  const artifactUrl = electronArtifactUrl(artifactName);
+  const cacheRoot = electronCacheRoot(targetPlatform);
+  const cachedZipPath = findCachedElectronArtifact(cacheRoot, checksumsPath, artifactName);
+  const zipPath = cachedZipPath ?? resolve(cacheRoot, artifactName);
+
+  rmSync(distPath, { recursive: true, force: true });
+  rmSync(pathFile, { force: true });
+  mkdirSync(distPath, { recursive: true });
+
+  if (cachedZipPath) {
+    console.warn(`Using cached Electron runtime artifact: ${cachedZipPath}`);
+  } else {
+    console.warn(`Downloading Electron runtime artifact: ${artifactUrl}`);
+    await downloadFile(artifactUrl, zipPath);
+  }
+  verifyElectronArtifactChecksum(zipPath, checksumsPath, artifactName);
+
+  await extractElectronRuntimeArtifact(packageRequire, zipPath, distPath, artifactName);
+
+  if (existsSync(electronDtsInDist)) {
+    rmSync(electronDtsInPackage, { force: true });
+    renameSync(electronDtsInDist, electronDtsInPackage);
+  }
+
+  writeFileSync(pathFile, electronPlatformPath(targetPlatform), "utf8");
+}
+
+async function extractElectronRuntimeArtifact(packageRequire, zipPath, distPath, artifactName) {
+  if (extractZipWithJar(zipPath, distPath)) {
+    console.warn(`Extracted Electron runtime artifact ${artifactName} with JDK jar.`);
+    return;
+  }
+
+  const yauzl = packageRequire("yauzl");
+  const extractedEntries = await withEventLoopKeepAlive(
+    () => extractZip(yauzl, zipPath, distPath),
+    `extracting Electron runtime artifact ${artifactName}`
+  );
+  console.warn(`Extracted ${extractedEntries} Electron runtime artifact entries with bundled yauzl.`);
+}
+
+function electronArtifactName(targetPlatform) {
+  return `electron-v${electronPackage.version}-${electronArtifactPlatform(targetPlatform)}-x64.zip`;
+}
+
+function electronArtifactPlatform(targetPlatform) {
+  if (targetPlatform === "windows_x86_64") {
+    return "win32";
+  }
+  if (targetPlatform === "linux_x86_64") {
+    return "linux";
+  }
+  throw new Error(`Unsupported Electron platform for download: ${targetPlatform}`);
+}
+
+function electronArtifactUrl(artifactName) {
+  const version = String(electronPackage.version);
+  const baseUrl = (
+    process.env.ELECTRON_MIRROR ??
+    process.env.npm_config_electron_mirror ??
+    process.env.electron_mirror ??
+    `https://github.com/electron/electron/releases/download/v${version}/`
+  ).replace(/\/?$/, "/");
+  return `${baseUrl}${artifactName}`;
+}
+
+async function downloadFile(url, destination) {
+  rmSync(destination, { force: true });
+  mkdirSync(dirname(destination), { recursive: true });
+
+  const tempDestination = `${destination}.tmp-${process.pid}`;
+  rmSync(tempDestination, { force: true });
+
+  try {
+    const response = await openDownloadResponse(url);
+    await pipeline(response, createWriteStream(tempDestination, { flags: "wx" }));
+    renameSync(tempDestination, destination);
+  } catch (error) {
+    rmSync(tempDestination, { force: true });
+    rmSync(destination, { force: true });
+    throw error;
+  }
+}
+
+async function openDownloadResponse(url, redirectCount = 0) {
+  if (redirectCount > 10) {
+    throw new Error(`Too many redirects while downloading ${url}`);
+  }
+
+  const response = await new Promise((resolvePromise, rejectPromise) => {
+    const client = url.startsWith("http://") ? http : https;
+    const request = client.get(
+      url,
+      {
+        headers: {
+          "user-agent": "HiCT-Electron-Payload-Builder",
+        },
+      },
+      resolvePromise
+    );
+    request.on("error", rejectPromise);
+    request.setTimeout(120_000, () => {
+      request.destroy(new Error(`Timed out while downloading Electron runtime artifact: ${url}`));
+    });
+  });
+
+  const statusCode = response.statusCode ?? 0;
+  if ([301, 302, 303, 307, 308].includes(statusCode)) {
+    response.resume();
+    const location = response.headers.location;
+    if (!location) {
+      throw new Error(`Electron download redirect did not include Location header: ${url}`);
+    }
+    return openDownloadResponse(new URL(location, url).toString(), redirectCount + 1);
+  }
+
+  if (statusCode < 200 || statusCode >= 300) {
+    response.resume();
+    throw new Error(`Electron download failed with HTTP ${statusCode}: ${url}`);
+  }
+
+  return response;
+}
+
+async function withEventLoopKeepAlive(action, description) {
+  let timeout = null;
+  // Node 24 exits with code 13 if top-level await is pending with no ref'ed handles.
+  const keepAlive = setInterval(() => {}, 1_000);
+  try {
+    return await Promise.race([
+      action(),
+      new Promise((_, rejectPromise) => {
+        timeout = setTimeout(() => {
+          rejectPromise(new Error(`Timed out while ${description}`));
+        }, 900_000);
+      }),
+    ]);
+  } finally {
+    clearInterval(keepAlive);
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+function extractZipWithJar(zipPath, targetDir) {
+  for (const jarCommand of resolveJarCommands()) {
+    const result = spawnSync(jarCommand, ["xf", zipPath], {
+      cwd: targetDir,
+      stdio: "inherit",
+    });
+    if (!result.error && result.status === 0) {
+      return true;
+    }
+    if (result.error) {
+      console.warn(`Could not start ${jarCommand} to extract Electron artifact: ${result.error.message}`);
+    } else {
+      console.warn(`${jarCommand} failed to extract Electron artifact with exit code ${result.status}`);
+    }
+  }
+  return false;
+}
+
+function resolveJarCommands() {
+  const executable = process.platform === "win32" ? "jar.exe" : "jar";
+  const commands = [];
+  if (process.env.JAVA_HOME) {
+    const javaHomeJar = resolve(process.env.JAVA_HOME, "bin", executable);
+    if (existsSync(javaHomeJar)) {
+      commands.push(javaHomeJar);
+    }
+  }
+  commands.push(executable);
+  return [...new Set(commands)];
+}
+
+async function extractZip(yauzl, zipPath, targetDir) {
+  return await new Promise((resolvePromise, rejectPromise) => {
+    let extractedEntries = 0;
+    let zipfile = null;
+    let settled = false;
+
+    const rejectOnce = (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (zipfile) {
+        zipfile.close();
+      }
+      rejectPromise(error);
+    };
+
+    yauzl.open(zipPath, { lazyEntries: true }, (openError, openedZipfile) => {
+      if (openError) {
+        rejectOnce(openError);
+        return;
+      }
+
+      zipfile = openedZipfile;
+      zipfile.on("error", rejectOnce);
+      zipfile.on("end", () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        zipfile.close();
+        resolvePromise(extractedEntries);
+      });
+      zipfile.on("entry", (entry) => {
+        extractZipEntry(zipfile, entry, targetDir)
+          .then((didExtract) => {
+            if (didExtract) {
+              extractedEntries += 1;
+            }
+            zipfile.readEntry();
+          })
+          .catch(rejectOnce);
+      });
+      zipfile.readEntry();
+    });
+  });
+}
+
+async function extractZipEntry(zipfile, entry, targetDir) {
+  const entryName = entry.fileName.replace(/\\/g, "/");
+  if (entryName.startsWith("__MACOSX/")) {
+    return false;
+  }
+
+  const targetPath = resolveZipEntryPath(targetDir, entryName);
+  const mode = (entry.externalFileAttributes >>> 16) & 0xffff;
+  const fileType = mode & 0o170000;
+  let isDirectory = fileType === 0o040000 || entryName.endsWith("/");
+  const isSymlink = fileType === 0o120000;
+  const madeBy = entry.versionMadeBy >> 8;
+  if (!isDirectory && madeBy === 0 && entry.externalFileAttributes === 16) {
+    isDirectory = true;
+  }
+  const extractedMode = mode ? mode & 0o777 : isDirectory ? 0o755 : 0o644;
+
+  if (isDirectory) {
+    mkdirSync(targetPath, { recursive: true, mode: extractedMode });
+    return true;
+  }
+
+  mkdirSync(dirname(targetPath), { recursive: true });
+  if (isSymlink) {
+    const target = await readZipEntryText(zipfile, entry);
+    symlinkSync(target, targetPath);
+    return true;
+  }
+
+  await writeZipEntryFile(zipfile, entry, targetPath, extractedMode);
+  return true;
+}
+
+function resolveZipEntryPath(targetDir, entryName) {
+  const targetRoot = resolve(targetDir);
+  const targetPath = resolve(targetRoot, entryName);
+  if (targetPath !== targetRoot && !targetPath.startsWith(`${targetRoot}${sep}`)) {
+    throw new Error(`Electron artifact contains an out-of-bounds zip entry: ${entryName}`);
+  }
+  return targetPath;
+}
+
+async function writeZipEntryFile(zipfile, entry, targetPath, mode) {
+  const readStream = await openZipEntryReadStream(zipfile, entry);
+  await new Promise((resolvePromise, rejectPromise) => {
+    let settled = false;
+    const settle = (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (error) {
+        rejectPromise(error);
+      } else {
+        resolvePromise();
+      }
+    };
+
+    const writeStream = createWriteStream(targetPath, { mode });
+    readStream.on("error", settle);
+    writeStream.on("error", settle);
+    writeStream.on("finish", () => settle());
+    readStream.pipe(writeStream);
+  });
+}
+
+async function readZipEntryText(zipfile, entry) {
+  const readStream = await openZipEntryReadStream(zipfile, entry);
+  const chunks = [];
+  await new Promise((resolvePromise, rejectPromise) => {
+    readStream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    readStream.on("error", rejectPromise);
+    readStream.on("end", resolvePromise);
+  });
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function openZipEntryReadStream(zipfile, entry) {
+  return await new Promise((resolvePromise, rejectPromise) => {
+    zipfile.openReadStream(entry, (error, readStream) => {
+      if (error) {
+        rejectPromise(error);
+      } else {
+        resolvePromise(readStream);
+      }
+    });
+  });
+}
+
+function findCachedElectronArtifact(cacheRoot, checksumsPath, artifactName) {
+  if (!existsSync(cacheRoot)) {
+    return null;
+  }
+
+  const candidates = listFiles(cacheRoot).filter((filePath) => basename(filePath) === artifactName);
+  for (const candidate of candidates) {
+    try {
+      verifyElectronArtifactChecksum(candidate, checksumsPath, artifactName, { removeOnMismatch: false });
+      return candidate;
+    } catch (error) {
+      console.warn(`Ignoring cached Electron artifact ${candidate}: ${error.message}`);
+    }
+  }
+
+  return null;
+}
+
+function verifyElectronArtifactChecksum(zipPath, checksumsPath, artifactName, { removeOnMismatch = true } = {}) {
+  if (!existsSync(checksumsPath)) {
+    console.warn(`Electron checksums file is missing; cannot verify ${artifactName}`);
+    return;
+  }
+
+  const checksums = JSON.parse(readFileSync(checksumsPath, "utf8"));
+  const expected = checksums[artifactName];
+  if (!expected) {
+    console.warn(`Electron checksum is missing for ${artifactName}; cannot verify downloaded artifact.`);
+    return;
+  }
+
+  const actual = createHash("sha256").update(readFileSync(zipPath)).digest("hex");
+  if (actual !== expected) {
+    if (removeOnMismatch) {
+      rmSync(zipPath, { force: true });
+    }
+    throw new Error(`Electron artifact checksum mismatch for ${artifactName}: expected ${expected}, got ${actual}`);
+  }
+}
+
+function electronPlatformPath(targetPlatform) {
+  return targetPlatform === "windows_x86_64" ? "electron.exe" : "electron";
+}
+
+function electronCacheRoot(targetPlatform) {
+  const cacheRoot = resolve(
+    process.env.HICT_ELECTRON_CACHE_DIR ?? join(repoDir, "node_modules", ".cache", "hict-electron"),
+    targetPlatform
+  );
+  mkdirSync(cacheRoot, { recursive: true });
+  return cacheRoot;
+}
+
+function shouldCopyElectronRuntimePath(path, keepLocales) {
+  if (path.includes(`${sep}locales${sep}`)) {
+    return keepLocales.has(basename(path));
+  }
+  if (path.endsWith(".pdb") || path.endsWith(".dSYM") || path.endsWith(".debug")) {
+    return false;
+  }
+  return true;
+}
+
+function describeDirectory(path) {
+  if (!existsSync(path)) {
+    return `${path} does not exist`;
+  }
+  return listFiles(path)
+    .slice(0, 80)
+    .map((filePath) => filePath.slice(path.length + 1))
+    .join(", ");
+}
+
+async function chmodExecutableIfPresent(path) {
+  if (platform !== "linux_x86_64" || !existsSync(path)) {
+    return;
+  }
+  await chmod(path, 0o755);
+  for (const helper of ["chrome-sandbox", "chrome_crashpad_handler"]) {
+    const helperPath = join(dirname(path), helper);
+    if (existsSync(helperPath)) {
+      await chmod(helperPath, 0o755);
+    }
+  }
+}
+
+async function flipSecurityFuses(executablePath) {
+  try {
+    const { flipFuses, FuseVersion, FuseV1Options } = await import("@electron/fuses");
+    await flipFuses(executablePath, {
+      version: FuseVersion.V1,
+      [FuseV1Options.RunAsNode]: false,
+      [FuseV1Options.EnableCookieEncryption]: true,
+      [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+      [FuseV1Options.EnableNodeCliInspectArguments]: false,
+      [FuseV1Options.GrantFileProtocolExtraPrivileges]: false,
+    });
+  } catch (error) {
+    console.warn(`Could not flip Electron security fuses for ${executablePath}: ${error.message}`);
+  }
+}
+
+function directorySize(path) {
+  const stats = statSync(path);
+  if (stats.isFile()) {
+    return stats.size;
+  }
+  return readdirSync(path)
+    .map((entry) => directorySize(join(path, entry)))
+    .reduce((left, right) => left + right, 0);
+}
+
+function sha256OfTree(path) {
+  const hash = createHash("sha256");
+  for (const filePath of listFiles(path).sort()) {
+    if (basename(filePath) === "manifest.json") {
+      continue;
+    }
+    hash.update(filePath.slice(path.length + 1));
+    hash.update("\0");
+    hash.update(readFileSync(filePath));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+function listFiles(path) {
+  const stats = statSync(path);
+  if (stats.isFile()) {
+    return [path];
+  }
+  return readdirSync(path).flatMap((entry) => listFiles(join(path, entry)));
+}

@@ -20,7 +20,7 @@
  -->
 
 <template>
-  <div>
+  <div class="color-picker-rectangle-root">
     <div :style="colorSelectorStyleObject" ref="vPicker"></div>
   </div>
 </template>
@@ -114,4 +114,27 @@ const colorSelectorStyleObject: Ref<Record<string, string>> = ref({
   "border-radius": "2px",
 });
 </script>
-<style scoped></style>
+<style scoped>
+.color-picker-rectangle-root {
+  position: relative;
+  z-index: 1;
+}
+
+:global(.picker_wrapper.popup) {
+  z-index: 2147483000 !important;
+  background: #ffffff !important;
+  opacity: 1 !important;
+  isolation: isolate;
+  pointer-events: auto !important;
+}
+
+:global(.picker_wrapper.popup .picker_arrow::before),
+:global(.picker_wrapper.popup .picker_arrow::after) {
+  background: #ffffff !important;
+}
+
+:global(.picker_wrapper.popup button),
+:global(.picker_wrapper.popup input) {
+  pointer-events: auto !important;
+}
+</style>

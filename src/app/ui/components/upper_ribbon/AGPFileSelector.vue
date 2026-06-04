@@ -28,7 +28,7 @@
     data-keyboard="false"
     data-backdrop="static"
   >
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Select AGP file</h5>
@@ -46,20 +46,16 @@
             <strong>Loading...</strong>
             <div class="spinner-border ms-auto" role="status"></div>
           </div>
-          <div>
-            <select
-              class="form-select form-select-lg mb-3"
-              v-model="selectedAGPFilename"
-            >
-              <option selected>Select AGP file from the list below...</option>
-              <option
-                v-for="(filename, idx) in filenames"
-                :key="idx"
-                :value="filename"
-              >
-                {{ filename }}
-              </option>
-            </select>
+          <div v-if="!loading">
+            <FileSelectionTable
+              v-model:selected-path="selectedAGPFilename"
+              :entries="fileEntries"
+              empty-message="No AGP files found"
+              scroll-height="34vh"
+              :show-size="false"
+              :show-modified="false"
+              @activate="onTableActivated"
+            />
             <div class="card flex justify-content-center" v-if="primeVueTree">
               <Tree
                 :filter="true"
@@ -121,13 +117,15 @@
 </template>
 
 <script setup lang="ts">
-import { type Ref, ref, onMounted } from "vue";
+import { type Ref, computed, ref, onMounted } from "vue";
 import { Modal } from "bootstrap";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { LoadAGPRequest } from "@/app/core/net/api/request";
 import path from "path-browserify";
 import { FileTreeNode, extensionToDataType } from "../ComponentCommon";
 import Tree from "primevue/tree";
+import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
+import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
 
 interface FinalTreeNode {
   isLeaf: boolean;
@@ -158,6 +156,12 @@ const fileTree: Ref<FileTreeNode | null> = ref(null);
 const loadAGPModal = ref<HTMLElement | null>(null);
 
 const expandedKeys: Ref<Record<string, boolean>> = ref({});
+
+const fileEntries = computed<FileSelectionTableEntry[]>(() =>
+  (filenames.value ?? []).map((filename) => ({
+    path: filename,
+  }))
+);
 
 function recursiveRecordToFileTree(
   r: RecursiveStringRecord | FinalTreeNode,
@@ -352,6 +356,11 @@ function onSelectClicked(): void {
     .catch((e) => {
       errorMessage.value = e;
     });
+}
+
+function onTableActivated(filename: string): void {
+  selectedAGPFilename.value = filename;
+  onSelectClicked();
 }
 
 onMounted(() => {

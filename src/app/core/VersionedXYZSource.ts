@@ -23,7 +23,10 @@ import { ImageTile } from "ol";
 import TileState from "ol/TileState";
 import XYZ, { type Options as XYZOptions } from "ol/source/XYZ";
 import { unref } from "vue";
-import type { HiCViewAndLayersManager } from "./mapmanagers/HiCViewAndLayersManager";
+import type {
+  HiCViewAndLayersManager,
+  MatrixSourceName,
+} from "./mapmanagers/HiCViewAndLayersManager";
 import { CurrentSignalRangeResponseDTO } from "./net/dto/responseDTO";
 import type { CurrentSignalRangeResponse } from "./net/api/response";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
@@ -38,6 +41,7 @@ class VersionedXYZContactMapSource extends XYZ {
     protected readonly layersManager: HiCViewAndLayersManager,
     protected readonly zoomLevel: number,
     protected readonly bpResolution: number,
+    protected readonly sourceName: MatrixSourceName = "PRIMARY",
     readonly xyzOptions?: XYZOptions
   ) {
     super(xyzOptions);
@@ -48,7 +52,11 @@ class VersionedXYZContactMapSource extends XYZ {
       const image: HTMLImageElement | HTMLVideoElement =
         imageTile.getImage() as HTMLImageElement | HTMLVideoElement;
       const uiSettingsStore = useUiSettingsStore();
-      if (uiSettingsStore.binaryTileTransportEnabled) {
+      if (
+        uiSettingsStore.binaryTileTransportEnabled &&
+        this.sourceName === "PRIMARY" &&
+        !this.layersManager.hasSecondarySource()
+      ) {
         this.loadBinarySignalTile(imageTile, image, src);
         return;
       }
@@ -122,6 +130,7 @@ class VersionedXYZContactMapSource extends XYZ {
       endRowPx: parsed.endRowPx,
       startColPx: parsed.startColPx,
       endColPx: parsed.endColPx,
+      source: this.sourceName,
       signalMode: "PIPELINE_SIGNAL",
       format: "BINARY_FLOAT32",
     };
@@ -331,6 +340,7 @@ class VersionedXYZContactMapSource extends XYZ {
         `/get_tile?version=${this.sourceVersion}` +
         `&level=${1 + this.zoomLevel}` +
         `&bpResolution=${this.bpResolution}` +
+        `&source=${this.sourceName}` +
         `&row=${row}` +
         `&col=${col}` +
         `&tile_size=${unref(this.layersManager.tileSize)}`

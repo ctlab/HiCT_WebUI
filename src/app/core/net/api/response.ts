@@ -72,6 +72,15 @@ class ConversionToolchainStatusResponse {
     public readonly hicConversionAvailable: boolean,
     public readonly hictkAvailable: boolean,
     public readonly hictkCommand: string | null,
+    public readonly minimap2Available: boolean,
+    public readonly minimap2Command: string | null,
+    public readonly mm2PlusAvx2Available: boolean,
+    public readonly mm2PlusAvx2Command: string | null,
+    public readonly mm2PlusAvx512Available: boolean,
+    public readonly mm2PlusAvx512Command: string | null,
+    public readonly dotplotAlignerPreference: string,
+    public readonly selectedDotplotAligner: string,
+    public readonly selectedDotplotAlignerCommand: string | null,
     public readonly coolerAvailable: boolean,
     public readonly coolerCommand: string | null,
     public readonly pythonAvailable: boolean,
@@ -110,7 +119,10 @@ class TrackSummaryResponse {
     public readonly renderStyle: string,
     public readonly renderMode: string,
     public readonly aggregationMode: string,
-    public readonly logScale: boolean
+    public readonly logScale: boolean,
+    public readonly rangeAuto: boolean,
+    public readonly rangeMin: number,
+    public readonly rangeMax: number
   ) {}
 }
 
@@ -139,7 +151,8 @@ class TrackBinResponse {
     public readonly thickStartPx: number | null,
     public readonly thickEndPx: number | null,
     public readonly featureType: string | null,
-    public readonly blocks: TrackBinBlockResponse[]
+    public readonly blocks: TrackBinBlockResponse[],
+    public readonly attributes: Record<string, string>
   ) {}
 }
 

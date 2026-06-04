@@ -141,10 +141,9 @@
                     </div>
                   </div>
                 </div>
-                <div v-if="requiresSecondarySource" class="alert alert-warning mt-3 mb-0">
-                  Two-source sessions are intended for comparative viewing. If matrix sizes, contig sets, or scaffold
-                  composition differ, scaffolding edits, AGP imports, and FASTA export should be treated as
-                  primary-source, view-only operations.
+                <div v-if="requiresSecondarySource" class="alert alert-info mt-3 mb-0">
+                  Overlay and split sessions keep one assembly source authoritative and propagate that layout to the
+                  other source by matching contig names. Choose the authoritative source on the Assembly file step.
                 </div>
               </div>
 
@@ -203,24 +202,31 @@
                     </div>
                   </div>
                 </div>
-              </div>
-
-              <div v-else-if="currentStep?.id === 'blending'" class="wizard-section">
-                <h6>Blending mode</h6>
-                <div class="row g-3">
-                  <div class="col-md-6">
-                    <label class="form-label">Pixel blend mode</label>
-                    <select v-model="blendMode" class="form-select">
-                      <option v-for="mode in BLEND_MODES" :key="mode" :value="mode">{{ mode }}</option>
-                    </select>
+                <div v-if="usesExpectedPreset" class="alert alert-info mt-3 mb-0">
+                  Expected and O/E are computed independently inside each scaffold. If the opened assembly has no
+                  scaffolds yet, each contig is treated as its own scaffold for expected-value estimation.
+                </div>
+                <div v-if="requiresSecondarySource" class="wizard-card mt-3">
+                  <div class="wizard-card-header">
+                    <strong>Blending mode</strong>
                   </div>
-                  <div class="col-md-3">
-                    <label class="form-label">Top opacity</label>
-                    <input v-model.number="topOpacity" class="form-control" type="number" min="0" max="1" step="0.05" />
-                  </div>
-                  <div class="col-md-3">
-                    <label class="form-label">Bottom opacity</label>
-                    <input v-model.number="bottomOpacity" class="form-control" type="number" min="0" max="1" step="0.05" />
+                  <div class="wizard-card-body">
+                    <div class="row g-3">
+                      <div class="col-md-6">
+                        <label class="form-label">Pixel blend mode</label>
+                        <select v-model="blendMode" class="form-select">
+                          <option v-for="mode in BLEND_MODES" :key="mode" :value="mode">{{ mode }}</option>
+                        </select>
+                      </div>
+                      <div class="col-md-3">
+                        <label class="form-label">Top opacity (secondary)</label>
+                        <input v-model.number="topOpacity" class="form-control" type="number" min="0" max="1" step="0.05" />
+                      </div>
+                      <div class="col-md-3">
+                        <label class="form-label">Bottom opacity (primary)</label>
+                        <input v-model.number="bottomOpacity" class="form-control" type="number" min="0" max="1" step="0.05" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -296,40 +302,80 @@
               </div>
 
               <div v-else-if="currentStep?.id === 'agp'" class="wizard-section">
-                <h6>AGP assembly</h6>
+                <h6>Assembly file</h6>
                 <div class="wizard-source-grid">
                   <div class="wizard-card">
                     <div class="wizard-card-header">
-                      <strong>Primary AGP</strong>
+                      <strong>Primary assembly</strong>
                     </div>
                     <div class="wizard-card-body">
                       <div class="input-group">
-                        <input class="form-control" type="text" readonly :value="primaryAgp || 'Optional AGP for primary source'" />
+                        <input class="form-control" type="text" readonly :value="primaryAgp || 'Optional .agp or Juicebox .assembly for primary source'" />
                         <button class="btn btn-outline-secondary" @click="openSelector('primary-agp')">Browse…</button>
                       </div>
+                      <small class="text-muted d-block mt-2">
+                        .agp is loaded after opening. .assembly is passed to .hic conversion; for already converted
+                        matrices it must be converted to AGP before applying layout.
+                      </small>
                     </div>
                   </div>
                   <div v-if="requiresSecondarySource" class="wizard-card">
                     <div class="wizard-card-header">
-                      <strong>Secondary AGP</strong>
+                      <strong>Secondary assembly</strong>
                     </div>
                     <div class="wizard-card-body">
                       <div class="input-group">
-                        <input class="form-control" type="text" readonly :value="secondaryAgp || 'Optional AGP for secondary source'" />
+                        <input class="form-control" type="text" readonly :value="secondaryAgp || 'Optional .agp or Juicebox .assembly for secondary source'" />
                         <button class="btn btn-outline-secondary" @click="openSelector('secondary-agp')">Browse…</button>
                       </div>
                     </div>
                   </div>
                 </div>
-                <div v-if="requiresSecondarySource" class="alert alert-warning mt-3 mb-0">
-                  Prefer the primary AGP as the authoritative assembly input. Loading AGPs for both sources is supported
-                  for comparison, but it can make layered views diverge and should not be treated as a coupled
-                  scaffolding workflow.
+                <div v-if="requiresSecondarySource" class="wizard-card mt-3">
+                  <div class="wizard-card-header">
+                    <strong>Overlay assembly source</strong>
+                  </div>
+                  <div class="wizard-card-body">
+                    <div class="row g-3">
+                      <div class="col-md-6">
+                        <button
+                          type="button"
+                          class="wizard-choice-card"
+                          :class="{ selected: overlayAssemblySource === 'PRIMARY' }"
+                          @click="overlayAssemblySource = 'PRIMARY'"
+                        >
+                          <strong>Primary controls overlay</strong>
+                          <small>
+                            Primary AGP/current layout is propagated to secondary; hidden contigs stay hidden in both
+                            layers.
+                          </small>
+                        </button>
+                      </div>
+                      <div class="col-md-6">
+                        <button
+                          type="button"
+                          class="wizard-choice-card"
+                          :class="{ selected: overlayAssemblySource === 'SECONDARY' }"
+                          @click="overlayAssemblySource = 'SECONDARY'"
+                        >
+                          <strong>Secondary controls overlay</strong>
+                          <small>
+                            Secondary AGP/current layout is propagated to primary when the dotplot or companion source
+                            is already scaffolded.
+                          </small>
+                        </button>
+                      </div>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                      For correctly coupled overlays, apply only the AGP for the selected authoritative source. A
+                      non-authoritative AGP is kept as metadata and is not loaded into the active map state.
+                    </small>
+                  </div>
                 </div>
               </div>
 
               <div v-else-if="currentStep?.id === 'conversion'" class="wizard-section">
-                <h6>File conversion</h6>
+                <h6>Map files conversion</h6>
                 <div class="wizard-card mb-3">
                   <div class="wizard-card-body">
                     <div class="form-check">
@@ -406,23 +452,63 @@
 
               <div v-else-if="currentStep?.id === 'notes'" class="wizard-section">
                 <h6>Notes and warnings</h6>
-                <div v-if="wizardNotes.length === 0" class="alert alert-success">
-                  No blocking issues detected. The wizard can run with the current configuration.
+                <div class="wizard-check-list">
+                  <div
+                    v-for="item in wizardCheckItems"
+                    :key="item.id"
+                    class="alert wizard-check"
+                    :class="item.kind === 'pass' ? 'alert-success' : item.kind === 'warning' ? 'alert-warning' : 'alert-danger'"
+                  >
+                    <div class="d-flex align-items-start gap-2">
+                      <div v-if="item.kind === 'pending'" class="spinner-border spinner-border-sm mt-1" role="status"></div>
+                      <div class="flex-grow-1">
+                        <strong>{{ item.title }}</strong>
+                        <div>{{ item.message }}</div>
+                        <div v-if="item.fixable" class="btn-group btn-group-sm mt-2">
+                          <button
+                            type="button"
+                            class="btn"
+                            :class="fixableIssuePolicy[item.id] !== 'discard' ? 'btn-primary' : 'btn-outline-primary'"
+                            @click="fixableIssuePolicy[item.id] = 'ignore'"
+                          >
+                            Ignore
+                          </button>
+                          <button
+                            type="button"
+                            class="btn"
+                            :class="fixableIssuePolicy[item.id] === 'discard' ? 'btn-warning' : 'btn-outline-warning'"
+                            @click="fixableIssuePolicy[item.id] = 'discard'"
+                          >
+                            Discard
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <ul v-else class="list-group">
-                  <li v-for="note in wizardNotes" :key="note" class="list-group-item">
-                    {{ note }}
-                  </li>
-                </ul>
               </div>
 
               <div v-else-if="currentStep?.id === 'finish'" class="wizard-section">
-                <h6>Finish</h6>
+                <h6>Final checks</h6>
                 <div class="alert alert-light border">
                   <div><strong>View mode:</strong> {{ currentViewModeLabel }}</div>
                   <div><strong>Primary source:</strong> {{ primarySource.filename || "not selected" }}</div>
                   <div v-if="requiresSecondarySource"><strong>Secondary source:</strong> {{ secondarySource.filename || "not selected" }}</div>
                   <div><strong>Tracks:</strong> {{ selectedTracks.length }}</div>
+                  <div><strong>Primary assembly:</strong> {{ primaryAgp || "not selected" }}</div>
+                  <div v-if="requiresSecondarySource"><strong>Secondary assembly:</strong> {{ secondaryAgp || "not selected" }}</div>
+                  <div v-if="requiresSecondarySource"><strong>Overlay assembly source:</strong> {{ overlayAssemblySource }}</div>
+                </div>
+                <div class="wizard-check-list mb-3">
+                  <div
+                    v-for="item in wizardCheckItems"
+                    :key="`final-${item.id}`"
+                    class="alert wizard-check"
+                    :class="item.kind === 'pass' ? 'alert-success' : item.kind === 'warning' ? 'alert-warning' : 'alert-danger'"
+                  >
+                    <strong>{{ item.title }}</strong>
+                    <div>{{ item.message }}</div>
+                  </div>
                 </div>
                 <div v-if="runState.running" class="alert alert-info">
                   <div class="d-flex justify-content-between align-items-center">
@@ -492,6 +578,7 @@
 
 <script setup lang="ts">
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import type { AssemblyInfo } from "@/app/core/domain/AssemblyInfo";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
 import {
   type ConversionJobResponse,
@@ -528,7 +615,6 @@ type WizardStepId =
   | "view-mode"
   | "sources"
   | "visualization"
-  | "blending"
   | "tracks"
   | "fasta"
   | "agp"
@@ -538,6 +624,7 @@ type WizardStepId =
   | "finish";
 
 type SourceRole = "primary" | "secondary";
+type OverlayAssemblySource = "PRIMARY" | "SECONDARY";
 
 type SourceDraft = {
   filename: string;
@@ -551,6 +638,14 @@ type SelectedTrack = {
   displayName: string;
   compatibility: TrackCompatibilityReportResponse | null;
   precomputeProbe: TrackPrecomputeCacheProbeResponse | null;
+};
+
+type WizardCheckItem = {
+  id: string;
+  kind: "pending" | "pass" | "warning" | "error";
+  title: string;
+  message: string;
+  fixable?: boolean;
 };
 
 type SelectorKind =
@@ -596,15 +691,14 @@ const matrixViewStore = useMatrixViewStore();
 const steps: Array<{ id: WizardStepId; label: string }> = [
   { id: "view-mode", label: "View mode" },
   { id: "sources", label: "Sources selection" },
+  { id: "agp", label: "Assembly file" },
+  { id: "conversion", label: "Map files conversion" },
   { id: "visualization", label: "Visualization options" },
-  { id: "blending", label: "Blending mode" },
   { id: "tracks", label: "1D tracks" },
   { id: "fasta", label: "FASTA file" },
-  { id: "agp", label: "AGP assembly" },
-  { id: "conversion", label: "File Conversion" },
-  { id: "track-precompute", label: "Track Precomputing" },
-  { id: "notes", label: "Notes and Warnings" },
-  { id: "finish", label: "Finish" },
+  { id: "notes", label: "Notes and warnings" },
+  { id: "track-precompute", label: "Track precomputing" },
+  { id: "finish", label: "Final checks" },
 ];
 
 const viewModeCards: Array<{
@@ -647,7 +741,9 @@ const primaryFasta = ref("");
 const secondaryFasta = ref("");
 const primaryAgp = ref("");
 const secondaryAgp = ref("");
+const overlayAssemblySource = ref<OverlayAssemblySource>("PRIMARY");
 const selectedTracks = ref<SelectedTrack[]>([]);
+const fixableIssuePolicy = reactive<Record<string, "ignore" | "discard">>({});
 const precomputeTracks = ref(true);
 const forceTrackPrecompute = ref(false);
 const dropCachesBeforeRun = ref(false);
@@ -688,9 +784,7 @@ const runState = reactive<{
   trackPrecomputeStatus: null,
 });
 
-const visibleSteps = computed(() =>
-  steps.filter((step) => step.id !== "blending" || viewMode.value === "overlay")
-);
+const visibleSteps = computed(() => steps);
 
 const currentStep = computed(() => visibleSteps.value[currentStepIndex.value]);
 const requiresSecondarySource = computed(() => viewMode.value !== "single");
@@ -732,6 +826,13 @@ const findPresetIdByName = (name: string): string =>
   availablePresets.value[0]?.id ??
   "";
 
+const usesExpectedPreset = computed(
+  () =>
+    primaryPreset.value?.preset.options.signalDisplayMode !== "OBSERVED" ||
+    (requiresSecondarySource.value &&
+      secondaryPreset.value?.preset.options.signalDisplayMode !== "OBSERVED")
+);
+
 const canRunWizard = computed(() => wizardBlockingIssues.value.length === 0);
 const wizardBlockingIssues = computed(() => {
   const issues: string[] = [];
@@ -762,11 +863,7 @@ const wizardBlockingIssues = computed(() => {
       "Bundled/external hictk toolchain is required for .hic conversion but is currently unavailable."
     );
   }
-  const usesExpectedPreset =
-    primaryPreset.value?.preset.options.signalDisplayMode !== "OBSERVED" ||
-    (requiresSecondarySource.value &&
-      secondaryPreset.value?.preset.options.signalDisplayMode !== "OBSERVED");
-  if (viewMode.value !== "single" && usesExpectedPreset) {
+  if (viewMode.value !== "single" && usesExpectedPreset.value) {
     issues.push(
       "Expected and O/E presets are currently supported only in single-map mode. Use Observed presets for overlay and upper/lower rendering."
     );
@@ -797,20 +894,156 @@ const wizardNotes = computed(() => {
   }
   if (requiresSecondarySource.value) {
     notes.push(
-      "Two-source overlay and split views are intended for comparative inspection. If sizes, contig lists, or scaffold composition differ, treat scaffolding operations as view-only and keep the primary source authoritative."
+      `${overlayAssemblySource.value} is the authoritative assembly source. Its layout and hidden-contig state will be propagated to the other source for coupled overlay rendering.`
     );
   }
   if (requiresSecondarySource.value && secondaryAgp.value) {
     notes.push(
-      "Secondary AGP input is best treated as comparative metadata. Use the primary AGP as the authoritative assembly when scaffolding operations are expected."
+      overlayAssemblySource.value === "SECONDARY"
+        ? "Secondary AGP is selected as the authoritative overlay assembly input."
+        : "Secondary AGP is not authoritative in this run and will not replace the synchronized primary-driven overlay assembly."
+    );
+  }
+  const selectedHicSources = [primarySource, secondarySource]
+    .filter((source, index) => index === 0 || requiresSecondarySource.value)
+    .filter((source) => source.filename.toLowerCase().endsWith(".hic"));
+  if (selectedHicSources.length > 0) {
+    notes.push(
+      ".hic sources do not reliably carry Juicebox/JBAT scaffold layout. Select the matching AGP after conversion; if the project only has a .assembly file, convert it to AGP before scaffolding-sensitive work."
     );
   }
   if (primaryAgp.value && secondaryAgp.value) {
     notes.push(
-      "Both AGPs are selected. This is supported for comparison, but the resulting two-source view may become intentionally unaligned after assembly edits."
+      `Both AGPs are selected. Only the ${overlayAssemblySource.value.toLowerCase()} AGP is applied as the coupled overlay assembly; the other AGP is ignored for this wizard run.`
+    );
+  }
+  if (usesExpectedPreset.value) {
+    notes.push(
+      "Expected and O/E are computed inside each scaffold. If the assembly has no scaffolds yet, each contig is treated as its own scaffold."
     );
   }
   return Array.from(new Set(notes));
+});
+
+const wizardCheckItems = computed<WizardCheckItem[]>(() => {
+  const items: WizardCheckItem[] = [];
+  if (primarySource.filename) {
+    items.push({
+      id: "primary-source",
+      kind: "pass",
+      title: "Primary source",
+      message: describeConversionPlan(primarySource),
+    });
+  } else {
+    items.push({
+      id: "primary-source",
+      kind: "error",
+      title: "Primary source",
+      message: "Primary matrix source is required.",
+    });
+  }
+  if (requiresSecondarySource.value) {
+    items.push(
+      secondarySource.filename
+        ? {
+            id: "secondary-source",
+            kind: "pass",
+            title: "Secondary source",
+            message: describeConversionPlan(secondarySource),
+          }
+        : {
+            id: "secondary-source",
+            kind: "error",
+            title: "Secondary source",
+            message: "Secondary matrix source is required for this view mode.",
+          }
+    );
+  }
+  if (primaryAgp.value) {
+    const isAuthoritative = !requiresSecondarySource.value || overlayAssemblySource.value === "PRIMARY";
+    items.push({
+      id: "primary-assembly",
+      kind: !isAuthoritative
+        ? "warning"
+        : primaryAgp.value.toLowerCase().endsWith(".agp") || primarySource.filename.toLowerCase().endsWith(".hic")
+        ? "pass"
+        : "warning",
+      title: "Primary assembly",
+      message: !isAuthoritative
+        ? "Primary AGP is not authoritative in this run and will not replace the secondary-driven overlay assembly."
+        : primaryAgp.value.toLowerCase().endsWith(".assembly")
+        ? "Juicebox .assembly will be passed to .hic conversion. For already converted matrices, convert it to AGP before applying layout."
+        : "AGP will be loaded after the primary matrix is opened.",
+      fixable: isAuthoritative && primaryAgp.value.toLowerCase().endsWith(".assembly") && !primarySource.filename.toLowerCase().endsWith(".hic"),
+    });
+  }
+  if (secondaryAgp.value && requiresSecondarySource.value) {
+    const isAuthoritative = overlayAssemblySource.value === "SECONDARY";
+    items.push({
+      id: "secondary-assembly",
+      kind: !isAuthoritative
+        ? "warning"
+        : secondaryAgp.value.toLowerCase().endsWith(".agp") || secondarySource.filename.toLowerCase().endsWith(".hic")
+        ? "pass"
+        : "warning",
+      title: "Secondary assembly",
+      message: !isAuthoritative
+        ? "Secondary AGP is not authoritative in this run and will not replace the primary-driven overlay assembly."
+        : secondaryAgp.value.toLowerCase().endsWith(".assembly")
+        ? "Juicebox .assembly will be passed to .hic conversion. For already converted matrices, convert it to AGP before applying layout."
+        : "AGP will be loaded after the secondary matrix is opened.",
+      fixable: isAuthoritative && secondaryAgp.value.toLowerCase().endsWith(".assembly") && !secondarySource.filename.toLowerCase().endsWith(".hic"),
+    });
+  }
+  if (selectedTracks.value.length === 0) {
+    items.push({
+      id: "tracks",
+      kind: "pass",
+      title: "1D tracks",
+      message: "No tracks selected. This optional step will be skipped.",
+    });
+  } else {
+    for (const track of selectedTracks.value) {
+      const status = track.compatibility?.status ?? "ok";
+      items.push({
+        id: `track-${track.filename}`,
+        kind: status === "error" ? "warning" : status === "warning" ? "warning" : "pass",
+        title: `Track: ${track.displayName || track.filename}`,
+        message: track.compatibility?.message ?? "Track will be opened and precomputed.",
+        fixable: status === "error" || status === "warning",
+      });
+    }
+  }
+  if (primaryFasta.value) {
+    items.push({
+      id: "primary-fasta",
+      kind: "pass",
+      title: "Primary FASTA",
+      message: "FASTA will be linked to the primary source.",
+    });
+  }
+  if (requiresSecondarySource.value && secondaryFasta.value) {
+    items.push({
+      id: "secondary-fasta",
+      kind: "pass",
+      title: "Secondary FASTA",
+      message: "FASTA will be linked to the secondary source.",
+    });
+  }
+  if (toolchainStatus.value && !toolchainStatus.value.hicConversionAvailable) {
+    const hasHicConversion = [primarySource, secondarySource]
+      .filter((source, index) => index === 0 || requiresSecondarySource.value)
+      .some((source) => source.filename.toLowerCase().endsWith(".hic") && !isResolvedDirectly(source));
+    if (hasHicConversion) {
+      items.push({
+        id: "hictk",
+        kind: "error",
+        title: ".hic conversion",
+        message: toolchainStatus.value.summary,
+      });
+    }
+  }
+  return items;
 });
 
 const canAdvanceFromCurrentStep = computed(() => {
@@ -872,7 +1105,10 @@ const isFastaFilename = (name: string): boolean => {
   ].some((suffix) => lowered.endsWith(suffix));
 };
 
-const isAgpFilename = (name: string): boolean => name.toLowerCase().endsWith(".agp");
+const isAssemblyLayoutFilename = (name: string): boolean => {
+  const lowered = name.toLowerCase();
+  return lowered.endsWith(".agp") || lowered.endsWith(".assembly");
+};
 
 const isResolvedDirectly = (source: SourceDraft): boolean =>
   source.resolution?.action === "OPEN_DIRECT";
@@ -949,10 +1185,10 @@ const openSelector = (kind: SelectorKind): void => {
     return;
   }
   selectorState.title =
-    kind === "primary-agp" ? "Select primary AGP" : "Select secondary AGP";
-  selectorState.fileType = ".agp";
-  selectorState.note = "AGP loading is optional and will be applied after the corresponding source is opened.";
-  selectorState.predicate = isAgpFilename;
+    kind === "primary-agp" ? "Select primary assembly file" : "Select secondary assembly file";
+  selectorState.fileType = ".agp, .assembly";
+  selectorState.note = ".agp files are loaded after opening. Juicebox .assembly files are passed into .hic conversion when selected for a .hic source.";
+  selectorState.predicate = isAssemblyLayoutFilename;
 };
 
 const closeSelector = (): void => {
@@ -1069,10 +1305,21 @@ const waitForConversionJob = async (jobId: string): Promise<ConversionJobRespons
     const job = await props.networkManager.requestManager.getConversionJob(jobId);
     runState.currentConversion = job;
     runState.currentMessage = job.currentStageLabel || job.status;
-    if (job.status === "COMPLETED") {
+    const normalizedStatus = (job.status ?? "").toLowerCase();
+    if (
+      normalizedStatus === "completed" ||
+      normalizedStatus === "complete" ||
+      normalizedStatus === "finished" ||
+      normalizedStatus === "success" ||
+      normalizedStatus === "succeeded"
+    ) {
       return job;
     }
-    if (job.status === "FAILED" || job.status === "CANCELLED") {
+    if (
+      normalizedStatus === "failed" ||
+      normalizedStatus === "cancelled" ||
+      normalizedStatus === "canceled"
+    ) {
       throw new Error(job.error || `Conversion job ${jobId} ended with status ${job.status}`);
     }
     await sleep(750);
@@ -1101,9 +1348,12 @@ const ensureOpenedFilename = async (source: SourceDraft): Promise<string> => {
   }
   runState.currentStepId = "conversion";
   runState.currentMessage = `Converting ${source.filename}`;
+  const assemblyFilename =
+    source === primarySource ? primaryAgp.value : secondaryAgp.value;
   const started = await props.networkManager.requestManager.startConversionJob(
     new StartConversionJobRequest({
       filename: source.filename,
+      assemblyFilename: assemblyFilename || undefined,
       direction: resolution.conversionDirection ?? undefined,
       overwrite: true,
     })
@@ -1126,11 +1376,28 @@ const waitForTrackPrecompute = async (): Promise<TracksPrecomputeStatusResponse>
 
 const applyWizardPresentationState = (): void => {
   matrixViewStore.setPresentationMode(viewMode.value);
+  matrixViewStore.setLayersSwapped(false);
   if (viewMode.value === "split") {
     matrixViewStore.setSelectionFastaSources("PRIMARY", "SECONDARY");
   } else {
     matrixViewStore.setSelectionFastaSources("PRIMARY", "PRIMARY");
   }
+};
+
+const applyAssemblyInfoToMap = (assemblyInfo: AssemblyInfo): void => {
+  const mapManager = props.networkManager.mapManager;
+  mapManager?.contigDimensionHolder.updateContigData(assemblyInfo.contigDescriptors);
+  mapManager?.scaffoldHolder.updateScaffoldData(assemblyInfo.scaffoldDescriptors);
+  mapManager?.reloadVisuals();
+  mapManager?.refreshOverviewMinimap();
+  void mapManager?.linearTrackManager.clearCachesAndRender();
+};
+
+const setAuthoritativeAssemblySource = async (
+  source: OverlayAssemblySource
+): Promise<void> => {
+  const result = await props.networkManager.requestManager.setAssemblyInfoSource(source);
+  applyAssemblyInfoToMap(result.assemblyInfo);
 };
 
 const goBack = (): void => {
@@ -1205,6 +1472,9 @@ const runWizard = async (): Promise<void> => {
             true
           );
       }
+      mapManager.viewAndLayersManager.setSecondaryResolutionModel(
+        secondaryStatus.compatibility
+      );
       secondaryStatus.warnings.forEach((warning) =>
         toast(warning, {
           style: {
@@ -1215,6 +1485,7 @@ const runWizard = async (): Promise<void> => {
       );
     } else {
       await props.networkManager.requestManager.closeSecondarySource().catch(() => undefined);
+      mapManager.viewAndLayersManager.setSecondaryResolutionModel(undefined);
     }
 
     const primaryPresetRecord = primaryPreset.value?.preset;
@@ -1263,23 +1534,30 @@ const runWizard = async (): Promise<void> => {
       );
     }
 
-    if (primaryAgp.value) {
+    if (requiresSecondarySource.value) {
+      runState.currentStepId = "agp";
+      runState.currentMessage = `Synchronizing ${overlayAssemblySource.value.toLowerCase()} assembly source`;
+      await setAuthoritativeAssemblySource(overlayAssemblySource.value);
+      const authoritativeAgp =
+        overlayAssemblySource.value === "PRIMARY"
+          ? primaryAgp.value
+          : secondaryAgp.value;
+      if (authoritativeAgp && authoritativeAgp.toLowerCase().endsWith(".agp")) {
+        runState.currentMessage = `Loading ${authoritativeAgp}`;
+        await props.networkManager.requestManager.loadAGP(
+          new LoadAGPRequest({
+            agpFilename: authoritativeAgp,
+            source: overlayAssemblySource.value,
+          })
+        );
+      }
+    } else if (primaryAgp.value && primaryAgp.value.toLowerCase().endsWith(".agp")) {
       runState.currentStepId = "agp";
       runState.currentMessage = `Loading ${primaryAgp.value}`;
       await props.networkManager.requestManager.loadAGP(
         new LoadAGPRequest({
           agpFilename: primaryAgp.value,
           source: "PRIMARY",
-        })
-      );
-    }
-    if (secondaryAgp.value && requiresSecondarySource.value) {
-      runState.currentStepId = "agp";
-      runState.currentMessage = `Loading ${secondaryAgp.value}`;
-      await props.networkManager.requestManager.loadAGP(
-        new LoadAGPRequest({
-          agpFilename: secondaryAgp.value,
-          source: "SECONDARY",
         })
       );
     }
@@ -1309,6 +1587,8 @@ const runWizard = async (): Promise<void> => {
     runState.currentMessage = "Done";
     runState.completed = true;
     toast.success("Wizard completed");
+    await nextTick();
+    emit("dismissed");
   } catch (error) {
     runState.error = String(error ?? "Wizard failed");
     runState.completed = false;

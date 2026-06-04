@@ -28,15 +28,13 @@ import {
   LayerResolutionDescriptor,
 } from "../mapmanagers/HiCViewAndLayersManager";
 import ContigDimensionHolder from "../mapmanagers/ContigDimensionHolder";
-import { transform, transformExtent } from "ol/proj";
-import { toSI } from "display-si";
+import { transform } from "ol/proj";
 import { storeToRefs } from "pinia";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { Ref } from "vue";
 import Colormap from "../visualization/colormap/Colormap";
 import { ColorTranslator } from "colortranslator";
-import SimpleLinearGradient from "../visualization/colormap/SimpleLinearGradient";
 
 interface Options extends ControlOptions {
   // position: "top" | "bottom" | "left" | "right";
@@ -46,11 +44,21 @@ interface Options extends ControlOptions {
 
 const DEFAULT_CANVAS_SIZE = 200;
 
+interface RulerTick {
+  screen: number;
+  mapPx: number;
+  bp: number;
+  label: string;
+  major: boolean;
+  boundary?: "start" | "end";
+}
+
 class RulerControl extends Control {
   protected readonly canvas: HTMLCanvasElement;
   protected readonly mapManager: ContactMapManager;
   protected readonly viewAndLayersManager: HiCViewAndLayersManager;
   protected readonly contigDimensionHolder: ContigDimensionHolder;
+  protected readonly tooltip: HTMLDivElement;
 
   protected readonly mapBackgroundColor: Ref<ColorTranslator>;
   protected readonly colormap: Ref<Colormap>;
@@ -60,6 +68,23 @@ class RulerControl extends Control {
 
   public constructor(public readonly opt_options: Options) {
     const canvas = document.createElement("canvas");
+    const tooltip = document.createElement("div");
+    tooltip.className = "hict-ruler-tooltip";
+    Object.assign(tooltip.style, {
+      position: "absolute",
+      zIndex: "18",
+      maxWidth: "250px",
+      padding: "6px 8px",
+      borderRadius: "6px",
+      border: "1px solid rgba(17, 24, 39, 0.35)",
+      background: "rgba(17, 24, 39, 0.9)",
+      color: "rgba(244, 247, 252, 0.98)",
+      fontSize: "11px",
+      lineHeight: "1.25",
+      pointerEvents: "none",
+      boxShadow: "0 6px 20px rgba(0, 0, 0, 0.28)",
+      display: "none",
+    });
     let canvasSize: number[];
 
     if (opt_options.target) {
@@ -70,6 +95,8 @@ class RulerControl extends Control {
           : (opt_options.target as HTMLElement);
       if (parent) {
         parent.appendChild(canvas);
+        parent.appendChild(tooltip);
+        parent.style.position ||= "relative";
       } else {
         throw new Error(
           "Cannot find parent element for RulerControl with target " +
@@ -100,6 +127,7 @@ class RulerControl extends Control {
     };
     super(newOptions);
     this.canvas = canvas;
+    this.tooltip = tooltip;
     this.mapManager = opt_options.mapManager;
     this.viewAndLayersManager = this.mapManager.getLayersManager();
     this.contigDimensionHolder = this.mapManager.getContigDimensionHolder();
@@ -114,6 +142,10 @@ class RulerControl extends Control {
     this.mapBackgroundColor = mapBackgroundColor as Ref<ColorTranslator>;
 
     this.canvasSize = canvasSize;
+    this.canvas.addEventListener("mousemove", (event) =>
+      this.showRulerTooltip(event)
+    );
+    this.canvas.addEventListener("mouseleave", () => this.hideRulerTooltip());
   }
 
   render(mapEvent: MapEvent) {
@@ -135,9 +167,20 @@ class RulerControl extends Control {
       this.viewAndLayersManager.currentViewState.resolutionDesciptor;
 
     const activeHiCLayer = this.viewAndLayersManager.getActiveHiCDataLayer();
-    const extent = mapView.calculateExtent(map.getSize());
-    const mapProjection = mapView.getProjection();
-
+    const mapSize = map.getSize();
+    const center = mapView.getCenter();
+    const pixelResolution = mapView.getResolution();
+    if (
+      !mapSize ||
+      !center ||
+      center.length < 2 ||
+      !center.every((value) => Number.isFinite(value)) ||
+      pixelResolution === undefined ||
+      !Number.isFinite(pixelResolution)
+    ) {
+      return;
+    }
+    const extent = mapView.calculateExtent(mapSize);
     const targetProjection = activeHiCLayer.getSource()?.getProjection();
 
     if (!targetProjection) {
@@ -151,14 +194,6 @@ class RulerControl extends Control {
       return;
     }
     const pixelMapSize = ps[ps.length - 1];
-
-    const extentInTargetProjection = transformExtent(
-      extent,
-      mapProjection,
-      targetProjection
-    );
-
-    const pixelResolution = mapView.getResolution() ?? 1;
 
     const layerPixelResolution = Number.isFinite(
       resolutionDescriptor.pixelResolution
@@ -303,121 +338,22 @@ class RulerControl extends Control {
     // context.strokeStyle = "black";
     // context.stroke();
 
-    const axisSpanPx = Math.max(
-      1,
-      Math.round((end[0] - start[0]) * deltaDir[0] + (end[1] - start[1]) * deltaDir[1])
-    );
-    const desiredTickCount = Math.max(2, Math.min(12, Math.floor(axisSpanPx / 90)));
-    const tickInterval = Math.max(24, Math.round(axisSpanPx / desiredTickCount));
-
-    {
-      const TICK_SEMI_HEIGHT =
-        Math.min(this.canvas.width, this.canvas.height) / 5;
-      const FONT_SIZE_PX = Math.floor(
-        Math.min(this.canvas.width, this.canvas.height) / 5
-      );
-      const FONT_STRING = `bold ${FONT_SIZE_PX}px serif`;
-      const LAST_TICK_MARGIN = Math.round(tickInterval / 2);
-      let tickIndex = 0;
-      let previousAbsoluteLabel: string | null = null;
-      let previousAbsoluteBp: number | null = null;
-      for (
-        let coord: [number, number] = [start[0], start[1]];
-        coord[0] < end[0] - LAST_TICK_MARGIN ||
-        coord[1] < end[1] - LAST_TICK_MARGIN;
-        coord[0] += deltaDir[0] * tickInterval,
-          coord[1] += deltaDir[1] * tickInterval
-      ) {
-        const tickState = this.drawTickAtPxOffset(
-          context,
-          resolutionDescriptor,
-          coord,
-          start,
-          end,
-          deltaDir,
-          tickInterval,
-          mapBoxPixelCoordinates,
-          visibleMapBoxExtentPixel,
-          fraction1,
-          TICK_SEMI_HEIGHT,
-          FONT_SIZE_PX,
-          FONT_STRING,
-          tickIndex,
-          previousAbsoluteLabel,
-          previousAbsoluteBp
-        );
-        previousAbsoluteLabel = tickState.absoluteLabel;
-        previousAbsoluteBp = tickState.absoluteBp;
-        tickIndex++;
-      }
-      this.drawTickAtPxOffset(
-        context,
-        resolutionDescriptor,
-        end,
-        start,
-        end,
-        deltaDir,
-        tickInterval,
-        mapBoxPixelCoordinates,
-        visibleMapBoxExtentPixel,
-        fraction1,
-        TICK_SEMI_HEIGHT,
-        FONT_SIZE_PX,
-        FONT_STRING,
-        tickIndex,
-        previousAbsoluteLabel,
-        previousAbsoluteBp
-      );
-    }
-    // Actually, if false, allows drawing smaller grid, currently disabled
-    if (tickInterval < 0) {
-      const TICK_SEMI_HEIGHT =
-        Math.min(this.canvas.width, this.canvas.height) / 10;
-      const FONT_SIZE_PX = Math.floor(
-        Math.min(this.canvas.width, this.canvas.height) / 10
-      );
-      const FONT_STRING = `bold ${FONT_SIZE_PX}px serif`;
-
-      const LAST_TICK_MARGIN = Math.round(tickInterval / 2);
-      for (
-        let coord: [number, number] = [
-          start[0] + (tickInterval / 2) * deltaDir[0],
-          start[1] + (tickInterval / 2) * deltaDir[1],
-        ];
-        coord[0] < end[0] - LAST_TICK_MARGIN ||
-        coord[1] < end[1] - LAST_TICK_MARGIN;
-        coord[0] += deltaDir[0] * tickInterval,
-          coord[1] += deltaDir[1] * tickInterval
-      ) {
-        // console.log(
-        //   "start",
-        //   start,
-        //   "end",
-        //   end,
-        //   "deltaDir",
-        //   deltaDir,
-        //   "coord",
-        //   coord
-        // );
-        this.drawTickAtPxOffset(
-          context,
-          resolutionDescriptor,
-          coord,
-          start,
-          end,
-          deltaDir,
-          tickInterval,
-          mapBoxPixelCoordinates,
-          visibleMapBoxExtentPixel,
-          fraction1,
-          TICK_SEMI_HEIGHT,
-          FONT_SIZE_PX,
-          FONT_STRING,
-          0,
-          null,
-          null
-        );
-      }
+    const axisStart = this.direction === "horizontal" ? start[0] : start[1];
+    const axisEnd = this.direction === "horizontal" ? end[0] : end[1];
+    const mapStartScreen =
+      this.direction === "horizontal"
+        ? mapBoxPixelCoordinates.left
+        : mapBoxPixelCoordinates.top;
+    const ticks = this.buildVisibleRulerTicks({
+      axisStart,
+      axisEnd,
+      mapStartScreen,
+      fraction: fraction1,
+      pixelMapSize,
+      resolutionDescriptor,
+    });
+    for (const tick of ticks) {
+      this.drawRulerTick(context, tick, start, deltaDir);
     }
   }
 
@@ -442,163 +378,327 @@ class RulerControl extends Control {
     }
   }
 
-  protected drawTickAtPxOffset(
+  private showRulerTooltip(event: MouseEvent): void {
+    const details = this.resolveRulerHoverDetails(event.offsetX, event.offsetY);
+    if (!details) {
+      this.hideRulerTooltip();
+      return;
+    }
+    const parent = this.canvas.parentElement;
+    if (!parent) {
+      return;
+    }
+    const left = Math.min(
+      Math.max(6, event.offsetX + 12),
+      Math.max(6, parent.clientWidth - 260)
+    );
+    const top = Math.min(
+      Math.max(6, event.offsetY + 12),
+      Math.max(6, parent.clientHeight - 86)
+    );
+    this.tooltip.innerHTML = details;
+    this.tooltip.style.left = `${Math.round(left)}px`;
+    this.tooltip.style.top = `${Math.round(top)}px`;
+    this.tooltip.style.display = "block";
+  }
+
+  private hideRulerTooltip(): void {
+    this.tooltip.style.display = "none";
+  }
+
+  private resolveRulerHoverDetails(offsetX: number, offsetY: number): string | null {
+    const map = this.mapManager.getMap();
+    const mapSize = map.getSize();
+    if (!mapSize) {
+      return null;
+    }
+    const mapView = map.getView();
+    const center = mapView.getCenter();
+    const pixelResolution = mapView.getResolution();
+    if (
+      !center ||
+      center.length < 2 ||
+      !center.every((value) => Number.isFinite(value)) ||
+      pixelResolution === undefined ||
+      !Number.isFinite(pixelResolution)
+    ) {
+      return null;
+    }
+    const resolutionDescriptor =
+      this.viewAndLayersManager.currentViewState.resolutionDesciptor;
+    const activeHiCLayer = this.viewAndLayersManager.getActiveHiCDataLayer();
+    const targetProjection =
+      activeHiCLayer.getSource()?.getProjection() ?? mapView.getProjection();
+    const ps = this.contigDimensionHolder.prefix_sum_px.get(
+      resolutionDescriptor.bpResolution
+    );
+    if (!ps) {
+      return null;
+    }
+    const pixelMapSize = ps[ps.length - 1];
+    const fixed = transform(
+      mapView.calculateExtent(mapSize),
+      mapView.getProjection(),
+      targetProjection
+    ).map((coordinate) => coordinate / pixelResolution);
+    const layerPixelResolution = Number.isFinite(
+      resolutionDescriptor.pixelResolution
+    )
+      ? resolutionDescriptor.pixelResolution
+      : 1;
+    const fraction =
+      layerPixelResolution > 0 ? pixelResolution / layerPixelResolution : 1;
+    const mapBoxPixelCoordinates = {
+      left: Math.round(-fixed[0]),
+      top: Math.round(fixed[3]),
+    };
+    const visibleStart =
+      this.direction === "horizontal"
+        ? Math.round(Math.max(0, -fixed[0]))
+        : Math.round(Math.max(0, fixed[3]));
+    const axisOffset = this.direction === "horizontal" ? offsetX : offsetY;
+    const unclampedPx =
+      Math.round(
+        axisOffset -
+          visibleStart -
+          Math.min(
+            0,
+            this.direction === "horizontal"
+              ? mapBoxPixelCoordinates.left
+              : mapBoxPixelCoordinates.top
+          )
+      ) * fraction;
+    const px = Math.max(0, Math.min(pixelMapSize - 1, Math.round(unclampedPx)));
+    const bp = this.contigDimensionHolder.getStartBpOfPx(
+      px,
+      resolutionDescriptor.bpResolution
+    );
+    const bin = this.contigDimensionHolder.pixelToBin(
+      px,
+      resolutionDescriptor.bpResolution
+    );
+    const contig = this.contigDimensionHolder.getContigLocusByBp(bp);
+    const scaffold = this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp);
+    const scaffoldLine = scaffold
+      ? `Scaffold: ${this.escapeHtml(scaffold.scaffoldName)} +${this.formatInteger(scaffold.inScaffoldBp)} bp`
+      : "Scaffold: n/a";
+    const source = this.contigDimensionHolder.getSourceLocusByBp(bp);
+    return [
+      `<strong>${this.direction === "horizontal" ? "Horizontal" : "Vertical"} ruler</strong>`,
+      `Assembly: ${this.formatInteger(bp)} bp, bin ${this.formatInteger(bin)}, px ${this.formatInteger(px)}`,
+      `Contig: ${this.escapeHtml(contig.contigName)} +${this.formatInteger(contig.inContigBp)} bp`,
+      scaffoldLine,
+      `Source: ${this.escapeHtml(source.sourceContig)}:${this.formatInteger(source.sourceBp)} bp`,
+    ].join("<br />");
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  private formatInteger(value: number): string {
+    return Math.round(value).toLocaleString();
+  }
+
+  private buildVisibleRulerTicks(options: {
+    axisStart: number;
+    axisEnd: number;
+    mapStartScreen: number;
+    fraction: number;
+    pixelMapSize: number;
+    resolutionDescriptor: LayerResolutionDescriptor;
+  }): RulerTick[] {
+    const axisStart = Math.round(Math.min(options.axisStart, options.axisEnd));
+    const axisEnd = Math.round(Math.max(options.axisStart, options.axisEnd));
+    const axisSpan = axisEnd - axisStart;
+    if (axisSpan <= 0) {
+      return [];
+    }
+
+    const spacing = 100;
+    const screens: number[] = [axisStart];
+    for (let screen = axisStart + spacing; screen < axisEnd - 42; screen += spacing) {
+      screens.push(Math.round(screen));
+    }
+    if (axisEnd - screens[screens.length - 1] >= 34) {
+      screens.push(axisEnd);
+    } else {
+      screens[screens.length - 1] = axisEnd;
+    }
+
+    const mapPxValues = screens.map((screen) =>
+      this.screenPositionToMapPx(
+        screen,
+        options.mapStartScreen,
+        options.fraction,
+        options.pixelMapSize
+      )
+    );
+    const bpValues = mapPxValues.map((mapPx) =>
+      this.contigDimensionHolder.getStartBpOfPx(
+        mapPx,
+        options.resolutionDescriptor.bpResolution
+      )
+    );
+    const maxBp = Math.max(...bpValues, 0);
+    const labelUnit = this.absoluteLabelUnit(maxBp);
+    let currentAnchor = this.roundDownToUnit(bpValues[0] ?? 0, labelUnit);
+    return screens.map((screen, index) => {
+      const bp = bpValues[index] ?? 0;
+      const mapPx = mapPxValues[index] ?? 0;
+      const anchor = this.roundDownToUnit(bp, labelUnit);
+      const boundary =
+        index === 0 ? "start" : index === screens.length - 1 ? "end" : undefined;
+      const major = boundary !== undefined || anchor !== currentAnchor;
+      if (major) {
+        currentAnchor = anchor;
+      }
+      const delta = Math.max(0, Math.round(bp - currentAnchor));
+      return {
+        screen,
+        mapPx,
+        bp,
+        major,
+        boundary,
+        label:
+          major || delta <= 0
+            ? this.formatBpLabel(anchor, 0)
+            : `+${this.formatBpLabel(delta, 0)}`,
+      };
+    });
+  }
+
+  private screenPositionToMapPx(
+    screenPosition: number,
+    mapStartScreen: number,
+    fraction: number,
+    pixelMapSize: number
+  ): number {
+    const raw = Math.round((screenPosition - mapStartScreen) * fraction);
+    return Math.max(0, Math.min(Math.max(0, pixelMapSize - 1), raw));
+  }
+
+  private drawRulerTick(
     context: CanvasRenderingContext2D,
-    resolutionDescriptor: LayerResolutionDescriptor,
-    coord: [number, number],
+    tick: RulerTick,
     start: [number, number],
-    end: [number, number],
-    deltaDir: [number, number],
-    tickInterval: number,
-    mapBoxPixelCoordinates: {
-      left: number;
-      right: number;
-      top: number;
-      bottom: number;
-    },
-    visibleMapBoxExtentPixel: {
-      left: number;
-      right: number;
-      top: number;
-      bottom: number;
-    },
-    fraction1: number,
-    TICK_SEMI_HEIGHT: number,
-    FONT_SIZE_PX: number,
-    FONT_STRING: string,
-    tickIndex: number,
-    previousAbsoluteLabel: string | null,
-    previousAbsoluteBp: number | null
-  ): { absoluteLabel: string; absoluteBp: number } {
-    coord = coord.map(Math.round) as [number, number];
-
-    const dPx = (() => {
-      switch (this.opt_options.direction) {
-        case "vertical":
-          return (
-            Math.round(
-              coord[1] - start[1] - Math.min(0, mapBoxPixelCoordinates.top)
-            ) * fraction1
-          );
-        case "horizontal":
-          return (
-            Math.round(
-              coord[0] - start[0] - Math.min(0, mapBoxPixelCoordinates.left)
-            ) * fraction1
-          );
-      }
-    })();
-
-    const preBP = (() => {
-      if (dPx == 0) {
-        return 0;
-      } else if (coord == end) {
-        return this.contigDimensionHolder.getStartBpOfPx(
-          dPx - 1,
-          resolutionDescriptor.bpResolution
-        );
-      } else {
-        return this.contigDimensionHolder.getStartBpOfPx(
-          dPx,
-          resolutionDescriptor.bpResolution
-        );
-      }
-    })();
-
-    // console.log(
-    //   this.opt_options.direction,
-    //   "coord",
-    //   coord,
-    //   "dPx",
-    //   dPx,
-    //   "dBp",
-    //   dBp,
-    //   "pre",
-    //   preBP,
-    //   "post",
-    //   postBP
-    // );
+    deltaDir: [number, number]
+  ): void {
+    const majorTickLength = Math.max(
+      8,
+      Math.min(16, Math.min(this.canvas.width, this.canvas.height) * 0.24)
+    );
+    const minorTickLength = Math.max(5, majorTickLength * 0.62);
+    const tickLength = tick.major ? majorTickLength : minorTickLength;
+    const coord: [number, number] =
+      this.direction === "horizontal"
+        ? [tick.screen, start[1]]
+        : [start[0], tick.screen];
 
     const { mainStroke, outlineStroke } = this.getRulerStrokeColors();
     context.strokeStyle = outlineStroke;
-    context.lineWidth = 6;
+    context.lineWidth = tick.major ? 5 : 4;
     context.beginPath();
-    context.moveTo(
-      coord[0] - TICK_SEMI_HEIGHT * deltaDir[1],
-      coord[1] - TICK_SEMI_HEIGHT * deltaDir[0]
-    );
+    context.moveTo(coord[0], coord[1]);
     context.lineTo(
-      coord[0] + TICK_SEMI_HEIGHT * deltaDir[1],
-      coord[1] + TICK_SEMI_HEIGHT * deltaDir[0]
+      coord[0] - tickLength * deltaDir[1],
+      coord[1] - tickLength * deltaDir[0]
     );
     context.stroke();
     context.strokeStyle = mainStroke;
-    context.lineWidth = 3;
+    context.lineWidth = tick.major ? 2.5 : 1.8;
     context.beginPath();
-    context.moveTo(
-      coord[0] - TICK_SEMI_HEIGHT * deltaDir[1],
-      coord[1] - TICK_SEMI_HEIGHT * deltaDir[0]
-    );
+    context.moveTo(coord[0], coord[1]);
     context.lineTo(
-      coord[0] + TICK_SEMI_HEIGHT * deltaDir[1],
-      coord[1] + TICK_SEMI_HEIGHT * deltaDir[0]
+      coord[0] - tickLength * deltaDir[1],
+      coord[1] - tickLength * deltaDir[0]
     );
     context.stroke();
 
-    const angleDeg = (() => {
-      switch (this.opt_options.direction) {
-        case "vertical":
-          return 0;
-        case "horizontal":
-          return -45;
-      }
-    })();
+    const fontSize = tick.major ? 11 : 9;
+    const font = `${tick.major ? "bold" : "normal"} ${fontSize}px sans-serif`;
+    if (this.direction === "horizontal") {
+      const textX = this.clamp(
+        tick.boundary === "start"
+          ? tick.screen + 2
+          : tick.boundary === "end"
+            ? tick.screen - 2
+            : tick.screen,
+        4,
+        this.canvas.width - 4
+      );
+      const textAlign: CanvasTextAlign =
+        tick.boundary === "start"
+          ? "left"
+          : tick.boundary === "end"
+            ? "right"
+            : "center";
+      this.drawRotatedText(
+        tick.label,
+        textX,
+        Math.max(9, coord[1] - tickLength - 3),
+        context,
+        tick.boundary ? 0 : -35,
+        font,
+        textAlign,
+        true,
+        false
+      );
+      return;
+    }
 
-    const textAlign = (() => {
-      switch (this.opt_options.direction) {
-        case "vertical":
-          return "right";
-        case "horizontal":
-          return "left";
-      }
-    })();
-
-    const fillBackground = this.opt_options.direction === "horizontal";
-    const absoluteLabel = toSI(preBP);
-    const useDeltaLabel =
-      tickIndex > 0 &&
-      previousAbsoluteLabel !== null &&
-      previousAbsoluteBp !== null &&
-      previousAbsoluteLabel === absoluteLabel &&
-      preBP > previousAbsoluteBp;
-    const deltaLabel = "+" + toSI(Math.max(0, preBP - (previousAbsoluteBp ?? preBP)));
-    const label = useDeltaLabel ? deltaLabel : absoluteLabel;
-    const fontSize = useDeltaLabel
-      ? Math.max(9, FONT_SIZE_PX - 2)
-      : Math.max(11, FONT_SIZE_PX + 2);
+    const textY = this.clamp(tick.screen + fontSize / 2, fontSize + 1, this.canvas.height - 3);
     this.drawRotatedText(
-      label,
-      Math.round(
-        coord[0] +
-          (FONT_SIZE_PX / 3) * deltaDir[0] -
-          (TICK_SEMI_HEIGHT + 5) * deltaDir[1]
-      ),
-      Math.round(
-        coord[1] +
-          (FONT_SIZE_PX / 3) * deltaDir[1] -
-          (TICK_SEMI_HEIGHT + 5) * deltaDir[0]
-      ),
+      tick.label,
+      Math.max(2, coord[0] - tickLength - 4),
+      textY,
       context,
-      angleDeg,
-      `${useDeltaLabel ? "normal" : "bold"} ${fontSize}px sans-serif`,
-      textAlign,
-      false,
-      fillBackground
+      0,
+      font,
+      "right",
+      true,
+      false
     );
-    return {
-      absoluteLabel,
-      absoluteBp: preBP,
-    };
+  }
+
+  private formatBpLabel(bp: number, precision: number): string {
+    const value = Math.max(0, Math.round(bp));
+    const units: Array<[number, string]> = [
+      [1_000_000_000, "G"],
+      [1_000_000, "M"],
+      [1_000, "K"],
+    ];
+    const [scale, suffix] =
+      units.find(([candidate]) => value >= candidate) ?? [1, ""];
+    const scaled = value / scale;
+    const digits = precision > 0 && scaled < 100 ? precision : 0;
+    return `${scaled.toFixed(digits).replace(/\.0+$/, "")}${suffix}`;
+  }
+
+  private absoluteLabelUnit(maxBp: number): number {
+    if (maxBp >= 1_000_000_000) {
+      return 1_000_000_000;
+    }
+    if (maxBp >= 1_000_000) {
+      return 1_000_000;
+    }
+    if (maxBp >= 1_000) {
+      return 1_000;
+    }
+    return 1;
+  }
+
+  private roundDownToUnit(bp: number, unit: number): number {
+    const safeUnit = Math.max(1, Math.round(unit));
+    return Math.floor(Math.max(0, Math.round(bp)) / safeUnit) * safeUnit;
+  }
+
+  private clamp(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
   }
 
   protected drawRotatedText(
@@ -633,10 +733,13 @@ class RulerControl extends Control {
 
     this.setFillStrokeContrastColors(context);
 
-    context.fillText(text, 0, 0);
     if (stroke) {
+      const fontSizeMatch = font.match(/(\d+(?:\.\d+)?)px/);
+      const fontSize = fontSizeMatch ? Number.parseFloat(fontSizeMatch[1]) : 10;
+      context.lineWidth = Math.max(2, fontSize / 5);
       context.strokeText(text, 0, 0);
     }
+    context.fillText(text, 0, 0);
 
     context.restore();
   }

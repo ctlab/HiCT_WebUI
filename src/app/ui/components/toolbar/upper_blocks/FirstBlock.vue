@@ -146,9 +146,9 @@ function zoomIn() {
         props.mapManager?.viewAndLayersManager.currentViewState
           .resolutionDesciptor;
       const minBpResolution =
-        props.mapManager?.viewAndLayersManager?.resolutions.reduce((a, b) =>
-          Math.min(a, b)
-        );
+        props.mapManager?.viewAndLayersManager
+          ?.getNavigationResolutionModel()
+          .resolutions.reduce((a, b) => Math.min(a, b));
       const [x_px, y_px] = [center[0], -center[1]].map((p) =>
         Math.floor(p / currentResolutionDescriptor.pixelResolution)
       );
@@ -220,9 +220,9 @@ function zoomOut() {
         props.mapManager?.viewAndLayersManager.currentViewState
           .resolutionDesciptor;
       const maxBpResolution =
-        props.mapManager?.viewAndLayersManager?.resolutions.reduce((a, b) =>
-          Math.max(a, b)
-        );
+        props.mapManager?.viewAndLayersManager
+          ?.getNavigationResolutionModel()
+          .resolutions.reduce((a, b) => Math.max(a, b));
       const [x_px, y_px] = [center[0], -center[1]].map((p) =>
         Math.floor(p / currentResolutionDescriptor.pixelResolution)
       );

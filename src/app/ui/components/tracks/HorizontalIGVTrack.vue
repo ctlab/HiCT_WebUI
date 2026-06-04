@@ -50,6 +50,18 @@
       <div v-if="featureTooltipSecondary" class="feature-meta">
         {{ featureTooltipSecondary }}
       </div>
+      <div
+        v-for="attribute in featureTooltipAttributes"
+        :key="attribute.key"
+        class="feature-meta"
+      >
+        <span
+          v-if="attribute.swatch"
+          class="feature-color-swatch"
+          :style="{ backgroundColor: attribute.swatch }"
+        ></span>
+        {{ attribute.key }}: {{ attribute.value }}
+      </div>
     </div>
   </div>
 </template>
@@ -78,6 +90,11 @@ const featureTooltipVisible = ref(false);
 const featureTooltipTitle = ref("");
 const featureTooltipRange = ref("");
 const featureTooltipSecondary = ref("");
+const featureTooltipAttributes = ref<Array<{
+  key: string;
+  value: string;
+  swatch?: string;
+}>>([]);
 const featureTooltipStyle = ref<Record<string, string>>({
   left: "0px",
   top: "0px",
@@ -135,7 +152,7 @@ const onMouseMoveFeature = (event: MouseEvent): void => {
     hideFeatureTooltip();
     return;
   }
-  const hit = props.mapManager.linearTrackManager.getFeatureHoverAt(
+  const hit = props.mapManager.linearTrackManager.getTrackHoverAt(
     "horizontal",
     event.offsetX,
     event.offsetY
@@ -158,18 +175,74 @@ const onMouseMoveFeature = (event: MouseEvent): void => {
     top: `${Math.round(desiredTop)}px`,
   };
   featureTooltipTitle.value =
-    hit.label ?? hit.featureType ?? hit.trackName;
-  featureTooltipRange.value = `${hit.startBp.toLocaleString()}-${hit.endBp.toLocaleString()} bp`;
+    hit.kind === "feature"
+      ? hit.label ?? hit.featureType ?? hit.trackName
+      : hit.trackName;
+  featureTooltipRange.value = formatHoverRange(hit);
   const secondaryParts: string[] = [];
-  if (hit.featureType) {
-    secondaryParts.push(hit.featureType);
+  if (hit.kind === "feature") {
+    if (hit.featureType) {
+      secondaryParts.push(hit.featureType);
+    }
+    if (hit.strand) {
+      secondaryParts.push(`strand ${hit.strand}`);
+    }
+    secondaryParts.push(hit.trackName);
+    featureTooltipAttributes.value = formatFeatureAttributes(hit.attributes);
+  } else {
+    secondaryParts.push(`value ${formatTrackValue(hit.value)}`);
+    if (hit.count > 1) {
+      secondaryParts.push(`${hit.count.toLocaleString()} bins/items`);
+    }
+    secondaryParts.push(hit.trackType);
+    featureTooltipAttributes.value = [];
   }
-  if (hit.strand) {
-    secondaryParts.push(`strand ${hit.strand}`);
-  }
-  secondaryParts.push(hit.trackName);
   featureTooltipSecondary.value = secondaryParts.join(" | ");
   featureTooltipVisible.value = true;
+};
+
+const formatTrackValue = (value: number): string => {
+  if (!Number.isFinite(value)) {
+    return "n/a";
+  }
+  if (Math.abs(value) >= 1000 || (value !== 0 && Math.abs(value) < 0.01)) {
+    return value.toExponential(3);
+  }
+  return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
+};
+
+const formatFeatureAttributes = (
+  attributes: Record<string, string>
+): Array<{ key: string; value: string; swatch?: string }> =>
+  Object.entries(attributes)
+    .filter(([key, value]) => key.trim().length > 0 && value.trim().length > 0)
+    .slice(0, 12)
+    .map(([key, value]) => ({
+      key,
+      value,
+      swatch: key.toLowerCase() === "itemrgb" ? bedRgbToCss(value) : undefined,
+    }));
+
+const bedRgbToCss = (value: string): string | undefined => {
+  const channels = value.split(",").map((part) => Number(part.trim()));
+  if (
+    channels.length !== 3 ||
+    channels.some((channel) => !Number.isInteger(channel) || channel < 0 || channel > 255)
+  ) {
+    return undefined;
+  }
+  return `rgb(${channels[0]}, ${channels[1]}, ${channels[2]})`;
+};
+
+const formatHoverRange = (hit: {
+  startBp: number;
+  endBp: number;
+  startPx: number;
+  endPx: number;
+}): string => {
+  const bpRange = `${hit.startBp.toLocaleString()}-${hit.endBp.toLocaleString()} bp`;
+  const binRange = `bins ${hit.startPx.toLocaleString()}-${hit.endPx.toLocaleString()}`;
+  return `${bpRange} | ${binRange}`;
 };
 
 const onMouseLeaveFeature = (): void => {
@@ -366,5 +439,14 @@ onBeforeUnmount(() => {
 
 .feature-meta {
   opacity: 0.95;
+}
+
+.feature-color-swatch {
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-right: 0.35em;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  vertical-align: -0.05em;
 }
 </style>

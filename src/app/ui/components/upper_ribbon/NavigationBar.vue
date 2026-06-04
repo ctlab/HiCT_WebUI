@@ -37,19 +37,19 @@
             >
             <ul class="dropdown-menu">
               <li>
+                <a class="dropdown-item" href="#" @click="onOpenWizard"
+                  >Open Wizard...</a
+                >
+              </li>
+              <li>
                 <a class="dropdown-item" href="#" @click="onOpenFile"
-                  >Open...</a
+                  >Manual Open...</a
                 >
               </li>
               <!-- <li>
                 <a class="dropdown-item" href="#" @click="onSaveClicked">Save</a>
                 <div v-if="saving" class="spinner-border ms-auto" role="status"></div>
               </li> -->
-              <li>
-                <a class="dropdown-item" href="#" @click="onOpenWizard"
-                  >Wizard...</a
-                >
-              </li>
               <li>
                 <a class="dropdown-item" href="#" @click="onCloseClicked"
                   >Close</a
@@ -86,8 +86,22 @@
                 >
               </li>
               <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="onGenerateDotplotClicked"
+                  >Generate dotplot</a
+                >
+              </li>
+              <li>
                 <a class="dropdown-item" href="#" @click="onDropCachesClicked"
                   >Drop caches</a
+                >
+              </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a class="dropdown-item" href="#" @click.prevent="onQuitClicked"
+                  >Quit</a
                 >
               </li>
             </ul>
@@ -220,7 +234,55 @@
                   Render tiles from binary signal (experimental)
                 </label>
               </li>
+              <li class="form-check mt-2">
+                <input
+                  id="toggle-native-processing"
+                  class="form-check-input"
+                  type="checkbox"
+                  v-model="nativeProcessingRequested"
+                  :disabled="nativeProcessingBusy"
+                  @change="onNativeProcessingChanged"
+                />
+                <label class="form-check-label" for="toggle-native-processing">
+                  Use native code processing
+                </label>
+                <div class="native-processing-status" :class="nativeProcessingStatusClass">
+                  {{ nativeProcessingStatusText }}
+                </div>
+              </li>
+              <li class="mt-3" @click.stop>
+                <label class="form-label mb-1" for="dotplot-aligner-preference">
+                  Dotplot aligner
+                </label>
+                <select
+                  id="dotplot-aligner-preference"
+                  v-model="dotplotAlignerPreference"
+                  class="form-select form-select-sm"
+                  :disabled="dotplotAlignerBusy"
+                  @change="onDotplotAlignerPreferenceChanged"
+                >
+                  <option value="auto">Auto (mm2-plus AVX-512 -> AVX2 -> minimap2)</option>
+                  <option value="mm2plus">mm2-plus best available</option>
+                  <option value="mm2plus-avx512" :disabled="!toolchainStatus?.mm2PlusAvx512Available">
+                    mm2-plus AVX-512{{ toolchainStatus?.mm2PlusAvx512Available ? "" : " (not bundled)" }}
+                  </option>
+                  <option value="mm2plus-avx2" :disabled="!toolchainStatus?.mm2PlusAvx2Available">
+                    mm2-plus AVX2{{ toolchainStatus?.mm2PlusAvx2Available ? "" : " (not bundled)" }}
+                  </option>
+                  <option value="minimap2" :disabled="!toolchainStatus?.minimap2Available">
+                    minimap2{{ toolchainStatus?.minimap2Available ? "" : " (not bundled)" }}
+                  </option>
+                </select>
+                <div class="native-processing-status" :class="dotplotAlignerStatusClass">
+                  {{ dotplotAlignerStatusText }}
+                </div>
+              </li>
               <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenServerStatistics">
+                  Runtime statistics...
+                </a>
+              </li>
               <li>
                 <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenWorkerDiagnostics">
                   Worker diagnostics...
@@ -319,6 +381,13 @@
     @dismissed="onConvertCoolersDismissed"
   >
   </CoolerConverter>
+  <DotplotGenerator
+    v-if="generatingDotplots"
+    :network-manager="networkManager"
+    :initial-fasta-filename="lastLinkedFastaFilename"
+    :initial-reference-map-filename="currentPrimaryHictFilename"
+    @dismissed="onGenerateDotplotDismissed"
+  />
   <TrackManager
     v-if="trackManagerOpen"
     :map-manager="props.mapManager"
@@ -333,6 +402,11 @@
     v-if="workerDiagnosticsOpen"
     :network-manager="props.networkManager"
     @dismissed="workerDiagnosticsOpen = false"
+  />
+  <ServerStatisticsModal
+    v-if="serverStatisticsOpen"
+    :network-manager="props.networkManager"
+    @dismissed="serverStatisticsOpen = false"
   />
   <FastaLinkWarningModal
     v-if="fastaLinkReport"
@@ -350,17 +424,109 @@
         <h2>HiCT</h2>
         <button class="btn-close" @click="aboutOpen = false"></button>
       </div>
-      <div class="about-body">
-        <p class="about-authors">
-          Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii
-          Dravgelis and Computer Technologies Laboratory ITMO University team.
-        </p>
-        <pre class="about-license">{{ licenseText }}</pre>
+      <div class="about-tabs" role="tablist" aria-label="About HiCT">
+        <button
+          type="button"
+          class="about-tab"
+          :class="{ active: aboutActiveTab === 'about' }"
+          @click="aboutActiveTab = 'about'"
+        >
+          About
+        </button>
+        <button
+          type="button"
+          class="about-tab"
+          :class="{ active: aboutActiveTab === 'attribution' }"
+          @click="aboutActiveTab = 'attribution'"
+        >
+          Attribution
+        </button>
+      </div>
+      <div v-if="aboutActiveTab === 'about'" class="about-body">
+        <p class="about-authors">{{ projectAttribution.authors }}</p>
+        <p class="about-note">{{ projectAttribution.note }}</p>
         <div class="about-versions">
           <div><strong>Backend:</strong> {{ backendVersion }}</div>
           <div><strong>WebUI:</strong> {{ webuiVersion }}</div>
           <div><strong>Commit:</strong> {{ webuiCommit }}</div>
         </div>
+        <pre class="about-license">{{ licenseText }}</pre>
+      </div>
+      <div v-else class="about-body attribution-panel">
+        <section class="attribution-section">
+          <h3>Project</h3>
+          <article class="attribution-card">
+            <div class="attribution-title">{{ projectAttribution.name }}</div>
+            <div>{{ projectAttribution.authors }}</div>
+            <div><strong>License:</strong> {{ projectAttribution.license }}</div>
+            <div v-if="projectAttribution.note">{{ projectAttribution.note }}</div>
+            <div v-if="projectAttribution.links?.length" class="attribution-links">
+              <a
+                v-for="link in projectAttribution.links"
+                :key="link.href"
+                :href="link.href"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {{ link.label }}
+              </a>
+            </div>
+          </article>
+        </section>
+        <section class="attribution-section">
+          <h3>Runtime and Conversion</h3>
+          <article
+            v-for="entry in runtimeAttributions"
+            :key="entry.name"
+            class="attribution-card"
+          >
+            <div class="attribution-title">{{ entry.name }}</div>
+            <div>{{ entry.authors }}</div>
+            <div><strong>License:</strong> {{ entry.license }}</div>
+            <div v-if="entry.note">{{ entry.note }}</div>
+            <div v-if="entry.links?.length" class="attribution-links">
+              <a
+                v-for="link in entry.links"
+                :key="link.href"
+                :href="link.href"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {{ link.label }}
+              </a>
+            </div>
+          </article>
+        </section>
+        <section class="attribution-section">
+          <h3>WebUI</h3>
+          <article
+            v-for="entry in webAttributions"
+            :key="entry.name"
+            class="attribution-card"
+          >
+            <div class="attribution-title">{{ entry.name }}</div>
+            <div>{{ entry.authors }}</div>
+            <div><strong>License:</strong> {{ entry.license }}</div>
+            <div v-if="entry.note">{{ entry.note }}</div>
+            <div v-if="entry.links?.length" class="attribution-links">
+              <a
+                v-for="link in entry.links"
+                :key="link.href"
+                :href="link.href"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {{ link.label }}
+              </a>
+            </div>
+          </article>
+        </section>
+        <section class="attribution-section">
+          <h3>Redistribution Notes</h3>
+          <ul class="attribution-notes">
+            <li v-for="note in redistributionNotes" :key="note">{{ note }}</li>
+          </ul>
+        </section>
       </div>
     </div>
   </div>
@@ -368,7 +534,7 @@
 
 <script setup lang="ts">
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
-import { defineAsyncComponent, Ref, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, Ref, ref, watch } from "vue";
 import {
   GetAGPForAssemblyRequest,
   GetFastaForAssemblyRequest,
@@ -377,57 +543,58 @@ import {
 } from "@/app/core/net/api/request";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import CoolerConverter from "./CoolerConverter.vue";
+import DotplotGenerator from "./DotplotGenerator.vue";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
 import TrackManager from "@/app/ui/components/upper_ribbon/TrackManager.vue";
 import FastaLinkWarningModal from "@/app/ui/components/upper_ribbon/FastaLinkWarningModal.vue";
 import WorkerDiagnosticsModal from "@/app/ui/components/upper_ribbon/WorkerDiagnosticsModal.vue";
+import ServerStatisticsModal from "@/app/ui/components/upper_ribbon/ServerStatisticsModal.vue";
 import { toast } from "vue-sonner";
 import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
-import type { FastaLinkResponse } from "@/app/core/net/api/response";
+import type {
+  ConversionToolchainStatusResponse,
+  FastaLinkResponse,
+} from "@/app/core/net/api/response";
+import type { NativeProcessingStatusResponse } from "@/app/core/net/api/RequestManager";
+import {
+  licenseText,
+  projectAttribution,
+  redistributionNotes,
+  runtimeAttributions,
+  webAttributions,
+} from "@/app/core/attribution";
 import pkg from "../../../../../package.json";
 const openingFile = ref(false);
 const openingFASTAFile = ref(false);
 const openingAGPFile = ref(false);
 const convertingCoolers = ref(false);
+const generatingDotplots = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
+const lastLinkedFastaFilename = ref<string | undefined>(undefined);
 const trackManagerOpen = ref(false);
 const renderingPipelineOpen = ref(false);
 const workerDiagnosticsOpen = ref(false);
+const serverStatisticsOpen = ref(false);
 const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
+const aboutActiveTab = ref<"about" | "attribution">("about");
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
+const nativeProcessingStatus = ref<NativeProcessingStatusResponse | null>(null);
+const nativeProcessingRequested = ref(false);
+const nativeProcessingBusy = ref(false);
+const toolchainStatus = ref<ConversionToolchainStatusResponse | null>(null);
+const dotplotAlignerPreference = ref("auto");
+const dotplotAlignerBusy = ref(false);
 const backendVersion = ref("loading...");
 const webuiVersion = ref(String((pkg as { version?: string })?.version ?? "unknown"));
 const webuiCommit = ref("unknown");
 const RenderingPipelineModal = defineAsyncComponent(
   () => import("@/app/ui/components/upper_ribbon/RenderingPipelineModal.vue")
 );
-const licenseText = `MIT License
-
-Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.`;
-
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
   (e: "closed"): void;
@@ -452,12 +619,80 @@ const { requestErrorToastsEnabled, webuiErrorToastsEnabled } =
 const { customZoomSliderEnabled, binaryTileTransportEnabled } =
   storeToRefs(uiSettingsStore);
 
+const currentPrimaryHictFilename = computed(() => {
+  const filename = props.mapManager?.getOptions().filename ?? "";
+  return filename.toLowerCase().endsWith(".hict.hdf5") ? filename : "";
+});
+
+const nativeProcessingStatusClass = computed(() => ({
+  "text-success": nativeProcessingStatus.value?.enabled,
+  "text-warning":
+    nativeProcessingStatus.value?.requested && !nativeProcessingStatus.value?.enabled,
+  "text-muted": !nativeProcessingStatus.value?.requested,
+}));
+
+const nativeProcessingStatusText = computed(() => {
+  const status = nativeProcessingStatus.value;
+  if (!status) {
+    return "Status is not loaded yet.";
+  }
+  if (status.enabled) {
+    return `Native backend active (${status.version}).`;
+  }
+  if (status.requested && !status.available) {
+    return `Native backend unavailable: ${status.reason}`;
+  }
+  if (status.requested) {
+    return `Native backend disabled: ${status.reason}`;
+  }
+  return status.available
+    ? `Available (${status.version}), currently disabled.`
+    : "Not bundled; Java backend is active.";
+});
+
+const dotplotAlignerStatusClass = computed(() => ({
+  "text-success": toolchainStatus.value?.selectedDotplotAligner !== "none",
+  "text-warning": toolchainStatus.value?.selectedDotplotAligner === "none",
+  "text-muted": !toolchainStatus.value,
+}));
+
+const dotplotAlignerStatusText = computed(() => {
+  const status = toolchainStatus.value;
+  if (!status) {
+    return "Toolchain status is not loaded yet.";
+  }
+  if (!status.selectedDotplotAlignerCommand) {
+    return "No usable dotplot aligner for this preference.";
+  }
+  return `Selected: ${status.selectedDotplotAligner}.`;
+});
+
+type HictDesktopBridge = {
+  platform?: string;
+  quit?: () => Promise<unknown> | unknown;
+};
+
+type TauriBridge = {
+  core?: {
+    invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+  };
+  invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+};
+
 function onOpenFile() {
   openingFile.value = true;
 }
 
 function onOpenWizard(): void {
   emit("wizardRequested");
+}
+
+function onGenerateDotplotClicked(): void {
+  generatingDotplots.value = true;
+}
+
+function onGenerateDotplotDismissed(): void {
+  generatingDotplots.value = false;
 }
 
 function onOpenTrackManager() {
@@ -472,9 +707,136 @@ function onOpenWorkerDiagnostics() {
   workerDiagnosticsOpen.value = true;
 }
 
+function onOpenServerStatistics() {
+  serverStatisticsOpen.value = true;
+}
+
+async function refreshNativeProcessingStatus(): Promise<void> {
+  nativeProcessingBusy.value = true;
+  try {
+    const status =
+      await props.networkManager.requestManager.getNativeProcessingStatus();
+    nativeProcessingStatus.value = status;
+    nativeProcessingRequested.value = status.requested;
+  } catch (error) {
+    nativeProcessingStatus.value = {
+      requested: false,
+      enabled: false,
+      available: false,
+      version: "unknown",
+      source: "",
+      reason: "Failed to query native backend status: " + String(error),
+      lastFailure: "",
+    };
+  } finally {
+    nativeProcessingBusy.value = false;
+  }
+}
+
+async function onNativeProcessingChanged(): Promise<void> {
+  nativeProcessingBusy.value = true;
+  try {
+    const status =
+      await props.networkManager.requestManager.setNativeProcessingEnabled(
+        nativeProcessingRequested.value
+      );
+    nativeProcessingStatus.value = status;
+    nativeProcessingRequested.value = status.requested;
+    if (status.enabled) {
+      toast.success("Native code processing enabled.");
+    } else if (status.requested) {
+      toast("Native code processing is unavailable; Java backend remains active.", {
+        style: {
+          "background-color": "lightyellow",
+          color: "black",
+        },
+      });
+    } else {
+      toast("Native code processing disabled; Java backend is active.");
+    }
+    props.mapManager?.reloadTiles();
+  } catch (error) {
+    toast.error("Failed to update native processing setting: " + String(error));
+    await refreshNativeProcessingStatus();
+  } finally {
+    nativeProcessingBusy.value = false;
+  }
+}
+
+async function refreshConversionToolchainStatus(): Promise<void> {
+  dotplotAlignerBusy.value = true;
+  try {
+    const status =
+      await props.networkManager.requestManager.getConversionToolchainStatus();
+    toolchainStatus.value = status;
+    dotplotAlignerPreference.value = status.dotplotAlignerPreference || "auto";
+  } catch (error) {
+    toolchainStatus.value = null;
+    console.error("Failed to query conversion toolchain status", error);
+  } finally {
+    dotplotAlignerBusy.value = false;
+  }
+}
+
+async function onDotplotAlignerPreferenceChanged(): Promise<void> {
+  dotplotAlignerBusy.value = true;
+  try {
+    const status =
+      await props.networkManager.requestManager.setDotplotAlignerPreference(
+        dotplotAlignerPreference.value
+      );
+    toolchainStatus.value = status;
+    dotplotAlignerPreference.value = status.dotplotAlignerPreference || "auto";
+    if (status.selectedDotplotAlignerCommand) {
+      toast.success(`Dotplot aligner set to ${status.selectedDotplotAligner}.`);
+    } else {
+      toast("No usable dotplot aligner for this preference.", {
+        style: {
+          "background-color": "lightyellow",
+          color: "black",
+        },
+      });
+    }
+  } catch (error) {
+    toast.error("Failed to update dotplot aligner: " + String(error));
+    await refreshConversionToolchainStatus();
+  } finally {
+    dotplotAlignerBusy.value = false;
+  }
+}
+
 function onOpenApiDocs(): void {
   const base = props.networkManager.host.replace(/\/+$/, "");
   window.open(`${base}/api/v1/`, "_blank", "noopener,noreferrer");
+}
+
+function onQuitClicked(): void {
+  const desktopBridge = (window as unknown as { hictDesktop?: HictDesktopBridge })
+    .hictDesktop;
+  if (typeof desktopBridge?.quit === "function") {
+    void Promise.resolve(desktopBridge.quit()).catch((error) => {
+      console.error("Failed to close Electron HiCT WebUI", error);
+      toast.error("Failed to close bundled WebUI: " + String(error));
+    });
+    return;
+  }
+
+  const tauriBridge = (window as unknown as { __TAURI__?: TauriBridge }).__TAURI__;
+  const invoke = tauriBridge?.core?.invoke ?? tauriBridge?.invoke;
+  if (typeof invoke === "function") {
+    void invoke("quit_app")
+      .catch(() => invoke("quit-app"))
+      .catch((error) => {
+        console.error("Failed to close Tauri HiCT WebUI", error);
+        toast.error("Failed to close bundled WebUI: " + String(error));
+      });
+    return;
+  }
+
+  const message =
+    "File -> Quit closes only bundled Electron/Tauri WebUI windows. Use the browser tab/window controls here.";
+  console.info(message);
+  toast(message);
 }
 
 function onLoadAGP() {
@@ -546,6 +908,7 @@ function onConvertCoolersDismissed(): void {
 
 function openAbout(): void {
   aboutOpen.value = true;
+  aboutActiveTab.value = "about";
   backendVersion.value = "loading...";
   props.networkManager.requestManager
     .getBackendVersion()
@@ -696,6 +1059,7 @@ function linkFASTA(filename: string, allowMismatch = false) {
       openingFile.value = false;
       openingFASTAFile.value = false;
       errorMessage.value = null;
+      lastLinkedFastaFilename.value = filename;
       emit("fastaLinked", filename);
       response.warnings.forEach((warning) =>
         toast(warning, {
@@ -727,6 +1091,11 @@ watch(
     props.mapManager?.reloadTiles();
   }
 );
+
+onMounted(() => {
+  void refreshNativeProcessingStatus();
+  void refreshConversionToolchainStatus();
+});
 
 function onFASTAFileSelected() {
   openingFASTAFile.value = false;
@@ -832,7 +1201,7 @@ function onAssemblyAGPRequest() {
   color: var(--hict-surface-fg, #1f2937);
   border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.18));
   border-radius: 10px;
-  width: min(720px, 90vw);
+  width: min(840px, 90vw);
   max-height: 90vh;
   overflow: auto;
   box-shadow: var(--hict-surface-shadow, 0 24px 48px rgba(0, 0, 0, 0.2));
@@ -849,21 +1218,119 @@ function onAssemblyAGPRequest() {
   margin-top: 12px;
 }
 
+.about-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  border-bottom: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.18));
+}
+
+.about-tab {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--hict-surface-fg, #1f2937);
+  cursor: pointer;
+  font-weight: 600;
+  padding: 8px 12px;
+  position: relative;
+}
+
+.about-tab.active::after {
+  background: #0d6efd;
+  border-radius: 999px;
+  bottom: -1px;
+  content: "";
+  height: 3px;
+  left: 10px;
+  position: absolute;
+  right: 10px;
+}
+
 .about-authors {
+  margin-bottom: 8px;
+}
+
+.about-note {
+  color: var(--hict-surface-muted, #6b7280);
   margin-bottom: 12px;
 }
 
 .about-license {
-  background: #f8f9fa;
+  background: var(--hict-control-bg, #f8f9fa);
+  border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.12));
+  color: var(--hict-surface-fg, #1f2937);
   padding: 12px;
   border-radius: 6px;
   white-space: pre-wrap;
   font-size: 12px;
+  margin-top: 12px;
 }
 
 .about-versions {
   margin-top: 12px;
   display: grid;
   gap: 4px;
+}
+
+.attribution-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.attribution-section h3 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+.attribution-card {
+  background: var(--hict-control-bg, rgba(248, 249, 250, 0.88));
+  border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.12));
+  border-radius: 8px;
+  color: var(--hict-surface-fg, #1f2937);
+  display: grid;
+  font-size: 13px;
+  gap: 3px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+}
+
+.attribution-title {
+  font-weight: 700;
+}
+
+.attribution-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 4px;
+}
+
+.attribution-links a {
+  color: #0d6efd;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.attribution-links a:hover {
+  text-decoration: underline;
+}
+
+.attribution-notes {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.attribution-notes li {
+  margin-bottom: 6px;
+}
+
+.native-processing-status {
+  font-size: 12px;
+  line-height: 1.25;
+  margin-left: 0;
+  margin-top: 2px;
+  max-width: 260px;
+  white-space: normal;
 }
 </style>

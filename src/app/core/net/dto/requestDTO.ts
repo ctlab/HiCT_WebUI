@@ -41,6 +41,8 @@ import {
   GetSecondarySourceStatusRequest,
   SetAssemblyInfoSourceRequest,
   GetWorkerDiagnosticsRequest,
+  GetNativeProcessingStatusRequest,
+  SetNativeProcessingEnabledRequest,
   GetRenderPipelineRequest,
   SetRenderPipelineRequest,
   ResetRenderPipelineRequest,
@@ -51,6 +53,7 @@ import {
   SaveFileRequest,
   GetAGPForAssemblyRequest,
   ListCoolerFilesRequest,
+  ListConvertibleMatrixFilesRequest,
   ListTrackFilesRequest,
   ResolveMatrixSourceRequest,
   DropAllCachesRequest,
@@ -69,6 +72,9 @@ import {
   ProbeTrackPrecomputeCacheRequest,
   StartConversionJobRequest,
   StartBatchConversionJobsRequest,
+  StartDotplotJobsRequest,
+  SetDotplotAlignerPreferenceRequest,
+  ListDotplotJobsRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
   StopConversionJobRequest,
@@ -123,6 +129,16 @@ abstract class HiCTAPIRequestDTO<
         return new StartBatchConversionJobsRequestDTO(
           entity as StartBatchConversionJobsRequest
         );
+      case entity instanceof StartDotplotJobsRequest:
+        return new StartDotplotJobsRequestDTO(
+          entity as StartDotplotJobsRequest
+        );
+      case entity instanceof SetDotplotAlignerPreferenceRequest:
+        return new SetDotplotAlignerPreferenceRequestDTO(
+          entity as SetDotplotAlignerPreferenceRequest
+        );
+      case entity instanceof ListDotplotJobsRequest:
+        return new ListDotplotJobsRequestDTO(entity as ListDotplotJobsRequest);
       case entity instanceof UngroupContigsFromScaffoldRequest:
         return new UngroupContigsFromScaffoldRequestDTO(
           entity as UngroupContigsFromScaffoldRequest
@@ -149,6 +165,8 @@ abstract class HiCTAPIRequestDTO<
         return new ListFilesDetailedRequestDTO(entity);
       case entity instanceof ListCoolerFilesRequest:
         return new ListCoolerFilesRequestDTO(entity);
+      case entity instanceof ListConvertibleMatrixFilesRequest:
+        return new ListConvertibleMatrixFilesRequestDTO(entity);
       case entity instanceof ListTrackFilesRequest:
         return new ListTrackFilesRequestDTO(entity);
       case entity instanceof ResolveMatrixSourceRequest:
@@ -237,6 +255,12 @@ abstract class HiCTAPIRequestDTO<
         );
       case entity instanceof GetWorkerDiagnosticsRequest:
         return new GetWorkerDiagnosticsRequestDTO(entity);
+      case entity instanceof GetNativeProcessingStatusRequest:
+        return new GetNativeProcessingStatusRequestDTO(entity);
+      case entity instanceof SetNativeProcessingEnabledRequest:
+        return new SetNativeProcessingEnabledRequestDTO(
+          entity as SetNativeProcessingEnabledRequest
+        );
       case entity instanceof GetRenderPipelineRequest:
         return new GetRenderPipelineRequestDTO(entity);
       case entity instanceof SetRenderPipelineRequest:
@@ -308,13 +332,34 @@ abstract class HiCTAPIRequestDTO<
         );
       case "/tracks/reorder":
         return new ReorderTrackRequestDTO(entity as ReorderTrackRequest);
+      case "/list_convertible_matrices":
+        return new ListConvertibleMatrixFilesRequestDTO(
+          entity as ListConvertibleMatrixFilesRequest
+        );
+      case "/native_processing/status":
+        return new GetNativeProcessingStatusRequestDTO(
+          entity as GetNativeProcessingStatusRequest
+        );
+      case "/native_processing/enabled":
+        return new SetNativeProcessingEnabledRequestDTO(
+          entity as SetNativeProcessingEnabledRequest
+        );
       default:
+        if (!("options" in entity)) {
+          return new EmptyRequestDTO(entity);
+        }
         throw new Error(
           `Unknown HiCTAPIRequest type: ${typeof entity}, constructor ${
             entity.constructor
           } cannot be transformed to DTO class.`
         );
     }
+  }
+}
+
+class EmptyRequestDTO extends HiCTAPIRequestDTO<HiCTAPIRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
   }
 }
 
@@ -362,6 +407,20 @@ class SetAssemblyInfoSourceRequestDTO extends HiCTAPIRequestDTO<SetAssemblyInfoS
 class GetWorkerDiagnosticsRequestDTO extends HiCTAPIRequestDTO<GetWorkerDiagnosticsRequest> {
   toDTO(): Record<string, unknown> {
     return {};
+  }
+}
+
+class GetNativeProcessingStatusRequestDTO extends HiCTAPIRequestDTO<GetNativeProcessingStatusRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class SetNativeProcessingEnabledRequestDTO extends HiCTAPIRequestDTO<SetNativeProcessingEnabledRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      enabled: this.entity.options.enabled,
+    };
   }
 }
 
@@ -427,6 +486,7 @@ class StartConversionJobRequestDTO extends HiCTAPIRequestDTO<StartConversionJobR
   toDTO(): Record<string, unknown> {
     return {
       filename: this.entity.options.filename,
+      assemblyFilename: this.entity.options.assemblyFilename,
       direction: this.entity.options.direction,
       overwrite: this.entity.options.overwrite,
       resolutions: this.entity.options.resolutions,
@@ -442,6 +502,8 @@ class StartBatchConversionJobsRequestDTO extends HiCTAPIRequestDTO<StartBatchCon
   toDTO(): Record<string, unknown> {
     return {
       files: this.entity.options.files,
+      assemblyFilename: this.entity.options.assemblyFilename,
+      assemblyFilenameByFile: this.entity.options.assemblyFilenameByFile,
       parallelJobs: this.entity.options.parallelJobs,
       parallelism: this.entity.options.parallelism,
       overwrite: this.entity.options.overwrite,
@@ -450,6 +512,45 @@ class StartBatchConversionJobsRequestDTO extends HiCTAPIRequestDTO<StartBatchCon
       compressionAlgorithm: this.entity.options.compressionAlgorithm,
       chunkSize: this.entity.options.chunkSize,
     };
+  }
+}
+
+class StartDotplotJobsRequestDTO extends HiCTAPIRequestDTO<StartDotplotJobsRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      fastaFiles: this.entity.options.fastaFiles,
+      outputDirectory: this.entity.options.outputDirectory,
+      binSize: this.entity.options.binSize,
+      resolutions: this.entity.options.resolutions,
+      referenceMapFilename: this.entity.options.referenceMapFilename,
+      assemblyAgpFilename: this.entity.options.assemblyAgpFilename,
+      minimizerK: this.entity.options.minimizerK,
+      minimizerWindow: this.entity.options.minimizerWindow,
+      minChainScore: this.entity.options.minChainScore,
+      skipDiagonal: this.entity.options.skipDiagonal,
+      dropNearDiagonalBins: this.entity.options.dropNearDiagonalBins,
+      sampleBp: this.entity.options.sampleBp,
+      minAlignmentLength: this.entity.options.minAlignmentLength,
+      extraMinimap2Args: this.entity.options.extraMinimap2Args,
+      alignerPreference: this.entity.options.alignerPreference,
+      alignmentThreads: this.entity.options.alignmentThreads,
+      conversionThreads: this.entity.options.conversionThreads,
+      overwrite: this.entity.options.overwrite,
+    };
+  }
+}
+
+class SetDotplotAlignerPreferenceRequestDTO extends HiCTAPIRequestDTO<SetDotplotAlignerPreferenceRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      alignerPreference: this.entity.alignerPreference,
+    };
+  }
+}
+
+class ListDotplotJobsRequestDTO extends HiCTAPIRequestDTO<ListDotplotJobsRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
   }
 }
 
@@ -635,6 +736,12 @@ class ListCoolerFilesRequestDTO extends HiCTAPIRequestDTO<ListCoolerFilesRequest
   }
 }
 
+class ListConvertibleMatrixFilesRequestDTO extends HiCTAPIRequestDTO<ListConvertibleMatrixFilesRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
 class ListTrackFilesRequestDTO extends HiCTAPIRequestDTO<ListTrackFilesRequest> {
   toDTO(): Record<string, unknown> {
     return {};
@@ -670,6 +777,7 @@ class OpenCoolerWeightsTrackRequestDTO extends HiCTAPIRequestDTO<OpenCoolerWeigh
     return {
       name: this.entity.options.name,
       color: this.entity.options.color,
+      source: this.entity.options.source,
     };
   }
 }
@@ -698,6 +806,9 @@ class UpdateTrackRequestDTO extends HiCTAPIRequestDTO<UpdateTrackRequest> {
       renderMode: this.entity.options.renderMode,
       aggregationMode: this.entity.options.aggregationMode,
       logScale: this.entity.options.logScale,
+      rangeAuto: this.entity.options.rangeAuto,
+      rangeMin: this.entity.options.rangeMin,
+      rangeMax: this.entity.options.rangeMax,
     };
   }
 }
@@ -876,6 +987,9 @@ export {
   DropAllCachesRequestDTO,
   StartConversionJobRequestDTO,
   StartBatchConversionJobsRequestDTO,
+  StartDotplotJobsRequestDTO,
+  SetDotplotAlignerPreferenceRequestDTO,
+  ListDotplotJobsRequestDTO,
   ListConversionJobsRequestDTO,
   GetConversionJobRequestDTO,
   StopConversionJobRequestDTO,
@@ -913,4 +1027,6 @@ export {
   SetVisualizationOptionsRequestDTO,
   SetViewportExpectedProfileRequestDTO,
   GetWorkerDiagnosticsRequestDTO,
+  GetNativeProcessingStatusRequestDTO,
+  SetNativeProcessingEnabledRequestDTO,
 };

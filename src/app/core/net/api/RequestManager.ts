@@ -75,9 +75,12 @@ import {
   SetViewportExpectedProfileRequest,
   StartBatchConversionJobsRequest,
   StartConversionJobRequest,
+  StartDotplotJobsRequest,
+  ListDotplotJobsRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
   GetConversionToolchainStatusRequest,
+  SetDotplotAlignerPreferenceRequest,
   StopConversionJobRequest,
   RenameContigRequest,
   RenameScaffoldRequest,
@@ -106,6 +109,9 @@ import {
   GetTracksPrecomputeStatusRequest,
   ProbeTrackPrecomputeCacheRequest,
   GetWorkerDiagnosticsRequest,
+  GetNativeProcessingStatusRequest,
+  GetServerStatisticsRequest,
+  SetNativeProcessingEnabledRequest,
   GetRenderPipelineRequest,
   SetRenderPipelineRequest,
   ResetRenderPipelineRequest,
@@ -137,6 +143,10 @@ export type SecondarySourceCompatibility = {
   exactMatch: boolean;
   primaryMaxBins: number;
   secondaryMaxBins: number;
+  primaryResolutions: number[];
+  secondaryResolutions: number[];
+  primaryPixelResolutions: number[];
+  secondaryPixelResolutions: number[];
   primaryBinsByResolution: number[];
   secondaryBinsByResolution: number[];
   mismatchedResolutionOrders: number[];
@@ -150,6 +160,48 @@ export type SecondarySourceStatusResponse = {
   requestedFilename?: string;
   warnings: string[];
   compatibility?: SecondarySourceCompatibility;
+};
+
+export type NativeProcessingStatusResponse = {
+  requested: boolean;
+  enabled: boolean;
+  available: boolean;
+  version: string;
+  source: string;
+  reason: string;
+  lastFailure: string;
+  nativeSessionActive?: boolean;
+  nativeOperationCount?: number;
+  nativeFailedOperationCount?: number;
+  nativeHdf5BackendAvailable?: boolean;
+};
+
+export type ServerEndpointStatisticsResponse = {
+  path: string;
+  totalRequests: number;
+  requestsPerSecondLast10s: number;
+  requestsPerSecondLast60s: number;
+};
+
+export type ServerStatisticsResponse = {
+  timestampMs: number;
+  startedMs: number;
+  uptimeSeconds: number;
+  totalRequests: number;
+  inFlightRequests: number;
+  meanRequestsPerSecond: number;
+  requestsPerSecondLast10s: number;
+  requestsPerSecondLast60s: number;
+  heapUsedBytes: number;
+  heapCommittedBytes: number;
+  heapMaxBytes: number;
+  nonHeapUsedBytes: number;
+  availableProcessors: number;
+  liveThreads: number;
+  daemonThreads: number;
+  peakThreads: number;
+  endpoints: ServerEndpointStatisticsResponse[];
+  nativeProcessing: NativeProcessingStatusResponse;
 };
 
 class RequestManager {
@@ -204,6 +256,34 @@ class RequestManager {
             exactMatch: Boolean(compatibilityRaw.exactMatch ?? false),
             primaryMaxBins: Number(compatibilityRaw.primaryMaxBins ?? 0),
             secondaryMaxBins: Number(compatibilityRaw.secondaryMaxBins ?? 0),
+            primaryResolutions: Array.isArray(
+              compatibilityRaw.primaryResolutions
+            )
+              ? (compatibilityRaw.primaryResolutions as unknown[]).map(
+                  (value) => Number(value ?? 0)
+                )
+              : [],
+            secondaryResolutions: Array.isArray(
+              compatibilityRaw.secondaryResolutions
+            )
+              ? (compatibilityRaw.secondaryResolutions as unknown[]).map(
+                  (value) => Number(value ?? 0)
+                )
+              : [],
+            primaryPixelResolutions: Array.isArray(
+              compatibilityRaw.primaryPixelResolutions
+            )
+              ? (compatibilityRaw.primaryPixelResolutions as unknown[]).map(
+                  (value) => Number(value ?? 0)
+                )
+              : [],
+            secondaryPixelResolutions: Array.isArray(
+              compatibilityRaw.secondaryPixelResolutions
+            )
+              ? (compatibilityRaw.secondaryPixelResolutions as unknown[]).map(
+                  (value) => Number(value ?? 0)
+                )
+              : [],
             primaryBinsByResolution: Array.isArray(
               compatibilityRaw.primaryBinsByResolution
             )
@@ -243,6 +323,59 @@ class RequestManager {
         ? (json.warnings as unknown[]).map((value) => String(value))
         : [],
       compatibility,
+    };
+  }
+
+  private parseNativeProcessingStatus(
+    json: Record<string, unknown>
+  ): NativeProcessingStatusResponse {
+    return {
+      requested: Boolean(json.requested ?? false),
+      enabled: Boolean(json.enabled ?? false),
+      available: Boolean(json.available ?? false),
+      version: String(json.version ?? "unknown"),
+      source: String(json.source ?? ""),
+      reason: String(json.reason ?? ""),
+      lastFailure: String(json.lastFailure ?? ""),
+      nativeSessionActive: Boolean(json.nativeSessionActive ?? false),
+      nativeOperationCount: Number(json.nativeOperationCount ?? 0),
+      nativeFailedOperationCount: Number(json.nativeFailedOperationCount ?? 0),
+      nativeHdf5BackendAvailable: Boolean(json.nativeHdf5BackendAvailable ?? false),
+    };
+  }
+
+  private parseServerStatistics(
+    json: Record<string, unknown>
+  ): ServerStatisticsResponse {
+    const endpointsRaw = Array.isArray(json.endpoints)
+      ? (json.endpoints as Record<string, unknown>[])
+      : [];
+    const nativeProcessingRaw =
+      (json.nativeProcessing as Record<string, unknown> | undefined) ?? {};
+    return {
+      timestampMs: Number(json.timestampMs ?? 0),
+      startedMs: Number(json.startedMs ?? 0),
+      uptimeSeconds: Number(json.uptimeSeconds ?? 0),
+      totalRequests: Number(json.totalRequests ?? 0),
+      inFlightRequests: Number(json.inFlightRequests ?? 0),
+      meanRequestsPerSecond: Number(json.meanRequestsPerSecond ?? 0),
+      requestsPerSecondLast10s: Number(json.requestsPerSecondLast10s ?? 0),
+      requestsPerSecondLast60s: Number(json.requestsPerSecondLast60s ?? 0),
+      heapUsedBytes: Number(json.heapUsedBytes ?? 0),
+      heapCommittedBytes: Number(json.heapCommittedBytes ?? 0),
+      heapMaxBytes: Number(json.heapMaxBytes ?? 0),
+      nonHeapUsedBytes: Number(json.nonHeapUsedBytes ?? 0),
+      availableProcessors: Number(json.availableProcessors ?? 0),
+      liveThreads: Number(json.liveThreads ?? 0),
+      daemonThreads: Number(json.daemonThreads ?? 0),
+      peakThreads: Number(json.peakThreads ?? 0),
+      endpoints: endpointsRaw.map((endpoint) => ({
+        path: String(endpoint.path ?? ""),
+        totalRequests: Number(endpoint.totalRequests ?? 0),
+        requestsPerSecondLast10s: Number(endpoint.requestsPerSecondLast10s ?? 0),
+        requestsPerSecondLast60s: Number(endpoint.requestsPerSecondLast60s ?? 0),
+      })),
+      nativeProcessing: this.parseNativeProcessingStatus(nativeProcessingRaw),
     };
   }
 
@@ -457,9 +590,10 @@ class RequestManager {
 
   public async openCoolerWeightsTrack(
     name?: string,
-    color?: string
+    color?: string,
+    source?: "PRIMARY" | "SECONDARY"
   ): Promise<TrackSummaryResponse> {
-    return this.sendRequest(new OpenCoolerWeightsTrackRequest({ name, color }))
+    return this.sendRequest(new OpenCoolerWeightsTrackRequest({ name, color, source }))
       .then((response) => response.data)
       .then((json) => new TrackSummaryResponseDTO(json).toEntity());
   }
@@ -494,6 +628,9 @@ class RequestManager {
       renderMode?: string;
       aggregationMode?: string;
       logScale?: boolean;
+      rangeAuto?: boolean;
+      rangeMin?: number;
+      rangeMax?: number;
     }
   ): Promise<TrackSummaryResponse> {
     return this.sendRequest(
@@ -505,6 +642,9 @@ class RequestManager {
         renderMode: options.renderMode,
         aggregationMode: options.aggregationMode,
         logScale: options.logScale,
+        rangeAuto: options.rangeAuto,
+        rangeMin: options.rangeMin,
+        rangeMax: options.rangeMax,
       })
     )
       .then((response) => response.data)
@@ -680,6 +820,26 @@ class RequestManager {
       );
   }
 
+  public async getNativeProcessingStatus(): Promise<NativeProcessingStatusResponse> {
+    return this.sendRequest(new GetNativeProcessingStatusRequest())
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => this.parseNativeProcessingStatus(json));
+  }
+
+  public async getServerStatistics(): Promise<ServerStatisticsResponse> {
+    return this.sendRequest(new GetServerStatisticsRequest())
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => this.parseServerStatistics(json));
+  }
+
+  public async setNativeProcessingEnabled(
+    enabled: boolean
+  ): Promise<NativeProcessingStatusResponse> {
+    return this.sendRequest(new SetNativeProcessingEnabledRequest({ enabled }))
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => this.parseNativeProcessingStatus(json));
+  }
+
   public async getRenderPipelineConfig(): Promise<Record<string, unknown>> {
     return this.sendRequest(new GetRenderPipelineRequest()).then(
       (response) => response.data as Record<string, unknown>
@@ -728,6 +888,20 @@ class RequestManager {
     return this.sendRequest(request).then((response) => response.data);
   }
 
+  public async startDotplotJobs(
+    request: StartDotplotJobsRequest
+  ): Promise<{ status: string; groupId: string; jobIds: string[] }> {
+    return this.sendRequest(request).then((response) => response.data);
+  }
+
+  public async listDotplotJobs(): Promise<ConversionJobResponse[]> {
+    return this.sendRequest(new ListDotplotJobsRequest()).then((response) =>
+      (response.data as Record<string, unknown>[]).map((job) =>
+        new ConversionJobResponseDTO(job).toEntity()
+      )
+    );
+  }
+
   public async listConversionJobs(): Promise<ConversionJobResponse[]> {
     return this.sendRequest(new ListConversionJobsRequest()).then((response) =>
       (response.data as Record<string, unknown>[]).map((job) =>
@@ -754,6 +928,16 @@ class RequestManager {
     return this.sendRequest(new GetConversionToolchainStatusRequest()).then(
       (response) =>
         new ConversionToolchainStatusResponseDTO(response.data).toEntity()
+    );
+  }
+
+  public async setDotplotAlignerPreference(
+    alignerPreference: string
+  ): Promise<ConversionToolchainStatusResponse> {
+    return this.sendRequest(
+      new SetDotplotAlignerPreferenceRequest(alignerPreference)
+    ).then((response) =>
+      new ConversionToolchainStatusResponseDTO(response.data).toEntity()
     );
   }
 
@@ -875,18 +1059,24 @@ class RequestManager {
     });
   }
 
-  public async loadAGP(request: LoadAGPRequest): Promise<void> {
+  public async loadAGP(
+    request: LoadAGPRequest,
+    options: { updateAssemblyState?: boolean } = {}
+  ): Promise<AssemblyInfo> {
     return this.sendRequest(request)
       .then((response) => response.data)
       .then((json) => new AssemblyInfoDTO(json).toEntity())
       .then((asmInfo) => {
-        this.networkManager.mapManager?.contigDimensionHolder.updateContigData(
-          asmInfo.contigDescriptors
-        );
-        this.networkManager.mapManager?.scaffoldHolder.updateScaffoldData(
-          asmInfo.scaffoldDescriptors
-        );
-        this.networkManager.mapManager?.reloadVisuals();
+        if (options.updateAssemblyState !== false) {
+          this.networkManager.mapManager?.contigDimensionHolder.updateContigData(
+            asmInfo.contigDescriptors
+          );
+          this.networkManager.mapManager?.scaffoldHolder.updateScaffoldData(
+            asmInfo.scaffoldDescriptors
+          );
+          this.networkManager.mapManager?.reloadVisuals();
+        }
+        return asmInfo;
       })
       .catch((err) => {
         throw new Error("Cannot link AGP file: " + err);

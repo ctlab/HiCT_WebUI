@@ -20,13 +20,75 @@
  */
 
 import { fileURLToPath, URL } from "url";
-import { rmSync } from "fs";
 
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import vueJsx from "@vitejs/plugin-vue-jsx";
 
-// rmSync("dist", { recursive: true, force: true }); // v14.14.0
+function manualChunk(id: string): string | undefined {
+  const normalizedId = id.replace(/\\/g, "/");
+
+  if (normalizedId.includes("/node_modules/")) {
+    if (
+      normalizedId.includes("/node_modules/vue/") ||
+      normalizedId.includes("/node_modules/@vue/") ||
+      normalizedId.includes("/node_modules/pinia/")
+    ) {
+      return "vendor-vue";
+    }
+    if (normalizedId.includes("/node_modules/ol/")) {
+      return "vendor-ol";
+    }
+    if (
+      normalizedId.includes("/node_modules/jspdf/") ||
+      normalizedId.includes("/node_modules/html2canvas/")
+    ) {
+      return "vendor-export";
+    }
+    if (
+      normalizedId.includes("/node_modules/prime") ||
+      normalizedId.includes("/node_modules/bootstrap") ||
+      normalizedId.includes("/node_modules/@popperjs/")
+    ) {
+      return "vendor-ui";
+    }
+    if (
+      normalizedId.includes("/node_modules/litegraph.js/") ||
+      normalizedId.includes("/node_modules/toolcool-color-picker/") ||
+      normalizedId.includes("/node_modules/vanilla-picker/") ||
+      normalizedId.includes("/node_modules/vue-color-kit/")
+    ) {
+      return "vendor-visual-editors";
+    }
+    if (normalizedId.includes("/node_modules/igv/")) {
+      return "vendor-genome";
+    }
+    return "vendor-shared";
+  }
+
+  if (normalizedId.includes("/src/app/core/visualization/")) {
+    return "app-visualization";
+  }
+  if (normalizedId.includes("/src/app/core/tracks/") || normalizedId.includes("/src/app/ui/components/tracks/")) {
+    return "app-tracks";
+  }
+  if (normalizedId.includes("/src/app/core/net/")) {
+    return "app-api";
+  }
+  if (normalizedId.includes("/src/app/core/mapmanagers/")) {
+    return "app-mapmanagers";
+  }
+  if (normalizedId.includes("/src/app/ui/components/upper_ribbon/")) {
+    return "ui-upper-ribbon";
+  }
+  if (normalizedId.includes("/src/app/ui/components/sidebar/")) {
+    return "ui-sidebar";
+  }
+  if (normalizedId.includes("/src/app/ui/components/workspace/")) {
+    return "ui-workspace";
+  }
+  return undefined;
+}
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -77,12 +139,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       output: {
-        manualChunks: {
-          "vendor-vue": ["vue", "pinia"],
-          "vendor-ol": ["ol"],
-          "vendor-ui": ["bootstrap", "@popperjs/core", "axios"],
-          "vendor-export": ["jspdf", "html2canvas"],
-        },
+        manualChunks: manualChunk,
       },
     },
   },

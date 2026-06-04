@@ -20,15 +20,15 @@
  -->
 
 <template>
-  <p class="w-100 m-0 text-lg-center"><b>Visualization presets:</b></p>
+  <p class="w-100 m-0 text-lg-center saved-visual-title"><b>Visualization presets:</b></p>
   <div
-    class="btn-group w-100 p-2"
+    class="btn-group w-100 px-2 py-1"
     role="group"
     aria-label="Visualization presets"
   >
     <button
       type="button"
-      class="btn btn-outline-primary"
+      class="btn btn-sm btn-outline-primary"
       data-bs-toggle="tooltip"
       data-bs-placement="bottom"
       title="Save current visualization options"
@@ -38,14 +38,14 @@
     </button>
     <button
       type="button"
-      class="btn btn-outline-primary"
+      class="btn btn-sm btn-outline-primary"
       @click="exportOptions"
     >
       Export
     </button>
     <button
       type="button"
-      class="btn btn-outline-primary"
+      class="btn btn-sm btn-outline-primary"
       @click="importFileBtn?.click()"
     >
       Import
@@ -642,16 +642,17 @@ function importOptionsFromFile() {
   align-items: flex-start;
 
   /* Inside auto layout */
-  flex: none;
+  flex: 1 1 auto;
   order: 2;
-  flex-grow: 0;
-
-  height: 90%;
-  max-height: 200px;
+  min-height: 0;
   overflow-y: scroll;
   overflow-x: hidden;
   width: 100%;
   /* padding-top: 15px; */
-  padding-right: 20px;
+  padding-right: 10px;
+}
+
+.saved-visual-title {
+  font-size: 0.92rem;
 }
 </style>

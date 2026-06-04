@@ -29,11 +29,55 @@
       class="btn btn-sm btn-light dropdown-toggle"
       type="button"
       data-bs-toggle="dropdown"
+      data-bs-auto-close="false"
       aria-expanded="false"
     >
       Normalization settings
     </button>
     <ul id="normalization-dropdown-menu" class="dropdown-menu p-3">
+      <li v-if="hasTwoSources">
+        <div class="mb-2 normalization-source-block">
+          <label class="form-label small mb-1">Source selection</label>
+          <div class="normalization-source-row">
+            <div class="btn-group flex-grow-1" role="group" aria-label="Visualization source">
+              <button
+                type="button"
+                class="btn btn-sm normalization-source-button"
+                :class="{ 'is-active': activeVisualizationSource === 'PRIMARY' }"
+                :aria-pressed="activeVisualizationSource === 'PRIMARY'"
+                @click.stop.prevent="selectVisualizationSource('PRIMARY')"
+              >
+                PRIMARY
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm normalization-source-button"
+                :class="{ 'is-active': activeVisualizationSource === 'SECONDARY' }"
+                :aria-pressed="activeVisualizationSource === 'SECONDARY'"
+                @click.stop.prevent="selectVisualizationSource('SECONDARY')"
+              >
+                SECONDARY
+              </button>
+            </div>
+            <button
+              type="button"
+              class="btn btn-sm layer-swap-button"
+              :class="layersSwapped ? 'btn-secondary active' : 'btn-outline-secondary'"
+              title="Swap Layers"
+              aria-label="Swap Layers"
+              @click.stop.prevent="swapLayers"
+            >
+              <i class="bi bi-shuffle"></i>
+            </button>
+          </div>
+          <small class="text-muted d-block mt-1">
+            Applies normalization and thresholds only to the selected layer.
+          </small>
+        </div>
+      </li>
+      <li v-if="hasTwoSources">
+        <hr class="dropdown-divider" />
+      </li>
       <li>
         <div class="form-check">
           <input
@@ -209,10 +253,10 @@
       </li>
       <li>
         <div class="btn-group" role="group" id="normalization-apply-group">
-          <button type="button" class="btn btn-success" @click="applySettings">
+          <button type="button" class="btn btn-success normalization-action-apply" @click="applySettings">
             Apply
           </button>
-          <button type="button" class="btn btn-danger" @click="resetAttributes">
+          <button type="button" class="btn btn-danger normalization-action-reset" @click="resetAttributes">
             Reset
           </button>
         </div>
@@ -228,12 +272,13 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { defineAsyncComponent, onUnmounted, Ref, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, onUnmounted, Ref, ref, watch } from "vue";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import { toast } from "vue-sonner";
 import type { EventsKey } from "ol/events";
 import { unByKey } from "ol/Observable";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 const RenderingPipelineModal = defineAsyncComponent(
   () => import("./RenderingPipelineModal.vue")
 );
@@ -248,6 +293,8 @@ const {
   autoThresholdQuantile,
   colormap,
 } = storeToRefs(visualizationOptionsStore);
+const matrixViewStore = useMatrixViewStore();
+const { presentationMode, activeVisualizationSource, layersSwapped } = storeToRefs(matrixViewStore);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -261,6 +308,8 @@ const applyPostLog: Ref<boolean> = ref(true);
 const pipelineModalOpen = ref(false);
 let autoThresholdMoveEndKey: EventsKey | undefined;
 let autoThresholdTimer: number | undefined;
+
+const hasTwoSources = computed(() => presentationMode.value !== "single");
 
 // const preLogBase: Ref<number> = ref(10);
 
@@ -279,6 +328,29 @@ function resetAttributes(): void {
   applySettings();
 }
 
+function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
+  return hasTwoSources.value ? activeVisualizationSource.value : undefined;
+}
+
+function syncLocalLogFlags(): void {
+  applyPreLog.value = preLogBase.value > 0;
+  applyPostLog.value = postLogBase.value > 0;
+}
+
+async function refreshOptionsForActiveSource(): Promise<void> {
+  if (!props.mapManager) {
+    return;
+  }
+  await props.mapManager.visualizationManager
+    .loadVisualizationOptionsForSource(activeSourceForOptions())
+    .then(syncLocalLogFlags)
+    .catch(() => undefined);
+}
+
+function selectVisualizationSource(source: "PRIMARY" | "SECONDARY"): void {
+  matrixViewStore.setActiveVisualizationSource(source);
+}
+
 watch(
   () => preLogBase.value,
   (value) => {
@@ -294,11 +366,15 @@ watch(
 );
 
 function applySettings(): void {
-  props.mapManager?.visualizationManager
-    .applyVisualizationSettingsAndReload()
-    .catch((error) => {
-      toast.error(String(error ?? "Failed to apply normalization settings"));
-    });
+  const source = hasTwoSources.value ? activeVisualizationSource.value : undefined;
+  const action = source
+    ? props.mapManager?.visualizationManager.applyVisualizationSettingsForSourceAndReload(
+        source
+      )
+    : props.mapManager?.visualizationManager.applyVisualizationSettingsAndReload();
+  action?.catch((error) => {
+    toast.error(String(error ?? "Failed to apply normalization settings"));
+  });
 }
 
 function preLogCheckChange() {
@@ -329,6 +405,21 @@ function openRenderingPipeline(): void {
   pipelineModalOpen.value = true;
 }
 
+function swapLayers(): void {
+  props.mapManager?.visualizationManager
+    .swapRenderPipelineLayersAndReload()
+    .then((swapped) => {
+      if (!swapped) {
+        toast("No active two-layer rendering pipeline to swap");
+        return;
+      }
+      matrixViewStore.toggleLayersSwapped();
+    })
+    .catch((error) => {
+      toast.error(String(error ?? "Failed to swap rendering layers"));
+    });
+}
+
 function clearAutoThresholdTimer(): void {
   if (autoThresholdTimer !== undefined) {
     window.clearTimeout(autoThresholdTimer);
@@ -343,7 +434,9 @@ function scheduleAutoThresholdRefresh(): void {
   }
   autoThresholdTimer = window.setTimeout(() => {
     props.mapManager?.visualizationManager
-      .refreshAutoThresholdAndReload()
+      .refreshAutoThresholdAndReload(
+        hasTwoSources.value ? activeVisualizationSource.value : undefined
+      )
       .catch(() => undefined);
   }, 180);
 }
@@ -388,6 +481,29 @@ watch(
   }
 );
 
+watch(
+  () => activeVisualizationSource.value,
+  () => {
+    void refreshOptionsForActiveSource();
+    if (autoThresholdEnabled.value) {
+      scheduleAutoThresholdRefresh();
+    }
+  }
+);
+
+watch(
+  () => [props.mapManager, presentationMode.value] as const,
+  () => {
+    void refreshOptionsForActiveSource();
+  },
+  { immediate: true }
+);
+
+onMounted(() => {
+  syncLocalLogFlags();
+  void refreshOptionsForActiveSource();
+});
+
 onUnmounted(() => {
   detachAutoThresholdMoveListener();
   clearAutoThresholdTimer();
@@ -396,15 +512,78 @@ onUnmounted(() => {
 
 <style scoped>
 #normalization-dropdown-menu {
-  white-space: nowrap;
+  min-width: min(34rem, calc(100vw - 2rem));
+  max-width: min(36rem, calc(100vw - 2rem));
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .number-input {
-  width: 100px;
+  width: 7.25rem;
   float: right;
 }
 
 #normalization-apply-group {
   width: 100%;
+}
+
+.normalization-source-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.normalization-source-button {
+  color: #0d6efd !important;
+  background: #ffffff !important;
+  border-color: #0d6efd !important;
+  text-shadow:
+    -1px -1px 0 rgba(255, 255, 255, 0.9),
+    1px -1px 0 rgba(255, 255, 255, 0.9),
+    -1px 1px 0 rgba(255, 255, 255, 0.9),
+    1px 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.normalization-source-button.is-active {
+  color: #ffffff !important;
+  background: #0d6efd !important;
+  border-color: #0d6efd !important;
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.65),
+    1px -1px 0 rgba(0, 0, 0, 0.65),
+    -1px 1px 0 rgba(0, 0, 0, 0.65),
+    1px 1px 0 rgba(0, 0, 0, 0.65);
+}
+
+.layer-swap-button {
+  width: 2.35rem;
+  min-width: 2.35rem;
+  border-radius: 0.55rem;
+}
+
+.layer-swap-button.active {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.normalization-action-apply {
+  color: #ffffff !important;
+  background: #198754 !important;
+  border-color: #198754 !important;
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.7),
+    1px -1px 0 rgba(0, 0, 0, 0.7),
+    -1px 1px 0 rgba(0, 0, 0, 0.7),
+    1px 1px 0 rgba(0, 0, 0, 0.7);
+}
+
+.normalization-action-reset {
+  color: #ffffff !important;
+  background: #dc3545 !important;
+  border-color: #dc3545 !important;
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.7),
+    1px -1px 0 rgba(0, 0, 0, 0.7),
+    -1px 1px 0 rgba(0, 0, 0, 0.7),
+    1px 1px 0 rgba(0, 0, 0, 0.7);
 }
 </style>

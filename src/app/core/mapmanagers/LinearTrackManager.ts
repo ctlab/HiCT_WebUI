@@ -242,9 +242,14 @@ class LinearTrackManager {
     await this.refreshTrackList();
   }
 
-  public async openCoolerWeightsTrack(name?: string): Promise<void> {
+  public async openCoolerWeightsTrack(
+    name?: string,
+    source: "PRIMARY" | "SECONDARY" = "PRIMARY"
+  ): Promise<void> {
     await this.mapManager.networkManager.requestManager.openCoolerWeightsTrack(
-      name
+      name,
+      undefined,
+      source
     );
     await this.refreshTrackList();
   }
@@ -274,6 +279,9 @@ class LinearTrackManager {
       renderMode?: string;
       aggregationMode?: string;
       logScale?: boolean;
+      rangeAuto?: boolean;
+      rangeMin?: number;
+      rangeMax?: number;
     }
   ): Promise<void> {
     await this.mapManager.networkManager.requestManager.updateTrack(
@@ -437,6 +445,15 @@ class LinearTrackManager {
     axisOffsetPx: number,
     crossOffsetPx: number
   ): FeatureHoverInfo | null {
+    const hit = this.getTrackHoverAt(orientation, axisOffsetPx, crossOffsetPx);
+    return hit?.kind === "feature" ? hit : null;
+  }
+
+  public getTrackHoverAt(
+    orientation: Orientation,
+    axisOffsetPx: number,
+    crossOffsetPx: number
+  ): TrackHoverInfo | null {
     const snapshot = this.lastRenderedSnapshot[orientation];
     if (!snapshot || snapshot.tracks.length === 0) {
       return null;
@@ -453,14 +470,12 @@ class LinearTrackManager {
       return null;
     }
     const track = snapshot.tracks[laneIndex];
-    if ((track.renderStyle ?? "SIGNAL").toUpperCase() !== "FEATURE") {
-      return null;
-    }
     const laneStart = laneIndex * laneSize;
     const laneEnd = laneStart + laneSize;
     if (crossOffsetPx < laneStart || crossOffsetPx > laneEnd) {
       return null;
     }
+    const renderStyle = (track.renderStyle ?? "SIGNAL").toUpperCase();
     for (const bin of track.bins) {
       const interval = this.resolveBinIntervalPx(bin, snapshot.viewport.bpResolution);
       if (!interval.visible) {
@@ -477,9 +492,24 @@ class LinearTrackManager {
       if (axisOffsetPx < start || axisOffsetPx > end) {
         continue;
       }
+      if (renderStyle !== "FEATURE") {
+        return {
+          kind: "signal",
+          trackId: track.trackId,
+          trackName: track.name,
+          trackType: track.type,
+          startBp: Math.min(bin.startBp, bin.endBp),
+          endBp: Math.max(bin.startBp, bin.endBp),
+          startPx: interval.startPx,
+          endPx: interval.endPx,
+          value: Number.isFinite(bin.value) ? bin.value : 0,
+          count: bin.count,
+        };
+      }
       const label = (bin.label ?? "").trim();
       const featureType = (bin.featureType ?? "").trim();
       return {
+        kind: "feature",
         trackId: track.trackId,
         trackName: track.name,
         label: label.length > 0 ? label : null,
@@ -487,7 +517,10 @@ class LinearTrackManager {
         strand: bin.strand,
         startBp: Math.min(bin.startBp, bin.endBp),
         endBp: Math.max(bin.startBp, bin.endBp),
+        startPx: interval.startPx,
+        endPx: interval.endPx,
         value: bin.value,
+        attributes: bin.attributes,
       };
     }
     return null;
@@ -560,9 +593,10 @@ class LinearTrackManager {
         : this.mapManager.getLayersManager().currentViewState.resolutionDesciptor
             .bpResolution;
     const finestPixelResolution =
-      this.mapManager.getLayersManager().resolutionToPixelResolution.get(
-        safeFinestBpResolution
-      ) ?? currentResolution;
+      this.mapManager
+        .getLayersManager()
+        .getPixelResolutionForBpResolution(safeFinestBpResolution) ??
+      currentResolution;
     const targetSpanPx = Math.max(180, Math.min(mapSize[0], mapSize[1]) * 0.52);
     const spanPxAtFinest = spanBp / Math.max(1, safeFinestBpResolution);
     const minViewResolution = view.getMinResolution() ?? 0;
@@ -752,6 +786,9 @@ class LinearTrackManager {
     }
 
     const viewport = this.getViewportGeometry(orientation);
+    if (!viewport) {
+      return;
+    }
     const cacheEpoch = this.cacheEpoch;
     try {
       const prefetch = this.buildPrefetchViewport(viewport);
@@ -927,11 +964,16 @@ class LinearTrackManager {
       const useLogScale =
         renderStyle === "SIGNAL" && !!trackSummary?.logScale;
       const logBase = this.getTrackLogBase(track.trackId);
-      const maxValue =
+      const signalRange =
         renderStyle === "SIGNAL"
-          ? this.getVisibleSignalMax(track.bins, viewport, bpResolution)
-          : Math.max(track.maxValue, 0);
-      const scaleTransform = this.buildScaleTransform(maxValue, useLogScale, logBase);
+          ? this.resolveSignalRange(trackSummary, track.bins, viewport, bpResolution)
+          : { min: 0, max: Math.max(track.maxValue, 0) };
+      const scaleTransform = this.buildScaleTransform(
+        signalRange.min,
+        signalRange.max,
+        useLogScale,
+        logBase
+      );
       const binsToRender =
         renderStyle === "FEATURE"
           ? this.sortFeatureBinsForDraw(track.bins)
@@ -1717,6 +1759,27 @@ class LinearTrackManager {
     return maxValue;
   }
 
+  private resolveSignalRange(
+    trackSummary: TrackSummaryResponse | undefined,
+    bins: TrackBinResponse[],
+    viewport: ViewportGeometry,
+    bpResolution: number
+  ): { min: number; max: number } {
+    if (
+      trackSummary &&
+      trackSummary.rangeAuto === false &&
+      Number.isFinite(trackSummary.rangeMin) &&
+      Number.isFinite(trackSummary.rangeMax) &&
+      trackSummary.rangeMax > trackSummary.rangeMin
+    ) {
+      return { min: trackSummary.rangeMin, max: trackSummary.rangeMax };
+    }
+    return {
+      min: 0,
+      max: this.getVisibleSignalMax(bins, viewport, bpResolution),
+    };
+  }
+
   private resolveBinIntervalPx(
     bin: TrackBinResponse,
     bpResolution: number
@@ -1755,13 +1818,16 @@ class LinearTrackManager {
   }
 
   private formatScaleValue(value: number): string {
-    if (!Number.isFinite(value) || value <= 0) {
+    if (!Number.isFinite(value)) {
+      return "n/a";
+    }
+    if (value === 0) {
       return "0";
     }
-    if (value >= 1000 || value < 0.01) {
+    if (Math.abs(value) >= 1000 || Math.abs(value) < 0.01) {
       return value.toExponential(2);
     }
-    if (value >= 10) {
+    if (Math.abs(value) >= 10) {
       return value.toFixed(1);
     }
     return value.toFixed(3);
@@ -1776,39 +1842,48 @@ class LinearTrackManager {
   }
 
   private buildScaleTransform(
+    minValue: number,
     maxValue: number,
     logScale: boolean,
     logBase: number
   ): SignalScaleTransform {
+    const safeMin = Number.isFinite(minValue) ? minValue : 0;
     const safeMax =
-      Number.isFinite(maxValue) && maxValue > 0 ? maxValue : 1;
+      Number.isFinite(maxValue) && maxValue > safeMin ? maxValue : safeMin + 1;
+    const span = Math.max(Number.EPSILON, safeMax - safeMin);
     if (!logScale) {
       return {
         logScale: false,
+        minValue: safeMin,
         maxValue: safeMax,
         logBase: 10,
-        display: (value: number) => (Number.isFinite(value) ? Math.max(0, value) : 0),
+        display: (value: number) => (Number.isFinite(value) ? value : safeMin),
         normalize: (value: number) =>
-          Math.max(0, Math.min(1, (Number.isFinite(value) ? value : 0) / safeMax)),
+          Math.max(
+            0,
+            Math.min(1, ((Number.isFinite(value) ? value : safeMin) - safeMin) / span)
+          ),
       };
     }
     const safeBase = Number.isFinite(logBase) && logBase > 1 ? logBase : 10;
     const logDenominator = Math.log(safeBase);
-    const toLog = (value: number): number => Math.log1p(Math.max(0, value)) / logDenominator;
+    const toLog = (value: number): number =>
+      Math.log1p(Math.max(0, value - safeMin)) / logDenominator;
     const maxLog = toLog(safeMax);
     const safeMaxLog = Number.isFinite(maxLog) && maxLog > 0 ? maxLog : 1;
     return {
       logScale: true,
+      minValue: safeMin,
       maxValue: safeMax,
       logBase: safeBase,
       display: (value: number) => {
-        if (!Number.isFinite(value) || value <= 0) {
-          return 0;
+        if (!Number.isFinite(value)) {
+          return safeMin;
         }
-        return toLog(value);
+        return value;
       },
       normalize: (value: number) => {
-        if (!Number.isFinite(value) || value <= 0) {
+        if (!Number.isFinite(value) || value <= safeMin) {
           return 0;
         }
         return Math.max(0, Math.min(1, toLog(value) / safeMaxLog));
@@ -2020,14 +2095,15 @@ class LinearTrackManager {
     pixelSpan: number
   ): number[] {
     const maxTickCount = Math.max(2, Math.min(7, Math.floor(pixelSpan / 16)));
-    const maxValue = Math.max(scale.maxValue, 0);
-    if (!Number.isFinite(maxValue) || maxValue <= 0) {
-      return [0];
+    const minValue = Number.isFinite(scale.minValue) ? scale.minValue : 0;
+    const maxValue = Number.isFinite(scale.maxValue) ? scale.maxValue : minValue + 1;
+    if (!Number.isFinite(maxValue) || maxValue <= minValue) {
+      return [minValue];
     }
     if (!scale.logScale) {
-      const step = this.niceStep(maxValue / Math.max(1, maxTickCount - 1));
-      const ticks: number[] = [0];
-      for (let value = step; value < maxValue; value += step) {
+      const step = this.niceStep((maxValue - minValue) / Math.max(1, maxTickCount - 1));
+      const ticks: number[] = [minValue];
+      for (let value = minValue + step; value < maxValue; value += step) {
         ticks.push(value);
       }
       ticks.push(maxValue);
@@ -2035,11 +2111,11 @@ class LinearTrackManager {
     }
     const safeBase =
       Number.isFinite(scale.logBase) && scale.logBase > 1 ? scale.logBase : 10;
-    const maxLog = Math.log1p(maxValue) / Math.log(safeBase);
+    const maxLog = Math.log1p(maxValue - minValue) / Math.log(safeBase);
     const stepLog = maxLog / Math.max(1, maxTickCount - 1);
-    const ticks: number[] = [];
+    const ticks: number[] = [minValue];
     for (let i = 0; i < maxTickCount; i++) {
-      ticks.push(Math.max(0, Math.pow(safeBase, i * stepLog) - 1));
+      ticks.push(minValue + Math.max(0, Math.pow(safeBase, i * stepLog) - 1));
     }
     ticks.push(maxValue);
     return this.uniqueSortedTicks(ticks);
@@ -2063,19 +2139,30 @@ class LinearTrackManager {
     return multiplier * base;
   }
 
-  private getViewportGeometry(orientation: Orientation): ViewportGeometry {
+  private getViewportGeometry(orientation: Orientation): ViewportGeometry | null {
     const descriptor =
       this.mapManager.getLayersManager().currentViewState.resolutionDesciptor;
     const bpResolution = descriptor.bpResolution;
     const map = this.mapManager.getMap();
     const view = this.mapManager.getView();
     const mapSize = map.getSize();
+    const center = view.getCenter();
+    const pixelResolution = view.getResolution();
+    if (
+      !mapSize ||
+      !center ||
+      center.length < 2 ||
+      !center.every((value) => Number.isFinite(value)) ||
+      pixelResolution === undefined ||
+      !Number.isFinite(pixelResolution)
+    ) {
+      return null;
+    }
     const extent = view.calculateExtent(mapSize);
     const activeHiCLayer =
       this.mapManager.getLayersManager().getActiveHiCDataLayer();
     const targetProjection =
       activeHiCLayer.getSource()?.getProjection() ?? view.getProjection();
-    const pixelResolution = view.getResolution() ?? 1;
     const layerPixelResolution = Number.isFinite(descriptor.pixelResolution)
       ? descriptor.pixelResolution
       : 1;
@@ -2398,6 +2485,7 @@ type TrackQueryCache = {
 
 type SignalScaleTransform = {
   logScale: boolean;
+  minValue: number;
   maxValue: number;
   logBase: number;
   display: (value: number) => number;
@@ -2417,6 +2505,7 @@ type FeatureSearchEntry = {
 };
 
 type FeatureHoverInfo = {
+  kind: "feature";
   trackId: string;
   trackName: string;
   label: string | null;
@@ -2424,8 +2513,26 @@ type FeatureHoverInfo = {
   strand: string | null;
   startBp: number;
   endBp: number;
+  startPx: number;
+  endPx: number;
   value: number;
+  attributes: Record<string, string>;
 };
+
+type SignalHoverInfo = {
+  kind: "signal";
+  trackId: string;
+  trackName: string;
+  trackType: string;
+  startBp: number;
+  endBp: number;
+  startPx: number;
+  endPx: number;
+  value: number;
+  count: number;
+};
+
+type TrackHoverInfo = FeatureHoverInfo | SignalHoverInfo;
 
 type SelectedTrackFeature = {
   trackId: string;

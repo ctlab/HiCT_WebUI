@@ -30,7 +30,7 @@
         name="btnradio"
         type="radio"
         :checked="activeTab === 'bookmarks'"
-        @change="activeTab = 'bookmarks'"
+        @change="setActiveTab('bookmarks')"
       />
       <label class="btn btn-outline-primary" for="bookmarks-btn">
         Bookmarks
@@ -43,7 +43,7 @@
         name="btnradio"
         type="radio"
         :checked="activeTab === 'contigs'"
-        @change="activeTab = 'contigs'"
+        @change="setActiveTab('contigs')"
       />
       <label class="btn btn-outline-primary" for="contigs-btn">Contigs</label>
 
@@ -54,7 +54,7 @@
         name="btnradio"
         type="radio"
         :checked="activeTab === 'scaffolds'"
-        @change="activeTab = 'scaffolds'"
+        @change="setActiveTab('scaffolds')"
       />
       <label class="btn btn-outline-primary" for="scaffolds-btn">
         Scaffolds
@@ -228,6 +228,7 @@ const props = defineProps<{
 }>();
 
 const activeTab = ref<"bookmarks" | "contigs" | "scaffolds">("bookmarks");
+const tabSelectedByUser = ref(false);
 
 const savedLocations: Ref<
   Map<
@@ -293,6 +294,14 @@ function refreshAssemblyLists(): void {
       scaffoldList.value.some((sc) => sc.scaffoldId === id)
     )
   );
+  if (!tabSelectedByUser.value) {
+    activeTab.value = scaffoldList.value.length > 0 ? "scaffolds" : "contigs";
+  }
+}
+
+function setActiveTab(tab: "bookmarks" | "contigs" | "scaffolds"): void {
+  tabSelectedByUser.value = true;
+  activeTab.value = tab;
 }
 
 watch(activeTab, () => {
@@ -644,7 +653,8 @@ function importNames(event: Event): void {
 
 .list-panel {
   padding: 8px 16px;
-  max-height: 320px;
+  min-height: 0;
+  flex: 1 1 auto;
   overflow: auto;
 }
 

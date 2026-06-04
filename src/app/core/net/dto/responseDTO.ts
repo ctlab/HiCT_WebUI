@@ -131,6 +131,15 @@ class ConversionToolchainStatusResponseDTO extends InboundDTO<ConversionToolchai
       Boolean(this.json["hicConversionAvailable"] ?? false),
       Boolean(this.json["hictkAvailable"] ?? false),
       (this.json["hictkCommand"] as string) ?? null,
+      Boolean(this.json["minimap2Available"] ?? false),
+      (this.json["minimap2Command"] as string) ?? null,
+      Boolean(this.json["mm2PlusAvx2Available"] ?? false),
+      (this.json["mm2PlusAvx2Command"] as string) ?? null,
+      Boolean(this.json["mm2PlusAvx512Available"] ?? false),
+      (this.json["mm2PlusAvx512Command"] as string) ?? null,
+      (this.json["dotplotAlignerPreference"] as string) ?? "auto",
+      (this.json["selectedDotplotAligner"] as string) ?? "none",
+      (this.json["selectedDotplotAlignerCommand"] as string) ?? null,
       Boolean(this.json["coolerAvailable"] ?? false),
       (this.json["coolerCommand"] as string) ?? null,
       Boolean(this.json["pythonAvailable"] ?? false),
@@ -173,7 +182,10 @@ class TrackSummaryResponseDTO extends InboundDTO<TrackSummaryResponse> {
       (this.json["renderStyle"] as string) ?? "SIGNAL",
       (this.json["renderMode"] as string) ?? "COVERAGE",
       (this.json["aggregationMode"] as string) ?? "MAX",
-      (this.json["logScale"] as boolean) ?? false
+      (this.json["logScale"] as boolean) ?? false,
+      (this.json["rangeAuto"] as boolean) ?? true,
+      Number(this.json["rangeMin"] ?? 0),
+      Number(this.json["rangeMax"] ?? 1)
     );
   }
 }
@@ -196,7 +208,21 @@ class TrackBinResponseDTO extends InboundDTO<TrackBinResponse> {
       (this.json["featureType"] as string) ?? null,
       ((this.json["blocks"] as Record<string, unknown>[]) ?? []).map(
         (block) => new TrackBinBlockResponseDTO(block).toEntity()
-      )
+      ),
+      this.parseAttributes(this.json["attributes"])
+    );
+  }
+
+  private parseAttributes(value: unknown): Record<string, string> {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter((entry): entry is [string, string | number | boolean] =>
+          ["string", "number", "boolean"].includes(typeof entry[1])
+        )
+        .map(([key, rawValue]) => [key, String(rawValue)])
     );
   }
 }

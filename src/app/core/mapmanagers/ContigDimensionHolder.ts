@@ -63,6 +63,59 @@ export default class ContigDimensionHolder {
     console.log("Contig dimension holder: ", this);
   }
 
+  public ensureResolution(resolution: number): void {
+    if (!Number.isFinite(resolution) || resolution <= 0) {
+      return;
+    }
+    if (!this.resolutions.includes(resolution)) {
+      this.resolutions.push(resolution);
+      this.resolutions.sort((a, b) => a - b);
+    }
+    for (const descriptor of this.contigDescriptors) {
+      if (!descriptor.contigLengthBins.has(resolution)) {
+        descriptor.contigLengthBins.set(
+          resolution,
+          Math.max(1, Math.ceil(descriptor.contigLengthBp / resolution))
+        );
+      }
+      if (!descriptor.presenceAtResolution.has(resolution)) {
+        descriptor.presenceAtResolution.set(
+          resolution,
+          this.inferPresenceAtResolution(descriptor, resolution)
+        );
+      }
+    }
+    this.updatePrefixSumBins();
+    this.updatePrefixSumPixels();
+  }
+
+  private inferPresenceAtResolution(
+    descriptor: ContigDescriptor,
+    resolution: number
+  ): ContigHideType {
+    let bestResolution: number | undefined = undefined;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    descriptor.presenceAtResolution.forEach((_hideType, candidate) => {
+      if (!Number.isFinite(candidate) || candidate <= 0) {
+        return;
+      }
+      const distance = Math.abs(Math.log(candidate / resolution));
+      if (
+        distance < bestDistance ||
+        (distance === bestDistance &&
+          (bestResolution === undefined || candidate < bestResolution))
+      ) {
+        bestResolution = candidate;
+        bestDistance = distance;
+      }
+    });
+
+    return bestResolution === undefined
+      ? ContigHideType.AUTO_SHOWN
+      : descriptor.presenceAtResolution.get(bestResolution) ??
+          ContigHideType.AUTO_SHOWN;
+  }
+
   prefix_sum_bp: number[] = [];
   prefix_sum_bins: Map<number, number[]> = new Map<number, number[]>();
   prefix_sum_px: Map<number, number[]> = new Map<number, number[]>();
@@ -478,6 +531,39 @@ export default class ContigDimensionHolder {
   public getContigNameByPx(px: number, resolution: number): string {
     const contig_ord = this.getContigOrderByPx(px, resolution);
     return this.contigDescriptors[contig_ord].contigName;
+  }
+
+  public getContigLocusByBp(bp: number): {
+    contigId: number;
+    contigName: string;
+    inContigBp: number;
+    contigLengthBp: number;
+  } {
+    const contigOrd = this.getContigOrderByBp_internal(bp);
+    const descriptor = this.contigDescriptors[contigOrd];
+    const contigStartBp = this.prefix_sum_bp[contigOrd];
+    return {
+      contigId: descriptor.contigId,
+      contigName: descriptor.contigName,
+      inContigBp: CommonUtils.clamp(
+        bp - contigStartBp,
+        0,
+        Math.max(0, descriptor.contigLengthBp - 1)
+      ),
+      contigLengthBp: descriptor.contigLengthBp,
+    };
+  }
+
+  public getContigLocusByPx(
+    px: number,
+    resolution: number
+  ): {
+    contigId: number;
+    contigName: string;
+    inContigBp: number;
+    contigLengthBp: number;
+  } {
+    return this.getContigLocusByBp(this.getStartBpOfPx(px, resolution));
   }
 
   public isBpVisibleAtResolution(bp: number, resolution: number): boolean {

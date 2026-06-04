@@ -24,14 +24,14 @@
     <div class="input-group">
       <input
         type="text"
-        class="form-control m-0"
+        class="form-control form-control-sm m-0"
         placeholder="Preset name"
         aria-label="Name of visualization preset"
         v-model="name"
         @change="() => (showRenameButton = true)"
       />
       <button
-        class="btn btn-outline-success"
+        class="btn btn-sm btn-outline-success"
         type="button"
         title="Rename preset"
         data-bs-toggle="tooltip"
@@ -42,7 +42,7 @@
         <i class="bi bi-check-square-fill"></i>
       </button>
       <button
-        class="btn btn-outline-primary"
+        class="btn btn-sm btn-outline-primary"
         type="button"
         title="Load visualization preset"
         data-bs-toggle="tooltip"
@@ -52,7 +52,7 @@
         <i class="bi bi-brush"></i>
       </button>
       <button
-        class="btn btn-outline-danger"
+        class="btn btn-sm btn-outline-danger"
         type="button"
         title="Remove visualization preset"
         data-bs-toggle="tooltip"
@@ -74,6 +74,7 @@ import { storeToRefs } from "pinia";
 import { useStyleStore } from "@/app/stores/styleStore";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import { ColorTranslator } from "colortranslator";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
@@ -82,6 +83,8 @@ const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
 
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
+const matrixViewStore = useMatrixViewStore();
+const { presentationMode, activeVisualizationSource } = storeToRefs(matrixViewStore);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -133,9 +136,20 @@ function setOptionsPreset() {
     if (props.trackStyles) {
       props.mapManager.getLayersManager().applyTrackStylePreset(props.trackStyles);
     }
-    props.mapManager?.visualizationManager
-      .sendVisualizationOptionsToServer()
-      .then(() => props.mapManager?.reloadTiles());
+    const source =
+      presentationMode.value === "single" ? undefined : activeVisualizationSource.value;
+    const action = source
+      ? props.mapManager?.visualizationManager.applyVisualizationSettingsForSourceAndReload(
+          source
+        )
+      : props.mapManager
+        ? props.mapManager.visualizationManager
+            .sendVisualizationOptionsToServer()
+            .then(() => props.mapManager?.reloadTiles())
+        : undefined;
+    action?.catch((error) => {
+      console.error("Failed to apply visualization preset", error);
+    });
   }
 }
 
@@ -157,9 +171,9 @@ function renamePreset() {
   /* gap: 20px; */
 
   width: 100%;
-  height: 40px;
-  margin-left: 10px;
-  margin-right: 10px;
+  height: 32px;
+  margin-left: 8px;
+  margin-right: 8px;
 
   /* Inside auto layout */
   flex: none;

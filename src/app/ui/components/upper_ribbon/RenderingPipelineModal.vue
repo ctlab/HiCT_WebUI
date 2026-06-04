@@ -545,7 +545,7 @@ const buildDotplotOverlayPreset = (): {
   lowerExpression: PipelineExpression;
 } => {
   const darkBackground = styleStore.mapBackgroundColor.L <= 55;
-  const top = buildColorExpressionFromVisualizationOptions("PRIMARY", {
+  const bottom = buildColorExpressionFromVisualizationOptions("PRIMARY", {
     preLogBase: -1,
     postLogBase: -1,
     applyCoolerWeights: true,
@@ -556,7 +556,7 @@ const buildDotplotOverlayPreset = (): {
     minSignal: 0,
     maxSignal: 0.003,
   });
-  const bottom = buildColorExpressionFromVisualizationOptions("SECONDARY", {
+  const top = buildColorExpressionFromVisualizationOptions("SECONDARY", {
     preLogBase: -1,
     postLogBase: -1,
     applyCoolerWeights: false,

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "HiCT Browser",
+  "version": "0.1.1",
+  "identifier": "ru.itmo.ctlab.hict.browser",
+  "build": {
+    "beforeBuildCommand": "",
+    "beforeDevCommand": "",
+    "devUrl": "http://127.0.0.1:8080",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": []
+  },
+  "bundle": {
+    "active": false,
+    "category": "Science",
+    "icon": [
+      "../public/favicon.ico"
+    ],
+    "targets": "all"
+  }
+}

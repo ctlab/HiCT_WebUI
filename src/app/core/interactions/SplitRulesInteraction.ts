@@ -33,7 +33,8 @@ import { Coordinate } from "ol/coordinate";
 import MapBrowserEventType from "ol/MapBrowserEventType";
 import CommonUtils from "@/CommonUtils";
 import TileLayer from "ol/layer/Tile";
-import { transform } from "ol/proj";
+import type { LayerResolutionDescriptor } from "../mapmanagers/resolutionModel";
+import type { VersionedXYZContactMapSource } from "../VersionedXYZSource";
 
 interface Options extends PIOpts {
   mapManager: ContactMapManager;
@@ -80,6 +81,84 @@ class SplitRulesInteraction extends PointerInteraction {
     this.ruleFeatures = [undefined, undefined];
   }
 
+  private getHoveredDataLayer(
+    pixel: Pixel
+  ): TileLayer<VersionedXYZContactMapSource> | undefined {
+    const layers =
+      this.options.mapManager.viewAndLayersManager.layersHolder.hicDataLayers.filter(
+        (layer) => layer.getData(pixel)
+      );
+
+    return layers
+      .filter(
+        (layer): layer is TileLayer<VersionedXYZContactMapSource> =>
+          layer instanceof TileLayer
+      )
+      .sort(
+        (left, right) => (right.getZIndex() ?? 0) - (left.getZIndex() ?? 0)
+      )[0];
+  }
+
+  private getLayerResolutionDescriptor(
+    layer: TileLayer<VersionedXYZContactMapSource> | undefined
+  ): LayerResolutionDescriptor | undefined {
+    if (!layer) {
+      return undefined;
+    }
+    const bpResolution = Number(layer.get("bpResolution"));
+    const pixelResolution = Number(layer.get("pixelResolution"));
+    if (!Number.isFinite(bpResolution) || !Number.isFinite(pixelResolution)) {
+      return undefined;
+    }
+    return {
+      sourceName:
+        layer.get("sourceName") === "SECONDARY" ? "SECONDARY" : "PRIMARY",
+      bpResolution,
+      pixelResolution,
+      layerResolutionBorders: {
+        minResolutionInclusive: Number.NEGATIVE_INFINITY,
+        maxResolutionExclusive: Number.POSITIVE_INFINITY,
+      },
+      imageSizeIndex: 0,
+    };
+  }
+
+  private getGuidanceResolutionDescriptor(
+    fallback?: LayerResolutionDescriptor
+  ): LayerResolutionDescriptor {
+    const layersManager = this.mapManager.viewAndLayersManager;
+    const viewResolution = this.getMap()?.getView().getResolution();
+    if (Number.isFinite(viewResolution)) {
+      return layersManager.getGuidanceResolutionDescriptorForViewResolution(
+        viewResolution as number
+      );
+    }
+    return layersManager.ensureGuidanceResolutionDescriptor(fallback);
+  }
+
+  private getDimensionHolderForDescriptor(
+    descriptor: LayerResolutionDescriptor
+  ) {
+    return this.mapManager.viewAndLayersManager.getDimensionHolderForSource(
+      descriptor.sourceName
+    );
+  }
+
+  private coordinateToPxAtResolution(
+    coordinate: Coordinate,
+    descriptor: LayerResolutionDescriptor
+  ): Coordinate {
+    const fixedCoordinates = coordinate.map((value) =>
+      Math.ceil(value / descriptor.pixelResolution)
+    );
+    return this.getDimensionHolderForDescriptor(
+      descriptor
+    ).clampPxCoordinatesAtResolution(
+      [Math.floor(fixedCoordinates[0]), -Math.floor(fixedCoordinates[1])],
+      descriptor.bpResolution
+    ) as Coordinate;
+  }
+
   protected handlePointerMove(mapBrowserEvent: MapBrowserEvent<UIEvent>): void {
     const pixel = mapBrowserEvent.pixel;
 
@@ -91,51 +170,9 @@ class SplitRulesInteraction extends PointerInteraction {
     if (!coordinate) {
       return;
     }
-
-    const layers =
-      this.options.mapManager.viewAndLayersManager.layersHolder.hicDataLayers.filter(
-        (l) => l.getData(pixel)
-      );
-
-    const hovered_layer =
-      layers.length === 0
-        ? null
-        : layers
-            .filter((l) => l instanceof TileLayer)
-            .sort((l1, l2) => (l1.getZIndex() ?? 0) - (l2.getZIndex() ?? 0))[0];
-    if (!hovered_layer) {
+    if (!this.getHoveredDataLayer(pixel)) {
       return;
     }
-    const layer_projection = hovered_layer.getSource()?.getProjection();
-    if (!layer_projection) {
-      return;
-    }
-    const pixelResolution = hovered_layer.get("pixelResolution");
-    const fixed_coordinates = transform(
-      coordinate,
-      map.getView().getProjection(),
-      layer_projection
-    ).map((c) => Math.ceil(c / pixelResolution));
-    const bpResolutionString = hovered_layer.get("bpResolution");
-    const bpResolution = Number(bpResolutionString);
-    const int_coordinates_px =
-      this.mapManager.contigDimensionHolder.clampPxCoordinatesAtResolution(
-        [Math.floor(fixed_coordinates[0]), -Math.floor(fixed_coordinates[1])],
-        bpResolution
-      );
-
-    const coordinateFromPixel = this.getMap()?.getCoordinateFromPixelInternal(
-      mapBrowserEvent.pixel
-    ) ?? [0, 0];
-
-    console.log(
-      "pixel:",
-      mapBrowserEvent.pixel,
-      "coordinateFromPixel:",
-      coordinateFromPixel,
-      "fixed integer coordinates:",
-      int_coordinates_px
-    );
 
     this.createOrUpdateRules(pixel);
   }
@@ -151,15 +188,14 @@ class SplitRulesInteraction extends PointerInteraction {
     // console.log("SplitRulesInteraction: createOrUpdateRules pixel=", pixel);
     let [verticalRuleFeature, horizontalRuleFeature] = this.ruleFeatures;
 
-    const bpResolution =
-      this.mapManager.viewAndLayersManager.currentViewState.resolutionDesciptor
-        .bpResolution;
-    const pixelResolution =
-      this.mapManager.viewAndLayersManager.currentViewState.resolutionDesciptor
-        .pixelResolution;
-    const contigCount = this.mapManager.contigDimensionHolder.contig_count;
-    const prefixSumPx =
-      this.mapManager.contigDimensionHolder.prefix_sum_px.get(bpResolution);
+    const guidanceDescriptor = this.getGuidanceResolutionDescriptor();
+    const dimensionHolder =
+      this.getDimensionHolderForDescriptor(guidanceDescriptor);
+    const pixelResolution = guidanceDescriptor.pixelResolution;
+    const contigCount = dimensionHolder.contig_count;
+    const prefixSumPx = dimensionHolder.prefix_sum_px.get(
+      guidanceDescriptor.bpResolution
+    );
     const mapSizePx = prefixSumPx ? prefixSumPx[contigCount] : 1000;
     const mapSizeProj = mapSizePx * pixelResolution;
 
@@ -231,42 +267,18 @@ class SplitRulesInteraction extends PointerInteraction {
             return true;
           }
 
-          const layers =
-            this.options.mapManager.viewAndLayersManager.layersHolder.hicDataLayers.filter(
-              (l) => l.getData(pixel)
-            );
-
-          const hovered_layer =
-            layers.length === 0
-              ? null
-              : layers
-                  .filter((l) => l instanceof TileLayer)
-                  .sort(
-                    (l1, l2) => (l1.getZIndex() ?? 0) - (l2.getZIndex() ?? 0)
-                  )[0];
-          if (!hovered_layer) {
+          const hoveredLayer = this.getHoveredDataLayer(pixel);
+          if (!hoveredLayer) {
             return true;
           }
-          const layer_projection = hovered_layer.getSource()?.getProjection();
-          if (!layer_projection) {
-            return true;
-          }
-          const pixelResolution = hovered_layer.get("pixelResolution");
-          const fixed_coordinates = transform(
+          const fallbackDescriptor =
+            this.getLayerResolutionDescriptor(hoveredLayer);
+          const guidanceDescriptor =
+            this.getGuidanceResolutionDescriptor(fallbackDescriptor);
+          const int_coordinates_px = this.coordinateToPxAtResolution(
             coordinate,
-            map.getView().getProjection(),
-            layer_projection
-          ).map((c) => Math.ceil(c / pixelResolution));
-          const bpResolutionString = hovered_layer.get("bpResolution");
-          const bpResolution = Number(bpResolutionString);
-          const int_coordinates_px =
-            this.mapManager.contigDimensionHolder.clampPxCoordinatesAtResolution(
-              [
-                Math.floor(fixed_coordinates[0]),
-                -Math.floor(fixed_coordinates[1]),
-              ],
-              bpResolution
-            );
+            guidanceDescriptor
+          );
 
           this.setActive(false);
           this.ruleFeatures.forEach((f) => {
@@ -277,8 +289,7 @@ class SplitRulesInteraction extends PointerInteraction {
           this.ruleFeatures = [undefined, undefined];
           this.options.selectionCallback(
             int_coordinates_px,
-            this.mapManager.viewAndLayersManager.currentViewState
-              .resolutionDesciptor.bpResolution
+            guidanceDescriptor.bpResolution
           );
           return false;
         }

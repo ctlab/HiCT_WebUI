@@ -183,6 +183,7 @@ class StartConversionJobRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       readonly filename: string;
+      readonly assemblyFilename?: string;
       readonly direction?: string;
       readonly overwrite?: boolean;
       readonly resolutions?: string;
@@ -200,6 +201,8 @@ class StartBatchConversionJobsRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       readonly files: string[];
+      readonly assemblyFilename?: string;
+      readonly assemblyFilenameByFile?: Record<string, string>;
       readonly parallelJobs: number;
       readonly parallelism: number;
       readonly overwrite?: boolean;
@@ -231,6 +234,43 @@ class StopConversionJobRequest implements HiCTAPIRequest {
 
 class GetConversionToolchainStatusRequest implements HiCTAPIRequest {
   requestPath = "/convert/toolchain";
+}
+
+class SetDotplotAlignerPreferenceRequest implements HiCTAPIRequest {
+  requestPath = "/convert/toolchain/dotplot-aligner";
+
+  public constructor(public readonly alignerPreference: string) {}
+}
+
+class StartDotplotJobsRequest implements HiCTAPIRequest {
+  requestPath = "/dotplot/jobs";
+
+  public constructor(
+    public readonly options: {
+      readonly fastaFiles: string[];
+      readonly outputDirectory?: string;
+      readonly binSize: number;
+      readonly resolutions?: string;
+      readonly referenceMapFilename?: string;
+      readonly assemblyAgpFilename?: string;
+      readonly minimizerK: number;
+      readonly minimizerWindow: number;
+      readonly minChainScore: number;
+      readonly skipDiagonal: boolean;
+      readonly dropNearDiagonalBins: number;
+      readonly sampleBp?: number;
+      readonly minAlignmentLength?: number;
+      readonly extraMinimap2Args?: string;
+      readonly alignerPreference?: string;
+      readonly alignmentThreads: number;
+      readonly conversionThreads: number;
+      readonly overwrite?: boolean;
+    }
+  ) {}
+}
+
+class ListDotplotJobsRequest implements HiCTAPIRequest {
+  requestPath = "/dotplot/jobs/list";
 }
 
 class SetContrastRangeRequest implements HiCTAPIRequest {
@@ -389,6 +429,24 @@ class GetWorkerDiagnosticsRequest implements HiCTAPIRequest {
   requestPath = "/diagnostics/workers";
 }
 
+class GetNativeProcessingStatusRequest implements HiCTAPIRequest {
+  requestPath = "/native_processing/status";
+}
+
+class GetServerStatisticsRequest implements HiCTAPIRequest {
+  requestPath = "/statistics";
+}
+
+class SetNativeProcessingEnabledRequest implements HiCTAPIRequest {
+  requestPath = "/native_processing/enabled";
+
+  public constructor(
+    public readonly options: {
+      readonly enabled: boolean;
+    }
+  ) {}
+}
+
 class GetRenderPipelineRequest implements HiCTAPIRequest {
   requestPath = "/render_pipeline/get";
 }
@@ -455,6 +513,7 @@ class OpenCoolerWeightsTrackRequest implements HiCTAPIRequest {
     public readonly options: {
       readonly name?: string;
       readonly color?: string;
+      readonly source?: "PRIMARY" | "SECONDARY";
     } = {}
   ) {}
 }
@@ -485,6 +544,9 @@ class UpdateTrackRequest implements HiCTAPIRequest {
       readonly renderMode?: string;
       readonly aggregationMode?: string;
       readonly logScale?: boolean;
+      readonly rangeAuto?: boolean;
+      readonly rangeMin?: number;
+      readonly rangeMax?: number;
     }
   ) {}
 }
@@ -612,6 +674,9 @@ export {
   GetConversionJobRequest,
   StopConversionJobRequest,
   GetConversionToolchainStatusRequest,
+  SetDotplotAlignerPreferenceRequest,
+  StartDotplotJobsRequest,
+  ListDotplotJobsRequest,
   RenameContigRequest,
   RenameScaffoldRequest,
   ExportNameMappingRequest,
@@ -661,6 +726,9 @@ export {
   GetTracksPrecomputeStatusRequest,
   ProbeTrackPrecomputeCacheRequest,
   GetWorkerDiagnosticsRequest,
+  GetNativeProcessingStatusRequest,
+  GetServerStatisticsRequest,
+  SetNativeProcessingEnabledRequest,
   GetRenderPipelineRequest,
   SetRenderPipelineRequest,
   ResetRenderPipelineRequest,

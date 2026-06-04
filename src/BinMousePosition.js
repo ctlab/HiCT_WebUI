@@ -26,7 +26,6 @@ import {
   getTransformFromProjections,
   getUserProjection,
   identityTransform,
-  transform,
 } from "ol/proj";
 import TileLayer from "ol/layer/Tile";
 
@@ -39,6 +38,41 @@ export default class BinMousePosition extends MousePosition {
     if (opt_options.layers) {
       this.layers = opt_options.layers;
     }
+    if (opt_options.scaffold_holder) {
+      this.scaffold_holder = opt_options.scaffold_holder;
+    }
+    if (opt_options.layersManager) {
+      this.layersManager = opt_options.layersManager;
+    }
+  }
+
+  getGuidanceResolutionDescriptor(fallbackDescriptor) {
+    if (this.layersManager?.getFinestVisibleSourceResolutionDescriptor) {
+      const descriptor =
+        this.layersManager.getFinestVisibleSourceResolutionDescriptor();
+      if (
+        descriptor &&
+        Number.isFinite(descriptor.bpResolution) &&
+        Number.isFinite(descriptor.pixelResolution)
+      ) {
+        return this.layersManager?.ensureGuidanceResolutionDescriptor
+          ? this.layersManager.ensureGuidanceResolutionDescriptor(descriptor)
+          : descriptor;
+      }
+    }
+    return this.layersManager?.ensureGuidanceResolutionDescriptor
+      ? this.layersManager.ensureGuidanceResolutionDescriptor(
+          fallbackDescriptor
+        )
+      : fallbackDescriptor;
+  }
+
+  getDimensionHolderForDescriptor(descriptor) {
+    return (
+      this.layersManager?.getDimensionHolderForSource?.(
+        descriptor.sourceName ?? "PRIMARY"
+      ) ?? this.dimension_holder
+    );
   }
 
   updateHTML_(pixel) {
@@ -58,6 +92,7 @@ export default class BinMousePosition extends MousePosition {
       const map = this.getMap();
       const coordinate = map.getCoordinateFromPixelInternal(pixel);
       if (coordinate) {
+        const mapCoordinate = [...coordinate];
         const userProjection = getUserProjection();
         if (userProjection) {
           this.transform_ = getTransformFromProjections(
@@ -76,87 +111,179 @@ export default class BinMousePosition extends MousePosition {
             ? null
             : layers
                 .filter((l) => l instanceof TileLayer)
-                .sort((l1, l2) => l1.getZIndex() - l2.getZIndex())[0];
+                .sort((l1, l2) => l2.getZIndex() - l1.getZIndex())[0];
         if (hovered_layer) {
-          const layer_projection = hovered_layer.getSource().getProjection();
-          const pixelResolution = hovered_layer.get("pixelResolution");
-          const fixed_coordinates = transform(
-            coordinate,
-            map.getView().getProjection(),
-            layer_projection
-          ).map((c) => Math.ceil(c / pixelResolution));
-          const bpResolutionString = hovered_layer.get("bpResolution");
-          const bpResolution = Number(bpResolutionString);
-          const int_coordinates_px =
-            this.dimension_holder.clampPxCoordinatesAtResolution(
-              [
-                Math.floor(fixed_coordinates[0]),
-                -Math.floor(fixed_coordinates[1]),
-              ],
-              bpResolution
+          try {
+            const bpResolutionString = hovered_layer.get("bpResolution");
+            const hoveredBpResolution = Number(bpResolutionString);
+            const hoveredPixelResolution = Number(
+              hovered_layer.get("pixelResolution")
             );
+            const fallbackDescriptor = {
+              sourceName:
+                hovered_layer.get("sourceName") === "SECONDARY"
+                  ? "SECONDARY"
+                  : "PRIMARY",
+              bpResolution: hoveredBpResolution,
+              pixelResolution: hoveredPixelResolution,
+            };
+            const guidanceDescriptor =
+              this.getGuidanceResolutionDescriptor(fallbackDescriptor);
+            const dimensionHolder =
+              this.getDimensionHolderForDescriptor(guidanceDescriptor);
+            const bpResolution = guidanceDescriptor.bpResolution;
+            const pixelResolution = guidanceDescriptor.pixelResolution;
+            const fixed_coordinates = mapCoordinate.map((c) =>
+              Math.ceil(c / pixelResolution)
+            );
+            const int_coordinates_px =
+              dimensionHolder.clampPxCoordinatesAtResolution(
+                [
+                  Math.floor(fixed_coordinates[0]),
+                  -Math.floor(fixed_coordinates[1]),
+                ],
+                bpResolution
+              );
 
-          html =
-            '<div style="display: block; padding: 20px; background: rgba(0, 0, 0, 0.35); border: 1px solid black; border-radius: 15px; color: white; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;">';
-          html += "Global projection coordinate: " + coordinate.map(Math.floor);
-          html = html + "<";
-          html = html + "br/>";
-
-          // html +=
-          //   "Center coordinate: " + map.getView().getCenter().map(Math.floor);
-          // html = html + "<";
-          // html = html + "br/>";
-
-          if (fixed_coordinates) {
-            html = html + "Bin resolution: 1:" + bpResolution;
-            html = html + "<";
-            html = html + "br/>";
             html =
-              html +
-              "Position: px1=" +
-              int_coordinates_px[0] +
-              " px2=" +
-              int_coordinates_px[1];
-          }
+              '<div style="display: block; padding: 20px; background: rgba(0, 0, 0, 0.35); border: 1px solid black; border-radius: 15px; color: white; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;">';
+            html +=
+              "Global projection coordinate: " + coordinate.map(Math.floor);
+            html = html + "<";
+            html = html + "br/>";
 
-          if (this.dimension_holder) {
-            const int_coordinates_bins = this.dimension_holder.pixelsToBins(
-              int_coordinates_px,
-              bpResolution
-            );
-            html = html + "<";
-            html = html + "br/>";
-            html =
-              html +
-              "Position: bin1=" +
-              int_coordinates_bins[0] +
-              " bin2=" +
-              int_coordinates_bins[1];
-            html = html + "<";
-            html = html + "br/>";
-            const bp1 = this.dimension_holder.getStartBpOfPx(
-              int_coordinates_px[0],
-              bpResolution
-            );
-            const bp2 = this.dimension_holder.getStartBpOfPx(
-              int_coordinates_px[1],
-              bpResolution
-            );
-            const ctg1 = this.dimension_holder.getContigNameByPx(
-              int_coordinates_px[0],
-              bpResolution
-            );
-            const ctg2 = this.dimension_holder.getContigNameByPx(
-              int_coordinates_px[1],
-              bpResolution
-            );
-            html = html + "Position: bp1=" + bp1 + " bp2=" + bp2;
-            html = html + "<";
-            html = html + "br/>";
-            html = html + "Contigs: ctg1=" + ctg1 + " ctg2=" + ctg2;
-          }
+            // html +=
+            //   "Center coordinate: " + map.getView().getCenter().map(Math.floor);
+            // html = html + "<";
+            // html = html + "br/>";
 
-          html += "</div>";
+            if (fixed_coordinates) {
+              html = html + "Bin resolution: 1:" + bpResolution;
+              html = html + "<";
+              html = html + "br/>";
+              if (
+                Number.isFinite(hoveredBpResolution) &&
+                hoveredBpResolution !== bpResolution
+              ) {
+                html =
+                  html + "Hovered tile resolution: 1:" + hoveredBpResolution;
+                html = html + "<";
+                html = html + "br/>";
+              }
+              if (guidanceDescriptor.sourceName) {
+                html =
+                  html + "Guidance source: " + guidanceDescriptor.sourceName;
+                html = html + "<";
+                html = html + "br/>";
+              }
+              if (this.layersManager?.getVisibleSourceResolutionDescriptors) {
+                const visible =
+                  this.layersManager.getVisibleSourceResolutionDescriptors();
+                const details = [
+                  visible.primary
+                    ? `Primary 1:${visible.primary.bpResolution}`
+                    : null,
+                  visible.secondary
+                    ? `Secondary 1:${visible.secondary.bpResolution}`
+                    : null,
+                ].filter(Boolean);
+                if (details.length > 0) {
+                  html =
+                    html + "Visible source resolutions: " + details.join("; ");
+                  html = html + "<";
+                  html = html + "br/>";
+                }
+              }
+              html =
+                html +
+                "Position: px1=" +
+                int_coordinates_px[0] +
+                " px2=" +
+                int_coordinates_px[1];
+            }
+
+            if (dimensionHolder) {
+              const int_coordinates_bins = dimensionHolder.pixelsToBins(
+                int_coordinates_px,
+                bpResolution
+              );
+              html = html + "<";
+              html = html + "br/>";
+              html =
+                html +
+                "Position: bin1=" +
+                int_coordinates_bins[0] +
+                " bin2=" +
+                int_coordinates_bins[1];
+              html = html + "<";
+              html = html + "br/>";
+              const bp1 = dimensionHolder.getStartBpOfPx(
+                int_coordinates_px[0],
+                bpResolution
+              );
+              const bp2 = dimensionHolder.getStartBpOfPx(
+                int_coordinates_px[1],
+                bpResolution
+              );
+              const ctg1 = dimensionHolder.getContigNameByPx(
+                int_coordinates_px[0],
+                bpResolution
+              );
+              const ctg2 = dimensionHolder.getContigNameByPx(
+                int_coordinates_px[1],
+                bpResolution
+              );
+              html = html + "Position: bp1=" + bp1 + " bp2=" + bp2;
+              html = html + "<";
+              html = html + "br/>";
+              html = html + "Contigs: ctg1=" + ctg1 + " ctg2=" + ctg2;
+              if (dimensionHolder.getContigLocusByPx) {
+                const locus1 = dimensionHolder.getContigLocusByPx(
+                  int_coordinates_px[0],
+                  bpResolution
+                );
+                const locus2 = dimensionHolder.getContigLocusByPx(
+                  int_coordinates_px[1],
+                  bpResolution
+                );
+                html = html + "<";
+                html = html + "br/>";
+                html =
+                  html +
+                  "In-contig bp: ctg1=+" +
+                  locus1.inContigBp +
+                  " ctg2=+" +
+                  locus2.inContigBp;
+              }
+              if (this.scaffold_holder?.getScaffoldLocusByBp) {
+                const scaffold1 =
+                  this.scaffold_holder.getScaffoldLocusByBp(bp1);
+                const scaffold2 =
+                  this.scaffold_holder.getScaffoldLocusByBp(bp2);
+                html = html + "<";
+                html = html + "br/>";
+                html =
+                  html +
+                  "Scaffolds: scf1=" +
+                  (scaffold1 ? scaffold1.scaffoldName : "unscaffolded") +
+                  " scf2=" +
+                  (scaffold2 ? scaffold2.scaffoldName : "unscaffolded");
+                html = html + "<";
+                html = html + "br/>";
+                html =
+                  html +
+                  "In-scaffold bp: scf1=" +
+                  (scaffold1 ? "+" + scaffold1.inScaffoldBp : "n/a") +
+                  " scf2=" +
+                  (scaffold2 ? "+" + scaffold2.inScaffoldBp : "n/a");
+              }
+            }
+
+            html += "</div>";
+          } catch (error) {
+            console.warn("Unable to update map mouse position overlay", error);
+            html = this.placeholder_;
+          }
         }
       }
     }

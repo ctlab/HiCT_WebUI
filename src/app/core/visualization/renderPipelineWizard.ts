@@ -34,7 +34,7 @@ export type WizardBlendMode =
   | "DARKEN"
   | "XOR";
 
-type SourceName = "PRIMARY" | "SECONDARY";
+export type SourceName = "PRIMARY" | "SECONDARY";
 type TrackAxis = "ROW" | "COL";
 
 type PipelineExpression =
@@ -161,7 +161,7 @@ const buildSignalExpression = (
   return expression;
 };
 
-const buildColorExpression = (
+export const buildColorExpression = (
   source: SourceName,
   options: VisualizationOptions
 ): PipelineExpression => {
@@ -191,6 +191,18 @@ const buildColorExpression = (
   };
 };
 
+const withTransparentMinimumColor = (
+  expression: PipelineExpression
+): PipelineExpression => {
+  if (expression.type !== "colormap") {
+    return expression;
+  }
+  return {
+    ...expression,
+    startColor: `${expression.startColor.slice(0, 7)}00`,
+  };
+};
+
 export const buildWizardRenderPipelineConfig = (options: {
   viewMode: WizardViewMode;
   primaryOptions: VisualizationOptions;
@@ -214,8 +226,8 @@ export const buildWizardRenderPipelineConfig = (options: {
     const overlay: PipelineExpression = {
       type: "pixel_blend",
       mode: options.blendMode ?? "OVER",
-      top: primary,
-      bottom: secondary,
+      top: withTransparentMinimumColor(secondary),
+      bottom: primary,
       topOpacity:
         typeof options.topOpacity === "number" ? options.topOpacity : 0.5,
       bottomOpacity:

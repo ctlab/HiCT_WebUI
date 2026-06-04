@@ -33,7 +33,6 @@ import { transform, transformExtent } from "ol/proj";
 import { getCenter, getHeight, getWidth, intersects } from "ol/extent";
 import { unByKey } from "ol/Observable";
 import type { EventsKey } from "ol/events";
-import { toSI } from "display-si";
 import ContigDimensionHolder from "./ContigDimensionHolder";
 import { ScaffoldHolder } from "./ScaffoldHolder";
 import { HiCViewAndLayersManager } from "./HiCViewAndLayersManager";
@@ -406,8 +405,16 @@ class ContactMapManager {
             const y = tile.row * tileSize;
             const tileWidth = Math.min(tileSize, width - x);
             const tileHeight = Math.min(tileSize, height - y);
+            const imageHref =
+              tileWidth < tileSize || tileHeight < tileSize
+                ? await this.cropTileImageDataUrl(
+                    String(data.image),
+                    tileWidth,
+                    tileHeight
+                  )
+                : String(data.image);
             svgImages.push(
-              `<image x=\"${x}\" y=\"${y}\" width=\"${tileWidth}\" height=\"${tileHeight}\" href=\"${escapeAttr(data.image)}\" />`
+              `<image x=\"${x}\" y=\"${y}\" width=\"${tileWidth}\" height=\"${tileHeight}\" href=\"${escapeAttr(imageHref)}\" />`
             );
           }
           completed += 1;
@@ -474,16 +481,58 @@ class ContactMapManager {
     const blob = new Blob([svg], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
     try {
-      const image = new Image();
-      await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve();
-        image.onerror = (error) => reject(error);
-        image.src = url;
-      });
-      return image;
+      return await this.loadImageUrl(url);
     } finally {
       URL.revokeObjectURL(url);
     }
+  }
+
+  private async loadImageUrl(url: string): Promise<HTMLImageElement> {
+    const image = new Image();
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = (error) => reject(error);
+      image.src = url;
+    });
+    return image;
+  }
+
+  private async cropTileImageDataUrl(
+    dataUrl: string,
+    targetWidth: number,
+    targetHeight: number
+  ): Promise<string> {
+    const width = Math.max(1, Math.round(targetWidth));
+    const height = Math.max(1, Math.round(targetHeight));
+    const image = await this.loadImageUrl(dataUrl);
+    const naturalWidth = image.naturalWidth || image.width;
+    const naturalHeight = image.naturalHeight || image.height;
+    if (naturalWidth === width && naturalHeight === height) {
+      return dataUrl;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return dataUrl;
+    }
+    context.clearRect(0, 0, width, height);
+    const sourceWidth = Math.min(width, Math.max(1, naturalWidth));
+    const sourceHeight = Math.min(height, Math.max(1, naturalHeight));
+    context.drawImage(
+      image,
+      0,
+      0,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      sourceWidth,
+      sourceHeight
+    );
+    return canvas.toDataURL("image/png");
   }
 
   private drawOutlinedCanvasText(
@@ -529,12 +578,12 @@ class ContactMapManager {
     previousRawLabel: string | null,
     previousBpValue: number | null
   ): { text: string; compact: boolean; rawLabel: string } {
-    const rawLabel = toSI(Math.max(0, Math.round(bpValue)));
+    const rawLabel = this.formatBpLabel(bpValue, 0);
     if (previousRawLabel === rawLabel && previousBpValue !== null) {
       const delta = Math.max(0, Math.round(bpValue - previousBpValue));
       if (delta > 0) {
         return {
-          text: `+${toSI(delta)}`,
+          text: this.formatBpLabel(bpValue, 1),
           compact: true,
           rawLabel,
         };
@@ -545,6 +594,20 @@ class ContactMapManager {
       compact: false,
       rawLabel,
     };
+  }
+
+  private formatBpLabel(bpValue: number, precision: number): string {
+    const value = Math.max(0, Math.round(bpValue));
+    const units: Array<[number, string]> = [
+      [1_000_000_000, "G"],
+      [1_000_000, "M"],
+      [1_000, "K"],
+    ];
+    const [scale, suffix] =
+      units.find(([candidate]) => value >= candidate) ?? [1, ""];
+    const scaled = value / scale;
+    const digits = precision > 0 && scaled < 100 ? precision : 0;
+    return `${scaled.toFixed(digits).replace(/\.0+$/, "")}${suffix}`;
   }
 
   private drawFullExtentExportRulers(
@@ -935,11 +998,7 @@ class ContactMapManager {
         `</svg>`;
     }
     const blob = new Blob([svg], { type: "image/svg+xml" });
-    const a = document.createElement("a");
-    a.download = `${this.options.filename}.svg`;
-    a.href = URL.createObjectURL(blob);
-    a.click();
-    URL.revokeObjectURL(a.href);
+    await this.saveExportBlob(blob, `${this.options.filename}.svg`);
   }
 
   public async exportCurrentMapPng(
@@ -960,18 +1019,15 @@ class ContactMapManager {
     if (options?.includeWorkspaceComposite === true) {
       progressCallback?.(1);
     }
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
       canvas.toBlob((blob) => {
         if (!blob) {
           resolve();
           return;
         }
-        const a = document.createElement("a");
-        a.download = `${this.options.filename}.png`;
-        a.href = URL.createObjectURL(blob);
-        a.click();
-        URL.revokeObjectURL(a.href);
-        resolve();
+        this.saveExportBlob(blob, `${this.options.filename}.png`)
+          .then(resolve)
+          .catch(reject);
       }, "image/png");
     });
   }
@@ -1003,7 +1059,53 @@ class ContactMapManager {
       format: [canvas.width, canvas.height],
     });
     pdf.addImage(dataUrl, "PNG", 0, 0, canvas.width, canvas.height);
-    pdf.save(`${this.options.filename}.pdf`);
+    const blob = pdf.output("blob");
+    await this.saveExportBlob(blob, `${this.options.filename}.pdf`);
+  }
+
+  private async saveExportBlob(blob: Blob, filename: string): Promise<void> {
+    const sanitizedFilename = ContactMapManager.sanitizeDownloadFilename(filename);
+    const desktopBridge = (window as unknown as {
+      hictDesktop?: {
+        saveExport?: (payload: {
+          filename: string;
+          bytes: number[];
+        }) => Promise<unknown> | unknown;
+      };
+    }).hictDesktop;
+    if (typeof desktopBridge?.saveExport === "function") {
+      const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+      await Promise.resolve(
+        desktopBridge.saveExport({ filename: sanitizedFilename, bytes })
+      );
+      return;
+    }
+
+    const tauriBridge = (window as unknown as {
+      __TAURI__?: {
+        core?: {
+          invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+        };
+        invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+      };
+    }).__TAURI__;
+    const invoke = tauriBridge?.core?.invoke ?? tauriBridge?.invoke;
+    if (typeof invoke === "function") {
+      const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+      await invoke("save_export", { filename: sanitizedFilename, bytes });
+      return;
+    }
+
+    const a = document.createElement("a");
+    a.download = sanitizedFilename;
+    a.href = URL.createObjectURL(blob);
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  private static sanitizeDownloadFilename(filename: string): string {
+    const safe = filename.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim();
+    return safe.length > 0 ? safe : "hict-export.bin";
   }
 
   private exportTracksSvg(bpResolution: number): string {
@@ -1021,7 +1123,8 @@ class ContactMapManager {
     const scaffoldTrack =
       this.viewAndLayersManager.track2DHolder.scaffoldBordersTrack;
     const pixelResolution =
-      this.viewAndLayersManager.resolutionToPixelResolution.get(bpResolution) ?? 1;
+      this.viewAndLayersManager.getPixelResolutionForBpResolution(bpResolution) ??
+      1;
     if (!Number.isFinite(pixelResolution) || pixelResolution <= 0) {
       return "";
     }
@@ -1478,10 +1581,22 @@ class ContactMapManager {
     if (!mainMapSize) {
       return;
     }
-    const mainExtent = this.map.getView().calculateExtent(mainMapSize);
+    const mainView = this.map.getView();
+    const mainCenter = mainView.getCenter();
+    const mainResolution = mainView.getResolution();
+    if (
+      !mainCenter ||
+      mainCenter.length < 2 ||
+      !mainCenter.every((value) => Number.isFinite(value)) ||
+      mainResolution === undefined ||
+      !Number.isFinite(mainResolution)
+    ) {
+      return;
+    }
+    const mainExtent = mainView.calculateExtent(mainMapSize);
     const transformedMainExtent = transformExtent(
       mainExtent,
-      this.map.getView().getProjection(),
+      mainView.getProjection(),
       minimapProjection
     );
     if (!transformedMainExtent.every((value) => Number.isFinite(value))) {
@@ -1504,7 +1619,9 @@ class ContactMapManager {
     bounds: [number, number, number, number]
   ): [number, number, number, number] {
     const minimapResolution = this.minimap?.getView().getResolution() ?? 1;
-    const inset = Math.max(1e-6, Math.abs(minimapResolution) * 3);
+    // Keep the viewport stroke inside the minimap projection. Vector strokes
+    // clipped exactly at the projection boundary become invisible at map edges.
+    const inset = Math.max(1e-6, Math.abs(minimapResolution) * 5);
     const maxInsetX = Math.max(0, (getWidth(bounds) - 1e-6) / 2);
     const maxInsetY = Math.max(0, (getHeight(bounds) - 1e-6) / 2);
     const insetX = Math.min(inset, maxInsetX);

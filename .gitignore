@@ -28,3 +28,5 @@ electron
 *.sw?
 
 release
+src-tauri/target
+src-tauri/icons

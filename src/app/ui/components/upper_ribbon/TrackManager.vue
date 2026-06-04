@@ -67,9 +67,44 @@
                   <button class="btn btn-primary" @click="onAddTrack" :disabled="!selectedFile">
                     Add file
                   </button>
-                  <button class="btn btn-outline-primary btn-sm" @click="onAddCoolerWeights">
-                    Add weights
-                  </button>
+                </div>
+              </div>
+
+              <div class="alert alert-light border py-2 mb-3">
+                <strong class="small d-block mb-2">Show Cooler weights track</strong>
+                <div class="d-flex flex-wrap gap-3">
+                  <div class="form-check form-switch m-0">
+                    <input
+                      id="cooler-weights-primary"
+                      class="form-check-input"
+                      type="checkbox"
+                      :checked="primaryCoolerWeightsVisible"
+                      :disabled="!props.mapManager"
+                      :title="props.mapManager ? 'Show or hide Cooler balancing weights for the primary source.' : 'Open a map first.'"
+                      @change="onTogglePrimaryCoolerWeights(($event.target as HTMLInputElement).checked)"
+                    />
+                    <label class="form-check-label" for="cooler-weights-primary">
+                      Primary source
+                    </label>
+                  </div>
+                  <div class="form-check form-switch m-0">
+                    <input
+                      id="cooler-weights-secondary"
+                      class="form-check-input"
+                      type="checkbox"
+                      :checked="secondaryCoolerWeightsVisible"
+                      :disabled="!secondaryStatus.attached"
+                      :title="secondaryStatus.attached ? 'Show or hide Cooler balancing weights for the secondary source.' : 'Attach a secondary source first.'"
+                      @change="onToggleSecondaryCoolerWeights(($event.target as HTMLInputElement).checked)"
+                    />
+                    <label
+                      class="form-check-label"
+                      :class="{ 'text-muted': !secondaryStatus.attached }"
+                      for="cooler-weights-secondary"
+                    >
+                      Secondary source
+                    </label>
+                  </div>
                 </div>
               </div>
 
@@ -260,6 +295,39 @@
                       @change="onChangeLogBase(track.trackId, Number(($event.target as HTMLInputElement).value))"
                       title="Log base for log(1+x)"
                     />
+                    <div class="form-check form-switch m-0 ms-2">
+                      <input
+                        :id="`track-range-auto-${track.trackId}`"
+                        class="form-check-input"
+                        type="checkbox"
+                        :checked="track.rangeAuto"
+                        @change="onChangeRangeAuto(track.trackId, ($event.target as HTMLInputElement).checked)"
+                      />
+                      <label
+                        class="form-check-label small"
+                        :for="`track-range-auto-${track.trackId}`"
+                      >
+                        auto range
+                      </label>
+                    </div>
+                    <input
+                      type="number"
+                      class="form-control form-control-sm track-range-input"
+                      :value="track.rangeMin"
+                      :disabled="track.rangeAuto"
+                      step="any"
+                      title="Signal range minimum"
+                      @change="onChangeRangeBound(track.trackId, 'rangeMin', Number(($event.target as HTMLInputElement).value))"
+                    />
+                    <input
+                      type="number"
+                      class="form-control form-control-sm track-range-input"
+                      :value="track.rangeMax"
+                      :disabled="track.rangeAuto"
+                      step="any"
+                      title="Signal range maximum"
+                      @change="onChangeRangeBound(track.trackId, 'rangeMax', Number(($event.target as HTMLInputElement).value))"
+                    />
                   </div>
                   <select
                     v-if="track.type === 'BAM'"
@@ -293,25 +361,6 @@
                 </div>
                 <div v-if="tracks.length === 0" class="text-muted">No tracks loaded</div>
               </div>
-
-              <hr />
-              <div class="d-flex align-items-center gap-2">
-                <button class="btn btn-outline-primary" @click="addMarkerAtCenter">
-                  Add marker at center
-                </button>
-                <button
-                  class="btn btn-outline-primary"
-                  @click="addRectangleFromSelection"
-                >
-                  Add rectangle from selection
-                </button>
-                <button class="btn btn-outline-danger" @click="clearAnnotations">
-                  Clear annotations
-                </button>
-              </div>
-              <small class="text-muted">
-                Rectangles use current selection. Markers and rectangles stay aligned after scaffolding operations.
-              </small>
             </template>
           </div>
           <div class="modal-footer">
@@ -530,6 +579,27 @@ const onTrackBackgroundColorChanged = (value: string): void => {
 };
 
 const trackBackgroundHex = computed(() => rgbaLikeToHex(trackBackgroundColor.value));
+const COOLER_WEIGHTS_PRIMARY_SOURCE_FILE = "__internal__/cooler_weights/PRIMARY";
+const COOLER_WEIGHTS_SECONDARY_SOURCE_FILE = "__internal__/cooler_weights/SECONDARY";
+const primaryCoolerWeightsTrackIds = computed(() =>
+  tracks.value
+    .filter((track) =>
+      track.sourceFile === COOLER_WEIGHTS_PRIMARY_SOURCE_FILE ||
+      track.sourceFile === "__internal__/cooler_weights"
+    )
+    .map((track) => track.trackId)
+);
+const primaryCoolerWeightsVisible = computed(
+  () => primaryCoolerWeightsTrackIds.value.length > 0
+);
+const secondaryCoolerWeightsTrackIds = computed(() =>
+  tracks.value
+    .filter((track) => track.sourceFile === COOLER_WEIGHTS_SECONDARY_SOURCE_FILE)
+    .map((track) => track.trackId)
+);
+const secondaryCoolerWeightsVisible = computed(
+  () => secondaryCoolerWeightsTrackIds.value.length > 0
+);
 
 const TRACK_SUFFIXES = [
   ".bed",
@@ -600,6 +670,9 @@ const refreshSecondaryStatus = async () => {
   try {
     secondaryStatus.value =
       await props.mapManager.networkManager.requestManager.getSecondarySourceStatus();
+    props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
+      secondaryStatus.value.attached ? secondaryStatus.value.compatibility : undefined
+    );
     if (!secondaryStatus.value.attached) {
       selectedSecondaryFile.value = "";
     }
@@ -643,15 +716,51 @@ const onAddTrack = async () => {
   }
 };
 
-const onAddCoolerWeights = async () => {
+const onTogglePrimaryCoolerWeights = async (visible: boolean) => {
   if (!props.mapManager) {
     return;
   }
   try {
-    await props.mapManager.linearTrackManager.openCoolerWeightsTrack(
-      trackDisplayName.value.trim() || undefined
-    );
-    trackDisplayName.value = "";
+    if (visible) {
+      if (primaryCoolerWeightsTrackIds.value.length === 0) {
+        await props.mapManager.linearTrackManager.openCoolerWeightsTrack(
+          "Cooler weights - Primary",
+          "PRIMARY"
+        );
+      }
+    } else {
+      for (const trackId of primaryCoolerWeightsTrackIds.value) {
+        await props.mapManager.linearTrackManager.removeTrack(trackId);
+      }
+    }
+    await refreshTracks();
+    await refreshPrecomputeStatus();
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
+const onToggleSecondaryCoolerWeights = async (visible: boolean) => {
+  if (!props.mapManager) {
+    return;
+  }
+  try {
+    if (visible) {
+      if (!secondaryStatus.value.attached) {
+        toast.error("Attach a secondary source before showing its Cooler weights.");
+        return;
+      }
+      if (secondaryCoolerWeightsTrackIds.value.length === 0) {
+        await props.mapManager.linearTrackManager.openCoolerWeightsTrack(
+          "Cooler weights - Secondary",
+          "SECONDARY"
+        );
+      }
+    } else {
+      for (const trackId of secondaryCoolerWeightsTrackIds.value) {
+        await props.mapManager.linearTrackManager.removeTrack(trackId);
+      }
+    }
     await refreshTracks();
     await refreshPrecomputeStatus();
   } catch (err) {
@@ -740,6 +849,9 @@ const onAttachSecondarySource = async () => {
     }
     pendingSecondaryProbe.value = null;
     secondaryStatus.value = response;
+    props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
+      response.compatibility
+    );
     await props.mapManager.reloadTilesFromBackend();
     await refreshSecondaryStatus();
     toast.success("Secondary source attached");
@@ -765,6 +877,9 @@ const onProceedSecondaryWithMismatch = async () => {
         filenameToOpen,
         true
       );
+    props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
+      secondaryStatus.value.compatibility
+    );
     selectedSecondaryFile.value = filenameToOpen;
     await props.mapManager.reloadTilesFromBackend();
     await refreshSecondaryStatus();
@@ -781,6 +896,7 @@ const onDetachSecondarySource = async () => {
   try {
     secondaryStatus.value =
       await props.mapManager.networkManager.requestManager.closeSecondarySource();
+    props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(undefined);
     await props.mapManager.reloadTilesFromBackend();
     if (secondaryStatus.value.assemblySource === "PRIMARY") {
       const result =
@@ -920,6 +1036,40 @@ const onChangeLogScale = async (trackId: string, logScale: boolean) => {
   }
 };
 
+const onChangeRangeAuto = async (trackId: string, rangeAuto: boolean) => {
+  if (!props.mapManager) {
+    return;
+  }
+  try {
+    await props.mapManager.linearTrackManager.updateTrack(trackId, {
+      rangeAuto,
+    });
+    await refreshTracks();
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
+const onChangeRangeBound = async (
+  trackId: string,
+  field: "rangeMin" | "rangeMax",
+  value: number
+) => {
+  if (!props.mapManager || !Number.isFinite(value)) {
+    return;
+  }
+  try {
+    const options =
+      field === "rangeMin"
+        ? { rangeAuto: false, rangeMin: value }
+        : { rangeAuto: false, rangeMax: value };
+    await props.mapManager.linearTrackManager.updateTrack(trackId, options);
+    await refreshTracks();
+  } catch (err) {
+    toast.error(String(err));
+  }
+};
+
 const getTrackLogBase = (trackId: string): number => {
   return props.mapManager?.linearTrackManager.getTrackLogBase(trackId) ?? 10;
 };
@@ -929,18 +1079,6 @@ const onChangeLogBase = (trackId: string, value: number): void => {
     return;
   }
   props.mapManager.linearTrackManager.setTrackLogBase(trackId, value);
-};
-
-const addMarkerAtCenter = () => {
-  props.mapManager?.getLayersManager().addAnnotationMarkerAtCenter();
-};
-
-const addRectangleFromSelection = () => {
-  props.mapManager?.getLayersManager().addAnnotationRectangleFromSelection();
-};
-
-const clearAnnotations = () => {
-  props.mapManager?.getLayersManager().clearAnnotations();
 };
 
 const onStartPrecomputeAll = async () => {
@@ -1008,6 +1146,11 @@ onBeforeUnmount(() => {
 .track-log-base-input {
   min-width: 4rem;
   max-width: 5.4rem;
+}
+
+.track-range-input {
+  min-width: 5rem;
+  max-width: 6.2rem;
 }
 
 .precompute-list {
