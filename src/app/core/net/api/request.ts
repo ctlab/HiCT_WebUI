@@ -214,6 +214,18 @@ class StartBatchConversionJobsRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class ConvertAssemblyToAgpRequest implements HiCTAPIRequest {
+  requestPath = "/convert/assembly-to-agp";
+
+  public constructor(
+    public readonly options: {
+      readonly filename: string;
+      readonly outputFilename?: string;
+      readonly overwrite?: boolean;
+    }
+  ) {}
+}
+
 class ListConversionJobsRequest implements HiCTAPIRequest {
   requestPath = "/convert/jobs/list";
 }
@@ -670,6 +682,7 @@ export {
   DropAllCachesRequest,
   StartConversionJobRequest,
   StartBatchConversionJobsRequest,
+  ConvertAssemblyToAgpRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
   StopConversionJobRequest,

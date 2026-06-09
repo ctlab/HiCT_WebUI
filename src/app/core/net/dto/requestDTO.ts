@@ -74,6 +74,7 @@ import {
   StartBatchConversionJobsRequest,
   StartDotplotJobsRequest,
   SetDotplotAlignerPreferenceRequest,
+  ConvertAssemblyToAgpRequest,
   ListDotplotJobsRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
@@ -128,6 +129,10 @@ abstract class HiCTAPIRequestDTO<
       case entity instanceof StartBatchConversionJobsRequest:
         return new StartBatchConversionJobsRequestDTO(
           entity as StartBatchConversionJobsRequest
+        );
+      case entity instanceof ConvertAssemblyToAgpRequest:
+        return new ConvertAssemblyToAgpRequestDTO(
+          entity as ConvertAssemblyToAgpRequest
         );
       case entity instanceof StartDotplotJobsRequest:
         return new StartDotplotJobsRequestDTO(
@@ -511,6 +516,16 @@ class StartBatchConversionJobsRequestDTO extends HiCTAPIRequestDTO<StartBatchCon
       compression: this.entity.options.compression,
       compressionAlgorithm: this.entity.options.compressionAlgorithm,
       chunkSize: this.entity.options.chunkSize,
+    };
+  }
+}
+
+class ConvertAssemblyToAgpRequestDTO extends HiCTAPIRequestDTO<ConvertAssemblyToAgpRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      filename: this.entity.options.filename,
+      outputFilename: this.entity.options.outputFilename,
+      overwrite: this.entity.options.overwrite,
     };
   }
 }

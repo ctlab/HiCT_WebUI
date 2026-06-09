@@ -293,8 +293,8 @@ const sampleBp = ref(250);
 const minAlignmentLength = ref(50);
 const extraMinimap2Args = ref("");
 const alignerPreference = ref("auto");
-const alignmentThreads = ref(Math.max(1, Math.min(12, navigator.hardwareConcurrency || 4)));
-const conversionThreads = ref(Math.max(1, Math.min(12, navigator.hardwareConcurrency || 4)));
+const alignmentThreads = ref(Math.max(1, navigator.hardwareConcurrency || 4));
+const conversionThreads = ref(Math.max(1, navigator.hardwareConcurrency || 4));
 const overwrite = ref(false);
 
 const fastaEntries = computed<FileSelectionTableEntry[]>(() =>

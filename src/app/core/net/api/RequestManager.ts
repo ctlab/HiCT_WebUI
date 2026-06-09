@@ -81,6 +81,7 @@ import {
   GetConversionJobRequest,
   GetConversionToolchainStatusRequest,
   SetDotplotAlignerPreferenceRequest,
+  ConvertAssemblyToAgpRequest,
   StopConversionJobRequest,
   RenameContigRequest,
   RenameScaffoldRequest,
@@ -880,6 +881,16 @@ class RequestManager {
     request: StartConversionJobRequest
   ): Promise<{ status: string; jobId: string }> {
     return this.sendRequest(request).then((response) => response.data);
+  }
+
+  public async convertAssemblyToAgp(options: {
+    filename: string;
+    outputFilename?: string;
+    overwrite?: boolean;
+  }): Promise<{ status: string; inputFilename: string; outputFilename: string }> {
+    return this.sendRequest(new ConvertAssemblyToAgpRequest(options)).then(
+      (response) => response.data
+    );
   }
 
   public async startBatchConversionJobs(
