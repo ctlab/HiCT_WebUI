@@ -312,6 +312,13 @@
                       <div class="input-group">
                         <input class="form-control" type="text" readonly :value="primaryAgp || 'Optional .agp or Juicebox .assembly for primary source'" />
                         <button class="btn btn-outline-secondary" @click="openSelector('primary-agp')">Browse…</button>
+                        <button
+                          v-if="primaryAgp?.toLowerCase().endsWith('.assembly')"
+                          class="btn btn-outline-primary"
+                          @click="convertAssemblySelectionToAgp('primary')"
+                        >
+                          Convert to AGP
+                        </button>
                       </div>
                       <small class="text-muted d-block mt-2">
                         .agp is loaded after opening. .assembly is passed to .hic conversion; for already converted
@@ -327,6 +334,13 @@
                       <div class="input-group">
                         <input class="form-control" type="text" readonly :value="secondaryAgp || 'Optional .agp or Juicebox .assembly for secondary source'" />
                         <button class="btn btn-outline-secondary" @click="openSelector('secondary-agp')">Browse…</button>
+                        <button
+                          v-if="secondaryAgp?.toLowerCase().endsWith('.assembly')"
+                          class="btn btn-outline-primary"
+                          @click="convertAssemblySelectionToAgp('secondary')"
+                        >
+                          Convert to AGP
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1277,6 +1291,34 @@ const onSelectorPicked = async (filename: string): Promise<void> => {
   } catch (error) {
     toast.error(String(error ?? "Failed to process selected file"));
   }
+};
+
+const convertAssemblySelectionToAgp = async (
+  source: "primary" | "secondary"
+): Promise<void> => {
+  const filename = source === "primary" ? primaryAgp.value : secondaryAgp.value;
+  if (!filename.toLowerCase().endsWith(".assembly")) {
+    return;
+  }
+  const outputFilename = filename.replace(/\.assembly$/i, ".agp");
+  if (
+    !window.confirm(
+      `Convert ${filename} to ${outputFilename}? An existing AGP copy will be overwritten.`
+    )
+  ) {
+    return;
+  }
+  const result = await props.networkManager.requestManager.convertAssemblyToAgp({
+    filename,
+    outputFilename,
+    overwrite: true,
+  });
+  if (source === "primary") {
+    primaryAgp.value = result.outputFilename;
+  } else {
+    secondaryAgp.value = result.outputFilename;
+  }
+  toast.success(`Created ${result.outputFilename}`);
 };
 
 const sleep = (ms: number): Promise<void> =>
