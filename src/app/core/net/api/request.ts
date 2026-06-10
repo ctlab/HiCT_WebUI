@@ -403,6 +403,18 @@ class LoadAGPRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class ApplyJuiceboxAssemblyRequest implements HiCTAPIRequest {
+  requestPath = "/apply_juicebox_assembly";
+
+  public constructor(
+    public readonly options: {
+      readonly assemblyFilename: string;
+      readonly fastaFilename?: string;
+      readonly source?: "PRIMARY" | "SECONDARY";
+    }
+  ) {}
+}
+
 class OpenProgressRequest implements HiCTAPIRequest {
   requestPath = "/open_progress";
   public constructor() {}
@@ -708,6 +720,7 @@ export {
   MoveSelectionRangeRequest,
   ListAGPFilesRequest,
   LoadAGPRequest,
+  ApplyJuiceboxAssemblyRequest,
   OpenProgressRequest,
   OpenSecondarySourceRequest,
   CloseSecondarySourceRequest,
