@@ -41,7 +41,7 @@ const generatedIconPngBase64 = [
   "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAD6ElEQVR4nM2WQWhUVxSGv/vuezOTmcnMaMSaEBJFEUQSNKVoceWqs6oLSxcVunDRRTfqypWbum1JQ0u7sIiU0oWkENw0WagFQagBwXRjcROkVtq0kCBhJibvni7ezeS+926SSSi0PwyEe879//+ce+ZM4D+GOjt9vQZI+hRWZv7g9dwiKgrSoTBoy6pZnZ3+NnX+VvNDVBREsmZK7rmsGqLRBqV33siqJHTAp8AoYDaOFXq4jPr1FZjULS1GJsP+8menzl80P/9wE4BT5y8S1ArB2p+ty8B7QNyhKmrC4TIoBZLiCoC5ELgLvA/UN2wLeqiM7i8R/9YC5ZYkg/Ff7Z/EyOzbH30MwNqLZeR1+01ELgMDG7mg+0vooXJWHGAJGA+AKWAyFRJQlZBobA+qkH4ChAExcino0aV4oUW80CLo0SUxcglxxAFVCBKOSuhr/yQwFQArwBfA81TYCOFwGX24mr9s5Jxpx01pxUgrxrTjJkbOZYvQh6tJ+01O/bnVXFkv7wnwDVmpUFE42UBVcxVUMVxRJd2nSroPwxWg6oqrakjhZANCRQZitZ4ABPeb19YDN4HH2dRgf5HoeC09BwAiZ2TNXJA1cwGRM6mYguh4jWB/0df6x1aL+81ruA/8ApggeZI02UidYF+OTGPkKkauAjplel+RaKSeN51wT1gtIPkq4HRhCpjJdkH12nbqDKMwkB08tH22Xu/gzViNjmZmxHkFjAN/Z03oI1XCIe9AbcAI4VAZfcQzuAnnuNXooGPA6cID4PvsbVUMiMYaqB7tI0861aOTnGK2LrCcDzJa6Q7YQAx8BTzLCujBMuHRXh85AOHRXvRg2WfwmeWMXfGcAQdPga9xVup6dnSiQVCP0iICQT0iOtHwMcaW66lPKJfuOPwOeJgKCgR9BaLRzIQriEbrBH0FX/UPLRfZ6r0GHCwAnwPL2UB4rIY+UErEBPSBEuGxmo9j2XIsbCbiNeA4/RG4kwoKqIomGtuTbLlQ2X3vHc47lsNb/aYGHLRIFsfLrInwUIXwoP0cqvjEX9q7ra0ENjXgOH4E3MolRIrC6b0UTu+FKL/y7J1HGa4cvDddnJ2+DnCQpJ0j3tv56n8B3gXmtxKH7Z9gHfPAl8Bq6lS84qs2d74b4m0NOBXcBu51wXnP5m7Z+q4NOFgk+UotbZGzZHMWuyXtyoBTyV1sdZvgts3pqvquDTjY6n3n8c3Jv2XAqWgOuEHu14AbNtZ19TsykCG+Bcw6oVl7tiPxHRtw8DvJlmvbz4Q92zG2XUQ+2OVUYeMflw+A5Z1WDxDuxoDFMvCJ8/eusKsOQKcLHeym+v8F/gEnK0D2mS+qQgAAAABJRU5ErkJggg=="
 ].join("");
 
-if (!["linux_x86_64", "windows_x86_64"].includes(platform)) {
+if (!["linux_x86_64", "windows_x86_64", "darwin_arm64", "darwin_x86_64"].includes(platform)) {
   throw new Error(`Unsupported Tauri browser payload platform: ${platform}`);
 }
 if (!existsSync(resolve(repoDir, "dist", "index.html"))) {
@@ -63,7 +63,7 @@ mkdirSync(join(outputDir, "licenses"), { recursive: true });
 
 const command = platform === "windows_x86_64" ? "bin/hict-tauri-browser.exe" : "bin/hict-tauri-browser";
 cpSync(builtExecutable, join(outputDir, command));
-if (platform === "linux_x86_64") {
+if (platform !== "windows_x86_64") {
   chmodExecutable(join(outputDir, command));
 }
 
@@ -75,7 +75,8 @@ writeFileSync(
     "",
     "This payload contains a small Rust/Tauri wrapper written by the HiCT team.",
     "It does not bundle Chromium. It uses the operating system WebView runtime:",
-    "Microsoft Edge WebView2 on Windows and WebKitGTK on Linux.",
+    "Microsoft Edge WebView2 on Windows, WebKitGTK on Linux, and WKWebView",
+    "from macOS.",
     "",
     "Tauri, WRY, TAO and their Rust dependencies are redistributed as compiled",
     "Rust code under their upstream licenses. See cargo-metadata.json for the",
@@ -115,6 +116,10 @@ const manifest = {
     windows: {
       runtime: "Microsoft Edge WebView2 Runtime",
       detection: "EdgeUpdate Clients {F3017226-FE2A-4295-8BDF-00C3A9A7E4C5} pv registry value or standard Microsoft/EdgeWebView installation directory"
+    },
+    macos: {
+      runtime: "WKWebView",
+      detection: "Built into macOS; no separate browser runtime is bundled or required."
     }
   },
   sizeBytes: directorySize(outputDir),
@@ -153,6 +158,9 @@ function detectPlatform() {
   }
   if (process.platform === "linux") {
     return "linux_x86_64";
+  }
+  if (process.platform === "darwin") {
+    return process.arch === "arm64" ? "darwin_arm64" : "darwin_x86_64";
   }
   throw new Error(`Unsupported platform for HiCT Tauri browser payload: ${process.platform}`);
 }
