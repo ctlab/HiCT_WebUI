@@ -24,6 +24,8 @@
     "tauri:payload": "node scripts/build-tauri-browser-payload.mjs",
     "tauri:payload:linux": "npm run build:web && node scripts/build-tauri-browser-payload.mjs --platform linux_x86_64",
     "tauri:payload:windows": "npm run build:web && node scripts/build-tauri-browser-payload.mjs --platform windows_x86_64",
+    "tauri:payload:darwin-arm64": "npm run build:web && node scripts/build-tauri-browser-payload.mjs --platform darwin_arm64",
+    "tauri:payload:darwin-x86_64": "npm run build:web && node scripts/build-tauri-browser-payload.mjs --platform darwin_x86_64",
     "app:dev": "npm run electron:compile && concurrently vite \"electron . http://localhost:8080/\" \"npm run watch\"",
     "app:build": "npm run build && electron-builder",
     "app:multibuild": "npm run build && electron-builder -wl --ia-32 --x64 --publish never",
@@ -128,6 +130,7 @@
       "buildResources": "assets",
       "output": "release/${version}"
     },
+    "icon": "assets/icon",
     "win": {
       "target": [
         {

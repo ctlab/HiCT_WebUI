@@ -285,6 +285,13 @@ class ListDotplotJobsRequest implements HiCTAPIRequest {
   requestPath = "/dotplot/jobs/list";
 }
 
+class StopDotplotJobRequest implements HiCTAPIRequest {
+  public requestPath: string;
+  public constructor(public readonly jobId: string) {
+    this.requestPath = `/dotplot/jobs/${jobId}/stop`;
+  }
+}
+
 class SetContrastRangeRequest implements HiCTAPIRequest {
   requestPath = "/set_contrast_range";
 
@@ -398,6 +405,18 @@ class LoadAGPRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       readonly agpFilename: string;
+      readonly source?: "PRIMARY" | "SECONDARY";
+    }
+  ) {}
+}
+
+class ApplyJuiceboxAssemblyRequest implements HiCTAPIRequest {
+  requestPath = "/apply_juicebox_assembly";
+
+  public constructor(
+    public readonly options: {
+      readonly assemblyFilename: string;
+      readonly fastaFilename?: string;
       readonly source?: "PRIMARY" | "SECONDARY";
     }
   ) {}
@@ -690,6 +709,7 @@ export {
   SetDotplotAlignerPreferenceRequest,
   StartDotplotJobsRequest,
   ListDotplotJobsRequest,
+  StopDotplotJobRequest,
   RenameContigRequest,
   RenameScaffoldRequest,
   ExportNameMappingRequest,
@@ -708,6 +728,7 @@ export {
   MoveSelectionRangeRequest,
   ListAGPFilesRequest,
   LoadAGPRequest,
+  ApplyJuiceboxAssemblyRequest,
   OpenProgressRequest,
   OpenSecondarySourceRequest,
   CloseSecondarySourceRequest,

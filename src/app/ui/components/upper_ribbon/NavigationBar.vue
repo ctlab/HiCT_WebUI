@@ -23,7 +23,10 @@
   <nav class="navbar-bar navbar navbar-expand">
     <div class="container-fluid">
       <!-- Logo -->
-      <a class="navbar-brand" href="#">HiCT</a>
+      <a class="navbar-brand hict-navbar-brand" href="#">
+        <img :src="hictLogo" alt="" class="hict-navbar-logo" aria-hidden="true" />
+        <span>HiCT</span>
+      </a>
 
       <div id="navbarSupportedContent" class="collapse navbar-collapse">
         <ul class="navbar-nav me-auto mb-2 mb-lg-0">
@@ -171,6 +174,11 @@
               <li>
                 <a class="dropdown-item" href="#" @click="onLoadAGP"
                   >Load AGP</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" @click="onApplyJuiceboxAssembly"
+                  >Apply Juicebox assembly</a
                 >
               </li>
               <li>
@@ -374,6 +382,28 @@
     :error-message="errorMessage"
     :file-name-predicate="(name: string) => name.endsWith('.agp')"
   ></UniversalFileSelector>
+  <UniversalFileSelector
+    :network-manager="props.networkManager"
+    v-if="openingJuiceboxAssemblyFile"
+    @selected="onJuiceboxAssemblySelected"
+    @dismissed="onJuiceboxAssemblyFileDismissed"
+    :error-message="errorMessage"
+    :title="'Apply Juicebox assembly'"
+    :file-type="'.agp, .assembly'"
+    :note="'Select a Juicebox .assembly to convert it to AGP and apply it to the current map state. If you also have the original contig FASTA, selecting it will improve contig-border matching; otherwise the apply step will run in best-effort mode.'"
+    :file-name-predicate="isAssemblyFilename"
+  ></UniversalFileSelector>
+  <UniversalFileSelector
+    :network-manager="props.networkManager"
+    v-if="openingJuiceboxAssemblyFastaFile"
+    @selected="onJuiceboxAssemblyFastaSelected"
+    @dismissed="onJuiceboxAssemblyFastaFileDismissed"
+    :error-message="errorMessage"
+    :title="'Select original FASTA for exact assembly matching'"
+    :file-type="'.fasta, .fa, .fna, .fas, .gz'"
+    :note="'Optional. If selected, the assembly apply step will first link the FASTA so contig matching can be exact when the sequence names and lengths line up. Without it, the assembly will be applied in best-effort mode.'"
+    :file-name-predicate="isFastaFilename"
+  ></UniversalFileSelector>
   <CoolerConverter
     :network-manager="networkManager"
     :initial-cooler-filename="coolerToConvert"
@@ -540,6 +570,7 @@ import {
   GetFastaForAssemblyRequest,
   LinkFASTARequest,
   LoadAGPRequest,
+  ApplyJuiceboxAssemblyRequest,
 } from "@/app/core/net/api/request";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import CoolerConverter from "./CoolerConverter.vue";
@@ -566,9 +597,12 @@ import {
   webAttributions,
 } from "@/app/core/attribution";
 import pkg from "../../../../../package.json";
+import hictLogo from "@/assets/hict-logo.png";
 const openingFile = ref(false);
 const openingFASTAFile = ref(false);
 const openingAGPFile = ref(false);
+const openingJuiceboxAssemblyFile = ref(false);
+const openingJuiceboxAssemblyFastaFile = ref(false);
 const convertingCoolers = ref(false);
 const generatingDotplots = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
@@ -583,6 +617,8 @@ const aboutOpen = ref(false);
 const aboutActiveTab = ref<"about" | "attribution">("about");
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
+const pendingJuiceboxAssemblyFilename = ref("");
+const pendingJuiceboxAssemblyFastaFilename = ref("");
 const nativeProcessingStatus = ref<NativeProcessingStatusResponse | null>(null);
 const nativeProcessingRequested = ref(false);
 const nativeProcessingBusy = ref(false);
@@ -843,6 +879,12 @@ function onLoadAGP() {
   openingAGPFile.value = true;
 }
 
+function onApplyJuiceboxAssembly(): void {
+  pendingJuiceboxAssemblyFilename.value = "";
+  pendingJuiceboxAssemblyFastaFilename.value = "";
+  openingJuiceboxAssemblyFile.value = true;
+}
+
 function onFileDismissed() {
   openingFile.value = false;
   errorMessage.value = null;
@@ -943,6 +985,19 @@ function onAGPFileDismissed() {
   openingAGPFile.value = false;
 }
 
+function onJuiceboxAssemblyFileDismissed(): void {
+  openingJuiceboxAssemblyFile.value = false;
+  pendingJuiceboxAssemblyFilename.value = "";
+}
+
+function onJuiceboxAssemblyFastaFileDismissed(): void {
+  openingJuiceboxAssemblyFastaFile.value = false;
+  pendingJuiceboxAssemblyFastaFilename.value = "";
+  void applyPendingJuiceboxAssembly().catch((error) => {
+    toast.error(String(error));
+  });
+}
+
 async function onFileSelected(filename: string) {
   if (filename && filename !== "") {
     const lowered = filename.toLowerCase();
@@ -1013,6 +1068,68 @@ function openAGP(filename: string) {
     .catch((e) => {
       errorMessage.value = e;
     });
+}
+
+function isAssemblyFilename(name: string): boolean {
+  const lowered = name.toLowerCase();
+  return lowered.endsWith(".agp") || lowered.endsWith(".assembly");
+}
+
+async function applyPendingJuiceboxAssembly(): Promise<void> {
+  const assemblyFilename = pendingJuiceboxAssemblyFilename.value;
+  if (!assemblyFilename) {
+    return;
+  }
+  const fastaFilename = pendingJuiceboxAssemblyFastaFilename.value;
+  if (!fastaFilename) {
+    toast(
+      "No original FASTA selected. Applying the Juicebox assembly in best-effort mode; contig-border issues may remain.",
+      {
+        style: {
+          "background-color": "lightyellow",
+          color: "black",
+        },
+      }
+    );
+  }
+  const agpFilename = assemblyFilename.replace(/\.assembly$/i, ".agp");
+  await props.networkManager.requestManager.applyJuiceboxAssembly(
+    new ApplyJuiceboxAssemblyRequest({
+      assemblyFilename,
+      fastaFilename: fastaFilename || undefined,
+    })
+  );
+  emit("agpLoaded", agpFilename);
+  if (fastaFilename) {
+    emit("fastaLinked", fastaFilename);
+  }
+  pendingJuiceboxAssemblyFilename.value = "";
+  pendingJuiceboxAssemblyFastaFilename.value = "";
+  openingJuiceboxAssemblyFile.value = false;
+  openingJuiceboxAssemblyFastaFile.value = false;
+}
+
+function onJuiceboxAssemblySelected(filename: string): void {
+  pendingJuiceboxAssemblyFilename.value = filename;
+  openingJuiceboxAssemblyFile.value = false;
+  const wantsFasta = window.confirm(
+    "Select an original FASTA for exact contig matching? It is optional, but recommended when you have the contig-level FASTA used to build this Juicebox assembly."
+  );
+  if (wantsFasta) {
+    openingJuiceboxAssemblyFastaFile.value = true;
+    return;
+  }
+  void applyPendingJuiceboxAssembly().catch((error) => {
+    toast.error(String(error));
+  });
+}
+
+function onJuiceboxAssemblyFastaSelected(filename: string): void {
+  pendingJuiceboxAssemblyFastaFilename.value = filename;
+  openingJuiceboxAssemblyFastaFile.value = false;
+  void applyPendingJuiceboxAssembly().catch((error) => {
+    toast.error(String(error));
+  });
 }
 
 function isFastaFilename(name: string): boolean {
@@ -1176,6 +1293,22 @@ function onAssemblyAGPRequest() {
 
 .navbar-bar :deep(.dropdown-menu) {
   border-color: var(--hict-ui-border, rgba(15, 23, 38, 0.22));
+}
+
+.hict-navbar-brand {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.hict-navbar-logo {
+  border-radius: 6px;
+  display: block;
+  flex: 0 0 auto;
+  height: 28px;
+  object-fit: cover;
+  width: 28px;
 }
 
 #connection-settings-menu-dropdown {

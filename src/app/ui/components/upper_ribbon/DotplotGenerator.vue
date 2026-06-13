@@ -58,6 +58,20 @@
             </div>
 
             <div v-else-if="step === 'settings'" class="dotplot-settings">
+              <div class="alert alert-warning dotplot-ram-warning">
+                <strong>Memory warning.</strong>
+                <div class="mt-1">
+                  Dotplot generation can require a large amount of RAM, depending on genome assembly size.
+                  Machines with less than 64 GB of memory may not be enough for large inputs.
+                </div>
+                <details class="mt-2">
+                  <summary>Show cluster guidance</summary>
+                  <div class="mt-2">
+                    If you have access to a Linux-powered cluster with enough resources, you can run HiCT in remote
+                    server mode and connect to it with SSH port forwarding for HTTP 5000 and 8080.
+                  </div>
+                </details>
+              </div>
               <div class="row g-3">
                 <div class="col-md-4">
                   <label class="form-label">Base dotplot resolution, bp/bin</label>
@@ -209,6 +223,15 @@
                         :style="{ width: `${Math.round((job.overallProgress || 0) * 100)}%` }"
                       ></div>
                     </div>
+                    <div v-if="isActiveJob(job)" class="dotplot-job-actions">
+                      <button
+                        class="btn btn-danger btn-sm"
+                        :disabled="isCancellingJob(job.jobId)"
+                        @click="cancelDotplotJob(job)"
+                      >
+                        {{ isCancellingJob(job.jobId) ? "Cancelling..." : "Cancel" }}
+                      </button>
+                    </div>
                     <small class="d-block mt-2">{{ job.currentStageLabel || job.stageDetail || job.toolchainSummary }}</small>
                     <pre v-if="job.error" class="dotplot-error mt-2">{{ job.error }}</pre>
                     <details v-if="job.logs.length" class="mt-2">
@@ -277,6 +300,7 @@ const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> = ref(null)
 const errorMessage: Ref<string> = ref("");
 const submitting = ref(false);
 const refreshingJobs = ref(false);
+const cancellingJobs: Ref<Set<string>> = ref(new Set<string>());
 let refreshTimer: number | null = null;
 
 const binSize = ref(1000);
@@ -457,6 +481,41 @@ async function startDotplots(): Promise<void> {
   }
 }
 
+function isActiveJob(job: ConversionJobResponse): boolean {
+  return job.status === "queued" || job.status === "running";
+}
+
+function isCancellingJob(jobId: string): boolean {
+  return cancellingJobs.value.has(jobId);
+}
+
+function setJobCancelling(jobId: string, cancelling: boolean): void {
+  const next = new Set(cancellingJobs.value);
+  if (cancelling) {
+    next.add(jobId);
+  } else {
+    next.delete(jobId);
+  }
+  cancellingJobs.value = next;
+}
+
+async function cancelDotplotJob(job: ConversionJobResponse): Promise<void> {
+  if (!isActiveJob(job) || isCancellingJob(job.jobId)) {
+    return;
+  }
+  setJobCancelling(job.jobId, true);
+  errorMessage.value = "";
+  try {
+    await props.networkManager.requestManager.stopDotplotJob(job.jobId);
+    await refreshJobs();
+    syncAutoRefresh();
+  } catch (error) {
+    errorMessage.value = String(error);
+  } finally {
+    setJobCancelling(job.jobId, false);
+  }
+}
+
 function safeInteger(value: number, fallback: number): number {
   return Math.max(1, Math.trunc(Number.isFinite(value) ? value : fallback));
 }
@@ -598,6 +657,10 @@ onBeforeUnmount(() => {
   font-size: 0.9em;
 }
 
+.dotplot-ram-warning summary {
+  cursor: pointer;
+}
+
 .dotplot-command-preview {
   margin: 0;
   max-height: 120px;
@@ -640,6 +703,17 @@ onBeforeUnmount(() => {
 .status-pill.failed {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.status-pill.cancelled {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.dotplot-job-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
 }
 
 .dotplot-error,

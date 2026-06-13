@@ -77,11 +77,13 @@ import {
   StartConversionJobRequest,
   StartDotplotJobsRequest,
   ListDotplotJobsRequest,
+  StopDotplotJobRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
   GetConversionToolchainStatusRequest,
   SetDotplotAlignerPreferenceRequest,
   ConvertAssemblyToAgpRequest,
+  ApplyJuiceboxAssemblyRequest,
   StopConversionJobRequest,
   RenameContigRequest,
   RenameScaffoldRequest,
@@ -913,6 +915,14 @@ class RequestManager {
     );
   }
 
+  public async stopDotplotJob(
+    jobId: string
+  ): Promise<{ status: string; jobId: string }> {
+    return this.sendRequest(new StopDotplotJobRequest(jobId)).then(
+      (response) => response.data
+    );
+  }
+
   public async listConversionJobs(): Promise<ConversionJobResponse[]> {
     return this.sendRequest(new ListConversionJobsRequest()).then((response) =>
       (response.data as Record<string, unknown>[]).map((job) =>
@@ -1091,6 +1101,25 @@ class RequestManager {
       })
       .catch((err) => {
         throw new Error("Cannot link AGP file: " + err);
+      });
+  }
+
+  public async applyJuiceboxAssembly(request: ApplyJuiceboxAssemblyRequest): Promise<AssemblyInfo> {
+    return this.sendRequest(request)
+      .then((response) => response.data)
+      .then((json) => new AssemblyInfoDTO(json).toEntity())
+      .then((asmInfo) => {
+        this.networkManager.mapManager?.contigDimensionHolder.updateContigData(
+          asmInfo.contigDescriptors
+        );
+        this.networkManager.mapManager?.scaffoldHolder.updateScaffoldData(
+          asmInfo.scaffoldDescriptors
+        );
+        this.networkManager.mapManager?.reloadVisuals();
+        return asmInfo;
+      })
+      .catch((err) => {
+        throw new Error("Cannot apply Juicebox assembly: " + err);
       });
   }
 

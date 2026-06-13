@@ -35,6 +35,7 @@ import {
   MoveSelectionRangeRequest,
   ListAGPFilesRequest,
   LoadAGPRequest,
+  ApplyJuiceboxAssemblyRequest,
   OpenProgressRequest,
   OpenSecondarySourceRequest,
   CloseSecondarySourceRequest,
@@ -76,6 +77,7 @@ import {
   SetDotplotAlignerPreferenceRequest,
   ConvertAssemblyToAgpRequest,
   ListDotplotJobsRequest,
+  StopDotplotJobRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
   StopConversionJobRequest,
@@ -144,6 +146,8 @@ abstract class HiCTAPIRequestDTO<
         );
       case entity instanceof ListDotplotJobsRequest:
         return new ListDotplotJobsRequestDTO(entity as ListDotplotJobsRequest);
+      case entity instanceof StopDotplotJobRequest:
+        return new StopDotplotJobRequestDTO(entity as StopDotplotJobRequest);
       case entity instanceof UngroupContigsFromScaffoldRequest:
         return new UngroupContigsFromScaffoldRequestDTO(
           entity as UngroupContigsFromScaffoldRequest
@@ -240,6 +244,10 @@ abstract class HiCTAPIRequestDTO<
         return new ListAGPFilesRequestDTO(entity);
       case entity instanceof LoadAGPRequest:
         return new LoadAGPRequestDTO(entity as LoadAGPRequest);
+      case entity instanceof ApplyJuiceboxAssemblyRequest:
+        return new ApplyJuiceboxAssemblyRequestDTO(
+          entity as ApplyJuiceboxAssemblyRequest
+        );
       case entity instanceof OpenProgressRequest:
         return new OpenProgressRequestDTO(entity);
       case entity instanceof OpenSecondarySourceRequest:
@@ -569,6 +577,12 @@ class ListDotplotJobsRequestDTO extends HiCTAPIRequestDTO<ListDotplotJobsRequest
   }
 }
 
+class StopDotplotJobRequestDTO extends HiCTAPIRequestDTO<StopDotplotJobRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
 class ListConversionJobsRequestDTO extends HiCTAPIRequestDTO<ListConversionJobsRequest> {
   toDTO(): Record<string, unknown> {
     return {};
@@ -675,6 +689,16 @@ class LoadAGPRequestDTO extends HiCTAPIRequestDTO<LoadAGPRequest> {
   toDTO(): Record<string, unknown> {
     return {
       agpFilename: this.entity.options.agpFilename,
+      source: this.entity.options.source,
+    };
+  }
+}
+
+class ApplyJuiceboxAssemblyRequestDTO extends HiCTAPIRequestDTO<ApplyJuiceboxAssemblyRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      assemblyFilename: this.entity.options.assemblyFilename,
+      fastaFilename: this.entity.options.fastaFilename,
       source: this.entity.options.source,
     };
   }
@@ -1005,6 +1029,7 @@ export {
   StartDotplotJobsRequestDTO,
   SetDotplotAlignerPreferenceRequestDTO,
   ListDotplotJobsRequestDTO,
+  StopDotplotJobRequestDTO,
   ListConversionJobsRequestDTO,
   GetConversionJobRequestDTO,
   StopConversionJobRequestDTO,
