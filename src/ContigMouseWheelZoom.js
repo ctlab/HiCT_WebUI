@@ -119,6 +119,7 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
 
     if (this.useAnchor_) {
       this.lastMouseCoord = mapBrowserEvent.coordinate;
+      this.lastAnchor_ = mapBrowserEvent.coordinate;
       this.lastMousePixel = mapBrowserEvent.pixel;
       this.lastCenterPixel = [
         Math.round(map.getSize()[0] / 2),
@@ -293,22 +294,12 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     } catch (error) {
       console.warn("Unable to derive zoom target guidance resolution", error);
     }
-    const guidanceResolutionChanged =
-      oldGuidanceDescriptor &&
-      newGuidanceDescriptor &&
-      (oldGuidanceDescriptor.bpResolution !==
-        newGuidanceDescriptor.bpResolution ||
-        oldGuidanceDescriptor.pixelResolution !==
-          newGuidanceDescriptor.pixelResolution ||
-        oldGuidanceDescriptor.sourceName !== newGuidanceDescriptor.sourceName);
-
     if (
       this.lastMouseBps &&
       this.lastCenterPixel &&
       this.lastMousePixel &&
       this.lastMouseCoord &&
-      !isNaN(this.lastMouseCoord[0]) &&
-      guidanceResolutionChanged
+      !isNaN(this.lastMouseCoord[0])
     ) {
       if (newGuidanceDescriptor) {
         const dimensionHolder = this.getDimensionHolderForDescriptor(
