@@ -697,6 +697,7 @@ class CommonEventManager {
         " and right selection border is ",
         toPx
       );
+      return;
     }
     const bpResolution =
       this.mapManager.viewAndLayersManager.currentViewState.resolutionDesciptor
@@ -706,6 +707,20 @@ class CommonEventManager {
       .map((px) =>
         this.mapManager.contigDimensionHolder.getStartBpOfPx(px, bpResolution)
       );
+    if (
+      !Number.isFinite(fromBpX) ||
+      !Number.isFinite(fromBpY) ||
+      !Number.isFinite(toBpX) ||
+      !Number.isFinite(toBpY)
+    ) {
+      console.warn("Not exporting FASTA because selection coordinates are invalid", {
+        fromBpX,
+        fromBpY,
+        toBpX,
+        toBpY,
+      });
+      return;
+    }
     console.log("Bps: ", fromBpX, fromBpY, toBpX, toBpY, " pxs ", fromPx, toPx);
 
     this.mapManager.networkManager.requestManager
