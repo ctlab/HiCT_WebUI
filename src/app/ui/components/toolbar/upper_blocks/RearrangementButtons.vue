@@ -24,9 +24,12 @@
     <button
       class="btn btn-outline-primary"
       type="button"
-      data-bs-toggle="tooltip"
+      ref="reverseSelectionButton"
+      data-bs-toggle="popover"
       data-bs-placement="right"
-      title="Reverse selection"
+      data-bs-html="true"
+      data-bs-title="Reverse Selection"
+      data-bs-content="First select a range of contigs on the map using Shift + hold left mouse key. Then press this button to reverse a range covered by the selection"
       @click="props.mapManager?.eventManager.onReverseSelectionClicked"
     >
       <i class="bi bi-arrow-repeat"></i>
@@ -38,10 +41,12 @@
         'btn-outline-primary': !translocationMode,
       }"
       type="button"
-      data-bs-toggle="tooltip"
-      data-bs-placement="right"
-      title="Enter translocation mode"
       ref="translocationButton"
+      data-bs-toggle="popover"
+      data-bs-placement="right"
+      data-bs-html="true"
+      data-bs-title="Enter translocation mode"
+      data-bs-content="First select a range of contigs on the map using Shift + left mouse key. Then press this button and use your mouse cursor to insert it between neighbouring contigs. Press on the highlighted triangle inside the contig border to insert the range there."
       @click="translocationClick"
     >
       <i class="bi bi-arrows-move"></i>
@@ -62,13 +67,41 @@
 
 <script setup lang="ts">
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import { Popover } from "bootstrap";
 
 const props = defineProps<{
   readonly mapManager?: ContactMapManager | undefined;
 }>();
 
 const translocationMode = ref(false);
+const reverseSelectionButton = ref<HTMLElement | null>(null);
+const translocationButton = ref<HTMLElement | null>(null);
+const popovers = ref<Popover[]>([]);
+
+onMounted(() => {
+  const sharedOptions = {
+    trigger: "hover focus" as const,
+    delay: { show: 1000, hide: 150 },
+    container: "body",
+    fallbackPlacements: ["right", "left", "top", "bottom"],
+  };
+  popovers.value = [reverseSelectionButton, translocationButton]
+    .map((buttonRef) =>
+      buttonRef.value
+        ? new Popover(buttonRef.value, {
+            ...sharedOptions,
+            customClass: "hict-toolbar-help-popover",
+          })
+        : null
+    )
+    .filter((popover): popover is Popover => popover !== null);
+});
+
+onBeforeUnmount(() => {
+  popovers.value.forEach((popover) => popover.dispose());
+  popovers.value = [];
+});
 
 function translocationClick() {
   props.mapManager?.eventManager.onMoveSelectionClicked();
