@@ -58,6 +58,20 @@
             </div>
 
             <div v-else-if="step === 'settings'" class="dotplot-settings">
+              <div class="alert alert-warning dotplot-ram-warning">
+                <strong>Memory warning.</strong>
+                <div class="mt-1">
+                  Dotplot generation can require a large amount of RAM, depending on genome assembly size.
+                  Machines with less than 64 GB of memory may not be enough for large inputs.
+                </div>
+                <details class="mt-2">
+                  <summary>Show cluster guidance</summary>
+                  <div class="mt-2">
+                    If you have access to a Linux-powered cluster with enough resources, you can run HiCT in remote
+                    server mode and connect to it with SSH port forwarding for HTTP 5000 and 8080.
+                  </div>
+                </details>
+              </div>
               <div class="row g-3">
                 <div class="col-md-4">
                   <label class="form-label">Base dotplot resolution, bp/bin</label>
@@ -596,6 +610,10 @@ onBeforeUnmount(() => {
 
 .dotplot-settings code {
   font-size: 0.9em;
+}
+
+.dotplot-ram-warning summary {
+  cursor: pointer;
 }
 
 .dotplot-command-preview {

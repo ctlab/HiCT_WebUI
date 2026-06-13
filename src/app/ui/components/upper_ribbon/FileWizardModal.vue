@@ -56,7 +56,7 @@
 
             <section class="wizard-main">
               <div v-if="currentStep?.id === 'view-mode'" class="wizard-section">
-                <h6>View mode</h6>
+                <h6>View Mode</h6>
                 <div class="row g-3">
                   <div class="col-md-4" v-for="mode in viewModeCards" :key="mode.id">
                     <button
@@ -73,7 +73,7 @@
               </div>
 
               <div v-else-if="currentStep?.id === 'sources'" class="wizard-section">
-                <h6>Sources selection</h6>
+                <h6>Sources Selection</h6>
                 <div class="wizard-source-grid">
                   <div class="wizard-card">
                     <div class="wizard-card-header">
@@ -143,12 +143,12 @@
                 </div>
                 <div v-if="requiresSecondarySource" class="alert alert-info mt-3 mb-0">
                   Overlay and split sessions keep one assembly source authoritative and propagate that layout to the
-                  other source by matching contig names. Choose the authoritative source on the Assembly file step.
+                  other source by matching contig names. Choose the authoritative source on the Assembly File step.
                 </div>
               </div>
 
               <div v-else-if="currentStep?.id === 'visualization'" class="wizard-section">
-                <h6>Visualization options</h6>
+                <h6>Visualization Options</h6>
                 <div class="wizard-source-grid">
                   <div class="wizard-card">
                     <div class="wizard-card-header">
@@ -273,8 +273,50 @@
                 </div>
               </div>
 
+              <div v-else-if="currentStep?.id === 'conversion'" class="wizard-section">
+                <h6>Map Files Conversion</h6>
+                <div class="wizard-card mb-3">
+                  <div class="wizard-card-body">
+                    <div class="form-check">
+                      <input id="primary-force-conversion" v-model="primarySource.forceConversion" class="form-check-input" type="checkbox" />
+                      <label class="form-check-label" for="primary-force-conversion">
+                        Force primary conversion even when cached output is current
+                      </label>
+                    </div>
+                    <div v-if="requiresSecondarySource" class="form-check mt-2">
+                      <input id="secondary-force-conversion" v-model="secondarySource.forceConversion" class="form-check-input" type="checkbox" />
+                      <label class="form-check-label" for="secondary-force-conversion">
+                        Force secondary conversion even when cached output is current
+                      </label>
+                    </div>
+                    <div class="form-check mt-2">
+                      <input id="drop-caches-before-run" v-model="dropCachesBeforeRun" class="form-check-input" type="checkbox" />
+                      <label class="form-check-label" for="drop-caches-before-run">
+                        Drop all precomputed caches before running the wizard
+                      </label>
+                    </div>
+                    <div v-if="toolchainStatus && !toolchainStatus.hicConversionAvailable" class="alert alert-warning mt-3 mb-0">
+                      {{ toolchainStatus.summary }}
+                    </div>
+                  </div>
+                </div>
+                <ul class="list-group">
+                  <li class="list-group-item">
+                    Primary:
+                    <strong>{{ describeConversionPlan(primarySource) }}</strong>
+                  </li>
+                  <li v-if="requiresSecondarySource" class="list-group-item">
+                    Secondary:
+                    <strong>{{ describeConversionPlan(secondarySource) }}</strong>
+                  </li>
+                </ul>
+              </div>
+
               <div v-else-if="currentStep?.id === 'fasta'" class="wizard-section">
                 <h6>FASTA files</h6>
+                <div v-if="selectedHicSourceCount > 0" class="alert alert-warning mb-3">
+                  {{ hicAssemblyAndFastaWarning }}
+                </div>
                 <div class="wizard-source-grid">
                   <div class="wizard-card">
                     <div class="wizard-card-header">
@@ -302,7 +344,7 @@
               </div>
 
               <div v-else-if="currentStep?.id === 'agp'" class="wizard-section">
-                <h6>Assembly file</h6>
+                <h6>Assembly File</h6>
                 <div class="wizard-source-grid">
                   <div class="wizard-card">
                     <div class="wizard-card-header">
@@ -324,6 +366,9 @@
                         .agp is loaded after opening. .assembly is passed to .hic conversion; for already converted
                         matrices it must be converted to AGP before applying layout.
                       </small>
+                      <div v-if="selectedHicSourceCount > 0" class="alert alert-warning mt-3 mb-0">
+                        {{ hicAssemblyAndFastaWarning }}
+                      </div>
                     </div>
                   </div>
                   <div v-if="requiresSecondarySource" class="wizard-card">
@@ -341,6 +386,9 @@
                         >
                           Convert to AGP
                         </button>
+                      </div>
+                      <div v-if="selectedHicSourceCount > 0" class="alert alert-warning mt-3 mb-0">
+                        {{ hicAssemblyAndFastaWarning }}
                       </div>
                     </div>
                   </div>
@@ -388,47 +436,8 @@
                 </div>
               </div>
 
-              <div v-else-if="currentStep?.id === 'conversion'" class="wizard-section">
-                <h6>Map files conversion</h6>
-                <div class="wizard-card mb-3">
-                  <div class="wizard-card-body">
-                    <div class="form-check">
-                      <input id="primary-force-conversion" v-model="primarySource.forceConversion" class="form-check-input" type="checkbox" />
-                      <label class="form-check-label" for="primary-force-conversion">
-                        Force primary conversion even when cached output is current
-                      </label>
-                    </div>
-                    <div v-if="requiresSecondarySource" class="form-check mt-2">
-                      <input id="secondary-force-conversion" v-model="secondarySource.forceConversion" class="form-check-input" type="checkbox" />
-                      <label class="form-check-label" for="secondary-force-conversion">
-                        Force secondary conversion even when cached output is current
-                      </label>
-                    </div>
-                    <div class="form-check mt-2">
-                      <input id="drop-caches-before-run" v-model="dropCachesBeforeRun" class="form-check-input" type="checkbox" />
-                      <label class="form-check-label" for="drop-caches-before-run">
-                        Drop all precomputed caches before running the wizard
-                      </label>
-                    </div>
-                    <div v-if="toolchainStatus && !toolchainStatus.hicConversionAvailable" class="alert alert-warning mt-3 mb-0">
-                      {{ toolchainStatus.summary }}
-                    </div>
-                  </div>
-                </div>
-                <ul class="list-group">
-                  <li class="list-group-item">
-                    Primary:
-                    <strong>{{ describeConversionPlan(primarySource) }}</strong>
-                  </li>
-                  <li v-if="requiresSecondarySource" class="list-group-item">
-                    Secondary:
-                    <strong>{{ describeConversionPlan(secondarySource) }}</strong>
-                  </li>
-                </ul>
-              </div>
-
               <div v-else-if="currentStep?.id === 'track-precompute'" class="wizard-section">
-                <h6>Track precomputing</h6>
+                <h6>Track Precomputing</h6>
                 <div class="form-check">
                   <input id="enable-track-precompute" v-model="precomputeTracks" class="form-check-input" type="checkbox" />
                   <label class="form-check-label" for="enable-track-precompute">
@@ -465,7 +474,7 @@
               </div>
 
               <div v-else-if="currentStep?.id === 'notes'" class="wizard-section">
-                <h6>Notes and warnings</h6>
+                <h6>Notes and Warnings</h6>
                 <div class="wizard-check-list">
                   <div
                     v-for="item in wizardCheckItems"
@@ -503,9 +512,9 @@
               </div>
 
               <div v-else-if="currentStep?.id === 'finish'" class="wizard-section">
-                <h6>Final checks</h6>
+                <h6>Final Checks</h6>
                 <div class="alert alert-light border">
-                  <div><strong>View mode:</strong> {{ currentViewModeLabel }}</div>
+                  <div><strong>View Mode:</strong> {{ currentViewModeLabel }}</div>
                   <div><strong>Primary source:</strong> {{ primarySource.filename || "not selected" }}</div>
                   <div v-if="requiresSecondarySource"><strong>Secondary source:</strong> {{ secondarySource.filename || "not selected" }}</div>
                   <div><strong>Tracks:</strong> {{ selectedTracks.length }}</div>
@@ -705,11 +714,11 @@ const matrixViewStore = useMatrixViewStore();
 const steps: Array<{ id: WizardStepId; label: string }> = [
   { id: "view-mode", label: "View mode" },
   { id: "sources", label: "Sources selection" },
-  { id: "agp", label: "Assembly file" },
   { id: "conversion", label: "Map files conversion" },
-  { id: "visualization", label: "Visualization options" },
-  { id: "tracks", label: "1D tracks" },
+  { id: "agp", label: "Assembly file" },
   { id: "fasta", label: "FASTA file" },
+  { id: "tracks", label: "1D tracks" },
+  { id: "visualization", label: "Visualization" },
   { id: "notes", label: "Notes and warnings" },
   { id: "track-precompute", label: "Track precomputing" },
   { id: "finish", label: "Final checks" },
@@ -832,7 +841,9 @@ const currentViewModeLabel = computed(
 );
 
 const currentRunStepLabel = computed(
-  () => steps.find((step) => step.id === runState.currentStepId)?.label ?? "Running"
+  () =>
+    steps.find((step) => step.id === runState.currentStepId)?.label ??
+    (runState.currentStepId === "conversion" ? "Map Files Conversion" : "Running")
 );
 
 const findPresetIdByName = (name: string): string =>
@@ -845,6 +856,17 @@ const usesExpectedPreset = computed(
     primaryPreset.value?.preset.options.signalDisplayMode !== "OBSERVED" ||
     (requiresSecondarySource.value &&
       secondaryPreset.value?.preset.options.signalDisplayMode !== "OBSERVED")
+);
+
+const selectedHicSourceCount = computed(() =>
+  [primarySource, secondarySource]
+    .filter((source, index) => index === 0 || requiresSecondarySource.value)
+    .filter((source) => source.filename.toLowerCase().endsWith(".hic")).length
+);
+
+const hicAssemblyAndFastaWarning = computed(
+  () =>
+    "For the best .hic conversion quality, provide the matching .assembly and FASTA files. If a .hic source is paired with .assembly but no FASTA, contig-border placement will be less precise and borders may look shifted at intermediate zoom levels."
 );
 
 const canRunWizard = computed(() => wizardBlockingIssues.value.length === 0);
@@ -918,13 +940,8 @@ const wizardNotes = computed(() => {
         : "Secondary AGP is not authoritative in this run and will not replace the synchronized primary-driven overlay assembly."
     );
   }
-  const selectedHicSources = [primarySource, secondarySource]
-    .filter((source, index) => index === 0 || requiresSecondarySource.value)
-    .filter((source) => source.filename.toLowerCase().endsWith(".hic"));
-  if (selectedHicSources.length > 0) {
-    notes.push(
-      ".hic sources do not reliably carry Juicebox/JBAT scaffold layout. Select the matching AGP after conversion; if the project only has a .assembly file, convert it to AGP before scaffolding-sensitive work."
-    );
+  if (selectedHicSourceCount.value > 0) {
+    notes.push(hicAssemblyAndFastaWarning.value);
   }
   if (primaryAgp.value && secondaryAgp.value) {
     notes.push(
@@ -1042,6 +1059,15 @@ const wizardCheckItems = computed<WizardCheckItem[]>(() => {
       kind: "pass",
       title: "Secondary FASTA",
       message: "FASTA will be linked to the secondary source.",
+    });
+  }
+  if ([primarySource, secondarySource].some((source, index) => source.filename.toLowerCase().endsWith(".hic") && (index === 0 || requiresSecondarySource.value))) {
+    items.push({
+      id: "hic-conversion-guidance",
+      kind: "warning",
+      title: ".hic conversion guidance",
+      message:
+        "For the best conversion quality, pair each .hic source with the matching .assembly and FASTA. If .assembly is available but FASTA is missing, contig borders may be less accurate and may appear shifted at intermediate zoom levels.",
     });
   }
   if (toolchainStatus.value && !toolchainStatus.value.hicConversionAvailable) {
