@@ -285,6 +285,13 @@ class ListDotplotJobsRequest implements HiCTAPIRequest {
   requestPath = "/dotplot/jobs/list";
 }
 
+class StopDotplotJobRequest implements HiCTAPIRequest {
+  public requestPath: string;
+  public constructor(public readonly jobId: string) {
+    this.requestPath = `/dotplot/jobs/${jobId}/stop`;
+  }
+}
+
 class SetContrastRangeRequest implements HiCTAPIRequest {
   requestPath = "/set_contrast_range";
 
@@ -702,6 +709,7 @@ export {
   SetDotplotAlignerPreferenceRequest,
   StartDotplotJobsRequest,
   ListDotplotJobsRequest,
+  StopDotplotJobRequest,
   RenameContigRequest,
   RenameScaffoldRequest,
   ExportNameMappingRequest,

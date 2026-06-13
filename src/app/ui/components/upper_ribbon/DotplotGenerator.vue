@@ -223,6 +223,15 @@
                         :style="{ width: `${Math.round((job.overallProgress || 0) * 100)}%` }"
                       ></div>
                     </div>
+                    <div v-if="isActiveJob(job)" class="dotplot-job-actions">
+                      <button
+                        class="btn btn-danger btn-sm"
+                        :disabled="isCancellingJob(job.jobId)"
+                        @click="cancelDotplotJob(job)"
+                      >
+                        {{ isCancellingJob(job.jobId) ? "Cancelling..." : "Cancel" }}
+                      </button>
+                    </div>
                     <small class="d-block mt-2">{{ job.currentStageLabel || job.stageDetail || job.toolchainSummary }}</small>
                     <pre v-if="job.error" class="dotplot-error mt-2">{{ job.error }}</pre>
                     <details v-if="job.logs.length" class="mt-2">
@@ -291,6 +300,7 @@ const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> = ref(null)
 const errorMessage: Ref<string> = ref("");
 const submitting = ref(false);
 const refreshingJobs = ref(false);
+const cancellingJobs: Ref<Set<string>> = ref(new Set<string>());
 let refreshTimer: number | null = null;
 
 const binSize = ref(1000);
@@ -468,6 +478,41 @@ async function startDotplots(): Promise<void> {
     errorMessage.value = String(error);
   } finally {
     submitting.value = false;
+  }
+}
+
+function isActiveJob(job: ConversionJobResponse): boolean {
+  return job.status === "queued" || job.status === "running";
+}
+
+function isCancellingJob(jobId: string): boolean {
+  return cancellingJobs.value.has(jobId);
+}
+
+function setJobCancelling(jobId: string, cancelling: boolean): void {
+  const next = new Set(cancellingJobs.value);
+  if (cancelling) {
+    next.add(jobId);
+  } else {
+    next.delete(jobId);
+  }
+  cancellingJobs.value = next;
+}
+
+async function cancelDotplotJob(job: ConversionJobResponse): Promise<void> {
+  if (!isActiveJob(job) || isCancellingJob(job.jobId)) {
+    return;
+  }
+  setJobCancelling(job.jobId, true);
+  errorMessage.value = "";
+  try {
+    await props.networkManager.requestManager.stopDotplotJob(job.jobId);
+    await refreshJobs();
+    syncAutoRefresh();
+  } catch (error) {
+    errorMessage.value = String(error);
+  } finally {
+    setJobCancelling(job.jobId, false);
   }
 }
 
@@ -658,6 +703,17 @@ onBeforeUnmount(() => {
 .status-pill.failed {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.status-pill.cancelled {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.dotplot-job-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
 }
 
 .dotplot-error,

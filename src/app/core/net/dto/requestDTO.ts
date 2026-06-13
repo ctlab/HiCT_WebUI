@@ -77,6 +77,7 @@ import {
   SetDotplotAlignerPreferenceRequest,
   ConvertAssemblyToAgpRequest,
   ListDotplotJobsRequest,
+  StopDotplotJobRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
   StopConversionJobRequest,
@@ -145,6 +146,8 @@ abstract class HiCTAPIRequestDTO<
         );
       case entity instanceof ListDotplotJobsRequest:
         return new ListDotplotJobsRequestDTO(entity as ListDotplotJobsRequest);
+      case entity instanceof StopDotplotJobRequest:
+        return new StopDotplotJobRequestDTO(entity as StopDotplotJobRequest);
       case entity instanceof UngroupContigsFromScaffoldRequest:
         return new UngroupContigsFromScaffoldRequestDTO(
           entity as UngroupContigsFromScaffoldRequest
@@ -569,6 +572,12 @@ class SetDotplotAlignerPreferenceRequestDTO extends HiCTAPIRequestDTO<SetDotplot
 }
 
 class ListDotplotJobsRequestDTO extends HiCTAPIRequestDTO<ListDotplotJobsRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class StopDotplotJobRequestDTO extends HiCTAPIRequestDTO<StopDotplotJobRequest> {
   toDTO(): Record<string, unknown> {
     return {};
   }
@@ -1020,6 +1029,7 @@ export {
   StartDotplotJobsRequestDTO,
   SetDotplotAlignerPreferenceRequestDTO,
   ListDotplotJobsRequestDTO,
+  StopDotplotJobRequestDTO,
   ListConversionJobsRequestDTO,
   GetConversionJobRequestDTO,
   StopConversionJobRequestDTO,

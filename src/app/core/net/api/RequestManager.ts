@@ -77,6 +77,7 @@ import {
   StartConversionJobRequest,
   StartDotplotJobsRequest,
   ListDotplotJobsRequest,
+  StopDotplotJobRequest,
   ListConversionJobsRequest,
   GetConversionJobRequest,
   GetConversionToolchainStatusRequest,
@@ -911,6 +912,14 @@ class RequestManager {
       (response.data as Record<string, unknown>[]).map((job) =>
         new ConversionJobResponseDTO(job).toEntity()
       )
+    );
+  }
+
+  public async stopDotplotJob(
+    jobId: string
+  ): Promise<{ status: string; jobId: string }> {
+    return this.sendRequest(new StopDotplotJobRequest(jobId)).then(
+      (response) => response.data
     );
   }
 
