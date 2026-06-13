@@ -938,7 +938,6 @@ const selectedHicToolchainNote = computed(() => {
   if (selectedHicSourceCount.value === 0) {
     return null;
   }
-  const status = toolchainStatus.value;
   const lines = [
     "HiCT processes .hic files with hictk.",
   ];
@@ -946,8 +945,6 @@ const selectedHicToolchainNote = computed(() => {
   if (selectedHicToolchainCommandText.value) {
     lines.push(selectedHicToolchainCommandText.value);
   }
-  lines.push(`Project: ${hictkProjectUrl}`);
-  lines.push(`Citation: ${hictkCitationText}`);
   return lines;
 });
 
