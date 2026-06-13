@@ -117,15 +117,20 @@ const colorSelectorStyleObject: Ref<Record<string, string>> = ref({
 <style scoped>
 .color-picker-rectangle-root {
   position: relative;
+  overflow: visible;
   z-index: 1;
 }
 
 :global(.picker_wrapper.popup) {
   z-index: 2147483000 !important;
+  position: absolute !important;
   background: #ffffff !important;
   opacity: 1 !important;
   isolation: isolate;
   pointer-events: auto !important;
+  max-width: min(18rem, calc(100vw - 1.5rem));
+  max-height: min(24rem, calc(100vh - 1.5rem));
+  overflow: auto;
 }
 
 :global(.picker_wrapper.popup .picker_arrow::before),
