@@ -98,11 +98,11 @@ const originalToastSuccess = toast.success.bind(toast);
 const originalToastMessage = toast.message.bind(toast);
 
 const stringifyNotificationMessage = (value: unknown): string => {
-  if (value instanceof Error) {
-    return value.stack ?? value.message;
-  }
   if (typeof value === "string") {
     return value;
+  }
+  if (value instanceof Error) {
+    return value.stack ?? value.message;
   }
   try {
     return JSON.stringify(value);
@@ -115,7 +115,7 @@ const pushNotification = (
   level: NotificationLevel,
   message: string,
   options?: { skipConsole?: boolean }
-) => {
+) : number => {
   if (!options?.skipConsole) {
     switch (level) {
       case "error":
@@ -134,7 +134,7 @@ const pushNotification = (
         break;
     }
   }
-  notificationCenterStore.add(level, message);
+  return notificationCenterStore.add(level, message);
 };
 
 toast.error = ((message: unknown, data?: unknown) => {

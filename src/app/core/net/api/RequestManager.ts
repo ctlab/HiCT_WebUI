@@ -139,6 +139,7 @@ import {
 import { toast } from "vue-sonner";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
+import { extractErrorMessage } from "./errorMessage";
 
 export type SecondarySourceCompatibility = {
   sameResolutions: boolean;
@@ -421,8 +422,7 @@ class RequestManager {
       .catch((err) => {
         const errorToastStore = useErrorToastStore();
         if (!options?.suppressErrorToast && errorToastStore.requestErrorToastsEnabled) {
-          const message =
-            err?.response?.data?.error ?? err?.message ?? "Request failed";
+          const message = extractErrorMessage(err, "Request failed");
           toast.error(message);
         }
         throw err;
@@ -875,7 +875,7 @@ class RequestManager {
       .then((response) => response.data)
       .then((json) => new FastaLinkResponseDTO(json).toEntity())
       .catch((err) => {
-        throw new Error("Cannot link FASTA file: " + err);
+        throw new Error(extractErrorMessage(err, "Cannot link FASTA file"));
       });
   }
 
@@ -1100,7 +1100,7 @@ class RequestManager {
         return asmInfo;
       })
       .catch((err) => {
-        throw new Error("Cannot link AGP file: " + err);
+        throw new Error(extractErrorMessage(err, "Cannot link AGP file"));
       });
   }
 
@@ -1119,7 +1119,9 @@ class RequestManager {
         return asmInfo;
       })
       .catch((err) => {
-        throw new Error("Cannot apply Juicebox assembly: " + err);
+        throw new Error(
+          extractErrorMessage(err, "Cannot apply Juicebox assembly")
+        );
       });
   }
 
@@ -1129,7 +1131,9 @@ class RequestManager {
     return this.sendRequest(request, { responseType: "arraybuffer" })
       .then((response) => response.data)
       .catch((err) => {
-        throw new Error("Cannot download FASTA for assembly: " + err);
+        throw new Error(
+          extractErrorMessage(err, "Cannot download FASTA for assembly")
+        );
       });
   }
 
@@ -1139,7 +1143,9 @@ class RequestManager {
     return this.sendRequest(request, { responseType: "arraybuffer" })
       .then((response) => response.data)
       .catch((err) => {
-        throw new Error("Cannot download AGP for assembly: " + err);
+        throw new Error(
+          extractErrorMessage(err, "Cannot download AGP for assembly")
+        );
       });
   }
 
@@ -1149,7 +1155,9 @@ class RequestManager {
     return this.sendRequest(request, { responseType: "arraybuffer" })
       .then((response) => response.data)
       .catch((err) => {
-        throw new Error("Cannot download FASTA for selection: " + err);
+        throw new Error(
+          extractErrorMessage(err, "Cannot download FASTA for selection")
+        );
       });
   }
 

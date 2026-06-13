@@ -652,6 +652,7 @@ import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsS
 import { ColorTranslator } from "colortranslator";
 import { computed, nextTick, onMounted, reactive, ref } from "vue";
 import { toast } from "vue-sonner";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import UniversalFileSelector from "./UniversalFileSelector.vue";
 
@@ -1742,7 +1743,7 @@ const runWizard = async (): Promise<void> => {
     await nextTick();
     emit("dismissed");
   } catch (error) {
-    runState.error = String(error ?? "Wizard failed");
+    runState.error = extractErrorMessage(error, "Wizard failed");
     runState.completed = false;
     toast.error(runState.error);
   } finally {
