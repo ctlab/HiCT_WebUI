@@ -130,6 +130,7 @@
       "buildResources": "assets",
       "output": "release/${version}"
     },
+    "icon": "assets/icon",
     "win": {
       "target": [
         {

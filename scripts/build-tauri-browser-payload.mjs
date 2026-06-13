@@ -179,14 +179,19 @@ function ensureTauriConventionalIcons() {
   const iconsDir = resolve(tauriDir, "icons");
   const pngPath = resolve(iconsDir, "icon.png");
   const icoPath = resolve(iconsDir, "icon.ico");
+  const sourcePngPath = resolve(repoDir, "public", "hict-logo-512.png");
   const faviconPath = resolve(repoDir, "public", "favicon.ico");
-  const pngBuffer = Buffer.from(generatedIconPngBase64, "base64");
 
   mkdirSync(iconsDir, { recursive: true });
-  writeFileSync(pngPath, pngBuffer);
+  if (existsSync(sourcePngPath)) {
+    cpSync(sourcePngPath, pngPath);
+  } else {
+    writeFileSync(pngPath, Buffer.from(generatedIconPngBase64, "base64"));
+  }
   if (existsSync(faviconPath)) {
     cpSync(faviconPath, icoPath);
   } else {
+    const pngBuffer = readFileSync(pngPath);
     writeFileSync(icoPath, icoBufferFromPng(pngBuffer));
   }
 }

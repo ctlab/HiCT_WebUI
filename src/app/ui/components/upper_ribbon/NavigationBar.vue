@@ -23,7 +23,10 @@
   <nav class="navbar-bar navbar navbar-expand">
     <div class="container-fluid">
       <!-- Logo -->
-      <a class="navbar-brand" href="#">HiCT</a>
+      <a class="navbar-brand hict-navbar-brand" href="#">
+        <img :src="hictLogo" alt="" class="hict-navbar-logo" aria-hidden="true" />
+        <span>HiCT</span>
+      </a>
 
       <div id="navbarSupportedContent" class="collapse navbar-collapse">
         <ul class="navbar-nav me-auto mb-2 mb-lg-0">
@@ -594,6 +597,7 @@ import {
   webAttributions,
 } from "@/app/core/attribution";
 import pkg from "../../../../../package.json";
+import hictLogo from "@/assets/hict-logo.png";
 const openingFile = ref(false);
 const openingFASTAFile = ref(false);
 const openingAGPFile = ref(false);
@@ -1289,6 +1293,22 @@ function onAssemblyAGPRequest() {
 
 .navbar-bar :deep(.dropdown-menu) {
   border-color: var(--hict-ui-border, rgba(15, 23, 38, 0.22));
+}
+
+.hict-navbar-brand {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.hict-navbar-logo {
+  border-radius: 6px;
+  display: block;
+  flex: 0 0 auto;
+  height: 28px;
+  object-fit: cover;
+  width: 28px;
 }
 
 #connection-settings-menu-dropdown {
