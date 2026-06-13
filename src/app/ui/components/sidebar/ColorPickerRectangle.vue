@@ -21,20 +21,29 @@
 
 <template>
   <div class="color-picker-rectangle-root">
-    <div :style="colorSelectorStyleObject" ref="vPicker"></div>
+    <div
+      :style="colorSelectorStyleObject"
+      ref="vPicker"
+      role="button"
+      tabindex="0"
+      aria-label="Choose color"
+      @click.stop="togglePicker"
+      @keydown.enter.prevent.stop="togglePicker"
+      @keydown.space.prevent.stop="togglePicker"
+    ></div>
   </div>
 </template>
 <script setup lang="ts">
-import { Ref, onMounted, ref, watch } from "vue";
+import { Ref, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import "toolcool-color-picker";
 import Picker from "vanilla-picker";
 import "vanilla-picker/dist/vanilla-picker.csp.css";
 import { ColorTranslator } from "colortranslator";
 
-type position = false | "top" | "bottom" | "left" | "right";
+type PickerPosition = false | "top" | "bottom" | "left" | "right";
 
 const props = defineProps<{
-  position?: position | position[];
+  position?: PickerPosition | PickerPosition[];
   getDefaultColor: () => ColorTranslator | undefined;
 }>();
 
@@ -47,6 +56,8 @@ const emit = defineEmits<{
 const currentColor = ref(props.getDefaultColor());
 
 const vPicker: Ref<HTMLElement | null> = ref(null);
+const overlayRoot: Ref<HTMLDivElement | null> = ref(null);
+const pickerOpen = ref(false);
 
 watch(
   () => props.getDefaultColor(),
@@ -72,8 +83,12 @@ onMounted(() => {
     currentColor.value = new ColorTranslator("#00000000", { legacyCSS: true });
   }
   if (vPicker.value) {
+    overlayRoot.value = document.createElement("div");
+    overlayRoot.value.className = "hict-color-picker-overlay";
+    overlayRoot.value.style.display = "none";
+    document.body.appendChild(overlayRoot.value);
     picker.value = new Picker({
-      parent: vPicker.value,
+      parent: overlayRoot.value,
       color: currentColor.value.RGBA,
       onChange: function (color) {
         currentColor.value = new ColorTranslator(color.rgbaString as string, {
@@ -87,12 +102,125 @@ onMounted(() => {
         });
         colorSelectorStyleObject.value["background"] = currentColor.value.RGBA;
         emit("onColorChanged", currentColor.value as ColorTranslator);
+        closePicker();
       },
-      // @ts-expect-error Library actiually supports multiple terms in positioning
-      popup: props.position ?? ["top", "left"],
+      popup: false,
     });
+    document.addEventListener("mousedown", onDocumentMouseDown, true);
+    window.addEventListener("resize", positionOverlay);
+    window.addEventListener("scroll", positionOverlay, true);
   }
 });
+
+onBeforeUnmount(() => {
+  document.removeEventListener("mousedown", onDocumentMouseDown, true);
+  window.removeEventListener("resize", positionOverlay);
+  window.removeEventListener("scroll", positionOverlay, true);
+  picker.value?.destroy();
+  overlayRoot.value?.remove();
+});
+
+function togglePicker() {
+  if (pickerOpen.value) {
+    closePicker();
+  } else {
+    openPicker();
+  }
+}
+
+function openPicker() {
+  if (!overlayRoot.value) {
+    return;
+  }
+  pickerOpen.value = true;
+  overlayRoot.value.style.display = "block";
+  overlayRoot.value.style.visibility = "hidden";
+  nextTick(() => {
+    positionOverlay();
+    if (overlayRoot.value) {
+      overlayRoot.value.style.visibility = "visible";
+    }
+  });
+}
+
+function closePicker() {
+  pickerOpen.value = false;
+  if (overlayRoot.value) {
+    overlayRoot.value.style.display = "none";
+  }
+}
+
+function onDocumentMouseDown(event: MouseEvent) {
+  if (!pickerOpen.value) {
+    return;
+  }
+  const target = event.target;
+  if (!(target instanceof Node)) {
+    return;
+  }
+  if (vPicker.value?.contains(target) || overlayRoot.value?.contains(target)) {
+    return;
+  }
+  closePicker();
+}
+
+function positionOverlay() {
+  if (!pickerOpen.value || !vPicker.value || !overlayRoot.value) {
+    return;
+  }
+  const trigger = vPicker.value.getBoundingClientRect();
+  const overlay = overlayRoot.value.getBoundingClientRect();
+  const margin = 8;
+  const viewportWidth = document.documentElement.clientWidth;
+  const viewportHeight = document.documentElement.clientHeight;
+  const preferredPositions = (Array.isArray(props.position)
+    ? props.position
+    : [props.position ?? "top"]
+  ).filter((candidate): candidate is Exclude<PickerPosition, false> => Boolean(candidate));
+  const candidates: Exclude<PickerPosition, false>[] = preferredPositions.length > 0 ? preferredPositions : ["top"];
+
+  const rawPlacement = (candidate: Exclude<PickerPosition, false>) => {
+    switch (candidate) {
+      case "top":
+        return { left: trigger.left, top: trigger.top - overlay.height - margin };
+      case "bottom":
+        return { left: trigger.left, top: trigger.bottom + margin };
+      case "left":
+        return { left: trigger.left - overlay.width - margin, top: trigger.top };
+      case "right":
+        return { left: trigger.right + margin, top: trigger.top };
+    }
+  };
+
+  let placement = rawPlacement(candidates[0]);
+  for (const candidate of candidates) {
+    const candidatePlacement = rawPlacement(candidate);
+    if (
+      candidatePlacement.left >= margin &&
+      candidatePlacement.top >= margin &&
+      candidatePlacement.left + overlay.width <= viewportWidth - margin &&
+      candidatePlacement.top + overlay.height <= viewportHeight - margin
+    ) {
+      placement = candidatePlacement;
+      break;
+    }
+  }
+
+  overlayRoot.value.style.left = `${clamp(
+    placement.left,
+    margin,
+    Math.max(margin, viewportWidth - overlay.width - margin)
+  )}px`;
+  overlayRoot.value.style.top = `${clamp(
+    placement.top,
+    margin,
+    Math.max(margin, viewportHeight - overlay.height - margin)
+  )}px`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
 
 const colorSelectorStyleObject: Ref<Record<string, string>> = ref({
   width: "16px",
@@ -121,16 +249,28 @@ const colorSelectorStyleObject: Ref<Record<string, string>> = ref({
   z-index: 1;
 }
 
-:global(.picker_wrapper.popup) {
+:global(.hict-color-picker-overlay) {
+  position: fixed;
   z-index: 2147483000 !important;
-  position: absolute !important;
+  max-width: min(18rem, calc(100vw - 1.5rem));
+  max-height: min(24rem, calc(100vh - 1.5rem));
+  overflow: auto;
+  isolation: isolate;
+  pointer-events: auto;
+}
+
+:global(.hict-color-picker-overlay .picker_wrapper),
+:global(.picker_wrapper.popup) {
   background: #ffffff !important;
   opacity: 1 !important;
-  isolation: isolate;
   pointer-events: auto !important;
   max-width: min(18rem, calc(100vw - 1.5rem));
   max-height: min(24rem, calc(100vh - 1.5rem));
   overflow: auto;
+}
+
+:global(.hict-color-picker-overlay .picker_wrapper) {
+  position: static !important;
 }
 
 :global(.picker_wrapper.popup .picker_arrow::before),
@@ -138,6 +278,8 @@ const colorSelectorStyleObject: Ref<Record<string, string>> = ref({
   background: #ffffff !important;
 }
 
+:global(.hict-color-picker-overlay .picker_wrapper button),
+:global(.hict-color-picker-overlay .picker_wrapper input),
 :global(.picker_wrapper.popup button),
 :global(.picker_wrapper.popup input) {
   pointer-events: auto !important;
