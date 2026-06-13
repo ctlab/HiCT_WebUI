@@ -145,6 +145,15 @@
                   Overlay and split sessions keep one assembly source authoritative and propagate that layout to the
                   other source by matching contig names. Choose the authoritative source on the Assembly File step.
                 </div>
+                <div v-if="selectedHicToolchainNote" class="alert alert-info mt-3 mb-0">
+                  <div class="fw-semibold mb-1">.hic processing with hictk</div>
+                  <div v-for="(line, index) in selectedHicToolchainNote" :key="`hictk-source-${index}-${line}`">{{ line }}</div>
+                  <div class="mt-1">
+                    Project:
+                    <a :href="hictkProjectUrl" target="_blank" rel="noopener noreferrer">hictk</a>
+                  </div>
+                  <div>Citation: {{ hictkCitationText }}</div>
+                </div>
               </div>
 
               <div v-else-if="currentStep?.id === 'visualization'" class="wizard-section">
@@ -297,6 +306,17 @@
                     </div>
                     <div v-if="toolchainStatus && !toolchainStatus.hicConversionAvailable" class="alert alert-warning mt-3 mb-0">
                       {{ toolchainStatus.summary }}
+                    </div>
+                    <div v-if="selectedHicToolchainNote" class="alert alert-info mt-3 mb-0">
+                      <div class="fw-semibold mb-1">.hic processing with hictk</div>
+                      <div v-for="(line, index) in selectedHicToolchainNote" :key="`conversion-hictk-${index}-${line}`">
+                        {{ line }}
+                      </div>
+                      <div class="mt-1">
+                        Project:
+                        <a :href="hictkProjectUrl" target="_blank" rel="noopener noreferrer">hictk</a>
+                      </div>
+                      <div>Citation: {{ hictkCitationText }}</div>
                     </div>
                   </div>
                 </div>
@@ -873,6 +893,63 @@ const selectedHicSourceCount = computed(() =>
     .filter((source, index) => index === 0 || requiresSecondarySource.value)
     .filter((source) => source.filename.toLowerCase().endsWith(".hic")).length
 );
+
+const hictkProjectUrl = "https://github.com/paulsengroup/hictk";
+const hictkCitationText =
+  "Rossini R, Paulsen J. Bioinformatics 2024;40(7):btae408.";
+
+const selectedHicToolchainVariant = computed(() => {
+  const command = toolchainStatus.value?.hictkCommand ?? "";
+  const lowered = command.toLowerCase();
+  if (lowered.includes("avx512")) {
+    return "AVX-512";
+  }
+  if (lowered.includes("avx2")) {
+    return "AVX2";
+  }
+  if (lowered.includes("generic")) {
+    return "generic";
+  }
+  return "default";
+});
+
+const selectedHicToolchainAvailabilityText = computed(() => {
+  const status = toolchainStatus.value;
+  if (!status) {
+    return "hictk status is still loading";
+  }
+  if (status.hictkAvailable) {
+    return status.source.toLowerCase().includes("bundled")
+      ? `hictk is available in this build via bundled variant: ${selectedHicToolchainVariant.value}`
+      : `hictk is available in this build via external executable`;
+  }
+  return "hictk is not currently available in this build";
+});
+
+const selectedHicToolchainCommandText = computed(() => {
+  const status = toolchainStatus.value;
+  if (!status) {
+    return "";
+  }
+  return status.hictkCommand ? `Selected executable: ${status.hictkCommand}` : "Selected executable: unavailable";
+});
+
+const selectedHicToolchainNote = computed(() => {
+  if (selectedHicSourceCount.value === 0) {
+    return null;
+  }
+  const status = toolchainStatus.value;
+  const lines = [
+    "HiCT processes .hic files with hictk.",
+  ];
+  lines.push(selectedHicToolchainAvailabilityText.value);
+  if (selectedHicToolchainCommandText.value) {
+    lines.push(selectedHicToolchainCommandText.value);
+  }
+  lines.push(`Project: ${hictkProjectUrl}`);
+  lines.push(`Citation: ${hictkCitationText}`);
+  return lines;
+});
 
 const hicAssemblyAndFastaWarning = computed(
   () =>
