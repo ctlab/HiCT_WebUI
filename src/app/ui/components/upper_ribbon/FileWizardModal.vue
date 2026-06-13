@@ -92,7 +92,20 @@
                           Browse…
                         </button>
                       </div>
-                      <div v-if="primarySource.resolution" class="alert alert-light border py-2 mb-0">
+                      <div
+                        v-if="primarySource.resolving"
+                        class="alert alert-light border py-2 mb-0 d-flex align-items-center gap-2"
+                      >
+                        <div
+                          class="spinner-border spinner-border-sm text-primary flex-shrink-0"
+                          role="status"
+                          aria-hidden="true"
+                        ></div>
+                        <div class="text-truncate">
+                          Checking <strong>{{ primarySource.filename }}</strong>
+                        </div>
+                      </div>
+                      <div v-else-if="primarySource.resolution" class="alert alert-light border py-2 mb-0">
                         <small class="d-block">
                           Action: <strong>{{ humanizeMatrixAction(primarySource.resolution.action) }}</strong>
                         </small>
@@ -125,7 +138,20 @@
                           Browse…
                         </button>
                       </div>
-                      <div v-if="secondarySource.resolution" class="alert alert-light border py-2 mb-0">
+                      <div
+                        v-if="secondarySource.resolving"
+                        class="alert alert-light border py-2 mb-0 d-flex align-items-center gap-2"
+                      >
+                        <div
+                          class="spinner-border spinner-border-sm text-primary flex-shrink-0"
+                          role="status"
+                          aria-hidden="true"
+                        ></div>
+                        <div class="text-truncate">
+                          Checking <strong>{{ secondarySource.filename }}</strong>
+                        </div>
+                      </div>
+                      <div v-else-if="secondarySource.resolution" class="alert alert-light border py-2 mb-0">
                         <small class="d-block">
                           Action: <strong>{{ humanizeMatrixAction(secondarySource.resolution.action) }}</strong>
                         </small>
@@ -676,6 +702,8 @@ type SourceDraft = {
   resolution: MatrixSourceResolutionResponse | null;
   forceConversion: boolean;
   presetId: string;
+  resolving: boolean;
+  resolveRequestId: number;
 };
 
 type SelectedTrack = {
@@ -784,12 +812,16 @@ const primarySource = reactive<SourceDraft>({
   resolution: null,
   forceConversion: false,
   presetId: "",
+  resolving: false,
+  resolveRequestId: 0,
 });
 const secondarySource = reactive<SourceDraft>({
   filename: "",
   resolution: null,
   forceConversion: false,
   presetId: "",
+  resolving: false,
+  resolveRequestId: 0,
 });
 const primaryFasta = ref("");
 const secondaryFasta = ref("");
@@ -1328,16 +1360,22 @@ const resolveMatrixSource = async (
   filename: string,
   role: SourceRole
 ): Promise<void> => {
-  const response = await props.networkManager.requestManager.resolveMatrixSource(
-    filename
-  );
-  if (role === "primary") {
-    primarySource.filename = filename;
-    primarySource.resolution = response;
-    return;
+  const source = role === "primary" ? primarySource : secondarySource;
+  const requestId = ++source.resolveRequestId;
+  source.filename = filename;
+  source.resolution = null;
+  source.resolving = true;
+  try {
+    const response = await props.networkManager.requestManager.resolveMatrixSource(filename);
+    if (source.resolveRequestId !== requestId) {
+      return;
+    }
+    source.resolution = response;
+  } finally {
+    if (source.resolveRequestId === requestId) {
+      source.resolving = false;
+    }
   }
-  secondarySource.filename = filename;
-  secondarySource.resolution = response;
 };
 
 const addTrack = async (filename: string): Promise<void> => {
