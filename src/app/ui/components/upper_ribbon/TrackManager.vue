@@ -490,6 +490,7 @@ import type {
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import CoolerConverter from "@/app/ui/components/upper_ribbon/CoolerConverter.vue";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { storeToRefs } from "pinia";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
@@ -498,7 +499,7 @@ const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   (e: "dismissed"): void;
 }>();
 
@@ -524,6 +525,30 @@ let precomputePollHandle: number | null = null;
 const uiSettingsStore = useUiSettingsStore();
 const { inheritTrackBackgroundFromMap, trackBackgroundColor } =
   storeToRefs(uiSettingsStore);
+
+useEscDismissableDialog({
+  priority: 1060,
+  isOpen: () => true,
+  requestClose: () => {
+    emit("dismissed");
+  },
+});
+
+useEscDismissableDialog({
+  priority: 1075,
+  isOpen: () => pendingTrackProbe.value !== null,
+  requestClose: () => {
+    pendingTrackProbe.value = null;
+  },
+});
+
+useEscDismissableDialog({
+  priority: 1075,
+  isOpen: () => pendingSecondaryProbe.value !== null,
+  requestClose: () => {
+    pendingSecondaryProbe.value = null;
+  },
+});
 
 const normalizeColor = (value: string): string => {
   if (/^#[0-9a-fA-F]{6}$/.test(value)) {

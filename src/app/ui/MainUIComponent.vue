@@ -129,6 +129,11 @@ import {
   type SessionVisualizationPreset,
 } from "@/app/stores/sessionStore";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import {
+  dismissTopmostEscDialog,
+  hasAnyOpenEscDialog,
+  useEscDismissableDialog,
+} from "@/app/ui/escapeDialogRegistry";
 
 // Reactively use these refs only inside component
 // Pass them to Map Manager on creation as values, not Refs as objects
@@ -159,6 +164,12 @@ const openProgressStage = ref("starting");
 const openProgressPct = ref(0);
 let openProgressInFlight = false;
 const wizardOpen = ref(false);
+
+useEscDismissableDialog({
+  priority: 1050,
+  isOpen: () => openProgressVisible.value,
+  requestClose: closeOpenProgress,
+});
 
 function startOpenProgress() {
   if (openProgressTimer !== undefined) {
@@ -197,6 +208,22 @@ function stopOpenProgress() {
 
 function closeOpenProgress() {
   openProgressVisible.value = false;
+}
+
+function handleGlobalEscape(event: KeyboardEvent): void {
+  if (event.key !== "Escape" || event.repeat) {
+    return;
+  }
+  if (dismissTopmostEscDialog()) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  if (!hasAnyOpenEscDialog()) {
+    mapManager.value?.eventManager.resetSelection();
+    event.preventDefault();
+    event.stopPropagation();
+  }
 }
 
 function safeColorTranslator(
@@ -733,10 +760,12 @@ watch(
 );
 
 onMounted(() => {
+  window.addEventListener("keydown", handleGlobalEscape, true);
   syncUiChromePalette();
 });
 
 onUnmounted(() => {
+  window.removeEventListener("keydown", handleGlobalEscape, true);
   stopOpenProgress();
 });
 

@@ -69,6 +69,7 @@
 
 <script setup lang="ts">
 import type { FastaLinkResponse } from "@/app/core/net/api/response";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 
 const props = defineProps<{
   report: FastaLinkResponse;
@@ -78,6 +79,14 @@ const emit = defineEmits<{
   (e: "cancel"): void;
   (e: "proceed"): void;
 }>();
+
+useEscDismissableDialog({
+  priority: 2200,
+  isOpen: () => true,
+  requestClose: () => {
+    emit("cancel");
+  },
+});
 
 function yesNo(value: boolean): string {
   return value ? "Yes" : "No";

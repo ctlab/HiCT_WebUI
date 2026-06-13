@@ -155,6 +155,7 @@ import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { storeToRefs } from "pinia";
 import Tree from "primevue/tree";
 import { computed, onMounted, ref, watch, type CSSProperties } from "vue";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
@@ -198,6 +199,14 @@ const fileFilterHint = computed(() => {
     return `Showing ${props.fileType} by default (toggle "Show all files" to browse everything).`;
   }
   return "File type filter is active (toggle \"Show all files\" to browse everything).";
+});
+
+useEscDismissableDialog({
+  priority: props.zIndex ?? 1055,
+  isOpen: () => true,
+  requestClose: () => {
+    onDismissClicked();
+  },
 });
 
 watch(selectorMode, (mode) => {

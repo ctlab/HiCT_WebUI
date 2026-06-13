@@ -124,9 +124,18 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
 import type { ServerStatisticsResponse } from "@/app/core/net/api/RequestManager";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 
 const emit = defineEmits<{ (e: "dismissed"): void }>();
 const props = defineProps<{ networkManager: NetworkManager }>();
+
+useEscDismissableDialog({
+  priority: 1060,
+  isOpen: () => true,
+  requestClose: () => {
+    emit("dismissed");
+  },
+});
 
 const loading = ref(true);
 const error = ref("");

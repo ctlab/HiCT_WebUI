@@ -96,9 +96,18 @@ import {
   useNotificationCenterStore,
   type NotificationLevel,
 } from "@/app/stores/notificationCenterStore";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 
 const notificationStore = useNotificationCenterStore();
 const expandedEntryIds = ref<number[]>([]);
+
+useEscDismissableDialog({
+  priority: 2060,
+  isOpen: () => notificationStore.isOpen,
+  requestClose: () => {
+    notificationStore.isOpen = false;
+  },
+});
 
 const orderedEntries = computed(() =>
   notificationStore.entries.slice().reverse()

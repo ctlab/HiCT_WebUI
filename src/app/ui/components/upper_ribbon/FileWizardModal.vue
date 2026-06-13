@@ -632,6 +632,7 @@ import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsS
 import { ColorTranslator } from "colortranslator";
 import { computed, nextTick, onMounted, reactive, ref } from "vue";
 import { toast } from "vue-sonner";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import UniversalFileSelector from "./UniversalFileSelector.vue";
 
 type WizardStepId =
@@ -705,6 +706,15 @@ const props = defineProps<{
     options?: { applyDefaultPreset?: boolean }
   ) => Promise<void>;
 }>();
+
+useEscDismissableDialog({
+  priority: 1070,
+  isOpen: () => true,
+  canClose: () => !runState.running,
+  requestClose: () => {
+    emit("dismissed");
+  },
+});
 
 const sessionStore = useSessionStore();
 const visualizationOptionsStore = useVisualizationOptionsStore();

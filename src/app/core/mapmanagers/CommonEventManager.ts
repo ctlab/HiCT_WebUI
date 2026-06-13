@@ -691,12 +691,13 @@ class CommonEventManager {
         .rightPx,
     ];
     if (!fromPx || !toPx) {
-      console.log(
-        "Not exporting FASTA because left selection border is ",
+      const message =
+        "Cannot export FASTA for selection because there is no valid selection.";
+      console.warn(message, {
         fromPx,
-        " and right selection border is ",
-        toPx
-      );
+        toPx,
+      });
+      toast.error(message);
       return;
     }
     const bpResolution =
@@ -713,12 +714,15 @@ class CommonEventManager {
       !Number.isFinite(toBpX) ||
       !Number.isFinite(toBpY)
     ) {
-      console.warn("Not exporting FASTA because selection coordinates are invalid", {
+      const message =
+        "Cannot export FASTA for selection because selection coordinates are invalid.";
+      console.warn(message, {
         fromBpX,
         fromBpY,
         toBpX,
         toBpY,
       });
+      toast.error(message);
       return;
     }
     console.log("Bps: ", fromBpX, fromBpY, toBpX, toBpY, " pxs ", fromPx, toPx);

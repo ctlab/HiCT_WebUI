@@ -86,6 +86,7 @@ import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { toast } from "vue-sonner";
 import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
 import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
@@ -102,6 +103,14 @@ const loading: Ref<boolean> = ref(true);
 const modal: Ref<Modal | null> = ref(null);
 const openFileModal = ref<HTMLElement | null>(null);
 const errorMessage: Ref<unknown | null> = ref(null);
+
+useEscDismissableDialog({
+  priority: 1080,
+  isOpen: () => true,
+  requestClose: () => {
+    onDismissClicked();
+  },
+});
 
 const fileEntries = computed<FileSelectionTableEntry[]>(() =>
   filenames.value.map((filename) => ({

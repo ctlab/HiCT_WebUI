@@ -279,6 +279,7 @@ import { StartDotplotJobsRequest } from "@/app/core/net/api/request";
 import type { ConversionJobResponse, ConversionToolchainStatusResponse } from "@/app/core/net/api/response";
 import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
 import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
 
 const emit = defineEmits<{
@@ -320,6 +321,18 @@ const alignerPreference = ref("auto");
 const alignmentThreads = ref(Math.max(1, navigator.hardwareConcurrency || 4));
 const conversionThreads = ref(Math.max(1, navigator.hardwareConcurrency || 4));
 const overwrite = ref(false);
+
+useEscDismissableDialog({
+  priority: 1060,
+  isOpen: () => true,
+  requestClose: () => {
+    if (step.value === "select") {
+      emit("dismissed");
+      return;
+    }
+    step.value = "select";
+  },
+});
 
 const fastaEntries = computed<FileSelectionTableEntry[]>(() =>
   fastaFiles.value.map((path) => ({ path }))
