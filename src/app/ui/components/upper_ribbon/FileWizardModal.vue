@@ -558,7 +558,15 @@
               </div>
 
               <div v-else-if="currentStep?.id === 'finish'" class="wizard-section">
-                <h6>Final Checks</h6>
+                <h6 class="d-flex align-items-center gap-2">
+                  <div
+                    v-if="runState.running"
+                    class="spinner-border spinner-border-sm text-primary"
+                    role="status"
+                    aria-hidden="true"
+                  ></div>
+                  <span>Final Checks</span>
+                </h6>
                 <div class="alert alert-light border">
                   <div><strong>View Mode:</strong> {{ currentViewModeLabel }}</div>
                   <div><strong>Primary source:</strong> {{ primarySource.filename || "not selected" }}</div>
@@ -1473,6 +1481,13 @@ const convertAssemblySelectionToAgp = async (
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => window.setTimeout(resolve, ms));
 
+const waitForNextPaint = async (): Promise<void> => {
+  await nextTick();
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+};
+
 const describeConversionPlan = (source: SourceDraft): string => {
   if (!source.filename || !source.resolution) {
     return "no file selected";
@@ -1621,7 +1636,10 @@ const runWizard = async (): Promise<void> => {
   runState.currentMessage = "";
   runState.currentConversion = null;
   runState.trackPrecomputeStatus = null;
+  runState.currentStepId = "finish";
+  runState.currentMessage = "Final checks";
   currentStepIndex.value = visibleSteps.value.findIndex((step) => step.id === "finish");
+  await waitForNextPaint();
   try {
     if (dropCachesBeforeRun.value) {
       runState.currentStepId = "conversion";

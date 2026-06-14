@@ -42,12 +42,11 @@ export default class ContigDimensionHolder {
   }
 
   public updateContigData(contigDescriptors: ContigDescriptor[]): void {
-    this.contigDescriptors.length = 0;
     this.contigDescriptors = contigDescriptors;
     this.contigIdToOrd.length = 0;
-    contigDescriptors
-      .map((descriptor) => descriptor.contigId)
-      .forEach((id, ord) => (this.contigIdToOrd[id] = ord));
+    for (let ord = 0; ord < contigDescriptors.length; ord += 1) {
+      this.contigIdToOrd[contigDescriptors[ord].contigId] = ord;
+    }
 
     this.resolutions.length = 0;
     if (contigDescriptors.length > 0) {
@@ -60,7 +59,6 @@ export default class ContigDimensionHolder {
     this.updatePrefixSumBp();
     this.updatePrefixSumBins();
     this.updatePrefixSumPixels();
-    console.log("Contig dimension holder: ", this);
   }
 
   public ensureResolution(resolution: number): void {
@@ -121,91 +119,93 @@ export default class ContigDimensionHolder {
   prefix_sum_px: Map<number, number[]> = new Map<number, number[]>();
 
   protected updatePrefixSumBp(): void {
-    this.prefix_sum_bp = [];
-
-    this.prefix_sum_bp.push(0);
+    this.prefix_sum_bp = new Array(this.contig_count + 1);
+    this.prefix_sum_bp[0] = 0;
 
     if (!this.contigDescriptors || this.contig_count <= 0) {
       return;
     }
 
     for (let i = 0; i < this.contig_count; ++i) {
-      this.prefix_sum_bp.push(
-        this.prefix_sum_bp[i] + this.contigDescriptors[i].contigLengthBp
-      );
+      this.prefix_sum_bp[i + 1] =
+        this.prefix_sum_bp[i] + this.contigDescriptors[i].contigLengthBp;
     }
   }
 
   protected updatePrefixSumBins(): void {
-    this.prefix_sum_bins = new Map();
+    const prefixSumBins = new Map<number, number[]>();
 
     if (!this.contigDescriptors || this.contig_count <= 0) {
+      this.prefix_sum_bins = prefixSumBins;
       return;
     }
 
     for (const resolution of this.resolutions) {
-      this.prefix_sum_bins.set(resolution, [0]);
+      const prefixSum = new Array(this.contig_count + 1);
+      prefixSum[0] = 0;
+      prefixSumBins.set(resolution, prefixSum);
     }
 
-    this.contigDescriptors.forEach((ctg, i) => {
-      for (const [
-        resolution,
-        lengthBinsAtResolution,
-      ] of ctg.contigLengthBins.entries()) {
-        const resolutionPrefixSum: number[] | undefined =
-          this.prefix_sum_bins.get(resolution);
-        if (resolutionPrefixSum) {
-          resolutionPrefixSum.push(
-            resolutionPrefixSum[i] + lengthBinsAtResolution
-          );
-        } else {
+    for (let ctgOrder = 0; ctgOrder < this.contig_count; ctgOrder += 1) {
+      const descriptor = this.contigDescriptors[ctgOrder];
+      for (const resolution of this.resolutions) {
+        const resolutionPrefixSum = prefixSumBins.get(resolution);
+        const lengthBinsAtResolution = descriptor.contigLengthBins.get(
+          resolution
+        );
+        if (!resolutionPrefixSum || lengthBinsAtResolution === undefined) {
           throw new Error(
             `Unknown resolution ${resolution} in updatePrefixSumBins`
           );
         }
+        resolutionPrefixSum[ctgOrder + 1] =
+          resolutionPrefixSum[ctgOrder] + lengthBinsAtResolution;
       }
-    });
+    }
+
+    this.prefix_sum_bins = prefixSumBins;
   }
 
   protected updatePrefixSumPixels(): void {
-    this.prefix_sum_px = new Map();
+    const prefixSumPx = new Map<number, number[]>();
 
     if (!this.contigDescriptors || this.contig_count <= 0) {
+      this.prefix_sum_px = prefixSumPx;
       return;
     }
 
     for (const resolution of this.resolutions) {
-      this.prefix_sum_px.set(resolution, [0]);
+      const prefixSum = new Array(this.contig_count + 1);
+      prefixSum[0] = 0;
+      prefixSumPx.set(resolution, prefixSum);
     }
 
-    this.contigDescriptors.forEach((ctg, ctgOrder) => {
-      ctg.presenceAtResolution.forEach((hideTypeAtResolution, resolution) => {
-        const resolutionPrefixSum: number[] | undefined =
-          this.prefix_sum_px.get(resolution);
-        if (!resolutionPrefixSum) {
-          throw new Error(
-            `Unknown resolution ${resolution} in updatePrefixSumPx`
-          );
+    for (let ctgOrder = 0; ctgOrder < this.contig_count; ctgOrder += 1) {
+      const descriptor = this.contigDescriptors[ctgOrder];
+      for (const resolution of this.resolutions) {
+        const resolutionPrefixSum = prefixSumPx.get(resolution);
+        const hideTypeAtResolution =
+          descriptor.presenceAtResolution.get(resolution);
+        if (!resolutionPrefixSum || hideTypeAtResolution === undefined) {
+          throw new Error(`Unknown resolution ${resolution} in updatePrefixSumPx`);
         }
         switch (hideTypeAtResolution) {
           case ContigHideType.AUTO_HIDDEN:
           case ContigHideType.FORCED_HIDDEN:
-            resolutionPrefixSum.push(resolutionPrefixSum[ctgOrder]);
+            resolutionPrefixSum[ctgOrder + 1] = resolutionPrefixSum[ctgOrder];
             break;
           case ContigHideType.AUTO_SHOWN:
           case ContigHideType.FORCED_SHOWN:
             {
-              const lengthBinsAtResolution: number | undefined =
-                ctg.contigLengthBins.get(resolution);
-              if (lengthBinsAtResolution) {
-                const res =
-                  resolutionPrefixSum[ctgOrder] + lengthBinsAtResolution;
-                resolutionPrefixSum.push(res);
-              } else {
+              const lengthBinsAtResolution =
+                descriptor.contigLengthBins.get(resolution);
+              if (lengthBinsAtResolution === undefined) {
                 throw new Error(
                   `Unknown resolution ${resolution} in updatePrefixSumPx`
                 );
               }
+              resolutionPrefixSum[ctgOrder + 1] =
+                resolutionPrefixSum[ctgOrder] + lengthBinsAtResolution;
             }
             break;
           default:
@@ -213,8 +213,10 @@ export default class ContigDimensionHolder {
               `Unrecognized contig hide type: ${hideTypeAtResolution}`
             );
         }
-      });
-    });
+      }
+    }
+
+    this.prefix_sum_px = prefixSumPx;
   }
 
   protected clampBinCoordinateAtResolution(

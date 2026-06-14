@@ -333,15 +333,15 @@ class HiCViewAndLayersManager {
         layers: this.layersHolder.contigTranslocationArrowsLayers,
         style: new Style({
           fill: new Fill({
-            color: "rgba(255, 36, 64, 0.7)",
+            color: "rgba(184, 96, 255, 0.68)",
           }),
           stroke: new Stroke({
-            color: "rgba(64, 0, 255, 0.1)",
-            width: 2,
+            color: "rgba(48, 208, 132, 0.98)",
+            width: 4,
           }),
         }),
         condition: pointerMove,
-        hitTolerance: 5,
+        hitTolerance: 8,
         // filter: (feature, layer) => {
         //   console.log("Hover over", feature, layer);
         //   return true;
@@ -352,14 +352,14 @@ class HiCViewAndLayersManager {
         layers: this.layersHolder.contigTranslocationArrowsLayers,
         style: new Style({
           fill: new Fill({
-            color: "rgba(255, 36, 255, 0.7)",
+            color: "rgba(208, 120, 255, 0.76)",
           }),
           stroke: new Stroke({
-            color: "rgba(64, 0, 255, 0.1)",
-            width: 20,
+            color: "rgba(48, 208, 132, 1)",
+            width: 5,
           }),
         }),
-        hitTolerance: 5,
+        hitTolerance: 8,
         features: this.selectionCollections.selectedTranslocationArrowsFeatures,
         condition: singleClick,
       }),
@@ -1683,7 +1683,7 @@ class HiCViewAndLayersManager {
     }
   }
 
-  public reloadTracks(): void {
+  public reloadTracks(options?: { renderLinearTracks?: boolean }): void {
     const translocationMode =
       this.currentViewState.activeTool === ActiveTool.TRANSLOCATION;
     this.markBuiltinVectorLayersDirty();
@@ -1700,7 +1700,9 @@ class HiCViewAndLayersManager {
       );
     }
     this.refreshVisibleBuiltinVectorSources();
-    void this.mapManager.linearTrackManager.render();
+    if (options?.renderLinearTracks !== false) {
+      void this.mapManager.linearTrackManager.render();
+    }
   }
 
   public reloadVisuals(): void {

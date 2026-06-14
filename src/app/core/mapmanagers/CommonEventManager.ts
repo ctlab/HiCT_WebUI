@@ -65,7 +65,9 @@ class CommonEventManager {
   }
 
   public reloadTracks() {
-    this.mapManager.viewAndLayersManager.reloadTracks();
+    this.mapManager.viewAndLayersManager.reloadTracks({
+      renderLinearTracks: false,
+    });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

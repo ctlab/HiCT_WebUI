@@ -624,8 +624,8 @@ class ScaffoldBordersTrack2D extends WithRing {
 }
 
 class TranslocationArrowsTrack2D extends Track2DSymmetric {
-  private static readonly MAX_ARROW_SIZE_PX = 42;
-  private static readonly MIN_ARROW_SIZE_PX = 8;
+  private static readonly MAX_ARROW_SIZE_PX = 56;
+  private static readonly MIN_ARROW_SIZE_PX = 12;
 
   public constructor(public readonly mapManager: ContactMapManager) {
     super(
@@ -635,9 +635,9 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
       },
       mapManager.getContigDimensionHolder(),
       {
-        borderColor: "rgba(180, 0, 255, 0.9)",
-        fillColor: "rgba(255, 36, 96, 0.42)",
-        width: 2,
+        borderColor: "rgba(48, 208, 132, 0.98)",
+        fillColor: "rgba(160, 72, 255, 0.46)",
+        width: 3,
         zIndex: 12,
       }
     );
@@ -650,10 +650,7 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
     }
     return Math.min(
       TranslocationArrowsTrack2D.MAX_ARROW_SIZE_PX,
-      Math.max(
-        TranslocationArrowsTrack2D.MIN_ARROW_SIZE_PX,
-        spanPx * 0.35
-      )
+      Math.max(TranslocationArrowsTrack2D.MIN_ARROW_SIZE_PX, spanPx * 0.5)
     );
   }
 
