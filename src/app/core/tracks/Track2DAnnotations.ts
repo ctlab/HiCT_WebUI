@@ -151,13 +151,23 @@ class AnnotationTrack2D extends Track2DSymmetric {
     this.rectangles.length = 0;
   }
 
-  public recalculateBorders(): void {
-    this.features = new Map();
-    for (const resolution of this.contigDimensionHolder.resolutions) {
-      this.features.set(resolution, []);
+  public recalculateBorders(targetBpResolution?: number): void {
+    if (targetBpResolution === undefined) {
+      this.features = new Map();
+      for (const resolution of this.contigDimensionHolder.resolutions) {
+        this.features.set(resolution, []);
+      }
+    } else {
+      this.features.set(targetBpResolution, []);
     }
     const viewManager = this.mapManager.getLayersManager();
-    for (const resolutionTuple of viewManager.getVectorResolutionTuples()) {
+    for (const resolutionTuple of viewManager
+      .getVectorResolutionTuples()
+      .filter(
+        (tuple) =>
+          targetBpResolution === undefined ||
+          tuple.bpResolution === targetBpResolution
+      )) {
       const bpResolution = resolutionTuple.bpResolution;
       const pixelResolution = resolutionTuple.pixelResolution;
       const targetFeatures = this.features.get(bpResolution);

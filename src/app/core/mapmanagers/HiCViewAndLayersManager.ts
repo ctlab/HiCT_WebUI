@@ -124,6 +124,9 @@ interface Track2DHolder {
 }
 
 class HiCViewAndLayersManager {
+  private static readonly VECTOR_SOURCE_DIRTY_FLAG =
+    "hictVectorSourceDirty";
+
   protected readonly contigBorderColor: Ref<string> = ref("ffccee");
   public readonly pixelResolutionSet: number[] = [];
   public readonly resolutions: number[] = [];
@@ -337,8 +340,8 @@ class HiCViewAndLayersManager {
             width: 2,
           }),
         }),
-        hitTolerance: 0,
         condition: pointerMove,
+        hitTolerance: 5,
         // filter: (feature, layer) => {
         //   console.log("Hover over", feature, layer);
         //   return true;
@@ -356,7 +359,7 @@ class HiCViewAndLayersManager {
             width: 20,
           }),
         }),
-        hitTolerance: 0,
+        hitTolerance: 5,
         features: this.selectionCollections.selectedTranslocationArrowsFeatures,
         condition: singleClick,
       }),
@@ -563,7 +566,11 @@ class HiCViewAndLayersManager {
     this.track2DHolder.contigBordersTrack.style =
       this.track2DHolder.contigBordersTrack.generateStyleFunction()();
 
-    this.reloadTracks();
+    this.refreshGeneratedFeatureStyles(
+      this.track2DHolder.contigBordersTrack,
+      this.layersHolder.contigBordersLayers,
+      new Set(["contigBorders"])
+    );
   }
 
   public onScanffoldBorderColorChanged(scaffoldBorderColor: string): void {
@@ -573,7 +580,11 @@ class HiCViewAndLayersManager {
     this.track2DHolder.scaffoldBordersTrack.style =
       this.track2DHolder.scaffoldBordersTrack.generateStyleFunction()();
 
-    this.reloadTracks();
+    this.refreshGeneratedFeatureStyles(
+      this.track2DHolder.scaffoldBordersTrack,
+      this.layersHolder.scaffoldBordersLayers,
+      new Set(["scaffoldBorders"])
+    );
   }
 
   public onContigBorderStyleChanged(style: BorderStyle): void {
@@ -589,14 +600,22 @@ class HiCViewAndLayersManager {
     this.track2DHolder.contigBordersTrack.options.width = Math.max(1, width);
     this.track2DHolder.contigBordersTrack.style =
       this.track2DHolder.contigBordersTrack.generateStyleFunction()();
-    this.reloadTracks();
+    this.refreshGeneratedFeatureStyles(
+      this.track2DHolder.contigBordersTrack,
+      this.layersHolder.contigBordersLayers,
+      new Set(["contigBorders"])
+    );
   }
 
   public onContigFillColorChanged(fillColor: string): void {
     this.track2DHolder.contigBordersTrack.options.fillColor = fillColor;
     this.track2DHolder.contigBordersTrack.style =
       this.track2DHolder.contigBordersTrack.generateStyleFunction()();
-    this.reloadTracks();
+    this.refreshGeneratedFeatureStyles(
+      this.track2DHolder.contigBordersTrack,
+      this.layersHolder.contigBordersLayers,
+      new Set(["contigBorders"])
+    );
   }
 
   public onScanffoldBorderStyleChanged(style: BorderStyle): void {
@@ -612,14 +631,22 @@ class HiCViewAndLayersManager {
     this.track2DHolder.scaffoldBordersTrack.options.width = Math.max(1, width);
     this.track2DHolder.scaffoldBordersTrack.style =
       this.track2DHolder.scaffoldBordersTrack.generateStyleFunction()();
-    this.reloadTracks();
+    this.refreshGeneratedFeatureStyles(
+      this.track2DHolder.scaffoldBordersTrack,
+      this.layersHolder.scaffoldBordersLayers,
+      new Set(["scaffoldBorders"])
+    );
   }
 
   public onScaffoldFillColorChanged(fillColor: string): void {
     this.track2DHolder.scaffoldBordersTrack.options.fillColor = fillColor;
     this.track2DHolder.scaffoldBordersTrack.style =
       this.track2DHolder.scaffoldBordersTrack.generateStyleFunction()();
-    this.reloadTracks();
+    this.refreshGeneratedFeatureStyles(
+      this.track2DHolder.scaffoldBordersTrack,
+      this.layersHolder.scaffoldBordersLayers,
+      new Set(["scaffoldBorders"])
+    );
   }
 
   public onContigLabelSizeChanged(size: number): void {
@@ -831,12 +858,8 @@ class HiCViewAndLayersManager {
     );
     this.getVectorResolutionTuples().forEach(
       ({ bpResolution, pixelResolution }) => {
-        const boundingBoxPolygonFeatures = track.features.get(bpResolution);
-        if (!boundingBoxPolygonFeatures) {
-          return;
-        }
         const vectorSource = new VectorSource();
-        vectorSource.addFeatures(boundingBoxPolygonFeatures);
+        vectorSource.addFeatures(track.features.get(bpResolution) ?? []);
         const vectorLayer = new (
           this.useVectorImageLayer ? VectorImageLayer : VectorLayer
         )({
@@ -850,6 +873,7 @@ class HiCViewAndLayersManager {
           "pixelResolution",
           this.getPixelResolutionForBpResolution(bpResolution)
         );
+        vectorLayer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, true);
         layersCollection.push(vectorLayer);
         this.mapManager.getMap().addLayer(vectorLayer);
       }
@@ -1112,8 +1136,8 @@ class HiCViewAndLayersManager {
   }
 
   public initializeTracks(): void {
-    this.reloadTracks();
     this.addBuiltinVectorLayers();
+    this.reloadTracks();
   }
 
   private addBuiltinVectorLayers(): void {
@@ -1186,8 +1210,8 @@ class HiCViewAndLayersManager {
     );
     this.removeLayerCollection(this.layersHolder.scaffoldBordersLayers);
     this.clearBuiltinVectorLayerMaps();
-    this.reloadTracks();
     this.addBuiltinVectorLayers();
+    this.reloadTracks();
   }
 
   public initializeMapControls(): void {
@@ -1511,99 +1535,171 @@ class HiCViewAndLayersManager {
     }
   }
 
-  public reloadTracks(): void {
-    for (const track of this.track2DHolder.tracks2D) {
-      track.recalculateBorders();
+  private markBuiltinVectorLayersDirty(): void {
+    [
+      this.layersHolder.annotationLayers,
+      this.layersHolder.contigBordersLayers,
+      this.layersHolder.contigTranslocationArrowsLayers,
+      this.layersHolder.scaffoldBordersLayers,
+    ].forEach((layers) => {
+      layers.forEach((layer) => {
+        layer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, true);
+      });
+    });
+  }
+
+  private refreshVectorLayerFromFeatures(
+    layer: Layer,
+    featuresByResolution: Map<number, Feature<Geometry>[]>,
+    options?: { force?: boolean; clearWhenHidden?: boolean }
+  ): void {
+    const source = layer.getSource() as VectorSource | undefined;
+    if (!source) {
+      return;
     }
-    this.track2DHolder.contigBordersTrack.recalculateBorders();
-    this.track2DHolder.scaffoldBordersTrack.recalculateBorders();
-    this.track2DHolder.contigTranslocationArrowsTrack.recalculateBorders();
+
+    const force = options?.force ?? false;
+    const clearWhenHidden = options?.clearWhenHidden ?? false;
+    const visible = layer.getVisible();
+    const dirty = Boolean(
+      layer.get(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG)
+    );
+    if (!force && !dirty) {
+      return;
+    }
+    if (!visible && !clearWhenHidden) {
+      return;
+    }
+
+    source.clear(true);
+    if (visible) {
+      const bpResolution = Number(layer.get("bpResolution"));
+      const features = featuresByResolution.get(bpResolution);
+      if (!features) {
+        throw new Error(
+          `Cannot refresh vector track at resolution ${bpResolution}`
+        );
+      }
+      source.addFeatures(features);
+    }
+    source.changed();
+    layer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, false);
+    layer.changed();
+  }
+
+  private refreshGeneratedFeatureStyles(
+    track: Track2DSymmetric,
+    layers: Layer[],
+    trackTypes: Set<string>
+  ): void {
+    for (const features of track.features.values()) {
+      for (const feature of features) {
+        if (trackTypes.has(String(feature.get("trackType")))) {
+          feature.setStyle(track.style);
+        }
+      }
+    }
+    for (const layer of layers) {
+      layer.getSource()?.changed();
+      layer.changed();
+    }
+    this.mapManager.getMap().changed();
+  }
+
+  private isVectorLayerDirty(layer: Layer | undefined): boolean {
+    return Boolean(
+      layer?.get(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG)
+    );
+  }
+
+  private recalculateDirtyVisibleBuiltinVectorTracks(): void {
+    const activeResolution =
+      this.getActiveVectorResolutionDescriptor().bpResolution;
+    const annotationLayer =
+      this.layersHolder.bpResolutionToAnnotationLayer.get(activeResolution);
+    const contigLayer =
+      this.layersHolder.bpResolutionToContigBordersLayer.get(activeResolution);
+    const scaffoldLayer =
+      this.layersHolder.bpResolutionToScaffoldBordersLayer.get(
+        activeResolution
+      );
+    const translocationLayer =
+      this.layersHolder.bpResolutionToContigTranslocationArrowsLayer.get(
+        activeResolution
+      );
+
+    if (annotationLayer?.getVisible() && this.isVectorLayerDirty(annotationLayer)) {
+      this.track2DHolder.annotationTrack.recalculateBorders(activeResolution);
+    }
+    if (contigLayer?.getVisible() && this.isVectorLayerDirty(contigLayer)) {
+      this.track2DHolder.contigBordersTrack.recalculateBorders(
+        activeResolution
+      );
+    }
+    if (
+      scaffoldLayer?.getVisible() &&
+      this.isVectorLayerDirty(scaffoldLayer)
+    ) {
+      this.track2DHolder.scaffoldBordersTrack.recalculateBorders(
+        activeResolution
+      );
+    }
+    if (
+      translocationLayer?.getVisible() &&
+      this.isVectorLayerDirty(translocationLayer)
+    ) {
+      this.track2DHolder.contigTranslocationArrowsTrack.recalculateBorders(
+        activeResolution
+      );
+    }
+  }
+
+  private refreshVisibleBuiltinVectorSources(): void {
+    this.recalculateDirtyVisibleBuiltinVectorTracks();
+    for (const layer of this.layersHolder.annotationLayers) {
+      this.refreshVectorLayerFromFeatures(
+        layer,
+        this.track2DHolder.annotationTrack.features
+      );
+    }
+    for (const layer of this.layersHolder.contigBordersLayers) {
+      this.refreshVectorLayerFromFeatures(
+        layer,
+        this.track2DHolder.contigBordersTrack.features
+      );
+    }
+    for (const layer of this.layersHolder.contigTranslocationArrowsLayers) {
+      this.refreshVectorLayerFromFeatures(
+        layer,
+        this.track2DHolder.contigTranslocationArrowsTrack.features,
+        { clearWhenHidden: true }
+      );
+    }
+    for (const layer of this.layersHolder.scaffoldBordersLayers) {
+      this.refreshVectorLayerFromFeatures(
+        layer,
+        this.track2DHolder.scaffoldBordersTrack.features
+      );
+    }
+  }
+
+  public reloadTracks(): void {
+    const translocationMode =
+      this.currentViewState.activeTool === ActiveTool.TRANSLOCATION;
+    this.markBuiltinVectorLayersDirty();
     for (const layer of this.layersHolder.track2DLayers) {
       //TODO:
       layer.getSource()?.changed();
       layer.changed();
     }
-    for (const layer of this.layersHolder.annotationLayers) {
-      const source = layer.getSource() as VectorSource | undefined;
-      if (source) {
-        source.clear();
-        const features = this.track2DHolder.annotationTrack.features.get(
-          layer.get("bpResolution")
-        );
-        if (features) {
-          source.addFeatures(features);
-        }
-        source.changed();
-      }
-      layer.changed();
-    }
-    for (const layer of this.layersHolder.contigBordersLayers) {
-      const source = layer.getSource() as VectorSource | undefined;
-      if (source) {
-        source.clear();
-        const features = this.track2DHolder.contigBordersTrack.features.get(
-          layer.get("bpResolution")
-        );
-        if (!features) {
-          throw new Error(
-            `Cannot refresh contig borders track at resolution ${layer.get(
-              "bpResolution"
-            )}`
-          );
-        }
-        source.addFeatures(features);
-        source.changed();
-      }
-      layer.changed();
-    }
     for (const layer of this.layersHolder.contigTranslocationArrowsLayers) {
-      console.log(
-        "reloadTracks: active tool is",
-        this.currentViewState.activeTool
-      );
       layer.setVisible(
-        this.currentViewState.activeTool === ActiveTool.TRANSLOCATION
+        translocationMode &&
+          Number(layer.get("bpResolution")) ===
+            this.getActiveVectorResolutionDescriptor().bpResolution
       );
-      const source = layer.getSource() as VectorSource | undefined;
-      if (source) {
-        source.clear();
-        if (layer.getVisible()) {
-          const features =
-            this.track2DHolder.contigTranslocationArrowsTrack.features.get(
-              layer.get("bpResolution")
-            );
-          if (!features) {
-            throw new Error(
-              `Cannot refresh contig translocation arrows track at resolution ${layer.get(
-                "bpResolution"
-              )}`
-            );
-          }
-          source.addFeatures(features);
-        }
-        source.changed();
-      }
-      layer.changed();
     }
-    for (const layer of this.layersHolder.scaffoldBordersLayers) {
-      const source = layer.getSource() as VectorSource | undefined;
-      if (source) {
-        source.clear();
-        const features = this.track2DHolder.scaffoldBordersTrack.features.get(
-          layer.get("bpResolution")
-        );
-        if (!features) {
-          throw new Error(
-            `Cannot refresh scaffold borders track at resolution ${layer.get(
-              "bpResolution"
-            )}`
-          );
-        }
-        source.addFeatures(features);
-        source.changed();
-      }
-      layer.changed();
-    }
+    this.refreshVisibleBuiltinVectorSources();
     void this.mapManager.linearTrackManager.render();
   }
 
@@ -1666,6 +1762,7 @@ class HiCViewAndLayersManager {
       const layerResolution = Number(layer.get("bpResolution"));
       layer.setVisible(layerResolution === activeVectorResolution);
     }
+    this.refreshVisibleBuiltinVectorSources();
   }
 
   public addAnnotationMarkerAtCenter(name?: string): void {
