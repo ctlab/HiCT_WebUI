@@ -65,7 +65,9 @@ class CommonEventManager {
   }
 
   public reloadTracks() {
-    this.mapManager.viewAndLayersManager.reloadTracks();
+    this.mapManager.viewAndLayersManager.reloadTracks({
+      renderLinearTracks: false,
+    });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -691,12 +693,14 @@ class CommonEventManager {
         .rightPx,
     ];
     if (!fromPx || !toPx) {
-      console.log(
-        "Not exporting FASTA because left selection border is ",
+      const message =
+        "Cannot export FASTA for selection because there is no valid selection.";
+      console.warn(message, {
         fromPx,
-        " and right selection border is ",
-        toPx
-      );
+        toPx,
+      });
+      toast.error(message);
+      return;
     }
     const bpResolution =
       this.mapManager.viewAndLayersManager.currentViewState.resolutionDesciptor
@@ -706,6 +710,23 @@ class CommonEventManager {
       .map((px) =>
         this.mapManager.contigDimensionHolder.getStartBpOfPx(px, bpResolution)
       );
+    if (
+      !Number.isFinite(fromBpX) ||
+      !Number.isFinite(fromBpY) ||
+      !Number.isFinite(toBpX) ||
+      !Number.isFinite(toBpY)
+    ) {
+      const message =
+        "Cannot export FASTA for selection because selection coordinates are invalid.";
+      console.warn(message, {
+        fromBpX,
+        fromBpY,
+        toBpX,
+        toBpY,
+      });
+      toast.error(message);
+      return;
+    }
     console.log("Bps: ", fromBpX, fromBpY, toBpX, toBpY, " pxs ", fromPx, toPx);
 
     this.mapManager.networkManager.requestManager

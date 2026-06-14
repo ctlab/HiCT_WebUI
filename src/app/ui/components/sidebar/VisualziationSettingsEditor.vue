@@ -560,12 +560,14 @@ function formatSignal(value: number): string {
   background: var(--hict-surface-bg, #ffffff);
   position: relative;
   z-index: 30;
+  overflow: visible;
 }
 
 .threshold-input-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.45rem;
+  overflow: visible;
 }
 
 .threshold-card-title {
@@ -591,6 +593,7 @@ function formatSignal(value: number): string {
   grid-template-columns: minmax(0, 1fr) 1.45rem;
   align-items: center;
   gap: 0.25rem;
+  overflow: visible;
 }
 
 .threshold-number-input {
@@ -752,8 +755,10 @@ function formatSignal(value: number): string {
 }
 
 :deep(.picker_wrapper) {
-  z-index: 1080 !important;
+  z-index: 2147483000 !important;
   max-width: min(18rem, calc(100vw - 1.5rem));
+  max-height: min(24rem, calc(100vh - 1.5rem));
+  overflow: auto;
 }
 
 :deep(.picker_wrapper button) {

@@ -35,7 +35,7 @@ interface Track2DOptions {
 
 abstract class Track2D {
   public abstract getStyle(): Style;
-  public abstract recalculateBorders(): void;
+  public abstract recalculateBorders(bpResolution?: number): void;
 }
 
 export {

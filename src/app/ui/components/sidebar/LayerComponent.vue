@@ -332,7 +332,9 @@ function resetStyle() {
   gap: 20px;
 
   width: 200px;
-  height: 20px;
+  min-height: 20px;
+  height: auto;
+  overflow: visible;
 
   /* Inside auto layout */
   flex: none;
@@ -378,7 +380,9 @@ function resetStyle() {
   gap: 12px;
 
   width: 116px;
-  height: 20px;
+  min-height: 20px;
+  height: auto;
+  overflow: visible;
 
   /* Inside auto layout */
   flex: none;

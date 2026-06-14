@@ -126,6 +126,7 @@ import { FileTreeNode, extensionToDataType } from "../ComponentCommon";
 import Tree from "primevue/tree";
 import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
 import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 
 interface FinalTreeNode {
   isLeaf: boolean;
@@ -156,6 +157,14 @@ const fileTree: Ref<FileTreeNode | null> = ref(null);
 const loadAGPModal = ref<HTMLElement | null>(null);
 
 const expandedKeys: Ref<Record<string, boolean>> = ref({});
+
+useEscDismissableDialog({
+  priority: 1080,
+  isOpen: () => true,
+  requestClose: () => {
+    onDismissClicked();
+  },
+});
 
 const fileEntries = computed<FileSelectionTableEntry[]>(() =>
   (filenames.value ?? []).map((filename) => ({

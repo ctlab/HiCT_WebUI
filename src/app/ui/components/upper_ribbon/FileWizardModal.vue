@@ -92,7 +92,20 @@
                           Browse…
                         </button>
                       </div>
-                      <div v-if="primarySource.resolution" class="alert alert-light border py-2 mb-0">
+                      <div
+                        v-if="primarySource.resolving"
+                        class="alert alert-light border py-2 mb-0 d-flex align-items-center gap-2"
+                      >
+                        <div
+                          class="spinner-border spinner-border-sm text-primary flex-shrink-0"
+                          role="status"
+                          aria-hidden="true"
+                        ></div>
+                        <div class="text-truncate">
+                          Checking <strong>{{ primarySource.filename }}</strong>
+                        </div>
+                      </div>
+                      <div v-else-if="primarySource.resolution" class="alert alert-light border py-2 mb-0">
                         <small class="d-block">
                           Action: <strong>{{ humanizeMatrixAction(primarySource.resolution.action) }}</strong>
                         </small>
@@ -125,7 +138,20 @@
                           Browse…
                         </button>
                       </div>
-                      <div v-if="secondarySource.resolution" class="alert alert-light border py-2 mb-0">
+                      <div
+                        v-if="secondarySource.resolving"
+                        class="alert alert-light border py-2 mb-0 d-flex align-items-center gap-2"
+                      >
+                        <div
+                          class="spinner-border spinner-border-sm text-primary flex-shrink-0"
+                          role="status"
+                          aria-hidden="true"
+                        ></div>
+                        <div class="text-truncate">
+                          Checking <strong>{{ secondarySource.filename }}</strong>
+                        </div>
+                      </div>
+                      <div v-else-if="secondarySource.resolution" class="alert alert-light border py-2 mb-0">
                         <small class="d-block">
                           Action: <strong>{{ humanizeMatrixAction(secondarySource.resolution.action) }}</strong>
                         </small>
@@ -144,6 +170,15 @@
                 <div v-if="requiresSecondarySource" class="alert alert-info mt-3 mb-0">
                   Overlay and split sessions keep one assembly source authoritative and propagate that layout to the
                   other source by matching contig names. Choose the authoritative source on the Assembly File step.
+                </div>
+                <div v-if="selectedHicToolchainNote" class="alert alert-info mt-3 mb-0">
+                  <div class="fw-semibold mb-1">.hic processing with hictk</div>
+                  <div v-for="(line, index) in selectedHicToolchainNote" :key="`hictk-source-${index}-${line}`">{{ line }}</div>
+                  <div class="mt-1">
+                    Project:
+                    <a :href="hictkProjectUrl" target="_blank" rel="noopener noreferrer">hictk</a>
+                  </div>
+                  <div>Citation: {{ hictkCitationText }}</div>
                 </div>
               </div>
 
@@ -297,6 +332,17 @@
                     </div>
                     <div v-if="toolchainStatus && !toolchainStatus.hicConversionAvailable" class="alert alert-warning mt-3 mb-0">
                       {{ toolchainStatus.summary }}
+                    </div>
+                    <div v-if="selectedHicToolchainNote" class="alert alert-info mt-3 mb-0">
+                      <div class="fw-semibold mb-1">.hic processing with hictk</div>
+                      <div v-for="(line, index) in selectedHicToolchainNote" :key="`conversion-hictk-${index}-${line}`">
+                        {{ line }}
+                      </div>
+                      <div class="mt-1">
+                        Project:
+                        <a :href="hictkProjectUrl" target="_blank" rel="noopener noreferrer">hictk</a>
+                      </div>
+                      <div>Citation: {{ hictkCitationText }}</div>
                     </div>
                   </div>
                 </div>
@@ -512,7 +558,15 @@
               </div>
 
               <div v-else-if="currentStep?.id === 'finish'" class="wizard-section">
-                <h6>Final Checks</h6>
+                <h6 class="d-flex align-items-center gap-2">
+                  <div
+                    v-if="runState.running"
+                    class="spinner-border spinner-border-sm text-primary"
+                    role="status"
+                    aria-hidden="true"
+                  ></div>
+                  <span>Final Checks</span>
+                </h6>
                 <div class="alert alert-light border">
                   <div><strong>View Mode:</strong> {{ currentViewModeLabel }}</div>
                   <div><strong>Primary source:</strong> {{ primarySource.filename || "not selected" }}</div>
@@ -632,6 +686,8 @@ import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsS
 import { ColorTranslator } from "colortranslator";
 import { computed, nextTick, onMounted, reactive, ref } from "vue";
 import { toast } from "vue-sonner";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import UniversalFileSelector from "./UniversalFileSelector.vue";
 
 type WizardStepId =
@@ -654,6 +710,8 @@ type SourceDraft = {
   resolution: MatrixSourceResolutionResponse | null;
   forceConversion: boolean;
   presetId: string;
+  resolving: boolean;
+  resolveRequestId: number;
 };
 
 type SelectedTrack = {
@@ -706,6 +764,15 @@ const props = defineProps<{
   ) => Promise<void>;
 }>();
 
+useEscDismissableDialog({
+  priority: 1070,
+  isOpen: () => true,
+  canClose: () => !runState.running,
+  requestClose: () => {
+    emit("dismissed");
+  },
+});
+
 const sessionStore = useSessionStore();
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const styleStore = useStyleStore();
@@ -753,12 +820,16 @@ const primarySource = reactive<SourceDraft>({
   resolution: null,
   forceConversion: false,
   presetId: "",
+  resolving: false,
+  resolveRequestId: 0,
 });
 const secondarySource = reactive<SourceDraft>({
   filename: "",
   resolution: null,
   forceConversion: false,
   presetId: "",
+  resolving: false,
+  resolveRequestId: 0,
 });
 const primaryFasta = ref("");
 const secondaryFasta = ref("");
@@ -863,6 +934,60 @@ const selectedHicSourceCount = computed(() =>
     .filter((source, index) => index === 0 || requiresSecondarySource.value)
     .filter((source) => source.filename.toLowerCase().endsWith(".hic")).length
 );
+
+const hictkProjectUrl = "https://github.com/paulsengroup/hictk";
+const hictkCitationText =
+  "Rossini R, Paulsen J. Bioinformatics 2024;40(7):btae408.";
+
+const selectedHicToolchainVariant = computed(() => {
+  const command = toolchainStatus.value?.hictkCommand ?? "";
+  const lowered = command.toLowerCase();
+  if (lowered.includes("avx512")) {
+    return "AVX-512";
+  }
+  if (lowered.includes("avx2")) {
+    return "AVX2";
+  }
+  if (lowered.includes("generic")) {
+    return "generic";
+  }
+  return "default";
+});
+
+const selectedHicToolchainAvailabilityText = computed(() => {
+  const status = toolchainStatus.value;
+  if (!status) {
+    return "hictk status is still loading";
+  }
+  if (status.hictkAvailable) {
+    return status.source.toLowerCase().includes("bundled")
+      ? `hictk is available in this build via bundled variant: ${selectedHicToolchainVariant.value}`
+      : `hictk is available in this build via external executable`;
+  }
+  return "hictk is not currently available in this build";
+});
+
+const selectedHicToolchainCommandText = computed(() => {
+  const status = toolchainStatus.value;
+  if (!status) {
+    return "";
+  }
+  return status.hictkCommand ? `Selected executable: ${status.hictkCommand}` : "Selected executable: unavailable";
+});
+
+const selectedHicToolchainNote = computed(() => {
+  if (selectedHicSourceCount.value === 0) {
+    return null;
+  }
+  const lines = [
+    "HiCT processes .hic files with hictk.",
+  ];
+  lines.push(selectedHicToolchainAvailabilityText.value);
+  if (selectedHicToolchainCommandText.value) {
+    lines.push(selectedHicToolchainCommandText.value);
+  }
+  return lines;
+});
 
 const hicAssemblyAndFastaWarning = computed(
   () =>
@@ -1243,16 +1368,22 @@ const resolveMatrixSource = async (
   filename: string,
   role: SourceRole
 ): Promise<void> => {
-  const response = await props.networkManager.requestManager.resolveMatrixSource(
-    filename
-  );
-  if (role === "primary") {
-    primarySource.filename = filename;
-    primarySource.resolution = response;
-    return;
+  const source = role === "primary" ? primarySource : secondarySource;
+  const requestId = ++source.resolveRequestId;
+  source.filename = filename;
+  source.resolution = null;
+  source.resolving = true;
+  try {
+    const response = await props.networkManager.requestManager.resolveMatrixSource(filename);
+    if (source.resolveRequestId !== requestId) {
+      return;
+    }
+    source.resolution = response;
+  } finally {
+    if (source.resolveRequestId === requestId) {
+      source.resolving = false;
+    }
   }
-  secondarySource.filename = filename;
-  secondarySource.resolution = response;
 };
 
 const addTrack = async (filename: string): Promise<void> => {
@@ -1349,6 +1480,13 @@ const convertAssemblySelectionToAgp = async (
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const waitForNextPaint = async (): Promise<void> => {
+  await nextTick();
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+};
 
 const describeConversionPlan = (source: SourceDraft): string => {
   if (!source.filename || !source.resolution) {
@@ -1498,7 +1636,10 @@ const runWizard = async (): Promise<void> => {
   runState.currentMessage = "";
   runState.currentConversion = null;
   runState.trackPrecomputeStatus = null;
+  runState.currentStepId = "finish";
+  runState.currentMessage = "Final checks";
   currentStepIndex.value = visibleSteps.value.findIndex((step) => step.id === "finish");
+  await waitForNextPaint();
   try {
     if (dropCachesBeforeRun.value) {
       runState.currentStepId = "conversion";
@@ -1658,7 +1799,7 @@ const runWizard = async (): Promise<void> => {
     await nextTick();
     emit("dismissed");
   } catch (error) {
-    runState.error = String(error ?? "Wizard failed");
+    runState.error = extractErrorMessage(error, "Wizard failed");
     runState.completed = false;
     toast.error(runState.error);
   } finally {

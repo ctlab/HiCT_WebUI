@@ -265,6 +265,7 @@ import { ConversionToolchainStatusResponse } from "@/app/core/net/api/response";
 import ConverterStatusChecker from "./converter/ConverterStatusChecker.vue";
 import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
 import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import UniversalFileSelector from "./UniversalFileSelector.vue";
 
 const emit = defineEmits<{
@@ -295,6 +296,22 @@ const overwriteConfirmMessage: Ref<string> = ref("");
 const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> = ref(null);
 const toolchainLoading: Ref<boolean> = ref(true);
 let overwriteConfirmResolver: ((approved: boolean) => void) | null = null;
+
+useEscDismissableDialog({
+  priority: 1060,
+  isOpen: () => true,
+  requestClose: () => {
+    onDismissClicked();
+  },
+});
+
+useEscDismissableDialog({
+  priority: 1075,
+  isOpen: () => overwriteConfirmVisible.value,
+  requestClose: () => {
+    cancelPendingOverwriteConfirm();
+  },
+});
 
 function cancelPendingOverwriteConfirm(): void {
   overwriteConfirmVisible.value = false;

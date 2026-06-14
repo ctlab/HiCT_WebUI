@@ -55,17 +55,22 @@
                     v-if="hasExpandableBody(entry.message)"
                     type="button"
                     class="btn btn-sm btn-outline-secondary notification-expand-toggle"
-                    @click="toggleExpanded(entry.id)"
+                    @click="notificationStore.toggleEntryExpansion(entry.id)"
                   >
-                    {{ isExpanded(entry.id) ? "Collapse" : "Expand" }}
+                    {{
+                      notificationStore.isEntryExpanded(entry.id)
+                        ? "Collapse"
+                        : "Expand"
+                    }}
                   </button>
                 </div>
                 <div class="notification-message-preview">
                   {{ previewMessage(entry.message) }}
                 </div>
-                <pre v-if="isExpanded(entry.id)" class="notification-message-body">{{
-                  expandedBody(entry.message)
-                }}</pre>
+                <pre
+                  v-if="notificationStore.isEntryExpanded(entry.id)"
+                  class="notification-message-body"
+                >{{ expandedBody(entry.message) }}</pre>
               </div>
               <div
                 v-if="orderedEntries.length === 0"
@@ -91,14 +96,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import {
   useNotificationCenterStore,
   type NotificationLevel,
 } from "@/app/stores/notificationCenterStore";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 
 const notificationStore = useNotificationCenterStore();
-const expandedEntryIds = ref<number[]>([]);
+
+useEscDismissableDialog({
+  priority: 2060,
+  isOpen: () => notificationStore.isOpen,
+  requestClose: () => {
+    notificationStore.isOpen = false;
+  },
+});
 
 const orderedEntries = computed(() =>
   notificationStore.entries.slice().reverse()
@@ -144,14 +157,6 @@ const expandedBody = (message: string): string => message;
 const hasExpandableBody = (message: string): boolean =>
   normalizeMessage(message).length > 200 || message.includes("\n");
 
-const isExpanded = (entryId: number): boolean =>
-  expandedEntryIds.value.includes(entryId);
-
-const toggleExpanded = (entryId: number): void => {
-  expandedEntryIds.value = isExpanded(entryId)
-    ? expandedEntryIds.value.filter((value) => value !== entryId)
-    : [...expandedEntryIds.value, entryId];
-};
 </script>
 
 <style scoped>

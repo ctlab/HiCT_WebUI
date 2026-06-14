@@ -584,6 +584,7 @@ import { toast } from "vue-sonner";
 import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import type {
   ConversionToolchainStatusResponse,
   FastaLinkResponse,
@@ -641,6 +642,22 @@ const emit = defineEmits<{
   (e: "fastaLinked", filename: string): void;
   (e: "wizardRequested"): void;
 }>();
+
+useEscDismissableDialog({
+  priority: 1040,
+  isOpen: () => aboutOpen.value,
+  requestClose: () => {
+    aboutOpen.value = false;
+  },
+});
+
+useEscDismissableDialog({
+  priority: 2200,
+  isOpen: () => fastaLinkReport.value !== null,
+  requestClose: () => {
+    fastaLinkReport.value = null;
+  },
+});
 
 const props = defineProps<{
   networkManager: NetworkManager;

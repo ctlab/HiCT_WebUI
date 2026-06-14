@@ -148,6 +148,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
 import { LGraph, LGraphCanvas, LGraphNode, LiteGraph } from "litegraph.js";
 import "litegraph.js/css/litegraph.css";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 
 type SourceName = "PRIMARY" | "SECONDARY";
 type UnaryOp = "ABS" | "LOG1P" | "EXP" | "NEG";
@@ -311,6 +312,14 @@ const emit = defineEmits<{
 const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
+
+useEscDismissableDialog({
+  priority: 1065,
+  isOpen: () => true,
+  requestClose: () => {
+    void dismissModal();
+  },
+});
 
 const enabled = ref(false);
 const swapUpperLower = ref(false);

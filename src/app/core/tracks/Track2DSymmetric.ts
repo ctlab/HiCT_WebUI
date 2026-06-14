@@ -254,14 +254,23 @@ class BasePairsTrack2DSymmetric extends Track2DSymmetric {
     );
   }
 
-  public recalculateBorders(): void {
-    this.features = new Map();
-    for (const resolution of this.contigDimensionHolder.resolutions) {
-      this.features.set(resolution, []);
+  public recalculateBorders(targetBpResolution?: number): void {
+    if (targetBpResolution === undefined) {
+      this.features = new Map();
+      for (const resolution of this.contigDimensionHolder.resolutions) {
+        this.features.set(resolution, []);
+      }
+    } else {
+      this.features.set(targetBpResolution, []);
     }
     this.descriptor.bordersBp.forEach((bordersBp) => {
       for (const resolutionTuple of this.viewAndLayersManager
-        .getVectorResolutionTuples()) {
+        .getVectorResolutionTuples()
+        .filter(
+          (tuple) =>
+            targetBpResolution === undefined ||
+            tuple.bpResolution === targetBpResolution
+        )) {
         const [fromPx, toPx] = bordersBp.map((bp) =>
           this.contigDimensionHolder.getPxContainingBp(
             bp,
@@ -346,15 +355,25 @@ class ContigBordersTrack2D extends WithRing {
     );
   }
 
-  public recalculateBorders(): void {
-    this.features.clear();
-    for (const resolution of this.contigDimensionHolder.resolutions) {
-      this.features.set(resolution, []);
+  public recalculateBorders(targetBpResolution?: number): void {
+    if (targetBpResolution === undefined) {
+      this.features.clear();
+      for (const resolution of this.contigDimensionHolder.resolutions) {
+        this.features.set(resolution, []);
+      }
+    } else {
+      this.features.set(targetBpResolution, []);
     }
     const viewAndLayersManager: HiCViewAndLayersManager =
       this.mapManager.getLayersManager();
     this.contigDimensionHolder.contigDescriptors.forEach((cd, contigOrder) => {
       cd.presenceAtResolution.forEach((hideType, resolution) => {
+        if (
+          targetBpResolution !== undefined &&
+          resolution !== targetBpResolution
+        ) {
+          return;
+        }
         switch (hideType) {
           case ContigHideType.AUTO_HIDDEN:
           case ContigHideType.FORCED_HIDDEN:
@@ -479,10 +498,14 @@ class ScaffoldBordersTrack2D extends WithRing {
     );
   }
 
-  public recalculateBorders(): void {
-    this.features.clear();
-    for (const resolution of this.contigDimensionHolder.resolutions) {
-      this.features.set(resolution, []);
+  public recalculateBorders(targetBpResolution?: number): void {
+    if (targetBpResolution === undefined) {
+      this.features.clear();
+      for (const resolution of this.contigDimensionHolder.resolutions) {
+        this.features.set(resolution, []);
+      }
+    } else {
+      this.features.set(targetBpResolution, []);
     }
     const viewAndLayersManager: HiCViewAndLayersManager =
       this.mapManager.getLayersManager();
@@ -494,6 +517,12 @@ class ScaffoldBordersTrack2D extends WithRing {
         }
         this.contigDimensionHolder.prefix_sum_px.forEach(
           (prefix_sum_px, bpResolution) => {
+            if (
+              targetBpResolution !== undefined &&
+              bpResolution !== targetBpResolution
+            ) {
+              return;
+            }
             const [startBP, endBP] = [borders.startBP, borders.endBP];
 
             const [fromPx, toPx] = [startBP, endBP].map((bp) =>
@@ -595,6 +624,9 @@ class ScaffoldBordersTrack2D extends WithRing {
 }
 
 class TranslocationArrowsTrack2D extends Track2DSymmetric {
+  private static readonly MAX_ARROW_SIZE_PX = 56;
+  private static readonly MIN_ARROW_SIZE_PX = 12;
+
   public constructor(public readonly mapManager: ContactMapManager) {
     super(
       {
@@ -603,17 +635,80 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
       },
       mapManager.getContigDimensionHolder(),
       {
-        borderColor: "rgba(0, 0, 0, 0.0)",
-        fillColor: "rgba(0, 0, 0, 0.0)",
-        width: 2,
+        borderColor: "rgba(48, 208, 132, 0.98)",
+        fillColor: "rgba(160, 72, 255, 0.46)",
+        width: 3,
         zIndex: 12,
       }
     );
   }
 
-  public recalculateBorders(): void {
-    for (const resolution of this.contigDimensionHolder.resolutions) {
-      this.features.set(resolution, []);
+  private getArrowSizePx(fromPx: number, toPx: number): number {
+    const spanPx = Math.max(0, toPx - fromPx);
+    if (spanPx <= 0) {
+      return 0;
+    }
+    return Math.min(
+      TranslocationArrowsTrack2D.MAX_ARROW_SIZE_PX,
+      Math.max(TranslocationArrowsTrack2D.MIN_ARROW_SIZE_PX, spanPx * 0.5)
+    );
+  }
+
+  private scaleRing(
+    ring: number[][],
+    pixelResolution: number
+  ): number[][] {
+    return ring.map(([x, y]) => [x * pixelResolution, y * pixelResolution]);
+  }
+
+  private createLeftContigInsertionTriangle(
+    fromPx: number,
+    toPx: number,
+    pixelResolution: number
+  ): number[][] | undefined {
+    const arrowSize = this.getArrowSizePx(fromPx, toPx);
+    if (arrowSize <= 0) {
+      return undefined;
+    }
+    return this.scaleRing(
+      [
+        [toPx, -toPx],
+        [toPx, -toPx + arrowSize],
+        [toPx - arrowSize, -toPx],
+        [toPx, -toPx],
+      ],
+      pixelResolution
+    );
+  }
+
+  private createRightContigInsertionTriangle(
+    fromPx: number,
+    toPx: number,
+    pixelResolution: number
+  ): number[][] | undefined {
+    const arrowSize = this.getArrowSizePx(fromPx, toPx);
+    if (arrowSize <= 0) {
+      return undefined;
+    }
+    return this.scaleRing(
+      [
+        [fromPx, -fromPx],
+        [fromPx + arrowSize, -fromPx],
+        [fromPx, -fromPx - arrowSize],
+        [fromPx, -fromPx],
+      ],
+      pixelResolution
+    );
+  }
+
+  public recalculateBorders(targetBpResolution?: number): void {
+    if (targetBpResolution === undefined) {
+      this.features.clear();
+      for (const resolution of this.contigDimensionHolder.resolutions) {
+        this.features.set(resolution, []);
+      }
+    } else {
+      this.features.set(targetBpResolution, []);
     }
     const viewAndLayersManager: HiCViewAndLayersManager =
       this.mapManager.getLayersManager();
@@ -621,6 +716,12 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
       | { contigDescriptor: ContigDescriptor; contigOrder: number }
       | undefined = undefined;
     this.contigDimensionHolder.resolutions.forEach((resolution) => {
+      if (
+        targetBpResolution !== undefined &&
+        resolution !== targetBpResolution
+      ) {
+        return;
+      }
       this.contigDimensionHolder.contigDescriptors.forEach(
         (cd, contigOrder) => {
           switch (cd.presenceAtResolution.get(resolution)) {
@@ -655,19 +756,14 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
                   prefixSum[1 + previousShown.contigOrder],
                 ];
 
-                const ringL = [
-                  [toPxL, -toPxL],
-                  [toPxL, -fromPxL],
-                  [fromPxL, -toPxL],
-                  [toPxL, -toPxL],
-                ];
-
-                for (const c of ringL) {
-                  c[0] *= pixelResolution;
-                  c[1] *= pixelResolution;
+                const ringL = this.createLeftContigInsertionTriangle(
+                  fromPxL,
+                  toPxL,
+                  pixelResolution
+                );
+                if (ringL) {
+                  multiPolygonRings.push([ringL]);
                 }
-
-                multiPolygonRings.push([ringL]);
               } else {
                 previousShown = {
                   contigDescriptor: cd,
@@ -680,19 +776,14 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
                 prefixSum[1 + contigOrder],
               ];
 
-              const ringR = [
-                [fromPxR, -fromPxR],
-                [fromPxR, -toPxR],
-                [toPxR, -fromPxR],
-                [fromPxR, -fromPxR],
-              ];
-
-              for (const c of ringR) {
-                c[0] *= pixelResolution;
-                c[1] *= pixelResolution;
+              const ringR = this.createRightContigInsertionTriangle(
+                fromPxR,
+                toPxR,
+                pixelResolution
+              );
+              if (ringR) {
+                multiPolygonRings.push([ringR]);
               }
-
-              multiPolygonRings.push([ringR]);
 
               const lrArrow = new MultiPolygon(multiPolygonRings);
 
@@ -756,19 +847,15 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
           prefixSum[1 + previousShown.contigOrder],
         ];
 
-        const ringR = [
-          [toPxR, -toPxR],
-          [toPxR, -fromPxR],
-          [fromPxR, -toPxR],
-          [toPxR, -toPxR],
-        ];
-
-        for (const c of ringR) {
-          c[0] *= pixelResolution;
-          c[1] *= pixelResolution;
+        const ringR = this.createLeftContigInsertionTriangle(
+          fromPxR,
+          toPxR,
+          pixelResolution
+        );
+        if (ringR) {
+          multiPolygonRings.push([ringR]);
         }
 
-        multiPolygonRings.push([ringR]);
         const rightArrow = new MultiPolygon(multiPolygonRings);
 
         const multiPolygonFeature = new Feature({
