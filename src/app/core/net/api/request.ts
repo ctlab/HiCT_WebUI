@@ -191,6 +191,11 @@ class StartConversionJobRequest implements HiCTAPIRequest {
       readonly compressionAlgorithm?: string;
       readonly chunkSize?: number;
       readonly parallelism?: number;
+      readonly binTableFilename?: string;
+      readonly chromSizesFilename?: string;
+      readonly binSize?: number;
+      readonly oneBased?: boolean;
+      readonly countAsFloat?: boolean;
     }
   ) {}
 }
@@ -210,6 +215,11 @@ class StartBatchConversionJobsRequest implements HiCTAPIRequest {
       readonly compression?: number;
       readonly compressionAlgorithm?: string;
       readonly chunkSize?: number;
+      readonly binTableFilename?: string;
+      readonly chromSizesFilename?: string;
+      readonly binSize?: number;
+      readonly oneBased?: boolean;
+      readonly countAsFloat?: boolean;
     }
   ) {}
 }

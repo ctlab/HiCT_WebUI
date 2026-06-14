@@ -361,8 +361,8 @@
     @dismissed="onFileDismissed"
     :error-message="errorMessage"
     :title="'Open Hi-C dataset'"
-    :file-type="'.hict.hdf5, .hic, .cool, .mcool'"
-    :note="'Files in .hic, .cool, and .mcool formats must be converted into HiCT internal format before opening.'"
+    :file-type="'.hict.hdf5, .hic, .cool, .mcool, .matrix, .coo, .tsv, .csv, .bg2, .bedpe, .pairs, .validPairs'"
+    :note="'Files outside .hict.hdf5 must be converted into HiCT internal format before opening. Text matrix formats are loaded through hictk.'"
     :file-name-predicate="isOpenableAssemblyFilename"
   ></UniversalFileSelector>
   <UniversalFileSelector
@@ -1024,7 +1024,8 @@ async function onFileSelected(filename: string) {
     } else if (
       lowered.endsWith(".hic") ||
       lowered.endsWith(".cool") ||
-      lowered.endsWith(".mcool")
+      lowered.endsWith(".mcool") ||
+      isHictkLoadFilename(lowered)
     ) {
       try {
         const resolution =
@@ -1068,7 +1069,29 @@ function isOpenableAssemblyFilename(name: string): boolean {
     lowered.endsWith(".hict.hdf5") ||
     lowered.endsWith(".hic") ||
     lowered.endsWith(".cool") ||
-    lowered.endsWith(".mcool")
+    lowered.endsWith(".mcool") ||
+    isHictkLoadFilename(lowered)
+  );
+}
+
+function stripCompressionSuffix(name: string): string {
+  return name.replace(/\.(gz|bgz|xz|zst|zstd|bz2|lz4|lzo)$/i, "");
+}
+
+function isHictkLoadFilename(name: string): boolean {
+  const lowered = stripCompressionSuffix(name.toLowerCase());
+  return (
+    lowered.endsWith(".matrix") ||
+    lowered.endsWith(".coo") ||
+    lowered.endsWith(".coo.tsv") ||
+    lowered.endsWith(".coo.csv") ||
+    lowered.endsWith(".tsv") ||
+    lowered.endsWith(".csv") ||
+    lowered.endsWith(".bg2") ||
+    lowered.endsWith(".bedgraph2") ||
+    lowered.endsWith(".bedpe") ||
+    lowered.endsWith(".pairs") ||
+    lowered.endsWith(".validpairs")
   );
 }
 
