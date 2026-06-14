@@ -507,6 +507,11 @@ class StartConversionJobRequestDTO extends HiCTAPIRequestDTO<StartConversionJobR
       compressionAlgorithm: this.entity.options.compressionAlgorithm,
       chunkSize: this.entity.options.chunkSize,
       parallelism: this.entity.options.parallelism,
+      binTableFilename: this.entity.options.binTableFilename,
+      chromSizesFilename: this.entity.options.chromSizesFilename,
+      binSize: this.entity.options.binSize,
+      oneBased: this.entity.options.oneBased,
+      countAsFloat: this.entity.options.countAsFloat,
     };
   }
 }
@@ -524,6 +529,11 @@ class StartBatchConversionJobsRequestDTO extends HiCTAPIRequestDTO<StartBatchCon
       compression: this.entity.options.compression,
       compressionAlgorithm: this.entity.options.compressionAlgorithm,
       chunkSize: this.entity.options.chunkSize,
+      binTableFilename: this.entity.options.binTableFilename,
+      chromSizesFilename: this.entity.options.chromSizesFilename,
+      binSize: this.entity.options.binSize,
+      oneBased: this.entity.options.oneBased,
+      countAsFloat: this.entity.options.countAsFloat,
     };
   }
 }

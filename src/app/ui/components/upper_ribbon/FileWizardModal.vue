@@ -86,7 +86,7 @@
                           class="form-control"
                           type="text"
                           readonly
-                          :value="primarySource.filename || 'Select .hict.hdf5, .hic, .cool, or .mcool'"
+                          :value="primarySource.filename || matrixSelectorPlaceholder"
                         />
                         <button class="btn btn-outline-secondary" @click="openSelector('primary-matrix')">
                           Browse…
@@ -132,7 +132,7 @@
                           class="form-control"
                           type="text"
                           readonly
-                          :value="secondarySource.filename || 'Select .hict.hdf5, .hic, .cool, or .mcool'"
+                          :value="secondarySource.filename || matrixSelectorPlaceholder"
                         />
                         <button class="btn btn-outline-secondary" @click="openSelector('secondary-matrix')">
                           Browse…
@@ -179,6 +179,13 @@
                     <a :href="hictkProjectUrl" target="_blank" rel="noopener noreferrer">hictk</a>
                   </div>
                   <div>Citation: {{ hictkCitationText }}</div>
+                </div>
+                <div v-if="hictkLoadSources.length > 0" class="alert alert-info mt-3 mb-0">
+                  <div class="fw-semibold mb-1">Additional text matrix formats</div>
+                  <div>
+                    HiCT can load Hi-C Pro .matrix, COO TSV/CSV, BEDPE/bedGraph2, pairs, and validPairs files
+                    through hictk before importing them into .hict.hdf5.
+                  </div>
                 </div>
               </div>
 
@@ -343,6 +350,45 @@
                         <a :href="hictkProjectUrl" target="_blank" rel="noopener noreferrer">hictk</a>
                       </div>
                       <div>Citation: {{ hictkCitationText }}</div>
+                    </div>
+                    <div v-for="source in conversionSidecarSources" :key="`sidecar-${source.role}`" class="wizard-sidecar-card mt-3">
+                      <div class="fw-semibold mb-2">
+                        {{ source.role === "primary" ? "Primary" : "Secondary" }} {{ source.formatLabel }} options
+                      </div>
+                      <div v-if="source.needsBinTable" class="mb-2">
+                        <label class="form-label">BED3+ bin table</label>
+                        <div class="input-group">
+                          <input class="form-control" type="text" readonly :value="source.draft.binTableFilename || 'Auto-detect same-stem .bed when possible'" />
+                          <button class="btn btn-outline-secondary" @click="openSelector(source.role === 'primary' ? 'primary-bin-table' : 'secondary-bin-table')">Browse…</button>
+                          <button class="btn btn-outline-danger" :disabled="!source.draft.binTableFilename" @click="source.draft.binTableFilename = ''">Clear</button>
+                        </div>
+                        <small class="text-muted">
+                          Hi-C Pro .matrix requires the matching bin BED. Generic COO can auto-generate a synthetic 1 bp bin table for plain text or .gz input.
+                        </small>
+                      </div>
+                      <div v-if="source.needsChromSizes" class="row g-2">
+                        <div class="col-md-8">
+                          <label class="form-label">Chrom sizes</label>
+                          <div class="input-group">
+                            <input class="form-control" type="text" readonly :value="source.draft.chromSizesFilename || 'Select .chrom.sizes file'" />
+                            <button class="btn btn-outline-secondary" @click="openSelector(source.role === 'primary' ? 'primary-chrom-sizes' : 'secondary-chrom-sizes')">Browse…</button>
+                            <button class="btn btn-outline-danger" :disabled="!source.draft.chromSizesFilename" @click="source.draft.chromSizesFilename = ''">Clear</button>
+                          </div>
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Bin size</label>
+                          <input v-model.number="source.draft.binSize" class="form-control" type="number" min="1" step="1" placeholder="required" />
+                        </div>
+                        <small class="text-muted">
+                          BEDPE/bedGraph2 and validPairs inputs need chromosome lengths plus a target bin size.
+                        </small>
+                      </div>
+                      <div v-if="source.supportsFloatCounts" class="form-check mt-2">
+                        <input :id="`${source.role}-count-as-float`" v-model="source.draft.countAsFloat" class="form-check-input" type="checkbox" />
+                        <label class="form-check-label" :for="`${source.role}-count-as-float`">
+                          Counts are floating-point values
+                        </label>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -712,6 +758,10 @@ type SourceDraft = {
   presetId: string;
   resolving: boolean;
   resolveRequestId: number;
+  binTableFilename: string;
+  chromSizesFilename: string;
+  binSize: number | null;
+  countAsFloat: boolean;
 };
 
 type SelectedTrack = {
@@ -736,7 +786,11 @@ type SelectorKind =
   | "primary-fasta"
   | "secondary-fasta"
   | "primary-agp"
-  | "secondary-agp";
+  | "secondary-agp"
+  | "primary-bin-table"
+  | "secondary-bin-table"
+  | "primary-chrom-sizes"
+  | "secondary-chrom-sizes";
 
 const BLEND_MODES: WizardBlendMode[] = [
   "OVER",
@@ -822,6 +876,10 @@ const primarySource = reactive<SourceDraft>({
   presetId: "",
   resolving: false,
   resolveRequestId: 0,
+  binTableFilename: "",
+  chromSizesFilename: "",
+  binSize: null,
+  countAsFloat: false,
 });
 const secondarySource = reactive<SourceDraft>({
   filename: "",
@@ -830,6 +888,10 @@ const secondarySource = reactive<SourceDraft>({
   presetId: "",
   resolving: false,
   resolveRequestId: 0,
+  binTableFilename: "",
+  chromSizesFilename: "",
+  binSize: null,
+  countAsFloat: false,
 });
 const primaryFasta = ref("");
 const secondaryFasta = ref("");
@@ -935,6 +997,41 @@ const selectedHicSourceCount = computed(() =>
     .filter((source) => source.filename.toLowerCase().endsWith(".hic")).length
 );
 
+const matrixSelectorFileTypes =
+  ".hict.hdf5, .hic, .cool, .mcool, .matrix, .coo, .tsv, .csv, .bg2, .bedgraph2, .bedpe, .pairs, .validPairs";
+const matrixSelectorPlaceholder = `Select ${matrixSelectorFileTypes}`;
+
+const hictkLoadSources = computed(() =>
+  [primarySource, secondarySource]
+    .filter((source, index) => index === 0 || requiresSecondarySource.value)
+    .filter((source) => isHictkLoadFilename(source.filename))
+);
+
+const hictkConversionSourceCount = computed(() =>
+  [primarySource, secondarySource]
+    .filter((source, index) => index === 0 || requiresSecondarySource.value)
+    .filter((source) => {
+      const lowered = source.filename.toLowerCase();
+      return (lowered.endsWith(".hic") || isHictkLoadFilename(lowered)) && !isResolvedDirectly(source);
+    }).length
+);
+
+const conversionSidecarSources = computed(() =>
+  [
+    { role: "primary" as const, draft: primarySource },
+    { role: "secondary" as const, draft: secondarySource },
+  ]
+    .filter((entry, index) => index === 0 || requiresSecondarySource.value)
+    .map((entry) => ({
+      ...entry,
+      formatLabel: hictkLoadFormatLabel(entry.draft.filename),
+      needsBinTable: isHicProMatrixFilename(entry.draft.filename) || isCooFilename(entry.draft.filename),
+      needsChromSizes: isBg2Filename(entry.draft.filename) || isValidPairsFilename(entry.draft.filename),
+      supportsFloatCounts: isCooFilename(entry.draft.filename) || isHicProMatrixFilename(entry.draft.filename) || isBg2Filename(entry.draft.filename),
+    }))
+    .filter((entry) => entry.needsBinTable || entry.needsChromSizes || entry.supportsFloatCounts)
+);
+
 const hictkProjectUrl = "https://github.com/paulsengroup/hictk";
 const hictkCitationText =
   "Rossini R, Paulsen J. Bioinformatics 2024;40(7):btae408.";
@@ -1013,7 +1110,7 @@ const wizardBlockingIssues = computed(() => {
     .filter((source, index) => index === 0 || requiresSecondarySource.value)
     .filter((source) => {
       const lowered = source.filename.toLowerCase();
-      return lowered.endsWith(".hic") && !isResolvedDirectly(source);
+      return (lowered.endsWith(".hic") || isHictkLoadFilename(lowered)) && !isResolvedDirectly(source);
     });
   if (
     sourcesNeedingToolchain.length > 0 &&
@@ -1021,9 +1118,14 @@ const wizardBlockingIssues = computed(() => {
     !toolchainStatus.value.hicConversionAvailable
   ) {
     issues.push(
-      "Bundled/external hictk toolchain is required for .hic conversion but is currently unavailable."
+      "Bundled/external hictk toolchain is required for this conversion but is currently unavailable."
     );
   }
+  conversionSidecarSources.value.forEach((source) => {
+    if (source.needsChromSizes && (!source.draft.chromSizesFilename || !source.draft.binSize || source.draft.binSize <= 0)) {
+      issues.push(`${source.role === "primary" ? "Primary" : "Secondary"} ${source.formatLabel} conversion requires chrom sizes and a positive bin size.`);
+    }
+  });
   if (viewMode.value !== "single" && usesExpectedPreset.value) {
     issues.push(
       "Expected and O/E presets are currently supported only in single-map mode. Use Observed presets for overlay and upper/lower rendering."
@@ -1198,12 +1300,15 @@ const wizardCheckItems = computed<WizardCheckItem[]>(() => {
   if (toolchainStatus.value && !toolchainStatus.value.hicConversionAvailable) {
     const hasHicConversion = [primarySource, secondarySource]
       .filter((source, index) => index === 0 || requiresSecondarySource.value)
-      .some((source) => source.filename.toLowerCase().endsWith(".hic") && !isResolvedDirectly(source));
+      .some((source) => {
+        const lowered = source.filename.toLowerCase();
+        return (lowered.endsWith(".hic") || isHictkLoadFilename(lowered)) && !isResolvedDirectly(source);
+      });
     if (hasHicConversion) {
       items.push({
         id: "hictk",
         kind: "error",
-        title: ".hic conversion",
+        title: "hictk conversion",
         message: toolchainStatus.value.summary,
       });
     }
@@ -1233,8 +1338,70 @@ const isOpenableAssemblyFilename = (name: string): boolean => {
     lowered.endsWith(".hict.hdf5") ||
     lowered.endsWith(".hic") ||
     lowered.endsWith(".cool") ||
-    lowered.endsWith(".mcool")
+    lowered.endsWith(".mcool") ||
+    isHictkLoadFilename(lowered)
   );
+};
+
+const stripCompressionSuffix = (name: string): string =>
+  name.replace(/\.(gz|bgz|xz|zst|zstd|bz2|lz4|lzo)$/i, "");
+
+const isHicProMatrixFilename = (name: string): boolean =>
+  stripCompressionSuffix(name.toLowerCase()).endsWith(".matrix");
+
+const isCooFilename = (name: string): boolean => {
+  const lowered = stripCompressionSuffix(name.toLowerCase());
+  return (
+    lowered.endsWith(".coo") ||
+    lowered.endsWith(".coo.tsv") ||
+    lowered.endsWith(".coo.csv") ||
+    lowered.endsWith(".tsv") ||
+    lowered.endsWith(".csv")
+  );
+};
+
+const isBg2Filename = (name: string): boolean => {
+  const lowered = stripCompressionSuffix(name.toLowerCase());
+  return lowered.endsWith(".bg2") || lowered.endsWith(".bedgraph2") || lowered.endsWith(".bedpe");
+};
+
+const isPairsFilename = (name: string): boolean =>
+  stripCompressionSuffix(name.toLowerCase()).endsWith(".pairs");
+
+const isValidPairsFilename = (name: string): boolean =>
+  stripCompressionSuffix(name.toLowerCase()).endsWith(".validpairs");
+
+const isHictkLoadFilename = (name: string): boolean =>
+  isHicProMatrixFilename(name) ||
+  isCooFilename(name) ||
+  isBg2Filename(name) ||
+  isPairsFilename(name) ||
+  isValidPairsFilename(name);
+
+const hictkLoadFormatLabel = (name: string): string => {
+  if (isHicProMatrixFilename(name)) {
+    return "Hi-C Pro .matrix";
+  }
+  if (isCooFilename(name)) {
+    return "COO";
+  }
+  if (isBg2Filename(name)) {
+    return "BEDPE/bedGraph2";
+  }
+  if (isPairsFilename(name)) {
+    return "pairs";
+  }
+  if (isValidPairsFilename(name)) {
+    return "validPairs";
+  }
+  return "matrix";
+};
+
+const isBinTableFilename = (name: string): boolean => name.toLowerCase().endsWith(".bed");
+
+const isChromSizesFilename = (name: string): boolean => {
+  const lowered = name.toLowerCase();
+  return lowered.endsWith(".chrom.sizes") || lowered.endsWith(".chromsizes") || lowered.endsWith(".chrom_sizes.txt");
 };
 
 const isTrackFilename = (name: string): boolean => {
@@ -1318,7 +1485,7 @@ const openSelector = (kind: SelectorKind): void => {
   selectorState.kind = kind;
   if (kind === "primary-matrix") {
     selectorState.title = "Select primary matrix source";
-    selectorState.fileType = ".hict.hdf5, .hic, .cool, .mcool";
+    selectorState.fileType = matrixSelectorFileTypes;
     selectorState.note =
       "Current conversions will be reused when the original file fingerprint matches the cached record.";
     selectorState.predicate = isOpenableAssemblyFilename;
@@ -1326,7 +1493,7 @@ const openSelector = (kind: SelectorKind): void => {
   }
   if (kind === "secondary-matrix") {
     selectorState.title = "Select secondary matrix source";
-    selectorState.fileType = ".hict.hdf5, .hic, .cool, .mcool";
+    selectorState.fileType = matrixSelectorFileTypes;
     selectorState.note =
       "Secondary sources may be padded if matrix sizes differ from the primary source.";
     selectorState.predicate = isOpenableAssemblyFilename;
@@ -1347,6 +1514,20 @@ const openSelector = (kind: SelectorKind): void => {
     selectorState.fileType = ".fasta, .fa, .fna, .fas";
     selectorState.note = "FASTA linkage is optional but required for FASTA export.";
     selectorState.predicate = isFastaFilename;
+    return;
+  }
+  if (kind === "primary-bin-table" || kind === "secondary-bin-table") {
+    selectorState.title = kind === "primary-bin-table" ? "Select primary BED bin table" : "Select secondary BED bin table";
+    selectorState.fileType = ".bed";
+    selectorState.note = "BED3+ bin table used by hictk load for Hi-C Pro .matrix or generic COO input.";
+    selectorState.predicate = isBinTableFilename;
+    return;
+  }
+  if (kind === "primary-chrom-sizes" || kind === "secondary-chrom-sizes") {
+    selectorState.title = kind === "primary-chrom-sizes" ? "Select primary chrom sizes" : "Select secondary chrom sizes";
+    selectorState.fileType = ".chrom.sizes";
+    selectorState.note = "Chromosome sizes used by hictk load for BEDPE/bedGraph2 or validPairs input.";
+    selectorState.predicate = isChromSizesFilename;
     return;
   }
   selectorState.title =
@@ -1443,6 +1624,18 @@ const onSelectorPicked = async (filename: string): Promise<void> => {
         break;
       case "secondary-agp":
         secondaryAgp.value = filename;
+        break;
+      case "primary-bin-table":
+        primarySource.binTableFilename = filename;
+        break;
+      case "secondary-bin-table":
+        secondarySource.binTableFilename = filename;
+        break;
+      case "primary-chrom-sizes":
+        primarySource.chromSizesFilename = filename;
+        break;
+      case "secondary-chrom-sizes":
+        secondarySource.chromSizesFilename = filename;
         break;
     }
   } catch (error) {
@@ -1562,6 +1755,10 @@ const ensureOpenedFilename = async (source: SourceDraft): Promise<string> => {
       assemblyFilename: assemblyFilename || undefined,
       direction: resolution.conversionDirection ?? undefined,
       overwrite: true,
+      binTableFilename: source.binTableFilename || undefined,
+      chromSizesFilename: source.chromSizesFilename || undefined,
+      binSize: source.binSize ?? undefined,
+      countAsFloat: source.countAsFloat || undefined,
     })
   );
   const finishedJob = await waitForConversionJob(started.jobId);

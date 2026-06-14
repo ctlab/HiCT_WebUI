@@ -295,7 +295,12 @@ const iconClassForPath = (path: string, extension: string): string => {
   if (normalized.endsWith(".hict") || normalized.endsWith(".hict.hdf5") || normalized.endsWith(".hdf5")) {
     return "pi pi-fw pi-map";
   }
-  if (normalized.endsWith(".cool") || normalized.endsWith(".mcool") || normalized.endsWith(".hic")) {
+  if (
+    normalized.endsWith(".cool") ||
+    normalized.endsWith(".mcool") ||
+    normalized.endsWith(".hic") ||
+    isTextMatrixPath(normalized)
+  ) {
     return "pi pi-fw pi-table";
   }
   if (["fasta", "fa", "fna", "fai"].includes(extension)) {
@@ -314,6 +319,23 @@ const iconClassForPath = (path: string, extension: string): string => {
     return "pi pi-fw pi-file-edit";
   }
   return "pi pi-fw pi-file";
+};
+
+const isTextMatrixPath = (normalized: string): boolean => {
+  const stripped = normalized.replace(/\.(gz|bgz|xz|zst|zstd|bz2|lz4|lzo)$/i, "");
+  return (
+    stripped.endsWith(".matrix") ||
+    stripped.endsWith(".coo") ||
+    stripped.endsWith(".coo.tsv") ||
+    stripped.endsWith(".coo.csv") ||
+    stripped.endsWith(".tsv") ||
+    stripped.endsWith(".csv") ||
+    stripped.endsWith(".bg2") ||
+    stripped.endsWith(".bedgraph2") ||
+    stripped.endsWith(".bedpe") ||
+    stripped.endsWith(".pairs") ||
+    stripped.endsWith(".validpairs")
+  );
 };
 
 const formatBytes = (sizeBytes: number): string => {

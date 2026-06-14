@@ -171,6 +171,57 @@
                 </small>
               </div>
               <div class="mb-3">
+                <label class="form-label">Optional BED3+ bin table</label>
+                <div class="input-group">
+                  <input
+                    class="form-control"
+                    type="text"
+                    readonly
+                    :value="batchBinTableFilename || 'Auto-detect same-stem .bed when possible'"
+                  />
+                  <button class="btn btn-outline-secondary" @click="sidecarSelectorKind = 'bin-table'">
+                    Browse…
+                  </button>
+                  <button
+                    class="btn btn-outline-danger"
+                    :disabled="!batchBinTableFilename"
+                    @click="batchBinTableFilename = ''"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <small class="text-muted">
+                  Used by Hi-C Pro .matrix and generic COO conversions. Leave empty for auto-discovery or synthetic COO bins.
+                </small>
+              </div>
+              <div class="row g-2 mb-3">
+                <div class="col-md-8">
+                  <label class="form-label">Optional chrom sizes</label>
+                  <div class="input-group">
+                    <input
+                      class="form-control"
+                      type="text"
+                      readonly
+                      :value="batchChromSizesFilename || 'Required for BEDPE/bedGraph2 and validPairs'"
+                    />
+                    <button class="btn btn-outline-secondary" @click="sidecarSelectorKind = 'chrom-sizes'">
+                      Browse…
+                    </button>
+                    <button
+                      class="btn btn-outline-danger"
+                      :disabled="!batchChromSizesFilename"
+                      @click="batchChromSizesFilename = ''"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Bin size</label>
+                  <input type="number" class="form-control" v-model.number="batchBinSize" min="1" />
+                </div>
+              </div>
+              <div class="mb-3">
                 <label class="form-label">Parallel jobs</label>
                 <input type="number" class="form-control" v-model.number="batchParallelJobs" min="1" />
               </div>
@@ -251,6 +302,16 @@
       @selected="onAssemblySelected"
       @dismissed="assemblySelectorOpen = false"
     />
+    <UniversalFileSelector
+      v-if="sidecarSelectorKind !== null"
+      :network-manager="networkManager"
+      :title="sidecarSelectorKind === 'bin-table' ? 'Select BED bin table' : 'Select chrom sizes file'"
+      :file-type="sidecarSelectorKind === 'bin-table' ? '.bed' : '.chrom.sizes'"
+      :note="sidecarSelectorKind === 'bin-table' ? 'BED3+ bin table for hictk load.' : 'Chrom sizes for hictk load.'"
+      :file-name-predicate="sidecarSelectorKind === 'bin-table' ? isBinTableFilename : isChromSizesFilename"
+      @selected="onSidecarSelected"
+      @dismissed="sidecarSelectorKind = null"
+    />
   </div>
 </template>
 
@@ -285,6 +346,10 @@ const batchFiles: Ref<string[]> = ref([]);
 const batchSelection: Ref<Set<string>> = ref(new Set<string>());
 const batchAssemblyFilename: Ref<string> = ref("");
 const assemblySelectorOpen: Ref<boolean> = ref(false);
+const batchBinTableFilename: Ref<string> = ref("");
+const batchChromSizesFilename: Ref<string> = ref("");
+const batchBinSize: Ref<number | null> = ref(null);
+const sidecarSelectorKind: Ref<"bin-table" | "chrom-sizes" | null> = ref(null);
 const batchParallelJobs: Ref<number> = ref(2);
 const batchParallelism: Ref<number> = ref(Math.max(1, navigator.hardwareConcurrency || 4));
 const batchJobIds: Ref<string[]> = ref([]);
@@ -358,6 +423,10 @@ function resetState(): void {
     allFiles.value = new Set<string>();
     toolchainStatus.value = null;
     toolchainLoading.value = true;
+    batchBinTableFilename.value = "";
+    batchChromSizesFilename.value = "";
+    batchBinSize.value = null;
+    sidecarSelectorKind.value = null;
   }
 }
 
@@ -367,7 +436,8 @@ function onDismissClicked(): void {
 }
 
 function requiresHicToolchain(filename: string | null | undefined): boolean {
-  return filename?.toLowerCase().endsWith(".hic") ?? false;
+  const lowered = filename?.toLowerCase() ?? "";
+  return lowered.endsWith(".hic") || isHictkLoadFilename(lowered);
 }
 
 function isAssemblyFilename(name: string): boolean {
@@ -377,6 +447,15 @@ function isAssemblyFilename(name: string): boolean {
 function onAssemblySelected(filename: string): void {
   batchAssemblyFilename.value = filename;
   assemblySelectorOpen.value = false;
+}
+
+function onSidecarSelected(filename: string): void {
+  if (sidecarSelectorKind.value === "bin-table") {
+    batchBinTableFilename.value = filename;
+  } else if (sidecarSelectorKind.value === "chrom-sizes") {
+    batchChromSizesFilename.value = filename;
+  }
+  sidecarSelectorKind.value = null;
 }
 
 onMounted(() => {
@@ -473,6 +552,14 @@ function deriveOutputFilename(file: string): string {
   if (lower.endsWith(".cool")) {
     return file.slice(0, -".cool".length) + ".hict.hdf5";
   }
+  const withoutCompression = file.replace(/\.(gz|bgz|xz|zst|zstd|bz2|lz4|lzo)$/i, "");
+  const stripped = withoutCompression.replace(
+    /\.(coo\.tsv|coo\.csv|bedgraph2|validpairs|matrix|pairs|bedpe|coo|bg2|tsv|csv)$/i,
+    ""
+  );
+  if (stripped !== withoutCompression) {
+    return stripped + ".hict.hdf5";
+  }
   return file + ".hict.hdf5";
 }
 
@@ -544,6 +631,9 @@ async function startBatchConversion(): Promise<void> {
         parallelJobs: batchParallelJobs.value,
         parallelism: batchParallelism.value,
         overwrite: overwriteExisting,
+        binTableFilename: batchBinTableFilename.value || undefined,
+        chromSizesFilename: batchChromSizesFilename.value || undefined,
+        binSize: batchBinSize.value ?? undefined,
       })
     )
     .then((resp) => {
@@ -616,6 +706,36 @@ const hictkAvailabilityLabel = computed(() =>
 const hictkAvailabilityClass = computed(() =>
   toolchainStatus.value?.hicConversionAvailable ? "finished" : "failed"
 );
+
+function stripCompressionSuffix(name: string): string {
+  return name.replace(/\.(gz|bgz|xz|zst|zstd|bz2|lz4|lzo)$/i, "");
+}
+
+function isHictkLoadFilename(name: string): boolean {
+  const lowered = stripCompressionSuffix(name.toLowerCase());
+  return (
+    lowered.endsWith(".matrix") ||
+    lowered.endsWith(".coo") ||
+    lowered.endsWith(".coo.tsv") ||
+    lowered.endsWith(".coo.csv") ||
+    lowered.endsWith(".tsv") ||
+    lowered.endsWith(".csv") ||
+    lowered.endsWith(".bg2") ||
+    lowered.endsWith(".bedgraph2") ||
+    lowered.endsWith(".bedpe") ||
+    lowered.endsWith(".pairs") ||
+    lowered.endsWith(".validpairs")
+  );
+}
+
+function isBinTableFilename(name: string): boolean {
+  return name.toLowerCase().endsWith(".bed");
+}
+
+function isChromSizesFilename(name: string): boolean {
+  const lowered = name.toLowerCase();
+  return lowered.endsWith(".chrom.sizes") || lowered.endsWith(".chromsizes") || lowered.endsWith(".chrom_sizes.txt");
+}
 </script>
 
 <style scoped>
