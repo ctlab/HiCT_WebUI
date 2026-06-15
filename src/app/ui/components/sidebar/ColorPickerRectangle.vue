@@ -58,6 +58,7 @@ const currentColor = ref(props.getDefaultColor());
 const vPicker: Ref<HTMLElement | null> = ref(null);
 const overlayRoot: Ref<HTMLDivElement | null> = ref(null);
 const pickerOpen = ref(false);
+let suppressPickerEvents = false;
 
 watch(
   () => props.getDefaultColor(),
@@ -72,7 +73,14 @@ watch(
       // currentColor.value = nc.replace(re, `rgba($1,$2,$3,${alpha})`);
       currentColor.value = nc;
       colorSelectorStyleObject.value["background"] = currentColor.value.RGBA;
-      picker.value?.setColor(currentColor.value.RGBA, false);
+      if (picker.value) {
+        suppressPickerEvents = true;
+        try {
+          picker.value.setColor(currentColor.value.RGBA, false);
+        } finally {
+          suppressPickerEvents = false;
+        }
+      }
       // console.log("Picker rectangle: new color", currentColor.value);
     }
   }
@@ -95,14 +103,18 @@ onMounted(() => {
           legacyCSS: true,
         });
         colorSelectorStyleObject.value["background"] = currentColor.value.RGBA;
-        emit("onColorChanged", currentColor.value as ColorTranslator);
+        if (pickerOpen.value && !suppressPickerEvents) {
+          emit("onColorChanged", currentColor.value as ColorTranslator);
+        }
       },
       onDone: function (color) {
         currentColor.value = new ColorTranslator(color.rgbaString as string, {
           legacyCSS: true,
         });
         colorSelectorStyleObject.value["background"] = currentColor.value.RGBA;
-        emit("onColorChanged", currentColor.value as ColorTranslator);
+        if (pickerOpen.value && !suppressPickerEvents) {
+          emit("onColorChanged", currentColor.value as ColorTranslator);
+        }
         closePicker();
       },
       popup: false,
