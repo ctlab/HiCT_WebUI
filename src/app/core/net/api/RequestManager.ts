@@ -1028,6 +1028,20 @@ class RequestManager {
       .catch(() => "unknown");
   }
 
+  public async getChangelog(): Promise<string> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    return axios
+      .get(`${host}/changelog`, { headers: { Accept: "application/json" } })
+      .then((resp) => {
+        const data = resp.data;
+        if (typeof data === "string") {
+          return data;
+        }
+        return String(data?.text ?? "Changelog for this build was not detected");
+      })
+      .catch(() => "Changelog for this build was not detected");
+  }
+
   public async queryMatrixFloat32(options: {
     bpResolution: number;
     startRowPx: number;

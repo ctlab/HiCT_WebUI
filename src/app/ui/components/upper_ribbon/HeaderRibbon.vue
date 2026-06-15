@@ -135,13 +135,12 @@
         type="button"
         @click="reloadTiles"
       >
-        <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>
-        Reload tiles
+        <span><i class="bi bi-arrow-clockwise me-1"></i>Reload tiles</span>
       </button>
       <div class="export-group">
         <button
           id="toggle-osd-button"
-          class="btn btn-sm btn-outline-primary rounded-pill"
+          class="btn btn-sm btn-outline-primary"
           type="button"
           @click="osdOverlayVisible = !osdOverlayVisible"
           :title="osdOverlayVisible ? 'Hide map information overlay' : 'Show map information overlay'"
@@ -151,7 +150,7 @@
         </button>
         <button
           id="ruler-mode-button"
-          class="btn btn-sm btn-outline-primary rounded-pill"
+          class="btn btn-sm btn-outline-primary"
           type="button"
           @click="cycleRulerMode"
           :title="`Cycle ruler coordinate mode. Current: ${rulerModeLabel}`"

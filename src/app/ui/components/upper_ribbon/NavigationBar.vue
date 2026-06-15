@@ -603,6 +603,14 @@
         >
           Attribution
         </button>
+        <button
+          type="button"
+          class="about-tab"
+          :class="{ active: aboutActiveTab === 'changelog' }"
+          @click="aboutActiveTab = 'changelog'"
+        >
+          Changelog
+        </button>
       </div>
       <div v-if="aboutActiveTab === 'about'" class="about-body">
         <p class="about-authors">{{ projectAttribution.authors }}</p>
@@ -612,9 +620,24 @@
           <div><strong>WebUI:</strong> {{ webuiVersion }}</div>
           <div><strong>Commit:</strong> {{ webuiCommit }}</div>
         </div>
+        <section class="ask-authors">
+          <h3>Ask Authors</h3>
+          <div class="ask-authors-grid">
+            <article>
+              <div class="ask-authors-title">Implementation details, technical inquiries</div>
+              <a href="mailto:ntwwwnt@gmail.com">ntwwwnt@gmail.com</a>
+              <a href="mailto:anserdiukov@itmo.ru">anserdiukov@itmo.ru</a>
+            </article>
+            <article>
+              <div class="ask-authors-title">Fundamental design, conceptual questions</div>
+              <a href="mailto:zamyatin.anton@gmail.com">zamyatin.anton@gmail.com</a>
+              <a href="mailto:azamyatin@psu.edu">azamyatin@psu.edu</a>
+            </article>
+          </div>
+        </section>
         <pre class="about-license">{{ licenseText }}</pre>
       </div>
-      <div v-else class="about-body attribution-panel">
+      <div v-else-if="aboutActiveTab === 'attribution'" class="about-body attribution-panel">
         <section class="attribution-section">
           <h3>Project</h3>
           <article class="attribution-card">
@@ -690,6 +713,13 @@
           </ul>
         </section>
       </div>
+      <div v-else class="about-body">
+        <div v-if="changelogLoading" class="d-flex align-items-center gap-2">
+          <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+          <span>Loading changelog...</span>
+        </div>
+        <pre v-else class="about-changelog">{{ changelogText }}</pre>
+      </div>
     </div>
   </div>
 </template>
@@ -750,7 +780,9 @@ const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
 const osdSettingsOpen = ref(false);
-const aboutActiveTab = ref<"about" | "attribution">("about");
+const aboutActiveTab = ref<"about" | "attribution" | "changelog">("about");
+const changelogText = ref("Changelog for this build was not detected");
+const changelogLoading = ref(false);
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
 const pendingJuiceboxAssemblyFilename = ref("");
@@ -1213,6 +1245,7 @@ function openAbout(): void {
   aboutOpen.value = true;
   aboutActiveTab.value = "about";
   backendVersion.value = "loading...";
+  loadChangelog();
   props.networkManager.requestManager
     .getBackendVersion()
     .then((v) => {
@@ -1224,6 +1257,21 @@ function openAbout(): void {
       }
     })
     .catch(() => (backendVersion.value = "unknown"));
+}
+
+function loadChangelog(): void {
+  changelogLoading.value = true;
+  props.networkManager.requestManager
+    .getChangelog()
+    .then((text) => {
+      changelogText.value = text || "Changelog for this build was not detected";
+    })
+    .catch(() => {
+      changelogText.value = "Changelog for this build was not detected";
+    })
+    .finally(() => {
+      changelogLoading.value = false;
+    });
 }
 
 function onOpenFASTAFile() {
@@ -1704,6 +1752,54 @@ function onAssemblyAGPRequest() {
   margin-top: 12px;
   display: grid;
   gap: 4px;
+}
+
+.ask-authors {
+  margin-top: 16px;
+}
+
+.ask-authors h3 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+.ask-authors-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.ask-authors-grid article {
+  background: var(--hict-control-bg, rgba(248, 249, 250, 0.88));
+  border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.12));
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+}
+
+.ask-authors-title {
+  font-weight: 700;
+}
+
+.ask-authors a {
+  color: #0d6efd;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.about-changelog {
+  background: var(--hict-control-bg, #f8f9fa);
+  border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.12));
+  border-radius: 6px;
+  color: var(--hict-surface-fg, #1f2937);
+  font-family: inherit;
+  font-size: 13px;
+  margin: 0;
+  max-height: 62vh;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
 }
 
 .attribution-panel {
