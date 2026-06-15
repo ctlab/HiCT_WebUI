@@ -273,17 +273,19 @@ const emitSelectedPaths = (selected: Set<string>): void => {
 };
 
 const onRowClick = (event: { data?: FileSelectionTableRow; originalEvent?: Event }): void => {
-  if (event.data?.path) {
-    selectPath(event.data.path, event.originalEvent as MouseEvent | undefined);
+  const path = event.data?.path;
+  if (path !== undefined) {
+    selectPath(path, event.originalEvent as MouseEvent | undefined);
   }
 };
 
 const onRowDoubleClick = (event: { data?: FileSelectionTableRow }): void => {
-  if (event.data?.path) {
+  const path = event.data?.path;
+  if (path !== undefined) {
     if (!props.multiSelect) {
-      selectPath(event.data.path);
+      selectPath(path);
     }
-    emit("activate", event.data.path);
+    emit("activate", path);
   }
 };
 

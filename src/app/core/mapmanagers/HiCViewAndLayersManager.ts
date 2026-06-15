@@ -162,6 +162,8 @@ class HiCViewAndLayersManager {
   private wheelZoomInteraction?: ContigMouseWheelZoom;
   private coordinateBaseBp: number;
   private enabledBpResolutions?: Set<number>;
+  private rulerRenderCallback: (() => void) | null = null;
+  private readonly pendingFeatureStyleRefreshHandles = new Set<number>();
 
   public selectionCollections: {
     readonly selectedContigFeatures: Collection<Feature<Geometry>>;
@@ -913,14 +915,6 @@ class HiCViewAndLayersManager {
     track: Track2DSymmetric,
     layersCollection: Layer[] = this.layersHolder.track2DLayers
   ) {
-    console.log(
-      "Adding track: ",
-      track,
-      " is it Track2DSymmetric: ",
-      track instanceof Track2DSymmetric,
-      " is it ContigBordersTrack2D: ",
-      track instanceof ContigBordersTrack2D
-    );
     this.getVectorResolutionTuples().forEach(
       ({ bpResolution, pixelResolution }) => {
         const vectorSource = new VectorSource();
@@ -1333,6 +1327,7 @@ class HiCViewAndLayersManager {
           rulerV.render({ map } as never);
         });
       };
+      this.rulerRenderCallback = scheduleRulerRender;
       map.on("moveend", scheduleRulerRender);
       view.on("change:center", scheduleRulerRender);
       view.on("change:resolution", scheduleRulerRender);
@@ -1344,11 +1339,20 @@ class HiCViewAndLayersManager {
     }
   }
 
+  public scheduleRulerRender(): void {
+    this.rulerRenderCallback?.();
+  }
+
   public dispose(): void {
     if (!this.mapManager.getMap()) {
       return;
     }
     try {
+      for (const handle of this.pendingFeatureStyleRefreshHandles) {
+        window.clearTimeout(handle);
+      }
+      this.pendingFeatureStyleRefreshHandles.clear();
+      this.rulerRenderCallback = null;
       this.mapManager.getMap().getControls().clear();
       const hRuler = document.getElementById("horizontal-ruler-div");
       if (hRuler) {
@@ -1674,18 +1678,63 @@ class HiCViewAndLayersManager {
     layers: Layer[],
     trackTypes: Set<string>
   ): void {
-    for (const features of track.features.values()) {
-      for (const feature of features) {
-        if (trackTypes.has(String(feature.get("trackType")))) {
-          feature.setStyle(track.style);
+    for (const layer of layers) {
+      const source = layer.getSource() as VectorSource | undefined;
+      if (!source) {
+        continue;
+      }
+      if (layer.getVisible()) {
+        for (const feature of source.getFeatures()) {
+          if (trackTypes.has(String(feature.get("trackType")))) {
+            feature.setStyle(track.style);
+          }
         }
+        source.changed();
+        layer.changed();
+      } else {
+        layer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, true);
       }
     }
-    for (const layer of layers) {
-      layer.getSource()?.changed();
-      layer.changed();
-    }
     this.mapManager.getMap().changed();
+    this.scheduleBackgroundGeneratedFeatureStyleRefresh(track, trackTypes);
+  }
+
+  private scheduleBackgroundGeneratedFeatureStyleRefresh(
+    track: Track2DSymmetric,
+    trackTypes: Set<string>
+  ): void {
+    const resolutionFeatureGroups = Array.from(track.features.values());
+    let groupIndex = 0;
+    let featureIndex = 0;
+    let handle: number | undefined;
+    const processChunk = () => {
+      if (handle !== undefined) {
+        this.pendingFeatureStyleRefreshHandles.delete(handle);
+        handle = undefined;
+      }
+      const deadline = performance.now() + 8;
+      while (groupIndex < resolutionFeatureGroups.length && performance.now() < deadline) {
+        const features = resolutionFeatureGroups[groupIndex];
+        while (featureIndex < features.length && performance.now() < deadline) {
+          const feature = features[featureIndex];
+          if (trackTypes.has(String(feature.get("trackType")))) {
+            feature.setStyle(track.style);
+          }
+          featureIndex += 1;
+        }
+        if (featureIndex >= features.length) {
+          groupIndex += 1;
+          featureIndex = 0;
+        }
+      }
+      if (groupIndex < resolutionFeatureGroups.length) {
+        handle = window.setTimeout(processChunk, 0);
+        this.pendingFeatureStyleRefreshHandles.add(handle);
+      }
+    };
+
+    handle = window.setTimeout(processChunk, 0);
+    this.pendingFeatureStyleRefreshHandles.add(handle);
   }
 
   private isVectorLayerDirty(layer: Layer | undefined): boolean {

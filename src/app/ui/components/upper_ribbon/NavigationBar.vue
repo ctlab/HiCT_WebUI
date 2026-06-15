@@ -92,6 +92,14 @@
                 <a
                   class="dropdown-item"
                   href="#"
+                  @click.prevent="exportingMatrix = true"
+                  >Export matrix</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
                   @click.prevent="onGenerateDotplotClicked"
                   >Generate dotplot</a
                 >
@@ -128,52 +136,13 @@
                   >Rendering pipeline...</a
                 >
               </li>
-              <li class="dropdown-submenu p-3 osd-settings-menu" @click.stop>
-                <div class="fw-semibold mb-2">OSD overlay</div>
-                <div class="form-check form-switch mb-2">
-                  <input
-                    id="toggle-osd-visible"
-                    v-model="osdOverlayVisible"
-                    class="form-check-input"
-                    type="checkbox"
-                    role="switch"
-                  />
-                  <label class="form-check-label" for="toggle-osd-visible">
-                    Show overlay
-                  </label>
-                </div>
-                <label class="form-label small mb-1" for="osd-position-select">Position</label>
-                <select
-                  id="osd-position-select"
-                  v-model="osdOverlayPosition"
-                  class="form-select form-select-sm mb-2"
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="osdSettingsOpen = true"
+                  >OSD settings...</a
                 >
-                  <option value="top-right">Top right</option>
-                  <option value="bottom-left">Bottom left</option>
-                </select>
-                <div class="small text-muted mb-1">Fields</div>
-                <div
-                  v-for="field in osdFieldOrder"
-                  :key="field"
-                  class="osd-field-row"
-                >
-                  <div class="form-check form-switch">
-                    <input
-                      :id="`osd-field-${field}`"
-                      v-model="osdOverlayFields[field]"
-                      class="form-check-input"
-                      type="checkbox"
-                      role="switch"
-                    />
-                    <label class="form-check-label" :for="`osd-field-${field}`">
-                      {{ osdFieldLabels[field] ?? field }}
-                    </label>
-                  </div>
-                  <div class="btn-group btn-group-sm">
-                    <button class="btn btn-outline-secondary" type="button" @click="moveOsdField(field, -1)">Up</button>
-                    <button class="btn btn-outline-secondary" type="button" @click="moveOsdField(field, 1)">Down</button>
-                  </div>
-                </div>
               </li>
               <li class="dropdown-submenu p-3 resolution-settings-menu" @click.stop>
                 <div class="fw-semibold mb-2">Restrict resolution</div>
@@ -505,6 +474,12 @@
     @dismissed="onConvertCoolersDismissed"
   >
   </CoolerConverter>
+  <MatrixExportModal
+    v-if="exportingMatrix"
+    :network-manager="props.networkManager"
+    :initial-source-filename="currentPrimaryHictFilename"
+    @dismissed="exportingMatrix = false"
+  />
   <DotplotGenerator
     v-if="generatingDotplots"
     :network-manager="networkManager"
@@ -538,6 +513,69 @@
     @cancel="cancelFastaLinkWarning"
     @proceed="proceedFastaLinkWarning"
   />
+  <div
+    v-if="osdSettingsOpen"
+    class="settings-backdrop"
+    @click.self="osdSettingsOpen = false"
+  >
+    <div class="settings-modal osd-settings-modal" role="dialog" aria-modal="true">
+      <div class="settings-header">
+        <h2>OSD settings</h2>
+        <button class="btn-close" @click="osdSettingsOpen = false"></button>
+      </div>
+      <div class="settings-body">
+        <div class="form-check form-switch mb-3">
+          <input
+            id="toggle-osd-visible"
+            v-model="osdOverlayVisible"
+            class="form-check-input"
+            type="checkbox"
+            role="switch"
+          />
+          <label class="form-check-label" for="toggle-osd-visible">
+            Show overlay
+          </label>
+        </div>
+        <label class="form-label" for="osd-position-select">Position</label>
+        <select
+          id="osd-position-select"
+          v-model="osdOverlayPosition"
+          class="form-select form-select-sm mb-3"
+        >
+          <option value="top-right">Top right</option>
+          <option value="bottom-left">Bottom left</option>
+        </select>
+        <div class="fw-semibold mb-2">Fields</div>
+        <div
+          v-for="field in osdFieldOrder"
+          :key="field"
+          class="osd-field-row"
+        >
+          <div class="form-check form-switch">
+            <input
+              :id="`osd-field-${field}`"
+              v-model="osdOverlayFields[field]"
+              class="form-check-input"
+              type="checkbox"
+              role="switch"
+            />
+            <label class="form-check-label" :for="`osd-field-${field}`">
+              {{ osdFieldLabels[field] ?? field }}
+            </label>
+          </div>
+          <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-secondary" type="button" @click="moveOsdField(field, -1)">Up</button>
+            <button class="btn btn-outline-secondary" type="button" @click="moveOsdField(field, 1)">Down</button>
+          </div>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button class="btn btn-primary" type="button" @click="osdSettingsOpen = false">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
   <div
     v-if="aboutOpen"
     class="about-backdrop"
@@ -668,6 +706,7 @@ import {
 } from "@/app/core/net/api/request";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import CoolerConverter from "./CoolerConverter.vue";
+import MatrixExportModal from "./MatrixExportModal.vue";
 import DotplotGenerator from "./DotplotGenerator.vue";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
 import TrackManager from "@/app/ui/components/upper_ribbon/TrackManager.vue";
@@ -699,6 +738,7 @@ const openingAGPFile = ref(false);
 const openingJuiceboxAssemblyFile = ref(false);
 const openingJuiceboxAssemblyFastaFile = ref(false);
 const convertingCoolers = ref(false);
+const exportingMatrix = ref(false);
 const generatingDotplots = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
 const lastLinkedFastaFilename = ref<string | undefined>(undefined);
@@ -709,6 +749,7 @@ const serverStatisticsOpen = ref(false);
 const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
+const osdSettingsOpen = ref(false);
 const aboutActiveTab = ref<"about" | "attribution">("about");
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
@@ -742,6 +783,14 @@ useEscDismissableDialog({
   isOpen: () => aboutOpen.value,
   requestClose: () => {
     aboutOpen.value = false;
+  },
+});
+
+useEscDismissableDialog({
+  priority: 1041,
+  isOpen: () => osdSettingsOpen.value,
+  requestClose: () => {
+    osdSettingsOpen.value = false;
   },
 });
 
@@ -1554,7 +1603,8 @@ function onAssemblyAGPRequest() {
   margin-right: 30px;
 }
 
-.about-backdrop {
+.about-backdrop,
+.settings-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.35);
@@ -1564,7 +1614,8 @@ function onAssemblyAGPRequest() {
   z-index: 2000;
 }
 
-.about-modal {
+.about-modal,
+.settings-modal {
   background: var(--hict-surface-bg, #ffffff);
   color: var(--hict-surface-fg, #1f2937);
   border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.18));
@@ -1576,14 +1627,28 @@ function onAssemblyAGPRequest() {
   padding: 20px 24px;
 }
 
-.about-header {
+.about-header,
+.settings-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.about-body {
+.about-body,
+.settings-body {
   margin-top: 12px;
+}
+
+.settings-footer {
+  border-top: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.14));
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 14px;
+}
+
+.osd-settings-modal {
+  width: min(560px, 92vw);
 }
 
 .about-tabs {
@@ -1700,10 +1765,6 @@ function onAssemblyAGPRequest() {
   margin-top: 2px;
   max-width: 260px;
   white-space: normal;
-}
-
-.osd-settings-menu {
-  min-width: 19rem;
 }
 
 .resolution-settings-menu {

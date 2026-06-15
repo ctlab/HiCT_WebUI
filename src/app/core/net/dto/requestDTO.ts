@@ -503,6 +503,7 @@ class StartConversionJobRequestDTO extends HiCTAPIRequestDTO<StartConversionJobR
     return {
       filename: this.entity.options.filename,
       assemblyFilename: this.entity.options.assemblyFilename,
+      useCurrentAssembly: this.entity.options.useCurrentAssembly,
       direction: this.entity.options.direction,
       overwrite: this.entity.options.overwrite,
       resolutions: this.entity.options.resolutions,

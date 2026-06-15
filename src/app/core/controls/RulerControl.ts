@@ -32,6 +32,7 @@ import { transform } from "ol/proj";
 import { storeToRefs } from "pinia";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { Ref } from "vue";
 import Colormap from "../visualization/colormap/Colormap";
 import { ColorTranslator } from "colortranslator";
@@ -64,6 +65,7 @@ class RulerControl extends Control {
 
   protected readonly mapBackgroundColor: Ref<ColorTranslator>;
   protected readonly colormap: Ref<Colormap>;
+  protected readonly rulerCoordinateMode: Ref<"global" | "contig" | "scaffold">;
 
   public readonly canvasSize: number[];
   public readonly direction: "vertical" | "horizontal";
@@ -139,9 +141,12 @@ class RulerControl extends Control {
     const { colormap } = storeToRefs(visualizationOptionsStore);
     const stylesStore = useStyleStore();
     const { mapBackgroundColor } = storeToRefs(stylesStore);
+    const uiSettingsStore = useUiSettingsStore();
+    const { rulerCoordinateMode } = storeToRefs(uiSettingsStore);
 
     this.colormap = colormap;
     this.mapBackgroundColor = mapBackgroundColor as Ref<ColorTranslator>;
+    this.rulerCoordinateMode = rulerCoordinateMode;
 
     this.canvasSize = canvasSize;
     this.canvas.addEventListener("mousemove", (event) =>
@@ -546,22 +551,30 @@ class RulerControl extends Control {
         options.resolutionDescriptor.bpResolution
       )
     );
-    const maxBp = Math.max(...bpValues, 0);
+    const maxBp = Math.max(
+      ...bpValues.map((bp) => this.coordinateValueForMode(bp)),
+      0
+    );
     const labelUnit = this.absoluteLabelUnit(maxBp);
-    let currentAnchor = this.roundDownToUnit(bpValues[0] ?? 0, labelUnit);
+    let currentAnchor = this.roundDownToUnit(
+      this.coordinateValueForMode(bpValues[0] ?? 0),
+      labelUnit
+    );
     return screens.map((screen, index) => {
       const bp = bpValues[index] ?? 0;
       const mapPx = mapPxValues[index] ?? 0;
-      const anchor = this.roundDownToUnit(bp, labelUnit);
+      const coordinateValue = this.coordinateValueForMode(bp);
+      const anchor = this.roundDownToUnit(coordinateValue, labelUnit);
       const boundary =
         index === 0 ? "start" : index === screens.length - 1 ? "end" : undefined;
       const major = boundary !== undefined || anchor !== currentAnchor;
       if (major) {
         currentAnchor = anchor;
       }
-      const delta = Math.max(0, Math.round(bp - currentAnchor));
+      const delta = Math.max(0, Math.round(coordinateValue - currentAnchor));
       const contig = this.contigDimensionHolder.getContigLocusByBp(bp);
       const scaffold = this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp);
+      const prefix = this.coordinatePrefixForMode();
       return {
         screen,
         mapPx,
@@ -570,17 +583,37 @@ class RulerControl extends Control {
         boundary,
         label:
           major || delta <= 0
-            ? this.formatBpLabel(anchor, 0)
+            ? `${prefix}${this.formatBpLabel(anchor, 0)}`
             : `+${this.formatBpLabel(delta, 0)}`,
-        contigLabel: major
+        contigLabel: major && this.rulerCoordinateMode.value === "global"
           ? `ctg +${this.formatBpLabel(contig.inContigBp, 0)}`
           : undefined,
         scaffoldLabel:
-          major && scaffold
+          major && scaffold && this.rulerCoordinateMode.value === "global"
             ? `scf +${this.formatBpLabel(scaffold.inScaffoldBp, 0)}`
             : undefined,
       };
     });
+  }
+
+  private coordinateValueForMode(bp: number): number {
+    if (this.rulerCoordinateMode.value === "contig") {
+      return this.contigDimensionHolder.getContigLocusByBp(bp).inContigBp;
+    }
+    if (this.rulerCoordinateMode.value === "scaffold") {
+      return this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp)?.inScaffoldBp ?? bp;
+    }
+    return bp;
+  }
+
+  private coordinatePrefixForMode(): string {
+    if (this.rulerCoordinateMode.value === "contig") {
+      return "ctg ";
+    }
+    if (this.rulerCoordinateMode.value === "scaffold") {
+      return "scf ";
+    }
+    return "";
   }
 
   private screenPositionToMapPx(

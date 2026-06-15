@@ -51,12 +51,7 @@
               <button type="button" class="btn btn-outline-secondary" @click="onPathGoClicked">
                 Go
               </button>
-              <button
-                type="button"
-                class="btn btn-outline-secondary"
-                :disabled="!currentDirectory"
-                @click="goToParentDirectory"
-              >
+              <button type="button" class="btn btn-outline-secondary" @click="goToParentDirectory">
                 Up
               </button>
               <button type="button" class="btn btn-outline-secondary" @click="loadDirectory('')">
@@ -353,15 +348,18 @@ const parentDirectory = (path: string): string => {
   return chunks.join("/");
 };
 
-const parentDirectoryEntry = (): FileEntryResponse => ({
-  path: parentDirectory(currentDirectory.value),
-  name: "..",
-  sizeBytes: -1,
-  modifiedAtMs: 0,
-  extension: "",
-  type: "directory",
-  symbolicLink: false,
-});
+const parentDirectoryEntry = (): FileEntryResponse => {
+  const parent = parentDirectory(currentDirectory.value);
+  return {
+    path: parent,
+    name: "..",
+    sizeBytes: -1,
+    modifiedAtMs: 0,
+    extension: "",
+    type: "directory",
+    symbolicLink: false,
+  };
+};
 
 const loadDirectory = async (directory: string): Promise<void> => {
   const normalizedDirectory = normalizeRelativePath(directory);
@@ -513,7 +511,7 @@ const onExplorerRowActivated = (path: string): void => {
 
 const onTreeNodeSelect = (event: { node?: PrimeTreeNode }): void => {
   const path = event?.node?.data?.path;
-  if (!path) {
+  if (path === undefined) {
     return;
   }
   if (!event.node?.leaf) {
@@ -526,7 +524,7 @@ const onTreeNodeSelect = (event: { node?: PrimeTreeNode }): void => {
 
 const onTreeNodeDoubleClick = (node: { data?: { path?: string } }): void => {
   const path = node?.data?.path;
-  if (!path) {
+  if (path === undefined) {
     return;
   }
   const entry = filteredEntries.value.find((candidate) => candidate.path === path);
@@ -540,7 +538,7 @@ const onTreeNodeDoubleClick = (node: { data?: { path?: string } }): void => {
 
 const onTreeNodeClick = (node: { data?: { path?: string } }): void => {
   const path = node?.data?.path;
-  if (!path) {
+  if (path === undefined) {
     return;
   }
   const entry = filteredEntries.value.find((candidate) => candidate.path === path);

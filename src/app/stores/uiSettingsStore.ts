@@ -27,6 +27,9 @@ const persistRef = <T>(key: string, value: { value: T }) => {
 export const useUiSettingsStore = defineStore("uiSettings", () => {
   const customZoomSliderEnabled = ref(false);
   const binaryTileTransportEnabled = ref(false);
+  const rulerCoordinateMode = ref<"global" | "contig" | "scaffold">(
+    readStored("hict.ui.rulerCoordinateMode", "global")
+  );
   const fileSelectorMode = ref<"explorer" | "tree">(
     readStored("hict.ui.fileSelectorMode", "explorer")
   );
@@ -68,6 +71,7 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
   );
 
   persistRef("hict.ui.fileSelectorMode", fileSelectorMode);
+  persistRef("hict.ui.rulerCoordinateMode", rulerCoordinateMode);
   persistRef("hict.ui.osd.visible", osdOverlayVisible);
   persistRef("hict.ui.osd.position", osdOverlayPosition);
   persistRef("hict.ui.osd.fields", osdOverlayFields);
@@ -76,6 +80,7 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
   return {
     customZoomSliderEnabled,
     binaryTileTransportEnabled,
+    rulerCoordinateMode,
     fileSelectorMode,
     inheritTrackBackgroundFromMap,
     trackBackgroundColor,

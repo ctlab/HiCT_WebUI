@@ -232,13 +232,13 @@ const lowerSliderValue = computed(() => toSliderPosition(lowerBound.value));
 const upperSliderValue = computed(() => toSliderPosition(upperBound.value));
 const sliderStep = computed(() => {
   if (sliderLogScale.value) {
-    return 0.001;
+    return 1e-12;
   }
   const span = Math.max(
     sliderPositionMax.value - sliderPositionMin.value,
-    Number.EPSILON
+    Number.MIN_VALUE
   );
-  return Math.max(span / 1000, Number.EPSILON);
+  return Math.max(span / 1_000_000, Number.MIN_VALUE);
 });
 const thresholdSliderVars = computed<Record<string, string>>(() => ({
   "--lower-thumb-color": fromColor.value.RGBA,

@@ -194,6 +194,7 @@ class StartConversionJobRequest implements HiCTAPIRequest {
     public readonly options: {
       readonly filename: string;
       readonly assemblyFilename?: string;
+      readonly useCurrentAssembly?: boolean;
       readonly direction?: string;
       readonly overwrite?: boolean;
       readonly resolutions?: string;
