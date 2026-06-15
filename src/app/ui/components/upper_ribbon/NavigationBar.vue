@@ -144,52 +144,13 @@
                   >OSD settings...</a
                 >
               </li>
-              <li class="dropdown-submenu p-3 resolution-settings-menu" @click.stop>
-                <div class="fw-semibold mb-2">Restrict resolution</div>
-                <div class="resolution-limit-grid mb-2">
-                  <label class="small">
-                    Finest
-                    <input
-                      v-model.number="resolutionFinestLimit"
-                      type="number"
-                      class="form-control form-control-sm"
-                      min="1"
-                      step="1"
-                    />
-                  </label>
-                  <label class="small">
-                    Coarsest
-                    <input
-                      v-model.number="resolutionCoarsestLimit"
-                      type="number"
-                      class="form-control form-control-sm"
-                      min="1"
-                      step="1"
-                    />
-                  </label>
-                </div>
-                <button class="btn btn-sm btn-outline-primary w-100 mb-2" type="button" @click="applyResolutionLimits">
-                  Set limits
-                </button>
-                <div class="resolution-list">
-                  <div
-                    v-for="resolution in availableResolutions"
-                    :key="resolution"
-                    class="form-check form-switch"
-                  >
-                    <input
-                      :id="`resolution-${resolution}`"
-                      :checked="enabledResolutionSet.has(resolution)"
-                      class="form-check-input"
-                      type="checkbox"
-                      role="switch"
-                      @change="toggleResolution(resolution, ($event.target as HTMLInputElement).checked)"
-                    />
-                    <label class="form-check-label" :for="`resolution-${resolution}`">
-                      1:{{ resolution.toLocaleString() }}
-                    </label>
-                  </div>
-                </div>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="openResolutionSettings"
+                  >Restrict Resolutions...</a
+                >
               </li>
               <li>
                 <a class="dropdown-item" href="#" @click="onOpenApiDocs"
@@ -722,6 +683,77 @@
       </div>
     </div>
   </div>
+  <div
+    v-if="resolutionSettingsOpen"
+    class="settings-backdrop"
+    @click.self="resolutionSettingsOpen = false"
+  >
+    <div class="settings-modal resolution-settings-modal" role="dialog" aria-modal="true">
+      <div class="settings-header">
+        <h2>Restrict Resolutions</h2>
+        <button class="btn-close" @click="resolutionSettingsOpen = false"></button>
+      </div>
+      <div class="settings-body">
+        <p class="settings-description">
+          Disable resolutions that should not be used while zooming the map.
+        </p>
+        <div class="resolution-limit-grid mb-2">
+          <label class="small" for="resolution-finest-limit">
+            Finest
+            <input
+              id="resolution-finest-limit"
+              v-model.number="resolutionFinestLimit"
+              type="number"
+              class="form-control form-control-sm"
+              min="1"
+              step="1"
+            />
+          </label>
+          <label class="small" for="resolution-coarsest-limit">
+            Coarsest
+            <input
+              id="resolution-coarsest-limit"
+              v-model.number="resolutionCoarsestLimit"
+              type="number"
+              class="form-control form-control-sm"
+              min="1"
+              step="1"
+            />
+          </label>
+        </div>
+        <button class="btn btn-sm btn-outline-primary w-100 mb-3" type="button" @click="applyResolutionLimits">
+          Set limits
+        </button>
+        <div v-if="availableResolutions.length > 0" class="resolution-list">
+          <div
+            v-for="resolution in availableResolutions"
+            :key="resolution"
+            class="form-check form-switch"
+          >
+            <input
+              :id="`resolution-modal-${resolution}`"
+              :checked="enabledResolutionSet.has(resolution)"
+              class="form-check-input"
+              type="checkbox"
+              role="switch"
+              @change="toggleResolution(resolution, ($event.target as HTMLInputElement).checked)"
+            />
+            <label class="form-check-label" :for="`resolution-modal-${resolution}`">
+              1:{{ resolution.toLocaleString() }}
+            </label>
+          </div>
+        </div>
+        <div v-else class="text-muted small">
+          No map resolutions are available yet.
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button class="btn btn-primary" type="button" @click="resolutionSettingsOpen = false">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -780,6 +812,7 @@ const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
 const osdSettingsOpen = ref(false);
+const resolutionSettingsOpen = ref(false);
 const aboutActiveTab = ref<"about" | "attribution" | "changelog">("about");
 const changelogText = ref("Changelog for this build was not detected");
 const changelogLoading = ref(false);
@@ -823,6 +856,14 @@ useEscDismissableDialog({
   isOpen: () => osdSettingsOpen.value,
   requestClose: () => {
     osdSettingsOpen.value = false;
+  },
+});
+
+useEscDismissableDialog({
+  priority: 1041,
+  isOpen: () => resolutionSettingsOpen.value,
+  requestClose: () => {
+    resolutionSettingsOpen.value = false;
   },
 });
 
@@ -903,6 +944,11 @@ function refreshResolutionRestrictionState(): void {
     enabledResolutions.value[enabledResolutions.value.length - 1] ??
     all[all.length - 1] ??
     null;
+}
+
+function openResolutionSettings(): void {
+  refreshResolutionRestrictionState();
+  resolutionSettingsOpen.value = true;
 }
 
 function applyEnabledResolutions(next: number[]): void {
@@ -1863,10 +1909,6 @@ function onAssemblyAGPRequest() {
   white-space: normal;
 }
 
-.resolution-settings-menu {
-  min-width: 18rem;
-}
-
 .resolution-limit-grid {
   display: grid;
   gap: 0.5rem;
@@ -1878,6 +1920,16 @@ function onAssemblyAGPRequest() {
   gap: 0.25rem;
   max-height: 18rem;
   overflow: auto;
+}
+
+.resolution-settings-modal {
+  width: min(560px, 92vw);
+}
+
+.settings-description {
+  color: #5d6775;
+  font-size: 0.9rem;
+  margin: 0 0 0.75rem;
 }
 
 .osd-field-row {
