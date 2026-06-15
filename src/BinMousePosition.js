@@ -28,6 +28,35 @@ import {
   identityTransform,
 } from "ol/proj";
 import TileLayer from "ol/layer/Tile";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+
+function getOsdSettings() {
+  try {
+    return useUiSettingsStore();
+  } catch {
+    return null;
+  }
+}
+
+function overlayStyle(position) {
+  const location =
+    position === "bottom-left"
+      ? "left: 12px; bottom: 12px;"
+      : "right: 12px; top: 12px;";
+  return [
+    "display: block",
+    "position: absolute",
+    location,
+    "max-width: min(48rem, calc(100vw - 3rem))",
+    "padding: 14px 16px",
+    "background: rgba(0, 0, 0, 0.35)",
+    "border: 1px solid black",
+    "border-radius: 12px",
+    "color: white",
+    "text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000",
+    "pointer-events: none",
+  ].join("; ");
+}
 
 export default class BinMousePosition extends MousePosition {
   constructor(opt_options) {
@@ -133,6 +162,24 @@ export default class BinMousePosition extends MousePosition {
               this.getDimensionHolderForDescriptor(guidanceDescriptor);
             const bpResolution = guidanceDescriptor.bpResolution;
             const pixelResolution = guidanceDescriptor.pixelResolution;
+            const osdSettings = getOsdSettings();
+            if (osdSettings && !osdSettings.osdOverlayVisible) {
+              html = "";
+              if (!this.renderedHTML_ || html !== this.renderedHTML_) {
+                this.element.innerHTML = html;
+                this.renderedHTML_ = html;
+              }
+              return;
+            }
+            const fields = osdSettings?.osdOverlayFields ?? {};
+            const fieldOrder = osdSettings?.osdOverlayFieldOrder ?? [];
+            const osdLines = {};
+            const fieldEnabled = (field) => fields[field] !== false;
+            const appendLine = (field, text) => {
+              if (fieldEnabled(field)) {
+                osdLines[field] = text;
+              }
+            };
             const fixed_coordinates = mapCoordinate.map((c) =>
               Math.ceil(c / pixelResolution)
             );
@@ -145,12 +192,14 @@ export default class BinMousePosition extends MousePosition {
                 bpResolution
               );
 
-            html =
-              '<div style="display: block; padding: 20px; background: rgba(0, 0, 0, 0.35); border: 1px solid black; border-radius: 15px; color: white; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;">';
-            html +=
-              "Global projection coordinate: " + coordinate.map(Math.floor);
-            html = html + "<";
-            html = html + "br/>";
+            this.element.style.position = "absolute";
+            this.element.style.inset = "0";
+            this.element.style.pointerEvents = "none";
+            html = `<div style="${overlayStyle(osdSettings?.osdOverlayPosition)}">`;
+            appendLine(
+              "global",
+              "Global projection coordinate: " + coordinate.map(Math.floor)
+            );
 
             // html +=
             //   "Center coordinate: " + map.getView().getCenter().map(Math.floor);
@@ -158,23 +207,21 @@ export default class BinMousePosition extends MousePosition {
             // html = html + "br/>";
 
             if (fixed_coordinates) {
-              html = html + "Bin resolution: 1:" + bpResolution;
-              html = html + "<";
-              html = html + "br/>";
+              appendLine("resolution", "Bin resolution: 1:" + bpResolution);
               if (
                 Number.isFinite(hoveredBpResolution) &&
                 hoveredBpResolution !== bpResolution
               ) {
-                html =
-                  html + "Hovered tile resolution: 1:" + hoveredBpResolution;
-                html = html + "<";
-                html = html + "br/>";
+                appendLine(
+                  "resolution",
+                  "Hovered tile resolution: 1:" + hoveredBpResolution
+                );
               }
               if (guidanceDescriptor.sourceName) {
-                html =
-                  html + "Guidance source: " + guidanceDescriptor.sourceName;
-                html = html + "<";
-                html = html + "br/>";
+                appendLine(
+                  "source",
+                  "Guidance source: " + guidanceDescriptor.sourceName
+                );
               }
               if (this.layersManager?.getVisibleSourceResolutionDescriptors) {
                 const visible =
@@ -188,18 +235,19 @@ export default class BinMousePosition extends MousePosition {
                     : null,
                 ].filter(Boolean);
                 if (details.length > 0) {
-                  html =
-                    html + "Visible source resolutions: " + details.join("; ");
-                  html = html + "<";
-                  html = html + "br/>";
+                  appendLine(
+                    "visibleResolutions",
+                    "Visible source resolutions: " + details.join("; ")
+                  );
                 }
               }
-              html =
-                html +
+              appendLine(
+                "pixels",
                 "Position: px1=" +
                 int_coordinates_px[0] +
                 " px2=" +
-                int_coordinates_px[1];
+                int_coordinates_px[1]
+              );
             }
 
             if (dimensionHolder) {
@@ -207,16 +255,13 @@ export default class BinMousePosition extends MousePosition {
                 int_coordinates_px,
                 bpResolution
               );
-              html = html + "<";
-              html = html + "br/>";
-              html =
-                html +
+              appendLine(
+                "bins",
                 "Position: bin1=" +
                 int_coordinates_bins[0] +
                 " bin2=" +
-                int_coordinates_bins[1];
-              html = html + "<";
-              html = html + "br/>";
+                int_coordinates_bins[1]
+              );
               const bp1 = dimensionHolder.getStartBpOfPx(
                 int_coordinates_px[0],
                 bpResolution
@@ -233,10 +278,8 @@ export default class BinMousePosition extends MousePosition {
                 int_coordinates_px[1],
                 bpResolution
               );
-              html = html + "Position: bp1=" + bp1 + " bp2=" + bp2;
-              html = html + "<";
-              html = html + "br/>";
-              html = html + "Contigs: ctg1=" + ctg1 + " ctg2=" + ctg2;
+              appendLine("basePairs", "Position: bp1=" + bp1 + " bp2=" + bp2);
+              appendLine("contigs", "Contigs: ctg1=" + ctg1 + " ctg2=" + ctg2);
               if (dimensionHolder.getContigLocusByPx) {
                 const locus1 = dimensionHolder.getContigLocusByPx(
                   int_coordinates_px[0],
@@ -246,39 +289,44 @@ export default class BinMousePosition extends MousePosition {
                   int_coordinates_px[1],
                   bpResolution
                 );
-                html = html + "<";
-                html = html + "br/>";
-                html =
-                  html +
+                appendLine(
+                  "inContig",
                   "In-contig bp: ctg1=+" +
                   locus1.inContigBp +
                   " ctg2=+" +
-                  locus2.inContigBp;
+                  locus2.inContigBp
+                );
               }
               if (this.scaffold_holder?.getScaffoldLocusByBp) {
                 const scaffold1 =
                   this.scaffold_holder.getScaffoldLocusByBp(bp1);
                 const scaffold2 =
                   this.scaffold_holder.getScaffoldLocusByBp(bp2);
-                html = html + "<";
-                html = html + "br/>";
-                html =
-                  html +
+                appendLine(
+                  "scaffolds",
                   "Scaffolds: scf1=" +
                   (scaffold1 ? scaffold1.scaffoldName : "unscaffolded") +
                   " scf2=" +
-                  (scaffold2 ? scaffold2.scaffoldName : "unscaffolded");
-                html = html + "<";
-                html = html + "br/>";
-                html =
-                  html +
+                  (scaffold2 ? scaffold2.scaffoldName : "unscaffolded")
+                );
+                appendLine(
+                  "inScaffold",
                   "In-scaffold bp: scf1=" +
                   (scaffold1 ? "+" + scaffold1.inScaffoldBp : "n/a") +
                   " scf2=" +
-                  (scaffold2 ? "+" + scaffold2.inScaffoldBp : "n/a");
+                  (scaffold2 ? "+" + scaffold2.inScaffoldBp : "n/a")
+                );
               }
             }
 
+            const orderedFields = [
+              ...fieldOrder,
+              ...Object.keys(osdLines).filter((field) => !fieldOrder.includes(field)),
+            ];
+            const orderedLines = orderedFields
+              .map((field) => osdLines[field])
+              .filter(Boolean);
+            html += orderedLines.join("<br/>");
             html += "</div>";
           } catch (error) {
             console.warn("Unable to update map mouse position overlay", error);

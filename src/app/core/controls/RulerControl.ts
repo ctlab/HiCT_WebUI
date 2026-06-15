@@ -49,6 +49,8 @@ interface RulerTick {
   mapPx: number;
   bp: number;
   label: string;
+  contigLabel?: string;
+  scaffoldLabel?: string;
   major: boolean;
   boundary?: "start" | "end";
 }
@@ -558,6 +560,8 @@ class RulerControl extends Control {
         currentAnchor = anchor;
       }
       const delta = Math.max(0, Math.round(bp - currentAnchor));
+      const contig = this.contigDimensionHolder.getContigLocusByBp(bp);
+      const scaffold = this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp);
       return {
         screen,
         mapPx,
@@ -568,6 +572,13 @@ class RulerControl extends Control {
           major || delta <= 0
             ? this.formatBpLabel(anchor, 0)
             : `+${this.formatBpLabel(delta, 0)}`,
+        contigLabel: major
+          ? `ctg +${this.formatBpLabel(contig.inContigBp, 0)}`
+          : undefined,
+        scaffoldLabel:
+          major && scaffold
+            ? `scf +${this.formatBpLabel(scaffold.inScaffoldBp, 0)}`
+            : undefined,
       };
     });
   }
@@ -648,6 +659,19 @@ class RulerControl extends Control {
         true,
         false
       );
+      if (tick.major && (tick.contigLabel || tick.scaffoldLabel)) {
+        this.drawRotatedText(
+          [tick.contigLabel, tick.scaffoldLabel].filter(Boolean).join(" / "),
+          textX,
+          Math.max(22, coord[1] - tickLength + 10),
+          context,
+          0,
+          "9px sans-serif",
+          textAlign,
+          true,
+          false
+        );
+      }
       return;
     }
 
@@ -663,6 +687,19 @@ class RulerControl extends Control {
       true,
       false
     );
+    if (tick.major && (tick.contigLabel || tick.scaffoldLabel)) {
+      this.drawRotatedText(
+        [tick.contigLabel, tick.scaffoldLabel].filter(Boolean).join(" / "),
+        Math.max(2, coord[0] - tickLength - 4),
+        this.clamp(textY + 12, 12, this.canvas.height - 3),
+        context,
+        0,
+        "9px sans-serif",
+        "right",
+        true,
+        false
+      );
+    }
   }
 
   private formatBpLabel(bp: number, precision: number): string {

@@ -48,6 +48,7 @@
             :aria-label="`Select ${data.name}`"
             :checked="isSelected(data.path)"
             class="form-check-input file-row-checkbox"
+            :disabled="data.type === 'directory'"
             type="checkbox"
             @click.stop="selectPath(data.path, $event)"
             @keydown.space.stop.prevent="selectPath(data.path)"
@@ -59,6 +60,7 @@
           <span class="file-name-cell">
             <i :class="data.iconClass" aria-hidden="true"></i>
             <span :title="data.name">{{ data.name }}</span>
+            <span v-if="data.symbolicLink" class="file-link-badge" title="Symbolic link">link</span>
           </span>
         </template>
       </Column>
@@ -136,6 +138,8 @@ type FileSelectionTableRow = {
   iconClass: string;
   statusLabel: string;
   statusClass: string;
+  type: "file" | "directory";
+  symbolicLink: boolean;
 };
 
 const emit = defineEmits<{
@@ -178,6 +182,7 @@ const tableRows = computed<FileSelectionTableRow[]>(() =>
     const path = entry.path;
     const name = entry.name && entry.name.trim().length > 0 ? entry.name : basename(path);
     const extension = entry.extension ?? extensionOf(path);
+    const type = entry.type ?? "file";
     return {
       path,
       name,
@@ -186,9 +191,11 @@ const tableRows = computed<FileSelectionTableRow[]>(() =>
       sizeLabel: formatBytes(entry.sizeBytes ?? -1),
       modifiedLabel: formatTimestamp(entry.modifiedAtMs ?? 0),
       extension,
-      iconClass: entry.iconClass ?? iconClassForPath(path, extension),
+      iconClass: entry.iconClass ?? iconClassForPath(path, extension, type),
       statusLabel: props.statusLabel?.(path) ?? "",
       statusClass: props.statusClass?.(path) ?? "",
+      type,
+      symbolicLink: Boolean(entry.symbolicLink),
     };
   })
 );
@@ -207,6 +214,11 @@ const isSelected = (path: string): boolean =>
     : path === props.selectedPath;
 
 const selectPath = (path: string, event?: MouseEvent): void => {
+  const row = tableRows.value.find((candidate) => candidate.path === path);
+  if (row?.type === "directory") {
+    emit("activate", path);
+    return;
+  }
   if (props.multiSelect) {
     togglePath(path, event);
     return;
@@ -290,7 +302,10 @@ const extensionOf = (path: string): string => {
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
 };
 
-const iconClassForPath = (path: string, extension: string): string => {
+const iconClassForPath = (path: string, extension: string, type: "file" | "directory" = "file"): string => {
+  if (type === "directory") {
+    return "pi pi-fw pi-folder";
+  }
   const normalized = path.toLowerCase();
   if (normalized.endsWith(".hict") || normalized.endsWith(".hict.hdf5") || normalized.endsWith(".hdf5")) {
     return "pi pi-fw pi-map";
@@ -405,6 +420,17 @@ const formatTimestamp = (timestampMs: number): string => {
 .file-path-cell {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.file-link-badge {
+  border: 1px solid #94a3b8;
+  border-radius: 0.25rem;
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.08rem 0.25rem;
+  text-transform: uppercase;
 }
 
 .file-path-cell {

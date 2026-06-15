@@ -39,12 +39,37 @@
               {{ props.errorMessage ?? errorMessage }}
             </div>
 
+            <div class="input-group input-group-sm mb-2">
+              <span class="input-group-text">Look in</span>
+              <input
+                v-model.trim="pathInput"
+                class="form-control"
+                type="text"
+                placeholder="Relative folder or file path under DATA_DIR"
+                @keydown.enter.prevent="onPathGoClicked"
+              />
+              <button type="button" class="btn btn-outline-secondary" @click="onPathGoClicked">
+                Go
+              </button>
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                :disabled="!currentDirectory"
+                @click="goToParentDirectory"
+              >
+                Up
+              </button>
+              <button type="button" class="btn btn-outline-secondary" @click="loadDirectory('')">
+                Root
+              </button>
+            </div>
+
             <div class="d-flex align-items-center gap-2 mb-2">
               <input
                 v-model.trim="searchTerm"
                 class="form-control form-control-sm"
                 type="text"
-                placeholder="Search by file name or path"
+                placeholder="Filter current folder by file name or path"
               />
               <div v-if="hasPredicate" class="form-check form-switch m-0">
                 <input
@@ -80,7 +105,7 @@
             <small v-if="props.note" class="text-muted d-block mb-2">{{ props.note }}</small>
 
             <div v-if="loading" class="d-flex align-items-center gap-2 py-3">
-              <strong>Loading files…</strong>
+              <strong>Loading {{ currentDirectory || "DATA_DIR" }}…</strong>
               <div class="spinner-border spinner-border-sm ms-auto" role="status"></div>
             </div>
 
@@ -88,7 +113,7 @@
               <FileSelectionTable
                 v-model:selected-path="selectedFilename"
                 :entries="filteredEntries"
-                empty-message="No files found for current filter"
+                empty-message="No files or folders found for current filter"
                 scroll-height="58vh"
                 @activate="onExplorerRowActivated"
               />
@@ -125,7 +150,7 @@
                   </div>
                 </template>
               </Tree>
-              <div v-else class="text-muted">No files found for current filter</div>
+              <div v-else class="text-muted">No files or folders found for current filter</div>
             </div>
           </div>
           <div class="modal-footer">
@@ -136,7 +161,7 @@
               type="button"
               class="btn btn-primary"
               @click="onSelectClicked"
-              :disabled="!selectedFilename"
+              :disabled="!selectedFilename || selectedEntry?.type === 'directory'"
             >
               Load
             </button>
@@ -176,6 +201,8 @@ const loading = ref(true);
 const errorMessage = ref<string>("");
 const selectedFilename = ref<string | null>(null);
 const allEntries = ref<FileEntryResponse[]>([]);
+const currentDirectory = ref("");
+const pathInput = ref("");
 const searchTerm = ref("");
 const showAllFiles = ref(false);
 const treeSelectionKeys = ref<Record<string, boolean>>({});
@@ -226,7 +253,17 @@ watch(selectedFilename, (path) => {
 const filteredEntries = computed(() => {
   const predicate = props.fileNamePredicate;
   const query = searchTerm.value.trim().toLowerCase();
-  return allEntries.value.filter((entry) => {
+  const entries = currentDirectory.value ? [parentDirectoryEntry(), ...allEntries.value] : allEntries.value;
+  return entries.filter((entry) => {
+    if (entry.type === "directory") {
+      if (!query) {
+        return true;
+      }
+      return (
+        entry.name.toLowerCase().includes(query) ||
+        entry.path.toLowerCase().includes(query)
+      );
+    }
     const allowed =
       showAllFiles.value || !predicate ? true : predicate(entry.path);
     if (!allowed) {
@@ -241,6 +278,12 @@ const filteredEntries = computed(() => {
     );
   });
 });
+
+const selectedEntry = computed(() =>
+  selectedFilename.value
+    ? filteredEntries.value.find((entry) => entry.path === selectedFilename.value) ?? null
+    : null
+);
 
 type PrimeTreeNode = {
   key: string;
@@ -257,81 +300,27 @@ type PrimeTreeNode = {
   children?: PrimeTreeNode[];
 };
 
-type MutableTreeNode = {
-  key: string;
-  label: string;
-  children: Map<string, MutableTreeNode>;
-  path?: string;
-  meta?: string;
-};
-
 const fileSelectionKey = (path: string): string => `file:${path}`;
+const directorySelectionKey = (path: string): string => `dir:${path}`;
 
 const treeNodes = computed<PrimeTreeNode[]>(() => {
-  const rootNodes = new Map<string, MutableTreeNode>();
-  for (const entry of filteredEntries.value) {
-    const chunks = entry.path.split("/").filter((chunk) => chunk.length > 0);
-    if (chunks.length === 0) {
-      continue;
-    }
-    let currentLevel = rootNodes;
-    let keyPath = "";
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      keyPath = keyPath.length > 0 ? `${keyPath}/${chunk}` : chunk;
-      let node = currentLevel.get(chunk);
-      if (!node) {
-        node = {
-          key: `dir:${keyPath}`,
-          label: chunk,
-          children: new Map<string, MutableTreeNode>(),
-        };
-        currentLevel.set(chunk, node);
-      }
-      const isLeaf = i === chunks.length - 1;
-      if (isLeaf) {
-        node.key = fileSelectionKey(entry.path);
-        node.path = entry.path;
-        node.meta = `${formatBytes(entry.sizeBytes)}, ${formatTimestamp(entry.modifiedAtMs)}`;
-      }
-      currentLevel = node.children;
-    }
-  }
-  return [...rootNodes.values()]
-    .sort((a, b) => a.label.localeCompare(b.label))
-    .map((node) => mutableToPrimeNode(node));
+  return filteredEntries.value.map((entry) => {
+    const isDirectory = entry.type === "directory";
+    return {
+      key: isDirectory ? directorySelectionKey(entry.path) : fileSelectionKey(entry.path),
+      label: entry.name,
+      selectable: true,
+      leaf: !isDirectory,
+      data: {
+        path: entry.path,
+        meta: isDirectory
+          ? (entry.symbolicLink ? "linked folder" : "folder")
+          : `${formatBytes(entry.sizeBytes)}, ${formatTimestamp(entry.modifiedAtMs)}`,
+        iconCls: getIconForEntry(entry.path, isDirectory),
+      },
+    };
+  });
 });
-
-const mutableToPrimeNode = (node: MutableTreeNode): PrimeTreeNode => {
-  const children = [...node.children.values()]
-    .sort((a, b) => {
-      const aLeaf = a.children.size === 0;
-      const bLeaf = b.children.size === 0;
-      if (aLeaf !== bLeaf) {
-        return aLeaf ? 1 : -1;
-      }
-      return a.label.localeCompare(b.label);
-    })
-    .map((child) => mutableToPrimeNode(child));
-  const leaf = children.length === 0;
-  return {
-    key: node.key,
-    label: node.label,
-    selectable: !!node.path,
-    leaf,
-    expanded: node.key.split("/").length <= 2,
-    data: node.path
-      ? {
-          path: node.path,
-          meta: node.meta,
-          iconCls: getIconForEntry(node.path, false),
-        }
-      : {
-          iconCls: getIconForEntry(node.key, true),
-        },
-    children: leaf ? undefined : children,
-  };
-};
 
 const selectedPathFromTreeKeys = (): string | null => {
   const activeKey = Object.entries(treeSelectionKeys.value).find(
@@ -348,6 +337,88 @@ const resolveSelectedPath = (): string | null => {
     return selectedPathFromTreeKeys();
   }
   return selectedFilename.value;
+};
+
+const normalizeRelativePath = (path: string): string =>
+  path
+    .replaceAll("\\", "/")
+    .split("/")
+    .filter((chunk) => chunk.length > 0 && chunk !== ".")
+    .join("/");
+
+const parentDirectory = (path: string): string => {
+  const normalized = normalizeRelativePath(path);
+  const chunks = normalized.split("/").filter(Boolean);
+  chunks.pop();
+  return chunks.join("/");
+};
+
+const parentDirectoryEntry = (): FileEntryResponse => ({
+  path: parentDirectory(currentDirectory.value),
+  name: "..",
+  sizeBytes: -1,
+  modifiedAtMs: 0,
+  extension: "",
+  type: "directory",
+  symbolicLink: false,
+});
+
+const loadDirectory = async (directory: string): Promise<void> => {
+  const normalizedDirectory = normalizeRelativePath(directory);
+  loading.value = true;
+  errorMessage.value = "";
+  try {
+    const entries = await props.networkManager.requestManager.listDirectory(normalizedDirectory);
+    currentDirectory.value = normalizedDirectory;
+    pathInput.value = normalizedDirectory;
+    allEntries.value = entries.slice();
+    selectedFilename.value = null;
+    treeSelectionKeys.value = {};
+  } catch (error: unknown) {
+    errorMessage.value = String(error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const goToParentDirectory = (): void => {
+  void loadDirectory(parentDirectory(currentDirectory.value));
+};
+
+const onPathGoClicked = async (): Promise<void> => {
+  const requestedPath = normalizeRelativePath(pathInput.value);
+  const visibleEntry = filteredEntries.value.find((entry) => entry.path === requestedPath);
+  if (visibleEntry?.type === "file") {
+    selectedFilename.value = visibleEntry.path;
+    treeSelectionKeys.value = { [fileSelectionKey(visibleEntry.path)]: true };
+    emit("selected", visibleEntry.path);
+    return;
+  }
+  if (visibleEntry?.type === "directory") {
+    void loadDirectory(visibleEntry.path);
+    return;
+  }
+
+  const currentFileCandidate = allEntries.value.find((entry) => entry.path === requestedPath && entry.type === "file");
+  if (currentFileCandidate) {
+    selectedFilename.value = currentFileCandidate.path;
+    treeSelectionKeys.value = { [fileSelectionKey(currentFileCandidate.path)]: true };
+    emit("selected", currentFileCandidate.path);
+    return;
+  }
+
+  const candidateParent = parentDirectory(requestedPath);
+  const candidateName = requestedPath.split("/").filter(Boolean).pop();
+  if (candidateName && candidateParent !== requestedPath) {
+    await loadDirectory(candidateParent);
+    const candidate = allEntries.value.find((entry) => entry.name === candidateName && entry.type === "file");
+    if (candidate) {
+      selectedFilename.value = candidate.path;
+      treeSelectionKeys.value = { [fileSelectionKey(candidate.path)]: true };
+      return;
+    }
+  }
+  await loadDirectory(requestedPath);
 };
 
 const getIconForEntry = (path: string, isDirectory: boolean): string => {
@@ -415,8 +486,13 @@ const onSelectClicked = (): void => {
     errorMessage.value = "Please select a file";
     return;
   }
-  if (!filteredEntries.value.some((entry) => entry.path === selectedPath)) {
+  const entry = filteredEntries.value.find((candidate) => candidate.path === selectedPath);
+  if (!entry) {
     errorMessage.value = "Selected file is no longer available in current filter";
+    return;
+  }
+  if (entry.type === "directory") {
+    void loadDirectory(entry.path);
     return;
   }
   selectedFilename.value = selectedPath;
@@ -425,6 +501,11 @@ const onSelectClicked = (): void => {
 };
 
 const onExplorerRowActivated = (path: string): void => {
+  const entry = filteredEntries.value.find((candidate) => candidate.path === path);
+  if (entry?.type === "directory") {
+    void loadDirectory(path);
+    return;
+  }
   selectedFilename.value = path;
   treeSelectionKeys.value = { [fileSelectionKey(path)]: true };
   onSelectClicked();
@@ -433,6 +514,10 @@ const onExplorerRowActivated = (path: string): void => {
 const onTreeNodeSelect = (event: { node?: PrimeTreeNode }): void => {
   const path = event?.node?.data?.path;
   if (!path) {
+    return;
+  }
+  if (!event.node?.leaf) {
+    void loadDirectory(path);
     return;
   }
   selectedFilename.value = path;
@@ -444,6 +529,11 @@ const onTreeNodeDoubleClick = (node: { data?: { path?: string } }): void => {
   if (!path) {
     return;
   }
+  const entry = filteredEntries.value.find((candidate) => candidate.path === path);
+  if (entry?.type === "directory") {
+    void loadDirectory(path);
+    return;
+  }
   selectedFilename.value = path;
   onSelectClicked();
 };
@@ -451,6 +541,11 @@ const onTreeNodeDoubleClick = (node: { data?: { path?: string } }): void => {
 const onTreeNodeClick = (node: { data?: { path?: string } }): void => {
   const path = node?.data?.path;
   if (!path) {
+    return;
+  }
+  const entry = filteredEntries.value.find((candidate) => candidate.path === path);
+  if (entry?.type === "directory") {
+    treeSelectionKeys.value = { [directorySelectionKey(path)]: true };
     return;
   }
   selectedFilename.value = path;
@@ -463,22 +558,23 @@ watch(filteredEntries, (entries) => {
     treeSelectionKeys.value = {};
     return;
   }
+  const fileEntries = entries.filter((entry) => entry.type !== "directory");
   const selectedFromTree = selectedPathFromTreeKeys();
   if (
     selectedFromTree &&
-    entries.some((entry) => entry.path === selectedFromTree)
+    fileEntries.some((entry) => entry.path === selectedFromTree)
   ) {
     selectedFilename.value = selectedFromTree;
     return;
   }
-  if (selectedFilename.value && entries.some((entry) => entry.path === selectedFilename.value)) {
+  if (selectedFilename.value && fileEntries.some((entry) => entry.path === selectedFilename.value)) {
     const currentPath = selectedFilename.value;
     treeSelectionKeys.value = currentPath
       ? { [fileSelectionKey(currentPath)]: true }
       : {};
     return;
   }
-  selectedFilename.value = entries[0]?.path ?? null;
+  selectedFilename.value = fileEntries[0]?.path ?? null;
   const firstPath = selectedFilename.value;
   treeSelectionKeys.value = firstPath
     ? { [fileSelectionKey(firstPath)]: true }
@@ -487,21 +583,7 @@ watch(filteredEntries, (entries) => {
 
 onMounted(async () => {
   showAllFiles.value = !hasPredicate.value;
-  loading.value = true;
-  errorMessage.value = "";
-  try {
-    const entries = await props.networkManager.requestManager.listFilesDetailed();
-    allEntries.value = entries.slice().sort((a, b) => a.path.localeCompare(b.path));
-    const firstAllowed = filteredEntries.value[0];
-    if (firstAllowed) {
-      selectedFilename.value = firstAllowed.path;
-      treeSelectionKeys.value = { [fileSelectionKey(firstAllowed.path)]: true };
-    }
-  } catch (error: unknown) {
-    errorMessage.value = String(error);
-  } finally {
-    loading.value = false;
-  }
+  void loadDirectory("");
 });
 </script>
 

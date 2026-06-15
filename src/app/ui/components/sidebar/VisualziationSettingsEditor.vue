@@ -152,7 +152,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, Ref, onMounted, ref, watch } from "vue";
+import { computed, Ref, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import { toast } from "vue-sonner";
@@ -190,8 +190,11 @@ const sliderUpperLimit: Ref<number> = ref(1);
 const sliderBoundsManual: Ref<boolean> = ref(false);
 const sliderLogScale: Ref<boolean> = ref(false);
 const syncingFromColormap: Ref<boolean> = ref(false);
+const liveApplyReady: Ref<boolean> = ref(false);
 let registeredRangeMapManager: ContactMapManager | undefined;
+let liveApplyTimer: number | undefined;
 const LOG_SLIDER_FLOOR_FRACTION = 1e-10;
+const LIVE_APPLY_DELAY_MS = 350;
 
 const fromColorFn: Ref<() => ColorTranslator> = ref(
   () => fromColor.value
@@ -349,13 +352,29 @@ watch(
 );
 
 watch(
+  () => [
+    fromColor.value?.RGBA,
+    toColor.value?.RGBA,
+    lowerBound.value,
+    upperBound.value,
+  ],
+  () => {
+    scheduleLiveApply();
+  }
+);
+
+watch(
   () => props.mapManager,
   () => {
     if (props.mapManager) {
+      liveApplyReady.value = false;
       registerSignalRangeCallback(props.mapManager);
       props.mapManager.visualizationManager
         .loadVisualizationOptionsForSource(activeSourceForOptions())
-        .then(() => updateFromStore());
+        .then(() => {
+          updateFromStore();
+          liveApplyReady.value = true;
+        });
     }
   }
 );
@@ -363,9 +382,13 @@ watch(
 watch(
   () => [activeVisualizationSource.value, presentationMode.value] as const,
   () => {
+    liveApplyReady.value = false;
     props.mapManager?.visualizationManager
       .loadVisualizationOptionsForSource(activeSourceForOptions())
-      .then(() => updateFromStore())
+      .then(() => {
+        updateFromStore();
+        liveApplyReady.value = true;
+      })
       .catch(() => undefined);
   }
 );
@@ -376,7 +399,17 @@ onMounted(() => {
   }
   props.mapManager?.visualizationManager
     .loadVisualizationOptionsForSource(activeSourceForOptions())
-    .then(() => updateFromStore());
+    .then(() => {
+      updateFromStore();
+      liveApplyReady.value = true;
+    });
+});
+
+onBeforeUnmount(() => {
+  if (liveApplyTimer !== undefined) {
+    window.clearTimeout(liveApplyTimer);
+    liveApplyTimer = undefined;
+  }
 });
 
 function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
@@ -444,6 +477,19 @@ function applySettings() {
   action?.catch((error) => {
     toast.error(String(error ?? "Failed to apply visualization settings"));
   });
+}
+
+function scheduleLiveApply(): void {
+  if (!liveApplyReady.value || syncingFromColormap.value) {
+    return;
+  }
+  if (liveApplyTimer !== undefined) {
+    window.clearTimeout(liveApplyTimer);
+  }
+  liveApplyTimer = window.setTimeout(() => {
+    liveApplyTimer = undefined;
+    applySettings();
+  }, LIVE_APPLY_DELAY_MS);
 }
 
 function onLowerRangeInput(event: Event): void {

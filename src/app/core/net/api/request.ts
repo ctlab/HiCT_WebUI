@@ -61,6 +61,16 @@ class ListFilesDetailedRequest implements HiCTAPIRequest {
   requestPath = "/list_files_detailed";
 }
 
+class ListDirectoryRequest implements HiCTAPIRequest {
+  requestPath = "/list_directory";
+
+  public constructor(
+    public readonly options: {
+      readonly directory: string;
+    }
+  ) {}
+}
+
 class ListFASTAFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_fasta_files";
 }
@@ -730,6 +740,7 @@ export {
   OpenFileRequest,
   ListFilesRequest,
   ListFilesDetailedRequest,
+  ListDirectoryRequest,
   GroupContigsIntoScaffoldRequest,
   UngroupContigsFromScaffoldRequest,
   ReverseSelectionRangeRequest,

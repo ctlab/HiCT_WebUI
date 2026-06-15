@@ -95,6 +95,7 @@ onMounted(() => {
           legacyCSS: true,
         });
         colorSelectorStyleObject.value["background"] = currentColor.value.RGBA;
+        emit("onColorChanged", currentColor.value as ColorTranslator);
       },
       onDone: function (color) {
         currentColor.value = new ColorTranslator(color.rgbaString as string, {

@@ -370,7 +370,9 @@ class FileEntryResponseDTO extends InboundDTO<FileEntryResponse> {
       (this.json["name"] as string) ?? "",
       (this.json["sizeBytes"] as number) ?? -1,
       (this.json["modifiedAtMs"] as number) ?? 0,
-      (this.json["extension"] as string) ?? ""
+      (this.json["extension"] as string) ?? "",
+      ((this.json["type"] as string) === "directory" ? "directory" : "file"),
+      Boolean(this.json["symbolicLink"] ?? false)
     );
   }
 }

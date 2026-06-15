@@ -139,6 +139,16 @@
       </button>
       <div class="export-group">
         <button
+          id="toggle-osd-button"
+          class="btn-sm btn-outline-primary"
+          type="button"
+          @click="osdOverlayVisible = !osdOverlayVisible"
+          :title="osdOverlayVisible ? 'Hide map information overlay' : 'Show map information overlay'"
+        >
+          <i :class="osdOverlayVisible ? 'bi bi-badge-ad' : 'bi bi-badge-ad-fill'"></i>
+          OSD
+        </button>
+        <button
           id="export-svg-button"
           class="btn-sm btn-outline-primary"
           type="button"
@@ -198,6 +208,7 @@ import { Ref, onBeforeUnmount, ref } from "vue";
 import { toast } from "vue-sonner";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { storeToRefs } from "pinia";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 
@@ -205,6 +216,8 @@ const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
 
+const uiSettingsStore = useUiSettingsStore();
+const { osdOverlayVisible } = storeToRefs(uiSettingsStore);
 const rowContigId: Ref<number | null> = ref(null);
 const columnContigId: Ref<number | null> = ref(null);
 const exportingType = ref<"svg" | "png" | "pdf" | null>(null);

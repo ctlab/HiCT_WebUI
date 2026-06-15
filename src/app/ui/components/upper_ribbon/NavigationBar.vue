@@ -128,6 +128,100 @@
                   >Rendering pipeline...</a
                 >
               </li>
+              <li class="dropdown-submenu p-3 osd-settings-menu" @click.stop>
+                <div class="fw-semibold mb-2">OSD overlay</div>
+                <div class="form-check form-switch mb-2">
+                  <input
+                    id="toggle-osd-visible"
+                    v-model="osdOverlayVisible"
+                    class="form-check-input"
+                    type="checkbox"
+                    role="switch"
+                  />
+                  <label class="form-check-label" for="toggle-osd-visible">
+                    Show overlay
+                  </label>
+                </div>
+                <label class="form-label small mb-1" for="osd-position-select">Position</label>
+                <select
+                  id="osd-position-select"
+                  v-model="osdOverlayPosition"
+                  class="form-select form-select-sm mb-2"
+                >
+                  <option value="top-right">Top right</option>
+                  <option value="bottom-left">Bottom left</option>
+                </select>
+                <div class="small text-muted mb-1">Fields</div>
+                <div
+                  v-for="field in osdFieldOrder"
+                  :key="field"
+                  class="osd-field-row"
+                >
+                  <div class="form-check form-switch">
+                    <input
+                      :id="`osd-field-${field}`"
+                      v-model="osdOverlayFields[field]"
+                      class="form-check-input"
+                      type="checkbox"
+                      role="switch"
+                    />
+                    <label class="form-check-label" :for="`osd-field-${field}`">
+                      {{ osdFieldLabels[field] ?? field }}
+                    </label>
+                  </div>
+                  <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-secondary" type="button" @click="moveOsdField(field, -1)">Up</button>
+                    <button class="btn btn-outline-secondary" type="button" @click="moveOsdField(field, 1)">Down</button>
+                  </div>
+                </div>
+              </li>
+              <li class="dropdown-submenu p-3 resolution-settings-menu" @click.stop>
+                <div class="fw-semibold mb-2">Restrict resolution</div>
+                <div class="resolution-limit-grid mb-2">
+                  <label class="small">
+                    Finest
+                    <input
+                      v-model.number="resolutionFinestLimit"
+                      type="number"
+                      class="form-control form-control-sm"
+                      min="1"
+                      step="1"
+                    />
+                  </label>
+                  <label class="small">
+                    Coarsest
+                    <input
+                      v-model.number="resolutionCoarsestLimit"
+                      type="number"
+                      class="form-control form-control-sm"
+                      min="1"
+                      step="1"
+                    />
+                  </label>
+                </div>
+                <button class="btn btn-sm btn-outline-primary w-100 mb-2" type="button" @click="applyResolutionLimits">
+                  Set limits
+                </button>
+                <div class="resolution-list">
+                  <div
+                    v-for="resolution in availableResolutions"
+                    :key="resolution"
+                    class="form-check form-switch"
+                  >
+                    <input
+                      :id="`resolution-${resolution}`"
+                      :checked="enabledResolutionSet.has(resolution)"
+                      class="form-check-input"
+                      type="checkbox"
+                      role="switch"
+                      @change="toggleResolution(resolution, ($event.target as HTMLInputElement).checked)"
+                    />
+                    <label class="form-check-label" :for="`resolution-${resolution}`">
+                      1:{{ resolution.toLocaleString() }}
+                    </label>
+                  </div>
+                </div>
+              </li>
               <li>
                 <a class="dropdown-item" href="#" @click="onOpenApiDocs"
                   >API docs...</a
@@ -669,8 +763,109 @@ const errorToastStore = useErrorToastStore();
 const uiSettingsStore = useUiSettingsStore();
 const { requestErrorToastsEnabled, webuiErrorToastsEnabled } =
   storeToRefs(errorToastStore);
-const { customZoomSliderEnabled, binaryTileTransportEnabled } =
+const {
+  customZoomSliderEnabled,
+  binaryTileTransportEnabled,
+  osdOverlayVisible,
+  osdOverlayPosition,
+  osdOverlayFields,
+  osdOverlayFieldOrder,
+} =
   storeToRefs(uiSettingsStore);
+
+const osdFieldLabels: Record<string, string> = {
+  global: "Global coordinates",
+  resolution: "Resolution",
+  source: "Guidance source",
+  visibleResolutions: "Visible source resolutions",
+  pixels: "Pixel position",
+  bins: "Bin position",
+  basePairs: "Genome bp position",
+  contigs: "Contigs",
+  inContig: "In-contig bp",
+  scaffolds: "Scaffolds",
+  inScaffold: "In-scaffold bp",
+};
+
+const osdFieldOrder = computed(() =>
+  osdOverlayFieldOrder.value.filter((field) => field in osdFieldLabels)
+);
+const enabledResolutions = ref<number[]>([]);
+const resolutionFinestLimit = ref<number | null>(null);
+const resolutionCoarsestLimit = ref<number | null>(null);
+const availableResolutions = computed(() =>
+  props.mapManager?.getLayersManager().getAllNavigationBpResolutions() ?? []
+);
+const enabledResolutionSet = computed(() => new Set(enabledResolutions.value));
+
+function moveOsdField(field: string, delta: number): void {
+  const order = [...osdOverlayFieldOrder.value];
+  const from = order.indexOf(field);
+  if (from < 0) {
+    return;
+  }
+  const to = Math.max(0, Math.min(order.length - 1, from + delta));
+  if (from === to) {
+    return;
+  }
+  order.splice(from, 1);
+  order.splice(to, 0, field);
+  osdOverlayFieldOrder.value = order;
+}
+
+function refreshResolutionRestrictionState(): void {
+  const manager = props.mapManager?.getLayersManager();
+  const all = manager?.getAllNavigationBpResolutions() ?? [];
+  enabledResolutions.value = manager?.getEnabledBpResolutions() ?? all;
+  resolutionFinestLimit.value = enabledResolutions.value[0] ?? all[0] ?? null;
+  resolutionCoarsestLimit.value =
+    enabledResolutions.value[enabledResolutions.value.length - 1] ??
+    all[all.length - 1] ??
+    null;
+}
+
+function applyEnabledResolutions(next: number[]): void {
+  const all = availableResolutions.value;
+  const normalized = next
+    .filter((resolution) => all.includes(resolution))
+    .sort((a, b) => a - b);
+  if (normalized.length === 0 && all.length > 0) {
+    toast.error("At least one map resolution must stay enabled.");
+    return;
+  }
+  enabledResolutions.value = normalized;
+  props.mapManager?.getLayersManager().setEnabledBpResolutions(normalized);
+}
+
+function toggleResolution(resolution: number, enabled: boolean): void {
+  const next = new Set(enabledResolutions.value);
+  if (enabled) {
+    next.add(resolution);
+  } else {
+    next.delete(resolution);
+  }
+  applyEnabledResolutions([...next]);
+}
+
+function applyResolutionLimits(): void {
+  const finest = Number(resolutionFinestLimit.value);
+  const coarsest = Number(resolutionCoarsestLimit.value);
+  if (!Number.isFinite(finest) || !Number.isFinite(coarsest) || finest > coarsest) {
+    toast.error("Resolution limits must be valid and finest must not exceed coarsest.");
+    return;
+  }
+  applyEnabledResolutions(
+    availableResolutions.value.filter(
+      (resolution) => resolution >= finest && resolution <= coarsest
+    )
+  );
+}
+
+watch(
+  () => props.mapManager,
+  () => refreshResolutionRestrictionState(),
+  { immediate: true }
+);
 
 const currentPrimaryHictFilename = computed(() => {
   const filename = props.mapManager?.getOptions().filename ?? "";
@@ -1505,5 +1700,39 @@ function onAssemblyAGPRequest() {
   margin-top: 2px;
   max-width: 260px;
   white-space: normal;
+}
+
+.osd-settings-menu {
+  min-width: 19rem;
+}
+
+.resolution-settings-menu {
+  min-width: 18rem;
+}
+
+.resolution-limit-grid {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 1fr 1fr;
+}
+
+.resolution-list {
+  display: grid;
+  gap: 0.25rem;
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.osd-field-row {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  margin-top: 0.35rem;
+}
+
+.osd-field-row .form-check-label {
+  font-size: 0.86rem;
+  white-space: nowrap;
 }
 </style>

@@ -161,6 +161,7 @@ class HiCViewAndLayersManager {
   private secondaryResolutionSet?: SourceResolutionDescriptorSet;
   private wheelZoomInteraction?: ContigMouseWheelZoom;
   private coordinateBaseBp: number;
+  private enabledBpResolutions?: Set<number>;
 
   public selectionCollections: {
     readonly selectedContigFeatures: Collection<Feature<Geometry>>;
@@ -428,10 +429,74 @@ class HiCViewAndLayersManager {
     resolutions: number[];
     pixelResolutionSet: number[];
   } {
-    return getNavigationResolutionModelForSets(
-      this.primaryResolutionSet,
-      this.secondaryResolutionSet
+    const descriptors = [
+      ...this.getEnabledResolutionTuples(this.primaryResolutionSet),
+      ...(this.secondaryResolutionSet
+        ? this.getEnabledResolutionTuples(this.secondaryResolutionSet)
+        : []),
+    ].sort((a, b) => a.pixelResolution - b.pixelResolution);
+    const byPixelResolution = new Map<number, LayerResolutionDescriptor>();
+    for (const descriptor of descriptors) {
+      if (!byPixelResolution.has(descriptor.pixelResolution)) {
+        byPixelResolution.set(descriptor.pixelResolution, descriptor);
+      }
+    }
+    const uniqueDescriptors = [...byPixelResolution.values()].sort(
+      (a, b) => a.pixelResolution - b.pixelResolution
     );
+    if (uniqueDescriptors.length === 0) {
+      return getNavigationResolutionModelForSets(
+        this.primaryResolutionSet,
+        this.secondaryResolutionSet
+      );
+    }
+    return {
+      resolutions: uniqueDescriptors.map((descriptor) => descriptor.bpResolution),
+      pixelResolutionSet: uniqueDescriptors.map(
+        (descriptor) => descriptor.pixelResolution
+      ),
+    };
+  }
+
+  public getAllNavigationBpResolutions(): number[] {
+    return Array.from(
+      new Set([
+        ...this.primaryResolutionSet.resolutions,
+        ...(this.secondaryResolutionSet?.resolutions ?? []),
+      ])
+    ).sort((a, b) => a - b);
+  }
+
+  public getEnabledBpResolutions(): number[] {
+    const all = this.getAllNavigationBpResolutions();
+    if (!this.enabledBpResolutions || this.enabledBpResolutions.size === 0) {
+      return all;
+    }
+    return all.filter((resolution) => this.enabledBpResolutions?.has(resolution));
+  }
+
+  public setEnabledBpResolutions(resolutions: number[]): void {
+    const valid = new Set(this.getAllNavigationBpResolutions());
+    const next = resolutions
+      .map((resolution) => Number(resolution))
+      .filter((resolution) => Number.isFinite(resolution) && valid.has(resolution));
+    this.enabledBpResolutions = next.length > 0 ? new Set(next) : undefined;
+    this.updateWheelZoomResolutionModel();
+    this.updateProjectionAndViewExtent(1);
+    this.updateCurrentHiCViewState();
+    this.mapManager.getMap().changed();
+  }
+
+  private getEnabledResolutionTuples(
+    set: SourceResolutionDescriptorSet
+  ): LayerResolutionDescriptor[] {
+    if (!this.enabledBpResolutions || this.enabledBpResolutions.size === 0) {
+      return set.resolutionTuples;
+    }
+    const filtered = set.resolutionTuples.filter((tuple) =>
+      this.enabledBpResolutions?.has(tuple.bpResolution)
+    );
+    return filtered.length > 0 ? filtered : set.resolutionTuples;
   }
 
   public getVectorResolutionTuples(): LayerResolutionDescriptor[] {
@@ -989,7 +1054,24 @@ class HiCViewAndLayersManager {
     if (!set) {
       throw new Error(`No resolutions available for ${sourceName}`);
     }
-    return getResolutionDescriptorForViewResolution(set, viewResolution);
+    const tuples = this.getEnabledResolutionTuples(set);
+    if (tuples.length === set.resolutionTuples.length) {
+      return getResolutionDescriptorForViewResolution(set, viewResolution);
+    }
+    let descriptor = tuples[0];
+    const sorted = [...tuples].sort(
+      (a, b) =>
+        a.layerResolutionBorders.minResolutionInclusive -
+        b.layerResolutionBorders.minResolutionInclusive
+    );
+    for (const tuple of sorted) {
+      if (tuple.layerResolutionBorders.minResolutionInclusive <= viewResolution) {
+        descriptor = tuple;
+      } else {
+        break;
+      }
+    }
+    return descriptor;
   }
 
   public getVisibleSourceResolutionDescriptors(): {

@@ -22,6 +22,7 @@
 import {
   ListFilesRequest,
   ListFilesDetailedRequest,
+  ListDirectoryRequest,
   OpenFileRequest,
   CloseFileRequest,
   AttachSessionRequest,
@@ -172,6 +173,8 @@ abstract class HiCTAPIRequestDTO<
         return new ListFilesRequestDTO(entity);
       case entity instanceof ListFilesDetailedRequest:
         return new ListFilesDetailedRequestDTO(entity);
+      case entity instanceof ListDirectoryRequest:
+        return new ListDirectoryRequestDTO(entity as ListDirectoryRequest);
       case entity instanceof ListCoolerFilesRequest:
         return new ListCoolerFilesRequestDTO(entity);
       case entity instanceof ListConvertibleMatrixFilesRequest:
@@ -779,6 +782,14 @@ class ListFilesDetailedRequestDTO extends HiCTAPIRequestDTO<ListFilesDetailedReq
   }
 }
 
+class ListDirectoryRequestDTO extends HiCTAPIRequestDTO<ListDirectoryRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      directory: this.entity.options.directory,
+    };
+  }
+}
+
 class ListCoolerFilesRequestDTO extends HiCTAPIRequestDTO<ListCoolerFilesRequest> {
   toDTO(): Record<string, unknown> {
     return {};
@@ -1030,6 +1041,7 @@ export {
   OpenFileRequestDTO,
   ListFilesRequestDTO,
   ListFilesDetailedRequestDTO,
+  ListDirectoryRequestDTO,
   CloseFileRequestDTO,
   AttachSessionRequestDTO,
   ResolveMatrixSourceRequestDTO,

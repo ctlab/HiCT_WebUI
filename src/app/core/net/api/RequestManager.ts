@@ -56,6 +56,7 @@ import {
   ListAGPFilesRequest,
   ListCoolerFilesRequest,
   ListConvertibleMatrixFilesRequest,
+  ListDirectoryRequest,
   ListFilesDetailedRequest,
   ListFASTAFilesRequest,
   ListFilesRequest,
@@ -536,6 +537,14 @@ class RequestManager {
 
   public async listFilesDetailed(): Promise<FileEntryResponse[]> {
     return this.sendRequest(new ListFilesDetailedRequest())
+      .then((response) => response.data as Record<string, unknown>[])
+      .then((items) =>
+        items.map((item) => new FileEntryResponseDTO(item).toEntity())
+      );
+  }
+
+  public async listDirectory(directory = ""): Promise<FileEntryResponse[]> {
+    return this.sendRequest(new ListDirectoryRequest({ directory }))
       .then((response) => response.data as Record<string, unknown>[])
       .then((items) =>
         items.map((item) => new FileEntryResponseDTO(item).toEntity())

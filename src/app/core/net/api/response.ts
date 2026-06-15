@@ -260,7 +260,9 @@ class FileEntryResponse {
     public readonly name: string,
     public readonly sizeBytes: number,
     public readonly modifiedAtMs: number,
-    public readonly extension: string
+    public readonly extension: string,
+    public readonly type: "file" | "directory" = "file",
+    public readonly symbolicLink: boolean = false
   ) {}
 }
 

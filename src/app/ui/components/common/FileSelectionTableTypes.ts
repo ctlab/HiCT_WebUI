@@ -29,4 +29,6 @@ export type FileSelectionTableEntry = {
   modifiedAtMs?: number;
   extension?: string;
   iconClass?: string;
+  type?: "file" | "directory";
+  symbolicLink?: boolean;
 };
