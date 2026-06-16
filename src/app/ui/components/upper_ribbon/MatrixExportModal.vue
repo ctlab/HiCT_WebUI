@@ -33,6 +33,43 @@
             {{ errorMessage }}
           </div>
 
+          <div class="job-history-panel mb-3">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+              <div>
+                <strong>Conversion jobs</strong>
+                <small class="text-muted d-block">
+                  Reopen this window and use this list to check exports started earlier.
+                </small>
+              </div>
+              <button
+                class="btn btn-sm btn-outline-secondary"
+                type="button"
+                :disabled="jobsLoading"
+                @click="loadConversionJobs"
+              >
+                <span v-if="jobsLoading" class="spinner-border spinner-border-sm me-1"></span>
+                Refresh jobs
+              </button>
+            </div>
+            <div v-if="recentJobs.length" class="job-history-list mt-2">
+              <button
+                v-for="job in recentJobs"
+                :key="job.jobId"
+                class="job-history-item"
+                :class="{ active: job.jobId === jobId }"
+                type="button"
+                @click="jobId = job.jobId"
+              >
+                <span class="job-history-main">
+                  {{ job.outputFilename || job.sourceFilename }}
+                </span>
+                <span class="job-history-meta">
+                  {{ job.direction }} · {{ job.status }} · {{ Math.round((job.overallProgress ?? 0) * 100) }}%
+                </span>
+              </button>
+            </div>
+          </div>
+
           <div class="mb-3">
             <label class="form-label">Source .hict.hdf5 matrix</label>
             <div class="input-group">
@@ -156,9 +193,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { onMounted, ref, watch } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
 import { StartConversionJobRequest } from "@/app/core/net/api/request";
+import type { ConversionJobResponse } from "@/app/core/net/api/response";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
 import ConverterStatusChecker from "@/app/ui/components/upper_ribbon/converter/ConverterStatusChecker.vue";
 
@@ -182,6 +220,8 @@ const selectorKind = ref<"source" | "agp" | null>(null);
 const submitting = ref(false);
 const errorMessage = ref("");
 const jobId = ref("");
+const jobsLoading = ref(false);
+const recentJobs = ref<ConversionJobResponse[]>([]);
 
 watch(
   () => props.initialSourceFilename,
@@ -209,6 +249,27 @@ function onFileSelected(filename: string): void {
   selectorKind.value = null;
 }
 
+function loadConversionJobs(): void {
+  jobsLoading.value = true;
+  props.networkManager.requestManager
+    .listConversionJobs()
+    .then((jobs) => {
+      recentJobs.value = jobs
+        .filter((job) => job.direction === "hict-to-mcool" || ["queued", "running"].includes((job.status ?? "").toLowerCase()))
+        .sort((a, b) => {
+          const aRunning = ["queued", "running"].includes((a.status ?? "").toLowerCase()) ? 1 : 0;
+          const bRunning = ["queued", "running"].includes((b.status ?? "").toLowerCase()) ? 1 : 0;
+          return bRunning - aRunning;
+        });
+    })
+    .catch((error: unknown) => {
+      errorMessage.value = error instanceof Error ? error.message : String(error);
+    })
+    .finally(() => {
+      jobsLoading.value = false;
+    });
+}
+
 async function startExport(): Promise<void> {
   if (!sourceFilename.value) {
     errorMessage.value = "Select a .hict.hdf5 source matrix first.";
@@ -231,12 +292,17 @@ async function startExport(): Promise<void> {
       })
     );
     jobId.value = response.jobId;
+    loadConversionJobs();
   } catch (error: unknown) {
     errorMessage.value = error instanceof Error ? error.message : String(error);
   } finally {
     submitting.value = false;
   }
 }
+
+onMounted(() => {
+  loadConversionJobs();
+});
 </script>
 
 <style scoped>
@@ -247,5 +313,46 @@ async function startExport(): Promise<void> {
 
 .modal-backdrop {
   z-index: 1050;
+}
+
+.job-history-panel {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.job-history-list {
+  display: grid;
+  gap: 0.35rem;
+  max-height: 10rem;
+  overflow: auto;
+}
+
+.job-history-item {
+  background: #fff;
+  border: 1px solid #ced4da;
+  border-radius: 0.35rem;
+  color: #212529;
+  display: grid;
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+}
+
+.job-history-item.active {
+  border-color: #0d6efd;
+  box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.15);
+}
+
+.job-history-main {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-history-meta {
+  color: #6c757d;
+  font-size: 0.82rem;
 }
 </style>
