@@ -128,6 +128,14 @@
 
           <div class="row g-2 mb-3">
             <div class="col-md-4">
+              <label class="form-label">Export mode</label>
+              <select v-model="exportMode" class="form-select">
+                <option value="auto">auto (prefer hictk-assisted)</option>
+                <option value="hictk">hictk-assisted</option>
+                <option value="internal">direct internal exporter</option>
+              </select>
+            </div>
+            <div class="col-md-4">
               <label class="form-label">Compression</label>
               <select v-model="compressionAlgorithm" class="form-select">
                 <option value="deflate">deflate</option>
@@ -135,15 +143,31 @@
                 <option value="lzf">lzf</option>
               </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-2">
               <label class="form-label">Level</label>
               <input v-model.number="compression" class="form-control" type="number" min="0" max="9" />
             </div>
-            <div class="col-md-4">
+            <div class="col-md-2">
               <label class="form-label">Threads</label>
               <input v-model.number="parallelism" class="form-control" type="number" min="1" />
             </div>
           </div>
+
+          <div class="form-check form-switch mb-2">
+            <input
+              id="export-all-resolutions"
+              v-model="exportAllResolutions"
+              class="form-check-input"
+              type="checkbox"
+              role="switch"
+            />
+            <label class="form-check-label" for="export-all-resolutions">
+              Export all resolutions present in .hict.hdf5
+            </label>
+          </div>
+          <small class="text-muted d-block mb-3">
+            Disabled by default: only the finest resolution is exported, so you can zoomify later if needed.
+          </small>
 
           <div class="form-check mb-3">
             <input
@@ -216,6 +240,8 @@ const overwrite = ref(false);
 const compressionAlgorithm = ref("deflate");
 const compression = ref(6);
 const parallelism = ref(Math.max(1, navigator.hardwareConcurrency || 1));
+const exportMode = ref("auto");
+const exportAllResolutions = ref(false);
 const selectorKind = ref<"source" | "agp" | null>(null);
 const submitting = ref(false);
 const errorMessage = ref("");
@@ -289,6 +315,8 @@ async function startExport(): Promise<void> {
         compression: compression.value,
         compressionAlgorithm: compressionAlgorithm.value,
         parallelism: parallelism.value,
+        exportMode: exportMode.value,
+        exportAllResolutions: exportAllResolutions.value,
       })
     );
     jobId.value = response.jobId;

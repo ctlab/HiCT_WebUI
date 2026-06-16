@@ -202,6 +202,8 @@ class StartConversionJobRequest implements HiCTAPIRequest {
       readonly compressionAlgorithm?: string;
       readonly chunkSize?: number;
       readonly parallelism?: number;
+      readonly exportMode?: string;
+      readonly exportAllResolutions?: boolean;
       readonly binTableFilename?: string;
       readonly chromSizesFilename?: string;
       readonly binSize?: number;
@@ -226,6 +228,8 @@ class StartBatchConversionJobsRequest implements HiCTAPIRequest {
       readonly compression?: number;
       readonly compressionAlgorithm?: string;
       readonly chunkSize?: number;
+      readonly exportMode?: string;
+      readonly exportAllResolutions?: boolean;
       readonly binTableFilename?: string;
       readonly chromSizesFilename?: string;
       readonly binSize?: number;
