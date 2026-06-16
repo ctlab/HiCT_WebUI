@@ -337,6 +337,15 @@
                         Drop all precomputed caches before running the wizard
                       </label>
                     </div>
+                    <div class="form-check form-switch mt-3">
+                      <input id="build-resolution-pyramid" v-model="buildResolutionPyramid" class="form-check-input" type="checkbox" />
+                      <label class="form-check-label" for="build-resolution-pyramid">
+                        Build optimized resolution pyramid with hictk
+                      </label>
+                      <div class="form-text">
+                        Enabled by default. HiCT will zoomify and balance converted Cooler inputs before import so sparse or single-resolution files open with a complete set of map resolutions.
+                      </div>
+                    </div>
                     <div v-if="toolchainStatus && !toolchainStatus.hicConversionAvailable" class="alert alert-warning mt-3 mb-0">
                       {{ toolchainStatus.summary }}
                     </div>
@@ -903,6 +912,7 @@ const fixableIssuePolicy = reactive<Record<string, "ignore" | "discard">>({});
 const precomputeTracks = ref(true);
 const forceTrackPrecompute = ref(false);
 const dropCachesBeforeRun = ref(false);
+const buildResolutionPyramid = ref(true);
 const blendMode = ref<WizardBlendMode>("OVER");
 const topOpacity = ref(0.5);
 const bottomOpacity = ref(1.0);
@@ -1759,6 +1769,7 @@ const ensureOpenedFilename = async (source: SourceDraft): Promise<string> => {
       chromSizesFilename: source.chromSizesFilename || undefined,
       binSize: source.binSize ?? undefined,
       countAsFloat: source.countAsFloat || undefined,
+      buildResolutionPyramid: buildResolutionPyramid.value,
     })
   );
   const finishedJob = await waitForConversionJob(started.jobId);

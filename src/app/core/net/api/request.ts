@@ -204,6 +204,7 @@ class StartConversionJobRequest implements HiCTAPIRequest {
       readonly parallelism?: number;
       readonly exportMode?: string;
       readonly exportAllResolutions?: boolean;
+      readonly buildResolutionPyramid?: boolean;
       readonly binTableFilename?: string;
       readonly chromSizesFilename?: string;
       readonly binSize?: number;
@@ -230,6 +231,7 @@ class StartBatchConversionJobsRequest implements HiCTAPIRequest {
       readonly chunkSize?: number;
       readonly exportMode?: string;
       readonly exportAllResolutions?: boolean;
+      readonly buildResolutionPyramid?: boolean;
       readonly binTableFilename?: string;
       readonly chromSizesFilename?: string;
       readonly binSize?: number;
