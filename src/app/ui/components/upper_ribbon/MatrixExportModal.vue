@@ -25,7 +25,7 @@
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">Export matrix to .mcool</h5>
+          <h5 class="modal-title">Export matrix to Cooler</h5>
           <button type="button" class="btn-close" @click="emit('dismissed')"></button>
         </div>
         <div class="modal-body">
@@ -83,6 +83,20 @@
                 Browse...
               </button>
             </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Output Cooler filename</label>
+            <input
+              v-model="outputFilename"
+              class="form-control"
+              type="text"
+              placeholder="matrix.mcool"
+              @input="outputFilenameTouched = true"
+            />
+            <small class="text-muted">
+              Relative to the HiCT data directory. Use .cool for one selected resolution, or .mcool for multiple resolutions.
+            </small>
           </div>
 
           <div class="mb-3">
@@ -169,6 +183,22 @@
             Disabled by default: only the finest resolution is exported, so you can zoomify later if needed.
           </small>
 
+          <div class="form-check form-switch mb-2">
+            <input
+              id="export-balance-coolers"
+              v-model="balanceExportedCoolers"
+              class="form-check-input"
+              type="checkbox"
+              role="switch"
+            />
+            <label class="form-check-label" for="export-balance-coolers">
+              Balance exported Cooler with hictk
+            </label>
+          </div>
+          <small class="text-muted d-block mb-3">
+            Enabled by default. Auto and hictk-assisted modes run ICE balancing so downstream Cooler tools can use generated weights.
+          </small>
+
           <div class="form-check mb-3">
             <input
               id="export-overwrite"
@@ -177,7 +207,7 @@
               type="checkbox"
             />
             <label class="form-check-label" for="export-overwrite">
-              Overwrite existing .mcool next to source
+              Overwrite existing output
             </label>
           </div>
 
@@ -198,7 +228,7 @@
             @click="startExport"
           >
             <span v-if="submitting" class="spinner-border spinner-border-sm me-2"></span>
-            Export .mcool
+            Export Cooler
           </button>
         </div>
       </div>
@@ -242,6 +272,9 @@ const compression = ref(6);
 const parallelism = ref(Math.max(1, navigator.hardwareConcurrency || 1));
 const exportMode = ref("auto");
 const exportAllResolutions = ref(false);
+const balanceExportedCoolers = ref(true);
+const outputFilename = ref("");
+const outputFilenameTouched = ref(false);
 const selectorKind = ref<"source" | "agp" | null>(null);
 const submitting = ref(false);
 const errorMessage = ref("");
@@ -258,6 +291,16 @@ watch(
   }
 );
 
+watch(
+  [sourceFilename, exportAllResolutions],
+  () => {
+    if (!outputFilenameTouched.value) {
+      outputFilename.value = defaultOutputFilename(sourceFilename.value, exportAllResolutions.value);
+    }
+  },
+  { immediate: true }
+);
+
 function isHictFilename(filename: string): boolean {
   return filename.toLowerCase().endsWith(".hict.hdf5");
 }
@@ -269,10 +312,24 @@ function isAgpFilename(filename: string): boolean {
 function onFileSelected(filename: string): void {
   if (selectorKind.value === "source") {
     sourceFilename.value = filename;
+    if (!outputFilenameTouched.value) {
+      outputFilename.value = defaultOutputFilename(filename, exportAllResolutions.value);
+    }
   } else if (selectorKind.value === "agp") {
     customAgpFilename.value = filename;
   }
   selectorKind.value = null;
+}
+
+function defaultOutputFilename(filename: string, allResolutions: boolean): string {
+  if (!filename) {
+    return "";
+  }
+  const extension = allResolutions ? ".mcool" : ".cool";
+  const stripped = filename
+    .replace(/\.hict\.hdf5$/i, "")
+    .replace(/\.hict$/i, "");
+  return `${stripped}${extension}`;
 }
 
 function loadConversionJobs(): void {
@@ -309,6 +366,7 @@ async function startExport(): Promise<void> {
       new StartConversionJobRequest({
         filename: sourceFilename.value,
         direction: "hict-to-mcool",
+        outputFilename: outputFilename.value || defaultOutputFilename(sourceFilename.value, exportAllResolutions.value),
         useCurrentAssembly: useCurrentAssembly.value,
         assemblyFilename: useCurrentAssembly.value ? undefined : customAgpFilename.value || undefined,
         overwrite: overwrite.value,
@@ -317,6 +375,7 @@ async function startExport(): Promise<void> {
         parallelism: parallelism.value,
         exportMode: exportMode.value,
         exportAllResolutions: exportAllResolutions.value,
+        balanceExportedCoolers: balanceExportedCoolers.value,
       })
     );
     jobId.value = response.jobId;

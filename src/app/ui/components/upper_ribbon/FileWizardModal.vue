@@ -337,13 +337,22 @@
                         Drop all precomputed caches before running the wizard
                       </label>
                     </div>
-                    <div class="form-check form-switch mt-3">
+                    <div v-if="hasSelectedCoolerSource" class="form-check form-switch mt-3">
                       <input id="build-resolution-pyramid" v-model="buildResolutionPyramid" class="form-check-input" type="checkbox" />
                       <label class="form-check-label" for="build-resolution-pyramid">
                         Build optimized resolution pyramid with hictk
                       </label>
                       <div class="form-text">
-                        Enabled by default. HiCT will zoomify and balance converted Cooler inputs before import so sparse or single-resolution files open with a complete set of map resolutions.
+                        Enabled by default. HiCT will zoomify converted Cooler inputs before import so sparse or single-resolution files open with a complete set of map resolutions.
+                      </div>
+                    </div>
+                    <div v-if="hasSelectedCoolerSource" class="form-check form-switch mt-3">
+                      <input id="balance-input-coolers" v-model="balanceInputCoolers" class="form-check-input" type="checkbox" />
+                      <label class="form-check-label" for="balance-input-coolers">
+                        Balance input Coolers with hictk
+                      </label>
+                      <div class="form-text">
+                        Enabled by default for .cool/.mcool inputs. HiCT will run hictk ICE balancing before importing so Cooler weights are available immediately.
                       </div>
                     </div>
                     <div v-if="toolchainStatus && !toolchainStatus.hicConversionAvailable" class="alert alert-warning mt-3 mb-0">
@@ -913,6 +922,7 @@ const precomputeTracks = ref(true);
 const forceTrackPrecompute = ref(false);
 const dropCachesBeforeRun = ref(false);
 const buildResolutionPyramid = ref(true);
+const balanceInputCoolers = ref(true);
 const blendMode = ref<WizardBlendMode>("OVER");
 const topOpacity = ref(0.5);
 const bottomOpacity = ref(1.0);
@@ -1353,6 +1363,16 @@ const isOpenableAssemblyFilename = (name: string): boolean => {
   );
 };
 
+const isCoolerFilename = (name: string): boolean => {
+  const lowered = name.toLowerCase();
+  return lowered.endsWith(".cool") || lowered.endsWith(".mcool");
+};
+
+const hasSelectedCoolerSource = computed(() =>
+  isCoolerFilename(primarySource.filename) ||
+  (requiresSecondarySource.value && isCoolerFilename(secondarySource.filename))
+);
+
 const stripCompressionSuffix = (name: string): string =>
   name.replace(/\.(gz|bgz|xz|zst|zstd|bz2|lz4|lzo)$/i, "");
 
@@ -1749,8 +1769,13 @@ const ensureOpenedFilename = async (source: SourceDraft): Promise<string> => {
   if (!resolution) {
     throw new Error(`Failed to resolve source ${source.filename}`);
   }
+  const forceCoolerPreparation =
+    isCoolerFilename(source.filename) &&
+    canConvertSource(source) &&
+    (buildResolutionPyramid.value || balanceInputCoolers.value);
   if (
     (!(source.forceConversion && canConvertSource(source))) &&
+    !forceCoolerPreparation &&
     (resolution.action === "OPEN_DIRECT" || resolution.action === "REUSE_CONVERTED")
   ) {
     return resolution.resolvedFilename;
@@ -1770,6 +1795,7 @@ const ensureOpenedFilename = async (source: SourceDraft): Promise<string> => {
       binSize: source.binSize ?? undefined,
       countAsFloat: source.countAsFloat || undefined,
       buildResolutionPyramid: buildResolutionPyramid.value,
+      balanceInputCoolers: balanceInputCoolers.value,
     })
   );
   const finishedJob = await waitForConversionJob(started.jobId);
