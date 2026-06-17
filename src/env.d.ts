@@ -27,3 +27,17 @@ declare module "*.vue" {
   const component: DefineComponent<{}, {}, any>;
   export default component;
 }
+
+declare module "marked" {
+  export interface MarkedOptions {
+    async?: boolean;
+    breaks?: boolean;
+    gfm?: boolean;
+    headerIds?: boolean;
+    mangle?: boolean;
+  }
+
+  export const marked: {
+    parse(markdown: string, options?: MarkedOptions): string;
+  };
+}

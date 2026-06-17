@@ -679,7 +679,11 @@
           <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
           <span>Loading changelog...</span>
         </div>
-        <pre v-else class="about-changelog">{{ changelogText }}</pre>
+        <div
+          v-else
+          class="about-changelog markdown-body"
+          v-html="renderedChangelog"
+        ></div>
       </div>
     </div>
   </div>
@@ -758,6 +762,7 @@
 
 <script setup lang="ts">
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
+import { marked } from "marked";
 import { computed, defineAsyncComponent, onMounted, Ref, ref, watch } from "vue";
 import {
   GetAGPForAssemblyRequest,
@@ -816,6 +821,7 @@ const resolutionSettingsOpen = ref(false);
 const aboutActiveTab = ref<"about" | "attribution" | "changelog">("about");
 const changelogText = ref("Changelog for this build was not detected");
 const changelogLoading = ref(false);
+const renderedChangelog = computed(() => renderMarkdown(changelogText.value));
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
 const pendingJuiceboxAssemblyFilename = ref("");
@@ -1318,6 +1324,16 @@ function loadChangelog(): void {
     .finally(() => {
       changelogLoading.value = false;
     });
+}
+
+function renderMarkdown(markdown: string): string {
+  return marked.parse(markdown || "Changelog for this build was not detected", {
+    async: false,
+    breaks: false,
+    gfm: true,
+    headerIds: false,
+    mangle: false,
+  }) as string;
 }
 
 function onOpenFASTAFile() {
@@ -1841,11 +1857,68 @@ function onAssemblyAGPRequest() {
   color: var(--hict-surface-fg, #1f2937);
   font-family: inherit;
   font-size: 13px;
+  line-height: 1.45;
   margin: 0;
   max-height: 62vh;
   overflow: auto;
   padding: 12px;
-  white-space: pre-wrap;
+}
+
+.about-changelog :deep(h1),
+.about-changelog :deep(h2),
+.about-changelog :deep(h3) {
+  color: var(--hict-surface-fg, #1f2937);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.about-changelog :deep(h1) {
+  font-size: 19px;
+  margin: 0 0 12px;
+}
+
+.about-changelog :deep(h2) {
+  border-bottom: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.12));
+  font-size: 16px;
+  margin: 16px 0 10px;
+  padding-bottom: 6px;
+}
+
+.about-changelog :deep(h3) {
+  font-size: 14px;
+  margin: 12px 0 8px;
+}
+
+.about-changelog :deep(p) {
+  margin: 0 0 10px;
+}
+
+.about-changelog :deep(ul),
+.about-changelog :deep(ol) {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.about-changelog :deep(li) {
+  margin-bottom: 5px;
+}
+
+.about-changelog :deep(code) {
+  background: rgba(15, 23, 38, 0.08);
+  border-radius: 4px;
+  color: var(--hict-surface-fg, #1f2937);
+  font-size: 0.92em;
+  padding: 1px 4px;
+}
+
+.about-changelog :deep(a) {
+  color: #0d6efd;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.about-changelog :deep(a:hover) {
+  text-decoration: underline;
 }
 
 .attribution-panel {
