@@ -92,6 +92,14 @@
                 <a
                   class="dropdown-item"
                   href="#"
+                  @click.prevent="exportingMatrix = true"
+                  >Export matrix</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
                   @click.prevent="onGenerateDotplotClicked"
                   >Generate dotplot</a
                 >
@@ -126,6 +134,22 @@
               <li>
                 <a class="dropdown-item" href="#" @click="onOpenRenderingPipeline"
                   >Rendering pipeline...</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="osdSettingsOpen = true"
+                  >OSD settings...</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="openResolutionSettings"
+                  >Restrict Resolutions...</a
                 >
               </li>
               <li>
@@ -411,6 +435,12 @@
     @dismissed="onConvertCoolersDismissed"
   >
   </CoolerConverter>
+  <MatrixExportModal
+    v-if="exportingMatrix"
+    :network-manager="props.networkManager"
+    :initial-source-filename="currentPrimaryHictFilename"
+    @dismissed="exportingMatrix = false"
+  />
   <DotplotGenerator
     v-if="generatingDotplots"
     :network-manager="networkManager"
@@ -445,6 +475,69 @@
     @proceed="proceedFastaLinkWarning"
   />
   <div
+    v-if="osdSettingsOpen"
+    class="settings-backdrop"
+    @click.self="osdSettingsOpen = false"
+  >
+    <div class="settings-modal osd-settings-modal" role="dialog" aria-modal="true">
+      <div class="settings-header">
+        <h2>OSD settings</h2>
+        <button class="btn-close" @click="osdSettingsOpen = false"></button>
+      </div>
+      <div class="settings-body">
+        <div class="form-check form-switch mb-3">
+          <input
+            id="toggle-osd-visible"
+            v-model="osdOverlayVisible"
+            class="form-check-input"
+            type="checkbox"
+            role="switch"
+          />
+          <label class="form-check-label" for="toggle-osd-visible">
+            Show overlay
+          </label>
+        </div>
+        <label class="form-label" for="osd-position-select">Position</label>
+        <select
+          id="osd-position-select"
+          v-model="osdOverlayPosition"
+          class="form-select form-select-sm mb-3"
+        >
+          <option value="top-right">Top right</option>
+          <option value="bottom-left">Bottom left</option>
+        </select>
+        <div class="fw-semibold mb-2">Fields</div>
+        <div
+          v-for="field in osdFieldOrder"
+          :key="field"
+          class="osd-field-row"
+        >
+          <div class="form-check form-switch">
+            <input
+              :id="`osd-field-${field}`"
+              v-model="osdOverlayFields[field]"
+              class="form-check-input"
+              type="checkbox"
+              role="switch"
+            />
+            <label class="form-check-label" :for="`osd-field-${field}`">
+              {{ osdFieldLabels[field] ?? field }}
+            </label>
+          </div>
+          <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-secondary" type="button" @click="moveOsdField(field, -1)">Up</button>
+            <button class="btn btn-outline-secondary" type="button" @click="moveOsdField(field, 1)">Down</button>
+          </div>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button class="btn btn-primary" type="button" @click="osdSettingsOpen = false">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+  <div
     v-if="aboutOpen"
     class="about-backdrop"
     @click.self="aboutOpen = false"
@@ -471,6 +564,14 @@
         >
           Attribution
         </button>
+        <button
+          type="button"
+          class="about-tab"
+          :class="{ active: aboutActiveTab === 'changelog' }"
+          @click="aboutActiveTab = 'changelog'"
+        >
+          Changelog
+        </button>
       </div>
       <div v-if="aboutActiveTab === 'about'" class="about-body">
         <p class="about-authors">{{ projectAttribution.authors }}</p>
@@ -480,9 +581,24 @@
           <div><strong>WebUI:</strong> {{ webuiVersion }}</div>
           <div><strong>Commit:</strong> {{ webuiCommit }}</div>
         </div>
+        <section class="ask-authors">
+          <h3>Ask Authors</h3>
+          <div class="ask-authors-grid">
+            <article>
+              <div class="ask-authors-title">Implementation details, technical inquiries</div>
+              <a href="mailto:ntwwwnt@gmail.com">ntwwwnt@gmail.com</a>
+              <a href="mailto:anserdiukov@itmo.ru">anserdiukov@itmo.ru</a>
+            </article>
+            <article>
+              <div class="ask-authors-title">Fundamental design, conceptual questions</div>
+              <a href="mailto:zamyatin.anton@gmail.com">zamyatin.anton@gmail.com</a>
+              <a href="mailto:azamyatin@psu.edu">azamyatin@psu.edu</a>
+            </article>
+          </div>
+        </section>
         <pre class="about-license">{{ licenseText }}</pre>
       </div>
-      <div v-else class="about-body attribution-panel">
+      <div v-else-if="aboutActiveTab === 'attribution'" class="about-body attribution-panel">
         <section class="attribution-section">
           <h3>Project</h3>
           <article class="attribution-card">
@@ -558,12 +674,95 @@
           </ul>
         </section>
       </div>
+      <div v-else class="about-body">
+        <div v-if="changelogLoading" class="d-flex align-items-center gap-2">
+          <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+          <span>Loading changelog...</span>
+        </div>
+        <div
+          v-else
+          class="about-changelog markdown-body"
+          v-html="renderedChangelog"
+        ></div>
+      </div>
+    </div>
+  </div>
+  <div
+    v-if="resolutionSettingsOpen"
+    class="settings-backdrop"
+    @click.self="resolutionSettingsOpen = false"
+  >
+    <div class="settings-modal resolution-settings-modal" role="dialog" aria-modal="true">
+      <div class="settings-header">
+        <h2>Restrict Resolutions</h2>
+        <button class="btn-close" @click="resolutionSettingsOpen = false"></button>
+      </div>
+      <div class="settings-body">
+        <p class="settings-description">
+          Disable resolutions that should not be used while zooming the map.
+        </p>
+        <div class="resolution-limit-grid mb-2">
+          <label class="small" for="resolution-finest-limit">
+            Finest
+            <input
+              id="resolution-finest-limit"
+              v-model.number="resolutionFinestLimit"
+              type="number"
+              class="form-control form-control-sm"
+              min="1"
+              step="1"
+            />
+          </label>
+          <label class="small" for="resolution-coarsest-limit">
+            Coarsest
+            <input
+              id="resolution-coarsest-limit"
+              v-model.number="resolutionCoarsestLimit"
+              type="number"
+              class="form-control form-control-sm"
+              min="1"
+              step="1"
+            />
+          </label>
+        </div>
+        <button class="btn btn-sm btn-outline-primary w-100 mb-3" type="button" @click="applyResolutionLimits">
+          Set limits
+        </button>
+        <div v-if="availableResolutions.length > 0" class="resolution-list">
+          <div
+            v-for="resolution in availableResolutions"
+            :key="resolution"
+            class="form-check form-switch"
+          >
+            <input
+              :id="`resolution-modal-${resolution}`"
+              :checked="enabledResolutionSet.has(resolution)"
+              class="form-check-input"
+              type="checkbox"
+              role="switch"
+              @change="toggleResolution(resolution, ($event.target as HTMLInputElement).checked)"
+            />
+            <label class="form-check-label" :for="`resolution-modal-${resolution}`">
+              1:{{ resolution.toLocaleString() }}
+            </label>
+          </div>
+        </div>
+        <div v-else class="text-muted small">
+          No map resolutions are available yet.
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button class="btn btn-primary" type="button" @click="resolutionSettingsOpen = false">
+          Done
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
+import { marked } from "marked";
 import { computed, defineAsyncComponent, onMounted, Ref, ref, watch } from "vue";
 import {
   GetAGPForAssemblyRequest,
@@ -574,6 +773,7 @@ import {
 } from "@/app/core/net/api/request";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import CoolerConverter from "./CoolerConverter.vue";
+import MatrixExportModal from "./MatrixExportModal.vue";
 import DotplotGenerator from "./DotplotGenerator.vue";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
 import TrackManager from "@/app/ui/components/upper_ribbon/TrackManager.vue";
@@ -605,6 +805,7 @@ const openingAGPFile = ref(false);
 const openingJuiceboxAssemblyFile = ref(false);
 const openingJuiceboxAssemblyFastaFile = ref(false);
 const convertingCoolers = ref(false);
+const exportingMatrix = ref(false);
 const generatingDotplots = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
 const lastLinkedFastaFilename = ref<string | undefined>(undefined);
@@ -615,7 +816,12 @@ const serverStatisticsOpen = ref(false);
 const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
-const aboutActiveTab = ref<"about" | "attribution">("about");
+const osdSettingsOpen = ref(false);
+const resolutionSettingsOpen = ref(false);
+const aboutActiveTab = ref<"about" | "attribution" | "changelog">("about");
+const changelogText = ref("Changelog for this build was not detected");
+const changelogLoading = ref(false);
+const renderedChangelog = computed(() => renderMarkdown(changelogText.value));
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
 const pendingJuiceboxAssemblyFilename = ref("");
@@ -652,6 +858,22 @@ useEscDismissableDialog({
 });
 
 useEscDismissableDialog({
+  priority: 1041,
+  isOpen: () => osdSettingsOpen.value,
+  requestClose: () => {
+    osdSettingsOpen.value = false;
+  },
+});
+
+useEscDismissableDialog({
+  priority: 1041,
+  isOpen: () => resolutionSettingsOpen.value,
+  requestClose: () => {
+    resolutionSettingsOpen.value = false;
+  },
+});
+
+useEscDismissableDialog({
   priority: 2200,
   isOpen: () => fastaLinkReport.value !== null,
   requestClose: () => {
@@ -669,8 +891,114 @@ const errorToastStore = useErrorToastStore();
 const uiSettingsStore = useUiSettingsStore();
 const { requestErrorToastsEnabled, webuiErrorToastsEnabled } =
   storeToRefs(errorToastStore);
-const { customZoomSliderEnabled, binaryTileTransportEnabled } =
+const {
+  customZoomSliderEnabled,
+  binaryTileTransportEnabled,
+  osdOverlayVisible,
+  osdOverlayPosition,
+  osdOverlayFields,
+  osdOverlayFieldOrder,
+} =
   storeToRefs(uiSettingsStore);
+
+const osdFieldLabels: Record<string, string> = {
+  global: "Global coordinates",
+  resolution: "Resolution",
+  source: "Guidance source",
+  visibleResolutions: "Visible source resolutions",
+  pixels: "Pixel position",
+  bins: "Bin position",
+  basePairs: "Genome bp position",
+  contigs: "Contigs",
+  inContig: "In-contig bp",
+  scaffolds: "Scaffolds",
+  inScaffold: "In-scaffold bp",
+};
+
+const osdFieldOrder = computed(() =>
+  osdOverlayFieldOrder.value.filter((field) => field in osdFieldLabels)
+);
+const enabledResolutions = ref<number[]>([]);
+const resolutionFinestLimit = ref<number | null>(null);
+const resolutionCoarsestLimit = ref<number | null>(null);
+const availableResolutions = computed(() =>
+  props.mapManager?.getLayersManager().getAllNavigationBpResolutions() ?? []
+);
+const enabledResolutionSet = computed(() => new Set(enabledResolutions.value));
+
+function moveOsdField(field: string, delta: number): void {
+  const order = [...osdOverlayFieldOrder.value];
+  const from = order.indexOf(field);
+  if (from < 0) {
+    return;
+  }
+  const to = Math.max(0, Math.min(order.length - 1, from + delta));
+  if (from === to) {
+    return;
+  }
+  order.splice(from, 1);
+  order.splice(to, 0, field);
+  osdOverlayFieldOrder.value = order;
+}
+
+function refreshResolutionRestrictionState(): void {
+  const manager = props.mapManager?.getLayersManager();
+  const all = manager?.getAllNavigationBpResolutions() ?? [];
+  enabledResolutions.value = manager?.getEnabledBpResolutions() ?? all;
+  resolutionFinestLimit.value = enabledResolutions.value[0] ?? all[0] ?? null;
+  resolutionCoarsestLimit.value =
+    enabledResolutions.value[enabledResolutions.value.length - 1] ??
+    all[all.length - 1] ??
+    null;
+}
+
+function openResolutionSettings(): void {
+  refreshResolutionRestrictionState();
+  resolutionSettingsOpen.value = true;
+}
+
+function applyEnabledResolutions(next: number[]): void {
+  const all = availableResolutions.value;
+  const normalized = next
+    .filter((resolution) => all.includes(resolution))
+    .sort((a, b) => a - b);
+  if (normalized.length === 0 && all.length > 0) {
+    toast.error("At least one map resolution must stay enabled.");
+    return;
+  }
+  enabledResolutions.value = normalized;
+  props.mapManager?.getLayersManager().setEnabledBpResolutions(normalized);
+}
+
+function toggleResolution(resolution: number, enabled: boolean): void {
+  const next = new Set(enabledResolutions.value);
+  if (enabled) {
+    next.add(resolution);
+  } else {
+    next.delete(resolution);
+  }
+  applyEnabledResolutions([...next]);
+}
+
+function applyResolutionLimits(): void {
+  const finest = Number(resolutionFinestLimit.value);
+  const coarsest = Number(resolutionCoarsestLimit.value);
+  if (!Number.isFinite(finest) || !Number.isFinite(coarsest) || finest > coarsest) {
+    toast.error("Resolution limits must be valid and finest must not exceed coarsest.");
+    return;
+  }
+  applyEnabledResolutions(
+    availableResolutions.value.filter(
+      (resolution) => resolution >= finest && resolution <= coarsest
+    )
+  );
+}
+
+watch(
+  () => props.mapManager,
+  () => refreshResolutionRestrictionState(),
+  { immediate: true }
+);
 
 const currentPrimaryHictFilename = computed(() => {
   const filename = props.mapManager?.getOptions().filename ?? "";
@@ -969,6 +1297,7 @@ function openAbout(): void {
   aboutOpen.value = true;
   aboutActiveTab.value = "about";
   backendVersion.value = "loading...";
+  loadChangelog();
   props.networkManager.requestManager
     .getBackendVersion()
     .then((v) => {
@@ -980,6 +1309,31 @@ function openAbout(): void {
       }
     })
     .catch(() => (backendVersion.value = "unknown"));
+}
+
+function loadChangelog(): void {
+  changelogLoading.value = true;
+  props.networkManager.requestManager
+    .getChangelog()
+    .then((text) => {
+      changelogText.value = text || "Changelog for this build was not detected";
+    })
+    .catch(() => {
+      changelogText.value = "Changelog for this build was not detected";
+    })
+    .finally(() => {
+      changelogLoading.value = false;
+    });
+}
+
+function renderMarkdown(markdown: string): string {
+  return marked.parse(markdown || "Changelog for this build was not detected", {
+    async: false,
+    breaks: false,
+    gfm: true,
+    headerIds: false,
+    mangle: false,
+  }) as string;
 }
 
 function onOpenFASTAFile() {
@@ -1359,7 +1713,8 @@ function onAssemblyAGPRequest() {
   margin-right: 30px;
 }
 
-.about-backdrop {
+.about-backdrop,
+.settings-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.35);
@@ -1369,7 +1724,8 @@ function onAssemblyAGPRequest() {
   z-index: 2000;
 }
 
-.about-modal {
+.about-modal,
+.settings-modal {
   background: var(--hict-surface-bg, #ffffff);
   color: var(--hict-surface-fg, #1f2937);
   border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.18));
@@ -1381,14 +1737,28 @@ function onAssemblyAGPRequest() {
   padding: 20px 24px;
 }
 
-.about-header {
+.about-header,
+.settings-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.about-body {
+.about-body,
+.settings-body {
   margin-top: 12px;
+}
+
+.settings-footer {
+  border-top: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.14));
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 14px;
+}
+
+.osd-settings-modal {
+  width: min(560px, 92vw);
 }
 
 .about-tabs {
@@ -1444,6 +1814,111 @@ function onAssemblyAGPRequest() {
   margin-top: 12px;
   display: grid;
   gap: 4px;
+}
+
+.ask-authors {
+  margin-top: 16px;
+}
+
+.ask-authors h3 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+.ask-authors-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.ask-authors-grid article {
+  background: var(--hict-control-bg, rgba(248, 249, 250, 0.88));
+  border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.12));
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+}
+
+.ask-authors-title {
+  font-weight: 700;
+}
+
+.ask-authors a {
+  color: #0d6efd;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.about-changelog {
+  background: var(--hict-control-bg, #f8f9fa);
+  border: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.12));
+  border-radius: 6px;
+  color: var(--hict-surface-fg, #1f2937);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+  max-height: 62vh;
+  overflow: auto;
+  padding: 12px;
+}
+
+.about-changelog :deep(h1),
+.about-changelog :deep(h2),
+.about-changelog :deep(h3) {
+  color: var(--hict-surface-fg, #1f2937);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.about-changelog :deep(h1) {
+  font-size: 19px;
+  margin: 0 0 12px;
+}
+
+.about-changelog :deep(h2) {
+  border-bottom: 1px solid var(--hict-surface-border, rgba(15, 23, 38, 0.12));
+  font-size: 16px;
+  margin: 16px 0 10px;
+  padding-bottom: 6px;
+}
+
+.about-changelog :deep(h3) {
+  font-size: 14px;
+  margin: 12px 0 8px;
+}
+
+.about-changelog :deep(p) {
+  margin: 0 0 10px;
+}
+
+.about-changelog :deep(ul),
+.about-changelog :deep(ol) {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.about-changelog :deep(li) {
+  margin-bottom: 5px;
+}
+
+.about-changelog :deep(code) {
+  background: rgba(15, 23, 38, 0.08);
+  border-radius: 4px;
+  color: var(--hict-surface-fg, #1f2937);
+  font-size: 0.92em;
+  padding: 1px 4px;
+}
+
+.about-changelog :deep(a) {
+  color: #0d6efd;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.about-changelog :deep(a:hover) {
+  text-decoration: underline;
 }
 
 .attribution-panel {
@@ -1505,5 +1980,41 @@ function onAssemblyAGPRequest() {
   margin-top: 2px;
   max-width: 260px;
   white-space: normal;
+}
+
+.resolution-limit-grid {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 1fr 1fr;
+}
+
+.resolution-list {
+  display: grid;
+  gap: 0.25rem;
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.resolution-settings-modal {
+  width: min(560px, 92vw);
+}
+
+.settings-description {
+  color: #5d6775;
+  font-size: 0.9rem;
+  margin: 0 0 0.75rem;
+}
+
+.osd-field-row {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  margin-top: 0.35rem;
+}
+
+.osd-field-row .form-check-label {
+  font-size: 0.86rem;
+  white-space: nowrap;
 }
 </style>

@@ -131,16 +131,36 @@
     <div id="right-header-block" class="header-block">
       <button
         id="reload-tiles-button"
-        class="btn-sm btn-outline-primary"
+        class="btn btn-sm btn-outline-primary"
         type="button"
         @click="reloadTiles"
       >
-        Reload tiles
+        <span><i class="bi bi-arrow-clockwise me-1"></i>Reload tiles</span>
       </button>
       <div class="export-group">
         <button
+          id="toggle-osd-button"
+          class="btn btn-sm btn-outline-primary"
+          type="button"
+          @click="osdOverlayVisible = !osdOverlayVisible"
+          :title="osdOverlayVisible ? 'Hide map information overlay' : 'Show map information overlay'"
+        >
+          <i class="bi bi-card-text" aria-hidden="true"></i>
+          OSD
+        </button>
+        <button
+          id="ruler-mode-button"
+          class="btn btn-sm btn-outline-primary"
+          type="button"
+          @click="cycleRulerMode"
+          :title="`Cycle ruler coordinate mode. Current: ${rulerModeLabel}`"
+        >
+          <i class="bi bi-rulers me-1" aria-hidden="true"></i>
+          {{ rulerModeLabel }}
+        </button>
+        <button
           id="export-svg-button"
-          class="btn-sm btn-outline-primary"
+          class="btn btn-sm btn-outline-primary"
           type="button"
           :disabled="exportingType !== null"
           @click="exportSvg"
@@ -156,7 +176,7 @@
         </button>
         <button
           id="export-png-button"
-          class="btn-sm btn-outline-primary"
+          class="btn btn-sm btn-outline-primary"
           type="button"
           :disabled="exportingType !== null"
           @click="exportPng"
@@ -172,7 +192,7 @@
         </button>
         <button
           id="export-pdf-button"
-          class="btn-sm btn-outline-primary"
+          class="btn btn-sm btn-outline-primary"
           type="button"
           :disabled="exportingType !== null"
           @click="exportPdf"
@@ -194,10 +214,11 @@
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import NormalizationSelector from "./NormalizationSelector.vue";
-import { Ref, onBeforeUnmount, ref } from "vue";
+import { Ref, computed, onBeforeUnmount, ref } from "vue";
 import { toast } from "vue-sonner";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { storeToRefs } from "pinia";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 
@@ -205,6 +226,8 @@ const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
 
+const uiSettingsStore = useUiSettingsStore();
+const { osdOverlayVisible, rulerCoordinateMode } = storeToRefs(uiSettingsStore);
 const rowContigId: Ref<number | null> = ref(null);
 const columnContigId: Ref<number | null> = ref(null);
 const exportingType = ref<"svg" | "png" | "pdf" | null>(null);
@@ -241,6 +264,27 @@ const {
   signalDisplayMode,
   colormap,
 } = storeToRefs(visualizationOptionsStore);
+
+const rulerModeLabel = computed(() => {
+  switch (rulerCoordinateMode.value) {
+    case "contig":
+      return "Ruler: in-ctg";
+    case "scaffold":
+      return "Ruler: in-scf";
+    default:
+      return "Ruler: Global";
+  }
+});
+
+function cycleRulerMode(): void {
+  rulerCoordinateMode.value =
+    rulerCoordinateMode.value === "global"
+      ? "contig"
+      : rulerCoordinateMode.value === "contig"
+        ? "scaffold"
+        : "global";
+  props.mapManager?.getLayersManager().scheduleRulerRender();
+}
 
 async function exportSvg() {
   if (!props.mapManager || exportingType.value) return;

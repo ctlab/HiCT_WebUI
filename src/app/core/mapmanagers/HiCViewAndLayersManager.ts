@@ -161,6 +161,9 @@ class HiCViewAndLayersManager {
   private secondaryResolutionSet?: SourceResolutionDescriptorSet;
   private wheelZoomInteraction?: ContigMouseWheelZoom;
   private coordinateBaseBp: number;
+  private enabledBpResolutions?: Set<number>;
+  private rulerRenderCallback: (() => void) | null = null;
+  private readonly pendingFeatureStyleRefreshHandles = new Set<number>();
 
   public selectionCollections: {
     readonly selectedContigFeatures: Collection<Feature<Geometry>>;
@@ -428,10 +431,74 @@ class HiCViewAndLayersManager {
     resolutions: number[];
     pixelResolutionSet: number[];
   } {
-    return getNavigationResolutionModelForSets(
-      this.primaryResolutionSet,
-      this.secondaryResolutionSet
+    const descriptors = [
+      ...this.getEnabledResolutionTuples(this.primaryResolutionSet),
+      ...(this.secondaryResolutionSet
+        ? this.getEnabledResolutionTuples(this.secondaryResolutionSet)
+        : []),
+    ].sort((a, b) => a.pixelResolution - b.pixelResolution);
+    const byPixelResolution = new Map<number, LayerResolutionDescriptor>();
+    for (const descriptor of descriptors) {
+      if (!byPixelResolution.has(descriptor.pixelResolution)) {
+        byPixelResolution.set(descriptor.pixelResolution, descriptor);
+      }
+    }
+    const uniqueDescriptors = [...byPixelResolution.values()].sort(
+      (a, b) => a.pixelResolution - b.pixelResolution
     );
+    if (uniqueDescriptors.length === 0) {
+      return getNavigationResolutionModelForSets(
+        this.primaryResolutionSet,
+        this.secondaryResolutionSet
+      );
+    }
+    return {
+      resolutions: uniqueDescriptors.map((descriptor) => descriptor.bpResolution),
+      pixelResolutionSet: uniqueDescriptors.map(
+        (descriptor) => descriptor.pixelResolution
+      ),
+    };
+  }
+
+  public getAllNavigationBpResolutions(): number[] {
+    return Array.from(
+      new Set([
+        ...this.primaryResolutionSet.resolutions,
+        ...(this.secondaryResolutionSet?.resolutions ?? []),
+      ])
+    ).sort((a, b) => a - b);
+  }
+
+  public getEnabledBpResolutions(): number[] {
+    const all = this.getAllNavigationBpResolutions();
+    if (!this.enabledBpResolutions || this.enabledBpResolutions.size === 0) {
+      return all;
+    }
+    return all.filter((resolution) => this.enabledBpResolutions?.has(resolution));
+  }
+
+  public setEnabledBpResolutions(resolutions: number[]): void {
+    const valid = new Set(this.getAllNavigationBpResolutions());
+    const next = resolutions
+      .map((resolution) => Number(resolution))
+      .filter((resolution) => Number.isFinite(resolution) && valid.has(resolution));
+    this.enabledBpResolutions = next.length > 0 ? new Set(next) : undefined;
+    this.updateWheelZoomResolutionModel();
+    this.updateProjectionAndViewExtent(1);
+    this.updateCurrentHiCViewState();
+    this.mapManager.getMap().changed();
+  }
+
+  private getEnabledResolutionTuples(
+    set: SourceResolutionDescriptorSet
+  ): LayerResolutionDescriptor[] {
+    if (!this.enabledBpResolutions || this.enabledBpResolutions.size === 0) {
+      return set.resolutionTuples;
+    }
+    const filtered = set.resolutionTuples.filter((tuple) =>
+      this.enabledBpResolutions?.has(tuple.bpResolution)
+    );
+    return filtered.length > 0 ? filtered : set.resolutionTuples;
   }
 
   public getVectorResolutionTuples(): LayerResolutionDescriptor[] {
@@ -848,14 +915,6 @@ class HiCViewAndLayersManager {
     track: Track2DSymmetric,
     layersCollection: Layer[] = this.layersHolder.track2DLayers
   ) {
-    console.log(
-      "Adding track: ",
-      track,
-      " is it Track2DSymmetric: ",
-      track instanceof Track2DSymmetric,
-      " is it ContigBordersTrack2D: ",
-      track instanceof ContigBordersTrack2D
-    );
     this.getVectorResolutionTuples().forEach(
       ({ bpResolution, pixelResolution }) => {
         const vectorSource = new VectorSource();
@@ -989,7 +1048,24 @@ class HiCViewAndLayersManager {
     if (!set) {
       throw new Error(`No resolutions available for ${sourceName}`);
     }
-    return getResolutionDescriptorForViewResolution(set, viewResolution);
+    const tuples = this.getEnabledResolutionTuples(set);
+    if (tuples.length === set.resolutionTuples.length) {
+      return getResolutionDescriptorForViewResolution(set, viewResolution);
+    }
+    let descriptor = tuples[0];
+    const sorted = [...tuples].sort(
+      (a, b) =>
+        a.layerResolutionBorders.minResolutionInclusive -
+        b.layerResolutionBorders.minResolutionInclusive
+    );
+    for (const tuple of sorted) {
+      if (tuple.layerResolutionBorders.minResolutionInclusive <= viewResolution) {
+        descriptor = tuple;
+      } else {
+        break;
+      }
+    }
+    return descriptor;
   }
 
   public getVisibleSourceResolutionDescriptors(): {
@@ -1251,6 +1327,7 @@ class HiCViewAndLayersManager {
           rulerV.render({ map } as never);
         });
       };
+      this.rulerRenderCallback = scheduleRulerRender;
       map.on("moveend", scheduleRulerRender);
       view.on("change:center", scheduleRulerRender);
       view.on("change:resolution", scheduleRulerRender);
@@ -1262,11 +1339,20 @@ class HiCViewAndLayersManager {
     }
   }
 
+  public scheduleRulerRender(): void {
+    this.rulerRenderCallback?.();
+  }
+
   public dispose(): void {
     if (!this.mapManager.getMap()) {
       return;
     }
     try {
+      for (const handle of this.pendingFeatureStyleRefreshHandles) {
+        window.clearTimeout(handle);
+      }
+      this.pendingFeatureStyleRefreshHandles.clear();
+      this.rulerRenderCallback = null;
       this.mapManager.getMap().getControls().clear();
       const hRuler = document.getElementById("horizontal-ruler-div");
       if (hRuler) {
@@ -1592,18 +1678,63 @@ class HiCViewAndLayersManager {
     layers: Layer[],
     trackTypes: Set<string>
   ): void {
-    for (const features of track.features.values()) {
-      for (const feature of features) {
-        if (trackTypes.has(String(feature.get("trackType")))) {
-          feature.setStyle(track.style);
+    for (const layer of layers) {
+      const source = layer.getSource() as VectorSource | undefined;
+      if (!source) {
+        continue;
+      }
+      if (layer.getVisible()) {
+        for (const feature of source.getFeatures()) {
+          if (trackTypes.has(String(feature.get("trackType")))) {
+            feature.setStyle(track.style);
+          }
         }
+        source.changed();
+        layer.changed();
+      } else {
+        layer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, true);
       }
     }
-    for (const layer of layers) {
-      layer.getSource()?.changed();
-      layer.changed();
-    }
     this.mapManager.getMap().changed();
+    this.scheduleBackgroundGeneratedFeatureStyleRefresh(track, trackTypes);
+  }
+
+  private scheduleBackgroundGeneratedFeatureStyleRefresh(
+    track: Track2DSymmetric,
+    trackTypes: Set<string>
+  ): void {
+    const resolutionFeatureGroups = Array.from(track.features.values());
+    let groupIndex = 0;
+    let featureIndex = 0;
+    let handle: number | undefined;
+    const processChunk = () => {
+      if (handle !== undefined) {
+        this.pendingFeatureStyleRefreshHandles.delete(handle);
+        handle = undefined;
+      }
+      const deadline = performance.now() + 8;
+      while (groupIndex < resolutionFeatureGroups.length && performance.now() < deadline) {
+        const features = resolutionFeatureGroups[groupIndex];
+        while (featureIndex < features.length && performance.now() < deadline) {
+          const feature = features[featureIndex];
+          if (trackTypes.has(String(feature.get("trackType")))) {
+            feature.setStyle(track.style);
+          }
+          featureIndex += 1;
+        }
+        if (featureIndex >= features.length) {
+          groupIndex += 1;
+          featureIndex = 0;
+        }
+      }
+      if (groupIndex < resolutionFeatureGroups.length) {
+        handle = window.setTimeout(processChunk, 0);
+        this.pendingFeatureStyleRefreshHandles.add(handle);
+      }
+    };
+
+    handle = window.setTimeout(processChunk, 0);
+    this.pendingFeatureStyleRefreshHandles.add(handle);
   }
 
   private isVectorLayerDirty(layer: Layer | undefined): boolean {

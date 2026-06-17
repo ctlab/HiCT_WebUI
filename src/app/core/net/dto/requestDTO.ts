@@ -22,6 +22,7 @@
 import {
   ListFilesRequest,
   ListFilesDetailedRequest,
+  ListDirectoryRequest,
   OpenFileRequest,
   CloseFileRequest,
   AttachSessionRequest,
@@ -172,6 +173,8 @@ abstract class HiCTAPIRequestDTO<
         return new ListFilesRequestDTO(entity);
       case entity instanceof ListFilesDetailedRequest:
         return new ListFilesDetailedRequestDTO(entity);
+      case entity instanceof ListDirectoryRequest:
+        return new ListDirectoryRequestDTO(entity as ListDirectoryRequest);
       case entity instanceof ListCoolerFilesRequest:
         return new ListCoolerFilesRequestDTO(entity);
       case entity instanceof ListConvertibleMatrixFilesRequest:
@@ -500,6 +503,7 @@ class StartConversionJobRequestDTO extends HiCTAPIRequestDTO<StartConversionJobR
     return {
       filename: this.entity.options.filename,
       assemblyFilename: this.entity.options.assemblyFilename,
+      useCurrentAssembly: this.entity.options.useCurrentAssembly,
       direction: this.entity.options.direction,
       overwrite: this.entity.options.overwrite,
       resolutions: this.entity.options.resolutions,
@@ -507,6 +511,9 @@ class StartConversionJobRequestDTO extends HiCTAPIRequestDTO<StartConversionJobR
       compressionAlgorithm: this.entity.options.compressionAlgorithm,
       chunkSize: this.entity.options.chunkSize,
       parallelism: this.entity.options.parallelism,
+      exportMode: this.entity.options.exportMode,
+      exportAllResolutions: this.entity.options.exportAllResolutions,
+      buildResolutionPyramid: this.entity.options.buildResolutionPyramid,
       binTableFilename: this.entity.options.binTableFilename,
       chromSizesFilename: this.entity.options.chromSizesFilename,
       binSize: this.entity.options.binSize,
@@ -529,6 +536,9 @@ class StartBatchConversionJobsRequestDTO extends HiCTAPIRequestDTO<StartBatchCon
       compression: this.entity.options.compression,
       compressionAlgorithm: this.entity.options.compressionAlgorithm,
       chunkSize: this.entity.options.chunkSize,
+      exportMode: this.entity.options.exportMode,
+      exportAllResolutions: this.entity.options.exportAllResolutions,
+      buildResolutionPyramid: this.entity.options.buildResolutionPyramid,
       binTableFilename: this.entity.options.binTableFilename,
       chromSizesFilename: this.entity.options.chromSizesFilename,
       binSize: this.entity.options.binSize,
@@ -776,6 +786,14 @@ class ListFilesRequestDTO extends HiCTAPIRequestDTO<ListFilesRequest> {
 class ListFilesDetailedRequestDTO extends HiCTAPIRequestDTO<ListFilesDetailedRequest> {
   toDTO(): Record<string, unknown> {
     return {};
+  }
+}
+
+class ListDirectoryRequestDTO extends HiCTAPIRequestDTO<ListDirectoryRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      directory: this.entity.options.directory,
+    };
   }
 }
 
@@ -1030,6 +1048,7 @@ export {
   OpenFileRequestDTO,
   ListFilesRequestDTO,
   ListFilesDetailedRequestDTO,
+  ListDirectoryRequestDTO,
   CloseFileRequestDTO,
   AttachSessionRequestDTO,
   ResolveMatrixSourceRequestDTO,

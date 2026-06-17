@@ -61,6 +61,16 @@ class ListFilesDetailedRequest implements HiCTAPIRequest {
   requestPath = "/list_files_detailed";
 }
 
+class ListDirectoryRequest implements HiCTAPIRequest {
+  requestPath = "/list_directory";
+
+  public constructor(
+    public readonly options: {
+      readonly directory: string;
+    }
+  ) {}
+}
+
 class ListFASTAFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_fasta_files";
 }
@@ -184,6 +194,7 @@ class StartConversionJobRequest implements HiCTAPIRequest {
     public readonly options: {
       readonly filename: string;
       readonly assemblyFilename?: string;
+      readonly useCurrentAssembly?: boolean;
       readonly direction?: string;
       readonly overwrite?: boolean;
       readonly resolutions?: string;
@@ -191,6 +202,9 @@ class StartConversionJobRequest implements HiCTAPIRequest {
       readonly compressionAlgorithm?: string;
       readonly chunkSize?: number;
       readonly parallelism?: number;
+      readonly exportMode?: string;
+      readonly exportAllResolutions?: boolean;
+      readonly buildResolutionPyramid?: boolean;
       readonly binTableFilename?: string;
       readonly chromSizesFilename?: string;
       readonly binSize?: number;
@@ -215,6 +229,9 @@ class StartBatchConversionJobsRequest implements HiCTAPIRequest {
       readonly compression?: number;
       readonly compressionAlgorithm?: string;
       readonly chunkSize?: number;
+      readonly exportMode?: string;
+      readonly exportAllResolutions?: boolean;
+      readonly buildResolutionPyramid?: boolean;
       readonly binTableFilename?: string;
       readonly chromSizesFilename?: string;
       readonly binSize?: number;
@@ -730,6 +747,7 @@ export {
   OpenFileRequest,
   ListFilesRequest,
   ListFilesDetailedRequest,
+  ListDirectoryRequest,
   GroupContigsIntoScaffoldRequest,
   UngroupContigsFromScaffoldRequest,
   ReverseSelectionRangeRequest,

@@ -56,6 +56,7 @@ import {
   ListAGPFilesRequest,
   ListCoolerFilesRequest,
   ListConvertibleMatrixFilesRequest,
+  ListDirectoryRequest,
   ListFilesDetailedRequest,
   ListFASTAFilesRequest,
   ListFilesRequest,
@@ -542,6 +543,14 @@ class RequestManager {
       );
   }
 
+  public async listDirectory(directory = ""): Promise<FileEntryResponse[]> {
+    return this.sendRequest(new ListDirectoryRequest({ directory }))
+      .then((response) => response.data as Record<string, unknown>[])
+      .then((items) =>
+        items.map((item) => new FileEntryResponseDTO(item).toEntity())
+      );
+  }
+
   public async listCoolers(): Promise<string[]> {
     const response = await this.sendRequest(new ListCoolerFilesRequest());
     return response.data as string[];
@@ -1017,6 +1026,20 @@ class RequestManager {
       .get(`${host}/version`)
       .then((resp) => resp.data ?? { version: "unknown" })
       .catch(() => "unknown");
+  }
+
+  public async getChangelog(): Promise<string> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    return axios
+      .get(`${host}/changelog`, { headers: { Accept: "application/json" } })
+      .then((resp) => {
+        const data = resp.data;
+        if (typeof data === "string") {
+          return data;
+        }
+        return String(data?.text ?? "Changelog for this build was not detected");
+      })
+      .catch(() => "Changelog for this build was not detected");
   }
 
   public async queryMatrixFloat32(options: {
