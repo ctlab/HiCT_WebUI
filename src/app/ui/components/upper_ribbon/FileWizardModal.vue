@@ -1585,7 +1585,10 @@ const resolveMatrixSource = async (
   source.resolution = null;
   source.resolving = true;
   try {
-    const response = await props.networkManager.requestManager.resolveMatrixSource(filename);
+    const response = await props.networkManager.requestManager.resolveMatrixSource(filename, {
+      buildResolutionPyramid: buildResolutionPyramid.value,
+      balanceInputCoolers: balanceInputCoolers.value,
+    });
     if (source.resolveRequestId !== requestId) {
       return;
     }

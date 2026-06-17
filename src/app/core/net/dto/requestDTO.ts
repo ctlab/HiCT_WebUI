@@ -824,6 +824,8 @@ class ResolveMatrixSourceRequestDTO extends HiCTAPIRequestDTO<ResolveMatrixSourc
   toDTO(): Record<string, unknown> {
     return {
       filename: this.entity.options.filename,
+      buildResolutionPyramid: this.entity.options.buildResolutionPyramid,
+      balanceInputCoolers: this.entity.options.balanceInputCoolers,
     };
   }
 }

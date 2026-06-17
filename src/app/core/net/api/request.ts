@@ -97,6 +97,8 @@ class ResolveMatrixSourceRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       readonly filename: string;
+      readonly buildResolutionPyramid?: boolean;
+      readonly balanceInputCoolers?: boolean;
     }
   ) {}
 }
