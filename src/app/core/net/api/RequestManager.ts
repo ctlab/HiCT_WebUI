@@ -569,9 +569,13 @@ class RequestManager {
   }
 
   public async resolveMatrixSource(
-    filename: string
+    filename: string,
+    options: {
+      readonly buildResolutionPyramid?: boolean;
+      readonly balanceInputCoolers?: boolean;
+    } = {}
   ): Promise<MatrixSourceResolutionResponse> {
-    return this.sendRequest(new ResolveMatrixSourceRequest({ filename }))
+    return this.sendRequest(new ResolveMatrixSourceRequest({ filename, ...options }))
       .then((response) => response.data)
       .then((json) => new MatrixSourceResolutionResponseDTO(json).toEntity());
   }
