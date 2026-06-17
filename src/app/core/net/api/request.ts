@@ -196,6 +196,7 @@ class StartConversionJobRequest implements HiCTAPIRequest {
       readonly assemblyFilename?: string;
       readonly useCurrentAssembly?: boolean;
       readonly direction?: string;
+      readonly outputFilename?: string;
       readonly overwrite?: boolean;
       readonly resolutions?: string;
       readonly compression?: number;
@@ -205,6 +206,8 @@ class StartConversionJobRequest implements HiCTAPIRequest {
       readonly exportMode?: string;
       readonly exportAllResolutions?: boolean;
       readonly buildResolutionPyramid?: boolean;
+      readonly balanceInputCoolers?: boolean;
+      readonly balanceExportedCoolers?: boolean;
       readonly binTableFilename?: string;
       readonly chromSizesFilename?: string;
       readonly binSize?: number;
@@ -232,6 +235,8 @@ class StartBatchConversionJobsRequest implements HiCTAPIRequest {
       readonly exportMode?: string;
       readonly exportAllResolutions?: boolean;
       readonly buildResolutionPyramid?: boolean;
+      readonly balanceInputCoolers?: boolean;
+      readonly balanceExportedCoolers?: boolean;
       readonly binTableFilename?: string;
       readonly chromSizesFilename?: string;
       readonly binSize?: number;
