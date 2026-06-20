@@ -1301,6 +1301,17 @@ class LinearTrackManager {
   ): void {
     const laneCenter = (laneInnerStart + laneInnerEnd) / 2;
     const laneHeight = Math.max(1, laneInnerEnd - laneInnerStart);
+    if (this.isFeatureDensityBin(bin)) {
+      this.drawHorizontalFeatureDensityBin(
+        ctx,
+        laneInnerStart,
+        laneInnerEnd,
+        x0,
+        x1,
+        bin.count
+      );
+      return;
+    }
     const connectorHeight = Math.max(1, Math.round(laneHeight * 0.12));
     const exonHeight = Math.max(2, Math.round(laneHeight * 0.34));
     const codingHeight = Math.max(exonHeight + 1, Math.round(laneHeight * 0.5));
@@ -1405,6 +1416,17 @@ class LinearTrackManager {
   ): void {
     const laneCenter = (laneInnerStart + laneInnerEnd) / 2;
     const laneWidth = Math.max(1, laneInnerEnd - laneInnerStart);
+    if (this.isFeatureDensityBin(bin)) {
+      this.drawVerticalFeatureDensityBin(
+        ctx,
+        laneInnerStart,
+        laneInnerEnd,
+        y0,
+        y1,
+        bin.count
+      );
+      return;
+    }
     const connectorWidth = Math.max(1, Math.round(laneWidth * 0.12));
     const exonWidth = Math.max(2, Math.round(laneWidth * 0.34));
     const codingWidth = Math.max(exonWidth + 1, Math.round(laneWidth * 0.5));
@@ -1507,7 +1529,7 @@ class LinearTrackManager {
       return;
     }
     const arrowSpacing = 16;
-    const arrowSize = 3;
+    const arrowSize = 4;
     const arrowY = Math.floor(laneCenter);
     ctx.beginPath();
     if (strand === "+") {
@@ -1523,7 +1545,7 @@ class LinearTrackManager {
         ctx.lineTo(x + arrowSize, arrowY + arrowSize);
       }
     }
-    ctx.fill();
+    this.strokeAndFillFeaturePath(ctx);
   }
 
   private drawFeatureDirectionArrowsVertical(
@@ -1537,7 +1559,7 @@ class LinearTrackManager {
       return;
     }
     const arrowSpacing = 16;
-    const arrowSize = 3;
+    const arrowSize = 4;
     const arrowX = Math.floor(laneCenter);
     ctx.beginPath();
     if (strand === "+") {
@@ -1553,7 +1575,7 @@ class LinearTrackManager {
         ctx.lineTo(arrowX + arrowSize, y + arrowSize);
       }
     }
-    ctx.fill();
+    this.strokeAndFillFeaturePath(ctx);
   }
 
   private drawFeatureTerminalTriangleHorizontal(
@@ -1583,7 +1605,7 @@ class LinearTrackManager {
       ctx.lineTo(x + triangleSize, y + triangleSize);
     }
     ctx.closePath();
-    ctx.fill();
+    this.strokeAndFillFeaturePath(ctx);
   }
 
   private drawFeatureTerminalTriangleVertical(
@@ -1613,6 +1635,66 @@ class LinearTrackManager {
       ctx.lineTo(x + triangleSize, y + triangleSize);
     }
     ctx.closePath();
+    this.strokeAndFillFeaturePath(ctx);
+  }
+
+  private isFeatureDensityBin(bin: TrackBinResponse): boolean {
+    return (
+      (bin.count ?? 0) > 1 &&
+      !(bin.label ?? "").trim() &&
+      (bin.strand !== "+" && bin.strand !== "-") &&
+      (!bin.blocks || bin.blocks.length === 0)
+    );
+  }
+
+  private drawHorizontalFeatureDensityBin(
+    ctx: CanvasRenderingContext2D,
+    laneInnerStart: number,
+    laneInnerEnd: number,
+    x0: number,
+    x1: number,
+    count: number
+  ): void {
+    const laneHeight = Math.max(1, laneInnerEnd - laneInnerStart);
+    const intensity = Math.min(0.72, 0.22 + Math.log10(Math.max(1, count)) * 0.16);
+    ctx.save();
+    ctx.globalAlpha = intensity;
+    ctx.fillRect(x0, laneInnerStart, Math.max(1, x1 - x0), laneHeight);
+    ctx.globalAlpha = Math.min(0.95, intensity + 0.18);
+    const centerY = Math.floor((laneInnerStart + laneInnerEnd) / 2);
+    ctx.fillRect(x0, centerY - 1, Math.max(1, x1 - x0), 2);
+    ctx.restore();
+  }
+
+  private drawVerticalFeatureDensityBin(
+    ctx: CanvasRenderingContext2D,
+    laneInnerStart: number,
+    laneInnerEnd: number,
+    y0: number,
+    y1: number,
+    count: number
+  ): void {
+    const laneWidth = Math.max(1, laneInnerEnd - laneInnerStart);
+    const intensity = Math.min(0.72, 0.22 + Math.log10(Math.max(1, count)) * 0.16);
+    ctx.save();
+    ctx.globalAlpha = intensity;
+    ctx.fillRect(laneInnerStart, y0, laneWidth, Math.max(1, y1 - y0));
+    ctx.globalAlpha = Math.min(0.95, intensity + 0.18);
+    const centerX = Math.floor((laneInnerStart + laneInnerEnd) / 2);
+    ctx.fillRect(centerX - 1, y0, 2, Math.max(1, y1 - y0));
+    ctx.restore();
+  }
+
+  private strokeAndFillFeaturePath(ctx: CanvasRenderingContext2D): void {
+    const fillStyle = ctx.fillStyle;
+    ctx.save();
+    ctx.strokeStyle = "rgba(15, 23, 42, 0.58)";
+    ctx.lineWidth = 2;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = fillStyle;
     ctx.fill();
   }
 
