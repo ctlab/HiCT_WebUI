@@ -667,6 +667,16 @@
                         :style="{ width: `${Math.round(runState.currentConversion.overallProgress * 100)}%` }"
                       ></div>
                     </div>
+                    <details
+                      v-if="runState.currentConversion.logs.length"
+                      class="wizard-conversion-log mt-2"
+                    >
+                      <summary>
+                        Conversion log
+                        <span class="text-muted">({{ runState.currentConversion.logs.length }} lines)</span>
+                      </summary>
+                      <pre>{{ runState.currentConversion.logs.join("\n") }}</pre>
+                    </details>
                   </div>
                 </div>
                 <div v-if="runState.error" class="alert alert-danger">{{ runState.error }}</div>
@@ -2197,6 +2207,25 @@ onMounted(() => {
 
 .wizard-precompute-row + .wizard-precompute-row {
   margin-top: 12px;
+}
+
+.wizard-conversion-log summary {
+  cursor: pointer;
+  font-weight: 600;
+  user-select: none;
+}
+
+.wizard-conversion-log pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e5e7eb;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 992px) {
