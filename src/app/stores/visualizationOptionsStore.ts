@@ -22,7 +22,9 @@
 import { defineStore } from "pinia";
 import { ref, Ref } from "vue";
 import SimpleLinearGradient from "../core/visualization/colormap/SimpleLinearGradient";
-import VisualizationOptions from "../core/visualization/VisualizationOptions";
+import VisualizationOptions, {
+  type CoolerWeightsNaNPolicy,
+} from "../core/visualization/VisualizationOptions";
 import Colormap from "../core/visualization/colormap/Colormap";
 import { ColorTranslator } from "colortranslator";
 
@@ -39,6 +41,10 @@ export const useVisualizationOptionsStore = defineStore(
     const signalDisplayMode = ref<VisualizationOptions["signalDisplayMode"]>(
       "OBSERVED"
     );
+    const coolerWeightsNaNPolicy =
+      ref<CoolerWeightsNaNPolicy>("REPLACE_NANS_WITH_ONE");
+    const coolerWeightsHaveNaNs = ref(false);
+    const coolerWeightsNaNCount = ref(0);
     const colormap: Ref<Colormap> = ref(
       new SimpleLinearGradient(
         new ColorTranslator("rgba(0,255,0,0.0)", { legacyCSS: true }),
@@ -58,7 +64,10 @@ export const useVisualizationOptionsStore = defineStore(
         colormap.value,
         autoThresholdEnabled.value,
         autoThresholdQuantile.value,
-        signalDisplayMode.value
+        signalDisplayMode.value,
+        coolerWeightsNaNPolicy.value,
+        coolerWeightsHaveNaNs.value,
+        coolerWeightsNaNCount.value
       );
     }
 
@@ -71,6 +80,10 @@ export const useVisualizationOptionsStore = defineStore(
       autoThresholdEnabled.value = options.autoThresholdEnabled ?? false;
       autoThresholdQuantile.value = options.autoThresholdQuantile ?? 0.995;
       signalDisplayMode.value = options.signalDisplayMode ?? "OBSERVED";
+      coolerWeightsNaNPolicy.value =
+        options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE";
+      coolerWeightsHaveNaNs.value = options.coolerWeightsHaveNaNs ?? false;
+      coolerWeightsNaNCount.value = options.coolerWeightsNaNCount ?? 0;
       colormap.value = options.colormap;
     }
 
@@ -83,6 +96,9 @@ export const useVisualizationOptionsStore = defineStore(
       autoThresholdEnabled,
       autoThresholdQuantile,
       signalDisplayMode,
+      coolerWeightsNaNPolicy,
+      coolerWeightsHaveNaNs,
+      coolerWeightsNaNCount,
       colormap,
       asVisualizationOptions,
       setVisualizationOptions,

@@ -70,6 +70,8 @@ export const serializeVisualizationOptions = (
       autoThresholdEnabled: options.autoThresholdEnabled ?? false,
       autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
       signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
+      coolerWeightsNaNPolicy:
+        options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
       colormap: {
         colormapType: cmap.colormapType,
         startColorRGBAString: cmap.startColorRGBA.RGBA,
@@ -88,6 +90,8 @@ export const serializeVisualizationOptions = (
     autoThresholdEnabled: options.autoThresholdEnabled ?? false,
     autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
     signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
+    coolerWeightsNaNPolicy:
+      options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
     colormap: {
       colormapType: options.colormap?.colormapType ?? "Unknown",
     },
@@ -124,6 +128,12 @@ export const deserializeVisualizationOptions = (
     raw.signalDisplayMode === "OBSERVED_OVER_EXPECTED"
       ? raw.signalDisplayMode
       : "OBSERVED";
+  const coolerWeightsNaNPolicy =
+    raw.coolerWeightsNaNPolicy === "DISABLE_WEIGHTS" ||
+    raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ZERO" ||
+    raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ONE"
+      ? raw.coolerWeightsNaNPolicy
+      : "REPLACE_NANS_WITH_ONE";
   const cmapRaw = isRecord(raw.colormap) ? raw.colormap : {};
   const cmapType =
     typeof cmapRaw.colormapType === "string"
@@ -161,7 +171,8 @@ export const deserializeVisualizationOptions = (
     cmap,
     autoThresholdEnabled,
     autoThresholdQuantile,
-    signalDisplayMode
+    signalDisplayMode,
+    coolerWeightsNaNPolicy
   );
 };
 

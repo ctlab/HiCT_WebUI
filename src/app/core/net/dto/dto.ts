@@ -33,7 +33,9 @@ import type {
 } from "../../domain/ScaffoldDescriptor";
 import Colormap from "../../visualization/colormap/Colormap";
 import SimpleLinearGradient from "../../visualization/colormap/SimpleLinearGradient";
-import VisualizationOptions from "../../visualization/VisualizationOptions";
+import VisualizationOptions, {
+  type CoolerWeightsNaNPolicy,
+} from "../../visualization/VisualizationOptions";
 import type { OpenFileResponse } from "../netcommon";
 
 abstract class InboundDTO<T> {
@@ -254,12 +256,28 @@ class VisualizationOptionsDTO extends InboundDTO<VisualizationOptions> {
       autoThresholdEnabled: e.autoThresholdEnabled,
       autoThresholdQuantile: e.autoThresholdQuantile,
       signalDisplayMode: e.signalDisplayMode,
+      coolerWeightsNaNPolicy: e.coolerWeightsNaNPolicy,
+      coolerWeightsHaveNaNs: e.coolerWeightsHaveNaNs,
+      coolerWeightsNaNCount: e.coolerWeightsNaNCount,
       colormap: ColormapDTO.fromEntity(e.colormap),
     });
   }
 
   public toEntity(): VisualizationOptions {
     // console.log("Called to entity: ", this);
+    const rawCoolerWeightsNaNPolicy = this.json["coolerWeightsNaNPolicy"];
+    const coolerWeightsNaNPolicy: CoolerWeightsNaNPolicy =
+      rawCoolerWeightsNaNPolicy === "DISABLE_WEIGHTS" ||
+      rawCoolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ZERO" ||
+      rawCoolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ONE"
+        ? rawCoolerWeightsNaNPolicy
+        : "REPLACE_NANS_WITH_ONE";
+    const rawCoolerWeightsNaNCount = this.json["coolerWeightsNaNCount"];
+    const coolerWeightsNaNCount =
+      typeof rawCoolerWeightsNaNCount === "number" &&
+      Number.isFinite(rawCoolerWeightsNaNCount)
+        ? Math.max(0, Math.trunc(rawCoolerWeightsNaNCount))
+        : 0;
     return new VisualizationOptions(
       this.json["preLogBase"] as number,
       this.json["postLogBase"] as number,
@@ -275,7 +293,10 @@ class VisualizationOptionsDTO extends InboundDTO<VisualizationOptions> {
         : 0.995,
       typeof this.json["signalDisplayMode"] === "string"
         ? (this.json["signalDisplayMode"] as VisualizationOptions["signalDisplayMode"])
-        : "OBSERVED"
+        : "OBSERVED",
+      coolerWeightsNaNPolicy,
+      Boolean(this.json["coolerWeightsHaveNaNs"] ?? false),
+      coolerWeightsNaNCount
     );
   }
 }

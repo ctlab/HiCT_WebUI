@@ -458,22 +458,34 @@ class ResetRenderPipelineRequestDTO extends HiCTAPIRequestDTO<ResetRenderPipelin
   }
 }
 
+function finiteNumberOr(value: unknown, fallback: number): number {
+  if (typeof value === "string" && value.trim() === "") {
+    return fallback;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
 class SetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<SetVisualizationOptionsRequest> {
   toDTO(): Record<string, unknown> {
+    const options = this.entity.options.options;
     return {
-      preLogBase: this.entity.options.options.preLogBase,
-      postLogBase: this.entity.options.options.postLogBase,
-      applyCoolerWeights: this.entity.options.options.applyCoolerWeights,
-      resolutionScaling: this.entity.options.options.resolutionScaling,
+      preLogBase: finiteNumberOr(options.preLogBase, -1),
+      postLogBase: finiteNumberOr(options.postLogBase, -1),
+      applyCoolerWeights: options.applyCoolerWeights,
+      resolutionScaling: options.resolutionScaling,
       resolutionLinearScaling:
-        this.entity.options.options.resolutionLinearScaling,
-      autoThresholdEnabled: this.entity.options.options.autoThresholdEnabled,
-      autoThresholdQuantile: this.entity.options.options.autoThresholdQuantile,
-      signalDisplayMode: this.entity.options.options.signalDisplayMode,
+        options.resolutionLinearScaling,
+      autoThresholdEnabled: options.autoThresholdEnabled,
+      autoThresholdQuantile: finiteNumberOr(
+        options.autoThresholdQuantile,
+        0.995
+      ),
+      signalDisplayMode: options.signalDisplayMode,
+      coolerWeightsNaNPolicy: options.coolerWeightsNaNPolicy,
       preserveRenderPipeline:
         this.entity.options.preserveRenderPipeline ?? false,
-      colormap: ColormapDTO.fromEntity(this.entity.options.options.colormap)
-        .json,
+      colormap: ColormapDTO.fromEntity(options.colormap).json,
     };
   }
 }

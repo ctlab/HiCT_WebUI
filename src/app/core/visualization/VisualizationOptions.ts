@@ -26,6 +26,11 @@ export type SignalDisplayMode =
   | "EXPECTED"
   | "OBSERVED_OVER_EXPECTED";
 
+export type CoolerWeightsNaNPolicy =
+  | "DISABLE_WEIGHTS"
+  | "REPLACE_NANS_WITH_ONE"
+  | "REPLACE_NANS_WITH_ZERO";
+
 export default class VisualizationOptions {
   public constructor(
     public readonly preLogBase: number,
@@ -36,6 +41,9 @@ export default class VisualizationOptions {
     public readonly colormap: Colormap,
     public readonly autoThresholdEnabled: boolean = false,
     public readonly autoThresholdQuantile: number = 0.995,
-    public readonly signalDisplayMode: SignalDisplayMode = "OBSERVED"
+    public readonly signalDisplayMode: SignalDisplayMode = "OBSERVED",
+    public readonly coolerWeightsNaNPolicy: CoolerWeightsNaNPolicy = "REPLACE_NANS_WITH_ONE",
+    public readonly coolerWeightsHaveNaNs: boolean = false,
+    public readonly coolerWeightsNaNCount: number = 0
   ) {}
 }

@@ -125,12 +125,17 @@
             log10 scale
           </label>
         </div>
-        <details v-if="applyCoolerWeights" class="cooler-weights-hint">
+        <details v-if="applyCoolerWeights" :class="coolerWeightsHintClass">
           <summary title="Cooler weights warning">
             <i class="bi bi-exclamation-triangle-fill"></i>
             Cooler weights
           </summary>
-          <div>
+          <div v-if="coolerWeightsHaveNaNs">
+            Detected {{ coolerWeightsNaNCount }} non-finite Cooler balancing
+            weight{{ coolerWeightsNaNCount === 1 ? "" : "s" }}. Selected tactic:
+            {{ coolerWeightsNaNPolicyLabel }}.
+          </div>
+          <div v-else>
             Bins with missing or near-zero weights can appear as white stripes;
             compare with an unweighted/raw preset before treating those regions
             as absent signal.
@@ -163,9 +168,15 @@ import { ColorTranslator } from "colortranslator";
 import type { CurrentSignalRangeResponse } from "@/app/core/net/api/response";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 const visualizationOptionsStore = useVisualizationOptionsStore();
-const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
-  visualizationOptionsStore
-);
+const {
+  preLogBase,
+  applyCoolerWeights,
+  postLogBase,
+  colormap,
+  coolerWeightsNaNPolicy,
+  coolerWeightsHaveNaNs,
+  coolerWeightsNaNCount,
+} = storeToRefs(visualizationOptionsStore);
 const matrixViewStore = useMatrixViewStore();
 const { presentationMode, activeVisualizationSource } = storeToRefs(matrixViewStore);
 
@@ -209,6 +220,23 @@ const gradstyle = computed<Record<string, string>>(() => ({
   margin: "0",
   "background-image": `linear-gradient(to right, ${fromColor.value.RGBA}, ${toColor.value.RGBA})`,
   color: "#ffffff",
+}));
+
+const coolerWeightsNaNPolicyLabel = computed(() => {
+  switch (coolerWeightsNaNPolicy.value) {
+    case "DISABLE_WEIGHTS":
+      return "do not use Cooler weights";
+    case "REPLACE_NANS_WITH_ZERO":
+      return "replace NaNs with weight 0";
+    case "REPLACE_NANS_WITH_ONE":
+    default:
+      return "replace NaNs with weight 1";
+  }
+});
+
+const coolerWeightsHintClass = computed(() => ({
+  "cooler-weights-hint": true,
+  "cooler-weights-hint_error": coolerWeightsHaveNaNs.value,
 }));
 
 const sliderMin = computed(() =>
@@ -785,6 +813,11 @@ function formatSignal(value: number): string {
   white-space: nowrap;
 }
 
+.cooler-weights-hint_error summary {
+  color: #b02a37;
+  font-weight: 700;
+}
+
 .cooler-weights-hint summary::-webkit-details-marker {
   display: none;
 }
@@ -794,6 +827,12 @@ function formatSignal(value: number): string {
   border-left: 3px solid #f0ad4e;
   border-radius: 0.35rem;
   background: rgba(240, 173, 78, 0.12);
+}
+
+.cooler-weights-hint_error[open] {
+  border-left-color: #dc3545;
+  background: rgba(220, 53, 69, 0.12);
+  color: #842029;
 }
 
 .cooler-weights-hint[open] summary {

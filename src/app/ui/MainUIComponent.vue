@@ -69,6 +69,79 @@
         </div>
       </div>
     </div>
+    <div v-if="coolerWeightsNaNPromptVisible">
+      <div class="modal-backdrop fade show cooler-weights-nan-backdrop"></div>
+      <div
+        class="modal fade show cooler-weights-nan-modal"
+        style="display: block"
+        tabindex="-1"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cooler-weights-nan-title"
+      >
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 id="cooler-weights-nan-title" class="modal-title">
+                Cooler weights contain NaNs
+              </h5>
+              <button
+                type="button"
+                class="btn-close"
+                aria-label="Close"
+                @click="
+                  chooseCoolerWeightsNaNPolicy('DISABLE_WEIGHTS', false)
+                "
+              ></button>
+            </div>
+            <div class="modal-body">
+              <p>
+                HiCT detected
+                {{ visualizationOptionsStore.coolerWeightsNaNCount }}
+                non-finite Cooler balancing weight{{
+                  visualizationOptionsStore.coolerWeightsNaNCount === 1
+                    ? ""
+                    : "s"
+                }}. These usually come from failed balancing iterations and can
+                make the map disappear when Cooler weights are enabled.
+              </p>
+              <p class="mb-0">
+                Choose how HiCT should render this dataset.
+              </p>
+            </div>
+            <div class="modal-footer cooler-weights-nan-actions">
+              <button
+                type="button"
+                class="btn btn-primary"
+                @click="
+                  chooseCoolerWeightsNaNPolicy('DISABLE_WEIGHTS', false)
+                "
+              >
+                Do not use Cooler weights
+              </button>
+              <button
+                type="button"
+                class="btn btn-success"
+                @click="
+                  chooseCoolerWeightsNaNPolicy('REPLACE_NANS_WITH_ONE', true)
+                "
+              >
+                Replace NaNs with weight 1.0
+              </button>
+              <button
+                type="button"
+                class="btn btn-danger"
+                @click="
+                  chooseCoolerWeightsNaNPolicy('REPLACE_NANS_WITH_ZERO', true)
+                "
+              >
+                Replace NaNs with weight 0
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <UpperFrame
       :networkManager="networkManager"
       :mapManager="mapManager"
@@ -112,7 +185,9 @@ import defaultOptions from "@/app/core/visualization/colormap/default_options.js
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { useStyleStore } from "@/app/stores/styleStore";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
-import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
+import VisualizationOptions, {
+  type CoolerWeightsNaNPolicy,
+} from "@/app/core/visualization/VisualizationOptions";
 import { ColorTranslator } from "colortranslator";
 import { LoadAGPRequest } from "@/app/core/net/api/request";
 import { LinkFASTARequest } from "@/app/core/net/api/request";
@@ -164,11 +239,20 @@ const openProgressStage = ref("starting");
 const openProgressPct = ref(0);
 let openProgressInFlight = false;
 const wizardOpen = ref(false);
+const coolerWeightsNaNPromptVisible = ref(false);
+let lastCoolerWeightsNaNPromptKey = "";
 
 useEscDismissableDialog({
   priority: 1050,
   isOpen: () => openProgressVisible.value,
   requestClose: closeOpenProgress,
+});
+
+useEscDismissableDialog({
+  priority: 1060,
+  isOpen: () => coolerWeightsNaNPromptVisible.value,
+  requestClose: () =>
+    void chooseCoolerWeightsNaNPolicy("DISABLE_WEIGHTS", false),
 });
 
 function startOpenProgress() {
@@ -237,6 +321,51 @@ function safeColorTranslator(
     return new ColorTranslator(value, { legacyCSS: true });
   } catch {
     return new ColorTranslator(fallback, { legacyCSS: true });
+  }
+}
+
+async function maybePromptCoolerWeightsNaNs(): Promise<void> {
+  const manager = mapManager.value;
+  if (!manager) {
+    return;
+  }
+  const options = await manager.visualizationManager
+    .fetchVisualizationOptions()
+    .catch(() => null);
+  if (!options?.coolerWeightsHaveNaNs) {
+    return;
+  }
+  const key = `${filename.value ?? ""}:${options.coolerWeightsNaNCount}`;
+  if (lastCoolerWeightsNaNPromptKey === key) {
+    return;
+  }
+  lastCoolerWeightsNaNPromptKey = key;
+  coolerWeightsNaNPromptVisible.value = true;
+}
+
+async function chooseCoolerWeightsNaNPolicy(
+  policy: CoolerWeightsNaNPolicy,
+  keepWeights: boolean
+): Promise<void> {
+  coolerWeightsNaNPromptVisible.value = false;
+  visualizationOptionsStore.coolerWeightsNaNPolicy = policy;
+  visualizationOptionsStore.applyCoolerWeights = keepWeights;
+  const manager = mapManager.value;
+  if (!manager) {
+    return;
+  }
+  try {
+    await manager.visualizationManager.sendVisualizationOptionsToServer({
+      skipAutoThresholdRefresh: true,
+    });
+    await manager.reloadTilesFromBackend();
+  } catch (error) {
+    const message =
+      (error as { response?: { data?: { error?: string } }; message?: string })
+        ?.response?.data?.error ??
+      (error as { message?: string })?.message ??
+      "Failed to apply Cooler weight policy";
+    toast.error(message);
   }
 }
 
@@ -309,6 +438,7 @@ function onAttached() {
         mapManager.value = newManager;
         networkManager.mapManager = mapManager.value;
         newManager.initializeMap();
+        void maybePromptCoolerWeightsNaNs();
         toast.success("Attached to session " + attachedName);
       }
     )
@@ -348,6 +478,8 @@ async function openFileWithOptions(
     newManager.initializeMap();
     if (options?.applyDefaultPreset !== false) {
       await applyDefaultVisualizationPreset();
+    } else {
+      await maybePromptCoolerWeightsNaNs();
     }
     if (ffname && ffname.trim() !== "") {
       try {
@@ -424,6 +556,7 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
     if (manager) {
       await manager.visualizationManager.applyOpeningFullMapQuantileThreshold();
       await manager.reloadTilesFromBackend();
+      await maybePromptCoolerWeightsNaNs();
     }
     return;
   }
@@ -505,6 +638,7 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
   });
   await manager.visualizationManager.applyOpeningFullMapQuantileThreshold();
   await manager.reloadTilesFromBackend();
+  await maybePromptCoolerWeightsNaNs();
 }
 
 function onAgpLoaded(filename: string): void {
@@ -529,6 +663,10 @@ function serializeCurrentVisualizationOptions(): Record<string, unknown> {
       autoThresholdEnabled: options.autoThresholdEnabled ?? false,
       autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
       signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
+      coolerWeightsNaNPolicy:
+        options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
+      coolerWeightsHaveNaNs: options.coolerWeightsHaveNaNs ?? false,
+      coolerWeightsNaNCount: options.coolerWeightsNaNCount ?? 0,
       colormap: {
         colormapType: cmap.colormapType,
         startColorRGBAString: cmap.startColorRGBA.RGBA,
@@ -547,6 +685,10 @@ function serializeCurrentVisualizationOptions(): Record<string, unknown> {
     autoThresholdEnabled: options.autoThresholdEnabled ?? false,
     autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
     signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
+    coolerWeightsNaNPolicy:
+      options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
+    coolerWeightsHaveNaNs: options.coolerWeightsHaveNaNs ?? false,
+    coolerWeightsNaNCount: options.coolerWeightsNaNCount ?? 0,
     colormap: {
       colormapType: options.colormap?.colormapType ?? "Unknown",
     },
@@ -674,6 +816,21 @@ async function onOpenSession(file: File): Promise<void> {
         visRaw["signalDisplayMode"] === "OBSERVED_OVER_EXPECTED"
           ? (visRaw["signalDisplayMode"] as "EXPECTED" | "OBSERVED_OVER_EXPECTED")
           : "OBSERVED";
+      const coolerWeightsNaNPolicy =
+        visRaw["coolerWeightsNaNPolicy"] === "DISABLE_WEIGHTS" ||
+        visRaw["coolerWeightsNaNPolicy"] === "REPLACE_NANS_WITH_ZERO" ||
+        visRaw["coolerWeightsNaNPolicy"] === "REPLACE_NANS_WITH_ONE"
+          ? (visRaw["coolerWeightsNaNPolicy"] as CoolerWeightsNaNPolicy)
+          : "REPLACE_NANS_WITH_ONE";
+      const currentOptions = visualizationOptionsStore.asVisualizationOptions();
+      const coolerWeightsHaveNaNs =
+        typeof visRaw["coolerWeightsHaveNaNs"] === "boolean"
+          ? visRaw["coolerWeightsHaveNaNs"]
+          : (currentOptions.coolerWeightsHaveNaNs ?? false);
+      const rawCoolerWeightsNaNCount = Number(visRaw["coolerWeightsNaNCount"]);
+      const coolerWeightsNaNCount = Number.isFinite(rawCoolerWeightsNaNCount)
+        ? Math.max(0, rawCoolerWeightsNaNCount)
+        : (currentOptions.coolerWeightsNaNCount ?? 0);
       const cmapObj = new SimpleLinearGradient(
         safeColorTranslator(startColor, "rgba(0,255,0,0.0)"),
         safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
@@ -690,7 +847,10 @@ async function onOpenSession(file: File): Promise<void> {
           cmapObj,
           autoThresholdEnabled,
           autoThresholdQuantile,
-          signalDisplayMode
+          signalDisplayMode,
+          coolerWeightsNaNPolicy,
+          coolerWeightsHaveNaNs,
+          coolerWeightsNaNCount
         )
       );
     }

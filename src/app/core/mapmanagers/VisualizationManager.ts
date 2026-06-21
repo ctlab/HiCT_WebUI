@@ -435,7 +435,10 @@ const visualizationOptionsFromTarget = (
     ),
     currentOptions.autoThresholdEnabled,
     currentOptions.autoThresholdQuantile,
-    currentOptions.signalDisplayMode
+    currentOptions.signalDisplayMode,
+    currentOptions.coolerWeightsNaNPolicy,
+    currentOptions.coolerWeightsHaveNaNs,
+    currentOptions.coolerWeightsNaNCount
   );
 
 const forceMinimumAlphaZero = (target: ColormapTarget): void => {
@@ -884,7 +887,10 @@ class VisualizationManager {
         ),
         options.autoThresholdEnabled,
         options.autoThresholdQuantile,
-        options.signalDisplayMode
+        options.signalDisplayMode,
+        options.coolerWeightsNaNPolicy,
+        options.coolerWeightsHaveNaNs,
+        options.coolerWeightsNaNCount
       )
     );
     return nextUpperBound;
@@ -1026,7 +1032,10 @@ class VisualizationManager {
           current.colormap,
           false,
           quantile,
-          current.signalDisplayMode
+          current.signalDisplayMode,
+          current.coolerWeightsNaNPolicy,
+          current.coolerWeightsHaveNaNs,
+          current.coolerWeightsNaNCount
         )
       );
       await this.sendVisualizationOptionsToServer({
@@ -1073,7 +1082,10 @@ class VisualizationManager {
         ),
         false,
         quantile,
-        options.signalDisplayMode
+        options.signalDisplayMode,
+        options.coolerWeightsNaNPolicy,
+        options.coolerWeightsHaveNaNs,
+        options.coolerWeightsNaNCount
       )
     );
     await this.sendVisualizationOptionsToServer({
