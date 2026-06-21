@@ -347,7 +347,7 @@ async function openFileWithOptions(
     networkManager.mapManager = mapManager.value;
     newManager.initializeMap();
     if (options?.applyDefaultPreset !== false) {
-      applyDefaultVisualizationPreset();
+      await applyDefaultVisualizationPreset();
     }
     if (ffname && ffname.trim() !== "") {
       try {
@@ -403,7 +403,7 @@ function displayNewMap() {
     });
 }
 
-function applyDefaultVisualizationPreset() {
+async function applyDefaultVisualizationPreset(): Promise<void> {
   const presets =
     (
       defaultOptions as unknown as {
@@ -420,6 +420,11 @@ function applyDefaultVisualizationPreset() {
     ).data?.savedVisualizationPresets ??
     [];
   if (!presets || presets.length === 0) {
+    const manager = mapManager.value;
+    if (manager) {
+      await manager.visualizationManager.applyOpeningFullMapQuantileThreshold();
+      await manager.reloadTilesFromBackend();
+    }
     return;
   }
   const first = presets[0] as Record<string, unknown>;
@@ -491,11 +496,15 @@ function applyDefaultVisualizationPreset() {
       .getLayersManager()
       .applyTrackStylePreset(trackStyles as never);
   }
-  mapManager.value?.visualizationManager
-    .sendVisualizationOptionsToServer()
-    .then(() => {
-      mapManager.value?.reloadTiles();
-    });
+  const manager = mapManager.value;
+  if (!manager) {
+    return;
+  }
+  await manager.visualizationManager.sendVisualizationOptionsToServer({
+    skipAutoThresholdRefresh: true,
+  });
+  await manager.visualizationManager.applyOpeningFullMapQuantileThreshold();
+  await manager.reloadTilesFromBackend();
 }
 
 function onAgpLoaded(filename: string): void {

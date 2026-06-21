@@ -32,7 +32,7 @@ import {
 } from "ol/geom";
 import Fill from "ol/style/Fill";
 import Stroke from "ol/style/Stroke";
-import Style from "ol/style/Style";
+import Style, { type StyleLike } from "ol/style/Style";
 import Text from "ol/style/Text";
 import Point from "ol/geom/Point";
 import { ContigHideType } from "../domain/common";
@@ -76,7 +76,7 @@ export enum NamePlacement {
 abstract class Track2DSymmetric extends Track2D {
   public features: Map<number, Feature<Geometry>[]> = new Map();
   public options: Track2DSymmetricOptions;
-  public style: Style;
+  public style: StyleLike;
   protected namePlacement: NamePlacement = NamePlacement.TOP;
   private static measureCanvas?: HTMLCanvasElement;
 
@@ -116,7 +116,16 @@ abstract class Track2DSymmetric extends Track2D {
   }
 
   public getStyle(): Style {
-    return this.style;
+    if (Array.isArray(this.style)) {
+      for (let i = this.style.length - 1; i >= 0; i -= 1) {
+        const candidate = this.style[i];
+        if (candidate instanceof Style) {
+          return candidate;
+        }
+      }
+      return new Style();
+    }
+    return this.style instanceof Style ? this.style : new Style();
   }
 
   public getStyleType(): BorderStyle {
@@ -127,7 +136,7 @@ abstract class Track2DSymmetric extends Track2D {
     // Default: non-ring tracks ignore border style changes.
   }
 
-  public generateStyleFunction(): () => Style {
+  public generateStyleFunction(): () => StyleLike {
     const style = new Style({
       stroke: new Stroke({
         color: this.options.borderColor,
@@ -303,6 +312,29 @@ abstract class WithRing extends Track2DSymmetric {
   public override getStyleType(): BorderStyle {
     return this.borderStyle;
   }
+  public override generateStyleFunction(): () => StyleLike {
+    const outlineStyle = new Style({
+      stroke: new Stroke({
+        color: "rgba(0,0,0,0.9)",
+        width: Math.max(1, this.options.width + 3),
+      }),
+      fill: new Fill({
+        color: "rgba(0,0,0,0)",
+      }),
+      zIndex: this.options.zIndex,
+    });
+    const innerStyle = new Style({
+      stroke: new Stroke({
+        color: this.options.borderColor,
+        width: this.options.width,
+      }),
+      fill: new Fill({
+        color: this.options.fillColor,
+      }),
+      zIndex: this.options.zIndex + 1,
+    });
+    return () => [outlineStyle, innerStyle];
+  }
   protected drawPolygon(
     topLeft: Array<number>,
     topRight: Array<number>,
@@ -367,13 +399,17 @@ class ContigBordersTrack2D extends WithRing {
     const viewAndLayersManager: HiCViewAndLayersManager =
       this.mapManager.getLayersManager();
     this.contigDimensionHolder.contigDescriptors.forEach((cd, contigOrder) => {
-      cd.presenceAtResolution.forEach((hideType, resolution) => {
+      this.contigDimensionHolder.resolutions.forEach((resolution) => {
         if (
           targetBpResolution !== undefined &&
           resolution !== targetBpResolution
         ) {
           return;
         }
+        const hideType = this.contigDimensionHolder.getPresenceAtResolution(
+          contigOrder,
+          resolution
+        );
         switch (hideType) {
           case ContigHideType.AUTO_HIDDEN:
           case ContigHideType.FORCED_HIDDEN:
@@ -712,9 +748,6 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
     }
     const viewAndLayersManager: HiCViewAndLayersManager =
       this.mapManager.getLayersManager();
-    let previousShown:
-      | { contigDescriptor: ContigDescriptor; contigOrder: number }
-      | undefined = undefined;
     this.contigDimensionHolder.resolutions.forEach((resolution) => {
       if (
         targetBpResolution !== undefined &&
@@ -722,108 +755,112 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
       ) {
         return;
       }
-      this.contigDimensionHolder.contigDescriptors.forEach(
-        (cd, contigOrder) => {
-          switch (cd.presenceAtResolution.get(resolution)) {
-            case ContigHideType.AUTO_HIDDEN:
-            case ContigHideType.FORCED_HIDDEN:
-              break;
-            case ContigHideType.AUTO_SHOWN:
-            case ContigHideType.FORCED_SHOWN: {
-              const prefixSum =
-                this.contigDimensionHolder.prefix_sum_px.get(resolution);
-              if (!prefixSum) {
-                throw new Error(
-                  `Can't get prefix sum for resolution ${resolution}`
-                );
-              }
+      let previousShown:
+        | { contigDescriptor: ContigDescriptor; contigOrder: number }
+        | undefined = undefined;
+      for (const [
+        contigOrder,
+        cd,
+      ] of this.contigDimensionHolder.contigDescriptors.entries()) {
+        const hideType = this.contigDimensionHolder.getPresenceAtResolution(
+          contigOrder,
+          resolution
+        );
+        switch (hideType) {
+          case ContigHideType.AUTO_HIDDEN:
+          case ContigHideType.FORCED_HIDDEN:
+            break;
+          case ContigHideType.AUTO_SHOWN:
+          case ContigHideType.FORCED_SHOWN: {
+            const prefixSum =
+              this.contigDimensionHolder.prefix_sum_px.get(resolution);
+            if (!prefixSum) {
+              throw new Error(
+                `Can't get prefix sum for resolution ${resolution}`
+              );
+            }
 
-              const multiPolygonRings = [];
+            const multiPolygonRings = [];
 
-              const pixelResolution =
-                viewAndLayersManager.getPixelResolutionForBpResolution(
-                  resolution
-                );
-              if (!pixelResolution) {
-                throw new Error(
-                  `Cannot get pixel resolution for bp resolution = ${resolution}`
-                );
-              }
+            const pixelResolution =
+              viewAndLayersManager.getPixelResolutionForBpResolution(
+                resolution
+              );
+            if (!pixelResolution) {
+              throw new Error(
+                `Cannot get pixel resolution for bp resolution = ${resolution}`
+              );
+            }
 
-              if (previousShown) {
-                const [fromPxL, toPxL] = [
-                  prefixSum[previousShown.contigOrder],
-                  prefixSum[1 + previousShown.contigOrder],
-                ];
-
-                const ringL = this.createLeftContigInsertionTriangle(
-                  fromPxL,
-                  toPxL,
-                  pixelResolution
-                );
-                if (ringL) {
-                  multiPolygonRings.push([ringL]);
-                }
-              } else {
-                previousShown = {
-                  contigDescriptor: cd,
-                  contigOrder: contigOrder,
-                };
-              }
-
-              const [fromPxR, toPxR] = [
-                prefixSum[contigOrder],
-                prefixSum[1 + contigOrder],
+            if (previousShown) {
+              const [fromPxL, toPxL] = [
+                prefixSum[previousShown.contigOrder],
+                prefixSum[1 + previousShown.contigOrder],
               ];
 
-              const ringR = this.createRightContigInsertionTriangle(
-                fromPxR,
-                toPxR,
+              const ringL = this.createLeftContigInsertionTriangle(
+                fromPxL,
+                toPxL,
                 pixelResolution
               );
-              if (ringR) {
-                multiPolygonRings.push([ringR]);
+              if (ringL) {
+                multiPolygonRings.push([ringL]);
               }
-
-              const lrArrow = new MultiPolygon(multiPolygonRings);
-
-              const multiPolygonFeature = new Feature({
-                name: `Arrow-between-${
-                  previousShown.contigDescriptor === cd
-                    ? "left-border-"
-                    : previousShown.contigDescriptor.contigName
-                }-and-${cd.contigName}-at-bp${resolution}`,
-                geometry: lrArrow,
-              });
-              multiPolygonFeature.setStyle(this.style);
-              multiPolygonFeature.set("trackType", "translocationArrows");
-              multiPolygonFeature.set("bpResolution", resolution);
-              multiPolygonFeature.set("pixelResolution", pixelResolution);
-              multiPolygonFeature.set(
-                "leftContigDescriptor",
-                previousShown.contigDescriptor === cd
-                  ? undefined
-                  : previousShown.contigDescriptor
-              );
-              multiPolygonFeature.set("rightContigDescriptor", cd);
-
-              this.features.get(resolution)?.push(multiPolygonFeature);
+            } else {
               previousShown = {
                 contigDescriptor: cd,
                 contigOrder: contigOrder,
               };
-
-              break;
             }
-            default:
-              throw new Error(
-                `Unrecognized contig hide type: ${cd.presenceAtResolution.get(
-                  resolution
-                )}`
-              );
+
+            const [fromPxR, toPxR] = [
+              prefixSum[contigOrder],
+              prefixSum[1 + contigOrder],
+            ];
+
+            const ringR = this.createRightContigInsertionTriangle(
+              fromPxR,
+              toPxR,
+              pixelResolution
+            );
+            if (ringR) {
+              multiPolygonRings.push([ringR]);
+            }
+
+            const lrArrow = new MultiPolygon(multiPolygonRings);
+
+            const multiPolygonFeature = new Feature({
+              name: `Arrow-between-${
+                previousShown.contigDescriptor === cd
+                  ? "left-border-"
+                  : previousShown.contigDescriptor.contigName
+              }-and-${cd.contigName}-at-bp${resolution}`,
+              geometry: lrArrow,
+            });
+            multiPolygonFeature.setStyle(this.style);
+            multiPolygonFeature.set("trackType", "translocationArrows");
+            multiPolygonFeature.set("bpResolution", resolution);
+            multiPolygonFeature.set("pixelResolution", pixelResolution);
+            multiPolygonFeature.set(
+              "leftContigDescriptor",
+              previousShown.contigDescriptor === cd
+                ? undefined
+                : previousShown.contigDescriptor
+            );
+            multiPolygonFeature.set("rightContigDescriptor", cd);
+
+            this.features.get(resolution)?.push(multiPolygonFeature);
+            previousShown = {
+              contigDescriptor: cd,
+              contigOrder: contigOrder,
+            };
+
+            break;
           }
+          default:
+            throw new Error(`Unrecognized contig hide type: ${hideType}`);
         }
-      );
+      }
       // Add right corner:
       if (previousShown) {
         const prefixSum =
@@ -875,7 +912,6 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
         this.features.get(resolution)?.push(multiPolygonFeature);
       }
 
-      previousShown = undefined;
     });
   }
 }

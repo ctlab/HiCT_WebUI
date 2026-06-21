@@ -60,12 +60,59 @@ type ColormapTarget = {
 };
 
 const BUILTIN_COOLER_WEIGHTS_TRACK_ID = "__builtin_cooler_weights__";
+const OPENING_THRESHOLD_QUANTILE = 0.9;
+const OPENING_THRESHOLD_MAX_MAP_SIZE_PX = 2000;
 
 const clampQuantile = (value: number): number => {
   if (!Number.isFinite(value)) {
     return 0.995;
   }
   return Math.min(0.999999, Math.max(0.5, value));
+};
+
+const swapNumbers = (values: number[], left: number, right: number): void => {
+  if (left === right) {
+    return;
+  }
+  const tmp = values[left];
+  values[left] = values[right];
+  values[right] = tmp;
+};
+
+const selectNthNumber = (values: number[], index: number): number | null => {
+  if (values.length === 0) {
+    return null;
+  }
+  const target = Math.max(0, Math.min(values.length - 1, Math.trunc(index)));
+  let left = 0;
+  let right = values.length - 1;
+  while (left <= right) {
+    const pivot = values[Math.floor((left + right) / 2)];
+    let lower = left;
+    let cursor = left;
+    let upper = right;
+    while (cursor <= upper) {
+      const value = values[cursor];
+      if (value < pivot) {
+        swapNumbers(values, lower, cursor);
+        lower += 1;
+        cursor += 1;
+      } else if (value > pivot) {
+        swapNumbers(values, cursor, upper);
+        upper -= 1;
+      } else {
+        cursor += 1;
+      }
+    }
+    if (target < lower) {
+      right = lower - 1;
+    } else if (target > upper) {
+      left = upper + 1;
+    } else {
+      return values[target] ?? pivot;
+    }
+  }
+  return values[target] ?? null;
 };
 
 const computeFiniteQuantile = (values: Float32Array, quantile: number): number | null => {
@@ -78,12 +125,11 @@ const computeFiniteQuantile = (values: Float32Array, quantile: number): number |
   if (filtered.length === 0) {
     return null;
   }
-  filtered.sort((left, right) => left - right);
   const position = Math.min(
     filtered.length - 1,
     Math.max(0, Math.floor(clampQuantile(quantile) * (filtered.length - 1)))
   );
-  return filtered[position] ?? filtered[filtered.length - 1] ?? null;
+  return selectNthNumber(filtered, position);
 };
 
 const computeFinitePositiveMax = (values: Float32Array): number | null => {
@@ -700,6 +746,54 @@ class VisualizationManager {
     );
   }
 
+  private resolveOpeningFullMapPixelBounds(
+    maxMapSizePx = OPENING_THRESHOLD_MAX_MAP_SIZE_PX
+  ): ViewportPixelBounds | null {
+    const safeMaxMapSizePx = Math.max(1, Math.floor(maxMapSizePx));
+    const viewAndLayersManager = this.mapManager.viewAndLayersManager;
+    const candidates = viewAndLayersManager.resolutionTuples
+      .map((descriptor) => {
+        const rawMapSizePx = Number(
+          viewAndLayersManager.imageSizes[descriptor.imageSizeIndex] ?? NaN
+        );
+        const mapSizePx = Number.isFinite(rawMapSizePx)
+          ? Math.max(1, Math.round(rawMapSizePx))
+          : NaN;
+        return { descriptor, mapSizePx };
+      })
+      .filter(({ descriptor, mapSizePx }) => {
+        return (
+          Number.isFinite(descriptor.bpResolution) &&
+          Number.isFinite(descriptor.pixelResolution) &&
+          descriptor.bpResolution > 0 &&
+          descriptor.pixelResolution > 0 &&
+          Number.isFinite(mapSizePx) &&
+          mapSizePx > 0 &&
+          mapSizePx <= safeMaxMapSizePx
+        );
+      })
+      .sort((left, right) => {
+        const byPixelResolution =
+          right.descriptor.pixelResolution - left.descriptor.pixelResolution;
+        if (Math.abs(byPixelResolution) > 1e-9) {
+          return byPixelResolution;
+        }
+        return right.descriptor.bpResolution - left.descriptor.bpResolution;
+      });
+
+    const selected = candidates[0];
+    if (!selected) {
+      return null;
+    }
+    return {
+      bpResolution: selected.descriptor.bpResolution,
+      startRowPx: 0,
+      endRowPx: selected.mapSizePx,
+      startColPx: 0,
+      endColPx: selected.mapSizePx,
+    };
+  }
+
   public async syncExpectedProfileToViewport(): Promise<boolean> {
     const options = this.visualizationOptionsStore.asVisualizationOptions();
     if (options.signalDisplayMode === "OBSERVED") {
@@ -796,16 +890,21 @@ class VisualizationManager {
     return nextUpperBound;
   }
 
-  private async syncPipelineAutoThresholdToViewport(
+  private async syncPipelineAutoThresholdForBounds(
+    bounds: ViewportPixelBounds,
     config?: Record<string, unknown>,
-    sourceFilter?: SourceName
+    sourceFilter?: SourceName,
+    behavior?: {
+      requireAutoThresholdEnabled?: boolean;
+      quantile?: number;
+      reloadTiles?: boolean;
+    }
   ): Promise<boolean> {
     const options = this.visualizationOptionsStore.asVisualizationOptions();
-    if (!options.autoThresholdEnabled) {
-      return false;
-    }
-    const bounds = this.resolveViewportPixelBounds();
-    if (!bounds) {
+    if (
+      (behavior?.requireAutoThresholdEnabled ?? true) &&
+      !options.autoThresholdEnabled
+    ) {
       return false;
     }
     const activeConfig = config ?? (await this.getActiveRenderPipelineConfig());
@@ -845,7 +944,7 @@ class VisualizationManager {
             target.profile,
             scalingCoefficients
           ),
-          options.autoThresholdQuantile,
+          behavior?.quantile ?? options.autoThresholdQuantile,
           target.minSignal,
           target.maxSignal
         );
@@ -870,8 +969,123 @@ class VisualizationManager {
     await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
       activeConfig
     );
-    await this.mapManager.reloadTilesFromBackend();
+    if (behavior?.reloadTiles !== false) {
+      await this.mapManager.reloadTilesFromBackend();
+    }
     return true;
+  }
+
+  private async syncPipelineAutoThresholdToViewport(
+    config?: Record<string, unknown>,
+    sourceFilter?: SourceName,
+    behavior?: {
+      requireAutoThresholdEnabled?: boolean;
+      quantile?: number;
+      reloadTiles?: boolean;
+    }
+  ): Promise<boolean> {
+    const bounds = this.resolveViewportPixelBounds();
+    if (!bounds) {
+      return false;
+    }
+    return this.syncPipelineAutoThresholdForBounds(
+      bounds,
+      config,
+      sourceFilter,
+      behavior
+    );
+  }
+
+  public async applyOpeningFullMapQuantileThreshold(
+    quantile = OPENING_THRESHOLD_QUANTILE
+  ): Promise<number | null> {
+    const bounds = this.resolveOpeningFullMapPixelBounds();
+    if (!bounds) {
+      return null;
+    }
+    const pipelineConfig = await this.getActiveRenderPipelineConfig();
+    if (pipelineConfig) {
+      await this.syncPipelineAutoThresholdForBounds(
+        bounds,
+        pipelineConfig,
+        undefined,
+        {
+          requireAutoThresholdEnabled: false,
+          quantile,
+          reloadTiles: false,
+        }
+      ).catch(() => false);
+      const current = this.visualizationOptionsStore.asVisualizationOptions();
+      this.visualizationOptionsStore.setVisualizationOptions(
+        new VisualizationOptions(
+          current.preLogBase,
+          current.postLogBase,
+          current.applyCoolerWeights,
+          current.resolutionScaling,
+          current.resolutionLinearScaling,
+          current.colormap,
+          false,
+          quantile,
+          current.signalDisplayMode
+        )
+      );
+      await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        preserveCustomPipeline: true,
+      });
+      return null;
+    }
+
+    const options = this.visualizationOptionsStore.asVisualizationOptions();
+    if (!(options.colormap instanceof SimpleLinearGradient)) {
+      return null;
+    }
+    const response = await this.mapManager.networkManager.requestManager.queryMatrixFloat32(
+      {
+        ...bounds,
+        signalMode: "TRADITIONAL_NORMALIZED",
+      }
+    );
+    const nextUpperBound = resolveSafeAutoUpperBound(
+      response.values,
+      quantile,
+      options.colormap.minSignal,
+      options.colormap.maxSignal
+    );
+    const updatedMaxSignal =
+      nextUpperBound != null &&
+      Number.isFinite(nextUpperBound) &&
+      nextUpperBound > options.colormap.minSignal
+        ? nextUpperBound
+        : options.colormap.maxSignal;
+    this.visualizationOptionsStore.setVisualizationOptions(
+      new VisualizationOptions(
+        options.preLogBase,
+        options.postLogBase,
+        options.applyCoolerWeights,
+        options.resolutionScaling,
+        options.resolutionLinearScaling,
+        new SimpleLinearGradient(
+          options.colormap.startColorRGBA,
+          options.colormap.endColorRGBA,
+          options.colormap.minSignal,
+          updatedMaxSignal
+        ),
+        false,
+        quantile,
+        options.signalDisplayMode
+      )
+    );
+    await this.sendVisualizationOptionsToServer({
+      skipAutoThresholdRefresh: true,
+    });
+    return updatedMaxSignal;
+  }
+
+  public async applyOpeningViewportQuantileThreshold(
+    quantile = OPENING_THRESHOLD_QUANTILE
+  ): Promise<number | null> {
+    return this.applyOpeningFullMapQuantileThreshold(quantile);
   }
 
   public async sendVisualizationOptionsToServer(options?: {

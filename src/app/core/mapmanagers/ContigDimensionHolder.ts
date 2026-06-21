@@ -73,7 +73,9 @@ export default class ContigDimensionHolder {
       if (!descriptor.contigLengthBins.has(resolution)) {
         descriptor.contigLengthBins.set(
           resolution,
-          Math.max(1, Math.ceil(descriptor.contigLengthBp / resolution))
+          descriptor.contigLengthBp > 0
+            ? Math.ceil(descriptor.contigLengthBp / resolution)
+            : 0
         );
       }
       if (!descriptor.presenceAtResolution.has(resolution)) {
@@ -91,27 +93,57 @@ export default class ContigDimensionHolder {
     descriptor: ContigDescriptor,
     resolution: number
   ): ContigHideType {
-    let bestResolution: number | undefined = undefined;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    descriptor.presenceAtResolution.forEach((_hideType, candidate) => {
-      if (!Number.isFinite(candidate) || candidate <= 0) {
-        return;
-      }
-      const distance = Math.abs(Math.log(candidate / resolution));
-      if (
-        distance < bestDistance ||
-        (distance === bestDistance &&
-          (bestResolution === undefined || candidate < bestResolution))
-      ) {
-        bestResolution = candidate;
-        bestDistance = distance;
-      }
-    });
-
-    return bestResolution === undefined
+    const lengthBins =
+      descriptor.contigLengthBins.get(resolution) ??
+      (descriptor.contigLengthBp > 0
+        ? Math.ceil(descriptor.contigLengthBp / resolution)
+        : 0);
+    return lengthBins > 0 && descriptor.contigLengthBp >= resolution
       ? ContigHideType.AUTO_SHOWN
-      : descriptor.presenceAtResolution.get(bestResolution) ??
-          ContigHideType.AUTO_SHOWN;
+      : ContigHideType.AUTO_HIDDEN;
+  }
+
+  private resolvePresenceAtResolution(
+    descriptor: ContigDescriptor,
+    resolution: number
+  ): ContigHideType {
+    return (
+      descriptor.presenceAtResolution.get(resolution) ??
+      this.inferPresenceAtResolution(descriptor, resolution)
+    );
+  }
+
+  public getPresenceAtResolution(
+    contigOrder: number,
+    resolution: number
+  ): ContigHideType {
+    const descriptor = this.contigDescriptors[contigOrder];
+    if (!descriptor) {
+      throw new Error(`Unknown contig order ${contigOrder}`);
+    }
+    return this.resolvePresenceAtResolution(descriptor, resolution);
+  }
+
+  private isHiddenAtResolution(
+    descriptor: ContigDescriptor,
+    resolution: number
+  ): boolean {
+    const hideType = this.resolvePresenceAtResolution(descriptor, resolution);
+    return (
+      hideType === ContigHideType.AUTO_HIDDEN ||
+      hideType === ContigHideType.FORCED_HIDDEN
+    );
+  }
+
+  private isShownPixelInterval(contigOrder: number, resolution: number): boolean {
+    const prefixSumPx = this.prefix_sum_px.get(resolution);
+    const descriptor = this.contigDescriptors[contigOrder];
+    return (
+      !!prefixSumPx &&
+      !!descriptor &&
+      !this.isHiddenAtResolution(descriptor, resolution) &&
+      prefixSumPx[contigOrder + 1] > prefixSumPx[contigOrder]
+    );
   }
 
   prefix_sum_bp: number[] = [];
@@ -184,9 +216,11 @@ export default class ContigDimensionHolder {
       const descriptor = this.contigDescriptors[ctgOrder];
       for (const resolution of this.resolutions) {
         const resolutionPrefixSum = prefixSumPx.get(resolution);
-        const hideTypeAtResolution =
-          descriptor.presenceAtResolution.get(resolution);
-        if (!resolutionPrefixSum || hideTypeAtResolution === undefined) {
+        const hideTypeAtResolution = this.resolvePresenceAtResolution(
+          descriptor,
+          resolution
+        );
+        if (!resolutionPrefixSum) {
           throw new Error(`Unknown resolution ${resolution} in updatePrefixSumPx`);
         }
         switch (hideTypeAtResolution) {
@@ -316,8 +350,38 @@ export default class ContigDimensionHolder {
     if (!prefix_sum_px) {
       throw new Error("Unknown resolution for prefix_sum_px: " + resolution);
     }
-    const contig_ord_containing_px = bounds.le(prefix_sum_px, px);
-    return CommonUtils.clamp(contig_ord_containing_px, 0, this.contig_count - 1);
+    const maxPx = prefix_sum_px[this.contig_count] - 1;
+    if (maxPx < 0) {
+      return 0;
+    }
+    const clampedPx = CommonUtils.clamp(Math.floor(px), 0, maxPx);
+    const containsPx = (contigOrder: number) =>
+      contigOrder >= 0 &&
+      contigOrder < this.contig_count &&
+      this.isShownPixelInterval(contigOrder, resolution) &&
+      prefix_sum_px[contigOrder] <= clampedPx &&
+      clampedPx < prefix_sum_px[contigOrder + 1];
+
+    let contig_ord_containing_px = CommonUtils.clamp(
+      bounds.le(prefix_sum_px, clampedPx),
+      0,
+      this.contig_count - 1
+    );
+    while (
+      contig_ord_containing_px >= 0 &&
+      !containsPx(contig_ord_containing_px)
+    ) {
+      contig_ord_containing_px -= 1;
+    }
+    if (contig_ord_containing_px >= 0) {
+      return contig_ord_containing_px;
+    }
+    for (let contigOrder = 0; contigOrder < this.contig_count; contigOrder += 1) {
+      if (containsPx(contigOrder)) {
+        return contigOrder;
+      }
+    }
+    return 0;
   }
 
   protected getStartBpOfBin_internal(
@@ -479,8 +543,10 @@ export default class ContigDimensionHolder {
       contig_ord
     ];
 
-    const contig_hide_type =
-      this.contigDescriptors[contig_ord].presenceAtResolution.get(resolution);
+    const contig_hide_type = this.resolvePresenceAtResolution(
+      this.contigDescriptors[contig_ord],
+      resolution
+    );
 
     switch (contig_hide_type) {
       case ContigHideType.AUTO_HIDDEN:
@@ -573,7 +639,8 @@ export default class ContigDimensionHolder {
       return false;
     }
     const contigOrd = this.getContigOrderByBp_internal(bp);
-    const hideType = this.contigDescriptors[contigOrd].presenceAtResolution.get(
+    const hideType = this.resolvePresenceAtResolution(
+      this.contigDescriptors[contigOrd],
       resolution
     );
     return (

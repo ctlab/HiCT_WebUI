@@ -668,14 +668,19 @@
                       ></div>
                     </div>
                     <details
-                      v-if="runState.currentConversion.logs.length"
+                      v-if="conversionLogVisibleLineCount > 0"
                       class="wizard-conversion-log mt-2"
+                      :open="conversionLogExpanded"
+                      @toggle="onConversionLogToggle"
                     >
                       <summary>
                         Conversion log
-                        <span class="text-muted">({{ runState.currentConversion.logs.length }} lines)</span>
+                        <span class="text-muted fw-normal">
+                          ({{ conversionLogVisibleLineCount }} line{{ conversionLogVisibleLineCount === 1 ? "" : "s" }}
+                          <span v-if="conversionLogTruncated">, tail only</span>)
+                        </span>
                       </summary>
-                      <pre>{{ runState.currentConversion.logs.join("\n") }}</pre>
+                      <pre v-if="conversionLogExpanded">{{ conversionLogText }}</pre>
                     </details>
                   </div>
                 </div>
@@ -758,7 +763,7 @@ import { useSessionStore } from "@/app/stores/sessionStore";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { ColorTranslator } from "colortranslator";
-import { computed, nextTick, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { toast } from "vue-sonner";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
@@ -831,6 +836,8 @@ const BLEND_MODES: WizardBlendMode[] = [
   "DARKEN",
   "XOR",
 ];
+const MAX_CONVERSION_LOG_LINES = 1_000;
+const CONVERSION_LOG_RENDER_DEBOUNCE_MS = 150;
 
 const emit = defineEmits<{
   (e: "dismissed"): void;
@@ -969,6 +976,80 @@ const runState = reactive<{
   currentConversion: null,
   trackPrecomputeStatus: null,
 });
+
+const conversionLogExpanded = ref(false);
+const conversionLogText = ref("");
+const conversionLogVisibleLineCount = ref(0);
+const conversionLogTruncated = ref(false);
+let conversionLogRenderTimer: number | null = null;
+
+const currentConversionLogs = (): string[] =>
+  runState.currentConversion?.logs ?? [];
+
+const hasConversionLogTruncationNotice = (logs: string[]): boolean =>
+  logs[0]?.startsWith("... omitted ") ?? false;
+
+const updateConversionLogMetadata = (): void => {
+  const logs = currentConversionLogs();
+  const hasNotice = hasConversionLogTruncationNotice(logs);
+  conversionLogVisibleLineCount.value = hasNotice
+    ? logs.length
+    : Math.min(logs.length, MAX_CONVERSION_LOG_LINES);
+  conversionLogTruncated.value =
+    logs.length > MAX_CONVERSION_LOG_LINES ||
+    hasNotice;
+};
+
+const renderConversionLogText = (): void => {
+  updateConversionLogMetadata();
+  if (!conversionLogExpanded.value) {
+    conversionLogText.value = "";
+    return;
+  }
+  const logs = currentConversionLogs();
+  const hasNotice = hasConversionLogTruncationNotice(logs);
+  const visibleLogs =
+    logs.length > MAX_CONVERSION_LOG_LINES && !hasNotice
+      ? logs.slice(logs.length - MAX_CONVERSION_LOG_LINES)
+      : logs;
+  conversionLogText.value = visibleLogs.join("\n");
+};
+
+const scheduleConversionLogRender = (immediate = false): void => {
+  if (conversionLogRenderTimer !== null) {
+    if (!immediate) {
+      return;
+    }
+    window.clearTimeout(conversionLogRenderTimer);
+    conversionLogRenderTimer = null;
+  }
+  if (immediate) {
+    renderConversionLogText();
+    return;
+  }
+  conversionLogRenderTimer = window.setTimeout(() => {
+    conversionLogRenderTimer = null;
+    renderConversionLogText();
+  }, CONVERSION_LOG_RENDER_DEBOUNCE_MS);
+};
+
+const onConversionLogToggle = (event: Event): void => {
+  conversionLogExpanded.value = (event.currentTarget as HTMLDetailsElement).open;
+  scheduleConversionLogRender(true);
+};
+
+watch(
+  () => runState.currentConversion?.logs,
+  () => {
+    if (conversionLogExpanded.value) {
+      scheduleConversionLogRender();
+    } else {
+      updateConversionLogMetadata();
+      conversionLogText.value = "";
+    }
+  },
+  { immediate: true }
+);
 
 const visibleSteps = computed(() => steps);
 
@@ -1955,7 +2036,9 @@ const runWizard = async (): Promise<void> => {
     );
     styleStore.setMapBackground(backgroundColor);
     visualizationOptionsStore.setVisualizationOptions(primaryPresetRecord.options);
-    await mapManager.visualizationManager.sendVisualizationOptionsToServer();
+    await mapManager.visualizationManager.sendVisualizationOptionsToServer({
+      skipAutoThresholdRefresh: true,
+    });
 
     if (
       viewMode.value === "single" &&
@@ -1975,6 +2058,7 @@ const runWizard = async (): Promise<void> => {
         pipelineConfig
       );
     }
+    await mapManager.visualizationManager.applyOpeningFullMapQuantileThreshold();
     await mapManager.reloadTilesFromBackend();
     applyWizardPresentationState();
 
@@ -2065,6 +2149,13 @@ onMounted(() => {
     .catch(() => {
       toolchainStatus.value = null;
     });
+});
+
+onBeforeUnmount(() => {
+  if (conversionLogRenderTimer !== null) {
+    window.clearTimeout(conversionLogRenderTimer);
+    conversionLogRenderTimer = null;
+  }
 });
 </script>
 
