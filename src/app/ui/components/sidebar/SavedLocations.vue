@@ -462,6 +462,7 @@ function renameContig(contigId: number): void {
     .then((asm) => {
       map.contigDimensionHolder.updateContigData(asm.contigDescriptors);
       map.scaffoldHolder.updateScaffoldData(asm.scaffoldDescriptors);
+      map.getLayersManager().reapplyAxisScopes();
       contigDirty.value.delete(contigId);
       map.getLayersManager().reloadTracks();
       map.reloadTiles();
@@ -481,6 +482,7 @@ function renameScaffold(scaffoldId: number): void {
     .then((asm) => {
       map.contigDimensionHolder.updateContigData(asm.contigDescriptors);
       map.scaffoldHolder.updateScaffoldData(asm.scaffoldDescriptors);
+      map.getLayersManager().reapplyAxisScopes();
       scaffoldDirty.value.delete(scaffoldId);
       map.getLayersManager().reloadTracks();
       map.reloadTiles();
@@ -579,6 +581,7 @@ function importNames(event: Event): void {
         .then((asm) => {
           map.contigDimensionHolder.updateContigData(asm.contigDescriptors);
           map.scaffoldHolder.updateScaffoldData(asm.scaffoldDescriptors);
+          map.getLayersManager().reapplyAxisScopes();
           map.reloadTiles();
           refreshAssemblyLists();
         })

@@ -350,6 +350,17 @@ class ContactMapManager {
       descriptor.bpResolution,
       this.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex] ?? 1
     );
+    const pixelBounds = this.viewAndLayersManager.getActiveMapPixelBounds(
+      descriptor.bpResolution
+    );
+    const mapWidthPx = Math.max(
+      1,
+      Math.min(mapSizePx, pixelBounds.colEndPx) - pixelBounds.colStartPx
+    );
+    const mapHeightPx = Math.max(
+      1,
+      Math.min(mapSizePx, pixelBounds.rowEndPx) - pixelBounds.rowStartPx
+    );
     const tileSize = this.options.tileSize;
 
     const layer =
@@ -369,10 +380,13 @@ class ContactMapManager {
     const tileUrlFn = source.getTileUrlFunction();
     const projection = this.map.getView().getProjection();
     const pixelRatio = window.devicePixelRatio ?? 1;
-    const tilesPerSide = Math.ceil(mapSizePx / tileSize);
     const tiles: { col: number; row: number; url: string }[] = [];
-    for (let row = 0; row < tilesPerSide; row++) {
-      for (let col = 0; col < tilesPerSide; col++) {
+    const firstTileCol = Math.floor(pixelBounds.colStartPx / tileSize);
+    const lastTileCol = Math.ceil(pixelBounds.colEndPx / tileSize) - 1;
+    const firstTileRow = Math.floor(pixelBounds.rowStartPx / tileSize);
+    const lastTileRow = Math.ceil(pixelBounds.rowEndPx / tileSize) - 1;
+    for (let row = firstTileRow; row <= lastTileRow; row++) {
+      for (let col = firstTileCol; col <= lastTileCol; col++) {
         const url = tileUrlFn([0, col, row], pixelRatio, projection);
         if (url) {
           const withPriority =
@@ -382,8 +396,8 @@ class ContactMapManager {
       }
     }
 
-    const width = mapSizePx;
-    const height = mapSizePx;
+    const width = mapWidthPx;
+    const height = mapHeightPx;
     const backgroundColor = options?.backgroundColor ?? "rgba(255,255,255,0)";
     const escapeAttr = ContactMapManager.escapeXml;
     const svgImages: string[] = [];
@@ -401,20 +415,10 @@ class ContactMapManager {
           const response = await fetch(tile.url);
           const data = await response.json();
           if (data && data.image) {
-            const x = tile.col * tileSize;
-            const y = tile.row * tileSize;
-            const tileWidth = Math.min(tileSize, width - x);
-            const tileHeight = Math.min(tileSize, height - y);
-            const imageHref =
-              tileWidth < tileSize || tileHeight < tileSize
-                ? await this.cropTileImageDataUrl(
-                    String(data.image),
-                    tileWidth,
-                    tileHeight
-                  )
-                : String(data.image);
+            const x = tile.col * tileSize - pixelBounds.colStartPx;
+            const y = tile.row * tileSize - pixelBounds.rowStartPx;
             svgImages.push(
-              `<image x=\"${x}\" y=\"${y}\" width=\"${tileWidth}\" height=\"${tileHeight}\" href=\"${escapeAttr(imageHref)}\" />`
+              `<image x=\"${x}\" y=\"${y}\" width=\"${tileSize}\" height=\"${tileSize}\" href=\"${escapeAttr(String(data.image))}\" />`
             );
           }
           completed += 1;
@@ -446,7 +450,7 @@ class ContactMapManager {
     }
 
     svg += svgImages.join("");
-    svg += this.exportTracksSvg(descriptor.bpResolution);
+    svg += this.exportTracksSvg(descriptor.bpResolution, pixelBounds);
     svg += `</svg>`;
 
     if (typeof DOMParser !== "undefined") {
@@ -614,15 +618,26 @@ class ContactMapManager {
     context: CanvasRenderingContext2D,
     options: {
       mapOffset: number;
-      mapSizePx: number;
+      mapWidthPx: number;
+      mapHeightPx: number;
+      colStartPx: number;
+      rowStartPx: number;
       trackPanelSizePx: number;
       rulerPanelSizePx: number;
       bpResolution: number;
       backgroundColor: string;
     }
   ): void {
-    const { mapOffset, mapSizePx, trackPanelSizePx, rulerPanelSizePx, bpResolution } =
-      options;
+    const {
+      mapOffset,
+      mapWidthPx,
+      mapHeightPx,
+      colStartPx,
+      rowStartPx,
+      trackPanelSizePx,
+      rulerPanelSizePx,
+      bpResolution,
+    } = options;
     const palette = (() => {
       const darkBackground = useStyleStore().mapBackgroundColor.L <= 55;
       return darkBackground
@@ -640,24 +655,25 @@ class ContactMapManager {
 
     context.save();
     context.fillStyle = options.backgroundColor;
-    context.fillRect(mapOffset, trackPanelSizePx, mapSizePx, rulerPanelSizePx);
-    context.fillRect(trackPanelSizePx, mapOffset, rulerPanelSizePx, mapSizePx);
+    context.fillRect(mapOffset, trackPanelSizePx, mapWidthPx, rulerPanelSizePx);
+    context.fillRect(trackPanelSizePx, mapOffset, rulerPanelSizePx, mapHeightPx);
 
     const axisY = trackPanelSizePx + rulerPanelSizePx - 8;
     context.strokeStyle = palette.line;
     context.lineWidth = 2;
     context.beginPath();
     context.moveTo(mapOffset, axisY);
-    context.lineTo(mapOffset + mapSizePx, axisY);
+    context.lineTo(mapOffset + mapWidthPx, axisY);
     context.stroke();
 
     const axisX = trackPanelSizePx + rulerPanelSizePx - 8;
     context.beginPath();
     context.moveTo(axisX, mapOffset);
-    context.lineTo(axisX, mapOffset + mapSizePx);
+    context.lineTo(axisX, mapOffset + mapHeightPx);
     context.stroke();
 
-    const tickPositions = this.buildRulerTickPositions(mapSizePx);
+    const horizontalTickPositions = this.buildRulerTickPositions(mapWidthPx);
+    const verticalTickPositions = this.buildRulerTickPositions(mapHeightPx);
     context.strokeStyle = palette.line;
     context.fillStyle = palette.text;
     context.lineWidth = 1.5;
@@ -667,10 +683,10 @@ class ContactMapManager {
 
     let previousHorizontalRaw: string | null = null;
     let previousHorizontalBp: number | null = null;
-    for (const tickPx of tickPositions) {
-      const mapPx = Math.max(0, Math.min(mapSizePx - 1, tickPx));
+    for (const tickPx of horizontalTickPositions) {
+      const mapPx = Math.max(0, Math.min(mapWidthPx - 1, tickPx));
       const bpValue = this.contigDimensionHolder.getStartBpOfPx(
-        mapPx,
+        colStartPx + mapPx,
         bpResolution
       );
       const label = this.formatRulerTickLabel(
@@ -698,10 +714,10 @@ class ContactMapManager {
 
     let previousVerticalRaw: string | null = null;
     let previousVerticalBp: number | null = null;
-    for (const tickPx of tickPositions) {
-      const mapPx = Math.max(0, Math.min(mapSizePx - 1, tickPx));
+    for (const tickPx of verticalTickPositions) {
+      const mapPx = Math.max(0, Math.min(mapHeightPx - 1, tickPx));
       const bpValue = this.contigDimensionHolder.getStartBpOfPx(
-        mapPx,
+        rowStartPx + mapPx,
         bpResolution
       );
       const label = this.formatRulerTickLabel(
@@ -841,14 +857,24 @@ class ContactMapManager {
       bpResolution,
       configuredMapSizePx
     );
+    const pixelBounds =
+      this.viewAndLayersManager.getActiveMapPixelBounds(bpResolution);
+    const mapWidthPx = Math.max(
+      1,
+      Math.min(mapSizePx, pixelBounds.colEndPx) - pixelBounds.colStartPx
+    );
+    const mapHeightPx = Math.max(
+      1,
+      Math.min(mapSizePx, pixelBounds.rowEndPx) - pixelBounds.rowStartPx
+    );
     const visibleTrackCount = this.linearTrackManager
       .getTracksSnapshot()
       .filter((track) => track.visible).length;
     const trackPanelSizePx = visibleTrackCount > 0 ? 140 : 0;
     const rulerPanelSizePx = 44;
     const mapOffset = trackPanelSizePx + rulerPanelSizePx;
-    const totalWidth = mapOffset + mapSizePx;
-    const totalHeight = mapOffset + mapSizePx;
+    const totalWidth = mapOffset + mapWidthPx;
+    const totalHeight = mapOffset + mapHeightPx;
     const backgroundColor =
       options?.backgroundColor ?? useStyleStore().mapBackgroundColor.RGBA;
 
@@ -871,17 +897,18 @@ class ContactMapManager {
       }
     );
     const mapImage = await this.loadSvgImage(mapSvg);
-    const sourceSize = Math.min(mapSizePx, mapImage.width, mapImage.height);
+    const sourceWidth = Math.min(mapWidthPx, mapImage.width);
+    const sourceHeight = Math.min(mapHeightPx, mapImage.height);
     context.drawImage(
       mapImage,
       0,
       0,
-      sourceSize,
-      sourceSize,
+      sourceWidth,
+      sourceHeight,
       mapOffset,
       mapOffset,
-      mapSizePx,
-      mapSizePx
+      mapWidthPx,
+      mapHeightPx
     );
     progressCallback?.(0.68);
 
@@ -889,14 +916,14 @@ class ContactMapManager {
       const [horizontalTrackCanvas, verticalTrackCanvas] = await Promise.all([
         this.linearTrackManager.renderFullExtentCanvasForExport("horizontal", {
           bpResolution,
-          startPx: 0,
-          endPx: mapSizePx,
+          startPx: pixelBounds.colStartPx,
+          endPx: pixelBounds.colEndPx,
           trackPanelSizePx,
         }),
         this.linearTrackManager.renderFullExtentCanvasForExport("vertical", {
           bpResolution,
-          startPx: 0,
-          endPx: mapSizePx,
+          startPx: pixelBounds.rowStartPx,
+          endPx: pixelBounds.rowEndPx,
           trackPanelSizePx,
         }),
       ]);
@@ -905,7 +932,7 @@ class ContactMapManager {
           horizontalTrackCanvas,
           mapOffset,
           0,
-          mapSizePx,
+          mapWidthPx,
           trackPanelSizePx
         );
       }
@@ -915,7 +942,7 @@ class ContactMapManager {
           0,
           mapOffset,
           trackPanelSizePx,
-          mapSizePx
+          mapHeightPx
         );
       }
     }
@@ -923,7 +950,10 @@ class ContactMapManager {
 
     this.drawFullExtentExportRulers(context, {
       mapOffset,
-      mapSizePx,
+      mapWidthPx,
+      mapHeightPx,
+      colStartPx: pixelBounds.colStartPx,
+      rowStartPx: pixelBounds.rowStartPx,
       trackPanelSizePx,
       rulerPanelSizePx,
       bpResolution,
@@ -1108,7 +1138,10 @@ class ContactMapManager {
     return safe.length > 0 ? safe : "hict-export.bin";
   }
 
-  private exportTracksSvg(bpResolution: number): string {
+  private exportTracksSvg(
+    bpResolution: number,
+    pixelBounds = this.viewAndLayersManager.getActiveMapPixelBounds(bpResolution)
+  ): string {
     const flags = this.viewAndLayersManager.getExportTrackFlags();
     if (
       !flags.contigBorders &&
@@ -1141,8 +1174,8 @@ class ContactMapManager {
     const toFontFamily = (track: typeof contigTrack) =>
       toFont(track).replace(/^[^ ]+ /, "");
     const toSvgPoint = (coordinate: [number, number]): [number, number] => [
-      coordinate[0] / pixelResolution,
-      -coordinate[1] / pixelResolution,
+      coordinate[0] / pixelResolution - pixelBounds.colStartPx,
+      -coordinate[1] / pixelResolution - pixelBounds.rowStartPx,
     ];
     const polylineSvg = (coordinates: [number, number][]): string =>
       coordinates

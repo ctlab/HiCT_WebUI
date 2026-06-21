@@ -53,6 +53,7 @@ class CommonEventManager {
   }): void {
     this.mapManager.contigDimensionHolder.updateContigData(asmInfo.contigDescriptors);
     this.mapManager.scaffoldHolder.updateScaffoldData(asmInfo.scaffoldDescriptors);
+    this.mapManager.viewAndLayersManager.reapplyAxisScopes();
     this.mapManager.refreshOverviewMinimap();
   }
 

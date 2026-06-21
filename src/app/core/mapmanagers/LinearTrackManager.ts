@@ -360,6 +360,8 @@ class LinearTrackManager {
       endPx: options.endPx,
       bpResolution: options.bpResolution,
       visibleWidthPx: spanPx,
+      scopeStartPx: options.startPx,
+      scopeEndPx: options.endPx,
       pxToScreen: (px: number) => {
         const normalized = (px - options.startPx) / Math.max(1, spanPx);
         return normalized * spanPx;
@@ -2292,11 +2294,30 @@ class LinearTrackManager {
     const screenToPx = (screen: number): number =>
       Math.round((screen - offset) * safeFraction);
     const totalPx = Math.max(0, pixelMapSize);
-    const maxStartPx = Math.max(0, totalPx - 1);
+    const activePixelBounds =
+      this.mapManager.getLayersManager().getActiveMapPixelBounds(bpResolution);
+    const scopeStartPx =
+      orientation === "horizontal"
+        ? activePixelBounds.colStartPx
+        : activePixelBounds.rowStartPx;
+    const scopeEndPx =
+      orientation === "horizontal"
+        ? activePixelBounds.colEndPx
+        : activePixelBounds.rowEndPx;
+    if (scopeEndPx <= scopeStartPx) {
+      return null;
+    }
+    const maxStartPx = Math.max(0, Math.min(totalPx - 1, scopeEndPx - 1));
     const unclampedStartPx = screenToPx(visibleStartScreen);
     const unclampedEndPx = screenToPx(visibleEndScreen);
-    const startPx = Math.max(0, Math.min(unclampedStartPx, maxStartPx));
-    const endPx = Math.max(startPx + 1, Math.min(unclampedEndPx, totalPx));
+    const startPx = Math.max(
+      scopeStartPx,
+      Math.min(unclampedStartPx, maxStartPx)
+    );
+    const endPx = Math.max(
+      startPx + 1,
+      Math.min(unclampedEndPx, totalPx, scopeEndPx)
+    );
     const startBp = this.mapManager
       .getContigDimensionHolder()
       .getStartBpOfPx(startPx, bpResolution);
@@ -2311,7 +2332,12 @@ class LinearTrackManager {
       endPx,
       bpResolution,
       pxToScreen,
-      visibleWidthPx: Math.max(1, visibleEndScreen - visibleStartScreen),
+      visibleWidthPx: Math.max(
+        1,
+        Math.round(Math.abs(pxToScreen(endPx) - pxToScreen(startPx)))
+      ),
+      scopeStartPx,
+      scopeEndPx,
     };
   }
 
@@ -2328,8 +2354,19 @@ class LinearTrackManager {
         .prefix_sum_px.get(viewport.bpResolution)?.[
         this.mapManager.getContigDimensionHolder().contig_count
       ] ?? viewport.endPx;
-    const prefetchStartPx = Math.max(0, viewport.startPx - paddingPx);
-    const prefetchEndPx = Math.min(Math.max(prefetchStartPx + 1, totalPx), viewport.endPx + paddingPx);
+    const scopeStartPx = Math.max(0, viewport.scopeStartPx ?? 0);
+    const scopeEndPx = Math.min(
+      Math.max(scopeStartPx + 1, totalPx),
+      viewport.scopeEndPx ?? totalPx
+    );
+    const prefetchStartPx = Math.max(
+      scopeStartPx,
+      viewport.startPx - paddingPx
+    );
+    const prefetchEndPx = Math.min(
+      scopeEndPx,
+      Math.max(prefetchStartPx + 1, viewport.endPx + paddingPx)
+    );
     const prefetchSpan = Math.max(1, prefetchEndPx - prefetchStartPx);
     const prefetchWidthPx = Math.max(
       viewport.visibleWidthPx,
@@ -2379,7 +2416,8 @@ class LinearTrackManager {
     for (const neighborBpResolution of neighborBpResolutions) {
       const neighborViewport = this.projectViewportToResolution(
         viewport,
-        neighborBpResolution
+        neighborBpResolution,
+        orientation
       );
       if (!neighborViewport) {
         continue;
@@ -2457,7 +2495,8 @@ class LinearTrackManager {
 
   private projectViewportToResolution(
     viewport: ViewportGeometry,
-    targetBpResolution: number
+    targetBpResolution: number,
+    orientation: Orientation
   ): PrefetchViewport | null {
     const contigDimensionHolder = this.mapManager.getContigDimensionHolder();
     const totalPx =
@@ -2479,13 +2518,30 @@ class LinearTrackManager {
         targetBpResolution
       ) + 1;
     const maxStartPx = Math.max(0, totalPx - 1);
-    const startPx = Math.max(0, Math.min(startPxRaw, maxStartPx));
-    const endPx = Math.max(startPx + 1, Math.min(endPxRaw, totalPx));
+    const activePixelBounds =
+      this.mapManager
+        .getLayersManager()
+        .getActiveMapPixelBounds(targetBpResolution);
+    const scopeStartPx =
+      orientation === "horizontal"
+        ? activePixelBounds.colStartPx
+        : activePixelBounds.rowStartPx;
+    const scopeEndPx =
+      orientation === "horizontal"
+        ? activePixelBounds.colEndPx
+        : activePixelBounds.rowEndPx;
+    const startPx = Math.max(
+      scopeStartPx,
+      Math.min(startPxRaw, Math.min(maxStartPx, scopeEndPx - 1))
+    );
+    const endPx = Math.max(startPx + 1, Math.min(endPxRaw, totalPx, scopeEndPx));
     return {
       startPx,
       endPx,
       bpResolution: targetBpResolution,
       visibleWidthPx: viewport.visibleWidthPx,
+      scopeStartPx,
+      scopeEndPx,
     };
   }
 
@@ -2548,6 +2604,8 @@ type ViewportGeometry = {
   bpResolution: number;
   pxToScreen: (px: number) => number;
   visibleWidthPx: number;
+  scopeStartPx: number;
+  scopeEndPx: number;
 };
 
 type PrefetchViewport = {
@@ -2555,6 +2613,8 @@ type PrefetchViewport = {
   endPx: number;
   bpResolution: number;
   visibleWidthPx: number;
+  scopeStartPx?: number;
+  scopeEndPx?: number;
 };
 
 type TrackQueryCache = {

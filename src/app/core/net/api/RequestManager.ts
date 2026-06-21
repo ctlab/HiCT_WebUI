@@ -1122,6 +1122,7 @@ class RequestManager {
           this.networkManager.mapManager?.scaffoldHolder.updateScaffoldData(
             asmInfo.scaffoldDescriptors
           );
+          this.networkManager.mapManager?.getLayersManager().reapplyAxisScopes();
           this.networkManager.mapManager?.reloadVisuals();
         }
         return asmInfo;
@@ -1142,6 +1143,7 @@ class RequestManager {
         this.networkManager.mapManager?.scaffoldHolder.updateScaffoldData(
           asmInfo.scaffoldDescriptors
         );
+        this.networkManager.mapManager?.getLayersManager().reapplyAxisScopes();
         this.networkManager.mapManager?.reloadVisuals();
         return asmInfo;
       })

@@ -1922,6 +1922,7 @@ const applyAssemblyInfoToMap = (assemblyInfo: AssemblyInfo): void => {
   const mapManager = props.networkManager.mapManager;
   mapManager?.contigDimensionHolder.updateContigData(assemblyInfo.contigDescriptors);
   mapManager?.scaffoldHolder.updateScaffoldData(assemblyInfo.scaffoldDescriptors);
+  mapManager?.getLayersManager().reapplyAxisScopes();
   mapManager?.reloadVisuals();
   mapManager?.refreshOverviewMinimap();
   void mapManager?.linearTrackManager.clearCachesAndRender();

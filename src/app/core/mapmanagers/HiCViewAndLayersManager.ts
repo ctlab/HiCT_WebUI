@@ -86,6 +86,28 @@ interface SelectionBorders {
   rightBP?: [number, number];
 }
 
+type AxisScopeKind = "all" | "contig" | "scaffold";
+
+interface AxisScopeSelection {
+  kind: AxisScopeKind;
+  id?: number;
+  label: string;
+  startBp?: number;
+  endBp?: number;
+}
+
+interface MapAxisScopes {
+  readonly row: AxisScopeSelection;
+  readonly column: AxisScopeSelection;
+}
+
+interface MapAxisScopePixelBounds {
+  readonly colStartPx: number;
+  readonly colEndPx: number;
+  readonly rowStartPx: number;
+  readonly rowEndPx: number;
+}
+
 enum ActiveTool {
   TRANSLOCATION,
   SCISSORS,
@@ -164,6 +186,13 @@ class HiCViewAndLayersManager {
   private enabledBpResolutions?: Set<number>;
   private rulerRenderCallback: (() => void) | null = null;
   private readonly pendingFeatureStyleRefreshHandles = new Set<number>();
+  public readonly axisScopeRevision: Ref<number> = ref(0);
+  private fullGlobalExtent: [number, number, number, number] = [0, 0, 0, 0];
+  private activeAxisScopes: MapAxisScopes = {
+    row: { kind: "all", label: "All Rows" },
+    column: { kind: "all", label: "All Columns" },
+  };
+  private activeAxisScopeExtent?: [number, number, number, number];
 
   public selectionCollections: {
     readonly selectedContigFeatures: Collection<Feature<Geometry>>;
@@ -253,7 +282,8 @@ class HiCViewAndLayersManager {
       -maximum_scaled_image_size,
       maximum_scaled_image_size,
       0,
-    ];
+    ] as [number, number, number, number];
+    this.fullGlobalExtent = maximum_global_extent;
     // Define projection:
     this.pixelProjection = new Projection({
       code: "pixelate",
@@ -567,6 +597,355 @@ class HiCViewAndLayersManager {
     };
   }
 
+  public getAxisScopes(): MapAxisScopes {
+    return {
+      row: { ...this.activeAxisScopes.row },
+      column: { ...this.activeAxisScopes.column },
+    };
+  }
+
+  public getActiveMapExtent(): [number, number, number, number] {
+    return this.activeAxisScopeExtent ?? this.fullGlobalExtent;
+  }
+
+  public setAxisScopes(
+    row: AxisScopeSelection,
+    column: AxisScopeSelection
+  ): void {
+    this.activeAxisScopes = {
+      row: this.normalizeAxisScope(row, "row"),
+      column: this.normalizeAxisScope(column, "column"),
+    };
+    this.reapplyAxisScopes({ fit: true });
+    this.axisScopeRevision.value++;
+  }
+
+  public reapplyAxisScopes(options?: {
+    fit?: boolean;
+    renderLinearTracks?: boolean;
+    refreshViewOptions?: boolean;
+  }): void {
+    const previousExtent = this.activeAxisScopeExtent;
+    const resolvedRow = this.resolveAxisScope(this.activeAxisScopes.row, "row");
+    const resolvedColumn = this.resolveAxisScope(
+      this.activeAxisScopes.column,
+      "column"
+    );
+    const scopesChanged =
+      resolvedRow.kind !== this.activeAxisScopes.row.kind ||
+      resolvedRow.id !== this.activeAxisScopes.row.id ||
+      resolvedColumn.kind !== this.activeAxisScopes.column.kind ||
+      resolvedColumn.id !== this.activeAxisScopes.column.id;
+    this.activeAxisScopes = {
+      row: resolvedRow,
+      column: resolvedColumn,
+    };
+
+    const nextExtent = this.computeAxisScopeExtent(resolvedRow, resolvedColumn);
+    this.activeAxisScopeExtent = nextExtent ?? undefined;
+    const appliedExtent = this.getActiveMapExtent();
+    if (options?.refreshViewOptions !== false) {
+      this.view.applyOptions_(this.createViewOptions(appliedExtent));
+    }
+    this.applyLayerScopeExtent(nextExtent ?? undefined);
+
+    if (options?.fit) {
+      this.fitViewToExtent(appliedExtent);
+    } else if (
+      previousExtent &&
+      nextExtent &&
+      !this.areExtentsClose(previousExtent, nextExtent)
+    ) {
+      const center = this.view.getCenter();
+      if (center) {
+        this.view.setCenter(this.clampPointToExtent(center, appliedExtent));
+      }
+    }
+
+    if (
+      options?.renderLinearTracks !== false &&
+      this.mapManager.linearTrackManager
+    ) {
+      void this.mapManager.linearTrackManager.render({ allowFetch: true });
+    }
+    this.scheduleRulerRender();
+    this.mapManager.getMap().changed();
+    if (scopesChanged) {
+      this.axisScopeRevision.value++;
+    }
+  }
+
+  private normalizeAxisScope(
+    scope: AxisScopeSelection | undefined,
+    axis: "row" | "column"
+  ): AxisScopeSelection {
+    if (!scope || scope.kind === "all" || scope.id === undefined) {
+      return { kind: "all", label: axis === "row" ? "All Rows" : "All Columns" };
+    }
+    const id = Number(scope.id);
+    return {
+      kind: scope.kind,
+      id,
+      label: scope.label || String(id),
+      startBp: Number.isFinite(scope.startBp) ? scope.startBp : undefined,
+      endBp: Number.isFinite(scope.endBp) ? scope.endBp : undefined,
+    };
+  }
+
+  private resolveAxisScope(
+    scope: AxisScopeSelection,
+    axis: "row" | "column"
+  ): AxisScopeSelection {
+    if (scope.kind === "all" || scope.id === undefined) {
+      return { kind: "all", label: axis === "row" ? "All Rows" : "All Columns" };
+    }
+    if (scope.kind === "contig") {
+      const order =
+        this.mapManager.contigDimensionHolder.contigIdToOrd[scope.id];
+      const descriptor =
+        order !== undefined
+          ? this.mapManager.contigDimensionHolder.contigDescriptors[order]
+          : undefined;
+      if (!descriptor) {
+        return { kind: "all", label: axis === "row" ? "All Rows" : "All Columns" };
+      }
+      const startBp =
+        this.mapManager.contigDimensionHolder.prefix_sum_bp[order] ?? 0;
+      return {
+        kind: "contig",
+        id: descriptor.contigId,
+        label: descriptor.contigName,
+        startBp,
+        endBp: startBp + descriptor.contigLengthBp,
+      };
+    }
+
+    const scaffold = this.mapManager.scaffoldHolder.scaffoldTable.get(scope.id);
+    const borders =
+      scaffold?.scaffoldBordersBP ??
+      this.mapManager.scaffoldHolder.scaffoldBordersBp.get(scope.id);
+    if (!scaffold || !borders) {
+      return { kind: "all", label: axis === "row" ? "All Rows" : "All Columns" };
+    }
+    return {
+      kind: "scaffold",
+      id: scaffold.scaffoldId,
+      label: scaffold.scaffoldName,
+      startBp: borders.startBP,
+      endBp: borders.endBP,
+    };
+  }
+
+  private computeAxisScopeExtent(
+    row: AxisScopeSelection,
+    column: AxisScopeSelection
+  ): [number, number, number, number] | null {
+    if (row.kind === "all" && column.kind === "all") {
+      return null;
+    }
+    const descriptor = this.chooseScopeResolutionDescriptor(row, column);
+    if (!descriptor) {
+      return null;
+    }
+    const full = this.fullGlobalExtent;
+    const xRange =
+      column.kind === "all"
+        ? ([full[0], full[2]] as [number, number])
+        : this.bpIntervalToCoordinateRange(
+            column.startBp ?? 0,
+            column.endBp ?? 0,
+            descriptor
+          );
+    const yRange =
+      row.kind === "all"
+        ? ([0, -full[1]] as [number, number])
+        : this.bpIntervalToCoordinateRange(
+            row.startBp ?? 0,
+            row.endBp ?? 0,
+            descriptor
+          );
+    if (!xRange || !yRange) {
+      return null;
+    }
+    return [xRange[0], -yRange[1], xRange[1], -yRange[0]];
+  }
+
+  public getActiveMapPixelBounds(bpResolution: number): MapAxisScopePixelBounds {
+    const holder = this.mapManager.contigDimensionHolder;
+    holder.ensureResolution(bpResolution);
+    const mapSizePx =
+      holder.prefix_sum_px.get(bpResolution)?.[holder.contig_count] ??
+      Math.max(1, Math.round(this.imageSizes[0] ?? 1));
+    const row = this.resolveAxisScope(this.activeAxisScopes.row, "row");
+    const column = this.resolveAxisScope(this.activeAxisScopes.column, "column");
+    const columnRange =
+      column.kind === "all"
+        ? ([0, mapSizePx] as [number, number])
+        : this.bpIntervalToPixelRange(
+            column.startBp ?? 0,
+            column.endBp ?? 0,
+            bpResolution
+          );
+    const rowRange =
+      row.kind === "all"
+        ? ([0, mapSizePx] as [number, number])
+        : this.bpIntervalToPixelRange(
+            row.startBp ?? 0,
+            row.endBp ?? 0,
+            bpResolution
+          );
+    const normalizeRange = (range: [number, number]): [number, number] => {
+      const start = Math.max(0, Math.min(mapSizePx - 1, Math.floor(range[0])));
+      const end = Math.max(
+        start + 1,
+        Math.min(mapSizePx, Math.ceil(range[1]))
+      );
+      return [start, end];
+    };
+    const [colStartPx, colEndPx] = normalizeRange(columnRange);
+    const [rowStartPx, rowEndPx] = normalizeRange(rowRange);
+    return { colStartPx, colEndPx, rowStartPx, rowEndPx };
+  }
+
+  private chooseScopeResolutionDescriptor(
+    row: AxisScopeSelection,
+    column: AxisScopeSelection
+  ): LayerResolutionDescriptor | null {
+    const current = this.currentViewState?.resolutionDesciptor;
+    if (
+      current &&
+      this.scopeHasVisibleWidth(row, current) &&
+      this.scopeHasVisibleWidth(column, current)
+    ) {
+      return current;
+    }
+    const candidates = this.getVectorResolutionTuples().slice().sort(
+      (a, b) => a.bpResolution - b.bpResolution
+    );
+    return (
+      candidates.find(
+        (descriptor) =>
+          this.scopeHasVisibleWidth(row, descriptor) &&
+          this.scopeHasVisibleWidth(column, descriptor)
+      ) ??
+      current ??
+      candidates[0] ??
+      null
+    );
+  }
+
+  private scopeHasVisibleWidth(
+    scope: AxisScopeSelection,
+    descriptor: LayerResolutionDescriptor
+  ): boolean {
+    if (scope.kind === "all") {
+      return true;
+    }
+    const range = this.bpIntervalToCoordinateRange(
+      scope.startBp ?? 0,
+      scope.endBp ?? 0,
+      descriptor
+    );
+    return !!range && range[1] > range[0];
+  }
+
+  private bpIntervalToCoordinateRange(
+    startBpRaw: number,
+    endBpRaw: number,
+    descriptor: LayerResolutionDescriptor
+  ): [number, number] | null {
+    const holder = this.mapManager.contigDimensionHolder;
+    const totalBp = holder.prefix_sum_bp[holder.contig_count] ?? 0;
+    if (totalBp <= 0) {
+      return null;
+    }
+    const startBp = Math.max(0, Math.min(totalBp - 1, Math.floor(startBpRaw)));
+    const endBpExclusive = Math.max(
+      startBp + 1,
+      Math.min(totalBp, Math.ceil(endBpRaw))
+    );
+    holder.ensureResolution(descriptor.bpResolution);
+    const [startPx, endPx] = this.bpIntervalToPixelRange(
+      startBp,
+      endBpExclusive,
+      descriptor.bpResolution
+    );
+    const minPx = Math.min(startPx, endPx);
+    const maxPx = Math.max(startPx + 1, endPx);
+    const scale = descriptor.pixelResolution;
+    return [minPx * scale, maxPx * scale];
+  }
+
+  private bpIntervalToPixelRange(
+    startBpRaw: number,
+    endBpRaw: number,
+    bpResolution: number
+  ): [number, number] {
+    const holder = this.mapManager.contigDimensionHolder;
+    const totalBp = holder.prefix_sum_bp[holder.contig_count] ?? 0;
+    if (totalBp <= 0) {
+      return [0, 1];
+    }
+    const startBp = Math.max(0, Math.min(totalBp - 1, Math.floor(startBpRaw)));
+    const endBpExclusive = Math.max(
+      startBp + 1,
+      Math.min(totalBp, Math.ceil(endBpRaw))
+    );
+    holder.ensureResolution(bpResolution);
+    const startPx = holder.getPxContainingBp(startBp, bpResolution);
+    const endPx = holder.getPxContainingBp(endBpExclusive - 1, bpResolution) + 1;
+    return [startPx, endPx];
+  }
+
+  private fitViewToExtent(extent: [number, number, number, number]): void {
+    const size = this.mapManager.getMap().getSize();
+    if (size && size[0] > 0 && size[1] > 0) {
+      this.view.fit(extent, {
+        size,
+        nearest: false,
+        padding: [12, 12, 12, 12],
+      });
+      return;
+    }
+    this.view.setCenter([
+      (extent[0] + extent[2]) / 2,
+      (extent[1] + extent[3]) / 2,
+    ]);
+  }
+
+  private clampPointToExtent(
+    point: readonly number[],
+    extent: [number, number, number, number]
+  ): [number, number] {
+    return [
+      Math.max(extent[0], Math.min(extent[2], point[0])),
+      Math.max(extent[1], Math.min(extent[3], point[1])),
+    ];
+  }
+
+  private areExtentsClose(
+    a: [number, number, number, number],
+    b: [number, number, number, number]
+  ): boolean {
+    return a.every((value, index) => Math.abs(value - b[index]) < 1e-6);
+  }
+
+  private applyLayerScopeExtent(
+    extent?: [number, number, number, number]
+  ): void {
+    const allLayers = [
+      ...this.layersHolder.hicDataLayers,
+      ...this.layersHolder.track2DLayers,
+      ...this.layersHolder.annotationLayers,
+      ...this.layersHolder.contigBordersLayers,
+      ...this.layersHolder.contigTranslocationArrowsLayers,
+      ...this.layersHolder.scaffoldBordersLayers,
+    ];
+    for (const layer of allLayers) {
+      layer.setExtent(extent);
+    }
+  }
+
   private updateProjectionAndViewExtent(scalePreservedView = 1): void {
     const previousCenter = this.view.getCenter();
     const previousResolution = this.view.getResolution();
@@ -574,9 +953,22 @@ class HiCViewAndLayersManager {
       this.primaryResolutionSet,
       this.secondaryResolutionSet
     );
-    const extent = [0, -maximumScaledImageSize, maximumScaledImageSize, 0];
+    const extent = [
+      0,
+      -maximumScaledImageSize,
+      maximumScaledImageSize,
+      0,
+    ] as [number, number, number, number];
+    this.fullGlobalExtent = extent;
     this.pixelProjection.setExtent(extent);
-    this.view.applyOptions_(this.createViewOptions(extent));
+    this.activeAxisScopeExtent =
+      this.computeAxisScopeExtent(
+        this.activeAxisScopes.row,
+        this.activeAxisScopes.column
+      ) ?? undefined;
+    const activeExtent = this.getActiveMapExtent();
+    this.view.applyOptions_(this.createViewOptions(activeExtent));
+    this.applyLayerScopeExtent(this.activeAxisScopeExtent);
 
     const nextCenter =
       previousCenter &&
@@ -586,7 +978,7 @@ class HiCViewAndLayersManager {
             previousCenter[0] * scalePreservedView,
             previousCenter[1] * scalePreservedView,
           ] as [number, number])
-        : ([extent[0], extent[3]] as [number, number]);
+        : ([activeExtent[0], activeExtent[3]] as [number, number]);
     const nextResolution =
       previousResolution !== undefined && Number.isFinite(previousResolution)
         ? previousResolution * scalePreservedView
@@ -595,7 +987,7 @@ class HiCViewAndLayersManager {
             1
           );
 
-    this.view.setCenter(nextCenter);
+    this.view.setCenter(this.clampPointToExtent(nextCenter, activeExtent));
     if (Number.isFinite(nextResolution) && nextResolution > 0) {
       this.view.setResolution(nextResolution);
     }
@@ -603,6 +995,10 @@ class HiCViewAndLayersManager {
 
   public async onViewResolutionChanged(): Promise<void> {
     this.updateCurrentHiCViewState();
+    this.reapplyAxisScopes({
+      renderLinearTracks: false,
+      refreshViewOptions: false,
+    });
     await Promise.all(this.resolutionChangedAsyncSubscribers.map((fn) => fn()));
   }
 
@@ -933,6 +1329,7 @@ class HiCViewAndLayersManager {
           this.getPixelResolutionForBpResolution(bpResolution)
         );
         vectorLayer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, true);
+        vectorLayer.setExtent(this.activeAxisScopeExtent);
         layersCollection.push(vectorLayer);
         this.mapManager.getMap().addLayer(vectorLayer);
       }
@@ -997,6 +1394,7 @@ class HiCViewAndLayersManager {
       layer.set("sourceName", set.sourceName);
       layer.set("bpResolution", layerResolution);
       layer.set("pixelResolution", layerPixelResolution);
+      layer.setExtent(this.activeAxisScopeExtent);
       this.mapManager.getMap().addLayer(layer);
       layersCollection.push(layer);
       this.layersHolder.hicDataLayers.push(layer);
@@ -1895,6 +2293,7 @@ class HiCViewAndLayersManager {
       const layerResolution = Number(layer.get("bpResolution"));
       layer.setVisible(layerResolution === activeVectorResolution);
     }
+    this.applyLayerScopeExtent(this.activeAxisScopeExtent);
     this.refreshVisibleBuiltinVectorSources();
   }
 
@@ -1954,4 +2353,8 @@ export {
   type SelectionBorders,
   type Track2DHolder,
   ActiveTool,
+  type AxisScopeSelection,
+  type AxisScopeKind,
+  type MapAxisScopes,
+  type MapAxisScopePixelBounds,
 };

@@ -72,39 +72,61 @@
           </button>
         </div>
       </div>
-      <div class="mb-3">
-        <select
-          class="form-select form-select-sm"
-          v-model.lazy="rowContigId"
-          @change="checkOptionsAndSnapToContigIntersection"
-        >
-          <option selected value="null">All Rows</option>
-          <option
-            v-for="cd in mapManager?.getContigDimensionHolder()
-              .contigDescriptors"
-            :key="cd.contigId"
-            :value="cd.contigId"
+      <div class="scope-picker mb-3">
+        <input
+          class="form-control form-control-sm"
+          type="text"
+          v-model="rowScopeQuery"
+          @focus="openScopePicker('row')"
+          @input="rowScopeOpen = true"
+          @keydown.down.prevent="moveScopeHighlight('row', 1)"
+          @keydown.up.prevent="moveScopeHighlight('row', -1)"
+          @keydown.enter.prevent="acceptHighlightedScope('row')"
+          @keydown.esc.prevent="restoreScopeQuery('row')"
+          @blur="deferScopePickerClose('row')"
+          aria-label="Rows scope"
+        />
+        <div v-if="rowScopeOpen" class="scope-dropdown">
+          <button
+            v-for="(option, idx) in filteredRowScopeOptions"
+            :key="option.key"
+            type="button"
+            class="scope-result"
+            :class="{ active: idx === rowScopeIndex }"
+            @mousedown.prevent="selectScope('row', option)"
           >
-            {{ cd.contigName }}
-          </option>
-        </select>
+            <span class="scope-type">{{ option.displayType }}</span>
+            <span class="scope-name">{{ option.label }}</span>
+          </button>
+        </div>
       </div>
-      <div class="mb-3">
-        <select
-          class="form-select form-select-sm"
-          v-model.lazy="columnContigId"
-          @change="checkOptionsAndSnapToContigIntersection"
-        >
-          <option selected value="null">All Columns</option>
-          <option
-            v-for="cd in mapManager?.getContigDimensionHolder()
-              .contigDescriptors"
-            :key="cd.contigId"
-            :value="cd.contigId"
+      <div class="scope-picker mb-3">
+        <input
+          class="form-control form-control-sm"
+          type="text"
+          v-model="columnScopeQuery"
+          @focus="openScopePicker('column')"
+          @input="columnScopeOpen = true"
+          @keydown.down.prevent="moveScopeHighlight('column', 1)"
+          @keydown.up.prevent="moveScopeHighlight('column', -1)"
+          @keydown.enter.prevent="acceptHighlightedScope('column')"
+          @keydown.esc.prevent="restoreScopeQuery('column')"
+          @blur="deferScopePickerClose('column')"
+          aria-label="Columns scope"
+        />
+        <div v-if="columnScopeOpen" class="scope-dropdown">
+          <button
+            v-for="(option, idx) in filteredColumnScopeOptions"
+            :key="option.key"
+            type="button"
+            class="scope-result"
+            :class="{ active: idx === columnScopeIndex }"
+            @mousedown.prevent="selectScope('column', option)"
           >
-            {{ cd.contigName }}
-          </option>
-        </select>
+            <span class="scope-type">{{ option.displayType }}</span>
+            <span class="scope-name">{{ option.label }}</span>
+          </button>
+        </div>
       </div>
       <div class="mb-3">
         <select
@@ -213,8 +235,9 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import type { AxisScopeSelection } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
 import NormalizationSelector from "./NormalizationSelector.vue";
-import { Ref, computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { toast } from "vue-sonner";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
@@ -228,10 +251,29 @@ const props = defineProps<{
 
 const uiSettingsStore = useUiSettingsStore();
 const { osdOverlayVisible, rulerCoordinateMode } = storeToRefs(uiSettingsStore);
-const rowContigId: Ref<number | null> = ref(null);
-const columnContigId: Ref<number | null> = ref(null);
 const exportingType = ref<"svg" | "png" | "pdf" | null>(null);
 const svgProgress = ref(0);
+type ScopeAxis = "row" | "column";
+interface ScopeOption extends AxisScopeSelection {
+  key: string;
+  displayType: "All" | "Scaffold" | "Contig";
+  order: number;
+  searchText: string;
+}
+const selectedRowScope = ref<AxisScopeSelection>({
+  kind: "all",
+  label: "All Rows",
+});
+const selectedColumnScope = ref<AxisScopeSelection>({
+  kind: "all",
+  label: "All Columns",
+});
+const rowScopeQuery = ref("All Rows");
+const columnScopeQuery = ref("All Columns");
+const rowScopeOpen = ref(false);
+const columnScopeOpen = ref(false);
+const rowScopeIndex = ref(0);
+const columnScopeIndex = ref(0);
 const searchQuery = ref("");
 const searchResults = ref<
   {
@@ -264,6 +306,224 @@ const {
   signalDisplayMode,
   colormap,
 } = storeToRefs(visualizationOptionsStore);
+
+const allScopeLabel = (axis: ScopeAxis) =>
+  axis === "row" ? "All Rows" : "All Columns";
+
+const allScopeOption = (axis: ScopeAxis): ScopeOption => ({
+  kind: "all",
+  label: allScopeLabel(axis),
+  key: `${axis}-all`,
+  displayType: "All",
+  order: -1,
+  searchText: allScopeLabel(axis).toLowerCase(),
+});
+
+function scopeToSelection(option: AxisScopeSelection): AxisScopeSelection {
+  if (option.kind === "all" || option.id === undefined) {
+    return { kind: "all", label: option.label };
+  }
+  return {
+    kind: option.kind,
+    id: option.id,
+    label: option.label,
+    startBp: option.startBp,
+    endBp: option.endBp,
+  };
+}
+
+function buildScopeOptions(axis: ScopeAxis): ScopeOption[] {
+  const manager = props.mapManager;
+  if (!manager) {
+    return [allScopeOption(axis)];
+  }
+  void manager.getLayersManager().axisScopeRevision.value;
+  const options: ScopeOption[] = [allScopeOption(axis)];
+  const scaffolds = manager.scaffoldHolder.scaffoldBordersSorted;
+  for (let i = 0; i < scaffolds.length; i += 1) {
+    const [borders, scaffoldId] = scaffolds[i];
+    const descriptor = manager.scaffoldHolder.scaffoldTable.get(scaffoldId);
+    if (!descriptor || !borders) {
+      continue;
+    }
+    const label = descriptor.scaffoldName ?? `scaffold ${scaffoldId}`;
+    const original = descriptor.scaffoldOriginalName ?? "";
+    options.push({
+      kind: "scaffold",
+      id: scaffoldId,
+      label,
+      startBp: borders.startBP,
+      endBp: borders.endBP,
+      key: `${axis}-scaffold-${scaffoldId}`,
+      displayType: "Scaffold",
+      order: i,
+      searchText: `${label} ${original}`.toLowerCase(),
+    });
+  }
+  const contigs = manager.getContigDimensionHolder().contigDescriptors ?? [];
+  const prefixes = manager.getContigDimensionHolder().prefix_sum_bp ?? [];
+  const contigOffset = options.length + 100000;
+  for (let i = 0; i < contigs.length; i += 1) {
+    const descriptor = contigs[i];
+    const label = descriptor.contigName ?? `contig ${descriptor.contigId}`;
+    const original = descriptor.contigOriginalName ?? "";
+    const startBp = prefixes[i] ?? 0;
+    options.push({
+      kind: "contig",
+      id: descriptor.contigId,
+      label,
+      startBp,
+      endBp: startBp + descriptor.contigLengthBp,
+      key: `${axis}-contig-${descriptor.contigId}`,
+      displayType: "Contig",
+      order: contigOffset + i,
+      searchText: `${label} ${original}`.toLowerCase(),
+    });
+  }
+  return options;
+}
+
+function fuzzyScore(searchText: string, query: string): number | null {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return 0;
+  }
+  if (searchText.startsWith(normalized)) {
+    return 0;
+  }
+  if (searchText.includes(normalized)) {
+    return 1;
+  }
+  let q = 0;
+  for (let i = 0; i < searchText.length && q < normalized.length; i += 1) {
+    if (searchText[i] === normalized[q]) {
+      q += 1;
+    }
+  }
+  return q === normalized.length ? 2 : null;
+}
+
+function filterScopeOptions(
+  options: ScopeOption[],
+  query: string
+): ScopeOption[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return options.slice(0, 80);
+  }
+  return options
+    .map((option) => ({
+      option,
+      score: fuzzyScore(option.searchText, normalized),
+    }))
+    .filter((entry): entry is { option: ScopeOption; score: number } =>
+      entry.score !== null
+    )
+    .sort((a, b) => a.score - b.score || a.option.order - b.option.order)
+    .slice(0, 80)
+    .map((entry) => entry.option);
+}
+
+const rowScopeOptions = computed(() => buildScopeOptions("row"));
+const columnScopeOptions = computed(() => buildScopeOptions("column"));
+const filteredRowScopeOptions = computed(() =>
+  filterScopeOptions(rowScopeOptions.value, rowScopeQuery.value)
+);
+const filteredColumnScopeOptions = computed(() =>
+  filterScopeOptions(columnScopeOptions.value, columnScopeQuery.value)
+);
+
+function selectScope(axis: ScopeAxis, option: ScopeOption): void {
+  const selection = scopeToSelection(option);
+  if (axis === "row") {
+    selectedRowScope.value = selection;
+    rowScopeQuery.value = selection.label;
+    rowScopeOpen.value = false;
+    rowScopeIndex.value = 0;
+  } else {
+    selectedColumnScope.value = selection;
+    columnScopeQuery.value = selection.label;
+    columnScopeOpen.value = false;
+    columnScopeIndex.value = 0;
+  }
+  props.mapManager?.getLayersManager().setAxisScopes(
+    selectedRowScope.value,
+    selectedColumnScope.value
+  );
+}
+
+function openScopePicker(axis: ScopeAxis): void {
+  syncScopeQueriesFromManager();
+  if (axis === "row") {
+    rowScopeOpen.value = true;
+    rowScopeIndex.value = 0;
+  } else {
+    columnScopeOpen.value = true;
+    columnScopeIndex.value = 0;
+  }
+}
+
+function deferScopePickerClose(axis: ScopeAxis): void {
+  window.setTimeout(() => {
+    restoreScopeQuery(axis);
+  }, 120);
+}
+
+function restoreScopeQuery(axis: ScopeAxis): void {
+  if (axis === "row") {
+    rowScopeQuery.value = selectedRowScope.value.label || "All Rows";
+    rowScopeOpen.value = false;
+    rowScopeIndex.value = 0;
+  } else {
+    columnScopeQuery.value = selectedColumnScope.value.label || "All Columns";
+    columnScopeOpen.value = false;
+    columnScopeIndex.value = 0;
+  }
+}
+
+function moveScopeHighlight(axis: ScopeAxis, delta: number): void {
+  const options =
+    axis === "row" ? filteredRowScopeOptions.value : filteredColumnScopeOptions.value;
+  if (options.length === 0) {
+    return;
+  }
+  const indexRef = axis === "row" ? rowScopeIndex : columnScopeIndex;
+  indexRef.value =
+    (indexRef.value + delta + options.length) % options.length;
+}
+
+function acceptHighlightedScope(axis: ScopeAxis): void {
+  const options =
+    axis === "row" ? filteredRowScopeOptions.value : filteredColumnScopeOptions.value;
+  const index = axis === "row" ? rowScopeIndex.value : columnScopeIndex.value;
+  const option = options[index] ?? options[0];
+  if (option) {
+    selectScope(axis, option);
+  }
+}
+
+function syncScopeQueriesFromManager(): void {
+  const scopes = props.mapManager?.getLayersManager().getAxisScopes();
+  if (!scopes) {
+    selectedRowScope.value = { kind: "all", label: "All Rows" };
+    selectedColumnScope.value = { kind: "all", label: "All Columns" };
+  } else {
+    selectedRowScope.value = scopes.row;
+    selectedColumnScope.value = scopes.column;
+  }
+  if (!rowScopeOpen.value) {
+    rowScopeQuery.value = selectedRowScope.value.label || "All Rows";
+  }
+  if (!columnScopeOpen.value) {
+    columnScopeQuery.value = selectedColumnScope.value.label || "All Columns";
+  }
+}
+
+watch(
+  () => props.mapManager?.getLayersManager().axisScopeRevision.value,
+  () => syncScopeQueriesFromManager(),
+  { immediate: true }
+);
 
 const rulerModeLabel = computed(() => {
   switch (rulerCoordinateMode.value) {
@@ -666,75 +926,6 @@ onBeforeUnmount(() => {
   }
 });
 
-function checkOptionsAndSnapToContigIntersection() {
-  // alert("Row " + rowContigId.value + " Column " + columnContigId.value);
-  const rowCtgId = rowContigId.value;
-  const colCtgId = columnContigId.value;
-  if (rowCtgId && colCtgId && props.mapManager) {
-    const mapManager = props.mapManager;
-    const map = props.mapManager?.getMap();
-    const view = map?.getView();
-    if (mapManager && map && view) {
-      const mapSize = map.getSize() ?? [100, 100];
-      const rowContigSizes =
-        mapManager.getContigDimensionHolder().contigDescriptors[rowCtgId]
-          .contigLengthBins;
-      const colContigSizes =
-        mapManager.getContigDimensionHolder().contigDescriptors[colCtgId]
-          .contigLengthBins;
-      const minWidth = Math.min(200, mapSize[0]);
-      const minHeight = Math.min(200, mapSize[1]);
-      let bpResolutionToSnapAt: number = rowContigSizes.keys().next().value;
-      for (const [res, rowCtgLen] of rowContigSizes) {
-        const colCtgLen = colContigSizes.get(res) ?? 1;
-        if (
-          minWidth < colCtgLen &&
-          colCtgLen < mapSize[0] &&
-          minHeight < rowCtgLen &&
-          rowCtgLen < mapSize[1]
-        ) {
-          bpResolutionToSnapAt = res;
-          break;
-        }
-      }
-      const [lu_x, lu_y] =
-        mapManager.viewAndLayersManager.bpCoordinatesToGlobalCoordinates(
-          [
-            mapManager.getContigDimensionHolder().prefix_sum_bp[
-              mapManager.getContigDimensionHolder().contigIdToOrd[colCtgId]
-            ],
-            mapManager.getContigDimensionHolder().prefix_sum_bp[
-              mapManager.getContigDimensionHolder().contigIdToOrd[rowCtgId]
-            ],
-          ],
-          bpResolutionToSnapAt
-        );
-      const [br_x, br_y] =
-        mapManager.viewAndLayersManager.bpCoordinatesToGlobalCoordinates(
-          [
-            mapManager.getContigDimensionHolder().prefix_sum_bp[
-              mapManager.getContigDimensionHolder().contigIdToOrd[1 + colCtgId]
-            ],
-            mapManager.getContigDimensionHolder().prefix_sum_bp[
-              mapManager.getContigDimensionHolder().contigIdToOrd[1 + rowCtgId]
-            ],
-          ],
-          bpResolutionToSnapAt
-        );
-      const centerCoordiate = [(lu_x + br_x) / 2, (lu_y + br_y) / 2];
-      view.animate({
-        center: centerCoordiate,
-        resolution:
-          mapManager.viewAndLayersManager.getPixelResolutionForBpResolution(
-            bpResolutionToSnapAt
-          ),
-      });
-
-      //([lu_x, lu_y, br_x, br_y], {minResolution: bpResolutionToSnapAt})
-    }
-  }
-}
-
 async function reloadTiles() {
   try {
     await props.mapManager?.reloadTilesFromBackend();
@@ -977,6 +1168,64 @@ function onNormalizationChanged() {
 .search-original {
   font-size: 11px;
   color: var(--hict-surface-muted, #6c757d);
+}
+
+.scope-picker {
+  position: relative;
+  width: 180px;
+  flex: 0 0 180px;
+}
+
+.scope-picker .form-control {
+  height: 30px;
+  font-size: 13px;
+}
+
+.scope-dropdown {
+  position: absolute;
+  top: 34px;
+  left: 0;
+  width: 280px;
+  max-height: 280px;
+  overflow: auto;
+  background: var(--hict-surface-bg, #ffffff);
+  border: 1px solid var(--hict-surface-border, #ced4da);
+  border-radius: 6px;
+  box-shadow: var(--hict-surface-shadow, 0 8px 16px rgba(0, 0, 0, 0.12));
+  z-index: 35;
+  padding: 4px;
+}
+
+.scope-result {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 6px 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.scope-result:hover,
+.scope-result.active {
+  background: var(--hict-surface-bg-muted, #f1f3f5);
+}
+
+.scope-type {
+  font-size: 11px;
+  color: var(--hict-surface-muted, #6c757d);
+  min-width: 54px;
+}
+
+.scope-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--hict-surface-fg, #212529);
 }
 
 #reload-tiles-button {

@@ -853,6 +853,7 @@ const applyAssemblyInfo = (assemblyInfo: AssemblyInfo): void => {
   }
   props.mapManager.contigDimensionHolder.updateContigData(assemblyInfo.contigDescriptors);
   props.mapManager.scaffoldHolder.updateScaffoldData(assemblyInfo.scaffoldDescriptors);
+  props.mapManager.getLayersManager().reapplyAxisScopes();
   props.mapManager.reloadVisuals();
   props.mapManager.refreshOverviewMinimap();
   void props.mapManager.linearTrackManager.clearCachesAndRender();
