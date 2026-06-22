@@ -365,6 +365,15 @@ class RulerControl extends Control {
       this.direction === "horizontal"
         ? mapBoxPixelCoordinates.left
         : mapBoxPixelCoordinates.top;
+    const scopeStartPx =
+      this.direction === "horizontal"
+        ? scopePixelBounds.colStartPx
+        : scopePixelBounds.rowStartPx;
+    const globalCoordinateOffsetBp =
+      this.contigDimensionHolder.getStartBpOfPx(
+        scopeStartPx,
+        resolutionDescriptor.bpResolution
+      );
     const ticks = this.buildVisibleRulerTicks({
       axisStart,
       axisEnd,
@@ -372,6 +381,7 @@ class RulerControl extends Control {
       fraction: fraction1,
       pixelMapSize,
       resolutionDescriptor,
+      globalCoordinateOffsetBp,
     });
     for (const tick of ticks) {
       this.drawRulerTick(context, tick, start, deltaDir);
@@ -596,6 +606,7 @@ class RulerControl extends Control {
     fraction: number;
     pixelMapSize: number;
     resolutionDescriptor: LayerResolutionDescriptor;
+    globalCoordinateOffsetBp: number;
   }): RulerTick[] {
     const axisStart = Math.round(Math.min(options.axisStart, options.axisEnd));
     const axisEnd = Math.round(Math.max(options.axisStart, options.axisEnd));
@@ -630,18 +641,26 @@ class RulerControl extends Control {
       )
     );
     const maxBp = Math.max(
-      ...bpValues.map((bp) => this.coordinateValueForMode(bp)),
+      ...bpValues.map((bp) =>
+        this.coordinateValueForMode(bp, options.globalCoordinateOffsetBp)
+      ),
       0
     );
     const labelUnit = this.absoluteLabelUnit(maxBp);
     let currentAnchor = this.roundDownToUnit(
-      this.coordinateValueForMode(bpValues[0] ?? 0),
+      this.coordinateValueForMode(
+        bpValues[0] ?? 0,
+        options.globalCoordinateOffsetBp
+      ),
       labelUnit
     );
     return screens.map((screen, index) => {
       const bp = bpValues[index] ?? 0;
       const mapPx = mapPxValues[index] ?? 0;
-      const coordinateValue = this.coordinateValueForMode(bp);
+      const coordinateValue = this.coordinateValueForMode(
+        bp,
+        options.globalCoordinateOffsetBp
+      );
       const anchor = this.roundDownToUnit(coordinateValue, labelUnit);
       const boundary =
         index === 0 ? "start" : index === screens.length - 1 ? "end" : undefined;
@@ -669,14 +688,14 @@ class RulerControl extends Control {
     });
   }
 
-  private coordinateValueForMode(bp: number): number {
+  private coordinateValueForMode(bp: number, globalOffsetBp = 0): number {
     if (this.rulerCoordinateMode.value === "contig") {
       return this.contigDimensionHolder.getContigLocusByBp(bp).inContigBp;
     }
     if (this.rulerCoordinateMode.value === "scaffold") {
       return this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp)?.inScaffoldBp ?? bp;
     }
-    return bp;
+    return Math.max(0, bp - globalOffsetBp);
   }
 
   private coordinatePrefixForMode(): string {

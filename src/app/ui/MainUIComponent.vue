@@ -467,6 +467,8 @@ async function openFileWithOptions(
       fname,
       ffname
     );
+    filename.value = fname;
+    fastaFilename.value = ffname ?? "";
     mapManager.value?.dispose();
     const newManager = new ContactMapManager({
       response: openFileResponse,
@@ -704,19 +706,28 @@ function serializeCurrentVisualizationOptions(): Record<string, unknown> {
 }
 
 function onSaveSession(): void {
-  if (!mapManager.value) {
+  const manager = mapManager.value;
+  if (!manager) {
     toast.error("No open map to save session");
     return;
   }
-  const view = mapManager.value.getView();
+  const view = manager.getView();
+  const currentFilename =
+    filename.value && filename.value.trim() !== ""
+      ? filename.value
+      : manager.getOptions().filename;
+  const currentFastaFilename =
+    fastaFilename.value && fastaFilename.value.trim() !== ""
+      ? fastaFilename.value
+      : manager.getOptions().fastaFilename;
   const session = {
     version: 1,
-    filename: filename.value ?? "",
-    fastaFilename: fastaFilename.value ?? "",
+    filename: currentFilename ?? "",
+    fastaFilename: currentFastaFilename ?? "",
     agpFilename: lastAgpFilename.value ?? "",
     visualizationOptions: serializeCurrentVisualizationOptions(),
     backgroundColor: mapBackgroundColor.value?.RGBA ?? "rgba(255,255,255,1)",
-    trackStyles: mapManager.value.getLayersManager().getTrackStylePreset(),
+    trackStyles: manager.getLayersManager().getTrackStylePreset(),
     savedLocations: sessionStore.savedLocations,
     savedVisualizationPresets: sessionStore.savedVisualizationPresets,
     view: {
@@ -724,8 +735,8 @@ function onSaveSession(): void {
       resolution: view.getResolution(),
       rotation: view.getRotation(),
       bpResolution:
-        mapManager.value.viewAndLayersManager.currentViewState
-          .resolutionDesciptor.bpResolution,
+        manager.viewAndLayersManager.currentViewState.resolutionDesciptor
+          .bpResolution,
     },
   };
   const blob = new Blob([JSON.stringify(session, null, 2)], {
@@ -757,6 +768,102 @@ async function resolveFilename(
   return replacement;
 }
 
+function pathBasename(path: string): string {
+  const parts = path.split(/[\\/]/);
+  return parts[parts.length - 1] ?? path;
+}
+
+function isHiCTMapFilename(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower.endsWith(".hict.hdf5") || lower.endsWith(".hict");
+}
+
+function stripHiCTMapSuffix(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".hict.hdf5")) {
+    return name.slice(0, -".hict.hdf5".length);
+  }
+  if (lower.endsWith(".hict")) {
+    return name.slice(0, -".hict".length);
+  }
+  return name;
+}
+
+function sessionNameStem(sessionFileName: string): string {
+  return pathBasename(sessionFileName)
+    .replace(/\.json$/i, "")
+    .replace(/(?:^|[._-])hict(?:[._-])?session$/i, "")
+    .replace(/[._-]session$/i, "")
+    .toLowerCase();
+}
+
+function scoreSessionMapCandidate(candidate: string, stem: string): number {
+  if (!stem) return 0;
+  const candidateBase = stripHiCTMapSuffix(pathBasename(candidate)).toLowerCase();
+  const candidatePath = candidate.toLowerCase();
+  if (candidateBase === stem) return 1000;
+  if (candidateBase.startsWith(stem)) return 800;
+  if (candidateBase.includes(stem)) return 700;
+  if (stem.includes(candidateBase)) return 650;
+  if (candidatePath.includes(`/${stem}/`)) return 500;
+  if (candidatePath.includes(stem)) return 300;
+  return 0;
+}
+
+async function resolveRequiredHiCTSessionFilename(
+  original: string,
+  list: string[],
+  sessionFileName: string
+): Promise<string | null> {
+  if (original && original.trim() !== "") {
+    return resolveFilename("HiCT", original, list);
+  }
+
+  const hictCandidates = list.filter(isHiCTMapFilename);
+  if (hictCandidates.length === 1) {
+    toast(
+      `Session did not record a HiCT map filename; using ${hictCandidates[0]}`
+    );
+    return hictCandidates[0];
+  }
+
+  const stem = sessionNameStem(sessionFileName);
+  const ranked = hictCandidates
+    .map((candidate) => ({
+      candidate,
+      score: scoreSessionMapCandidate(candidate, stem),
+    }))
+    .sort(
+      (a, b) => b.score - a.score || a.candidate.localeCompare(b.candidate)
+    );
+  const likely = ranked.filter((entry) => entry.score > 0);
+  const visibleCandidates = (likely.length > 0 ? likely : ranked)
+    .slice(0, 10)
+    .map((entry) => entry.candidate);
+  const defaultCandidate = visibleCandidates[0] ?? "";
+  const promptLines = [
+    "This session does not record the HiCT map filename.",
+    "Enter the relative .hict.hdf5 file path to open, or leave empty to cancel.",
+  ];
+  if (visibleCandidates.length > 0) {
+    promptLines.push("", "Likely candidates:");
+    visibleCandidates.forEach((candidate) => {
+      promptLines.push(`- ${candidate}`);
+    });
+  }
+  const replacement = window.prompt(promptLines.join("\n"), defaultCandidate);
+  if (!replacement) return null;
+  if (!list.includes(replacement)) {
+    toast.error(`HiCT file '${replacement}' not found`);
+    return null;
+  }
+  if (!isHiCTMapFilename(replacement)) {
+    toast.error(`'${replacement}' is not a HiCT map file`);
+    return null;
+  }
+  return replacement;
+}
+
 async function onOpenSession(file: File): Promise<void> {
   try {
     const text = await file.text();
@@ -769,10 +876,10 @@ async function onOpenSession(file: File): Promise<void> {
     const fastaList = await networkManager.requestManager.listFASTAFiles();
     const agpList = await networkManager.requestManager.listAGPFiles();
 
-    const resolvedFile = await resolveFilename(
-      "HiCT",
+    const resolvedFile = await resolveRequiredHiCTSessionFilename(
       sessionFilename,
-      fileList
+      fileList,
+      file.name
     );
     if (resolvedFile === null) return;
 
@@ -905,7 +1012,13 @@ async function onOpenSession(file: File): Promise<void> {
     mapManager.value?.reloadTiles();
     toast.success("Session restored");
   } catch (e) {
-    toast.error("Failed to open session");
+    console.error(e);
+    const message =
+      (e as { response?: { data?: { error?: string } } })?.response?.data
+        ?.error ??
+      (e as Error)?.message ??
+      "Failed to open session";
+    toast.error(message);
   }
 }
 
