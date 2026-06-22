@@ -357,8 +357,11 @@ async function chooseCoolerWeightsNaNPolicy(
   try {
     await manager.visualizationManager.sendVisualizationOptionsToServer({
       skipAutoThresholdRefresh: true,
+      preserveCustomPipeline: true,
     });
+    await manager.visualizationManager.applyOpeningFullMapQuantileThreshold();
     await manager.reloadTilesFromBackend();
+    await manager.stabilizeInitialViewport({ fit: false });
   } catch (error) {
     const message =
       (error as { response?: { data?: { error?: string } }; message?: string })
@@ -438,7 +441,9 @@ function onAttached() {
         mapManager.value = newManager;
         networkManager.mapManager = mapManager.value;
         newManager.initializeMap();
-        void maybePromptCoolerWeightsNaNs();
+        void newManager
+          .stabilizeInitialViewport({ fit: false })
+          .then(() => maybePromptCoolerWeightsNaNs());
         toast.success("Attached to session " + attachedName);
       }
     )
@@ -476,6 +481,7 @@ async function openFileWithOptions(
     mapManager.value = newManager;
     networkManager.mapManager = mapManager.value;
     newManager.initializeMap();
+    await newManager.stabilizeInitialViewport({ fit: true });
     if (options?.applyDefaultPreset !== false) {
       await applyDefaultVisualizationPreset();
     } else {
@@ -556,6 +562,7 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
     if (manager) {
       await manager.visualizationManager.applyOpeningFullMapQuantileThreshold();
       await manager.reloadTilesFromBackend();
+      await manager.stabilizeInitialViewport({ fit: false });
       await maybePromptCoolerWeightsNaNs();
     }
     return;
@@ -638,6 +645,7 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
   });
   await manager.visualizationManager.applyOpeningFullMapQuantileThreshold();
   await manager.reloadTilesFromBackend();
+  await manager.stabilizeInitialViewport({ fit: false });
   await maybePromptCoolerWeightsNaNs();
 }
 

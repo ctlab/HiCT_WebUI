@@ -66,6 +66,8 @@ class ContactMapManager {
   private minimapPointerCleanup: (() => void)[];
   private minimapDragPointerId: number | null;
   private minimapRenderFramePending: boolean;
+  private workspaceLayoutRefreshFramePending: boolean;
+  private workspaceLayoutRefreshShouldRenderTracks: boolean;
 
   constructor(
     protected readonly options: {
@@ -112,12 +114,14 @@ class ContactMapManager {
     this.minimapPointerCleanup = [];
     this.minimapDragPointerId = null;
     this.minimapRenderFramePending = false;
+    this.workspaceLayoutRefreshFramePending = false;
+    this.workspaceLayoutRefreshShouldRenderTracks = false;
   }
 
   public initializeMap(): void {
     this.map.setTarget(this.options.mapTargetSelector);
     this.sizeObserver = new ResizeObserver(() => {
-      this.map.updateSize();
+      this.scheduleWorkspaceLayoutRefresh({ renderTracks: false });
     });
     this.sizeObserver.observe(
       document.querySelector("#" + this.options.mapTargetSelector) as Element
@@ -287,6 +291,8 @@ class ContactMapManager {
   public reloadTiles(): void {
     this.viewAndLayersManager.reloadTiles();
     void this.linearTrackManager.clearCachesAndRender();
+    this.viewAndLayersManager.updateCurrentHiCViewState();
+    this.scheduleWorkspaceLayoutRefresh({ renderTracks: false });
     this.scheduleMinimapViewportSync();
   }
 
@@ -294,7 +300,73 @@ class ContactMapManager {
     const version = await this.networkManager.requestManager.reloadTilesVersion();
     this.viewAndLayersManager.reloadTiles(version);
     void this.linearTrackManager.clearCachesAndRender();
+    this.viewAndLayersManager.updateCurrentHiCViewState();
+    this.scheduleWorkspaceLayoutRefresh({ renderTracks: false });
     this.scheduleMinimapViewportSync();
+  }
+
+  public async stabilizeInitialViewport(options?: { fit?: boolean }): Promise<void> {
+    await this.waitForNextAnimationFrame();
+    await this.waitForNextAnimationFrame();
+    this.map.updateSize();
+    if (options?.fit === false) {
+      this.viewAndLayersManager.updateCurrentHiCViewState();
+      this.viewAndLayersManager.scheduleRulerRender();
+      this.map.changed();
+    } else {
+      this.viewAndLayersManager.fitViewToActiveExtent();
+    }
+    await this.linearTrackManager.render({ allowFetch: true }).catch(() => {
+      // Track rendering is best-effort during startup; map tiles must still appear.
+    });
+    this.scheduleMinimapViewportSync();
+    this.map.renderSync();
+  }
+
+  public scheduleWorkspaceLayoutRefresh(options?: {
+    renderTracks?: boolean;
+  }): void {
+    if (options?.renderTracks !== false) {
+      this.workspaceLayoutRefreshShouldRenderTracks = true;
+    }
+    if (this.workspaceLayoutRefreshFramePending) {
+      return;
+    }
+    this.workspaceLayoutRefreshFramePending = true;
+    this.scheduleAnimationFrame(() => {
+      const renderTracks = this.workspaceLayoutRefreshShouldRenderTracks;
+      this.workspaceLayoutRefreshShouldRenderTracks = false;
+      this.workspaceLayoutRefreshFramePending = false;
+      this.refreshWorkspaceLayout({ renderTracks });
+    });
+  }
+
+  private refreshWorkspaceLayout(options?: { renderTracks?: boolean }): void {
+    this.map.updateSize();
+    this.viewAndLayersManager.updateCurrentHiCViewState();
+    this.viewAndLayersManager.scheduleRulerRender();
+    if (options?.renderTracks !== false) {
+      void this.linearTrackManager.render({ allowFetch: true });
+    }
+    this.scheduleMinimapViewportSync();
+    this.map.renderSync();
+  }
+
+  private waitForNextAnimationFrame(): Promise<void> {
+    return new Promise((resolve) => {
+      this.scheduleAnimationFrame(() => resolve());
+    });
+  }
+
+  private scheduleAnimationFrame(callback: () => void): void {
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      window.requestAnimationFrame(callback);
+      return;
+    }
+    setTimeout(callback, 0);
   }
 
   private resolveExportMapSizePx(
@@ -980,7 +1052,7 @@ class ContactMapManager {
     }
   ): Promise<void> {
     let svg: string;
-    if (options?.includeWorkspaceComposite === true) {
+    if (options?.includeWorkspaceComposite !== false) {
       const workspaceCanvas = await this.renderWorkspaceCompositeCanvas(
         options?.backgroundColor
       );
@@ -1039,14 +1111,15 @@ class ContactMapManager {
       includeWorkspaceComposite?: boolean;
     }
   ): Promise<void> {
+    const useWorkspaceComposite = options?.includeWorkspaceComposite !== false;
     const canvas =
-      options?.includeWorkspaceComposite === true
+      useWorkspaceComposite
         ? await this.renderWorkspaceCompositeCanvas(options?.backgroundColor)
         : await this.buildDataDrivenExportCompositeCanvas(
             progressCallback,
             options
           );
-    if (options?.includeWorkspaceComposite === true) {
+    if (useWorkspaceComposite) {
       progressCallback?.(1);
     }
     await new Promise<void>((resolve, reject) => {
@@ -1070,14 +1143,15 @@ class ContactMapManager {
       includeWorkspaceComposite?: boolean;
     }
   ): Promise<void> {
+    const useWorkspaceComposite = options?.includeWorkspaceComposite !== false;
     const canvas =
-      options?.includeWorkspaceComposite === true
+      useWorkspaceComposite
         ? await this.renderWorkspaceCompositeCanvas(options?.backgroundColor)
         : await this.buildDataDrivenExportCompositeCanvas(
             progressCallback,
             options
           );
-    if (options?.includeWorkspaceComposite === true) {
+    if (useWorkspaceComposite) {
       progressCallback?.(1);
     }
     const dataUrl = canvas.toDataURL("image/png");

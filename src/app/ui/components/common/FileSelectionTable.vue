@@ -38,6 +38,7 @@
       @value-change="onValueChange"
     >
       <Column
+        v-if="props.multiSelect"
         header=""
         body-class="selection-cell"
         header-class="selection-cell"

@@ -78,7 +78,7 @@
           type="text"
           v-model="rowScopeQuery"
           @focus="openScopePicker('row')"
-          @input="rowScopeOpen = true"
+          @input="onScopeInput('row')"
           @keydown.down.prevent="moveScopeHighlight('row', 1)"
           @keydown.up.prevent="moveScopeHighlight('row', -1)"
           @keydown.enter.prevent="acceptHighlightedScope('row')"
@@ -100,13 +100,24 @@
           </button>
         </div>
       </div>
+      <div class="scope-copy-control mb-3">
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm scope-copy-button"
+          title="Copy row scope to columns"
+          aria-label="Copy row scope to columns"
+          @click="copyRowScopeToColumn"
+        >
+          <i class="bi bi-arrow-right"></i>
+        </button>
+      </div>
       <div class="scope-picker mb-3">
         <input
           class="form-control form-control-sm"
           type="text"
           v-model="columnScopeQuery"
           @focus="openScopePicker('column')"
-          @input="columnScopeOpen = true"
+          @input="onScopeInput('column')"
           @keydown.down.prevent="moveScopeHighlight('column', 1)"
           @keydown.up.prevent="moveScopeHighlight('column', -1)"
           @keydown.enter.prevent="acceptHighlightedScope('column')"
@@ -270,6 +281,8 @@ const selectedColumnScope = ref<AxisScopeSelection>({
 });
 const rowScopeQuery = ref("All Rows");
 const columnScopeQuery = ref("All Columns");
+const rowScopeFilterQuery = ref("");
+const columnScopeFilterQuery = ref("");
 const rowScopeOpen = ref(false);
 const columnScopeOpen = ref(false);
 const rowScopeIndex = ref(0);
@@ -332,12 +345,22 @@ function scopeToSelection(option: AxisScopeSelection): AxisScopeSelection {
   };
 }
 
+function normalizeSelectionForAxis(
+  selection: AxisScopeSelection,
+  axis: ScopeAxis
+): AxisScopeSelection {
+  if (selection.kind === "all" || selection.id === undefined) {
+    return { kind: "all", label: allScopeLabel(axis) };
+  }
+  return scopeToSelection(selection);
+}
+
 function buildScopeOptions(axis: ScopeAxis): ScopeOption[] {
   const manager = props.mapManager;
   if (!manager) {
     return [allScopeOption(axis)];
   }
-  void manager.getLayersManager().axisScopeRevision.value;
+  void manager.getLayersManager().axisScopeRevision;
   const options: ScopeOption[] = [allScopeOption(axis)];
   const scaffolds = manager.scaffoldHolder.scaffoldBordersSorted;
   for (let i = 0; i < scaffolds.length; i += 1) {
@@ -409,7 +432,7 @@ function filterScopeOptions(
 ): ScopeOption[] {
   const normalized = query.trim().toLowerCase();
   if (!normalized) {
-    return options.slice(0, 80);
+    return options;
   }
   return options
     .map((option) => ({
@@ -427,10 +450,10 @@ function filterScopeOptions(
 const rowScopeOptions = computed(() => buildScopeOptions("row"));
 const columnScopeOptions = computed(() => buildScopeOptions("column"));
 const filteredRowScopeOptions = computed(() =>
-  filterScopeOptions(rowScopeOptions.value, rowScopeQuery.value)
+  filterScopeOptions(rowScopeOptions.value, rowScopeFilterQuery.value)
 );
 const filteredColumnScopeOptions = computed(() =>
-  filterScopeOptions(columnScopeOptions.value, columnScopeQuery.value)
+  filterScopeOptions(columnScopeOptions.value, columnScopeFilterQuery.value)
 );
 
 function selectScope(axis: ScopeAxis, option: ScopeOption): void {
@@ -438,11 +461,13 @@ function selectScope(axis: ScopeAxis, option: ScopeOption): void {
   if (axis === "row") {
     selectedRowScope.value = selection;
     rowScopeQuery.value = selection.label;
+    rowScopeFilterQuery.value = "";
     rowScopeOpen.value = false;
     rowScopeIndex.value = 0;
   } else {
     selectedColumnScope.value = selection;
     columnScopeQuery.value = selection.label;
+    columnScopeFilterQuery.value = "";
     columnScopeOpen.value = false;
     columnScopeIndex.value = 0;
   }
@@ -456,9 +481,23 @@ function openScopePicker(axis: ScopeAxis): void {
   syncScopeQueriesFromManager();
   if (axis === "row") {
     rowScopeOpen.value = true;
+    rowScopeFilterQuery.value = "";
     rowScopeIndex.value = 0;
   } else {
     columnScopeOpen.value = true;
+    columnScopeFilterQuery.value = "";
+    columnScopeIndex.value = 0;
+  }
+}
+
+function onScopeInput(axis: ScopeAxis): void {
+  if (axis === "row") {
+    rowScopeOpen.value = true;
+    rowScopeFilterQuery.value = rowScopeQuery.value;
+    rowScopeIndex.value = 0;
+  } else {
+    columnScopeOpen.value = true;
+    columnScopeFilterQuery.value = columnScopeQuery.value;
     columnScopeIndex.value = 0;
   }
 }
@@ -472,13 +511,28 @@ function deferScopePickerClose(axis: ScopeAxis): void {
 function restoreScopeQuery(axis: ScopeAxis): void {
   if (axis === "row") {
     rowScopeQuery.value = selectedRowScope.value.label || "All Rows";
+    rowScopeFilterQuery.value = "";
     rowScopeOpen.value = false;
     rowScopeIndex.value = 0;
   } else {
     columnScopeQuery.value = selectedColumnScope.value.label || "All Columns";
+    columnScopeFilterQuery.value = "";
     columnScopeOpen.value = false;
     columnScopeIndex.value = 0;
   }
+}
+
+function copyRowScopeToColumn(): void {
+  const nextColumn = normalizeSelectionForAxis(selectedRowScope.value, "column");
+  selectedColumnScope.value = nextColumn;
+  columnScopeQuery.value = nextColumn.label;
+  columnScopeFilterQuery.value = "";
+  columnScopeOpen.value = false;
+  columnScopeIndex.value = 0;
+  props.mapManager?.getLayersManager().setAxisScopes(
+    selectedRowScope.value,
+    selectedColumnScope.value
+  );
 }
 
 function moveScopeHighlight(axis: ScopeAxis, delta: number): void {
@@ -513,14 +567,16 @@ function syncScopeQueriesFromManager(): void {
   }
   if (!rowScopeOpen.value) {
     rowScopeQuery.value = selectedRowScope.value.label || "All Rows";
+    rowScopeFilterQuery.value = "";
   }
   if (!columnScopeOpen.value) {
     columnScopeQuery.value = selectedColumnScope.value.label || "All Columns";
+    columnScopeFilterQuery.value = "";
   }
 }
 
 watch(
-  () => props.mapManager?.getLayersManager().axisScopeRevision.value,
+  () => props.mapManager?.getLayersManager().axisScopeRevision,
   () => syncScopeQueriesFromManager(),
   { immediate: true }
 );
@@ -1179,6 +1235,19 @@ function onNormalizationChanged() {
 .scope-picker .form-control {
   height: 30px;
   font-size: 13px;
+}
+
+.scope-copy-control {
+  flex: 0 0 auto;
+}
+
+.scope-copy-button {
+  height: 30px;
+  width: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .scope-dropdown {

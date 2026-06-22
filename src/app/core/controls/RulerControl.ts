@@ -253,6 +253,20 @@ class RulerControl extends Control {
       return;
     }
 
+    const scopePixelBounds =
+      this.viewAndLayersManager.getActiveMapPixelBounds(
+        resolutionDescriptor.bpResolution
+      );
+    const scopedVisibleExtentPixel = this.getScopedVisibleRulerExtent({
+      mapBoxPixelCoordinates,
+      visibleMapBoxExtentPixel,
+      fraction: fraction1,
+      scopePixelBounds,
+    });
+    if (!scopedVisibleExtentPixel) {
+      return;
+    }
+
     // console.log(
     //   //   "Got extent",
     //   //   extent,
@@ -284,14 +298,14 @@ class RulerControl extends Control {
       switch (this.opt_options.direction) {
         case "vertical":
           return [
-            [Math.round(this.canvas.width), visibleMapBoxExtentPixel.top],
-            [Math.round(this.canvas.width), visibleMapBoxExtentPixel.bottom],
+            [Math.round(this.canvas.width), scopedVisibleExtentPixel.start],
+            [Math.round(this.canvas.width), scopedVisibleExtentPixel.end],
             [0, 1],
           ];
         case "horizontal":
           return [
-            [visibleMapBoxExtentPixel.left, Math.round(this.canvas.height)],
-            [visibleMapBoxExtentPixel.right, Math.round(this.canvas.height)],
+            [scopedVisibleExtentPixel.start, Math.round(this.canvas.height)],
+            [scopedVisibleExtentPixel.end, Math.round(this.canvas.height)],
             [1, 0],
           ];
       }
@@ -413,6 +427,55 @@ class RulerControl extends Control {
     this.tooltip.style.display = "none";
   }
 
+  private getScopedVisibleRulerExtent(options: {
+    mapBoxPixelCoordinates: {
+      left: number;
+      top: number;
+    };
+    visibleMapBoxExtentPixel: {
+      left: number;
+      right: number;
+      top: number;
+      bottom: number;
+    };
+    fraction: number;
+    scopePixelBounds: {
+      colStartPx: number;
+      colEndPx: number;
+      rowStartPx: number;
+      rowEndPx: number;
+    };
+  }): { start: number; end: number } | null {
+    const axisIsHorizontal = this.direction === "horizontal";
+    const mapStartScreen = axisIsHorizontal
+      ? options.mapBoxPixelCoordinates.left
+      : options.mapBoxPixelCoordinates.top;
+    const visibleStart = axisIsHorizontal
+      ? options.visibleMapBoxExtentPixel.left
+      : options.visibleMapBoxExtentPixel.top;
+    const visibleEnd = axisIsHorizontal
+      ? options.visibleMapBoxExtentPixel.right
+      : options.visibleMapBoxExtentPixel.bottom;
+    const scopeStartPx = axisIsHorizontal
+      ? options.scopePixelBounds.colStartPx
+      : options.scopePixelBounds.rowStartPx;
+    const scopeEndPx = axisIsHorizontal
+      ? options.scopePixelBounds.colEndPx
+      : options.scopePixelBounds.rowEndPx;
+    const scopeStartScreen = mapStartScreen + scopeStartPx / options.fraction;
+    const scopeEndScreen = mapStartScreen + scopeEndPx / options.fraction;
+    const start = Math.ceil(
+      Math.max(visibleStart, Math.min(scopeStartScreen, scopeEndScreen))
+    );
+    const end = Math.floor(
+      Math.min(visibleEnd, Math.max(scopeStartScreen, scopeEndScreen))
+    );
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      return null;
+    }
+    return { start, end };
+  }
+
   private resolveRulerHoverDetails(offsetX: number, offsetY: number): string | null {
     const map = this.mapManager.getMap();
     const mapSize = map.getSize();
@@ -476,6 +539,21 @@ class RulerControl extends Control {
           )
       ) * fraction;
     const px = Math.max(0, Math.min(pixelMapSize - 1, Math.round(unclampedPx)));
+    const scopePixelBounds =
+      this.viewAndLayersManager.getActiveMapPixelBounds(
+        resolutionDescriptor.bpResolution
+      );
+    const scopeStartPx =
+      this.direction === "horizontal"
+        ? scopePixelBounds.colStartPx
+        : scopePixelBounds.rowStartPx;
+    const scopeEndPx =
+      this.direction === "horizontal"
+        ? scopePixelBounds.colEndPx
+        : scopePixelBounds.rowEndPx;
+    if (px < scopeStartPx || px >= scopeEndPx) {
+      return null;
+    }
     const bp = this.contigDimensionHolder.getStartBpOfPx(
       px,
       resolutionDescriptor.bpResolution
@@ -572,8 +650,6 @@ class RulerControl extends Control {
         currentAnchor = anchor;
       }
       const delta = Math.max(0, Math.round(coordinateValue - currentAnchor));
-      const contig = this.contigDimensionHolder.getContigLocusByBp(bp);
-      const scaffold = this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp);
       const prefix = this.coordinatePrefixForMode();
       return {
         screen,
@@ -585,12 +661,9 @@ class RulerControl extends Control {
           major || delta <= 0
             ? `${prefix}${this.formatBpLabel(anchor, 0)}`
             : `+${this.formatBpLabel(delta, 0)}`,
-        contigLabel: major && this.rulerCoordinateMode.value === "global"
-          ? `ctg +${this.formatBpLabel(contig.inContigBp, 0)}`
-          : undefined,
-        scaffoldLabel:
-          major && scaffold && this.rulerCoordinateMode.value === "global"
-            ? `scf +${this.formatBpLabel(scaffold.inScaffoldBp, 0)}`
+        contigLabel:
+          major && this.rulerCoordinateMode.value === "global"
+            ? this.secondaryGlobalCoordinateLabel(bp)
             : undefined,
       };
     });
@@ -614,6 +687,15 @@ class RulerControl extends Control {
       return "scf ";
     }
     return "";
+  }
+
+  private secondaryGlobalCoordinateLabel(bp: number): string {
+    const scaffold = this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp);
+    if (scaffold) {
+      return `scf+${this.formatBpLabel(scaffold.inScaffoldBp, 0)}`;
+    }
+    const contig = this.contigDimensionHolder.getContigLocusByBp(bp);
+    return `ctg+${this.formatBpLabel(contig.inContigBp, 0)}`;
   }
 
   private screenPositionToMapPx(

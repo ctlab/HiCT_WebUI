@@ -276,7 +276,7 @@
               <div v-else-if="currentStep?.id === 'tracks'" class="wizard-section">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <h6 class="mb-0">1D tracks</h6>
-                  <button class="btn btn-outline-primary btn-sm" @click="openSelector('track')">Add track…</button>
+                  <button class="btn btn-outline-primary btn-sm" @click="openSelector('track')">Add tracks…</button>
                 </div>
                 <div v-if="selectedTracks.length === 0" class="alert alert-light border">
                   No tracks selected. This step is optional.
@@ -726,7 +726,9 @@
       :file-type="selectorState.fileType"
       :note="selectorState.note"
       :file-name-predicate="selectorState.predicate"
+      :multi-select="selectorState.kind === 'track'"
       @selected="onSelectorPicked"
+      @selected-many="onSelectorPickedMany"
       @dismissed="closeSelector"
     />
   </div>
@@ -1093,6 +1095,15 @@ const currentRunStepLabel = computed(
 const findPresetIdByName = (name: string): string =>
   availablePresets.value.find((preset) => preset.preset.name === name)?.id ??
   availablePresets.value[0]?.id ??
+  "";
+
+const findOptionalPresetIdByName = (name: string): string =>
+  availablePresets.value.find((preset) => preset.preset.name === name)?.id ?? "";
+
+const findSecondaryOverlayPresetId = (): string =>
+  findOptionalPresetIdByName("Dotplot overlay black") ||
+  findOptionalPresetIdByName("Dotplot black") ||
+  availablePresets.value[0]?.id ||
   "";
 
 const usesExpectedPreset = computed(
@@ -1621,7 +1632,7 @@ const openSelector = (kind: SelectorKind): void => {
     return;
   }
   if (kind === "track") {
-    selectorState.title = "Select 1D track file";
+    selectorState.title = "Select 1D track files";
     selectorState.fileType = ".bed, .vcf, .gff, .gtf, .bw, .bigwig, .bam";
     selectorState.note = "Track caches are fingerprinted and can be reused when unchanged.";
     selectorState.predicate = isTrackFilename;
@@ -1714,6 +1725,12 @@ const addTrack = async (filename: string): Promise<void> => {
   ];
 };
 
+const addTracks = async (filenames: string[]): Promise<void> => {
+  for (const filename of filenames) {
+    await addTrack(filename);
+  }
+};
+
 const removeTrack = (filename: string): void => {
   selectedTracks.value = selectedTracks.value.filter(
     (track) => track.filename !== filename
@@ -1764,6 +1781,19 @@ const onSelectorPicked = async (filename: string): Promise<void> => {
     }
   } catch (error) {
     toast.error(String(error ?? "Failed to process selected file"));
+  }
+};
+
+const onSelectorPickedMany = async (filenames: string[]): Promise<void> => {
+  const kind = selectorState.kind;
+  closeSelector();
+  if (kind !== "track") {
+    return;
+  }
+  try {
+    await addTracks(filenames);
+  } catch (error: unknown) {
+    toast.error(extractErrorMessage(error));
   }
 };
 
@@ -1925,6 +1955,7 @@ const applyAssemblyInfoToMap = (assemblyInfo: AssemblyInfo): void => {
   mapManager?.getLayersManager().reapplyAxisScopes();
   mapManager?.reloadVisuals();
   mapManager?.refreshOverviewMinimap();
+  mapManager?.scheduleWorkspaceLayoutRefresh();
   void mapManager?.linearTrackManager.clearCachesAndRender();
 };
 
@@ -1933,6 +1964,23 @@ const setAuthoritativeAssemblySource = async (
 ): Promise<void> => {
   const result = await props.networkManager.requestManager.setAssemblyInfoSource(source);
   applyAssemblyInfoToMap(result.assemblyInfo);
+};
+
+const refreshSecondaryResolutionModelFromBackend = async (
+  mapManager: ContactMapManager
+): Promise<void> => {
+  if (!requiresSecondarySource.value) {
+    return;
+  }
+  const secondaryStatus =
+    await props.networkManager.requestManager.getSecondarySourceStatus();
+  if (!secondaryStatus.attached || !secondaryStatus.compatibility) {
+    mapManager.viewAndLayersManager.setSecondaryResolutionModel(undefined);
+    return;
+  }
+  mapManager.viewAndLayersManager.setSecondaryResolutionModel(
+    secondaryStatus.compatibility
+  );
 };
 
 const goBack = (): void => {
@@ -2037,6 +2085,8 @@ const runWizard = async (): Promise<void> => {
     );
     styleStore.setMapBackground(backgroundColor);
     visualizationOptionsStore.setVisualizationOptions(primaryPresetRecord.options);
+    applyWizardPresentationState();
+    await nextTick();
     await mapManager.visualizationManager.sendVisualizationOptionsToServer({
       skipAutoThresholdRefresh: true,
     });
@@ -2059,10 +2109,6 @@ const runWizard = async (): Promise<void> => {
         pipelineConfig
       );
     }
-    await mapManager.visualizationManager.applyOpeningFullMapQuantileThreshold();
-    await mapManager.reloadTilesFromBackend();
-    applyWizardPresentationState();
-
     if (secondaryFasta.value && requiresSecondarySource.value) {
       runState.currentStepId = "fasta";
       runState.currentMessage = `Linking ${secondaryFasta.value}`;
@@ -2092,6 +2138,8 @@ const runWizard = async (): Promise<void> => {
           })
         );
       }
+      runState.currentMessage = "Refreshing overlay resolution model";
+      await refreshSecondaryResolutionModelFromBackend(mapManager);
     } else if (primaryAgp.value && primaryAgp.value.toLowerCase().endsWith(".agp")) {
       runState.currentStepId = "agp";
       runState.currentMessage = `Loading ${primaryAgp.value}`;
@@ -2102,6 +2150,13 @@ const runWizard = async (): Promise<void> => {
         })
       );
     }
+
+    runState.currentStepId = "finish";
+    runState.currentMessage = "Preparing initial view";
+    applyWizardPresentationState();
+    await nextTick();
+    await mapManager.visualizationManager.applyOpeningFullMapQuantileThreshold();
+    await mapManager.reloadTilesFromBackend();
 
     for (const track of selectedTracks.value) {
       runState.currentStepId = "tracks";
@@ -2125,11 +2180,19 @@ const runWizard = async (): Promise<void> => {
     }
 
     runState.currentStepId = "finish";
+    runState.currentMessage = "Rendering map";
+    await nextTick();
+    await mapManager.stabilizeInitialViewport({ fit: true });
+
     runState.currentMessage = "Done";
     runState.completed = true;
     toast.success("Wizard completed");
     await nextTick();
     emit("dismissed");
+    requestAnimationFrame(() => {
+      mapManager.scheduleWorkspaceLayoutRefresh();
+      void mapManager.stabilizeInitialViewport({ fit: false });
+    });
   } catch (error) {
     runState.error = extractErrorMessage(error, "Wizard failed");
     runState.completed = false;
@@ -2141,7 +2204,7 @@ const runWizard = async (): Promise<void> => {
 
 onMounted(() => {
   primarySource.presetId = findPresetIdByName("Mosquitoes Demo");
-  secondarySource.presetId = findPresetIdByName("Dotplot black");
+  secondarySource.presetId = findSecondaryOverlayPresetId();
   props.networkManager.requestManager
     .getConversionToolchainStatus()
     .then((status) => {

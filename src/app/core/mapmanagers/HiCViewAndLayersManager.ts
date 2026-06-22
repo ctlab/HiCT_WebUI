@@ -186,7 +186,7 @@ class HiCViewAndLayersManager {
   private enabledBpResolutions?: Set<number>;
   private rulerRenderCallback: (() => void) | null = null;
   private readonly pendingFeatureStyleRefreshHandles = new Set<number>();
-  public readonly axisScopeRevision: Ref<number> = ref(0);
+  public axisScopeRevision = 0;
   private fullGlobalExtent: [number, number, number, number] = [0, 0, 0, 0];
   private activeAxisScopes: MapAxisScopes = {
     row: { kind: "all", label: "All Rows" },
@@ -608,6 +608,13 @@ class HiCViewAndLayersManager {
     return this.activeAxisScopeExtent ?? this.fullGlobalExtent;
   }
 
+  public fitViewToActiveExtent(): void {
+    this.fitViewToExtent(this.getActiveMapExtent());
+    this.updateCurrentHiCViewState();
+    this.scheduleRulerRender();
+    this.mapManager.getMap().changed();
+  }
+
   public setAxisScopes(
     row: AxisScopeSelection,
     column: AxisScopeSelection
@@ -617,7 +624,7 @@ class HiCViewAndLayersManager {
       column: this.normalizeAxisScope(column, "column"),
     };
     this.reapplyAxisScopes({ fit: true });
-    this.axisScopeRevision.value++;
+    this.axisScopeRevision += 1;
   }
 
   public reapplyAxisScopes(options?: {
@@ -671,7 +678,7 @@ class HiCViewAndLayersManager {
     this.scheduleRulerRender();
     this.mapManager.getMap().changed();
     if (scopesChanged) {
-      this.axisScopeRevision.value++;
+      this.axisScopeRevision += 1;
     }
   }
 
@@ -1582,6 +1589,8 @@ class HiCViewAndLayersManager {
     this.updateCurrentHiCViewState();
     this.rebuildBuiltinVectorLayers();
     this.reloadTiles();
+    this.syncLayerVisibilityForCurrentResolution();
+    this.mapManager.scheduleWorkspaceLayoutRefresh({ renderTracks: false });
   }
 
   public hasSecondarySource(): boolean {

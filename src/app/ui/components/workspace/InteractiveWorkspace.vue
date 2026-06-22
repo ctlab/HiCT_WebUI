@@ -147,16 +147,22 @@ const bindCornerMinimap = () => {
   props.mapManager.addOverviewMapTarget(target);
 };
 
+const refreshWorkspaceAfterLayout = async () => {
+  await nextTick();
+  bindCornerMinimap();
+  props.mapManager?.scheduleWorkspaceLayoutRefresh();
+};
+
 onMounted(() => {
   bindTrackVisibility();
-  bindCornerMinimap();
+  void refreshWorkspaceAfterLayout();
 });
 
 watch(
   () => props.mapManager,
   () => {
     bindTrackVisibility();
-    bindCornerMinimap();
+    void refreshWorkspaceAfterLayout();
   }
 );
 
@@ -171,11 +177,10 @@ watch(visibleTrackCount, async () => {
       verticalTrackPanelSizePx.value = 140;
     }
   }
-  await nextTick();
-  bindCornerMinimap();
-  window.requestAnimationFrame(() => {
-    void props.mapManager?.linearTrackManager.render();
-  });
+  // The visible track count changes the workspace grid dimensions. OpenLayers,
+  // rulers and 1D canvases all cache viewport state, so refresh them after Vue
+  // has committed the new grid.
+  await refreshWorkspaceAfterLayout();
 });
 
 onBeforeUnmount(() => {

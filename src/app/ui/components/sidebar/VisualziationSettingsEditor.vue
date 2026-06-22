@@ -125,7 +125,10 @@
             log10 scale
           </label>
         </div>
-        <details v-if="applyCoolerWeights" :class="coolerWeightsHintClass">
+        <details
+          v-if="applyCoolerWeights || coolerWeightsHaveNaNs"
+          :class="coolerWeightsHintClass"
+        >
           <summary title="Cooler weights warning">
             <i class="bi bi-exclamation-triangle-fill"></i>
             Cooler weights
@@ -134,6 +137,23 @@
             Detected {{ coolerWeightsNaNCount }} non-finite Cooler balancing
             weight{{ coolerWeightsNaNCount === 1 ? "" : "s" }}. Selected tactic:
             {{ coolerWeightsNaNPolicyLabel }}.
+            <label class="form-label small mt-2 mb-1" for="cooler-weights-nan-policy">
+              NaN weight tactic
+            </label>
+            <select
+              id="cooler-weights-nan-policy"
+              v-model="coolerWeightsNaNPolicy"
+              class="form-select form-select-sm"
+              @change="onCoolerWeightsNaNPolicyChanged"
+            >
+              <option value="DISABLE_WEIGHTS">Do not use Cooler weights</option>
+              <option value="REPLACE_NANS_WITH_ONE">
+                Replace NaNs with weight 1.0
+              </option>
+              <option value="REPLACE_NANS_WITH_ZERO">
+                Replace NaNs with weight 0
+              </option>
+            </select>
           </div>
           <div v-else>
             Bins with missing or near-zero weights can appear as white stripes;
@@ -505,6 +525,25 @@ function applySettings() {
   action?.catch((error) => {
     toast.error(String(error ?? "Failed to apply visualization settings"));
   });
+}
+
+function onCoolerWeightsNaNPolicyChanged(): void {
+  applyCoolerWeights.value = coolerWeightsNaNPolicy.value !== "DISABLE_WEIGHTS";
+  const manager = props.mapManager;
+  if (!manager) {
+    applySettings();
+    return;
+  }
+  manager.visualizationManager
+    .sendVisualizationOptionsToServer({
+      skipAutoThresholdRefresh: true,
+      preserveCustomPipeline: true,
+    })
+    .then(() => manager.visualizationManager.applyOpeningFullMapQuantileThreshold())
+    .then(() => manager.reloadTilesFromBackend())
+    .catch((error) => {
+      toast.error(String(error ?? "Failed to apply Cooler weight policy"));
+    });
 }
 
 function scheduleLiveApply(): void {

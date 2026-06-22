@@ -77,7 +77,12 @@
                   Show all files
                 </label>
               </div>
-              <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Selector mode">
+              <div
+                v-if="!props.multiSelect"
+                class="btn-group btn-group-sm ms-auto"
+                role="group"
+                aria-label="Selector mode"
+              >
                 <button
                   type="button"
                   class="btn"
@@ -107,7 +112,9 @@
             <div v-else-if="selectorMode === 'explorer'" class="table-host">
               <FileSelectionTable
                 v-model:selected-path="selectedFilename"
+                v-model:selected-paths="selectedFilenames"
                 :entries="filteredEntries"
+                :multi-select="props.multiSelect"
                 empty-message="No files or folders found for current filter"
                 scroll-height="58vh"
                 @activate="onExplorerRowActivated"
@@ -149,6 +156,9 @@
             </div>
           </div>
           <div class="modal-footer">
+            <div v-if="props.multiSelect" class="me-auto small text-muted">
+              {{ selectedFilenames.length }} selected
+            </div>
             <button type="button" class="btn btn-secondary" @click="onDismissClicked">
               Dismiss
             </button>
@@ -156,9 +166,9 @@
               type="button"
               class="btn btn-primary"
               @click="onSelectClicked"
-              :disabled="!selectedFilename || selectedEntry?.type === 'directory'"
+              :disabled="selectButtonDisabled"
             >
-              Load
+              {{ props.multiSelect ? "Add selected" : "Load" }}
             </button>
           </div>
         </div>
@@ -179,6 +189,7 @@ import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
+  (e: "selectedMany", filenames: string[]): void;
   (e: "dismissed"): void;
 }>();
 
@@ -190,11 +201,13 @@ const props = defineProps<{
   note?: string;
   errorMessage?: unknown;
   zIndex?: number;
+  multiSelect?: boolean;
 }>();
 
 const loading = ref(true);
 const errorMessage = ref<string>("");
 const selectedFilename = ref<string | null>(null);
+const selectedFilenames = ref<string[]>([]);
 const allEntries = ref<FileEntryResponse[]>([]);
 const currentDirectory = ref("");
 const pathInput = ref("");
@@ -232,6 +245,12 @@ useEscDismissableDialog({
 });
 
 watch(selectorMode, (mode) => {
+  if (props.multiSelect) {
+    if (mode !== "explorer") {
+      selectorMode.value = "explorer";
+    }
+    return;
+  }
   fileSelectorMode.value = mode;
   if (mode === "tree") {
     const currentPath = selectedFilename.value;
@@ -278,6 +297,12 @@ const selectedEntry = computed(() =>
   selectedFilename.value
     ? filteredEntries.value.find((entry) => entry.path === selectedFilename.value) ?? null
     : null
+);
+
+const selectButtonDisabled = computed(() =>
+  props.multiSelect
+    ? selectedFilenames.value.length === 0
+    : !selectedFilename.value || selectedEntry.value?.type === "directory"
 );
 
 type PrimeTreeNode = {
@@ -479,6 +504,15 @@ const onDismissClicked = (): void => {
 };
 
 const onSelectClicked = (): void => {
+  if (props.multiSelect) {
+    const selected = selectedFilenames.value.slice();
+    if (selected.length === 0) {
+      errorMessage.value = "Please select at least one file";
+      return;
+    }
+    emit("selectedMany", selected);
+    return;
+  }
   const selectedPath = resolveSelectedPath();
   if (!selectedPath) {
     errorMessage.value = "Please select a file";
@@ -502,6 +536,16 @@ const onExplorerRowActivated = (path: string): void => {
   const entry = filteredEntries.value.find((candidate) => candidate.path === path);
   if (entry?.type === "directory") {
     void loadDirectory(path);
+    return;
+  }
+  if (props.multiSelect) {
+    const selected = new Set(selectedFilenames.value);
+    if (selected.has(path)) {
+      selected.delete(path);
+    } else {
+      selected.add(path);
+    }
+    selectedFilenames.value = Array.from(selected);
     return;
   }
   selectedFilename.value = path;
@@ -551,6 +595,11 @@ const onTreeNodeClick = (node: { data?: { path?: string } }): void => {
 };
 
 watch(filteredEntries, (entries) => {
+  if (props.multiSelect) {
+    selectedFilename.value = null;
+    treeSelectionKeys.value = {};
+    return;
+  }
   if (entries.length === 0) {
     selectedFilename.value = null;
     treeSelectionKeys.value = {};
@@ -581,6 +630,9 @@ watch(filteredEntries, (entries) => {
 
 onMounted(async () => {
   showAllFiles.value = !hasPredicate.value;
+  if (props.multiSelect) {
+    selectorMode.value = "explorer";
+  }
   void loadDirectory("");
 });
 </script>
