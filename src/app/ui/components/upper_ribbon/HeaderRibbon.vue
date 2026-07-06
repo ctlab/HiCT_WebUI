@@ -168,7 +168,7 @@
         type="button"
         @click="reloadTiles"
       >
-        <span><i class="bi bi-arrow-clockwise me-1"></i>Reload tiles</span>
+        <span><i class="bi bi-arrow-clockwise me-1"></i><span class="optional-button-label">Reload tiles</span></span>
       </button>
       <div class="export-group">
         <button
@@ -179,7 +179,7 @@
           :title="osdOverlayVisible ? 'Hide map information overlay' : 'Show map information overlay'"
         >
           <i class="bi bi-card-text" aria-hidden="true"></i>
-          OSD
+          <span class="optional-button-label">OSD</span>
         </button>
         <button
           id="ruler-mode-button"
@@ -189,7 +189,7 @@
           :title="`Cycle ruler coordinate mode. Current: ${rulerModeLabel}`"
         >
           <i class="bi bi-rulers me-1" aria-hidden="true"></i>
-          {{ rulerModeLabel }}
+          <span class="ruler-button-label">{{ rulerModeLabel }}</span>
         </button>
         <button
           id="export-svg-button"
@@ -200,7 +200,7 @@
           title="Export full map as SVG"
         >
           <span v-if="exportingType !== 'svg'"
-            ><i class="bi bi-box-arrow-up"></i> SVG</span
+            ><i class="bi bi-box-arrow-up"></i><span class="export-button-label">SVG</span></span
           >
           <span v-else>
             <span class="spinner-border spinner-border-sm me-2"></span>
@@ -216,7 +216,7 @@
           title="Export full map as PNG"
         >
           <span v-if="exportingType !== 'png'"
-            ><i class="bi bi-box-arrow-up"></i> PNG</span
+            ><i class="bi bi-box-arrow-up"></i><span class="export-button-label">PNG</span></span
           >
           <span v-else>
             <span class="spinner-border spinner-border-sm me-2"></span>
@@ -232,7 +232,7 @@
           title="Export full map as PDF"
         >
           <span v-if="exportingType !== 'pdf'"
-            ><i class="bi bi-box-arrow-up"></i> PDF</span
+            ><i class="bi bi-box-arrow-up"></i><span class="export-button-label">PDF</span></span
           >
           <span v-else>
             <span class="spinner-border spinner-border-sm me-2"></span>
@@ -1043,12 +1043,13 @@ function onNormalizationChanged() {
   flex-direction: row;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: nowrap;
-  padding: 12px 16px;
-  gap: 16px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  gap: 8px 12px;
 
   width: 100%;
-  height: 53px;
+  min-height: 53px;
+  height: auto;
 
   background: linear-gradient(180deg, #909aa4 0%, #7f8993 42%, #6d7781 100%);
   color: rgba(24, 30, 38, 0.95);
@@ -1094,8 +1095,9 @@ function onNormalizationChanged() {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
   flex-wrap: nowrap;
+  min-width: 0;
 }
 
 #left-header-block {
@@ -1107,7 +1109,8 @@ function onNormalizationChanged() {
   gap: 16px;
 
   width: auto;
-  height: 30px;
+  min-height: 30px;
+  height: auto;
 
   /* Inside auto layout */
   flex: 1 1 auto;
@@ -1117,9 +1120,10 @@ function onNormalizationChanged() {
 }
 
 #right-header-block {
-  gap: 12px;
+  gap: 6px;
   margin-left: auto;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 #search-container {
@@ -1363,7 +1367,65 @@ function onNormalizationChanged() {
 
 .export-group {
   display: flex;
+  flex: 0 1 auto;
   gap: 6px;
+  min-width: 0;
+}
+
+.export-group .btn,
+#reload-tiles-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.25rem;
+  justify-content: center;
+  min-width: 2.45rem;
+  white-space: nowrap;
+}
+
+.export-button-label,
+.optional-button-label,
+.ruler-button-label {
+  margin-left: 0.25rem;
+}
+
+@media (max-width: 1320px) {
+  .export-button-label {
+    display: none;
+  }
+
+  #export-svg-button,
+  #export-png-button,
+  #export-pdf-button {
+    padding-left: 0.55rem;
+    padding-right: 0.55rem;
+  }
+}
+
+@media (max-width: 1120px) {
+  .optional-button-label {
+    display: none;
+  }
+
+  #ruler-mode-button {
+    max-width: 8.75rem;
+  }
+
+  .ruler-button-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+@media (max-width: 900px) {
+  #left-header-block,
+  #right-header-block {
+    flex: 1 1 100%;
+  }
+
+  #right-header-block {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
 }
 
 #global-search-button {

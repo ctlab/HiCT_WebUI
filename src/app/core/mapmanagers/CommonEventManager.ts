@@ -57,6 +57,48 @@ class CommonEventManager {
     this.mapManager.refreshOverviewMinimap();
   }
 
+  private getSelectedContigBpRange(actionLabel: string): {
+    startBP: number;
+    endBP: number;
+  } | null {
+    const selectedArray =
+      this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
+        .getArray()
+        .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
+    if (selectedArray.length === 0) {
+      toast.error(`Select one or more contigs before ${actionLabel}.`);
+      return null;
+    }
+
+    const prefixSumBp = this.mapManager.contigDimensionHolder.prefix_sum_bp;
+    const idToOrder = this.mapManager.contigDimensionHolder.contigIdToOrd;
+    const lcd = selectedArray.reduce((accumulator, element) =>
+      idToOrder[accumulator.contigId] < idToOrder[element.contigId]
+        ? accumulator
+        : element
+    );
+    const rcd = selectedArray.reduce((accumulator, element) =>
+      idToOrder[accumulator.contigId] > idToOrder[element.contigId]
+        ? accumulator
+        : element
+    );
+    const [lord, rord] = [lcd, rcd].map((cd) => 1 + idToOrder[cd.contigId]);
+    const startBP = lord > 0 ? prefixSumBp[lord - 1] : 0;
+    const endBP = prefixSumBp[rord];
+
+    if (typeof startBP !== "number" || typeof endBP !== "number") {
+      toast.error("Selected contig range is no longer available in the current assembly.");
+      console.log(
+        `Not ${actionLabel}: left border bp is`,
+        startBP,
+        " right border bp is ",
+        endBP
+      );
+      return null;
+    }
+    return { startBP, endBP };
+  }
+
   public reloadTiles() {
     this.mapManager.reloadTiles();
   }
@@ -365,45 +407,15 @@ class CommonEventManager {
   public onMoveToDebrisClicked(): void {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
-    const selectedArray =
-      this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
-        .getArray()
-        .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
-    const prefixSumBp = this.mapManager.contigDimensionHolder.prefix_sum_bp;
-    const idToOrder = this.mapManager.contigDimensionHolder.contigIdToOrd;
-    const [lcd, rcd] = [
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] < idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] > idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-    ];
-    const [lord, rord] = [lcd, rcd].map((cd) => 1 + idToOrder[cd.contigId]);
-
-    const [startBP, endBP] = [
-      lord > 0 ? prefixSumBp[lord - 1] : 0,
-      prefixSumBp[rord],
-    ];
-
-    if (startBP === undefined || endBP === undefined) {
-      console.log(
-        "Not ungrouping contigs from selection: left border bp is",
-        startBP,
-        " right border bp is ",
-        endBP
-      );
+    const range = this.getSelectedContigBpRange("moving selection to debris");
+    if (!range) {
       return;
     }
     this.mapManager.networkManager.requestManager
       .moveSelectionToDebris(
         new MoveSelectionToDebrisRequest({
-          startBP: startBP,
-          endBP: endBP,
+          startBP: range.startBP,
+          endBP: range.endBP,
         })
       )
       .then((asmInfo) => {
@@ -417,44 +429,15 @@ class CommonEventManager {
   public onReverseSelectionClicked(): void {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
-    const selectedArray =
-      this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
-        .getArray()
-        .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
-    const prefixSumBp = this.mapManager.contigDimensionHolder.prefix_sum_bp;
-    const idToOrder = this.mapManager.contigDimensionHolder.contigIdToOrd;
-    const [lcd, rcd] = [
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] < idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] > idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-    ];
-    const [lord, rord] = [lcd, rcd].map((cd) => 1 + idToOrder[cd.contigId]);
-
-    const [startBP, endBP] = [
-      lord > 0 ? prefixSumBp[lord - 1] : 0,
-      prefixSumBp[rord],
-    ];
-    if (startBP === undefined || endBP === undefined) {
-      console.log(
-        "Not reversing selection: left border bp is",
-        startBP,
-        " right border bp is ",
-        endBP
-      );
+    const range = this.getSelectedContigBpRange("reversing a selection");
+    if (!range) {
       return;
     }
     this.mapManager.networkManager.requestManager
       .reverseSelectionRange(
         new ReverseSelectionRangeRequest({
-          startBP: startBP,
-          endBP: endBP,
+          startBP: range.startBP,
+          endBP: range.endBP,
         })
       )
       .then((asmInfo) => {
@@ -471,44 +454,14 @@ class CommonEventManager {
       toast.success("Translocation mode deactivated");
       this.mapManager.deactivateTranslocation();
     } else {
+      const range = this.getSelectedContigBpRange("entering translocation mode");
+      if (!range) {
+        return;
+      }
       toast.message(
         "You've entered translocation mode. Click on arrow at the contig boxes to put selection before or after that arrow. Click again on translocation mode button to leave translocation mode.",
         { duration: 10000 }
       );
-      const selectedArray =
-        this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
-          .getArray()
-          .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
-      const prefixSumBp = this.mapManager.contigDimensionHolder.prefix_sum_bp;
-      const idToOrder = this.mapManager.contigDimensionHolder.contigIdToOrd;
-      const [lcd, rcd] = [
-        selectedArray.reduce((accumulator, element) =>
-          idToOrder[accumulator.contigId] < idToOrder[element.contigId]
-            ? accumulator
-            : element
-        ),
-        selectedArray.reduce((accumulator, element) =>
-          idToOrder[accumulator.contigId] > idToOrder[element.contigId]
-            ? accumulator
-            : element
-        ),
-      ];
-      const [lord, rord] = [lcd, rcd].map((cd) => 1 + idToOrder[cd.contigId]);
-
-      const [startBP, endBP] = [
-        lord > 0 ? prefixSumBp[lord - 1] : 0,
-        prefixSumBp[rord],
-      ];
-
-      if (startBP === undefined || endBP === undefined) {
-        console.log(
-          "Not moving (start) selection: left border bp is",
-          startBP,
-          " right border bp is ",
-          endBP
-        );
-        return;
-      }
       this.mapManager.viewAndLayersManager.currentViewState.activeTool =
         ActiveTool.TRANSLOCATION;
       this.mapManager.viewAndLayersManager.selectionInteractions.contigSelectionInteraction.setActive(
@@ -528,11 +481,11 @@ class CommonEventManager {
       );
       this.mapManager.viewAndLayersManager.selectionInteractions.translocationArrowSelectionInteraction.set(
         "startBP",
-        startBP
+        range.startBP
       );
       this.mapManager.viewAndLayersManager.selectionInteractions.translocationArrowSelectionInteraction.set(
         "endBP",
-        endBP
+        range.endBP
       );
     }
 
