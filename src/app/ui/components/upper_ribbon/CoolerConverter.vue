@@ -227,7 +227,7 @@
               </div>
               <div class="mb-3">
                 <label class="form-label">Parallelism per file</label>
-                <input type="number" class="form-control" v-model.number="batchParallelism" min="1" />
+                <input type="number" class="form-control" v-model.number="batchParallelism" min="-1" title="-1: automatic server CPU allocation" />
               </div>
               <div class="mt-3 d-flex gap-2">
                 <button
@@ -351,7 +351,7 @@ const batchChromSizesFilename: Ref<string> = ref("");
 const batchBinSize: Ref<number | null> = ref(null);
 const sidecarSelectorKind: Ref<"bin-table" | "chrom-sizes" | null> = ref(null);
 const batchParallelJobs: Ref<number> = ref(2);
-const batchParallelism: Ref<number> = ref(Math.max(1, navigator.hardwareConcurrency || 4));
+const batchParallelism: Ref<number> = ref(-1);
 const batchJobIds: Ref<string[]> = ref([]);
 const batchStatusMap: Ref<Map<string, string>> = ref(new Map());
 const batchProgressMap: Ref<Map<string, number>> = ref(new Map());

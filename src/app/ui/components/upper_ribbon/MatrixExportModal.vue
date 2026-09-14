@@ -163,7 +163,7 @@
             </div>
             <div class="col-md-2">
               <label class="form-label">Threads</label>
-              <input v-model.number="parallelism" class="form-control" type="number" min="1" />
+              <input v-model.number="parallelism" class="form-control" type="number" min="-1" title="-1: automatic server CPU allocation" />
             </div>
           </div>
 
@@ -269,7 +269,7 @@ const useCurrentAssembly = ref(true);
 const overwrite = ref(false);
 const compressionAlgorithm = ref("deflate");
 const compression = ref(6);
-const parallelism = ref(Math.max(1, navigator.hardwareConcurrency || 1));
+const parallelism = ref(-1);
 const exportMode = ref("auto");
 const exportAllResolutions = ref(false);
 const balanceExportedCoolers = ref(true);

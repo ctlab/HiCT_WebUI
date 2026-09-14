@@ -157,11 +157,11 @@
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Aligner threads</label>
-                  <input v-model.number="alignmentThreads" type="number" min="1" class="form-control" />
+                  <input v-model.number="alignmentThreads" type="number" min="-1" title="-1: automatic server CPU allocation" class="form-control" />
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Conversion threads</label>
-                  <input v-model.number="conversionThreads" type="number" min="1" class="form-control" />
+                  <input v-model.number="conversionThreads" type="number" min="-1" title="-1: automatic server CPU allocation" class="form-control" />
                 </div>
                 <div class="col-md-6">
                   <label class="form-label">Self-alignment engine</label>
@@ -318,8 +318,8 @@ const sampleBp = ref(250);
 const minAlignmentLength = ref(50);
 const extraMinimap2Args = ref("");
 const alignerPreference = ref("auto");
-const alignmentThreads = ref(Math.max(1, navigator.hardwareConcurrency || 4));
-const conversionThreads = ref(Math.max(1, navigator.hardwareConcurrency || 4));
+const alignmentThreads = ref(-1);
+const conversionThreads = ref(-1);
 const overwrite = ref(false);
 
 useEscDismissableDialog({
@@ -387,7 +387,7 @@ const alignerCommandPreview = computed(() => {
   const args = [
     selectedAlignerCommand.value,
     "-t",
-    String(safeInteger(alignmentThreads.value, 1)),
+    alignmentThreads.value > 0 ? String(Math.trunc(alignmentThreads.value)) : "<server-auto>",
     "-k",
     String(safeInteger(minimizerK.value, 17)),
     "-w",
@@ -479,8 +479,8 @@ async function startDotplots(): Promise<void> {
         minAlignmentLength: Math.max(0, Math.trunc(minAlignmentLength.value || 50)),
         extraMinimap2Args: extraMinimap2Args.value.trim() || undefined,
         alignerPreference: alignerPreference.value,
-        alignmentThreads: Math.max(1, Math.trunc(alignmentThreads.value || 1)),
-        conversionThreads: Math.max(1, Math.trunc(conversionThreads.value || 1)),
+        alignmentThreads: alignmentThreads.value > 0 ? Math.trunc(alignmentThreads.value) : -1,
+        conversionThreads: conversionThreads.value > 0 ? Math.trunc(conversionThreads.value) : -1,
         overwrite: overwrite.value,
       })
     );
