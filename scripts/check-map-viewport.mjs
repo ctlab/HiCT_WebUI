@@ -6,6 +6,10 @@ import vm from "node:vm";
 import ts from "typescript";
 import View from "ol/View.js";
 import Projection from "ol/proj/Projection.js";
+import VectorLayer from "ol/layer/Vector.js";
+import VectorSource from "ol/source/Vector.js";
+import Feature from "ol/Feature.js";
+import Point from "ol/geom/Point.js";
 
 // Exercise the production managers with a real OpenLayers View. Only unrelated
 // UI imports and the network/assembly facade are replaced for this Node test.
@@ -30,16 +34,18 @@ function loadManager(name, imports = {}) {
     },
     { filename: filename.pathname }
   );
-  return exports[name];
+  return exports;
 }
 
-const HiCViewAndLayersManager = loadManager("HiCViewAndLayersManager");
+const { HiCViewAndLayersManager, ActiveTool } = loadManager(
+  "HiCViewAndLayersManager"
+);
 class Request {
   constructor(options) {
     Object.assign(this, options);
   }
 }
-const CommonEventManager = loadManager("CommonEventManager", {
+const { CommonEventManager } = loadManager("CommonEventManager", {
   "../net/api/request": {
     ReverseSelectionRangeRequest: Request,
     MoveSelectionRangeRequest: Request,
@@ -165,6 +171,125 @@ function snapshot(view) {
 }
 
 async function checkViewport() {
+  {
+    const { manager } = fixture();
+    const resolutions = [1000, 5000, 10000];
+    const generated = [];
+    const arrows = {
+      features: new Map(),
+      recalculateBorders(resolution) {
+        generated.push(resolution);
+        const feature = new Feature(new Point([100, -100]));
+        feature.set("bpResolution", resolution);
+        this.features.set(resolution, [feature]);
+      },
+    };
+    for (const name of Object.keys(manager.layersHolder)) {
+      manager.layersHolder[name] = [];
+    }
+    for (const kind of ["Annotation", "ContigBorders", "ScaffoldBorders"]) {
+      manager.layersHolder[`bpResolutionTo${kind}Layer`] = new Map();
+    }
+    manager.layersHolder.primaryHiCDataLayers = [];
+    manager.layersHolder.secondaryHiCDataLayers = [];
+    const layers = resolutions.map((resolution) => {
+      const layer = new VectorLayer({ source: new VectorSource() });
+      layer.set("bpResolution", resolution);
+      return layer;
+    });
+    manager.layersHolder.contigTranslocationArrowsLayers = layers;
+    manager.layersHolder.bpResolutionToContigTranslocationArrowsLayer = new Map(
+      resolutions.map((resolution, i) => [resolution, layers[i]])
+    );
+    manager.track2DHolder = {
+      contigTranslocationArrowsTrack: arrows,
+      annotationTrack: { features: new Map() },
+      contigBordersTrack: { features: new Map() },
+      scaffoldBordersTrack: { features: new Map() },
+    };
+    manager.getVisibleSourceResolutionDescriptors = () => ({
+      primary: {
+        bpResolution:
+          manager.view.getResolution() >= 10
+            ? 10000
+            : manager.view.getResolution() >= 5
+            ? 5000
+            : 1000,
+      },
+    });
+    manager.viewResolutionToResolutionDescriptor = () =>
+      manager.getVisibleSourceResolutionDescriptors().primary;
+    manager.resolutionChangedAsyncSubscribers = [];
+    manager.reloadTracks();
+    assert.ok(layers.every((layer) => layer.getSource().isEmpty()));
+    manager.currentViewState.activeTool = ActiveTool.TRANSLOCATION;
+    manager.reloadTracks();
+    assert.deepEqual(
+      generated,
+      [1000],
+      "generate only active-resolution arrows on entry"
+    );
+
+    for (const resolution of [5, 10, 5, 1, 10, 1]) {
+      manager.view.setResolution(resolution);
+      await manager.onViewResolutionChanged();
+      const active = manager.getActiveVectorResolutionDescriptor().bpResolution;
+      assert.equal(
+        manager.layersHolder.bpResolutionToContigTranslocationArrowsLayer
+          .get(active)
+          .getSource()
+          .getFeatures().length,
+        1,
+        `active arrows must be populated when switching to ${active}`
+      );
+      for (const layer of layers) {
+        const isActive = layer.get("bpResolution") === active;
+        assert.equal(layer.getVisible(), isActive);
+        assert.equal(
+          layer.getSource().getFeatures().length,
+          isActive ? 1 : 0,
+          `arrows must be populated when switching to ${active}`
+        );
+      }
+      const generationCount = generated.length;
+      await manager.onViewResolutionChanged();
+      assert.equal(
+        generated.length,
+        generationCount,
+        "no redundant rebuild at the same resolution"
+      );
+      assert.equal(
+        manager.selectionInteractions.translocationArrowSelectionInteraction.get(
+          "startBP"
+        ),
+        0
+      );
+      assert.equal(
+        manager.selectionInteractions.translocationArrowSelectionInteraction.get(
+          "endBP"
+        ),
+        5000
+      );
+    }
+    manager.currentViewState.activeTool = undefined;
+    manager.reloadTracks();
+    assert.ok(
+      layers.every(
+        (layer) => !layer.getVisible() && layer.getSource().isEmpty()
+      )
+    );
+    manager.view.setResolution(5);
+    await manager.onViewResolutionChanged();
+    assert.ok(layers.every((layer) => !layer.getVisible()));
+    manager.currentViewState.activeTool = ActiveTool.TRANSLOCATION;
+    manager.reloadTracks();
+    assert.equal(
+      layers[1].getSource().getFeatures().length,
+      1,
+      "re-entry regenerates arrows"
+    );
+  }
+
   for (const action of [
     "onReverseSelectionClicked",
     "onClickInTranslocationMode",
@@ -279,7 +404,7 @@ async function checkViewport() {
   }
 
   console.log(
-    "Map viewport regression check passed (edits, isolation, overlay and resolution updates)."
+    "Map viewport regression check passed (edits, isolation, overlay, resolution updates and translocation arrows)."
   );
 }
 

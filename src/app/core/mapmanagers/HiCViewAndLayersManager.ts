@@ -2062,24 +2062,31 @@ class HiCViewAndLayersManager {
     const dirty = Boolean(
       layer.get(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG)
     );
-    if (!force && !dirty) {
+    if (!visible) {
+      if (clearWhenHidden) {
+        if (!source.isEmpty()) {
+          source.clear(true);
+          source.changed();
+          layer.changed();
+        }
+        // Clearing a hidden source invalidates it for the next resolution switch.
+        layer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, true);
+      }
       return;
     }
-    if (!visible && !clearWhenHidden) {
+    if (!force && !dirty) {
       return;
     }
 
     source.clear(true);
-    if (visible) {
-      const bpResolution = Number(layer.get("bpResolution"));
-      const features = featuresByResolution.get(bpResolution);
-      if (!features) {
-        throw new Error(
-          `Cannot refresh vector track at resolution ${bpResolution}`
-        );
-      }
-      source.addFeatures(features);
+    const bpResolution = Number(layer.get("bpResolution"));
+    const features = featuresByResolution.get(bpResolution);
+    if (!features) {
+      throw new Error(
+        `Cannot refresh vector track at resolution ${bpResolution}`
+      );
     }
+    source.addFeatures(features);
     source.changed();
     layer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, false);
     layer.changed();
