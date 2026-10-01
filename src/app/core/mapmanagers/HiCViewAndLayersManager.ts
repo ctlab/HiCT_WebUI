@@ -652,7 +652,10 @@ class HiCViewAndLayersManager {
     this.activeAxisScopeExtent = nextExtent ?? undefined;
     const appliedExtent = this.getActiveMapExtent();
     if (options?.refreshViewOptions !== false) {
-      this.view.applyOptions_(this.createViewOptions(appliedExtent));
+      // applyOptions_ resets omitted view state, including the center to null.
+      this.view.applyOptions_(
+        this.view.getUpdatedOptions_(this.createViewOptions(appliedExtent))
+      );
     }
     this.applyLayerScopeExtent(nextExtent ?? undefined);
 
@@ -974,9 +977,6 @@ class HiCViewAndLayersManager {
         this.activeAxisScopes.column
       ) ?? undefined;
     const activeExtent = this.getActiveMapExtent();
-    this.view.applyOptions_(this.createViewOptions(activeExtent));
-    this.applyLayerScopeExtent(this.activeAxisScopeExtent);
-
     const nextCenter =
       previousCenter &&
       previousCenter.length >= 2 &&
@@ -994,10 +994,15 @@ class HiCViewAndLayersManager {
             1
           );
 
-    this.view.setCenter(this.clampPointToExtent(nextCenter, activeExtent));
+    const viewOptions = this.view.getUpdatedOptions_({
+      ...this.createViewOptions(activeExtent),
+      center: this.clampPointToExtent(nextCenter, activeExtent),
+    });
     if (Number.isFinite(nextResolution) && nextResolution > 0) {
-      this.view.setResolution(nextResolution);
+      viewOptions.resolution = nextResolution;
     }
+    this.view.applyOptions_(viewOptions);
+    this.applyLayerScopeExtent(this.activeAxisScopeExtent);
   }
 
   public async onViewResolutionChanged(): Promise<void> {
