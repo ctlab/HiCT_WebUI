@@ -79,6 +79,8 @@ abstract class Track2DSymmetric extends Track2D {
   public style: StyleLike;
   protected namePlacement: NamePlacement = NamePlacement.TOP;
   private static measureCanvas?: HTMLCanvasElement;
+  private static readonly labelWidthCacheLimit = 32768;
+  private static readonly labelWidthCache = new Map<string, number>();
 
   public constructor(
     public readonly trackDescriptor: Track2DSymmetricDescriptor,
@@ -231,13 +233,35 @@ abstract class Track2DSymmetric extends Track2D {
   protected measureLabelWidthPx(label: string): number {
     if (!Track2DSymmetric.measureCanvas) {
       Track2DSymmetric.measureCanvas = document.createElement("canvas");
+      const clearWidths = () => Track2DSymmetric.labelWidthCache.clear();
+      document.fonts?.addEventListener("loadingdone", clearWidths);
+      document.fonts?.addEventListener("loadingerror", clearWidths);
+    }
+    // Reordering contigs does not change their label widths. Share measurements
+    // across tracks/resolutions, but preserve the existing font/placement rules.
+    const font = `${this.options.labelSize}px sans-serif`;
+    const key = `${font}\0${label}`;
+    const cacheable = document.fonts?.status === "loaded";
+    const cached = cacheable ? Track2DSymmetric.labelWidthCache.get(key) : undefined;
+    if (cached !== undefined) {
+      return cached;
     }
     const ctx = Track2DSymmetric.measureCanvas.getContext("2d");
     if (!ctx) {
       return label.length * this.options.labelSize * 0.6;
     }
-    ctx.font = `${this.options.labelSize}px sans-serif`;
-    return ctx.measureText(label).width;
+    ctx.font = font;
+    const width = ctx.measureText(label).width;
+    if (cacheable) {
+      if (Track2DSymmetric.labelWidthCache.size >= Track2DSymmetric.labelWidthCacheLimit) {
+        const oldest = Track2DSymmetric.labelWidthCache.keys().next().value;
+        if (oldest !== undefined) {
+          Track2DSymmetric.labelWidthCache.delete(oldest);
+        }
+      }
+      Track2DSymmetric.labelWidthCache.set(key, width);
+    }
+    return width;
   }
 }
 
