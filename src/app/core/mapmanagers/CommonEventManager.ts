@@ -489,7 +489,7 @@ class CommonEventManager {
       );
     }
 
-    this.mapManager.viewAndLayersManager.reloadTracks();
+    this.mapManager.viewAndLayersManager.refreshTranslocationArrows();
   }
 
   public onSplitContigClicked(): void {

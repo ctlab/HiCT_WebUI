@@ -20,6 +20,7 @@
  */
 
 import type ContigDimensionHolder from "@/app/core/mapmanagers/ContigDimensionHolder";
+import { markRaw } from "vue";
 import type { Color } from "ol/color";
 import type { ColorLike } from "ol/colorlike";
 import Feature from "ol/Feature";
@@ -74,7 +75,7 @@ export enum NamePlacement {
 }
 
 abstract class Track2DSymmetric extends Track2D {
-  public features: Map<number, Feature<Geometry>[]> = new Map();
+  public features: Map<number, Feature<Geometry>[]> = markRaw(new Map());
   public options: Track2DSymmetricOptions;
   public style: StyleLike;
   protected namePlacement: NamePlacement = NamePlacement.TOP;
@@ -422,14 +423,10 @@ class ContigBordersTrack2D extends WithRing {
     }
     const viewAndLayersManager: HiCViewAndLayersManager =
       this.mapManager.getLayersManager();
+    const resolutions = targetBpResolution === undefined
+      ? this.contigDimensionHolder.resolutions : [targetBpResolution];
     this.contigDimensionHolder.contigDescriptors.forEach((cd, contigOrder) => {
-      this.contigDimensionHolder.resolutions.forEach((resolution) => {
-        if (
-          targetBpResolution !== undefined &&
-          resolution !== targetBpResolution
-        ) {
-          return;
-        }
+      resolutions.forEach((resolution) => {
         const hideType = this.contigDimensionHolder.getPresenceAtResolution(
           contigOrder,
           resolution
@@ -569,20 +566,16 @@ class ScaffoldBordersTrack2D extends WithRing {
     }
     const viewAndLayersManager: HiCViewAndLayersManager =
       this.mapManager.getLayersManager();
+    const resolutions = targetBpResolution === undefined
+      ? Array.from(this.contigDimensionHolder.prefix_sum_px.keys()) : [targetBpResolution];
     this.mapManager.scaffoldHolder.scaffoldTable.forEach(
       (scaffoldDescriptor) => {
         const borders = scaffoldDescriptor.scaffoldBordersBP;
         if (!borders) {
           return;
         }
-        this.contigDimensionHolder.prefix_sum_px.forEach(
-          (prefix_sum_px, bpResolution) => {
-            if (
-              targetBpResolution !== undefined &&
-              bpResolution !== targetBpResolution
-            ) {
-              return;
-            }
+        resolutions.forEach(
+          (bpResolution) => {
             const [startBP, endBP] = [borders.startBP, borders.endBP];
 
             const [fromPx, toPx] = [startBP, endBP].map((bp) =>

@@ -43,7 +43,7 @@ import type { ContigDescriptor } from "../domain/ContigDescriptor";
 import { CommonEventManager } from "./CommonEventManager";
 import { CurrentSignalRangeResponse } from "../net/api/response";
 import { VisualizationManager } from "./VisualizationManager";
-import { Ref } from "vue";
+import { Ref, markRaw } from "vue";
 import { VersionedXYZContactMapSource } from "../VersionedXYZSource";
 import { LinearTrackManager } from "./LinearTrackManager";
 import { useStyleStore } from "@/app/stores/styleStore";
@@ -98,10 +98,12 @@ class ContactMapManager {
       options.response
     );
 
-    this.map = new Map({
+    // OpenLayers owns its observable object graph. Vue must not recursively
+    // proxy native renderer objects and their geometry/event-listener arrays.
+    this.map = markRaw(new Map({
       layers: [],
       interactions: [],
-    });
+    }));
 
     this.visualizationManager = new VisualizationManager(this);
     this.visualizationManager.fetchVisualizationOptions();
@@ -202,7 +204,7 @@ class ContactMapManager {
     });
 
     const projectionExtentTuple = projectionExtent as [number, number, number, number];
-    const minimap = new Map({
+    const minimap = markRaw(new Map({
       target: resolvedTarget,
       controls: [],
       interactions: [],
@@ -214,7 +216,7 @@ class ContactMapManager {
         constrainResolution: false,
         extent: projectionExtentTuple,
       }),
-    });
+    }));
     this.minimap = minimap;
     this.minimapViewportFeature = viewportFeature;
     this.fitMinimapToFullExtent();

@@ -27,13 +27,15 @@ import bounds from "binary-search-bounds";
 import CommonUtils from "@/CommonUtils";
 import { ContigDirection, ContigHideType } from "../domain/common";
 import type { ContigDescriptor } from "../domain/ContigDescriptor";
+import { markRaw } from "vue";
 
 export default class ContigDimensionHolder {
   public contig_count = 0;
-  public readonly contigIdToOrd: number[] = [];
-  public readonly resolutions: number[] = [];
+  public readonly contigIdToOrd: number[] = markRaw([]);
+  public readonly resolutions: number[] = markRaw([]);
 
   public contigDescriptors: ContigDescriptor[] = [];
+  private readonly ensuredResolutions = new Set<number>();
 
   constructor(contigDescriptors: ContigDescriptor[] | undefined) {
     if (contigDescriptors) {
@@ -42,7 +44,10 @@ export default class ContigDimensionHolder {
   }
 
   public updateContigData(contigDescriptors: ContigDescriptor[]): void {
-    this.contigDescriptors = contigDescriptors;
+    this.ensuredResolutions.clear();
+    // Assembly responses replace this snapshot as a whole. Vue observes the
+    // replacement; individual bin counts and prefix-sum cells are model data.
+    this.contigDescriptors = markRaw(contigDescriptors);
     this.contigIdToOrd.length = 0;
     for (let ord = 0; ord < contigDescriptors.length; ord += 1) {
       this.contigIdToOrd[contigDescriptors[ord].contigId] = ord;
@@ -65,12 +70,18 @@ export default class ContigDimensionHolder {
     if (!Number.isFinite(resolution) || resolution <= 0) {
       return;
     }
+    if (this.ensuredResolutions.has(resolution)) {
+      return;
+    }
+    let changed = false;
     if (!this.resolutions.includes(resolution)) {
       this.resolutions.push(resolution);
       this.resolutions.sort((a, b) => a - b);
+      changed = true;
     }
     for (const descriptor of this.contigDescriptors) {
       if (!descriptor.contigLengthBins.has(resolution)) {
+        changed = true;
         descriptor.contigLengthBins.set(
           resolution,
           descriptor.contigLengthBp > 0
@@ -79,14 +90,18 @@ export default class ContigDimensionHolder {
         );
       }
       if (!descriptor.presenceAtResolution.has(resolution)) {
+        changed = true;
         descriptor.presenceAtResolution.set(
           resolution,
           this.inferPresenceAtResolution(descriptor, resolution)
         );
       }
     }
-    this.updatePrefixSumBins();
-    this.updatePrefixSumPixels();
+    if (changed) {
+      this.updatePrefixSumBins();
+      this.updatePrefixSumPixels();
+    }
+    this.ensuredResolutions.add(resolution);
   }
 
   private inferPresenceAtResolution(
@@ -146,12 +161,12 @@ export default class ContigDimensionHolder {
     );
   }
 
-  prefix_sum_bp: number[] = [];
-  prefix_sum_bins: Map<number, number[]> = new Map<number, number[]>();
-  prefix_sum_px: Map<number, number[]> = new Map<number, number[]>();
+  prefix_sum_bp: number[] = markRaw([]);
+  prefix_sum_bins: Map<number, number[]> = markRaw(new Map<number, number[]>());
+  prefix_sum_px: Map<number, number[]> = markRaw(new Map<number, number[]>());
 
   protected updatePrefixSumBp(): void {
-    this.prefix_sum_bp = new Array(this.contig_count + 1);
+    this.prefix_sum_bp = markRaw(new Array(this.contig_count + 1));
     this.prefix_sum_bp[0] = 0;
 
     if (!this.contigDescriptors || this.contig_count <= 0) {
@@ -165,7 +180,7 @@ export default class ContigDimensionHolder {
   }
 
   protected updatePrefixSumBins(): void {
-    const prefixSumBins = new Map<number, number[]>();
+    const prefixSumBins = markRaw(new Map<number, number[]>());
 
     if (!this.contigDescriptors || this.contig_count <= 0) {
       this.prefix_sum_bins = prefixSumBins;
@@ -199,7 +214,7 @@ export default class ContigDimensionHolder {
   }
 
   protected updatePrefixSumPixels(): void {
-    const prefixSumPx = new Map<number, number[]>();
+    const prefixSumPx = markRaw(new Map<number, number[]>());
 
     if (!this.contigDescriptors || this.contig_count <= 0) {
       this.prefix_sum_px = prefixSumPx;

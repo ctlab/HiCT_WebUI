@@ -20,6 +20,7 @@
  */
 
 import { toast } from "vue-sonner";
+import { markRaw } from "vue";
 import type {
   ScaffoldBordersBP,
   ScaffoldDescriptor,
@@ -33,13 +34,11 @@ type SortedScaffoldSegment = [
 ];
 
 class ScaffoldHolder {
-  public readonly scaffoldTable: Map<ScaffoldId, ScaffoldDescriptor> =
-    new Map();
+  public scaffoldTable: Map<ScaffoldId, ScaffoldDescriptor> = markRaw(new Map());
 
-  public readonly scaffoldBordersBp: Map<ScaffoldId, ScaffoldBordersBP> =
-    new Map();
+  public scaffoldBordersBp: Map<ScaffoldId, ScaffoldBordersBP> = markRaw(new Map());
 
-  public readonly scaffoldBordersSorted: SortedScaffoldSegment[] = [];
+  public scaffoldBordersSorted: SortedScaffoldSegment[] = markRaw([]);
 
   constructor(
     public readonly contigDimensionHolder: ContigDimensionHolder,
@@ -51,21 +50,26 @@ class ScaffoldHolder {
   }
 
   public updateScaffoldData(scaffoldDescriptors: ScaffoldDescriptor[]): void {
-    this.scaffoldTable.clear();
-    this.scaffoldBordersBp.clear();
-    this.scaffoldBordersSorted.length = 0;
+    // Publish one new snapshot instead of triggering a reactive mutation for
+    // every scaffold. UI consumers still observe the replaced properties.
+    const table = markRaw(new Map<ScaffoldId, ScaffoldDescriptor>());
+    const borders = markRaw(new Map<ScaffoldId, ScaffoldBordersBP>());
+    const sorted = markRaw([] as SortedScaffoldSegment[]);
     for (const sd of scaffoldDescriptors) {
-      this.scaffoldTable.set(sd.scaffoldId, sd);
+      table.set(sd.scaffoldId, sd);
       if (sd.scaffoldBordersBP) {
-        this.scaffoldBordersBp.set(sd.scaffoldId, sd.scaffoldBordersBP);
-        this.scaffoldBordersSorted.push([sd.scaffoldBordersBP, sd.scaffoldId]);
+        borders.set(sd.scaffoldId, sd.scaffoldBordersBP);
+        sorted.push([sd.scaffoldBordersBP, sd.scaffoldId]);
       }
     }
-    this.scaffoldBordersSorted.sort(([bp1, id1], [bp2, id2]) => {
+    sorted.sort(([bp1, id1], [bp2, id2]) => {
       const leftBorders = bp1.startBP - bp2.startBP;
       const rightBordes = bp1.endBP - bp2.endBP;
       return leftBorders !== 0 ? leftBorders : rightBordes;
     });
+    this.scaffoldTable = table;
+    this.scaffoldBordersBp = borders;
+    this.scaffoldBordersSorted = sorted;
   }
 
   public getScaffoldById(scaffoldId: ScaffoldId): ScaffoldDescriptor {

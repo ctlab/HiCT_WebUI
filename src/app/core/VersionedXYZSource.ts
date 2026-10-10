@@ -44,7 +44,10 @@ class VersionedXYZContactMapSource extends XYZ {
     protected readonly sourceName: MatrixSourceName = "PRIMARY",
     readonly xyzOptions?: XYZOptions
   ) {
-    super(xyzOptions);
+    // Matrix tiles represent discrete coordinate versions. Cross-fading old
+    // and edited matrices blends unrelated contacts and adds a 250 ms delay.
+    // Callers can still explicitly request a transition for other use cases.
+    super({ transition: 0, ...xyzOptions });
     this.sourceVersion = 0;
     this.setTileLoadFunction((tile, src) => {
       console.assert(tile instanceof ImageTile);
@@ -76,7 +79,8 @@ class VersionedXYZContactMapSource extends XYZ {
       const data = xhr.response;
       if (data && data.image) {
         image.src = data.image;
-        tile.setState(TileState.LOADED);
+        // ImageTile's load/decode listener marks it ready. Receiving JSON is
+        // not image completion; rendercomplete must wait for decoded pixels.
         // @ts-expect-error Adding field to object is ok in JS but not in TS
         tile.lastResponse = data;
         this.layersManager.callbackFns.contrastSliderRangesCallbacks.forEach(
@@ -150,7 +154,6 @@ class VersionedXYZContactMapSource extends XYZ {
         const values = this.decodeFloat32Array(response, rows * cols);
         const dataUrl = this.renderSignalTile(values, rows, cols);
         image.src = dataUrl;
-        tile.setState(TileState.LOADED);
         // @ts-expect-error dynamic cache field
         tile.lastResponse = { image: dataUrl };
         return;

@@ -34,7 +34,7 @@ import Style from "ol/style/Style";
 import TileGrid from "ol/tilegrid/TileGrid";
 import { asString, type Color } from "ol/color";
 import type { ColorLike } from "ol/colorlike";
-import { type Ref, ref } from "vue";
+import { type Ref, ref, markRaw } from "vue";
 import ContigMouseWheelZoom from "@/ContigMouseWheelZoom";
 import BinMousePosition from "@/BinMousePosition";
 import { VersionedXYZContactMapSource } from "../VersionedXYZSource";
@@ -160,7 +160,9 @@ class HiCViewAndLayersManager {
   // protected readonly hicDataLayers: Layer[] = [];
   // protected readonly hicDataSources: Source[] = [];
   // protected readonly contigVectorLayers: Layer[] = [];
-  public readonly layersHolder: LayersHolder = {
+  // Native layers, sources and collections notify through OpenLayers events.
+  // Keep Vue reactivity for UI state, not for renderer implementation details.
+  public readonly layersHolder: LayersHolder = markRaw({
     hicDataLayers: [],
     primaryHiCDataLayers: [],
     secondaryHiCDataLayers: [],
@@ -176,7 +178,7 @@ class HiCViewAndLayersManager {
     bpResolutionToContigBordersLayer: new Map(),
     bpResolutionToContigTranslocationArrowsLayer: new Map(),
     bpResolutionToScaffoldBordersLayer: new Map(),
-  };
+  });
   protected readonly view: View;
   public tileSize: number;
   private primaryResolutionSet: SourceResolutionDescriptorSet;
@@ -198,11 +200,11 @@ class HiCViewAndLayersManager {
     readonly selectedContigFeatures: Collection<Feature<Geometry>>;
     readonly selectedScaffoldFeatures: Collection<Feature<Geometry>>;
     readonly selectedTranslocationArrowsFeatures: Collection<Feature<Geometry>>;
-  } = {
+  } = markRaw({
     selectedContigFeatures: new Collection(),
     selectedScaffoldFeatures: new Collection(),
     selectedTranslocationArrowsFeatures: new Collection(),
-  };
+  });
 
   public currentViewState: CurrentHiCViewState;
 
@@ -285,7 +287,7 @@ class HiCViewAndLayersManager {
     ] as [number, number, number, number];
     this.fullGlobalExtent = maximum_global_extent;
     // Define projection:
-    this.pixelProjection = new Projection({
+    this.pixelProjection = markRaw(new Projection({
       code: "pixelate",
       units: "pixels",
       metersPerUnit: undefined,
@@ -293,9 +295,9 @@ class HiCViewAndLayersManager {
       axisOrientation: "esu", // OK, axis orientation is changed in layer projections
       global: false,
       getPointResolution: (resolution) => resolution,
-    });
+    }));
     // Define view:
-    this.view = new View({
+    this.view = markRaw(new View({
       ...this.createViewOptions(maximum_global_extent),
       center: [
         this.pixelProjection.getExtent()[0],
@@ -305,7 +307,7 @@ class HiCViewAndLayersManager {
         this.pixelResolutionSet.length > 0
           ? Math.max(...this.pixelResolutionSet)
           : 1,
-    });
+    }));
 
     this.currentViewState = {
       resolutionDesciptor: {
@@ -344,7 +346,7 @@ class HiCViewAndLayersManager {
       scissorsGuideInteraction: undefined,
     };
 
-    this.selectionInteractions = {
+    this.selectionInteractions = markRaw({
       contigSelectionInteraction: new Select({
         multi: false,
         layers: this.layersHolder.contigBordersLayers,
@@ -400,7 +402,7 @@ class HiCViewAndLayersManager {
         condition: shiftKeyOnly,
         pixelTolerance: 0,
       }),
-    };
+    });
 
     this.view.on("change:resolution", async () => {
       await this.onViewResolutionChanged();
@@ -2231,6 +2233,20 @@ class HiCViewAndLayersManager {
         this.track2DHolder.scaffoldBordersTrack.features
       );
     }
+  }
+
+  public refreshTranslocationArrows(): void {
+    const activeResolution = this.getActiveVectorResolutionDescriptor().bpResolution;
+    for (const layer of this.layersHolder.contigTranslocationArrowsLayers) {
+      layer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, true);
+      layer.setVisible(
+        this.currentViewState.activeTool === ActiveTool.TRANSLOCATION &&
+          Number(layer.get("bpResolution")) === activeResolution
+      );
+    }
+    // Entering/leaving a tool does not change contig/scaffold coordinates.
+    // Refresh arrows without rebuilding every unchanged border and label.
+    this.refreshVisibleBuiltinVectorSources();
   }
 
   public reloadTracks(options?: { renderLinearTracks?: boolean }): void {
