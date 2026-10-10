@@ -20,9 +20,9 @@
  */
 
 import type ContigDimensionHolder from "@/app/core/mapmanagers/ContigDimensionHolder";
-import { markRaw } from "vue";
+import { markRaw, toRaw } from "vue";
 import type { Color } from "ol/color";
-import { intersects } from "ol/extent";
+import { boundingExtent, intersects } from "ol/extent";
 import type { ColorLike } from "ol/colorlike";
 import Feature from "ol/Feature";
 import {
@@ -445,21 +445,23 @@ class ContigBordersTrack2D extends WithRing {
   }
 
   public recalculateBorders(targetBpResolution?: number, viewport?: TrackViewport): void {
+    // Snapshot reads do not need a Vue proxy lookup for every contig/bin.
+    const holder = toRaw(this.contigDimensionHolder);
     if (targetBpResolution === undefined) {
       this.features.clear();
-      for (const resolution of this.contigDimensionHolder.resolutions) {
+      for (const resolution of holder.resolutions) {
         this.features.set(resolution, []);
       }
     } else {
       this.features.set(targetBpResolution, []);
     }
     const viewAndLayersManager: HiCViewAndLayersManager =
-      this.mapManager.getLayersManager();
+      toRaw(this.mapManager.getLayersManager());
     const resolutions = targetBpResolution === undefined
-      ? this.contigDimensionHolder.resolutions : [targetBpResolution];
-    this.contigDimensionHolder.contigDescriptors.forEach((cd, contigOrder) => {
+      ? holder.resolutions : [targetBpResolution];
+    holder.contigDescriptors.forEach((cd, contigOrder) => {
       resolutions.forEach((resolution) => {
-        const hideType = this.contigDimensionHolder.getPresenceAtResolution(
+        const hideType = holder.getPresenceAtResolution(
           contigOrder,
           resolution
         );
@@ -470,7 +472,7 @@ class ContigBordersTrack2D extends WithRing {
           case ContigHideType.AUTO_SHOWN:
           case ContigHideType.FORCED_SHOWN: {
             const prefixSum =
-              this.contigDimensionHolder.prefix_sum_px.get(resolution);
+              holder.prefix_sum_px.get(resolution);
             if (!prefixSum) {
               throw new Error(
                 `Can't get prefix sum for resolution ${resolution}`
@@ -593,18 +595,20 @@ class ScaffoldBordersTrack2D extends WithRing {
   }
 
   public recalculateBorders(targetBpResolution?: number, viewport?: TrackViewport): void {
+    // Snapshot reads do not need a Vue proxy lookup for every contig/bin.
+    const holder = toRaw(this.contigDimensionHolder);
     if (targetBpResolution === undefined) {
       this.features.clear();
-      for (const resolution of this.contigDimensionHolder.resolutions) {
+      for (const resolution of holder.resolutions) {
         this.features.set(resolution, []);
       }
     } else {
       this.features.set(targetBpResolution, []);
     }
     const viewAndLayersManager: HiCViewAndLayersManager =
-      this.mapManager.getLayersManager();
+      toRaw(this.mapManager.getLayersManager());
     const resolutions = targetBpResolution === undefined
-      ? Array.from(this.contigDimensionHolder.prefix_sum_px.keys()) : [targetBpResolution];
+      ? Array.from(holder.prefix_sum_px.keys()) : [targetBpResolution];
     this.mapManager.scaffoldHolder.scaffoldTable.forEach(
       (scaffoldDescriptor) => {
         const borders = scaffoldDescriptor.scaffoldBordersBP;
@@ -616,7 +620,7 @@ class ScaffoldBordersTrack2D extends WithRing {
             const [startBP, endBP] = [borders.startBP, borders.endBP];
 
             const [fromPx, toPx] = [startBP, endBP].map((bp) =>
-              this.contigDimensionHolder.getPxContainingBp(bp, bpResolution)
+              holder.getPxContainingBp(bp, bpResolution)
             );
 
             if (toPx <= fromPx) {
@@ -797,17 +801,19 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
   }
 
   public recalculateBorders(targetBpResolution?: number, viewport?: TrackViewport): void {
+    // Snapshot reads do not need a Vue proxy lookup for every contig/bin.
+    const holder = toRaw(this.contigDimensionHolder);
     if (targetBpResolution === undefined) {
       this.features.clear();
-      for (const resolution of this.contigDimensionHolder.resolutions) {
+      for (const resolution of holder.resolutions) {
         this.features.set(resolution, []);
       }
     } else {
       this.features.set(targetBpResolution, []);
     }
     const viewAndLayersManager: HiCViewAndLayersManager =
-      this.mapManager.getLayersManager();
-    this.contigDimensionHolder.resolutions.forEach((resolution) => {
+      toRaw(this.mapManager.getLayersManager());
+    holder.resolutions.forEach((resolution) => {
       if (
         targetBpResolution !== undefined &&
         resolution !== targetBpResolution
@@ -820,8 +826,8 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
       for (const [
         contigOrder,
         cd,
-      ] of this.contigDimensionHolder.contigDescriptors.entries()) {
-        const hideType = this.contigDimensionHolder.getPresenceAtResolution(
+      ] of holder.contigDescriptors.entries()) {
+        const hideType = holder.getPresenceAtResolution(
           contigOrder,
           resolution
         );
@@ -832,7 +838,7 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
           case ContigHideType.AUTO_SHOWN:
           case ContigHideType.FORCED_SHOWN: {
             const prefixSum =
-              this.contigDimensionHolder.prefix_sum_px.get(resolution);
+              holder.prefix_sum_px.get(resolution);
             if (!prefixSum) {
               throw new Error(
                 `Can't get prefix sum for resolution ${resolution}`
@@ -886,9 +892,9 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
               multiPolygonRings.push([ringR]);
             }
 
-            const lrArrow = new MultiPolygon(multiPolygonRings);
-
-            if (!viewport || intersects(viewport.extent, lrArrow.getExtent())) {
+            if (!viewport || multiPolygonRings.some(rings =>
+              intersects(viewport.extent, boundingExtent(rings[0])))) {
+              const lrArrow = new MultiPolygon(multiPolygonRings);
               const multiPolygonFeature = new Feature({
                 name: `Arrow-between-${
                   previousShown.contigDescriptor === cd
@@ -925,7 +931,7 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
       // Add right corner:
       if (previousShown) {
         const prefixSum =
-          this.contigDimensionHolder.prefix_sum_px.get(resolution);
+          holder.prefix_sum_px.get(resolution);
         if (!prefixSum) {
           throw new Error(`Can't get prefix sum for resolution ${resolution}`);
         }
@@ -954,9 +960,9 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
           multiPolygonRings.push([ringR]);
         }
 
-        const rightArrow = new MultiPolygon(multiPolygonRings);
-
-        if (!viewport || intersects(viewport.extent, rightArrow.getExtent())) {
+        if (!viewport || multiPolygonRings.some(rings =>
+          intersects(viewport.extent, boundingExtent(rings[0])))) {
+          const rightArrow = new MultiPolygon(multiPolygonRings);
           const multiPolygonFeature = new Feature({
             name: `Arrow-between-${previousShown.contigDescriptor.contigName}-and-right-border-at-bp${resolution}`,
             geometry: rightArrow,

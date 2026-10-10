@@ -84,6 +84,16 @@ function contigHideTypeFromDTO(dto: number): ContigHideType {
   return contigHideTypes[dto];
 }
 
+// Avoid allocating an entry tuple and a mapped tuple per resolution for every
+// contig in every assembly response. Preserve key/value conversion semantics.
+function resolutionMap<T>(json: Record<string, number>, convert: (value: number) => T): Map<number, T> {
+  const result = new Map<number, T>();
+  for (const resolution of Object.keys(json)) {
+    result.set(Number(resolution), convert(json[resolution]));
+  }
+  return result;
+}
+
 class ContigDescriptorDTO extends InboundDTO<ContigDescriptor> {
   public toEntity(): ContigDescriptor {
     return {
@@ -95,23 +105,12 @@ class ContigDescriptorDTO extends InboundDTO<ContigDescriptor> {
         (this.json.contigOriginalName as string),
       contigOffsetInSource: (this.json.contigOffsetInSource as number) ?? 0,
       contigLengthBp: this.json.contigLengthBp as number,
-      contigLengthBins: new Map(
-        Array.from(
-          Object.entries(this.json.contigLengthBins as Record<number, number>)
-        ).map(([resolution, lengthBins]) => {
-          return [Number(resolution), Number(lengthBins)];
-        })
+      contigLengthBins: resolutionMap(
+        this.json.contigLengthBins as Record<string, number>, Number
       ),
       direction: contigDirectionFromDTO(this.json.contigDirection as number),
-      presenceAtResolution: new Map(
-        Array.from(
-          Object.entries(
-            this.json.contigPresenceAtResolution as Record<number, number>
-          )
-        ).map(([resolution, chtIndex]) => [
-          Number(resolution),
-          contigHideTypeFromDTO(chtIndex),
-        ])
+      presenceAtResolution: resolutionMap(
+        this.json.contigPresenceAtResolution as Record<string, number>, contigHideTypeFromDTO
       ),
     };
   }

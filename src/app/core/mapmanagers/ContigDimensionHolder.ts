@@ -27,7 +27,7 @@ import bounds from "binary-search-bounds";
 import CommonUtils from "@/CommonUtils";
 import { ContigDirection, ContigHideType } from "../domain/common";
 import type { ContigDescriptor } from "../domain/ContigDescriptor";
-import { markRaw } from "vue";
+import { markRaw, toRaw } from "vue";
 
 export default class ContigDimensionHolder {
   public contig_count = 0;
@@ -48,9 +48,10 @@ export default class ContigDimensionHolder {
     // Assembly responses replace this snapshot as a whole. Vue observes the
     // replacement; individual bin counts and prefix-sum cells are model data.
     this.contigDescriptors = markRaw(contigDescriptors);
-    this.contigIdToOrd.length = 0;
+    const idToOrd = this.contigIdToOrd;
+    idToOrd.length = 0;
     for (let ord = 0; ord < contigDescriptors.length; ord += 1) {
-      this.contigIdToOrd[contigDescriptors[ord].contigId] = ord;
+      idToOrd[contigDescriptors[ord].contigId] = ord;
     }
 
     this.resolutions.length = 0;
@@ -166,36 +167,40 @@ export default class ContigDimensionHolder {
   prefix_sum_px: Map<number, number[]> = markRaw(new Map<number, number[]>());
 
   protected updatePrefixSumBp(): void {
-    this.prefix_sum_bp = markRaw(new Array(this.contig_count + 1));
-    this.prefix_sum_bp[0] = 0;
+    const holder = toRaw(this);
+    const descriptors = holder.contigDescriptors;
+    const count = holder.contig_count;
+    const prefixSum = markRaw(new Array<number>(count + 1));
+    prefixSum[0] = 0;
 
-    if (!this.contigDescriptors || this.contig_count <= 0) {
-      return;
+    for (let i = 0; i < count; ++i) {
+      prefixSum[i + 1] =
+        prefixSum[i] + descriptors[i].contigLengthBp;
     }
-
-    for (let i = 0; i < this.contig_count; ++i) {
-      this.prefix_sum_bp[i + 1] =
-        this.prefix_sum_bp[i] + this.contigDescriptors[i].contigLengthBp;
-    }
+    this.prefix_sum_bp = prefixSum;
   }
 
   protected updatePrefixSumBins(): void {
+    const holder = toRaw(this);
+    const descriptors = holder.contigDescriptors;
+    const count = holder.contig_count;
+    const resolutions = holder.resolutions;
     const prefixSumBins = markRaw(new Map<number, number[]>());
 
-    if (!this.contigDescriptors || this.contig_count <= 0) {
+    if (!descriptors || count <= 0) {
       this.prefix_sum_bins = prefixSumBins;
       return;
     }
 
-    for (const resolution of this.resolutions) {
-      const prefixSum = new Array(this.contig_count + 1);
+    for (const resolution of resolutions) {
+      const prefixSum = new Array(count + 1);
       prefixSum[0] = 0;
       prefixSumBins.set(resolution, prefixSum);
     }
 
-    for (let ctgOrder = 0; ctgOrder < this.contig_count; ctgOrder += 1) {
-      const descriptor = this.contigDescriptors[ctgOrder];
-      for (const resolution of this.resolutions) {
+    for (let ctgOrder = 0; ctgOrder < count; ctgOrder += 1) {
+      const descriptor = descriptors[ctgOrder];
+      for (const resolution of resolutions) {
         const resolutionPrefixSum = prefixSumBins.get(resolution);
         const lengthBinsAtResolution = descriptor.contigLengthBins.get(
           resolution
@@ -214,24 +219,28 @@ export default class ContigDimensionHolder {
   }
 
   protected updatePrefixSumPixels(): void {
+    const holder = toRaw(this);
+    const descriptors = holder.contigDescriptors;
+    const count = holder.contig_count;
+    const resolutions = holder.resolutions;
     const prefixSumPx = markRaw(new Map<number, number[]>());
 
-    if (!this.contigDescriptors || this.contig_count <= 0) {
+    if (!descriptors || count <= 0) {
       this.prefix_sum_px = prefixSumPx;
       return;
     }
 
-    for (const resolution of this.resolutions) {
-      const prefixSum = new Array(this.contig_count + 1);
+    for (const resolution of resolutions) {
+      const prefixSum = new Array(count + 1);
       prefixSum[0] = 0;
       prefixSumPx.set(resolution, prefixSum);
     }
 
-    for (let ctgOrder = 0; ctgOrder < this.contig_count; ctgOrder += 1) {
-      const descriptor = this.contigDescriptors[ctgOrder];
-      for (const resolution of this.resolutions) {
+    for (let ctgOrder = 0; ctgOrder < count; ctgOrder += 1) {
+      const descriptor = descriptors[ctgOrder];
+      for (const resolution of resolutions) {
         const resolutionPrefixSum = prefixSumPx.get(resolution);
-        const hideTypeAtResolution = this.resolvePresenceAtResolution(
+        const hideTypeAtResolution = holder.resolvePresenceAtResolution(
           descriptor,
           resolution
         );
