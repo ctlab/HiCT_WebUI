@@ -23,6 +23,7 @@ import { ImageTile } from "ol";
 import TileState from "ol/TileState";
 import XYZ, { type Options as XYZOptions } from "ol/source/XYZ";
 import { unref } from "vue";
+import { getUid } from "ol/util";
 import type {
   HiCViewAndLayersManager,
   MatrixSourceName,
@@ -36,6 +37,7 @@ import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinear
 
 class VersionedXYZContactMapSource extends XYZ {
   protected sourceVersion: number;
+  private tileGeneration = 0;
 
   constructor(
     protected readonly layersManager: HiCViewAndLayersManager,
@@ -318,7 +320,7 @@ class VersionedXYZContactMapSource extends XYZ {
     this.tileCache.expireCache({});
     this.tileCache.clear();
     ++this.sourceVersion;
-    this.setTileUrlFunction(this.create_tile_url_function());
+    this.installTileUrlFunction();
     this.changed();
   }
 
@@ -326,8 +328,21 @@ class VersionedXYZContactMapSource extends XYZ {
     this.tileCache.expireCache({});
     this.tileCache.clear();
     this.sourceVersion = Math.max(0, Math.floor(version));
-    this.setTileUrlFunction(this.create_tile_url_function());
+    this.installTileUrlFunction();
     this.changed();
+  }
+
+  private installTileUrlFunction(): void {
+    const urlFunction = this.create_tile_url_function();
+    // TileQueue indexes by tile.getKey(), not source identity. An omitted key
+    // gives different resolutions and edited versions the same coordinate key.
+    // A late response can then finish another generation's queue entry, leaving
+    // rendering permanently incomplete. A new generation also covers explicit
+    // reloads with an unchanged server version (e.g. visualization changes).
+    this.setTileUrlFunction(
+      urlFunction,
+      `${getUid(this)}:${++this.tileGeneration}:${urlFunction([0, 0, 0])}`
+    );
   }
 
   protected create_tile_url_function() {
