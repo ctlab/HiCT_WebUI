@@ -176,6 +176,7 @@ async function checkViewport() {
     const resolutions = [1000, 5000, 10000];
     const generated = [];
     const arrows = {
+      options: { width: 2 },
       features: new Map(),
       recalculateBorders(resolution) {
         generated.push(resolution);
@@ -204,8 +205,8 @@ async function checkViewport() {
     manager.track2DHolder = {
       contigTranslocationArrowsTrack: arrows,
       annotationTrack: { features: new Map() },
-      contigBordersTrack: { features: new Map() },
-      scaffoldBordersTrack: { features: new Map() },
+      contigBordersTrack: { features: new Map(), options: { width: 2 } },
+      scaffoldBordersTrack: { features: new Map(), options: { width: 2 } },
     };
     manager.getVisibleSourceResolutionDescriptors = () => ({
       primary: {
