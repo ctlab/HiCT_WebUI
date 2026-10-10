@@ -22,6 +22,7 @@
 import type ContigDimensionHolder from "@/app/core/mapmanagers/ContigDimensionHolder";
 import { markRaw } from "vue";
 import type { Color } from "ol/color";
+import { intersects } from "ol/extent";
 import type { ColorLike } from "ol/colorlike";
 import Feature from "ol/Feature";
 import {
@@ -41,6 +42,12 @@ import type { ContigDescriptor } from "../domain/ContigDescriptor";
 import type { ContactMapManager } from "../mapmanagers/ContactMapManager";
 import type { HiCViewAndLayersManager } from "../mapmanagers/HiCViewAndLayersManager";
 import { Track2D } from "./Track2D";
+
+export interface TrackViewport {
+  /** Map coordinates, padded by the renderer's buffer and maximum stroke. */
+  extent: number[];
+  resolution: number;
+}
 
 type track2DSymmetricBorders = [startIncl: number, endExcl: number];
 
@@ -231,7 +238,10 @@ abstract class Track2DSymmetric extends Track2D {
     });
   }
 
-  protected measureLabelWidthPx(label: string): number {
+  protected measureLabelWidthPx(
+    label: string,
+    font = `${this.options.labelSize}px sans-serif`
+  ): number {
     if (!Track2DSymmetric.measureCanvas) {
       Track2DSymmetric.measureCanvas = document.createElement("canvas");
       const clearWidths = () => Track2DSymmetric.labelWidthCache.clear();
@@ -240,7 +250,6 @@ abstract class Track2DSymmetric extends Track2D {
     }
     // Reordering contigs does not change their label widths. Share measurements
     // across tracks/resolutions, but preserve the existing font/placement rules.
-    const font = `${this.options.labelSize}px sans-serif`;
     const key = `${font}\0${label}`;
     const cacheable = document.fonts?.status === "loaded";
     const cached = cacheable ? Track2DSymmetric.labelWidthCache.get(key) : undefined;
@@ -264,6 +273,29 @@ abstract class Track2DSymmetric extends Track2D {
     }
     return width;
   }
+  protected spanIntersectsViewport(
+    fromPx: number, toPx: number, pixelResolution: number, viewport?: TrackViewport
+  ): boolean {
+    return !viewport || intersects(viewport.extent, [
+      fromPx * pixelResolution, -toPx * pixelResolution,
+      toPx * pixelResolution, -fromPx * pixelResolution,
+    ]);
+  }
+
+  protected labelIntersectsViewport(
+    label: string, x: number, y: number, viewport?: TrackViewport
+  ): boolean {
+    if (!viewport) return true;
+    // Text is drawn in screen pixels, independently of the matrix bin scale.
+    // Test the actual bold/non-bold font, including labels outside their boxes.
+    const width = this.measureLabelWidthPx(label,
+      `${this.options.labelBold ? "bold " : ""}${this.options.labelSize}px sans-serif`);
+    // A circumscribed radius remains conservative when the map is rotated.
+    const radius = (width / 2 + 2 * this.options.labelSize + this.options.labelOutlineWidth)
+      * viewport.resolution;
+    return intersects(viewport.extent, [x - radius, y - radius, x + radius, y + radius]);
+  }
+
 }
 
 class BasePairsTrack2DSymmetric extends Track2DSymmetric {
@@ -412,7 +444,7 @@ class ContigBordersTrack2D extends WithRing {
     );
   }
 
-  public recalculateBorders(targetBpResolution?: number): void {
+  public recalculateBorders(targetBpResolution?: number, viewport?: TrackViewport): void {
     if (targetBpResolution === undefined) {
       this.features.clear();
       for (const resolution of this.contigDimensionHolder.resolutions) {
@@ -478,25 +510,27 @@ class ContigBordersTrack2D extends WithRing {
             //   c[1] *= pixelResolution;
             // }
 
-            const contig_bounding_box = this.drawPolygon(
-              [fromPx, -fromPx],
-              [fromPx, -toPx],
-              [toPx, -toPx],
-              [toPx, -fromPx],
-              pixelResolution
-            );
+            if (this.spanIntersectsViewport(fromPx, toPx, pixelResolution, viewport)) {
+              const contig_bounding_box = this.drawPolygon(
+                [fromPx, -fromPx],
+                [fromPx, -toPx],
+                [toPx, -toPx],
+                [toPx, -fromPx],
+                pixelResolution
+              );
 
-            const polygonFeature = new Feature({
-              name: `ContigBorder-${cd.contigName}-bp${resolution}`,
-              geometry: contig_bounding_box,
-            });
-            polygonFeature.setStyle(this.style);
-            polygonFeature.set("trackType", "contigBorders");
-            polygonFeature.set("bpResolution", resolution);
-            polygonFeature.set("pixelResolution", pixelResolution);
-            polygonFeature.set("contigDescriptor", cd);
+              const polygonFeature = new Feature({
+                name: `ContigBorder-${cd.contigName}-bp${resolution}`,
+                geometry: contig_bounding_box,
+              });
+              polygonFeature.setStyle(this.style);
+              polygonFeature.set("trackType", "contigBorders");
+              polygonFeature.set("bpResolution", resolution);
+              polygonFeature.set("pixelResolution", pixelResolution);
+              polygonFeature.set("contigDescriptor", cd);
 
-            this.features.get(resolution)?.push(polygonFeature);
+              this.features.get(resolution)?.push(polygonFeature);
+            }
 
             if (this.namePlacement !== NamePlacement.HIDDEN) {
               const rectWidthPx = toPx - fromPx;
@@ -511,20 +545,23 @@ class ContigBordersTrack2D extends WithRing {
                     ? -fromPx + labelOffset
                     : -toPx - labelOffset;
                 const midPx = (fromPx + toPx) / 2;
-                const labelPoint = new Point([
-                  midPx * pixelResolution,
-                  labelY * pixelResolution,
-                ]);
-                const labelFeature = new Feature({
-                  name: `ContigName-${cd.contigName}-bp${resolution}`,
-                  geometry: labelPoint,
-                });
-                labelFeature.setStyle(this.createLabelStyle(cd.contigName));
-                labelFeature.set("trackType", "contigNames");
-                labelFeature.set("bpResolution", resolution);
-                labelFeature.set("pixelResolution", pixelResolution);
-                labelFeature.set("contigDescriptor", cd);
-                this.features.get(resolution)?.push(labelFeature);
+                if (this.labelIntersectsViewport(cd.contigName,
+                  midPx * pixelResolution, labelY * pixelResolution, viewport)) {
+                  const labelPoint = new Point([
+                    midPx * pixelResolution,
+                    labelY * pixelResolution,
+                  ]);
+                  const labelFeature = new Feature({
+                    name: `ContigName-${cd.contigName}-bp${resolution}`,
+                    geometry: labelPoint,
+                  });
+                  labelFeature.setStyle(this.createLabelStyle(cd.contigName));
+                  labelFeature.set("trackType", "contigNames");
+                  labelFeature.set("bpResolution", resolution);
+                  labelFeature.set("pixelResolution", pixelResolution);
+                  labelFeature.set("contigDescriptor", cd);
+                  this.features.get(resolution)?.push(labelFeature);
+                }
               }
             }
 
@@ -555,7 +592,7 @@ class ScaffoldBordersTrack2D extends WithRing {
     );
   }
 
-  public recalculateBorders(targetBpResolution?: number): void {
+  public recalculateBorders(targetBpResolution?: number, viewport?: TrackViewport): void {
     if (targetBpResolution === undefined) {
       this.features.clear();
       for (const resolution of this.contigDimensionHolder.resolutions) {
@@ -616,25 +653,27 @@ class ScaffoldBordersTrack2D extends WithRing {
             //   c[1] *= pixelResolution;
             // }
 
-            const scaffold_bounding_box = this.drawPolygon(
-              [fromPx, -fromPx],
-              [fromPx, -toPx],
-              [toPx, -toPx],
-              [toPx, -fromPx],
-              pixelResolution
-            );
+            if (this.spanIntersectsViewport(fromPx, toPx, pixelResolution, viewport)) {
+              const scaffold_bounding_box = this.drawPolygon(
+                [fromPx, -fromPx],
+                [fromPx, -toPx],
+                [toPx, -toPx],
+                [toPx, -fromPx],
+                pixelResolution
+              );
 
-            const polygonFeature = new Feature({
-              name: `ScaffoldBorder-${scaffoldDescriptor.scaffoldName}-bp${bpResolution}`,
-              geometry: scaffold_bounding_box,
-            });
-            polygonFeature.setStyle(this.style);
-            polygonFeature.set("trackType", "scaffoldBorders");
-            polygonFeature.set("bpResolution", bpResolution);
-            polygonFeature.set("pixelResolution", pixelResolution);
-            polygonFeature.set("scaffolDescriptor", scaffoldDescriptor);
+              const polygonFeature = new Feature({
+                name: `ScaffoldBorder-${scaffoldDescriptor.scaffoldName}-bp${bpResolution}`,
+                geometry: scaffold_bounding_box,
+              });
+              polygonFeature.setStyle(this.style);
+              polygonFeature.set("trackType", "scaffoldBorders");
+              polygonFeature.set("bpResolution", bpResolution);
+              polygonFeature.set("pixelResolution", pixelResolution);
+              polygonFeature.set("scaffolDescriptor", scaffoldDescriptor);
 
-            this.features.get(bpResolution)?.push(polygonFeature);
+              this.features.get(bpResolution)?.push(polygonFeature);
+            }
 
             if (this.namePlacement !== NamePlacement.HIDDEN) {
               const rectWidthPx = toPx - fromPx;
@@ -651,22 +690,25 @@ class ScaffoldBordersTrack2D extends WithRing {
                     ? -fromPx + labelOffset
                     : -toPx - labelOffset;
                 const midPx = (fromPx + toPx) / 2;
-                const labelPoint = new Point([
-                  midPx * pixelResolution,
-                  labelY * pixelResolution,
-                ]);
-                const labelFeature = new Feature({
-                  name: `ScaffoldName-${scaffoldDescriptor.scaffoldName}-bp${bpResolution}`,
-                  geometry: labelPoint,
-                });
-                labelFeature.setStyle(
-                  this.createLabelStyle(scaffoldDescriptor.scaffoldName)
-                );
-                labelFeature.set("trackType", "scaffoldNames");
-                labelFeature.set("bpResolution", bpResolution);
-                labelFeature.set("pixelResolution", pixelResolution);
-                labelFeature.set("scaffolDescriptor", scaffoldDescriptor);
-                this.features.get(bpResolution)?.push(labelFeature);
+                if (this.labelIntersectsViewport(scaffoldDescriptor.scaffoldName,
+                  midPx * pixelResolution, labelY * pixelResolution, viewport)) {
+                  const labelPoint = new Point([
+                    midPx * pixelResolution,
+                    labelY * pixelResolution,
+                  ]);
+                  const labelFeature = new Feature({
+                    name: `ScaffoldName-${scaffoldDescriptor.scaffoldName}-bp${bpResolution}`,
+                    geometry: labelPoint,
+                  });
+                  labelFeature.setStyle(
+                    this.createLabelStyle(scaffoldDescriptor.scaffoldName)
+                  );
+                  labelFeature.set("trackType", "scaffoldNames");
+                  labelFeature.set("bpResolution", bpResolution);
+                  labelFeature.set("pixelResolution", pixelResolution);
+                  labelFeature.set("scaffolDescriptor", scaffoldDescriptor);
+                  this.features.get(bpResolution)?.push(labelFeature);
+                }
               }
             }
           }
@@ -754,7 +796,7 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
     );
   }
 
-  public recalculateBorders(targetBpResolution?: number): void {
+  public recalculateBorders(targetBpResolution?: number, viewport?: TrackViewport): void {
     if (targetBpResolution === undefined) {
       this.features.clear();
       for (const resolution of this.contigDimensionHolder.resolutions) {
@@ -846,27 +888,29 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
 
             const lrArrow = new MultiPolygon(multiPolygonRings);
 
-            const multiPolygonFeature = new Feature({
-              name: `Arrow-between-${
+            if (!viewport || intersects(viewport.extent, lrArrow.getExtent())) {
+              const multiPolygonFeature = new Feature({
+                name: `Arrow-between-${
+                  previousShown.contigDescriptor === cd
+                    ? "left-border-"
+                    : previousShown.contigDescriptor.contigName
+                }-and-${cd.contigName}-at-bp${resolution}`,
+                geometry: lrArrow,
+              });
+              multiPolygonFeature.setStyle(this.style);
+              multiPolygonFeature.set("trackType", "translocationArrows");
+              multiPolygonFeature.set("bpResolution", resolution);
+              multiPolygonFeature.set("pixelResolution", pixelResolution);
+              multiPolygonFeature.set(
+                "leftContigDescriptor",
                 previousShown.contigDescriptor === cd
-                  ? "left-border-"
-                  : previousShown.contigDescriptor.contigName
-              }-and-${cd.contigName}-at-bp${resolution}`,
-              geometry: lrArrow,
-            });
-            multiPolygonFeature.setStyle(this.style);
-            multiPolygonFeature.set("trackType", "translocationArrows");
-            multiPolygonFeature.set("bpResolution", resolution);
-            multiPolygonFeature.set("pixelResolution", pixelResolution);
-            multiPolygonFeature.set(
-              "leftContigDescriptor",
-              previousShown.contigDescriptor === cd
-                ? undefined
-                : previousShown.contigDescriptor
-            );
-            multiPolygonFeature.set("rightContigDescriptor", cd);
+                  ? undefined
+                  : previousShown.contigDescriptor
+              );
+              multiPolygonFeature.set("rightContigDescriptor", cd);
 
-            this.features.get(resolution)?.push(multiPolygonFeature);
+              this.features.get(resolution)?.push(multiPolygonFeature);
+            }
             previousShown = {
               contigDescriptor: cd,
               contigOrder: contigOrder,
@@ -912,21 +956,23 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
 
         const rightArrow = new MultiPolygon(multiPolygonRings);
 
-        const multiPolygonFeature = new Feature({
-          name: `Arrow-between-${previousShown.contigDescriptor.contigName}-and-right-border-at-bp${resolution}`,
-          geometry: rightArrow,
-        });
-        multiPolygonFeature.setStyle(this.style);
-        multiPolygonFeature.set("trackType", "translocationArrows");
-        multiPolygonFeature.set("bpResolution", resolution);
-        multiPolygonFeature.set("pixelResolution", pixelResolution);
-        multiPolygonFeature.set(
-          "leftContigDescriptor",
-          previousShown.contigDescriptor
-        );
-        multiPolygonFeature.set("rightContigDescriptor", undefined);
+        if (!viewport || intersects(viewport.extent, rightArrow.getExtent())) {
+          const multiPolygonFeature = new Feature({
+            name: `Arrow-between-${previousShown.contigDescriptor.contigName}-and-right-border-at-bp${resolution}`,
+            geometry: rightArrow,
+          });
+          multiPolygonFeature.setStyle(this.style);
+          multiPolygonFeature.set("trackType", "translocationArrows");
+          multiPolygonFeature.set("bpResolution", resolution);
+          multiPolygonFeature.set("pixelResolution", pixelResolution);
+          multiPolygonFeature.set(
+            "leftContigDescriptor",
+            previousShown.contigDescriptor
+          );
+          multiPolygonFeature.set("rightContigDescriptor", undefined);
 
-        this.features.get(resolution)?.push(multiPolygonFeature);
+          this.features.get(resolution)?.push(multiPolygonFeature);
+        }
       }
 
     });

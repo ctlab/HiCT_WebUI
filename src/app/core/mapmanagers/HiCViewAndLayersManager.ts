@@ -48,6 +48,7 @@ import {
   Track2DSymmetric,
   NamePlacement,
   BorderStyle,
+  type TrackViewport,
 } from "../tracks/Track2DSymmetric";
 import { AnnotationTrack2D } from "../tracks/Track2DAnnotations";
 import type {
@@ -186,6 +187,8 @@ class HiCViewAndLayersManager {
   private wheelZoomInteraction?: ContigMouseWheelZoom;
   private coordinateBaseBp: number;
   private enabledBpResolutions?: Set<number>;
+  private vectorViewportKey = "";
+  private vectorViewportListener?: () => void;
   private rulerRenderCallback: (() => void) | null = null;
   private readonly pendingFeatureStyleRefreshHandles = new Set<number>();
   public axisScopeRevision = 0;
@@ -1628,6 +1631,41 @@ class HiCViewAndLayersManager {
   public initializeTracks(): void {
     this.addBuiltinVectorLayers();
     this.reloadTracks();
+    // Run before layer rendering, also during pan/zoom/resize animations. The
+    // completed frame must contain the newly visible annotations, not merely
+    // schedule their construction for a later idle callback.
+    this.vectorViewportListener = () => {
+      const viewport = this.getTrackViewport();
+      if (!viewport) return;
+      const key = [...viewport.extent, viewport.resolution,
+        this.getActiveVectorResolutionDescriptor().bpResolution].join(",");
+      if (key === this.vectorViewportKey) return;
+      this.vectorViewportKey = key;
+      for (const layers of [this.layersHolder.contigBordersLayers,
+        this.layersHolder.scaffoldBordersLayers,
+        this.layersHolder.contigTranslocationArrowsLayers]) {
+        for (const layer of layers) {
+          layer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, true);
+        }
+      }
+      this.refreshVisibleBuiltinVectorSources();
+    };
+    this.mapManager.getMap().on("precompose", this.vectorViewportListener);
+  }
+
+  private getTrackViewport(): TrackViewport | undefined {
+    // The layer manager also runs during construction, before the native map
+    // exists. Preserve full generation until a viewport is available.
+    const size = this.mapManager.getMap()?.getSize();
+    const resolution = this.view.getResolution();
+    if (!size || !resolution || !this.view.getCenter()) return undefined;
+    const extent = this.view.calculateExtent(size);
+    const tracks = this.track2DHolder;
+    const margin = Math.max(100, tracks.contigBordersTrack.options.width + 3,
+      tracks.scaffoldBordersTrack.options.width + 3,
+      tracks.contigTranslocationArrowsTrack.options.width + 3) * resolution;
+    return {extent: [extent[0] - margin, extent[1] - margin,
+      extent[2] + margin, extent[3] + margin], resolution};
   }
 
   private addBuiltinVectorLayers(): void {
@@ -1762,6 +1800,10 @@ class HiCViewAndLayersManager {
       return;
     }
     try {
+      if (this.vectorViewportListener) {
+        this.mapManager.getMap().un("precompose", this.vectorViewportListener);
+        this.vectorViewportListener = undefined;
+      }
       for (const handle of this.pendingFeatureStyleRefreshHandles) {
         window.clearTimeout(handle);
       }
@@ -1973,6 +2015,18 @@ class HiCViewAndLayersManager {
       }
       const vectorSource = activeContigBordersLayer.getSource() as VectorSource;
 
+      // A Shift-drag can extend beyond the current viewport after panning.
+      // Materialize that selection's features as well, preserving the native
+      // selection semantics; ordinary rendering remains viewport bounded.
+      const track = this.track2DHolder.contigBordersTrack;
+      const viewport = this.getTrackViewport();
+      if (viewport) {
+        viewport.extent = [Math.min(viewport.extent[0], extent[0]),
+          Math.min(viewport.extent[1], extent[1]),
+          Math.max(viewport.extent[2], extent[2]), Math.max(viewport.extent[3], extent[3])];
+      }
+      track.recalculateBorders(bpResolution, viewport);
+      this.refreshVectorLayerFromFeatures(activeContigBordersLayer, track.features, {force: true});
       const boxFeatures = vectorSource
         .getFeaturesInExtent(extent)
         .filter((feature) => feature?.getGeometry()?.intersectsExtent(extent));
@@ -2165,6 +2219,7 @@ class HiCViewAndLayersManager {
   }
 
   private recalculateDirtyVisibleBuiltinVectorTracks(): void {
+    const viewport = this.getTrackViewport();
     const activeResolution =
       this.getActiveVectorResolutionDescriptor().bpResolution;
     const annotationLayer =
@@ -2185,7 +2240,7 @@ class HiCViewAndLayersManager {
     }
     if (contigLayer?.getVisible() && this.isVectorLayerDirty(contigLayer)) {
       this.track2DHolder.contigBordersTrack.recalculateBorders(
-        activeResolution
+        activeResolution, viewport
       );
     }
     if (
@@ -2193,7 +2248,7 @@ class HiCViewAndLayersManager {
       this.isVectorLayerDirty(scaffoldLayer)
     ) {
       this.track2DHolder.scaffoldBordersTrack.recalculateBorders(
-        activeResolution
+        activeResolution, viewport
       );
     }
     if (
@@ -2201,7 +2256,7 @@ class HiCViewAndLayersManager {
       this.isVectorLayerDirty(translocationLayer)
     ) {
       this.track2DHolder.contigTranslocationArrowsTrack.recalculateBorders(
-        activeResolution
+        activeResolution, viewport
       );
     }
   }
