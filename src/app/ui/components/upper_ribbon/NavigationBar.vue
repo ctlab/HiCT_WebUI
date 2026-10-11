@@ -761,6 +761,7 @@
 </template>
 
 <script setup lang="ts">
+import { AgpImportCancelledError } from "@/app/core/net/agpImportChoice";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { marked } from "marked";
 import { computed, defineAsyncComponent, onMounted, Ref, ref, watch } from "vue";
@@ -1460,6 +1461,10 @@ function openAGP(filename: string) {
       toast.message("Assembly loaded from AGP file " + filename);
     })
     .catch((e) => {
+      if (e instanceof AgpImportCancelledError) {
+        openingAGPFile.value = false; openingFile.value = false; errorMessage.value = null;
+        toast.message(e.message); return;
+      }
       errorMessage.value = e;
     });
 }

@@ -20,6 +20,7 @@
  -->
 
 <template>
+  <AGPImportChoiceModal />
   <Toaster position="bottom-right" richColors closeButton />
   <!-- <button @click="() => toast('My first toast')">Render a toast</button> -->
   <div class="main-ui-component">
@@ -102,11 +103,14 @@
                   visualizationOptionsStore.coolerWeightsNaNCount === 1
                     ? ""
                     : "s"
-                }}. These usually come from failed balancing iterations and can
-                make the map disappear when Cooler weights are enabled.
+                }}. NaN weights normally mark bins excluded from Cooler balancing
+                (for example, low-coverage bins); they do not by themselves mean
+                balancing failed.
               </p>
               <p class="mb-0">
-                Choose how HiCT should render this dataset.
+                Weight 0 masks these bins. Weight 1 retains their unbalanced signal,
+                which can dominate balanced bins whose weights are much smaller.
+                Masking changes the display, not the stored contact counts.
               </p>
             </div>
             <div class="modal-footer cooler-weights-nan-actions">
@@ -121,7 +125,7 @@
               </button>
               <button
                 type="button"
-                class="btn btn-success"
+                class="btn btn-outline-secondary"
                 @click="
                   chooseCoolerWeightsNaNPolicy('REPLACE_NANS_WITH_ONE', true)
                 "
@@ -130,12 +134,12 @@
               </button>
               <button
                 type="button"
-                class="btn btn-danger"
+                class="btn btn-success"
                 @click="
                   chooseCoolerWeightsNaNPolicy('REPLACE_NANS_WITH_ZERO', true)
                 "
               >
-                Replace NaNs with weight 0
+                Mask excluded bins (weight 0)
               </button>
             </div>
           </div>
@@ -191,6 +195,7 @@ import VisualizationOptions, {
 import { ColorTranslator } from "colortranslator";
 import { LoadAGPRequest } from "@/app/core/net/api/request";
 import { LinkFASTARequest } from "@/app/core/net/api/request";
+import AGPImportChoiceModal from "@/app/ui/components/upper_ribbon/AGPImportChoiceModal.vue";
 import NotificationCenterModal from "@/app/ui/components/notifications/NotificationCenterModal.vue";
 import FileWizardModal from "@/app/ui/components/upper_ribbon/FileWizardModal.vue";
 
@@ -468,6 +473,8 @@ async function openFileWithOptions(
       ffname
     );
     filename.value = fname;
+    // Opening applies a preset again; ask again instead of silently reusing its NaN policy.
+    lastCoolerWeightsNaNPromptKey = "";
     fastaFilename.value = ffname ?? "";
     mapManager.value?.dispose();
     const newManager = new ContactMapManager({
@@ -1060,6 +1067,10 @@ onUnmounted(() => {
 });
 
 function onFileSelected(newFilename: string) {
+  if (newFilename === filename.value && newFilename) {
+    toast.message("This file is already open. Use File > Close, then open it again to reset the assembly.");
+    return;
+  }
   if (newFilename !== filename.value) {
     resetState();
     filename.value = newFilename;

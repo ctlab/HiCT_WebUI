@@ -43,18 +43,19 @@
               <span class="input-group-text">Look in</span>
               <input
                 v-model.trim="pathInput"
+                :disabled="loading"
                 class="form-control"
                 type="text"
                 placeholder="Relative folder or file path under DATA_DIR"
                 @keydown.enter.prevent="onPathGoClicked"
               />
-              <button type="button" class="btn btn-outline-secondary" @click="onPathGoClicked">
+              <button type="button" class="btn btn-outline-secondary" :disabled="loading" @click="onPathGoClicked">
                 Go
               </button>
-              <button type="button" class="btn btn-outline-secondary" @click="goToParentDirectory">
+              <button type="button" class="btn btn-outline-secondary" :disabled="loading" @click="goToParentDirectory">
                 Up
               </button>
-              <button type="button" class="btn btn-outline-secondary" @click="loadDirectory('')">
+              <button type="button" class="btn btn-outline-secondary" :disabled="loading" @click="loadDirectory('')">
                 Root
               </button>
             </div>
@@ -62,6 +63,7 @@
             <div class="d-flex align-items-center gap-2 mb-2">
               <input
                 v-model.trim="searchTerm"
+                :disabled="loading"
                 class="form-control form-control-sm"
                 type="text"
                 placeholder="Filter current folder by file name or path"
@@ -300,9 +302,9 @@ const selectedEntry = computed(() =>
 );
 
 const selectButtonDisabled = computed(() =>
-  props.multiSelect
+  loading.value || (props.multiSelect
     ? selectedFilenames.value.length === 0
-    : !selectedFilename.value || selectedEntry.value?.type === "directory"
+    : !selectedFilename.value || selectedEntry.value?.type === "directory")
 );
 
 type PrimeTreeNode = {

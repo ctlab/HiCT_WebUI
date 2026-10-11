@@ -19,6 +19,7 @@
  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+import { chooseMissingComponents, AgpImportCancelledError } from "../agpImportChoice";
 import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 import type { AssemblyInfo } from "../../domain/AssemblyInfo";
 import {
@@ -1111,25 +1112,25 @@ class RequestManager {
     request: LoadAGPRequest,
     options: { updateAssemblyState?: boolean } = {}
   ): Promise<AssemblyInfo> {
-    return this.sendRequest(request)
-      .then((response) => response.data)
-      .then((json) => new AssemblyInfoDTO(json).toEntity())
-      .then((asmInfo) => {
-        if (options.updateAssemblyState !== false) {
-          this.networkManager.mapManager?.contigDimensionHolder.updateContigData(
-            asmInfo.contigDescriptors
-          );
-          this.networkManager.mapManager?.scaffoldHolder.updateScaffoldData(
-            asmInfo.scaffoldDescriptors
-          );
-          this.networkManager.mapManager?.getLayersManager().reapplyAxisScopes();
-          this.networkManager.mapManager?.reloadVisuals();
-        }
-        return asmInfo;
-      })
-      .catch((err) => {
-        throw new Error(extractErrorMessage(err, "Cannot link AGP file"));
-      });
+    try {
+      let response = await this.sendRequest(request);
+      if (response.data.requiresMissingComponentsChoice === true) {
+        const policy = await chooseMissingComponents(response.data.importReport);
+        if (!policy) throw new AgpImportCancelledError();
+        response = await this.sendRequest(new LoadAGPRequest({ ...request.options, missingComponentsPolicy: policy }));
+      }
+      const asmInfo = new AssemblyInfoDTO(response.data).toEntity();
+      if (options.updateAssemblyState !== false) {
+        this.networkManager.mapManager?.contigDimensionHolder.updateContigData(asmInfo.contigDescriptors);
+        this.networkManager.mapManager?.scaffoldHolder.updateScaffoldData(asmInfo.scaffoldDescriptors);
+        this.networkManager.mapManager?.getLayersManager().reapplyAxisScopes();
+        this.networkManager.mapManager?.reloadVisuals();
+      }
+      return asmInfo;
+    } catch (err) {
+      if (err instanceof AgpImportCancelledError) throw err;
+      throw new Error(extractErrorMessage(err, "Cannot link AGP file"));
+    }
   }
 
   public async applyJuiceboxAssembly(request: ApplyJuiceboxAssemblyRequest): Promise<AssemblyInfo> {

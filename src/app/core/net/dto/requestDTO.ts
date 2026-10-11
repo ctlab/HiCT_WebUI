@@ -730,6 +730,7 @@ class LoadAGPRequestDTO extends HiCTAPIRequestDTO<LoadAGPRequest> {
     return {
       agpFilename: this.entity.options.agpFilename,
       source: this.entity.options.source,
+      missingComponentsPolicy: this.entity.options.missingComponentsPolicy,
     };
   }
 }
@@ -1046,12 +1047,13 @@ class GetFastaForAssemblyRequestDTO extends HiCTAPIRequestDTO<GetFastaForAssembl
   toDTO(): Record<string, unknown> {
     return {
       source: this.entity.options.source,
+      preserveImportedGaps: true,
     };
   }
 }
 class GetAGPForAssemblyRequestDTO extends HiCTAPIRequestDTO<GetAGPForAssemblyRequest> {
   toDTO(): Record<string, unknown> {
-    return {};
+    return { preserveImportedGaps: true };
   }
 }
 
