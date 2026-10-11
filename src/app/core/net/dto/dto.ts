@@ -143,6 +143,10 @@ class ScaffoldDescriptorDTO extends InboundDTO<ScaffoldDescriptor> {
 
 class AssemblyInfoDTO extends InboundDTO<AssemblyInfo> {
   public toEntity(): AssemblyInfo {
+    if (this.json.format !== undefined) {
+      if (this.json.format !== "compact-v1") throw new Error("Unsupported assembly response format");
+      return this.fromCompact();
+    }
     return {
       contigDescriptors: (
         this.json.contigDescriptors as Record<string, unknown>[]
@@ -151,6 +155,46 @@ class AssemblyInfoDTO extends InboundDTO<AssemblyInfo> {
         this.json.scaffoldDescriptors as Record<string, unknown>[]
       ).map((sd) => new ScaffoldDescriptorDTO(sd).toEntity()),
     };
+  }
+
+  private fromCompact(): AssemblyInfo {
+    const resolutions = this.json.resolutions;
+    if (!Array.isArray(resolutions) || resolutions.some(r => !Number.isSafeInteger(r) || r <= 0) ||
+        new Set(resolutions).size !== resolutions.length ||
+        !Array.isArray(this.json.contigs) || !Array.isArray(this.json.scaffolds)) {
+      throw new Error("Invalid compact assembly header");
+    }
+    const contigDescriptors = this.json.contigs.map((row: unknown): ContigDescriptor => {
+      if (!Array.isArray(row) || row.length !== 9 ||
+          !Array.isArray(row[7]) || !Array.isArray(row[8]) ||
+          row[7].length !== resolutions.length || row[8].length !== resolutions.length ||
+          !Number.isInteger(row[0]) || ![row[1], row[2], row[3]].every(v => typeof v === "string") ||
+          !Number.isInteger(row[4]) || (row[5] !== 0 && row[5] !== 1) || !Number.isFinite(row[6])) {
+        throw new Error("Invalid compact contig descriptor");
+      }
+      const lengths = new Map<number, number>();
+      const presence = new Map<number, ContigHideType>();
+      for (let i = 0; i < resolutions.length; ++i) {
+        if (!Number.isFinite(row[7][i]) || !Number.isInteger(row[8][i]) || row[8][i] < 0 || row[8][i] > 3) {
+          throw new Error("Invalid compact resolution value");
+        }
+        lengths.set(resolutions[i], row[7][i]);
+        presence.set(resolutions[i], contigHideTypeFromDTO(row[8][i]));
+      }
+      return {contigId: row[0], contigName: row[1], contigOriginalName: row[2],
+        contigSourceName: row[3], contigOffsetInSource: row[4], direction: contigDirectionFromDTO(row[5]),
+        contigLengthBp: row[6], contigLengthBins: lengths, presenceAtResolution: presence};
+    });
+    const scaffoldDescriptors = this.json.scaffolds.map((row: unknown): ScaffoldDescriptor => {
+      if (!Array.isArray(row) || row.length !== 5 || !Number.isFinite(row[0]) ||
+          typeof row[1] !== "string" || typeof row[2] !== "string" || !Number.isFinite(row[3]) ||
+          (row[4] !== null && (!Array.isArray(row[4]) || row[4].length !== 2 || !row[4].every(Number.isFinite)))) {
+        throw new Error("Invalid compact scaffold descriptor");
+      }
+      return {scaffoldId: row[0], scaffoldName: row[1], scaffoldOriginalName: row[2], spacerLength: row[3],
+        scaffoldBordersBP: row[4] === null ? null : {startBP: row[4][0], endBP: row[4][1]}};
+    });
+    return {contigDescriptors, scaffoldDescriptors};
   }
 }
 

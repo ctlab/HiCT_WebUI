@@ -505,6 +505,7 @@ class SetViewportExpectedProfileRequestDTO extends HiCTAPIRequestDTO<SetViewport
 class ReverseSelectionRangeRequestDTO extends HiCTAPIRequestDTO<ReverseSelectionRangeRequest> {
   toDTO(): Record<string, unknown> {
     return {
+      assemblyFormat: "compact-v1",
       startBP: this.entity.options.startBP,
       endBP: this.entity.options.endBP,
     };
@@ -680,6 +681,7 @@ class ReloadTilesRequestDTO extends HiCTAPIRequestDTO<ReloadTilesRequest> {
 class MoveSelectionRangeRequestDTO extends HiCTAPIRequestDTO<MoveSelectionRangeRequest> {
   toDTO(): Record<string, unknown> {
     return {
+      assemblyFormat: "compact-v1",
       startBP: this.entity.options.startBP,
       endBP: this.entity.options.endBP,
       targetStartBP: this.entity.options.targetStartBP,
@@ -690,6 +692,7 @@ class MoveSelectionRangeRequestDTO extends HiCTAPIRequestDTO<MoveSelectionRangeR
 class SplitContigRequestDTO extends HiCTAPIRequestDTO<SplitContigRequest> {
   toDTO(): Record<string, unknown> {
     return {
+      assemblyFormat: "compact-v1",
       splitPx: this.entity.options.splitPx,
       bpResolution: this.entity.options.bpResolution,
     };
@@ -744,6 +747,7 @@ class ApplyJuiceboxAssemblyRequestDTO extends HiCTAPIRequestDTO<ApplyJuiceboxAss
 class GroupContigsIntoScaffoldRequestDTO extends HiCTAPIRequestDTO<GroupContigsIntoScaffoldRequest> {
   toDTO(): Record<string, unknown> {
     return {
+      assemblyFormat: "compact-v1",
       startBP: this.entity.options.startBP,
       endBP: this.entity.options.endBP,
       scaffoldName: this.entity.options.newScaffoldName,
@@ -779,6 +783,7 @@ class GetCurrentSignalRangeRequestDTO extends HiCTAPIRequestDTO<GetCurrentSignal
 class UngroupContigsFromScaffoldRequestDTO extends HiCTAPIRequestDTO<UngroupContigsFromScaffoldRequest> {
   toDTO(): Record<string, unknown> {
     return {
+      assemblyFormat: "compact-v1",
       startBP: this.entity.options.startBP,
       endBP: this.entity.options.endBP,
     };
@@ -788,6 +793,7 @@ class UngroupContigsFromScaffoldRequestDTO extends HiCTAPIRequestDTO<UngroupCont
 class MoveSelectionToDebrisRequestDTO extends HiCTAPIRequestDTO<MoveSelectionToDebrisRequest> {
   toDTO(): Record<string, unknown> {
     return {
+      assemblyFormat: "compact-v1",
       startBP: this.entity.options.startBP,
       endBP: this.entity.options.endBP,
     };

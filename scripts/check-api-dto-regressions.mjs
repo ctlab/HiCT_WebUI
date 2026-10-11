@@ -104,3 +104,38 @@ assert.notEqual(first.contigDescriptors[0].contigLengthBins, next.contigDescript
 assert.deepEqual(new AssemblyInfoDTO({contigDescriptors: [], scaffoldDescriptors: []}).toEntity(),
   {contigDescriptors: [], scaffoldDescriptors: []});
 console.log("API DTO regression check passed (including real assembly response conversion).");
+
+// The negotiated representation must produce exactly the same application state.
+const scaffoldDtos = [
+  {scaffoldId: 2147483657, scaffoldName: 'alias α', scaffoldOriginalName: 'original', spacerLength: 1000, scaffoldBordersBP: {startBP: 123, endBP: 999}},
+  {scaffoldId: 18, scaffoldName: 'unplaced', scaffoldOriginalName: 'unplaced', spacerLength: 0, scaffoldBordersBP: null},
+];
+const legacy = {contigDescriptors: descriptors.map(d => ({...d, contigSourceName: 'source😀\"'})), scaffoldDescriptors: scaffoldDtos};
+const compact = {format: 'compact-v1', resolutions: [100,250,1000],
+  contigs: legacy.contigDescriptors.map(d => [d.contigId,d.contigName,d.contigOriginalName,d.contigSourceName,d.contigOffsetInSource,d.contigDirection,d.contigLengthBp,
+    [100,250,1000].map(r => Number(d.contigLengthBins[r])), [100,250,1000].map(r => d.contigPresenceAtResolution[r])]),
+  scaffolds: scaffoldDtos.map(s => [s.scaffoldId,s.scaffoldName,s.scaffoldOriginalName,s.spacerLength,s.scaffoldBordersBP ? [s.scaffoldBordersBP.startBP,s.scaffoldBordersBP.endBP] : null])};
+assert.deepEqual(new AssemblyInfoDTO(compact).toEntity(), new AssemblyInfoDTO(legacy).toEntity());
+const converted = new AssemblyInfoDTO(compact).toEntity();
+converted.contigDescriptors[0].contigLengthBins.set(100, 777);
+assert.deepEqual(new AssemblyInfoDTO(compact).toEntity(), new AssemblyInfoDTO(legacy).toEntity());
+assert.deepEqual(new AssemblyInfoDTO({format:'compact-v1',resolutions:[],contigs:[],scaffolds:[]}).toEntity(), {contigDescriptors:[],scaffoldDescriptors:[]});
+for (const damage of [
+  c => { c.format='compact-v2'; },
+  c => { c.resolutions[1]=c.resolutions[0]; },
+  c => { c.contigs[0].pop(); },
+  c => { c.contigs[0][7].pop(); },
+  c => { c.contigs[0][8][0]=99; },
+  c => { c.contigs[0][5]=9; },
+  c => { c.scaffolds[0][4]=[1]; },
+]) {
+  const bad=structuredClone(compact);damage(bad);
+  assert.throws(()=>new AssemblyInfoDTO(bad).toEntity());
+}
+const { HiCTAPIRequestDTO } = loadTypeScript(resolve(projectRoot,'src/app/core/net/dto/requestDTO.ts'));
+const requestClasses = loadTypeScript(resolve(projectRoot,'src/app/core/net/api/request.ts'));
+for (const name of ['ReverseSelectionRangeRequest','MoveSelectionRangeRequest','SplitContigRequest','GroupContigsIntoScaffoldRequest','UngroupContigsFromScaffoldRequest','MoveSelectionToDebrisRequest']) {
+  const request = new requestClasses[name]({startBP:0,endBP:100,targetStartBP:200,splitPx:50,bpResolution:100});
+  assert.equal(HiCTAPIRequestDTO.toDTOClass(request).toDTO().assemblyFormat,'compact-v1',name);
+}
+console.log('Compact assembly contract, invalid payloads, independent maps and opt-in edit requests passed.');
