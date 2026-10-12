@@ -210,7 +210,50 @@ export type ServerStatisticsResponse = {
   nativeProcessing: NativeProcessingStatusResponse;
 };
 
+import { shallowReactive } from "vue";
+import { AssemblyHistoryRequest, RestoreAssemblyHistoryRequest } from "./request";
+export type HistorySummary = {
+  session: string; revision: number; currentId: number; position: number; size: number;
+  canUndo: boolean; canRedo: boolean;
+};
+export type HistoryPage = {
+  summary: HistorySummary | null; offset: number;
+  entries: { id: number; label: string; timestamp: string }[];
+};
+const assemblyMutationPaths = new Set([
+  "/reverse_selection_range", "/move_selection_range", "/split_contig_at_bin",
+  "/group_contigs_into_scaffold", "/ungroup_contigs_from_scaffold", "/move_selection_to_debris",
+  "/load_agp", "/apply_juicebox_assembly", "/names/contig", "/names/scaffold", "/names/import",
+]);
+const assemblySessionPaths = new Set(["/open", "/close", "/secondary/open", "/secondary/close", "/secondary/set_assembly_source"]);
+
 class RequestManager {
+  public readonly history = shallowReactive({ summary: null as HistorySummary | null, busy: 0 });
+
+  public async getAssemblyHistory(offset?: number): Promise<HistoryPage> {
+    const response = await this.sendRequest(new AssemblyHistoryRequest({ offset, limit: 100 }));
+    return response.data as HistoryPage;
+  }
+
+  public async restoreAssemblyHistory(action: "undo" | "redo" | "restore", id?: number): Promise<void> {
+    const summary = this.history.summary;
+    if (!summary || this.history.busy) return;
+    const response = await this.sendRequest(new RestoreAssemblyHistoryRequest({
+      session: summary.session, revision: summary.revision, action, id, assemblyFormat: "compact-v1",
+    }));
+    const assembly = new AssemblyInfoDTO(this.normalizeAssemblyInfo(response.data)).toEntity();
+    const manager = this.networkManager.mapManager;
+    if (!manager) return;
+    manager.deactivateTranslocation();
+    manager.viewAndLayersManager.currentViewState.activeTool = undefined;
+    manager.eventManager.resetSelection();
+    manager.contigDimensionHolder.updateContigData(assembly.contigDescriptors);
+    manager.scaffoldHolder.updateScaffoldData(assembly.scaffoldDescriptors);
+    manager.getLayersManager().reapplyAxisScopes();
+    manager.refreshOverviewMinimap();
+    manager.reloadVisuals();
+  }
+
   constructor(public readonly networkManager: NetworkManager) {}
 
   private notifyInboundPayload(payload: unknown): void {
@@ -392,10 +435,19 @@ class RequestManager {
   ): Promise<AxiosResponse> {
     const host = this.networkManager.host.replace(/\/+$/, "");
     const path = request.requestPath.replace(/^\/+/, "");
+    const mutation = assemblyMutationPaths.has(request.requestPath);
+    const tracked = mutation || assemblySessionPaths.has(request.requestPath) || request.requestPath === "/assembly/history/restore";
+    const summary = this.history.summary;
+    const historyHeaders = mutation && summary ? {
+      "X-HiCT-History-Session": summary.session,
+      "X-HiCT-History-Revision": String(summary.revision),
+    } : {};
+    if (tracked) this.history.busy++;
     const mergedConfig: AxiosRequestConfig = {
       ...(axiosConfig ?? {}),
       headers: {
         Accept: "application/json",
+        ...historyHeaders,
         ...((axiosConfig ?? {}).headers ?? {}),
       },
     };
@@ -418,6 +470,13 @@ class RequestManager {
             );
           }
         }
+        const header = req.headers["x-hict-history"];
+        if (typeof header === "string") {
+          const next = JSON.parse(header) as HistorySummary | null;
+          const current = this.history.summary;
+          if (!next || !current || next.session !== current.session || next.revision > current.revision)
+            this.history.summary = next;
+        }
         this.notifyInboundPayload(req.data);
         return req;
       })
@@ -427,8 +486,10 @@ class RequestManager {
           const message = extractErrorMessage(err, "Request failed");
           toast.error(message);
         }
+        // A failed/conflicting command can leave another client's newer journal.
+        if (tracked) void this.getAssemblyHistory().catch(() => undefined);
         throw err;
-      });
+      }).finally(() => { if (tracked) this.history.busy--; });
   }
 
   public async openFile(

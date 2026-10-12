@@ -31,6 +31,18 @@ interface HiCTAPIRequest {
   requestPath: string;
 }
 
+export class AssemblyHistoryRequest implements HiCTAPIRequest {
+  requestPath = "/assembly/history";
+  constructor(public readonly options: { offset?: number; limit?: number } = {}) {}
+}
+export class RestoreAssemblyHistoryRequest implements HiCTAPIRequest {
+  requestPath = "/assembly/history/restore";
+  constructor(public readonly options: {
+    session: string; revision: number; action: "undo" | "redo" | "restore"; id?: number;
+    assemblyFormat: "compact-v1";
+  }) {}
+}
+
 class OpenFileRequest implements HiCTAPIRequest {
   requestPath = "/open";
 

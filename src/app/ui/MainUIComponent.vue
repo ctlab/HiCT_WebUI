@@ -158,6 +158,7 @@
       @fastaLinked="onFastaLinked"
       @wizardRequested="wizardOpen = true"
     ></UpperFrame>
+    <AssemblyHistory :network-manager="networkManager" />
     <WorkspaceComponent
       :mapManager="mapManager"
       :filename="filename"
@@ -195,6 +196,7 @@ import VisualizationOptions, {
 import { ColorTranslator } from "colortranslator";
 import { LoadAGPRequest } from "@/app/core/net/api/request";
 import { LinkFASTARequest } from "@/app/core/net/api/request";
+import AssemblyHistory from "@/app/ui/components/AssemblyHistory.vue";
 import AGPImportChoiceModal from "@/app/ui/components/upper_ribbon/AGPImportChoiceModal.vue";
 import NotificationCenterModal from "@/app/ui/components/notifications/NotificationCenterModal.vue";
 import FileWizardModal from "@/app/ui/components/upper_ribbon/FileWizardModal.vue";

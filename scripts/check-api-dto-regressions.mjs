@@ -148,3 +148,11 @@ for (const name of ['GetAGPForAssemblyRequest','GetFastaForAssemblyRequest']) {
   assert.equal(HiCTAPIRequestDTO.toDTOClass(new requestClasses[name]()).toDTO().preserveImportedGaps,true);
 }
 console.log('AGP omission choices and matching AGP/FASTA gap export requests passed.');
+
+for (const [name, options] of [
+  ['AssemblyHistoryRequest', {offset: 100, limit: 100}],
+  ['RestoreAssemblyHistoryRequest', {session: 'session-id', revision: 7, action: 'restore', id: 3, assemblyFormat: 'compact-v1'}],
+]) {
+  assert.deepEqual(HiCTAPIRequestDTO.toDTOClass(new requestClasses[name](options)).toDTO(), options);
+}
+console.log('Journal pagination and guarded restoration payloads passed.');

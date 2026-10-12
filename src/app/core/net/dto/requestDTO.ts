@@ -95,6 +95,8 @@ import {
 } from "../api/request";
 import { ColormapDTO, OutboundDTO, VisualizationOptionsDTO } from "./dto";
 
+import { AssemblyHistoryRequest, RestoreAssemblyHistoryRequest } from "../api/request";
+
 abstract class HiCTAPIRequestDTO<
   T extends HiCTAPIRequest
 > extends OutboundDTO<T> {
@@ -107,6 +109,9 @@ abstract class HiCTAPIRequestDTO<
 
   static toDTOClass(entity: HiCTAPIRequest) {
     switch (true) {
+      case entity instanceof AssemblyHistoryRequest:
+      case entity instanceof RestoreAssemblyHistoryRequest:
+        return { toDTO: () => (entity as AssemblyHistoryRequest | RestoreAssemblyHistoryRequest).options };
       case entity instanceof GetCurrentSignalRangeRequest:
         return new GetCurrentSignalRangeRequestDTO(
           entity as GetCurrentSignalRangeRequest
