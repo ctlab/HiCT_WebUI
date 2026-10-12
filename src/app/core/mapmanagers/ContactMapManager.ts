@@ -1052,128 +1052,76 @@ class ContactMapManager {
     return canvas;
   }
 
-  public async exportCurrentMapSvg(
-    progressCallback?: (progress: number) => void,
-    options?: {
-      backgroundColor?: string;
-      metadata?: Record<string, unknown>;
-      includeWorkspaceComposite?: boolean;
+  private exportInProgress = false;
+
+  private async buildViewportExportSvg(options?: {
+    backgroundColor?: string; metadata?: Record<string, unknown>;
+    includeWorkspaceComposite?: boolean; scope?: "viewport" | "whole-map";
+  }): Promise<{svg: SVGSVGElement; canvas: HTMLCanvasElement}> {
+    if (this.exportInProgress) throw new Error("An export is already running.");
+    const workspace = document.querySelector(".interactive-workspace") as HTMLElement | null;
+    if (!workspace || this.disposed) throw new Error("Open a map before exporting.");
+    const view=this.map.getView(), center=view.getCenter()?.slice(), resolution=view.getResolution(), rotation=view.getRotation();
+    const whole=options?.scope === "whole-map" || options?.includeWorkspaceComposite === false;
+    const history=this.networkManager.requestManager.history.applied;
+    const interactions=this.map.getInteractions().getArray().map(item => [item,item.getActive()] as const);
+    this.exportInProgress=true;
+    try {
+      interactions.forEach(([item])=>item.setActive(false));
+      if (whole) this.viewAndLayersManager.fitViewToActiveExtent();
+      await document.fonts.ready;
+      await this.linearTrackManager.render({allowFetch:true});
+      await new Promise<void>((resolve,reject)=>{
+        const done=()=>{window.clearTimeout(timer);resolve();};
+        const timer=window.setTimeout(()=>{this.map.un("rendercomplete",done);reject(new Error("The map did not finish rendering for export. Retry after loading completes."));},60000);
+        this.map.once("rendercomplete",done);this.map.renderSync();
+      });
+      const {captureCanvasScene}=await import("../export/CanvasScene");
+      const svg=await captureCanvasScene(workspace,async()=>{
+        this.map.getLayers().forEach(layer=>layer.changed());
+        this.map.renderSync();
+        this.minimap?.getLayers().forEach(layer=>layer.changed());this.minimap?.renderSync();
+        this.viewAndLayersManager.scheduleRulerRender();
+        await this.linearTrackManager.render({allowFetch:false});
+        await this.waitForNextAnimationFrame();await this.waitForNextAnimationFrame();
+      },options?.metadata);
+      if (history !== this.networkManager.requestManager.history.applied) throw new Error("The assembly changed during export. Please export the updated view again.");
+      return svg;
+    } finally {
+      if(whole && !this.disposed){view.setCenter(center);view.setResolution(resolution);view.setRotation(rotation);this.map.renderSync();this.viewAndLayersManager.scheduleRulerRender();void this.linearTrackManager.render();}
+      interactions.forEach(([item,active])=>item.setActive(active));
+      this.exportInProgress=false;
     }
-  ): Promise<void> {
-    let svg: string;
-    if (options?.includeWorkspaceComposite !== false) {
-      const workspaceCanvas = await this.renderWorkspaceCompositeCanvas(
-        options?.backgroundColor
-      );
-      progressCallback?.(1);
-      const dataUrl = workspaceCanvas.toDataURL("image/png");
-      svg =
-        `<?xml version=\"1.0\" encoding=\"UTF-8\"?>` +
-        `<svg xmlns=\"http://www.w3.org/2000/svg\" ` +
-        `xmlns:xlink=\"http://www.w3.org/1999/xlink\" ` +
-        `width=\"${workspaceCanvas.width}\" height=\"${workspaceCanvas.height}\" viewBox=\"0 0 ${workspaceCanvas.width} ${workspaceCanvas.height}\">` +
-        `${
-          options?.metadata
-            ? `<metadata><![CDATA[${JSON.stringify(options.metadata)}]]></metadata>`
-            : ""
-        }` +
-        `<rect width=\"${workspaceCanvas.width}\" height=\"${workspaceCanvas.height}\" fill=\"${
-          options?.backgroundColor ?? "rgba(255,255,255,1)"
-        }\" />` +
-        `<image x=\"0\" y=\"0\" width=\"${workspaceCanvas.width}\" height=\"${workspaceCanvas.height}\" href=\"${ContactMapManager.escapeXml(
-          dataUrl
-        )}\" />` +
-        `</svg>`;
-    } else {
-      const composite = await this.buildDataDrivenExportCompositeCanvas(
-        progressCallback,
-        options
-      );
-      const dataUrl = composite.toDataURL("image/png");
-      svg =
-        `<?xml version=\"1.0\" encoding=\"UTF-8\"?>` +
-        `<svg xmlns=\"http://www.w3.org/2000/svg\" ` +
-        `xmlns:xlink=\"http://www.w3.org/1999/xlink\" ` +
-        `width=\"${composite.width}\" height=\"${composite.height}\" viewBox=\"0 0 ${composite.width} ${composite.height}\">` +
-        `${
-          options?.metadata
-            ? `<metadata><![CDATA[${JSON.stringify(options.metadata)}]]></metadata>`
-            : ""
-        }` +
-        `<rect width=\"${composite.width}\" height=\"${composite.height}\" fill=\"${
-          options?.backgroundColor ?? "rgba(255,255,255,1)"
-        }\" />` +
-        `<image x=\"0\" y=\"0\" width=\"${composite.width}\" height=\"${composite.height}\" href=\"${ContactMapManager.escapeXml(
-          dataUrl
-        )}\" />` +
-        `</svg>`;
-    }
-    const blob = new Blob([svg], { type: "image/svg+xml" });
-    await this.saveExportBlob(blob, `${this.options.filename}.svg`);
   }
 
-  public async exportCurrentMapPng(
-    progressCallback?: (progress: number) => void,
-    options?: {
-      backgroundColor?: string;
-      metadata?: Record<string, unknown>;
-      includeWorkspaceComposite?: boolean;
-    }
-  ): Promise<void> {
-    const useWorkspaceComposite = options?.includeWorkspaceComposite !== false;
-    const canvas =
-      useWorkspaceComposite
-        ? await this.renderWorkspaceCompositeCanvas(options?.backgroundColor)
-        : await this.buildDataDrivenExportCompositeCanvas(
-            progressCallback,
-            options
-          );
-    if (useWorkspaceComposite) {
-      progressCallback?.(1);
-    }
-    await new Promise<void>((resolve, reject) => {
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          resolve();
-          return;
-        }
-        this.saveExportBlob(blob, `${this.options.filename}.png`)
-          .then(resolve)
-          .catch(reject);
-      }, "image/png");
-    });
+  public async exportCurrentMapSvg(progressCallback?: (progress:number)=>void, options?: {
+    backgroundColor?:string;metadata?:Record<string,unknown>;includeWorkspaceComposite?:boolean;scope?:"viewport"|"whole-map";
+  }):Promise<void> {
+    const {svg}=await this.buildViewportExportSvg(options);
+    const {embedSvgFonts}=await import("../rendering/MapFonts");await embedSvgFonts(svg);
+    await this.saveExportBlob(new Blob([new XMLSerializer().serializeToString(svg)],{type:"image/svg+xml"}),`${this.options.filename}.svg`);
+    progressCallback?.(1);
   }
 
-  public async exportCurrentMapPdf(
-    progressCallback?: (progress: number) => void,
-    options?: {
-      backgroundColor?: string;
-      metadata?: Record<string, unknown>;
-      includeWorkspaceComposite?: boolean;
-    }
-  ): Promise<void> {
-    const useWorkspaceComposite = options?.includeWorkspaceComposite !== false;
-    const canvas =
-      useWorkspaceComposite
-        ? await this.renderWorkspaceCompositeCanvas(options?.backgroundColor)
-        : await this.buildDataDrivenExportCompositeCanvas(
-            progressCallback,
-            options
-          );
-    if (useWorkspaceComposite) {
-      progressCallback?.(1);
-    }
-    const dataUrl = canvas.toDataURL("image/png");
-    const { jsPDF } = await import("jspdf");
-    const orientation = canvas.width >= canvas.height ? "landscape" : "portrait";
-    const pdf = new jsPDF({
-      orientation,
-      unit: "px",
-      format: [canvas.width, canvas.height],
-    });
-    pdf.addImage(dataUrl, "PNG", 0, 0, canvas.width, canvas.height);
-    const blob = pdf.output("blob");
-    await this.saveExportBlob(blob, `${this.options.filename}.pdf`);
+  public async exportCurrentMapPng(progressCallback?: (progress:number)=>void, options?: {
+    backgroundColor?:string;metadata?:Record<string,unknown>;includeWorkspaceComposite?:boolean;scope?:"viewport"|"whole-map";
+  }):Promise<void> {
+    const {canvas}=await this.buildViewportExportSvg(options);
+    const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error("PNG encoding failed.")),"image/png"));
+    await this.saveExportBlob(blob,`${this.options.filename}.png`);progressCallback?.(1);
+  }
+
+  public async exportCurrentMapPdf(progressCallback?: (progress:number)=>void, options?: {
+    backgroundColor?:string;metadata?:Record<string,unknown>;includeWorkspaceComposite?:boolean;scope?:"viewport"|"whole-map";
+  }):Promise<void> {
+    const {svg}=await this.buildViewportExportSvg(options);
+    const width=Number(svg.getAttribute("width")),height=Number(svg.getAttribute("height"));
+    const {jsPDF}=await import("jspdf");await import("svg2pdf.js");
+    const {embedPdfFonts,configureMapPdfFonts}=await import("../rendering/MapFonts");configureMapPdfFonts(jsPDF);
+    const pdf=new jsPDF({compress:true,orientation:width>=height?"landscape":"portrait",unit:"px",format:[width,height],hotfixes:["px_scaling"]});
+    await embedPdfFonts(pdf);
+    await pdf.svg(svg,{x:0,y:0,width,height});
+    await this.saveExportBlob(pdf.output("blob"),`${this.options.filename}.pdf`);progressCallback?.(1);
   }
 
   private async saveExportBlob(blob: Blob, filename: string): Promise<void> {

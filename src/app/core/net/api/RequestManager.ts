@@ -211,7 +211,7 @@ export type ServerStatisticsResponse = {
 };
 
 import { shallowReactive } from "vue";
-import { AssemblyHistoryRequest, RestoreAssemblyHistoryRequest } from "./request";
+import { UnscaffoldAllRequest, AssemblyHistoryRequest, RestoreAssemblyHistoryRequest } from "./request";
 export type HistorySummary = {
   session: string; revision: number; currentId: number; position: number; size: number;
   canUndo: boolean; canRedo: boolean;
@@ -222,7 +222,7 @@ export type HistoryPage = {
 };
 const assemblyMutationPaths = new Set([
   "/reverse_selection_range", "/move_selection_range", "/split_contig_at_bin",
-  "/group_contigs_into_scaffold", "/ungroup_contigs_from_scaffold", "/move_selection_to_debris",
+  "/unscaffold_all", "/group_contigs_into_scaffold", "/ungroup_contigs_from_scaffold", "/move_selection_to_debris",
   "/load_agp", "/apply_juicebox_assembly", "/names/contig", "/names/scaffold", "/names/import",
 ]);
 const assemblySessionPaths = new Set(["/open", "/close", "/secondary/open", "/secondary/close", "/secondary/set_assembly_source"]);
@@ -268,10 +268,10 @@ class RequestManager {
       toast.success(json.info);
     }
     if (typeof json.message === "string" && json.message.trim().length > 0) {
-      toast(json.message);
+      toast.message(json.message);
     }
     if (typeof json.warning === "string" && json.warning.trim().length > 0) {
-      toast(json.warning, {
+      toast.message(json.warning, {
         style: {
           "background-color": "lightyellow",
           color: "black",
@@ -451,12 +451,12 @@ class RequestManager {
         ...((axiosConfig ?? {}).headers ?? {}),
       },
     };
-    return axios
+    return Promise.resolve().then(() => axios
       .post(
         `${host}/${path}`,
         HiCTAPIRequestDTO.toDTOClass(request).toDTO(),
         mergedConfig
-      )
+      ))
       .then((req) => {
         if (typeof req.data === "string") {
           try {
@@ -1264,6 +1264,11 @@ class RequestManager {
       .then((json) =>
         new AssemblyInfoDTO(this.normalizeAssemblyInfo(json)).toEntity()
       );
+  }
+
+  public async unscaffoldAll(): Promise<AssemblyInfo> {
+    const response = await this.sendRequest(new UnscaffoldAllRequest());
+    return new AssemblyInfoDTO(this.normalizeAssemblyInfo(response.data)).toEntity();
   }
 
   public async ungroupContigsFromScaffold(

@@ -818,14 +818,14 @@ const onSecondaryFileSelected = async (filename: string) => {
       if (resolution?.action === "REUSE_CONVERTED") {
         selectedSecondaryFile.value = resolution.resolvedFilename;
         secondaryFileSelectorOpen.value = false;
-        resolution.warnings.forEach((warning) => toast(warning));
+        resolution.warnings.forEach((warning) => toast.message(warning));
         return;
       }
       secondaryFileSelectorOpen.value = false;
       secondaryCoolerToConvert.value = filename;
       convertingSecondaryCooler.value = true;
       resolution?.warnings.forEach((warning) =>
-        toast(warning, {
+        toast.message(warning, {
           style: {
             "background-color": "lightyellow",
             color: "black",

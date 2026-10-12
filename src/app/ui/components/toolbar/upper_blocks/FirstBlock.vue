@@ -174,7 +174,7 @@ function zoomIn() {
           bpResolution: currentResolutionDescriptor.bpResolution,
           lastCenterCoordinate: center,
         };
-        toast("Zooming all the way in");
+        toast.message("Zooming all the way in");
         view.animate({
           center: [x_target_px, -y_target_px],
           zoom: 10e10,
@@ -197,13 +197,13 @@ function zoomIn() {
           Math.abs(last_x_px - x_px) < PRECISION_THRESHOLD_PX.value &&
           Math.abs(last_y_px - y_px) < PRECISION_THRESHOLD_PX.value
         ) {
-          toast("Zooming back out");
+          toast.message("Zooming back out");
           view.animate({
             center: lastZoomInCenterPosition.value.lastCenterCoordinate,
             zoom: lastZoomInCenterPosition.value.zoom,
           });
         } else {
-          toast("Already at the highest resolution");
+          toast.message("Already at the highest resolution");
         }
       }
     }
@@ -248,7 +248,7 @@ function zoomOut() {
           bpResolution: currentResolutionDescriptor.bpResolution,
           lastCenterCoordinate: center,
         };
-        toast("Zooming out");
+        toast.message("Zooming out");
         view.animate({
           center: [x_target_px, -y_target_px],
           zoom: 0,
@@ -271,13 +271,13 @@ function zoomOut() {
           Math.abs(last_x_px - x_px) < PRECISION_THRESHOLD_PX.value &&
           Math.abs(last_y_px - y_px) < PRECISION_THRESHOLD_PX.value
         ) {
-          toast("Zooming back in");
+          toast.message("Zooming back in");
           view.animate({
             center: lastZoomInCenterPosition.value.lastCenterCoordinate,
             zoom: lastZoomInCenterPosition.value.zoom,
           });
         } else {
-          toast("Already at the lowest resolution");
+          toast.message("Already at the lowest resolution");
         }
       }
     }
@@ -325,7 +325,7 @@ function slideVertically() {
           // Old position is not set or close to the main diagonal at current resolution
           toast.success("Already close to the main diagonal");
         } else {
-          toast("Returning to the previous position vertically");
+          toast.message("Returning to the previous position vertically");
           view.animate({
             center: [
               last_x_px * currentResolutionDescriptor.pixelResolution,
@@ -342,7 +342,7 @@ function slideVertically() {
           zoom: view.getZoom() ?? 0,
           bpResolution: currentResolutionDescriptor.bpResolution,
         };
-        toast("Sliding vertically to the main diagonal");
+        toast.message("Sliding vertically to the main diagonal");
         view.animate({
           center: [center[0], -center[0]],
           zoom: view.getZoom(),
@@ -393,7 +393,7 @@ function slideHorizontally() {
           // Old position is not set or close to the main diagonal at current resolution
           toast.success("Already close to the main diagonal");
         } else {
-          toast("Returning to the previous position horizontally");
+          toast.message("Returning to the previous position horizontally");
           view.animate({
             center: [
               last_x_px * currentResolutionDescriptor.pixelResolution,
@@ -410,7 +410,7 @@ function slideHorizontally() {
           zoom: view.getZoom() ?? 0,
           bpResolution: currentResolutionDescriptor.bpResolution,
         };
-        toast("Sliding horizontally to the main diagonal");
+        toast.message("Sliding horizontally to the main diagonal");
         view.animate({
           center: [-center[1], center[1]],
           zoom: view.getZoom(),
@@ -461,7 +461,7 @@ function slideByCounterDiagonal() {
           // Old position is not set or close to the main diagonal at current resolution
           toast.success("Already close to the main diagonal");
         } else {
-          toast("Returning to the previous position along counter-diagonal");
+          toast.message("Returning to the previous position along counter-diagonal");
           view.animate({
             center: [
               last_x_px * currentResolutionDescriptor.pixelResolution,
@@ -478,7 +478,7 @@ function slideByCounterDiagonal() {
           zoom: view.getZoom() ?? 0,
           bpResolution: currentResolutionDescriptor.bpResolution,
         };
-        toast("Sliding to the main diagonal");
+        toast.message("Sliding to the main diagonal");
         view.animate({
           center: [(center[0] - center[1]) / 2, -(center[0] - center[1]) / 2],
           zoom: view.getZoom(),

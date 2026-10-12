@@ -251,7 +251,8 @@ class TrackRenderResponseDTO extends InboundDTO<TrackRenderResponse> {
         new TrackBinResponseDTO(bin).toEntity()
       ),
       this.json["maxValue"] as number,
-      (this.json["error"] as string) ?? null
+      (this.json["error"] as string) ?? null,
+      (this.json["statusMessage"] as string) ?? null
     );
   }
 }
@@ -518,7 +519,8 @@ class FastaLinkCompatibilityResponseDTO extends InboundDTO<FastaLinkCompatibilit
       this.json["sameLengthMultiset"] as boolean,
       ((this.json["mismatches"] as Record<string, unknown>[]) ?? []).map((item) =>
         new FastaLinkMismatchResponseDTO(item).toEntity()
-      )
+      ),
+      Boolean(this.json["sourceIntervalsCovered"])
     );
   }
 }

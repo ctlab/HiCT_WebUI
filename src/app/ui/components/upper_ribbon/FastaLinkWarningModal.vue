@@ -19,6 +19,8 @@
           <div>{{ report.compatibility.fastaRecordCount }}</div>
           <div>Assembly contigs</div>
           <div>{{ report.compatibility.assemblyContigCount }}</div>
+          <div>Required source intervals covered</div>
+          <div>{{ yesNo(report.compatibility.sourceIntervalsCovered) }}</div>
           <div>Same order and length</div>
           <div>{{ yesNo(report.compatibility.sameOrderAndLength) }}</div>
           <div>Same length multiset</div>

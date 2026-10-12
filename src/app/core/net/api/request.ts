@@ -31,6 +31,10 @@ interface HiCTAPIRequest {
   requestPath: string;
 }
 
+export class UnscaffoldAllRequest implements HiCTAPIRequest {
+  requestPath = "/unscaffold_all";
+}
+
 export class AssemblyHistoryRequest implements HiCTAPIRequest {
   requestPath = "/assembly/history";
   constructor(public readonly options: { offset?: number; limit?: number } = {}) {}

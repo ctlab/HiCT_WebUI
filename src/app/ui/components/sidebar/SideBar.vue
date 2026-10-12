@@ -43,6 +43,7 @@
           :getLabelOutlineWidth="layer.getLabelOutlineWidth"
           :getIncludeInSvg="layer.getIncludeInSvg"
           :enableStyleEditor="layer.enableStyleEditor"
+          :current-border-style="currentBorderStyle(layer.name)"
           @onColorChanged="onColorChanged"
           @onBorderStyleChanged="onBorderStyleChanged"
           @onStyleChanged="onStyleChanged"
@@ -68,9 +69,14 @@
           >
             Entities
           </button>
+          <button type="button" class="btn btn-sm"
+            :class="activeSidebarPanel === 'history' ? 'btn-primary' : 'btn-outline-primary'"
+            :aria-pressed="activeSidebarPanel === 'history'" @click="activeSidebarPanel = 'history'">Journal</button>
         </div>
       </div>
 
+      <AssemblyHistory v-if="props.mapManager"
+        :network-manager="props.mapManager.networkManager" :expanded="activeSidebarPanel === 'history'" />
       <div v-if="props.mapManager" class="sidebar-panel-content">
         <template v-if="activeSidebarPanel === 'visualization'">
           <div v-if="hasTwoSources" class="visualization-source-selector px-2 pt-2">
@@ -121,7 +127,7 @@
           </div>
         </template>
 
-        <template v-else>
+        <template v-else-if="activeSidebarPanel === 'entities'">
           <div id="saved-locations">
             <SavedLocations :map-manager="props.mapManager"></SavedLocations>
           </div>
@@ -133,11 +139,12 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import AssemblyHistory from "../AssemblyHistory.vue";
 import LayerComponent from "@/app/ui/components/sidebar/LayerComponent.vue";
 import SavedLocations from "@/app/ui/components/sidebar/SavedLocations.vue";
 import { computed, ref, watch, type Ref } from "vue";
 import { CommonEventManager } from "@/app/core/mapmanagers/CommonEventManager";
-import { BorderStyle } from "@/app/core/tracks/Track2DSymmetric";
+import { BorderStyle, NamePlacement } from "@/app/core/tracks/Track2DSymmetric";
 import Style from "ol/style/Style";
 import { toast } from "vue-sonner";
 import Stroke from "ol/style/Stroke";
@@ -151,7 +158,7 @@ import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 
 const stylesStore = useStyleStore();
 const matrixViewStore = useMatrixViewStore();
-const activeSidebarPanel = ref<"visualization" | "entities">("visualization");
+const activeSidebarPanel = ref<"visualization" | "entities" | "history">("visualization");
 
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const { presentationMode, activeVisualizationSource, layersSwapped } =
@@ -369,6 +376,22 @@ function onColorChanged(layerName: string, newColor: ColorTranslator) {
   // getEventManager()[invoke](layerName, newColor);
 }
 
+function currentBorderStyle(name: string): BorderStyle | undefined {
+  const manager = props.mapManager?.getLayersManager();
+  if (!manager || name === "Background") return undefined;
+  // Explicit style revisions keep the controls synchronized with loaded presets.
+  void manager.trackStyleState.revision.value;
+  const track = name === "Contigs" || name === "Cnames"
+    ? manager.track2DHolder.contigBordersTrack : manager.track2DHolder.scaffoldBordersTrack;
+  if (!name.endsWith("names")) return track.getStyleType();
+  switch (track.getNamePlacement()) {
+    case NamePlacement.TOP: return BorderStyle.TOP;
+    case NamePlacement.BOTTOM: return BorderStyle.BOTTOM;
+    case NamePlacement.CENTER: return BorderStyle.FULL;
+    default: return BorderStyle.NONE;
+  }
+}
+
 function onBorderStyleChanged(layerName: string, style: BorderStyle) {
   switch (layerName) {
     case "Contigs":
@@ -463,7 +486,7 @@ function swapLayers(): void {
     .swapRenderPipelineLayersAndReload()
     .then((swapped) => {
       if (!swapped) {
-        toast("No active two-layer rendering pipeline to swap");
+        toast.message("No active two-layer rendering pipeline to swap");
         return;
       }
       matrixViewStore.toggleLayersSwapped();

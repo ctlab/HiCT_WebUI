@@ -162,7 +162,7 @@
 </template>
 
 <script setup lang="ts">
-import { type Ref, ref } from "vue";
+import { type Ref, ref, watch } from "vue";
 import { BorderStyle } from "@/app/core/tracks/Track2DSymmetric";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import Style from "ol/style/Style";
@@ -172,6 +172,7 @@ import type { ColorLike } from "ol/colorlike";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const props = defineProps<{
   layerName: string;
+  currentBorderStyle?: BorderStyle;
   getDefaultColor?: () => Style | undefined;
   enableStyleEditor?: boolean;
   getLabelSize?: () => number;
@@ -236,6 +237,12 @@ const bordersStyle: Ref<number> = ref(
   props.layerName.includes("names") ? BorderStyle.TOP : 0
 );
 const visible: Ref<boolean> = ref(true);
+
+watch(() => props.currentBorderStyle, (style) => {
+  if (style === undefined) return;
+  visible.value = style !== BorderStyle.NONE;
+  if (visible.value) bordersStyle.value = style;
+}, { immediate: true });
 
 function updateVisibility() {
   visible.value = !visible.value;

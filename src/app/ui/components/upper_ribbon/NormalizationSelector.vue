@@ -410,7 +410,7 @@ function swapLayers(): void {
     .swapRenderPipelineLayersAndReload()
     .then((swapped) => {
       if (!swapped) {
-        toast("No active two-layer rendering pipeline to swap");
+        toast.message("No active two-layer rendering pipeline to swap");
         return;
       }
       matrixViewStore.toggleLayersSwapped();

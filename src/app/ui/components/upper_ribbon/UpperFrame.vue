@@ -105,7 +105,8 @@ function onWizardRequested(): void {
   /* width: 1840px; */
   width: 100%;
   /* TODO: Константа глобальная */
-  height: 109px;
+  height: auto;
+  flex: 0 0 auto;
   left: 0px;
   top: 0px;
   box-shadow: inset 0 -1px 0 #000000;

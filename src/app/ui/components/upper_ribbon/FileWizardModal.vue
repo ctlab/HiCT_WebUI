@@ -2062,7 +2062,7 @@ const runWizard = async (): Promise<void> => {
         secondaryStatus.compatibility
       );
       secondaryStatus.warnings.forEach((warning) =>
-        toast(warning, {
+        toast.message(warning, {
           style: {
             "background-color": "lightyellow",
             color: "black",

@@ -48,7 +48,7 @@ import { showTranslocationStatus } from "./TranslocationStatusToast";
 class CommonEventManager {
   public constructor(public readonly mapManager: ContactMapManager) {}
 
-  private applyAssemblyInfo(asmInfo: {
+  public applyAssemblyInfo(asmInfo: {
     contigDescriptors: ContigDescriptor[];
     scaffoldDescriptors: ScaffoldDescriptor[];
   }): void {
@@ -304,40 +304,9 @@ class CommonEventManager {
       ),
     ];
     */
-    const selectedArray =
-      this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
-        .getArray()
-        .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
-    const prefixSumBp = this.mapManager.contigDimensionHolder.prefix_sum_bp;
-    const idToOrder = this.mapManager.contigDimensionHolder.contigIdToOrd;
-    const [lcd, rcd] = [
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] < idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] > idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-    ];
-    const [lord, rord] = [lcd, rcd].map((cd) => 1 + idToOrder[cd.contigId]);
-
-    const [startBP, endBP] = [
-      lord > 0 ? prefixSumBp[lord - 1] : 0,
-      prefixSumBp[rord],
-    ];
-
-    if (startBP === undefined || endBP === undefined) {
-      console.log(
-        "Not grouping contigs into scaffold from selection: left border bp is",
-        startBP,
-        " right border bp is ",
-        endBP
-      );
-      return;
-    }
+    const range = this.getSelectedContigBpRange("grouping a scaffold");
+    if (!range) return;
+    const { startBP, endBP } = range;
     this.mapManager.networkManager.requestManager
       .groupContigsIntoScaffold(
         new GroupContigsIntoScaffoldRequest({
@@ -356,40 +325,9 @@ class CommonEventManager {
   public onRemoveScaffoldClicked(): void {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
-    const selectedArray =
-      this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
-        .getArray()
-        .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
-    const prefixSumBp = this.mapManager.contigDimensionHolder.prefix_sum_bp;
-    const idToOrder = this.mapManager.contigDimensionHolder.contigIdToOrd;
-    const [lcd, rcd] = [
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] < idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] > idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-    ];
-    const [lord, rord] = [lcd, rcd].map((cd) => 1 + idToOrder[cd.contigId]);
-
-    const [startBP, endBP] = [
-      lord > 0 ? prefixSumBp[lord - 1] : 0,
-      prefixSumBp[rord],
-    ];
-
-    if (startBP === undefined || endBP === undefined) {
-      console.log(
-        "Not ungrouping contigs from selection: left border bp is",
-        startBP,
-        " right border bp is ",
-        endBP
-      );
-      return;
-    }
+    const range = this.getSelectedContigBpRange("ungrouping a scaffold");
+    if (!range) return;
+    const { startBP, endBP } = range;
     this.mapManager.networkManager.requestManager
       .ungroupContigsFromScaffold(
         new UngroupContigsFromScaffoldRequest({
@@ -403,6 +341,13 @@ class CommonEventManager {
         this.resetSelection();
         this.reloadTracks();
       });
+  }
+
+  public async onUnscaffoldAllClicked(): Promise<void> {
+    const assembly = await this.mapManager.networkManager.requestManager.unscaffoldAll();
+    this.applyAssemblyInfo(assembly);
+    this.resetSelection();
+    await this.mapManager.reloadVisuals();
   }
 
   public onMoveToDebrisClicked(): void {

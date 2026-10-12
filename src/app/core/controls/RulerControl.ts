@@ -765,7 +765,7 @@ class RulerControl extends Control {
     context.stroke();
 
     const fontSize = tick.major ? 11 : 9;
-    const font = `${tick.major ? "bold" : "normal"} ${fontSize}px sans-serif`;
+    const font = `${tick.major ? "bold" : "normal"} ${fontSize}px HiCT Sans`;
     if (this.direction === "horizontal") {
       const textX = this.clamp(
         tick.boundary === "start"
@@ -800,7 +800,7 @@ class RulerControl extends Control {
           Math.max(22, coord[1] - tickLength + 10),
           context,
           0,
-          "9px sans-serif",
+          "9px HiCT Sans",
           textAlign,
           true,
           false
@@ -828,7 +828,7 @@ class RulerControl extends Control {
         this.clamp(textY + 12, 12, this.canvas.height - 3),
         context,
         0,
-        "9px sans-serif",
+        "9px HiCT Sans",
         "right",
         true,
         false

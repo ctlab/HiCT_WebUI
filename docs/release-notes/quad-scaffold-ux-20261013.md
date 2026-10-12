@@ -1,0 +1,9 @@
+# Scaffold editing and map export
+
+Undo/redo and the scrollable edit journal now share the sidebar with Visualization and Entities. Undo and redo remain accessible while another tab is selected. Contig/scaffold borders and labels have a right-click menu for independent renaming and whole-scaffold operations. Unscaffold all is an explicit exception to singleton scaffolding. Native scissors and AGP partial import retain their distinct server-side bin policies.
+
+Rendering Pipeline uses the selected map background lightness to switch between light and dark themes. Numeric ports/edges are blue circles; color ports/edges are purple squares. Both sinks use the same theme as other nodes and accept only color outputs. Resize notifications are coalesced into animation frames.
+
+PNG exports the rendered viewport by default. Whole-map export is optional and restores the view afterwards. SVG/PDF retain editable text, vector borders, rulers and vector tracks; heatmaps and other raster layers remain images. Map fonts are bundled with their license. Sidebar and navigation controls are not part of the exported map. Browser compositing, SVG and PDF viewers can rasterize text and images differently; pixel identity across PDF renderers is not promised. Unsupported third-party canvas paint operations fail explicitly rather than silently omitting layers.
+
+Export capture is installed only while exporting and restored afterwards; normal panning/rendering is not intercepted. Automated browser evidence covers primary map, dotplot overlay, cooler weights, custom pipeline, styling, viewport and whole-map exports. Console warnings/errors and application notices are retained in the notification center; indexing progress is informational. Shift-selection inside a contig works with top/bottom-only borders.

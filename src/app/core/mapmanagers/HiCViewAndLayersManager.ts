@@ -147,6 +147,7 @@ interface Track2DHolder {
 }
 
 class HiCViewAndLayersManager {
+  public readonly trackStyleState = markRaw({ revision: ref(0) });
   private static readonly VECTOR_SOURCE_DIRTY_FLAG =
     "hictVectorSourceDirty";
 
@@ -1073,6 +1074,7 @@ class HiCViewAndLayersManager {
     this.track2DHolder.contigBordersTrack.style =
       this.track2DHolder.contigBordersTrack.generateStyleFunction()();
 
+    this.trackStyleState.revision.value++;
     this.reloadTracks();
   }
 
@@ -1104,6 +1106,7 @@ class HiCViewAndLayersManager {
     this.track2DHolder.scaffoldBordersTrack.style =
       this.track2DHolder.scaffoldBordersTrack.generateStyleFunction()();
 
+    this.trackStyleState.revision.value++;
     this.reloadTracks();
   }
 
@@ -1203,17 +1206,20 @@ class HiCViewAndLayersManager {
 
   public onContigNamePlacementChanged(placement: NamePlacement): void {
     this.track2DHolder.contigBordersTrack.setNamePlacement(placement);
+    this.trackStyleState.revision.value++;
     this.reloadTracks();
   }
 
   public onScaffoldNamePlacementChanged(placement: NamePlacement): void {
     this.track2DHolder.scaffoldBordersTrack.setNamePlacement(placement);
+    this.trackStyleState.revision.value++;
     this.reloadTracks();
   }
 
   public onNamePlacementChanged(placement: NamePlacement): void {
     this.track2DHolder.contigBordersTrack.setNamePlacement(placement);
     this.track2DHolder.scaffoldBordersTrack.setNamePlacement(placement);
+    this.trackStyleState.revision.value++;
     this.reloadTracks();
   }
 
@@ -1237,6 +1243,7 @@ class HiCViewAndLayersManager {
       this.track2DHolder.scaffoldBordersTrack,
       preset.scaffolds
     );
+    this.trackStyleState.revision.value++;
     this.reloadTracks();
   }
 
@@ -2027,9 +2034,18 @@ class HiCViewAndLayersManager {
       }
       track.recalculateBorders(bpResolution, viewport);
       this.refreshVectorLayerFromFeatures(activeContigBordersLayer, track.features, {force: true});
-      const boxFeatures = vectorSource
-        .getFeaturesInExtent(extent)
-        .filter((feature) => feature?.getGeometry()?.intersectsExtent(extent));
+      // Selection follows the diagonal assembly interval, independently of how
+      // its borders are styled. TOP/BOTTOM outlines are LineStrings: testing
+      // line/box intersection rejected a drag entirely inside a large contig.
+      // Labels must not become duplicate selected contig objects either.
+      const boxFeatures = leftPxInclusive <= rightPxInclusive
+        ? vectorSource.getFeaturesInExtent(extent).filter((feature) => {
+            if (feature.get("trackType") !== "contigBorders") return false;
+            const descriptor = feature.get("contigDescriptor") as ContigDescriptor;
+            const order = this.mapManager.contigDimensionHolder.contigIdToOrd[descriptor.contigId];
+            return order >= leftContigOrderInclusive && order <= rightContigOrderInclusive;
+          })
+        : [];
       this.selectionCollections.selectedContigFeatures.extend(boxFeatures);
     });
     this.mapManager.map.addInteraction(

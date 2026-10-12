@@ -22,7 +22,7 @@
 <template>
   <AGPImportChoiceModal />
   <Toaster position="bottom-right" richColors closeButton />
-  <!-- <button @click="() => toast('My first toast')">Render a toast</button> -->
+  <!-- <button @click="() => toast.message('My first toast')">Render a toast</button> -->
   <div class="main-ui-component">
     <div v-if="openProgressVisible">
       <div class="modal-backdrop fade show open-progress-backdrop"></div>
@@ -158,7 +158,6 @@
       @fastaLinked="onFastaLinked"
       @wizardRequested="wizardOpen = true"
     ></UpperFrame>
-    <AssemblyHistory :network-manager="networkManager" />
     <WorkspaceComponent
       :mapManager="mapManager"
       :filename="filename"
@@ -179,6 +178,7 @@
 </template>
 
 <script setup lang="ts">
+import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
 import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
 import {
   ContactMapManager,
@@ -196,7 +196,6 @@ import VisualizationOptions, {
 import { ColorTranslator } from "colortranslator";
 import { LoadAGPRequest } from "@/app/core/net/api/request";
 import { LinkFASTARequest } from "@/app/core/net/api/request";
-import AssemblyHistory from "@/app/ui/components/AssemblyHistory.vue";
 import AGPImportChoiceModal from "@/app/ui/components/upper_ribbon/AGPImportChoiceModal.vue";
 import NotificationCenterModal from "@/app/ui/components/notifications/NotificationCenterModal.vue";
 import FileWizardModal from "@/app/ui/components/upper_ribbon/FileWizardModal.vue";
@@ -423,7 +422,7 @@ function onAttached() {
   networkManager.requestManager
     .attachSession()
     .then(
-      ({
+      async ({
         filename: attachedName,
         fastaFilename: attachedFastaName,
         response,
@@ -435,6 +434,7 @@ function onAttached() {
         mapManager.value?.dispose();
         filename.value = attachedName;
         fastaFilename.value = attachedFastaName ?? "";
+        await ensureMapFonts();
         const newManager = new ContactMapManager({
           response,
           filename: attachedName,
@@ -479,6 +479,7 @@ async function openFileWithOptions(
     lastCoolerWeightsNaNPromptKey = "";
     fastaFilename.value = ffname ?? "";
     mapManager.value?.dispose();
+    await ensureMapFonts();
     const newManager = new ContactMapManager({
       response: openFileResponse,
       filename: fname,
@@ -504,7 +505,7 @@ async function openFileWithOptions(
           new LinkFASTARequest({ fastaFilename: ffname, allowMismatch: true })
         );
         linkResponse.warnings.forEach((warning) =>
-          toast(warning, {
+          toast.message(warning, {
             style: {
               "background-color": "lightyellow",
               color: "black",
@@ -830,7 +831,7 @@ async function resolveRequiredHiCTSessionFilename(
 
   const hictCandidates = list.filter(isHiCTMapFilename);
   if (hictCandidates.length === 1) {
-    toast(
+    toast.message(
       `Session did not record a HiCT map filename; using ${hictCandidates[0]}`
     );
     return hictCandidates[0];

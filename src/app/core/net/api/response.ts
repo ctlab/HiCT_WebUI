@@ -165,7 +165,8 @@ class TrackRenderResponse {
     public readonly renderStyle: string,
     public readonly bins: TrackBinResponse[],
     public readonly maxValue: number,
-    public readonly error: string | null
+    public readonly error: string | null,
+    public readonly statusMessage: string | null = null
   ) {}
 }
 
@@ -364,7 +365,8 @@ class FastaLinkCompatibilityResponse {
     public readonly sameOrderLengthAndOriginalNames: boolean,
     public readonly sameOrderLengthAndSourceNames: boolean,
     public readonly sameLengthMultiset: boolean,
-    public readonly mismatches: FastaLinkMismatchResponse[]
+    public readonly mismatches: FastaLinkMismatchResponse[],
+    public readonly sourceIntervalsCovered: boolean = false
   ) {}
 }
 

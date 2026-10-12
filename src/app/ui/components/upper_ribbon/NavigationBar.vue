@@ -1127,14 +1127,14 @@ async function onNativeProcessingChanged(): Promise<void> {
     if (status.enabled) {
       toast.success("Native code processing enabled.");
     } else if (status.requested) {
-      toast("Native code processing is unavailable; Java backend remains active.", {
+      toast.message("Native code processing is unavailable; Java backend remains active.", {
         style: {
           "background-color": "lightyellow",
           color: "black",
         },
       });
     } else {
-      toast("Native code processing disabled; Java backend is active.");
+      toast.message("Native code processing disabled; Java backend is active.");
     }
     props.mapManager?.reloadTiles();
   } catch (error) {
@@ -1172,7 +1172,7 @@ async function onDotplotAlignerPreferenceChanged(): Promise<void> {
     if (status.selectedDotplotAlignerCommand) {
       toast.success(`Dotplot aligner set to ${status.selectedDotplotAligner}.`);
     } else {
-      toast("No usable dotplot aligner for this preference.", {
+      toast.message("No usable dotplot aligner for this preference.", {
         style: {
           "background-color": "lightyellow",
           color: "black",
@@ -1218,7 +1218,7 @@ function onQuitClicked(): void {
   const message =
     "File -> Quit closes only bundled Electron/Tauri WebUI windows. Use the browser tab/window controls here.";
   console.info(message);
-  toast(message);
+  toast.message(message);
 }
 
 function onLoadAGP() {
@@ -1389,7 +1389,7 @@ async function onFileSelected(filename: string) {
           );
         if (resolution.action === "REUSE_CONVERTED") {
           openingFile.value = false;
-          resolution.warnings.forEach((warning) => toast(warning));
+          resolution.warnings.forEach((warning) => toast.message(warning));
           emit("selected", resolution.resolvedFilename);
           return;
         }
@@ -1397,7 +1397,7 @@ async function onFileSelected(filename: string) {
         coolerToConvert.value = filename;
         convertingCoolers.value = true;
         resolution.warnings.forEach((warning) =>
-          toast(warning, {
+          toast.message(warning, {
             style: {
               "background-color": "lightyellow",
               color: "black",
@@ -1481,7 +1481,7 @@ async function applyPendingJuiceboxAssembly(): Promise<void> {
   }
   const fastaFilename = pendingJuiceboxAssemblyFastaFilename.value;
   if (!fastaFilename) {
-    toast(
+    toast.message(
       "No original FASTA selected. Applying the Juicebox assembly in best-effort mode; contig-border issues may remain.",
       {
         style: {
@@ -1578,7 +1578,7 @@ function linkFASTA(filename: string, allowMismatch = false) {
       lastLinkedFastaFilename.value = filename;
       emit("fastaLinked", filename);
       response.warnings.forEach((warning) =>
-        toast(warning, {
+        toast.message(warning, {
           style: {
             "background-color": "lightyellow",
             color: "black",

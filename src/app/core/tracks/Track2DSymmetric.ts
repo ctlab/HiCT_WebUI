@@ -222,7 +222,7 @@ abstract class Track2DSymmetric extends Track2D {
         text: label,
         font: `${this.options.labelBold ? "bold " : ""}${
           this.options.labelSize
-        }px sans-serif`,
+        }px HiCT Sans`,
         fill: new Fill({
           color: this.options.labelColor ?? this.options.borderColor,
         }),
@@ -240,7 +240,7 @@ abstract class Track2DSymmetric extends Track2D {
 
   protected measureLabelWidthPx(
     label: string,
-    font = `${this.options.labelSize}px sans-serif`
+    font = `${this.options.labelSize}px HiCT Sans`
   ): number {
     if (!Track2DSymmetric.measureCanvas) {
       Track2DSymmetric.measureCanvas = document.createElement("canvas");
@@ -289,7 +289,7 @@ abstract class Track2DSymmetric extends Track2D {
     // Text is drawn in screen pixels, independently of the matrix bin scale.
     // Test the actual bold/non-bold font, including labels outside their boxes.
     const width = this.measureLabelWidthPx(label,
-      `${this.options.labelBold ? "bold " : ""}${this.options.labelSize}px sans-serif`);
+      `${this.options.labelBold ? "bold " : ""}${this.options.labelSize}px HiCT Sans`);
     // A circumscribed radius remains conservative when the map is rotated.
     const radius = (width / 2 + 2 * this.options.labelSize + this.options.labelOutlineWidth)
       * viewport.resolution;

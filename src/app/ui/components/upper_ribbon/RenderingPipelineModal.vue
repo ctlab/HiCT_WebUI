@@ -89,7 +89,7 @@
               </div>
             </div>
             <small class="text-muted d-block mb-2">
-              Right-click to add HiCT nodes only. Upper/Lower sinks accept color outputs; use the same full-map graph on both sinks for overlays.
+              Blue round ports carry numeric signals; purple square ports carry colors. Sinks accept only colors. Right-click to add nodes; use the same full-map graph on both sinks for overlays.
             </small>
 
             <div v-if="loading" class="py-2">
@@ -144,7 +144,7 @@ import type { TrackSummaryResponse } from "@/app/core/net/api/response";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
-import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { toast } from "vue-sonner";
 import { LGraph, LGraphCanvas, LGraphNode, LiteGraph } from "litegraph.js";
 import "litegraph.js/css/litegraph.css";
@@ -343,6 +343,7 @@ const previewSnapshot = ref<{
 let graph: LGraph | null = null;
 let graphCanvas: LGraphCanvas | null = null;
 let resizeObserver: ResizeObserver | null = null;
+let resizeFrame: number | null = null;
 let upperSinkId: number | null = null;
 let lowerSinkId: number | null = null;
 let nodeTypesRegistered = false;
@@ -1259,8 +1260,6 @@ const ensureNodeTypesRegistered = (): void => {
       this.title = "Sink";
       this.addInput("value", "color");
       this.properties = { branch: "UPPER" };
-      this.color = "#0f766e";
-      this.bgcolor = "#dcfce7";
       this.size = [190, 62];
     }
   }
@@ -1417,9 +1416,9 @@ const fitGraphCanvas = (): void => {
   }
   const width = Math.max(640, Math.floor(graphHost.value.clientWidth));
   const height = Math.max(420, Math.floor(graphHost.value.clientHeight));
-  graphCanvasRef.value.width = width;
-  graphCanvasRef.value.height = height;
-  graphCanvas.resize(width, height);
+  if (graphCanvasRef.value.width !== width || graphCanvasRef.value.height !== height) {
+    graphCanvas.resize(width, height);
+  }
   graphCanvas.draw(true, true);
 };
 
@@ -1490,6 +1489,68 @@ const updateTrackNodeWidgets = (): void => {
   graphCanvas?.draw(true, true);
 };
 
+// Colors describe data types, not special node classes. LiteGraph rejects number→color links.
+const graphDark = () => styleStore.mapBackgroundColor.L < 50;
+const stylePipelineNode = (node: LGraphNode): void => {
+  node.color = graphDark() ? "#303e50" : "#dde5ef";
+  node.bgcolor = graphDark() ? "#1e293b" : "#ffffff";
+  (node as LGraphNode & { title_text_color: string }).title_text_color = graphDark() ? "#f1f5f9" : "#172033";
+  // LiteGraph's built-in button hard-codes a dark fill. Use its documented
+  // custom-widget drawing/mouse hooks, leaving the dependency unmodified.
+  for (const widget of (node as LGraphNode & { widgets?: Array<{ type: string; name: string; value: unknown; callback?: (...args: unknown[]) => unknown }> }).widgets ?? []) {
+    if (widget.type !== "button") continue;
+    Object.assign(widget, {
+      type: "hict-themed-button",
+      draw: (ctx: CanvasRenderingContext2D, _node: LGraphNode, width: number, y: number, height: number) => {
+        ctx.fillStyle = graphDark() ? "#334155" : "#e2e8f0";
+        ctx.fillRect(15, y, width - 30, height);
+        ctx.strokeStyle = graphDark() ? "#94a3b8" : "#64748b";
+        ctx.strokeRect(15, y, width - 30, height);
+        ctx.fillStyle = graphDark() ? "#f8fafc" : "#172033";
+        ctx.textAlign = "center";
+        ctx.fillText(widget.name, width / 2, y + height * .7);
+      },
+      mouse: (event: MouseEvent) => {
+        if (event.type === `${(LiteGraph as typeof LiteGraph & { pointerevents_method: string }).pointerevents_method}down`) {
+          window.setTimeout(() => widget.callback?.(widget.value, graphCanvas!, node, [0, 0], event), 20);
+        }
+        return true;
+      },
+    });
+  }
+  for (const slot of [...(node.inputs ?? []), ...(node.outputs ?? [])]) {
+    Object.assign(slot, {
+      color_on: slot.type === "color" ? (graphDark() ? "#c4b5fd" : "#7c3aed") : (graphDark() ? "#7dd3fc" : "#0369a1"),
+      color_off: slot.type === "color" ? "#9479c7" : "#5792b1",
+      shape: slot.type === "color" ? LiteGraph.BOX_SHAPE : LiteGraph.CIRCLE_SHAPE,
+    });
+  }
+};
+const applyGraphTheme = (): void => {
+  const dark = graphDark();
+  Object.assign(LiteGraph, {
+    NODE_TEXT_COLOR: dark ? "#e2e8f0" : "#263449",
+    NODE_TITLE_COLOR: dark ? "#f1f5f9" : "#172033",
+    WIDGET_BGCOLOR: dark ? "#172033" : "#f1f5f9",
+    WIDGET_OUTLINE_COLOR: dark ? "#94a3b8" : "#94a3b8",
+    WIDGET_TEXT_COLOR: dark ? "#f8fafc" : "#172033",
+    WIDGET_SECONDARY_TEXT_COLOR: dark ? "#cbd5e1" : "#475569",
+  });
+  Object.assign(LGraphCanvas.link_type_colors, {
+    number: dark ? "#7dd3fc" : "#0369a1", color: dark ? "#c4b5fd" : "#7c3aed",
+  });
+  if (graphHost.value) graphHost.value.style.backgroundColor = dark ? "#111827" : "#f1f5f9";
+  if (graphCanvas) Object.assign(graphCanvas, {
+    clear_background_color: dark ? "#111827" : "#f1f5f9",
+    node_title_color: dark ? "#f1f5f9" : "#172033",
+  });
+  graph?.serialize().nodes.forEach((data) => {
+    const node = graph?.getNodeById(data.id); if (node) stylePipelineNode(node);
+  });
+  graphCanvas?.setDirty(true, true);
+};
+watch(() => styleStore.mapBackgroundColor.RGBA, applyGraphTheme);
+
 const initializeGraph = (): void => {
   if (!graphCanvasRef.value) {
     return;
@@ -1502,11 +1563,18 @@ const initializeGraph = (): void => {
   (graphCanvas as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
   graphCanvas.allow_interaction = true;
   graphCanvas.background_image = "";
+  graph.onNodeAdded = (node: LGraphNode) => stylePipelineNode(node);
+  applyGraphTheme();
   graphCanvas.ds.scale = 0.9;
   createSinkNodes();
   fitGraphCanvas();
   if (graphHost.value) {
-    resizeObserver = new ResizeObserver(() => fitGraphCanvas());
+    resizeObserver = new ResizeObserver(() => {
+      // Resizing the canvas synchronously inside observer delivery can resize
+      // its flex ancestors and trigger a ResizeObserver loop error.
+      if (resizeFrame !== null) return;
+      resizeFrame = requestAnimationFrame(() => { resizeFrame = null; fitGraphCanvas(); });
+    });
     resizeObserver.observe(graphHost.value);
   }
 };
@@ -1522,7 +1590,7 @@ const clearGraph = (): void => {
 };
 
 const GRAPH_VERTICAL_GAP = 40;
-const GRAPH_HORIZONTAL_GAP = 250;
+const GRAPH_HORIZONTAL_GAP = 310;
 const GRAPH_TOP_PADDING = 44;
 const GRAPH_BRANCH_GAP = 150;
 const GRAPH_LEFT_PADDING = 60;
@@ -2292,6 +2360,8 @@ const destroyGraphRuntime = (): void => {
   cleanupContextMenus();
   resizeObserver?.disconnect();
   resizeObserver = null;
+  if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
+  resizeFrame = null;
   graphCanvas?.clear();
   graphCanvas = null;
   graph?.clear();
@@ -2546,7 +2616,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   min-height: 420px;
-  background: #111827;
+  background: #f1f5f9;
   overflow: hidden;
 }
 

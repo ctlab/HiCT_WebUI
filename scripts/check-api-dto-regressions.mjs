@@ -155,7 +155,8 @@ for (const [name, options] of [
 ]) {
   assert.deepEqual(HiCTAPIRequestDTO.toDTOClass(new requestClasses[name](options)).toDTO(), options);
 }
-console.log('Journal pagination and guarded restoration payloads passed.');
+assert.deepEqual(HiCTAPIRequestDTO.toDTOClass(new requestClasses.UnscaffoldAllRequest()).toDTO(), {});
+console.log('Journal pagination, unscaffold-all and guarded restoration payloads passed.');
 
 // Execute the production HTTP adapter with controlled responses. A history-list
 // response must not authorize edits using coordinates from an older displayed map.
@@ -166,6 +167,8 @@ const adapterSource = ts.transpileModule(readFileSync(resolve(projectRoot,
 }).outputText;
 let responseRevision=2;
 let sentHeaders;
+let serializationFailure=false;
+const notificationErrors=[];
 const adapterExports={};
 vm.runInNewContext(adapterSource,{exports:adapterExports,console,require:name=>{
   if(name==='vue')return {shallowReactive:value=>value};
@@ -173,7 +176,10 @@ vm.runInNewContext(adapterSource,{exports:adapterExports,console,require:name=>{
     sentHeaders=config.headers;
     return {data:{},headers:{'x-hict-history':JSON.stringify({session:'s',revision:responseRevision,currentId:responseRevision,position:responseRevision,size:responseRevision+1,canUndo:true,canRedo:false})}};
   }};
-  if(name==='../dto/requestDTO')return {HiCTAPIRequestDTO:{toDTOClass:request=>({toDTO:()=>request.options ?? {}})}};
+  if(name==='../dto/requestDTO')return {HiCTAPIRequestDTO:{toDTOClass:request=>{if(serializationFailure)throw new Error('Serialization failed');return {toDTO:()=>request.options ?? {}};}}};
+  if(name.includes('errorMessage'))return {extractErrorMessage:err=>err.message};
+  if(name.includes('errorToastStore'))return {useErrorToastStore:()=>({requestErrorToastsEnabled:true})};
+  if(name==='vue-sonner')return {toast:{error:message=>notificationErrors.push(message)}};
   return {};
 }});
 const adapter=new adapterExports.RequestManager({host:'http://example.test'});
@@ -188,3 +194,10 @@ assert.equal(sentHeaders['X-HiCT-History-Revision'],'1');
 assert.equal(adapter.history.applied.revision,3);
 assert.equal(adapter.history.busy,0);
 console.log('History reads cannot authorize edits on stale displayed coordinates.');
+
+serializationFailure=true;
+adapter.getAssemblyHistory=async()=>{};
+await assert.rejects(adapter.sendRequest({requestPath:'/unscaffold_all'}), /Serialization failed/);
+assert.equal(adapter.history.busy,0,'Serialization failure must release the edit guard');
+assert.equal(notificationErrors.length,1,'Serialization failure must be visible');
+console.log('Synchronous serialization failures release edit guard and notify the user.');

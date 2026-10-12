@@ -1,3 +1,4 @@
+import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -77,6 +78,8 @@ class LinearTrackManager {
   private cacheEpoch = 0;
   private readonly lastTrackErrors = new Map<string, string>();
   private readonly prefetchExtentScreens = DEFAULT_PREFETCH_EXTENT_SCREENS;
+  private pendingRefreshTimer: number | null = null;
+  private readonly pendingTrackMessages = new Map<string, string>();
   private readonly queryCache: Record<Orientation, Map<number, TrackQueryCache>> = {
     horizontal: new Map<number, TrackQueryCache>(),
     vertical: new Map<number, TrackQueryCache>(),
@@ -131,6 +134,8 @@ class LinearTrackManager {
     if (this.resolutionListener) {
       unByKey(this.resolutionListener);
     }
+    if (this.pendingRefreshTimer !== null) window.clearTimeout(this.pendingRefreshTimer);
+    this.pendingRefreshTimer = null;
     this.horizontalResizeObserver?.disconnect();
     this.verticalResizeObserver?.disconnect();
     this.horizontalCanvas = null;
@@ -839,7 +844,22 @@ class LinearTrackManager {
       if (requestId !== this.renderRequestId) {
         return;
       }
+      if (response.tracks.some((track) => track.statusMessage) && this.pendingRefreshTimer === null) {
+        this.pendingRefreshTimer = window.setTimeout(() => {
+          this.pendingRefreshTimer = null;
+          this.invalidateQueryCache();
+          void this.render();
+        }, 1000);
+      }
       response.tracks.forEach((track) => {
+        if (track.statusMessage) {
+          if (this.pendingTrackMessages.get(track.trackId) !== track.statusMessage) {
+            this.pendingTrackMessages.set(track.trackId, track.statusMessage);
+            useNotificationCenterStore().add("info", `${track.name}: ${track.statusMessage}`);
+          }
+        } else {
+          this.pendingTrackMessages.delete(track.trackId);
+        }
         if (track.error) {
           const previous = this.lastTrackErrors.get(track.trackId);
           if (previous !== track.error) {
@@ -905,6 +925,7 @@ class LinearTrackManager {
         bins: [],
         maxValue: 0,
         error: null,
+        statusMessage: null,
       }));
     const tracks =
       (response.tracks ?? []).length > 0 ? response.tracks : fallbackTracks;
@@ -918,7 +939,7 @@ class LinearTrackManager {
     const textPalette = this.resolveTrackTextPalette();
     if (tracks.length === 0) {
       ctx.fillStyle = textPalette.muted;
-      ctx.font = "12px sans-serif";
+      ctx.font = "12px HiCT Sans";
       this.drawOutlinedText(
         ctx,
         statusMessage ?? "No tracks loaded",
@@ -1054,19 +1075,19 @@ class LinearTrackManager {
         }
       }
       ctx.fillStyle = textPalette.primary;
-      ctx.font = "bold 11px sans-serif";
+      ctx.font = "bold 11px HiCT Sans";
       if (orientation === "horizontal") {
         this.drawOutlinedText(ctx, track.name, 6, laneStart + 4, textPalette);
         if (track.error) {
           ctx.fillStyle = textPalette.error;
-          ctx.font = "10px sans-serif";
+          ctx.font = "10px HiCT Sans";
           this.drawOutlinedText(ctx, track.error, 6, laneStart + 20, textPalette);
         } else if (track.bins.length === 0) {
           ctx.fillStyle = textPalette.muted;
-          ctx.font = "10px sans-serif";
+          ctx.font = "10px HiCT Sans";
           this.drawOutlinedText(
             ctx,
-            statusMessage ?? "No signal in current view",
+            track.statusMessage ?? statusMessage ?? "No signal in current view",
             6,
             laneStart + 20,
             textPalette
@@ -1107,7 +1128,7 @@ class LinearTrackManager {
           ctx.translate(laneStart + 22, canvas.height - 4);
           ctx.rotate(-Math.PI / 2);
           ctx.fillStyle = textPalette.error;
-          ctx.font = "10px sans-serif";
+          ctx.font = "10px HiCT Sans";
           this.drawOutlinedText(ctx, track.error, 0, 0, textPalette);
           ctx.restore();
         } else if (track.bins.length === 0) {
@@ -1115,10 +1136,10 @@ class LinearTrackManager {
           ctx.translate(laneStart + 22, canvas.height - 4);
           ctx.rotate(-Math.PI / 2);
           ctx.fillStyle = textPalette.muted;
-          ctx.font = "10px sans-serif";
+          ctx.font = "10px HiCT Sans";
           this.drawOutlinedText(
             ctx,
-            statusMessage ?? "No signal",
+            track.statusMessage ?? statusMessage ?? "No signal",
             0,
             0,
             textPalette
@@ -1154,12 +1175,13 @@ class LinearTrackManager {
     });
     const hasAnySignal = tracks.some((track) => track.bins.length > 0);
     const firstError = tracks.find((track) => track.error)?.error;
+    const pendingMessage = tracks.find((track) => track.statusMessage)?.statusMessage;
     this.setRenderState(orientation, {
       statusMessage: firstError
         ? firstError
         : hasAnySignal
         ? ""
-        : statusMessage ?? "No signal in current view",
+        : pendingMessage ?? statusMessage ?? "No signal in current view",
       trackCount: tracks.length,
     });
   }
@@ -1236,7 +1258,7 @@ class LinearTrackManager {
     let drawnCount = 0;
     let lastLabelEnd = Number.NEGATIVE_INFINITY;
     ctx.fillStyle = textPalette.primary;
-    ctx.font = "10px sans-serif";
+    ctx.font = "10px HiCT Sans";
     ctx.textAlign = "left";
     for (const bin of bins) {
       if (drawnCount >= maxLabelsPerLane) {
@@ -1994,7 +2016,7 @@ class LinearTrackManager {
     }
     ctx.fillStyle = textPalette.axis;
     ctx.strokeStyle = textPalette.axisStroke;
-    ctx.font = "9px monospace";
+    ctx.font = "9px HiCT Mono";
     let lastLabelCoord = Number.NEGATIVE_INFINITY;
     const minLabelSpacing = 14;
     if (orientation === "horizontal") {
@@ -2024,7 +2046,7 @@ class LinearTrackManager {
       }
       if (scale.logScale) {
         ctx.fillStyle = textPalette.axis;
-        ctx.font = "8px monospace";
+        ctx.font = "8px HiCT Mono";
         ctx.textAlign = "left";
         this.drawOutlinedText(
           ctx,

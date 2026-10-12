@@ -21,6 +21,7 @@
 
 <template>
   <div class="map-shell">
+    <AssemblyContextMenu v-if="props.mapManager" :map-manager="props.mapManager" />
     <div id="hic-contact-map" :style="mapContainerStyle" ref="mapTarget"></div>
     <div
       class="zoom-slider-overlay"
@@ -33,6 +34,7 @@
 
 <script setup lang="ts">
 import "ol/ol.css";
+import AssemblyContextMenu from "./AssemblyContextMenu.vue";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { ref, computed, Ref, watch } from "vue";
 import { storeToRefs } from "pinia";

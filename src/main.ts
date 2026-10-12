@@ -151,7 +151,12 @@ toast.success = ((message: unknown, data?: unknown) => {
 
 toast.message = ((message: unknown, data?: unknown) => {
   const normalized = stringifyNotificationMessage(message);
-  pushNotification("message", normalized);
+  // Existing user-facing warning toasts use this explicit yellow style. Keep
+  // them in the journal without turning an expected validation notice into a
+  // developer-console warning or a second error toast.
+  const warning = (data as { style?: Record<string, unknown> } | undefined)
+    ?.style?.["background-color"] === "lightyellow";
+  pushNotification(warning ? "warning" : "message", normalized, { skipConsole: warning });
   return originalToastMessage(normalized, data as never);
 }) as typeof toast.message;
 
@@ -165,28 +170,30 @@ watch(
 
 console.error = (...args: unknown[]) => {
   originalConsoleError(...args);
-  if (!errorToastStore.webuiErrorToastsEnabled) return;
   try {
     const message = args.map(stringifyNotificationMessage).join(" ");
     pushNotification("error", message, { skipConsole: true });
-    originalToastError(message);
+    if (errorToastStore.webuiErrorToastsEnabled) originalToastError(message);
   } catch (_e) {
     pushNotification("error", "WebUI error (see console for details)", {
       skipConsole: true,
     });
-    originalToastError("WebUI error (see console for details)");
+    if (errorToastStore.webuiErrorToastsEnabled) originalToastError("WebUI error (see console for details)");
   }
 };
 
+console.warn = (...args: unknown[]) => {
+  originalConsoleWarn(...args);
+  pushNotification("warning", args.map(stringifyNotificationMessage).join(" "), { skipConsole: true });
+};
+
 window.addEventListener("error", (event) => {
-  if (!errorToastStore.webuiErrorToastsEnabled) return;
   const msg = event.error?.message ?? event.message ?? "WebUI error";
   pushNotification("error", msg, { skipConsole: true });
-  originalToastError(msg);
+  if (errorToastStore.webuiErrorToastsEnabled) originalToastError(msg);
 });
 
 window.addEventListener("unhandledrejection", (event) => {
-  if (!errorToastStore.webuiErrorToastsEnabled) return;
   const reason = event.reason;
   const msg =
     reason instanceof Error
@@ -195,5 +202,5 @@ window.addEventListener("unhandledrejection", (event) => {
       ? reason
       : "Unhandled promise rejection";
   pushNotification("error", msg, { skipConsole: true });
-  originalToastError(msg);
+  if (errorToastStore.webuiErrorToastsEnabled) originalToastError(msg);
 });
