@@ -49,6 +49,7 @@ import { LinearTrackManager } from "./LinearTrackManager";
 import { useStyleStore } from "@/app/stores/styleStore";
 
 class ContactMapManager {
+  private disposed = false;
   public readonly map: Map;
   public readonly contigDimensionHolder: ContigDimensionHolder;
   public readonly scaffoldHolder: ScaffoldHolder;
@@ -300,6 +301,7 @@ class ContactMapManager {
 
   public async reloadTilesFromBackend(): Promise<void> {
     const version = await this.networkManager.requestManager.reloadTilesVersion();
+    if (this.disposed) return;
     this.viewAndLayersManager.reloadTiles(version);
     void this.linearTrackManager.clearCachesAndRender();
     this.viewAndLayersManager.updateCurrentHiCViewState();
@@ -310,6 +312,7 @@ class ContactMapManager {
   public async stabilizeInitialViewport(options?: { fit?: boolean }): Promise<void> {
     await this.waitForNextAnimationFrame();
     await this.waitForNextAnimationFrame();
+    if (this.disposed) return;
     this.map.updateSize();
     if (options?.fit === false) {
       this.viewAndLayersManager.updateCurrentHiCViewState();
@@ -321,6 +324,7 @@ class ContactMapManager {
     await this.linearTrackManager.render({ allowFetch: true }).catch(() => {
       // Track rendering is best-effort during startup; map tiles must still appear.
     });
+    if (this.disposed) return;
     this.scheduleMinimapViewportSync();
     this.map.renderSync();
   }
@@ -328,6 +332,7 @@ class ContactMapManager {
   public scheduleWorkspaceLayoutRefresh(options?: {
     renderTracks?: boolean;
   }): void {
+    if (this.disposed) return;
     if (options?.renderTracks !== false) {
       this.workspaceLayoutRefreshShouldRenderTracks = true;
     }
@@ -344,12 +349,14 @@ class ContactMapManager {
   }
 
   private refreshWorkspaceLayout(options?: { renderTracks?: boolean }): void {
+    if (this.disposed) return;
     this.map.updateSize();
     this.viewAndLayersManager.updateCurrentHiCViewState();
     this.viewAndLayersManager.scheduleRulerRender();
     if (options?.renderTracks !== false) {
       void this.linearTrackManager.render({ allowFetch: true });
     }
+    if (this.disposed) return;
     this.scheduleMinimapViewportSync();
     this.map.renderSync();
   }
@@ -1370,6 +1377,8 @@ class ContactMapManager {
   }
 
   public dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
     this.visualizationManager.dispose();
     this.linearTrackManager.dispose();
     this.clearOverviewMapTarget();
@@ -1429,6 +1438,7 @@ class ContactMapManager {
   }
 
   public reloadVisuals(): void {
+    if (this.disposed) return;
     this.viewAndLayersManager.reloadVisuals();
     void this.linearTrackManager.clearCachesAndRender();
     this.scheduleMinimapViewportSync();
@@ -1594,13 +1604,13 @@ class ContactMapManager {
   }
 
   private scheduleMinimapViewportSync(): void {
-    if (this.minimapRenderFramePending) {
+    if (this.disposed || this.minimapRenderFramePending) {
       return;
     }
     this.minimapRenderFramePending = true;
     window.requestAnimationFrame(() => {
       this.minimapRenderFramePending = false;
-      this.syncMinimapViewport();
+      if (!this.disposed) this.syncMinimapViewport();
     });
   }
 

@@ -413,3 +413,19 @@ checkViewport().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+// Closing a file must make already queued layout work inert.
+const { ContactMapManager } = loadManager("ContactMapManager");
+const closedMap = Object.create(ContactMapManager.prototype);
+closedMap.disposed = false;
+closedMap.visualizationManager = { dispose() {} };
+closedMap.linearTrackManager = { dispose() {} };
+closedMap.clearOverviewMapTarget = () => {};
+closedMap.viewAndLayersManager = { dispose() {} };
+closedMap.map = { setTarget() {}, updateSize() { throw Error("rendered a closed map"); } };
+closedMap.dispose();
+closedMap.refreshWorkspaceLayout();
+closedMap.scheduleWorkspaceLayoutRefresh();
+closedMap.reloadVisuals();
+closedMap.dispose();
+console.log("Disposed map rejects pending layout and visual updates.");
