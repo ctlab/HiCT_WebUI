@@ -1118,9 +1118,11 @@ class ContactMapManager {
     const width=Number(svg.getAttribute("width")),height=Number(svg.getAttribute("height"));
     const {jsPDF}=await import("jspdf");await import("svg2pdf.js");
     const {embedPdfFonts,configureMapPdfFonts}=await import("../rendering/MapFonts");configureMapPdfFonts(jsPDF);
+    const {prepareSvgForPdf,configurePdfTransparency}=await import("../export/PdfCompatibility");
     const pdf=new jsPDF({compress:true,orientation:width>=height?"landscape":"portrait",unit:"px",format:[width,height],hotfixes:["px_scaling"]});
+    configurePdfTransparency(pdf);
     await embedPdfFonts(pdf);
-    await pdf.svg(svg,{x:0,y:0,width,height});
+    await pdf.svg(prepareSvgForPdf(svg),{x:0,y:0,width,height});
     await this.saveExportBlob(pdf.output("blob"),`${this.options.filename}.pdf`);progressCallback?.(1);
   }
 
