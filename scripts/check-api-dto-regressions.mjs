@@ -139,7 +139,7 @@ for (const name of ['ReverseSelectionRangeRequest','MoveSelectionRangeRequest','
   assert.equal(HiCTAPIRequestDTO.toDTOClass(request).toDTO().assemblyFormat,'compact-v1',name);
 }
 console.log('Compact assembly contract, invalid payloads, independent maps and opt-in edit requests passed.');
-for (const policy of [undefined, 'APPEND_UNPLACED', 'EXCLUDE']) {
+for (const policy of [undefined, 'APPEND_UNPLACED', 'EXCLUDE', 'SCAFFOLDED_ONLY']) {
   const request = new requestClasses.LoadAGPRequest({agpFilename:'layout.agp',missingComponentsPolicy:policy});
   const payload=HiCTAPIRequestDTO.toDTOClass(request).toDTO();
   assert.equal(payload.agpFilename,'layout.agp');assert.equal(payload.missingComponentsPolicy,policy);

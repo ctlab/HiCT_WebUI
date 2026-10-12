@@ -456,7 +456,7 @@ class LoadAGPRequest implements HiCTAPIRequest {
     public readonly options: {
       readonly agpFilename: string;
       readonly source?: "PRIMARY" | "SECONDARY";
-      readonly missingComponentsPolicy?: "APPEND_UNPLACED" | "EXCLUDE";
+      readonly missingComponentsPolicy?: "APPEND_UNPLACED" | "EXCLUDE" | "SCAFFOLDED_ONLY";
     }
   ) {}
 }
