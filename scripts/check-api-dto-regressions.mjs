@@ -156,3 +156,35 @@ for (const [name, options] of [
   assert.deepEqual(HiCTAPIRequestDTO.toDTOClass(new requestClasses[name](options)).toDTO(), options);
 }
 console.log('Journal pagination and guarded restoration payloads passed.');
+
+// Execute the production HTTP adapter with controlled responses. A history-list
+// response must not authorize edits using coordinates from an older displayed map.
+const vm = await import('node:vm');
+const adapterSource = ts.transpileModule(readFileSync(resolve(projectRoot,
+  'src/app/core/net/api/RequestManager.ts'),'utf8'), {
+  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}
+}).outputText;
+let responseRevision=2;
+let sentHeaders;
+const adapterExports={};
+vm.runInNewContext(adapterSource,{exports:adapterExports,console,require:name=>{
+  if(name==='vue')return {shallowReactive:value=>value};
+  if(name==='axios')return {post:async(url,payload,config)=>{
+    sentHeaders=config.headers;
+    return {data:{},headers:{'x-hict-history':JSON.stringify({session:'s',revision:responseRevision,currentId:responseRevision,position:responseRevision,size:responseRevision+1,canUndo:true,canRedo:false})}};
+  }};
+  if(name==='../dto/requestDTO')return {HiCTAPIRequestDTO:{toDTOClass:request=>({toDTO:()=>request.options ?? {}})}};
+  return {};
+}});
+const adapter=new adapterExports.RequestManager({host:'http://example.test'});
+adapter.notifyInboundPayload=()=>{};
+adapter.history.summary={session:'s',revision:1};adapter.history.applied={session:'s',revision:1};
+await adapter.sendRequest({requestPath:'/assembly/history'});
+assert.equal(adapter.history.summary.revision,2);
+assert.equal(adapter.history.applied.revision,1,'Reading the journal must not advance the displayed-coordinate guard');
+responseRevision=3;
+await adapter.sendRequest({requestPath:'/reverse_selection_range'});
+assert.equal(sentHeaders['X-HiCT-History-Revision'],'1');
+assert.equal(adapter.history.applied.revision,3);
+assert.equal(adapter.history.busy,0);
+console.log('History reads cannot authorize edits on stale displayed coordinates.');

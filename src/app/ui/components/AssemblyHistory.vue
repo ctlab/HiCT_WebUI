@@ -6,6 +6,8 @@
       title="Redo (Ctrl+Y or Ctrl+Shift+Z)" aria-label="Redo assembly edit" @click="restore('redo')">↷ Redo</button>
     <button class="btn btn-sm btn-outline-secondary" :disabled="!summary" :aria-expanded="expanded"
       aria-controls="assembly-journal" @click="expanded = !expanded">Edit journal</button>
+    <button v-if="outOfDate" class="btn btn-sm btn-warning" :disabled="busy"
+      title="The server assembly changed in another client" @click="restore('restore', summary?.currentId)">Refresh assembly</button>
     <span class="small text-muted" aria-live="polite">{{ busy ? 'Updating assembly…' : summary ? `State ${summary.position + 1} of ${summary.size}` : 'No assembly open' }}</span>
     <section v-if="expanded && summary" id="assembly-journal" class="assembly-journal" aria-label="Edit journal">
       <div class="d-flex justify-content-between align-items-center">
@@ -41,6 +43,9 @@ const props = defineProps<{ networkManager: NetworkManager }>();
 const manager = props.networkManager.requestManager;
 const summary = computed(() => manager.history.summary);
 const busy = computed(() => manager.history.busy > 0);
+const outOfDate = computed(() => summary.value && (
+  summary.value.session !== manager.history.applied?.session || summary.value.revision !== manager.history.applied?.revision
+));
 const expanded = ref(false), loading = ref(false), error = ref("");
 const offset = ref(0), entries = ref<HistoryPage["entries"]>([]);
 let requestId = 0;

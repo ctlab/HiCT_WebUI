@@ -228,7 +228,7 @@ const assemblyMutationPaths = new Set([
 const assemblySessionPaths = new Set(["/open", "/close", "/secondary/open", "/secondary/close", "/secondary/set_assembly_source"]);
 
 class RequestManager {
-  public readonly history = shallowReactive({ summary: null as HistorySummary | null, busy: 0 });
+  public readonly history = shallowReactive({ summary: null as HistorySummary | null, applied: null as HistorySummary | null, busy: 0 });
 
   public async getAssemblyHistory(offset?: number): Promise<HistoryPage> {
     const response = await this.sendRequest(new AssemblyHistoryRequest({ offset, limit: 100 }));
@@ -437,7 +437,7 @@ class RequestManager {
     const path = request.requestPath.replace(/^\/+/, "");
     const mutation = assemblyMutationPaths.has(request.requestPath);
     const tracked = mutation || assemblySessionPaths.has(request.requestPath) || request.requestPath === "/assembly/history/restore";
-    const summary = this.history.summary;
+    const summary = this.history.applied;
     const historyHeaders = mutation && summary ? {
       "X-HiCT-History-Session": summary.session,
       "X-HiCT-History-Revision": String(summary.revision),
@@ -476,6 +476,10 @@ class RequestManager {
           const current = this.history.summary;
           if (!next || !current || next.session !== current.session || next.revision > current.revision)
             this.history.summary = next;
+          // Listing history may observe another client's edit. It must not advance
+          // the coordinate guard until this client's assembly model is refreshed.
+          if (tracked && req.data?.requiresMissingComponentsChoice !== true || request.requestPath === "/attach")
+            this.history.applied = next;
         }
         this.notifyInboundPayload(req.data);
         return req;
