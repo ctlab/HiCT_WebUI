@@ -105,6 +105,11 @@
                 >
               </li>
               <li>
+                <button class="dropdown-item" :disabled="!props.mapManager" @click="sequenceSearchOpen = true">
+                  Find sequences in linked FASTA…
+                </button>
+              </li>
+              <li>
                 <a class="dropdown-item" href="#" @click="onDropCachesClicked"
                   >Drop caches</a
                 >
@@ -448,6 +453,11 @@
     :initial-reference-map-filename="currentPrimaryHictFilename"
     @dismissed="onGenerateDotplotDismissed"
   />
+  <SequenceSearchModal
+    v-if="sequenceSearchOpen && props.mapManager"
+    :map-manager="props.mapManager"
+    @dismissed="sequenceSearchOpen = false"
+  />
   <TrackManager
     v-if="trackManagerOpen"
     :map-manager="props.mapManager"
@@ -776,6 +786,7 @@ import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import CoolerConverter from "./CoolerConverter.vue";
 import MatrixExportModal from "./MatrixExportModal.vue";
 import DotplotGenerator from "./DotplotGenerator.vue";
+import SequenceSearchModal from "./SequenceSearchModal.vue";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
 import TrackManager from "@/app/ui/components/upper_ribbon/TrackManager.vue";
 import FastaLinkWarningModal from "@/app/ui/components/upper_ribbon/FastaLinkWarningModal.vue";
@@ -808,6 +819,7 @@ const openingJuiceboxAssemblyFastaFile = ref(false);
 const convertingCoolers = ref(false);
 const exportingMatrix = ref(false);
 const generatingDotplots = ref(false);
+const sequenceSearchOpen = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
 const lastLinkedFastaFilename = ref<string | undefined>(undefined);
 const trackManagerOpen = ref(false);

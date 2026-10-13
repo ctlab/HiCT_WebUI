@@ -80,6 +80,20 @@ export const runtimeAttributions: AttributionEntry[] = [
     links: [{ label: "minimap2", href: "https://github.com/lh3/minimap2" }],
   },
   {
+    name: "SeqKit",
+    authors: "Wei Shen, Botond Sipos, Liuyang Zhao and contributors.",
+    license: "MIT; bundled dependencies retain their own notices.",
+    note: "Exact and substitution sequence search. Cite SeqKit2, iMeta 2024, e191 (doi:10.1002/imt2.191).",
+    links: [{ label: "SeqKit", href: "https://github.com/shenwei356/seqkit" }, { label: "Paper", href: "https://doi.org/10.1002/imt2.191" }],
+  },
+  {
+    name: "ModDotPlot and ntHash",
+    authors: "Andrew P. Sweeten, Michael C. Schatz, Adam M. Phillippy; Hamid Mohamadi and ntHash contributors.",
+    license: "MIT. Colour palettes have separate Apache-2.0 notices and attribution conditions.",
+    note: "Sequence identity estimates. Cite ModDotPlot, Bioinformatics 2024, btae493. Includes colour specifications and designs developed by Cynthia Brewer (colorbrewer.org).",
+    links: [{ label: "ModDotPlot", href: "https://github.com/marbl/ModDotPlot" }, { label: "Paper", href: "https://doi.org/10.1093/bioinformatics/btae493" }],
+  },
+  {
     name: "mm2-plus",
     authors: "Ghanshyam Chandra, Md Vasimuddin, Sanchit Misra, Chirag Jain and contributors.",
     license: "See bundled upstream license file.",

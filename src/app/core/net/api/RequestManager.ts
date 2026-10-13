@@ -438,7 +438,8 @@ class RequestManager {
     const mutation = assemblyMutationPaths.has(request.requestPath);
     const tracked = mutation || assemblySessionPaths.has(request.requestPath) || request.requestPath === "/assembly/history/restore";
     const summary = this.history.applied;
-    const historyHeaders = mutation && summary ? {
+    const sequenceSnapshot = request.requestPath.startsWith("/sequence/") && request.requestPath.endsWith("/jobs");
+    const historyHeaders = (mutation || sequenceSnapshot) && summary ? {
       "X-HiCT-History-Session": summary.session,
       "X-HiCT-History-Revision": String(summary.revision),
     } : {};

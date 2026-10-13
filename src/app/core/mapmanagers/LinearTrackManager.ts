@@ -1003,6 +1003,10 @@ class LinearTrackManager {
           : track.bins;
       ctx.fillStyle = track.color ?? "#4e79a7";
       for (const bin of binsToRender) {
+        const matchStatus = bin.attributes?.matchStatus;
+        ctx.fillStyle = renderStyle === "FEATURE" && matchStatus && ["fragmented", "rearranged", "partial"].includes(matchStatus)
+          ? "#d26914"
+          : track.color ?? "#4e79a7";
         const interval = this.resolveBinIntervalPx(bin, bpResolution);
         if (!interval.visible || interval.endPx <= viewport.startPx || interval.startPx >= viewport.endPx) {
           continue;

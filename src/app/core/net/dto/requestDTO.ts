@@ -96,6 +96,7 @@ import {
 import { ColormapDTO, OutboundDTO, VisualizationOptionsDTO } from "./dto";
 
 import { AssemblyHistoryRequest, RestoreAssemblyHistoryRequest } from "../api/request";
+import { SequenceAnalysisRequest } from "../api/SequenceAnalysisRequest";
 
 abstract class HiCTAPIRequestDTO<
   T extends HiCTAPIRequest
@@ -109,6 +110,8 @@ abstract class HiCTAPIRequestDTO<
 
   static toDTOClass(entity: HiCTAPIRequest) {
     switch (true) {
+      case entity instanceof SequenceAnalysisRequest:
+        return { toDTO: () => (entity as SequenceAnalysisRequest).options };
       case entity instanceof AssemblyHistoryRequest:
       case entity instanceof RestoreAssemblyHistoryRequest:
         return { toDTO: () => (entity as AssemblyHistoryRequest | RestoreAssemblyHistoryRequest).options };
