@@ -178,6 +178,7 @@
 </template>
 
 <script setup lang="ts">
+import BenchmarkFeature from "ol/Feature";
 import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
 import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
 import {
@@ -230,6 +231,17 @@ const networkManager: NetworkManager = new NetworkManager(
   "http://localhost:5000/",
   undefined
 );
+// Opt-in automation access. Opening, editing and rendering use native handlers.
+if ((window as any).__HICT_BENCHMARK_ENABLED__) {
+  (window as any).__hictBenchmark = {
+    open: (name: string, host: string) => {
+      networkManager.onHostChanged(host);
+      return openFileWithOptions(name, undefined);
+    },
+    manager: () => mapManager.value,
+    feature: (properties: Record<string, unknown>) => new BenchmarkFeature(properties),
+  };
+}
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
