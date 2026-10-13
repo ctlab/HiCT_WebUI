@@ -26,6 +26,12 @@ import vue from "@vitejs/plugin-vue";
 import vueJsx from "@vitejs/plugin-vue-jsx";
 
 function manualChunk(id: string): string | undefined {
+  // Keep runtime helpers independent of application chunks. Otherwise Rollup
+  // may put Vite's preload helper into app-mapmanagers; export dependencies
+  // then import that chunk while OpenLayers is still being initialized.
+  if (id.includes("vite/preload-helper") || id.includes("commonjsHelpers")) {
+    return "runtime-helpers";
+  }
   const normalizedId = id.replace(/\\/g, "/");
 
   if (normalizedId.includes("/node_modules/")) {
