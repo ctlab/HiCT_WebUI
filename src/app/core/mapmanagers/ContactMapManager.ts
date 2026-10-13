@@ -1056,19 +1056,27 @@ class ContactMapManager {
 
   private async buildViewportExportSvg(options?: {
     backgroundColor?: string; metadata?: Record<string, unknown>;
-    includeWorkspaceComposite?: boolean; scope?: "viewport" | "whole-map";
+    includeWorkspaceComposite?: boolean; scope?: "viewport" | "whole-map" | "selection";
   }): Promise<{svg: SVGSVGElement; canvas: HTMLCanvasElement}> {
     if (this.exportInProgress) throw new Error("An export is already running.");
     const workspace = document.querySelector(".interactive-workspace") as HTMLElement | null;
     if (!workspace || this.disposed) throw new Error("Open a map before exporting.");
     const view=this.map.getView(), center=view.getCenter()?.slice(), resolution=view.getResolution(), rotation=view.getRotation();
     const whole=options?.scope === "whole-map" || options?.includeWorkspaceComposite === false;
+    const selection = options?.scope === "selection" ? this.viewAndLayersManager.selectionInteractions.contigSelectExtent.getExtent()?.slice() : undefined;
+    if (options?.scope === "selection" && (!selection || selection[2] <= selection[0] || selection[3] <= selection[1])) throw new Error("Select a nonempty rectangle before exporting.");
     const history=this.networkManager.requestManager.history.applied;
     const interactions=this.map.getInteractions().getArray().map(item => [item,item.getActive()] as const);
     this.exportInProgress=true;
     try {
       interactions.forEach(([item])=>item.setActive(false));
       if (whole) this.viewAndLayersManager.fitViewToActiveExtent();
+      if (selection) { view.setRotation(0); view.fit(selection, { size: this.map.getSize(), padding: [1, 1, 1, 1] }); }
+      if (selection) {
+        const a = this.map.getPixelFromCoordinate([selection[0], selection[3]]), b = this.map.getPixelFromCoordinate([selection[2], selection[1]]);
+        const size = this.map.getSize()!;
+        this.linearTrackManager.exportLabelBounds = { left: a[0]/size[0], right: b[0]/size[0], top: a[1]/size[1], bottom: b[1]/size[1] };
+      }
       await document.fonts.ready;
       await this.linearTrackManager.render({allowFetch:true});
       await new Promise<void>((resolve,reject)=>{
@@ -1086,16 +1094,26 @@ class ContactMapManager {
         await this.waitForNextAnimationFrame();await this.waitForNextAnimationFrame();
       },options?.metadata);
       if (history !== this.networkManager.requestManager.history.applied) throw new Error("The assembly changed during export. Please export the updated view again.");
+      if (selection) {
+        const a = this.map.getPixelFromCoordinate([selection[0], selection[3]]);
+        const b = this.map.getPixelFromCoordinate([selection[2], selection[1]]);
+        const mapRect = this.map.getViewport().getBoundingClientRect(), sceneRect = workspace.getBoundingClientRect();
+        const marginLeft = mapRect.left - sceneRect.left, marginTop = mapRect.top - sceneRect.top;
+        const { cropSelectionScene } = await import("../export/SelectionScene");
+        return cropSelectionScene(svg, { left: marginLeft + a[0], top: marginTop + a[1],
+          width: b[0] - a[0], height: b[1] - a[1], marginLeft, marginTop });
+      }
       return svg;
     } finally {
-      if(whole && !this.disposed){view.setCenter(center);view.setResolution(resolution);view.setRotation(rotation);this.map.renderSync();this.viewAndLayersManager.scheduleRulerRender();void this.linearTrackManager.render();}
+      this.linearTrackManager.exportLabelBounds = undefined;
+      if((whole || selection) && !this.disposed){view.setCenter(center);view.setResolution(resolution);view.setRotation(rotation);this.map.renderSync();this.viewAndLayersManager.scheduleRulerRender();void this.linearTrackManager.render();}
       interactions.forEach(([item,active])=>item.setActive(active));
       this.exportInProgress=false;
     }
   }
 
   public async exportCurrentMapSvg(progressCallback?: (progress:number)=>void, options?: {
-    backgroundColor?:string;metadata?:Record<string,unknown>;includeWorkspaceComposite?:boolean;scope?:"viewport"|"whole-map";
+    backgroundColor?:string;metadata?:Record<string,unknown>;includeWorkspaceComposite?:boolean;scope?:"viewport"|"whole-map"|"selection";
   }):Promise<void> {
     const {svg}=await this.buildViewportExportSvg(options);
     const {embedSvgFonts}=await import("../rendering/MapFonts");await embedSvgFonts(svg);
@@ -1104,7 +1122,7 @@ class ContactMapManager {
   }
 
   public async exportCurrentMapPng(progressCallback?: (progress:number)=>void, options?: {
-    backgroundColor?:string;metadata?:Record<string,unknown>;includeWorkspaceComposite?:boolean;scope?:"viewport"|"whole-map";
+    backgroundColor?:string;metadata?:Record<string,unknown>;includeWorkspaceComposite?:boolean;scope?:"viewport"|"whole-map"|"selection";
   }):Promise<void> {
     const {canvas}=await this.buildViewportExportSvg(options);
     const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error("PNG encoding failed.")),"image/png"));
@@ -1112,7 +1130,7 @@ class ContactMapManager {
   }
 
   public async exportCurrentMapPdf(progressCallback?: (progress:number)=>void, options?: {
-    backgroundColor?:string;metadata?:Record<string,unknown>;includeWorkspaceComposite?:boolean;scope?:"viewport"|"whole-map";
+    backgroundColor?:string;metadata?:Record<string,unknown>;includeWorkspaceComposite?:boolean;scope?:"viewport"|"whole-map"|"selection";
   }):Promise<void> {
     const {svg}=await this.buildViewportExportSvg(options);
     const width=Number(svg.getAttribute("width")),height=Number(svg.getAttribute("height"));

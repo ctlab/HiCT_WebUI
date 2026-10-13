@@ -155,4 +155,12 @@ async function cancel() {
 .sequence-modal .modal-body { max-height: 75vh; overflow-y: auto; }
 .sequence-input { font-family: ui-monospace, monospace; }
 .sequence-logs { max-height: 13rem; overflow: auto; padding: 0.8rem; background: #eef2f7; color: #172b42; white-space: pre-wrap; }
+
+.sequence-modal { font-family: system-ui, sans-serif; color: var(--hict-surface-fg, #172033); }
+.sequence-modal .modal-content { border: 1px solid #cbd5e1; border-radius: 0.6rem; box-shadow: 0 12px 40px #0003; background: var(--hict-surface-bg, #fff); overflow: hidden; }
+.sequence-modal .modal-header, .sequence-modal .modal-footer { padding: 1rem 1.4rem; display: flex; align-items: center; gap: 0.8rem; }
+.sequence-modal .modal-header { justify-content: space-between; border-bottom: 1px solid #cbd5e1; }
+.sequence-modal .modal-footer { justify-content: flex-end; border-top: 1px solid #cbd5e1; }
+.sequence-modal .modal-body { padding: 1.2rem 1.4rem; }
+.sequence-modal .form-check { padding-left: 1.7rem; }
 </style>

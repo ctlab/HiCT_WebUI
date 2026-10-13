@@ -53,6 +53,9 @@ const MAX_PREFETCH_QUERY_WIDTH_PX = 2048;
 const MAX_CACHED_RESOLUTIONS_PER_ORIENTATION = 6;
 
 class LinearTrackManager {
+  /** Temporary label anchors for a cropped export; data coordinates stay unchanged. */
+  public exportLabelBounds?: { left: number; right: number; top: number; bottom: number };
+
   private horizontalCanvas: HTMLCanvasElement | null = null;
   private verticalCanvas: HTMLCanvasElement | null = null;
   private horizontalResizeObserver: ResizeObserver | null = null;
@@ -961,6 +964,8 @@ class LinearTrackManager {
       orientation === "horizontal"
         ? canvas.height / tracks.length
         : canvas.width / tracks.length;
+    const labelLeft = (this.exportLabelBounds?.left ?? 0) * canvas.width;
+    const labelBottom = (this.exportLabelBounds?.bottom ?? 1) * canvas.height;
     tracks.forEach((track, trackIndex) => {
       const laneStart = laneSize * trackIndex;
       const laneEnd = laneStart + laneSize;
@@ -1081,11 +1086,11 @@ class LinearTrackManager {
       ctx.fillStyle = textPalette.primary;
       ctx.font = "bold 11px HiCT Sans";
       if (orientation === "horizontal") {
-        this.drawOutlinedText(ctx, track.name, 6, laneStart + 4, textPalette);
+        this.drawOutlinedText(ctx, track.name, labelLeft + 6, laneStart + 4, textPalette);
         if (track.error) {
           ctx.fillStyle = textPalette.error;
           ctx.font = "10px HiCT Sans";
-          this.drawOutlinedText(ctx, track.error, 6, laneStart + 20, textPalette);
+          this.drawOutlinedText(ctx, track.error, labelLeft + 6, laneStart + 20, textPalette);
         } else if (track.bins.length === 0) {
           ctx.fillStyle = textPalette.muted;
           ctx.font = "10px HiCT Sans";
@@ -1123,13 +1128,13 @@ class LinearTrackManager {
         }
       } else {
         ctx.save();
-        ctx.translate(laneStart + 10, canvas.height - 4);
+        ctx.translate(laneStart + 10, labelBottom - 4);
         ctx.rotate(-Math.PI / 2);
         this.drawOutlinedText(ctx, track.name, 0, 0, textPalette);
         ctx.restore();
         if (track.error) {
           ctx.save();
-          ctx.translate(laneStart + 22, canvas.height - 4);
+          ctx.translate(laneStart + 22, labelBottom - 4);
           ctx.rotate(-Math.PI / 2);
           ctx.fillStyle = textPalette.error;
           ctx.font = "10px HiCT Sans";
@@ -1137,7 +1142,7 @@ class LinearTrackManager {
           ctx.restore();
         } else if (track.bins.length === 0) {
           ctx.save();
-          ctx.translate(laneStart + 22, canvas.height - 4);
+          ctx.translate(laneStart + 22, labelBottom - 4);
           ctx.rotate(-Math.PI / 2);
           ctx.fillStyle = textPalette.muted;
           ctx.font = "10px HiCT Sans";
@@ -2025,9 +2030,10 @@ class LinearTrackManager {
     const minLabelSpacing = 14;
     if (orientation === "horizontal") {
       ctx.textAlign = "left";
-      const tickX0 = canvasWidth - 22;
-      const tickX1 = canvasWidth - 15;
-      const labelX = canvasWidth - 13;
+      const right = canvasWidth * (this.exportLabelBounds?.right ?? 1);
+      const tickX0 = right - 22;
+      const tickX1 = right - 15;
+      const labelX = right - 13;
       for (const tick of ticks) {
         const normalized = scale.normalize(tick);
         const y = laneInnerEnd - normalized * axisSpan;

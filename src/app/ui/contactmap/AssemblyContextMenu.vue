@@ -12,15 +12,22 @@
     >
       <section v-for="item in items" :key="`${item.kind}-${item.id}`">
         <div class="entity-title">
-          {{ item.kind === "scaffold" ? "Scaffold" : "Contig" }}:
+          {{ item.kind === "selection" ? "Selection" : item.kind === "scaffold" ? "Scaffold" : "Contig" }}:
           {{ item.name }}
         </div>
-        <button role="menuitem" @click="beginRename(item)">Rename…</button>
+        <button v-if="item.kind !== 'selection'" role="menuitem" @click="beginRename(item)">Rename…</button>
+        <template v-if="item.kind === 'selection'">
+          <button role="menuitem" @click="openAnalysis('dotplot')">Generate dotplot for selection…</button>
+          <button role="menuitem" @click="openAnalysis('moddotplot')">Generate ModDotPlot for selection…</button>
+          <button role="menuitem" @click="openAnalysis('search')">Find sequences in selection…</button>
+          <button role="menuitem" @click="exportFasta">Export FASTA for selection</button>
+          <button v-for="format in ['PNG', 'SVG', 'PDF'] as const" :key="format" role="menuitem" @click="exportSelection(format)">Export selection as {{ format }}</button>
+        </template>
         <template v-if="item.kind === 'scaffold' || !hasScaffold">
-          <button role="menuitem" @click="execute(item, 'reverse')">
+          <button role="menuitem" :disabled="item.structural === false" @click="execute(item, 'reverse')">
             Reverse {{ item.kind }}
           </button>
-          <button role="menuitem" @click="move(item)">
+          <button role="menuitem" :disabled="item.structural === false" @click="move(item)">
             Move {{ item.kind }}…
           </button>
           <button
@@ -30,11 +37,12 @@
           >
             Ungroup into singletons
           </button>
-          <button role="menuitem" @click="execute(item, 'debris')">
+          <button role="menuitem" :disabled="item.structural === false" @click="execute(item, 'debris')">
             Move to debris and hide
           </button>
         </template>
       </section>
+      <p v-if="items.some(item => item.kind === 'selection')" class="scope-note">Structural edits use the interval where the rectangle crosses the diagonal and expand to whole scaffolds.</p>
       <p v-if="hasScaffold" class="scope-note">
         Structural edits act on the whole scaffold.
       </p>
@@ -83,6 +91,8 @@
       </form>
     </div>
   </Teleport>
+  <ModDotPlotModal v-if="analysis === 'moddotplot' || analysis === 'dotplot'" :kind="analysis" :map-manager="props.mapManager" :initial-selection="true" @dismissed="analysis = null" />
+  <SequenceSearchModal v-if="analysis === 'search'" :map-manager="props.mapManager" :initial-selection="true" @dismissed="analysis = null" />
 </template>
 <script setup lang="ts">
 import {
@@ -102,12 +112,18 @@ import {
   MoveSelectionToDebrisRequest,
 } from "@/app/core/net/api/request";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
+import { containsCoordinate } from "ol/extent";
+import ModDotPlotModal from "@/app/ui/components/upper_ribbon/ModDotPlotModal.vue";
+import SequenceSearchModal from "@/app/ui/components/upper_ribbon/SequenceSearchModal.vue";
+import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
+const analysis = ref<"search" | "moddotplot" | "dotplot" | null>(null);
 type Item = {
-  kind: "contig" | "scaffold";
+  kind: "contig" | "scaffold" | "selection";
   id: number;
   name: string;
   startBP: number;
   endBP: number;
+  structural?: boolean;
 };
 const props = defineProps<{ mapManager: ContactMapManager }>();
 const items = ref<Item[]>([]),
@@ -138,6 +154,13 @@ async function open(event: MouseEvent) {
   if (busy.value) return;
   const manager = props.mapManager;
   const found: Item[] = [];
+  const extent = manager.viewAndLayersManager.selectionInteractions.contigSelectExtent.getExtent();
+  const bounds = manager.viewAndLayersManager.currentViewState.selectionBorders;
+  if (extent && bounds.leftBP && bounds.rightBP && containsCoordinate(extent, manager.map.getEventCoordinate(event))) {
+    const startBP = Math.max(...bounds.leftBP), endBP = Math.min(...bounds.rightBP);
+    found.push({ kind: "selection", id: -1, name: "active rectangle", startBP, endBP, structural: endBP > startBP });
+  }
+  if (!found.length)
   for (const feature of manager.map.getFeaturesAtPixel(
     manager.map.getEventPixel(event),
     { hitTolerance: 5 }
@@ -263,6 +286,7 @@ async function execute(item: Item, action: "reverse" | "ungroup" | "debris") {
 function move(item: Item) {
   items.value = [];
   const manager = props.mapManager;
+  if (item.kind === "selection") { manager.eventManager.onMoveSelectionClicked(); return; }
   manager.eventManager.resetSelection();
   const resolution =
     manager.viewAndLayersManager.currentViewState.resolutionDesciptor
@@ -285,6 +309,18 @@ function move(item: Item) {
       );
   }
   manager.eventManager.onMoveSelectionClicked();
+}
+function openAnalysis(kind: "moddotplot" | "dotplot" | "search") { items.value = []; analysis.value = kind; }
+function exportFasta() { items.value = []; props.mapManager.eventManager.onExportFASTAForSelectionClicked(); }
+async function exportSelection(format: "PNG" | "SVG" | "PDF") {
+  items.value = [];
+  const notifications = useNotificationCenterStore();
+  try {
+    const manager = props.mapManager;
+    const method = format === "PNG" ? manager.exportCurrentMapPng : format === "SVG" ? manager.exportCurrentMapSvg : manager.exportCurrentMapPdf;
+    await method.call(manager, undefined, { scope: "selection" });
+    notifications.add("success", `Selection exported as ${format}.`);
+  } catch (failure) { notifications.add("error", `Selection export failed: ${String(failure)}`); }
 }
 watch(
   () => props.mapManager.networkManager.requestManager.history.applied,

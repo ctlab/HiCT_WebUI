@@ -27,7 +27,7 @@ export interface SequenceAnalysisJob {
 /** Uses the normal request/error/notification path, including backend error messages. */
 export class SequenceAnalysisRequest {
   constructor(public readonly requestPath: string, public readonly options: object = {}) {
-    if (!/^\/sequence\/(search\/jobs|jobs\/list|jobs\/[a-zA-Z0-9-]+\/stop)$/.test(requestPath))
+    if (!/^\/sequence\/((?:search|moddotplot|dotplot)\/jobs|jobs\/list|jobs\/[a-zA-Z0-9-]+\/stop)$/.test(requestPath))
       throw new Error("Invalid sequence analysis endpoint");
   }
 }

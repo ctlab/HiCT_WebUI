@@ -105,6 +105,8 @@
                 >
               </li>
               <li>
+                <button class="dropdown-item" :disabled="!props.mapManager" @click="assemblyDotPlotOpen = true">Generate dotplot from active assembly…</button>
+                <button class="dropdown-item" :disabled="!props.mapManager" @click="modDotPlotOpen = true">Generate ModDotPlot…</button>
                 <button class="dropdown-item" :disabled="!props.mapManager" @click="sequenceSearchOpen = true">
                   Find sequences in linked FASTA…
                 </button>
@@ -453,6 +455,8 @@
     :initial-reference-map-filename="currentPrimaryHictFilename"
     @dismissed="onGenerateDotplotDismissed"
   />
+  <ModDotPlotModal v-if="assemblyDotPlotOpen && props.mapManager" kind="dotplot" :map-manager="props.mapManager" @dismissed="assemblyDotPlotOpen = false" />
+  <ModDotPlotModal v-if="modDotPlotOpen && props.mapManager" :map-manager="props.mapManager" @dismissed="modDotPlotOpen = false" />
   <SequenceSearchModal
     v-if="sequenceSearchOpen && props.mapManager"
     :map-manager="props.mapManager"
@@ -785,6 +789,7 @@ import {
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import CoolerConverter from "./CoolerConverter.vue";
 import MatrixExportModal from "./MatrixExportModal.vue";
+import ModDotPlotModal from "./ModDotPlotModal.vue";
 import DotplotGenerator from "./DotplotGenerator.vue";
 import SequenceSearchModal from "./SequenceSearchModal.vue";
 import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
@@ -820,6 +825,8 @@ const convertingCoolers = ref(false);
 const exportingMatrix = ref(false);
 const generatingDotplots = ref(false);
 const sequenceSearchOpen = ref(false);
+const modDotPlotOpen = ref(false);
+const assemblyDotPlotOpen = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
 const lastLinkedFastaFilename = ref<string | undefined>(undefined);
 const trackManagerOpen = ref(false);
