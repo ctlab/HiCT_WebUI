@@ -166,7 +166,8 @@ class TrackRenderResponse {
     public readonly bins: TrackBinResponse[],
     public readonly maxValue: number,
     public readonly error: string | null,
-    public readonly statusMessage: string | null = null
+    public readonly statusMessage: string | null = null,
+    public readonly analysisWarning: string | null = null
   ) {}
 }
 

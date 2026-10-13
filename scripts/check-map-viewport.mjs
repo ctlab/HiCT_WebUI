@@ -429,3 +429,19 @@ closedMap.scheduleWorkspaceLayoutRefresh();
 closedMap.reloadVisuals();
 closedMap.dispose();
 console.log("Disposed map rejects pending layout and visual updates.");
+
+const minimapManager = Object.create(ContactMapManager.prototype);
+const minimapBounds = [0, -100, 100, 0];
+for (const [requested, expected] of [
+  [[-50, -150, 150, 50], minimapBounds],
+  [[-20, -60, 40, -20], [0, -60, 40, -20]],
+  [[60, -60, 120, -20], [60, -60, 100, -20]],
+  [[20, -40, 60, 20], [20, -40, 60, 0]],
+  [[20, -120, 60, -60], [20, -100, 60, -60]],
+  [[10, -20, 10.01, -19.99], [10, -20, 10.01, -19.99]],
+  [[120, -40, 150, -20], null],
+]) {
+  const actual = minimapManager.clampExtentToBounds(requested, minimapBounds);
+  assert.deepEqual(actual ? Array.from(actual) : null, expected);
+}
+console.log("Minimap preserves viewport coordinates and clips every edge without inflation.");

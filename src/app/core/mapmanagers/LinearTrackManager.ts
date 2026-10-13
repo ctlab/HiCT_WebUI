@@ -79,6 +79,8 @@ class LinearTrackManager {
     vertical: { statusMessage: "No tracks loaded", trackCount: 0 },
   };
   private cacheEpoch = 0;
+  private readonly analysisWarnings = new Map<string, string>();
+  public getAnalysisWarning(trackId: string): string | undefined { return this.analysisWarnings.get(trackId); }
   private readonly lastTrackErrors = new Map<string, string>();
   private readonly prefetchExtentScreens = DEFAULT_PREFETCH_EXTENT_SCREENS;
   private pendingRefreshTimer: number | null = null;
@@ -855,6 +857,13 @@ class LinearTrackManager {
         }, 1000);
       }
       response.tracks.forEach((track) => {
+        if ((this.analysisWarnings.get(track.trackId) ?? null) !== track.analysisWarning) {
+          if (track.analysisWarning) {
+            this.analysisWarnings.set(track.trackId, track.analysisWarning);
+            useNotificationCenterStore().add("warning", `${track.name}: ${track.analysisWarning}`);
+          } else this.analysisWarnings.delete(track.trackId);
+          this.notifyTrackListChanged();
+        }
         if (track.statusMessage) {
           if (this.pendingTrackMessages.get(track.trackId) !== track.statusMessage) {
             this.pendingTrackMessages.set(track.trackId, track.statusMessage);
@@ -929,6 +938,7 @@ class LinearTrackManager {
         maxValue: 0,
         error: null,
         statusMessage: null,
+        analysisWarning: null,
       }));
     const tracks =
       (response.tracks ?? []).length > 0 ? response.tracks : fallbackTracks;
@@ -1086,7 +1096,7 @@ class LinearTrackManager {
       ctx.fillStyle = textPalette.primary;
       ctx.font = "bold 11px HiCT Sans";
       if (orientation === "horizontal") {
-        this.drawOutlinedText(ctx, track.name, labelLeft + 6, laneStart + 4, textPalette);
+        this.drawOutlinedText(ctx, (track.analysisWarning ? "⚠ " : "") + track.name, labelLeft + 6, laneStart + 4, textPalette);
         if (track.error) {
           ctx.fillStyle = textPalette.error;
           ctx.font = "10px HiCT Sans";
@@ -1130,7 +1140,7 @@ class LinearTrackManager {
         ctx.save();
         ctx.translate(laneStart + 10, labelBottom - 4);
         ctx.rotate(-Math.PI / 2);
-        this.drawOutlinedText(ctx, track.name, 0, 0, textPalette);
+        this.drawOutlinedText(ctx, (track.analysisWarning ? "⚠ " : "") + track.name, 0, 0, textPalette);
         ctx.restore();
         if (track.error) {
           ctx.save();

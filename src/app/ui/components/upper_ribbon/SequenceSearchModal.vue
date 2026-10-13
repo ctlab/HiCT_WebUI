@@ -8,12 +8,14 @@
           <button type="button" class="btn-close" aria-label="Close" :disabled="busy" @click="emit('dismissed')"></button>
         </header>
         <div class="modal-body">
-          <p>The active assembly is searched in its current order and orientation, as one sequence without inserted scaffold gaps. Excluded regions and debris are omitted; matches may cross contig or scaffold joins.</p>
+          <p>The active assembly is searched in its current order and orientation, preserving AGP gaps and using the configured default between scaffolds. Excluded regions and debris are omitted. Searches do not cross positive-length gaps.</p>
           <p v-if="error" class="alert alert-danger" role="alert">{{ error }}</p>
           <fieldset :disabled="busy">
+            <SequenceGapSettings :request-manager="props.mapManager.networkManager.requestManager" />
             <label class="form-label" for="search-sequences">FASTA records, or one DNA sequence per line</label>
             <textarea id="search-sequences" v-model="queries" class="form-control sequence-input" rows="7" required spellcheck="false" placeholder=">my motif&#10;ACGTACGT&#10;>another motif&#10;TTGCAACC"></textarea>
             <p class="form-text">FASTA descriptions appear in hit tooltips. Plain sequences receive query_1, query_2, … IDs. Input is case-insensitive.</p>
+            <p v-if="!blastAvailable" class="alert alert-info">{{ blastUnavailableReason }}</p>
             <div class="row g-3">
               <div class="col-sm-6">
                 <label for="search-scope" class="form-label">Search scope</label>
@@ -34,19 +36,27 @@
                 <label for="search-mode" class="form-label">Matching</label>
                 <select id="search-mode" v-model="mode" class="form-select">
                   <option value="exact">Exact match</option>
-                  <option value="substitutions">Allow substitutions</option>
+                  <option value="substitutions">Allow substitutions (SeqKit)</option>
+                  <option value="blast" :disabled="!blastAvailable">Gapped local alignment (BLAST+)</option>
                 </select>
-                <small class="form-text">SeqKit locate. Substitution mode does not allow insertions or deletions and is not BLAST alignment.</small>
+                <small class="form-text">SeqKit finds exact/full-length substitution matches. BLAST finds similar subsequences with insertions and deletions; a hit is an alignment, not an exact occurrence. Both run locally.</small>
               </div>
               <div v-if="mode === 'substitutions'" class="col-sm-6">
                 <label for="search-mismatches" class="form-label">Maximum substitutions per match</label>
                 <input id="search-mismatches" v-model.number="mismatches" type="number" min="1" step="1" class="form-control" required />
               </div>
-              <div v-else class="col-sm-6 form-check align-self-center ps-4">
+              <div v-else-if="mode === 'exact'" class="col-sm-6 form-check align-self-center ps-4">
                 <input id="search-degenerate" v-model="degenerate" type="checkbox" class="form-check-input" />
                 <label for="search-degenerate" class="form-check-label">Expand IUPAC ambiguity codes in queries</label>
                 <small class="form-text d-block">Otherwise letters such as N are matched literally.</small>
               </div>
+              <template v-if="mode === 'blast'">
+                <div class="col-sm-6"><label class="form-label">Maximum E-value<input v-model.number="evalue" type="number" min="1e-100" step="any" required class="form-control" /></label></div>
+                <div class="col-sm-6"><label class="form-label">Minimum identity (%)<input v-model.number="identity" type="number" min="0" max="100" step="any" required class="form-control" /></label></div>
+                <div class="col-sm-6"><label class="form-label">Minimum query coverage per alignment (%)<input v-model.number="coverage" type="number" min="0" max="100" step="any" required class="form-control" /></label></div>
+                <div class="col-sm-6"><label class="form-label">Maximum subject records per query<input v-model.number="maxTargets" type="number" min="1" max="1000000" step="1" required class="form-control" /></label></div>
+                <small class="form-text">Uses blastn-short if any query is shorter than 50 bases, otherwise blastn. Low-complexity masking is off. Separate gap-free scaffold segments are searched as independent subjects; the target limit can omit weaker matches.</small>
+              </template>
             </div>
           </fieldset>
           <div v-if="job" class="mt-3" role="status" aria-live="polite">
@@ -66,7 +76,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount } from "vue";
+import { ref, computed, onBeforeUnmount, onMounted } from "vue";
+import SequenceGapSettings from "./SequenceGapSettings.vue";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { SequenceAnalysisRequest, type SequenceAnalysisJob, type SequenceSearchSettings } from "@/app/core/net/api/SequenceAnalysisRequest";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
@@ -84,7 +96,16 @@ const selection = borders.leftBP && borders.rightBP ? {
 const queries = ref("");
 const scope = ref<"assembly" | "selection">(props.initialSelection && selection ? "selection" : "assembly");
 const bothStrands = ref(true), degenerate = ref(false), mismatches = ref(1);
-const mode = ref<"exact" | "substitutions">("exact");
+const mode = ref<"exact" | "substitutions" | "blast">("exact");
+const evalue = ref(10), identity = ref(70), coverage = ref(50), maxTargets = ref(500);
+const blastAvailable = ref(false), blastUnavailableReason = ref("Checking local BLAST availability…");
+onMounted(async () => {
+  try {
+    const { data } = await manager.sendRequest(new SequenceAnalysisRequest("/sequence/settings", { checkBlast: true }));
+    blastAvailable.value = data.blastAvailable === true;
+    blastUnavailableReason.value = data.blastUnavailableReason ?? "BLAST is not available in this build. Install NCBI BLAST+ and configure HICT_BLASTN_BIN.";
+  } catch (failure) { blastUnavailableReason.value = `Could not check BLAST availability: ${String(failure)}`; }
+});
 const submitting = ref(false), error = ref("");
 const job = ref<SequenceAnalysisJob | null>(null);
 const busy = computed(() => submitting.value || !!job.value && ["submitted", "preparing", "running"].includes(job.value.status));
@@ -100,9 +121,11 @@ async function start() {
   error.value = ""; submitting.value = true; openingResult = false;
   sourceSession = manager.history.applied?.session;
   const settings: SequenceSearchSettings = {
+    gapLengthBp: useUiSettingsStore().sequenceGapLengthBp,
     queries: queries.value, scope: scope.value, mode: mode.value,
     bothStrands: bothStrands.value, degenerate: mode.value === "exact" && degenerate.value,
     mismatches: mismatches.value, threads: -1,
+    evalue: evalue.value, identity: identity.value, coverage: coverage.value, maxTargets: maxTargets.value,
     ...(scope.value === "selection" && selection ? selection : {}),
   };
   try {

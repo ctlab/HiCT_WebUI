@@ -459,6 +459,7 @@
                   <div class="wizard-card">
                     <div class="wizard-card-header">
                       <strong>Primary assembly</strong>
+                      <SequenceGapSettings :request-manager="props.networkManager.requestManager" />
                     </div>
                     <div class="wizard-card-body">
                       <div class="input-group">
@@ -735,6 +736,9 @@
 </template>
 
 <script setup lang="ts">
+import SequenceGapSettings from "./SequenceGapSettings.vue";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+import { SequenceAnalysisRequest } from "@/app/core/net/api/SequenceAnalysisRequest";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { AssemblyInfo } from "@/app/core/domain/AssemblyInfo";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
@@ -2032,6 +2036,9 @@ const runWizard = async (): Promise<void> => {
 
     runState.currentStepId = "finish";
     runState.currentMessage = `Opening ${primaryOpenedFilename}`;
+    await props.networkManager.requestManager.sendRequest(new SequenceAnalysisRequest("/sequence/settings", {
+      gapLengthBp: useUiSettingsStore().sequenceGapLengthBp,
+    }));
     await props.openPrimaryDataset(primaryOpenedFilename, primaryFasta.value || undefined, {
       applyDefaultPreset: false,
     });

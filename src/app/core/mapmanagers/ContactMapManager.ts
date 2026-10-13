@@ -191,13 +191,13 @@ class ContactMapManager {
       style: [
         new Style({
           stroke: new Stroke({
-            color: "rgba(34, 211, 238, 0.98)",
+            color: "rgba(255, 255, 255, 0.9)",
             width: 5,
           }),
         }),
         new Style({
           stroke: new Stroke({
-            color: "rgba(217, 70, 239, 0.98)",
+            color: "#0673ff",
             width: 2,
           }),
         }),
@@ -214,6 +214,10 @@ class ContactMapManager {
         projection,
         center: getCenter(projectionExtentTuple),
         resolution: this.estimateMinimapResolution(projectionExtentTuple, resolvedTarget),
+        // The default View maximum assumes a 256-pixel viewport. A smaller
+        // minimap needs to zoom farther out to display its entire projection.
+        maxResolution: Math.max(getWidth(projectionExtentTuple), getHeight(projectionExtentTuple)),
+        showFullExtent: true,
         constrainResolution: false,
         extent: projectionExtentTuple,
       }),
@@ -1471,7 +1475,10 @@ class ContactMapManager {
     this.applyMinimapBackground(target);
     const extentTuple = extent as [number, number, number, number];
     view.setCenter(getCenter(extentTuple));
-    view.setResolution(this.estimateMinimapResolution(extentTuple, target));
+    // OpenLayers measures the content box; clientWidth includes CSS padding.
+    // Fitting to clientWidth crops the outer map pixels and hides an edge-aligned stroke.
+    const size = this.minimap.getSize();
+    if (size && size[0] > 0 && size[1] > 0) view.fit(extentTuple, { size, padding: [0, 0, 0, 0] });
   }
 
   private bindMinimapPointerInteractions(target: HTMLElement): void {
@@ -1693,32 +1700,20 @@ class ContactMapManager {
       transformedMainExtent as [number, number, number, number],
       minimapProjectionExtent as [number, number, number, number]
     );
-    this.minimapViewportFeature.setGeometry(fromExtent(clampedExtent));
+    this.minimapViewportFeature.setGeometry(clampedExtent ? fromExtent(clampedExtent) : undefined);
     this.minimap.render();
   }
 
   private applyMinimapBackground(target: HTMLElement): void {
     const color = useStyleStore().mapBackgroundColor.RGB;
     target.style.backgroundColor = color;
+    target.style.overflow = "hidden";
   }
 
   private getMinimapVisibleBounds(
     bounds: [number, number, number, number]
   ): [number, number, number, number] {
-    const minimapResolution = this.minimap?.getView().getResolution() ?? 1;
-    // Keep the viewport stroke inside the minimap projection. Vector strokes
-    // clipped exactly at the projection boundary become invisible at map edges.
-    const inset = Math.max(1e-6, Math.abs(minimapResolution) * 5);
-    const maxInsetX = Math.max(0, (getWidth(bounds) - 1e-6) / 2);
-    const maxInsetY = Math.max(0, (getHeight(bounds) - 1e-6) / 2);
-    const insetX = Math.min(inset, maxInsetX);
-    const insetY = Math.min(inset, maxInsetY);
-    return [
-      bounds[0] + insetX,
-      bounds[1] + insetY,
-      bounds[2] - insetX,
-      bounds[3] - insetY,
-    ];
+    return bounds;
   }
 
   private clampCoordinateToBounds(
@@ -1734,44 +1729,16 @@ class ContactMapManager {
   private clampExtentToBounds(
     extent: [number, number, number, number],
     bounds: [number, number, number, number]
-  ): [number, number, number, number] {
-    const visibleBounds = this.getMinimapVisibleBounds(bounds);
-    if (!intersects(extent, bounds)) {
-      return visibleBounds;
-    }
-    const visibleWidth = Math.max(1e-6, getWidth(visibleBounds));
-    const visibleHeight = Math.max(1e-6, getHeight(visibleBounds));
-    const minimapResolution = Math.abs(this.minimap?.getView().getResolution() ?? 1);
-    const minimumVisibleSize = Math.max(1e-6, minimapResolution * 4);
-    const requestedWidth = Math.max(1e-6, extent[2] - extent[0]);
-    const requestedHeight = Math.max(1e-6, extent[3] - extent[1]);
-    const width = Math.min(
-      visibleWidth,
-      Math.max(requestedWidth, minimumVisibleSize)
-    );
-    const height = Math.min(
-      visibleHeight,
-      Math.max(requestedHeight, minimumVisibleSize)
-    );
-    const clamp = (value: number, minValue: number, maxValue: number): number =>
-      Math.max(minValue, Math.min(maxValue, value));
-    const centerX = clamp(
-      (extent[0] + extent[2]) / 2,
-      visibleBounds[0] + width / 2,
-      visibleBounds[2] - width / 2
-    );
-    const centerY = clamp(
-      (extent[1] + extent[3]) / 2,
-      visibleBounds[1] + height / 2,
-      visibleBounds[3] - height / 2
-    );
-    return [
-      centerX - width / 2,
-      centerY - height / 2,
-      centerX + width / 2,
-      centerY + height / 2,
+  ): [number, number, number, number] | null {
+    // Intersect, never translate or inflate the viewport: its edges represent
+    // actual visible coordinates even when the main map is panned off-map.
+    const clipped: [number, number, number, number] = [
+      Math.max(extent[0], bounds[0]), Math.max(extent[1], bounds[1]),
+      Math.min(extent[2], bounds[2]), Math.min(extent[3], bounds[3]),
     ];
+    return clipped[0] < clipped[2] && clipped[1] < clipped[3] ? clipped : null;
   }
+
 }
 
 export { ContactMapManager /*, type ContactMapManagerOptions*/ };

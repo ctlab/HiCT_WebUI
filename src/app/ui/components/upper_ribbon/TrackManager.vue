@@ -167,6 +167,8 @@
                     </select>
                   </div>
                 </div>
+                <p class="small mb-1 mt-2">Attaching, replacing or removing a secondary map starts a new edit journal. The current assembly layout stays; earlier undo/redo states will no longer be available.</p>
+                <p class="small mb-1">Generated dotplot scores move with their original sequence bins. Recompute after changing joins to refresh context-dependent scores.</p>
                 <small class="text-muted d-block mt-1">
                   {{
                     secondaryStatus.attached
@@ -255,6 +257,10 @@
                     :value="track.name"
                     @change="onRename(track.trackId, ($event.target as HTMLInputElement).value)"
                   />
+                  <button v-if="props.mapManager?.linearTrackManager.getAnalysisWarning(track.trackId)" type="button"
+                    class="btn btn-sm btn-outline-warning" :title="props.mapManager?.linearTrackManager.getAnalysisWarning(track.trackId)"
+                    aria-label="New matches might have formed"
+                    @click="toast.message(props.mapManager?.linearTrackManager.getAnalysisWarning(track.trackId) ?? '', { duration: 15000 })">⚠</button>
                   <span class="badge text-bg-secondary">{{ track.type }}</span>
                   <select
                     v-if="track.type === 'BIGWIG'"

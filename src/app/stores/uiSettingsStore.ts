@@ -25,6 +25,8 @@ const persistRef = <T>(key: string, value: { value: T }) => {
 };
 
 export const useUiSettingsStore = defineStore("uiSettings", () => {
+  const sequenceGapLengthBp = ref(readStored("hict.sequence.gapLengthBp", 1000));
+  persistRef("hict.sequence.gapLengthBp", sequenceGapLengthBp);
   const customZoomSliderEnabled = ref(false);
   const binaryTileTransportEnabled = ref(false);
   const rulerCoordinateMode = ref<"global" | "contig" | "scaffold">(
@@ -78,6 +80,7 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
   persistRef("hict.ui.osd.fieldOrder", osdOverlayFieldOrder);
 
   return {
+    sequenceGapLengthBp,
     customZoomSliderEnabled,
     binaryTileTransportEnabled,
     rulerCoordinateMode,

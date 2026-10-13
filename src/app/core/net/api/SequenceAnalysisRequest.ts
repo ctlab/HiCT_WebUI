@@ -1,11 +1,16 @@
 export interface SequenceSearchSettings {
   queries: string;
   scope: "assembly" | "selection";
-  mode: "exact" | "substitutions";
+  mode: "exact" | "substitutions" | "blast";
+  evalue?: number;
+  identity?: number;
+  coverage?: number;
+  maxTargets?: number;
   bothStrands: boolean;
   degenerate: boolean;
   mismatches: number;
   threads: number;
+  gapLengthBp?: number;
   startBp?: number;
   endBp?: number;
 }
@@ -27,7 +32,7 @@ export interface SequenceAnalysisJob {
 /** Uses the normal request/error/notification path, including backend error messages. */
 export class SequenceAnalysisRequest {
   constructor(public readonly requestPath: string, public readonly options: object = {}) {
-    if (!/^\/sequence\/((?:search|moddotplot|dotplot)\/jobs|jobs\/list|jobs\/[a-zA-Z0-9-]+\/stop)$/.test(requestPath))
+    if (!/^\/sequence\/(settings|cleanup|(?:search|moddotplot|dotplot)\/jobs|jobs\/list|jobs\/[a-zA-Z0-9-]+\/stop)$/.test(requestPath))
       throw new Error("Invalid sequence analysis endpoint");
   }
 }

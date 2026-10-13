@@ -252,7 +252,8 @@ class TrackRenderResponseDTO extends InboundDTO<TrackRenderResponse> {
       ),
       this.json["maxValue"] as number,
       (this.json["error"] as string) ?? null,
-      (this.json["statusMessage"] as string) ?? null
+      (this.json["statusMessage"] as string) ?? null,
+      (this.json["analysisWarning"] as string) ?? null
     );
   }
 }

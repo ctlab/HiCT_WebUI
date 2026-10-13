@@ -8,10 +8,11 @@
           <button type="button" class="btn-close" aria-label="Close" :disabled="busy" @click="emit('dismissed')"></button>
         </header>
         <div class="modal-body">
-          <p>{{ alignment ? "Align sequence from the linked FASTA" : "Estimate sequence identity from the linked FASTA" }} in the current assembly order, including joins, without scaffold gaps. Debris and excluded sequence are omitted.</p>
+          <p>{{ alignment ? "Align sequence from the linked FASTA" : "Estimate sequence identity from the linked FASTA" }} in the current assembly order, preserving AGP gaps and adding the configured separator between scaffolds. Debris and excluded sequence are omitted.</p>
           <p class="small">Scores are anchored to contact bins and follow assembly edits. They describe the captured sequence: new joins need recomputation. Each selected resolution is computed independently.</p>
           <p v-if="error" class="alert alert-danger" role="alert">{{ error }}</p>
           <fieldset :disabled="busy">
+            <SequenceGapSettings :request-manager="props.mapManager.networkManager.requestManager" />
             <label for="moddotplot-scope" class="form-label">Analysis scope</label>
             <select id="moddotplot-scope" v-model="scope" class="form-select mb-3">
               <option value="assembly">Whole active assembly</option>
@@ -36,7 +37,7 @@
               <div class="col-sm-6" v-for="option in alignmentOptions" :key="option.key"><label :for="'dotplot-' + option.key" class="form-label">{{ option.label }}</label><input :id="'dotplot-' + option.key" v-model.number="alignmentSettings[option.key]" type="number" :min="1" :max="option.max" step="1" class="form-control" required /></div>
             </div>
             <label class="form-check mt-3"><input v-model="mergeCompatible" type="checkbox" class="form-check-input" />Accumulate compatible regions; replace scores within this rectangle</label>
-            <p class="small">Different settings create a separate overlay. Completed versions are retained, including when a job is cancelled.</p>
+            <p class="small">Different settings create a separate overlay. After a successful update, the superseded matrix is removed once detached. Logs and provenance are retained. Cancellation or failure retains the previous matrix.</p>
             <label class="form-check"><input v-model="displayResult" type="checkbox" class="form-check-input" />Show result below the diagonal, replacing the current secondary overlay</label>
             <p class="small">Attaching a secondary map starts a new edit journal. To retain the current journal, leave this unchecked and attach the saved sidecar later.</p>
             <p v-if="!alignment" class="small">Uses Observed display: Hi-C above, identity below. Identity colours run from blue at the threshold to red at 100%; zero/uncomputed cells are transparent. Coverage and provenance are saved in the sidecar.</p>
@@ -56,6 +57,8 @@
 </template>
 <script setup lang="ts">
 import { ref, computed, onBeforeUnmount } from "vue";
+import SequenceGapSettings from "./SequenceGapSettings.vue";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { SequenceAnalysisRequest, type SequenceAnalysisJob } from "@/app/core/net/api/SequenceAnalysisRequest";
 import { SetVisualizationOptionsRequest } from "@/app/core/net/api/request";
@@ -96,6 +99,7 @@ async function start() {
   submitting.value = true; error.value = ""; openingResult = false; session = api.history.applied?.session;
   try {
     job.value = (await api.sendRequest(new SequenceAnalysisRequest(`/sequence/${kind}/jobs`, {
+      gapLengthBp: useUiSettingsStore().sequenceGapLengthBp,
       scope: scope.value, region: scope.value === "selection" ? selection : undefined,
       resolutions: resolutions.value, identity: identity.value, k: k.value, sketchSize: sketchSize.value,
       delta: delta.value, mergeCompatible: mergeCompatible.value,
@@ -134,7 +138,9 @@ async function poll() {
           await props.mapManager.reloadTilesFromBackend();
         } catch (failure) { error.value = `Saved at ${current.outputFile}, but could not display it: ${String(failure)}`; notifications.add("error", error.value); return; }
       }
-      notifications.add("success", `${title} completed: ${current.outputFile}. Previous overlay versions were retained.`);
+      try { await api.sendRequest(new SequenceAnalysisRequest("/sequence/cleanup")); }
+      catch (failure) { notifications.add("warning", `Overlay saved, but superseded-file cleanup needs retry: ${String(failure)}`); }
+      notifications.add("success", `${title} completed: ${current.outputFile}. Superseded matrices are reclaimed after successful publication and detach.`);
       emit("dismissed"); return;
     }
     if (current.status === "failed") { error.value = current.error ?? `${title} failed`; notifications.add("error", error.value); return; }
