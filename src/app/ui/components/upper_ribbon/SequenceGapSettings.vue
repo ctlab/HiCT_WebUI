@@ -8,6 +8,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { onMounted, ref } from "vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { SequenceAnalysisRequest } from "@/app/core/net/api/SequenceAnalysisRequest";
@@ -17,7 +18,7 @@ onMounted(async () => {
   try {
     const { data: state } = await props.requestManager.sendRequest(new SequenceAnalysisRequest("/sequence/settings", {}));
     settings.sequenceGapLengthBp = state.gapLengthBp;
-  } catch (e) { error.value = `Could not read the default gap: ${String(e)}`; }
+  } catch (e) { error.value = `Could not read the default gap: ${extractErrorMessage(e)}`; }
   finally { loading.value = false; }
 });
 async function save() {
@@ -26,6 +27,6 @@ async function save() {
     error.value = "Choose an integer between 0 and 1,000,000."; return;
   }
   try { await props.requestManager.sendRequest(new SequenceAnalysisRequest("/sequence/settings", { gapLengthBp: settings.sequenceGapLengthBp })); }
-  catch (e) { error.value = `Could not save the default gap: ${String(e)}`; }
+  catch (e) { error.value = `Could not save the default gap: ${extractErrorMessage(e)}`; }
 }
 </script>

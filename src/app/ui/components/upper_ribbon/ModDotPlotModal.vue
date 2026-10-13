@@ -11,6 +11,7 @@
           <p>{{ alignment ? "Align sequence from the linked FASTA" : "Estimate sequence identity from the linked FASTA" }} in the current assembly order, preserving AGP gaps and adding the configured separator between scaffolds. Debris and excluded sequence are omitted.</p>
           <p class="small">Scores are anchored to contact bins and follow assembly edits. They describe the captured sequence: new joins need recomputation. Each selected resolution is computed independently.</p>
           <p v-if="error" class="alert alert-danger" role="alert">{{ error }}</p>
+          <div v-if="unavailableReason" class="alert alert-warning" role="status">{{ unavailableReason }} <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="readiness.checking.value || busy" @click="readiness.refresh">Check again</button></div>
           <fieldset :disabled="busy">
             <SequenceGapSettings :request-manager="props.mapManager.networkManager.requestManager" />
             <label for="moddotplot-scope" class="form-label">Analysis scope</label>
@@ -38,10 +39,15 @@
             </div>
             <label class="form-check mt-3"><input v-model="mergeCompatible" type="checkbox" class="form-check-input" />Accumulate compatible regions; replace scores within this rectangle</label>
             <p class="small">Different settings create a separate overlay. After a successful update, the superseded matrix is removed once detached. Logs and provenance are retained. Cancellation or failure retains the previous matrix.</p>
-            <label class="form-check"><input v-model="displayResult" type="checkbox" class="form-check-input" />Show result below the diagonal, replacing the current secondary overlay</label>
-            <p class="small">Attaching a secondary map starts a new edit journal. To retain the current journal, leave this unchecked and attach the saved sidecar later.</p>
-            <p v-if="!alignment" class="small">Uses Observed display: Hi-C above, identity below. Identity colours run from blue at the threshold to red at 100%; zero/uncomputed cells are transparent. Coverage and provenance are saved in the sidecar.</p>
-            <p v-if="alignment" class="small">Uses Observed display: Hi-C above, sampled alignment counts below. Counts are not identity percentages. The active minimap2/mm2-plus aligner is used; zeros are transparent.</p>
+            <label for="dotplot-display" class="form-label">Display completed result</label>
+            <select id="dotplot-display" v-model="displayMode" class="form-select mb-2">
+              <option value="overlay">Overlay on the Hi-C map</option>
+              <option value="below">Below diagonal</option>
+              <option value="none">Do not link now</option>
+            </select>
+            <p class="small">Attaching replaces the current secondary source and starts a new edit journal. To retain the current journal, choose “Do not link now” and attach the saved sidecar later.</p>
+            <p v-if="!alignment" class="small">Uses Observed display. Identity colours run from blue at the threshold to red at 100%; zero/uncomputed cells are transparent. Coverage and provenance are saved in the sidecar.</p>
+            <p v-if="alignment" class="small">Uses Observed display with sampled alignment counts. Counts are not identity percentages. The active minimap2/mm2-plus aligner is used; zeros are transparent.</p>
           </fieldset>
           <div v-if="job" class="mt-3" role="status" aria-live="polite"><span v-if="busy" class="spinner-border spinner-border-sm me-2"></span>{{ job.status }}</div>
           <pre v-if="job?.logs.length" class="analysis-logs" aria-label="ModDotPlot log">{{ job.logs.join('\n') }}</pre>
@@ -49,19 +55,22 @@
         <footer class="modal-footer">
           <button v-if="busy && job" type="button" class="btn btn-outline-danger" @click="cancel">Cancel generation</button>
           <button v-if="!busy" type="button" class="btn btn-outline-secondary" @click="emit('dismissed')">Close</button>
-          <button type="submit" class="btn btn-primary" :disabled="busy || !resolutions.length">{{ title }}</button>
+          <button type="submit" class="btn btn-primary" :disabled="busy || !!unavailableReason || !resolutions.length">{{ title }}</button>
         </footer>
       </form>
     </section>
   </Teleport>
 </template>
 <script setup lang="ts">
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { ref, computed, onBeforeUnmount } from "vue";
+import { useSequenceReadiness } from "./useSequenceReadiness";
 import SequenceGapSettings from "./SequenceGapSettings.vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { SequenceAnalysisRequest, type SequenceAnalysisJob } from "@/app/core/net/api/SequenceAnalysisRequest";
 import { SetVisualizationOptionsRequest } from "@/app/core/net/api/request";
+import { buildColorExpression } from "@/app/core/visualization/renderPipelineWizard";
 import { modDotPlotLowerExpression } from "@/app/core/sequence/modDotPlot";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
@@ -78,6 +87,8 @@ const alignmentOptions: {key: keyof typeof alignmentSettings.value; label: strin
 ];
 const emit = defineEmits<{ (e: "dismissed"): void }>();
 const api = props.mapManager.networkManager.requestManager, notifications = useNotificationCenterStore();
+const readiness = useSequenceReadiness(api);
+const unavailableReason = computed(() => readiness.reason(alignment ? "dotplot" : "hict-moddotplot"));
 const view = props.mapManager.viewAndLayersManager;
 const borders = view.currentViewState.selectionBorders;
 const selection = borders.leftBP && borders.rightBP ? {
@@ -88,14 +99,14 @@ const availableResolutions = [...view.resolutions].sort((a, b) => a - b);
 const resolutions = ref([view.currentViewState.resolutionDesciptor.bpResolution]);
 const scope = ref(props.initialSelection && selection ? "selection" : "assembly");
 const identity = ref(80), k = ref(21), sketchSize = ref(1000), delta = ref(0.5);
-const mergeCompatible = ref(true), displayResult = ref(true), submitting = ref(false), error = ref("");
+const mergeCompatible = ref(true), displayMode = ref<"overlay" | "below" | "none">("below"), submitting = ref(false), error = ref("");
 const job = ref<SequenceAnalysisJob | null>(null);
 const busy = computed(() => submitting.value || !!job.value && ["submitted", "preparing", "running"].includes(job.value.status));
 let disposed = false, openingResult = false, timer: number | undefined, session: string | undefined;
 useEscDismissableDialog({ priority: 1070, isOpen: () => true, canClose: () => !busy.value, requestClose: () => emit("dismissed") });
 onBeforeUnmount(() => { disposed = true; window.clearTimeout(timer); });
 async function start() {
-  if (busy.value) return;
+  if (busy.value || unavailableReason.value) return;
   submitting.value = true; error.value = ""; openingResult = false; session = api.history.applied?.session;
   try {
     job.value = (await api.sendRequest(new SequenceAnalysisRequest(`/sequence/${kind}/jobs`, {
@@ -107,7 +118,7 @@ async function start() {
     }))).data;
     notifications.add("info", `${title} submitted. The captured assembly is used throughout the calculation.`);
     timer = window.setTimeout(poll, 300);
-  } catch (failure) { error.value = String(failure); }
+  } catch (failure) { error.value = extractErrorMessage(failure); }
   finally { submitting.value = false; }
 }
 async function poll() {
@@ -120,7 +131,7 @@ async function poll() {
     if (current.status === "finished" && !openingResult) {
       openingResult = true;
       if (!current.outputFile) { error.value = "The completed job has no output file."; return; }
-      if (displayResult.value) {
+      if (displayMode.value !== "none") {
         if (session !== api.history.applied?.session) { error.value = `The map changed. Overlay saved at ${current.outputFile}; attach it to its original map.`; notifications.add("warning", error.value); return; }
         try {
           const response = await api.openSecondarySource(current.outputFile);
@@ -131,27 +142,30 @@ async function poll() {
             options.signalDisplayMode = "OBSERVED";
             await api.setVisualizationOptions(new SetVisualizationOptionsRequest({ options: options.asVisualizationOptions(), preserveRenderPipeline: true }));
           }
-          const pipeline = await api.getRenderPipelineConfig();
-          await api.setRenderPipelineConfig({ ...pipeline, enabled: true, swapUpperLower: false,
-            lowerExpression: alignment ? { type: "colormap", mode: "LINEAR", input: { type: "source", source: "SECONDARY" },
-              startColor: "#00008000", endColor: "#000080ff", minSignal: 0, maxSignal: 20 } : modDotPlotLowerExpression(identity.value) });
+          const primary = buildColorExpression("PRIMARY", options.asVisualizationOptions());
+          const secondary = alignment ? { type: "colormap", mode: "LINEAR", input: { type: "source", source: "SECONDARY" },
+            startColor: "#00008000", endColor: "#000080ff", minSignal: 0, maxSignal: 20 } : modDotPlotLowerExpression(identity.value);
+          const overlay = { type: "pixel_blend", mode: "OVER", top: secondary, bottom: primary, topOpacity: 0.5, bottomOpacity: 1 };
+          await api.setRenderPipelineConfig({ enabled: true, swapUpperLower: false,
+            upperExpression: displayMode.value === "overlay" ? overlay : primary,
+            lowerExpression: displayMode.value === "overlay" ? overlay : secondary });
           await props.mapManager.reloadTilesFromBackend();
-        } catch (failure) { error.value = `Saved at ${current.outputFile}, but could not display it: ${String(failure)}`; notifications.add("error", error.value); return; }
+        } catch (failure) { error.value = `Saved at ${current.outputFile}, but could not display it: ${extractErrorMessage(failure)}`; notifications.add("error", error.value); return; }
       }
       try { await api.sendRequest(new SequenceAnalysisRequest("/sequence/cleanup")); }
-      catch (failure) { notifications.add("warning", `Overlay saved, but superseded-file cleanup needs retry: ${String(failure)}`); }
+      catch (failure) { notifications.add("warning", `Overlay saved, but superseded-file cleanup needs retry: ${extractErrorMessage(failure)}`); }
       notifications.add("success", `${title} completed: ${current.outputFile}. Superseded matrices are reclaimed after successful publication and detach.`);
       emit("dismissed"); return;
     }
     if (current.status === "failed") { error.value = current.error ?? `${title} failed`; notifications.add("error", error.value); return; }
     if (current.status === "cancelled") { notifications.add("info", `${title} cancelled; previous overlay retained.`); return; }
-  } catch (failure) { error.value = `Progress refresh failed: ${String(failure)}. Retrying…`; }
+  } catch (failure) { error.value = `Progress refresh failed: ${extractErrorMessage(failure)}. Retrying…`; }
   if (!disposed) timer = window.setTimeout(poll, 1000);
 }
 async function cancel() {
   if (!job.value) return;
   try { await api.sendRequest(new SequenceAnalysisRequest(`/sequence/jobs/${job.value.jobId}/stop`)); }
-  catch (failure) { error.value = String(failure); }
+  catch (failure) { error.value = extractErrorMessage(failure); }
 }
 </script>
 <style scoped>

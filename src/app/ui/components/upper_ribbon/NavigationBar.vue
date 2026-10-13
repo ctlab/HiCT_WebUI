@@ -97,21 +97,6 @@
                 >
               </li>
               <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
-                  @click.prevent="onGenerateDotplotClicked"
-                  >Generate dotplot</a
-                >
-              </li>
-              <li>
-                <button class="dropdown-item" :disabled="!props.mapManager" @click="assemblyDotPlotOpen = true">Generate dotplot from active assembly…</button>
-                <button class="dropdown-item" :disabled="!props.mapManager" @click="modDotPlotOpen = true">Generate ModDotPlot…</button>
-                <button class="dropdown-item" :disabled="!props.mapManager" @click="sequenceSearchOpen = true">
-                  Find sequences in linked FASTA…
-                </button>
-              </li>
-              <li>
                 <a class="dropdown-item" href="#" @click="onDropCachesClicked"
                   >Drop caches</a
                 >
@@ -121,6 +106,27 @@
                 <a class="dropdown-item" href="#" @click.prevent="onQuitClicked"
                   >Quit</a
                 >
+              </li>
+            </ul>
+          </li>
+          <!-- Tools -->
+          <li class="nav-item dropdown">
+            <a class="nav-link active dropdown-toggle" data-bs-toggle="dropdown" href="#">Tools</a>
+            <ul class="dropdown-menu">
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="onGenerateDotplotClicked"
+                  >Generate dotplot from FASTA files…</a
+                >
+              </li>
+              <li>
+                <button class="dropdown-item" :disabled="!props.mapManager" @click="assemblyDotPlotOpen = true">Generate dotplot from active assembly…</button>
+                <button class="dropdown-item" :disabled="!props.mapManager" @click="modDotPlotOpen = true">Generate ModDotPlot…</button>
+                <button class="dropdown-item" :disabled="!props.mapManager" @click="sequenceSearchOpen = true">
+                  Find sequences in linked FASTA…
+                </button>
               </li>
             </ul>
           </li>

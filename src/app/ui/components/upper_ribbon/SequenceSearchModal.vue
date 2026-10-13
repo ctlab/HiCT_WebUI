@@ -10,12 +10,13 @@
         <div class="modal-body">
           <p>The active assembly is searched in its current order and orientation, preserving AGP gaps and using the configured default between scaffolds. Excluded regions and debris are omitted. Searches do not cross positive-length gaps.</p>
           <p v-if="error" class="alert alert-danger" role="alert">{{ error }}</p>
+          <div v-if="unavailableReason" class="alert alert-warning" role="status">{{ unavailableReason }} <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="readiness.checking.value || busy" @click="readiness.refresh">Check again</button></div>
           <fieldset :disabled="busy">
             <SequenceGapSettings :request-manager="props.mapManager.networkManager.requestManager" />
             <label class="form-label" for="search-sequences">FASTA records, or one DNA sequence per line</label>
             <textarea id="search-sequences" v-model="queries" class="form-control sequence-input" rows="7" required spellcheck="false" placeholder=">my motif&#10;ACGTACGT&#10;>another motif&#10;TTGCAACC"></textarea>
             <p class="form-text">FASTA descriptions appear in hit tooltips. Plain sequences receive query_1, query_2, … IDs. Input is case-insensitive.</p>
-            <p v-if="!blastAvailable" class="alert alert-info">{{ blastUnavailableReason }}</p>
+            <p v-if="!blastAvailable && !readiness.prerequisite.value" class="alert alert-info">{{ blastUnavailableReason }}</p>
             <div class="row g-3">
               <div class="col-sm-6">
                 <label for="search-scope" class="form-label">Search scope</label>
@@ -35,8 +36,8 @@
               <div class="col-sm-6">
                 <label for="search-mode" class="form-label">Matching</label>
                 <select id="search-mode" v-model="mode" class="form-select">
-                  <option value="exact">Exact match</option>
-                  <option value="substitutions">Allow substitutions (SeqKit)</option>
+                  <option value="exact" :disabled="!readiness.available('seqkit')">Exact match</option>
+                  <option value="substitutions" :disabled="!readiness.available('seqkit')">Allow substitutions (SeqKit)</option>
                   <option value="blast" :disabled="!blastAvailable">Gapped local alignment (BLAST+)</option>
                 </select>
                 <small class="form-text">SeqKit finds exact/full-length substitution matches. BLAST finds similar subsequences with insertions and deletions; a hit is an alignment, not an exact occurrence. Both run locally.</small>
@@ -68,7 +69,7 @@
         <footer class="modal-footer">
           <button v-if="busy && job" type="button" class="btn btn-outline-danger" @click="cancel">Cancel search</button>
           <button v-if="!busy" type="button" class="btn btn-outline-secondary" @click="emit('dismissed')">Close</button>
-          <button type="submit" class="btn btn-primary" :disabled="busy || !queries.trim()">Find sequences</button>
+          <button type="submit" class="btn btn-primary" :disabled="busy || !!unavailableReason || !queries.trim()">Find sequences</button>
         </footer>
       </form>
     </section>
@@ -76,7 +77,9 @@
 </template>
 
 <script setup lang="ts">
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { ref, computed, onBeforeUnmount, onMounted } from "vue";
+import { useSequenceReadiness } from "./useSequenceReadiness";
 import SequenceGapSettings from "./SequenceGapSettings.vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
@@ -98,14 +101,10 @@ const scope = ref<"assembly" | "selection">(props.initialSelection && selection 
 const bothStrands = ref(true), degenerate = ref(false), mismatches = ref(1);
 const mode = ref<"exact" | "substitutions" | "blast">("exact");
 const evalue = ref(10), identity = ref(70), coverage = ref(50), maxTargets = ref(500);
-const blastAvailable = ref(false), blastUnavailableReason = ref("Checking local BLAST availability…");
-onMounted(async () => {
-  try {
-    const { data } = await manager.sendRequest(new SequenceAnalysisRequest("/sequence/settings", { checkBlast: true }));
-    blastAvailable.value = data.blastAvailable === true;
-    blastUnavailableReason.value = data.blastUnavailableReason ?? "BLAST is not available in this build. Install NCBI BLAST+ and configure HICT_BLASTN_BIN.";
-  } catch (failure) { blastUnavailableReason.value = `Could not check BLAST availability: ${String(failure)}`; }
-});
+const readiness = useSequenceReadiness(manager);
+const blastAvailable = computed(() => readiness.available("blastn"));
+const blastUnavailableReason = computed(() => readiness.reason("blastn"));
+const unavailableReason = computed(() => readiness.reason(mode.value === "blast" ? "blastn" : "seqkit"));
 const submitting = ref(false), error = ref("");
 const job = ref<SequenceAnalysisJob | null>(null);
 const busy = computed(() => submitting.value || !!job.value && ["submitted", "preparing", "running"].includes(job.value.status));
@@ -117,7 +116,7 @@ useEscDismissableDialog({ priority: 1070, isOpen: () => true, canClose: () => !b
 onBeforeUnmount(() => { disposed = true; window.clearTimeout(timer); });
 
 async function start() {
-  if (busy.value) return;
+  if (busy.value || unavailableReason.value) return;
   error.value = ""; submitting.value = true; openingResult = false;
   sourceSession = manager.history.applied?.session;
   const settings: SequenceSearchSettings = {
@@ -132,7 +131,7 @@ async function start() {
     job.value = (await manager.sendRequest(new SequenceAnalysisRequest("/sequence/search/jobs", settings))).data;
     notifications.add("info", `Sequence search submitted (${scope.value}, ${bothStrands.value ? 'both strands' : 'forward strand'}, ${mode.value}).`);
     timer = window.setTimeout(poll, 300);
-  } catch (failure) { error.value = String(failure); }
+  } catch (failure) { error.value = extractErrorMessage(failure); }
   finally { submitting.value = false; }
 }
 
@@ -152,7 +151,7 @@ async function poll() {
       if (current.hits > 0 && current.outputFile) {
         try { await props.mapManager.linearTrackManager.openTrack(current.outputFile, `Sequence search (${current.hits} matches)`); }
         catch (failure) {
-          error.value = `Search finished, but the track could not be opened: ${String(failure)}. The result is saved at ${current.outputFile}.`;
+          error.value = `Search finished, but the track could not be opened: ${extractErrorMessage(failure)}. The result is saved at ${current.outputFile}.`;
           notifications.add("error", error.value); return;
         }
       }
@@ -161,14 +160,14 @@ async function poll() {
     }
     if (current.status === "failed") { error.value = current.error ?? "Sequence analysis failed"; notifications.add("error", error.value); return; }
     if (current.status === "cancelled") { notifications.add("info", "Sequence search cancelled."); return; }
-  } catch (failure) { error.value = `Could not refresh search progress: ${String(failure)}. Retrying…`; }
+  } catch (failure) { error.value = `Could not refresh search progress: ${extractErrorMessage(failure)}. Retrying…`; }
   if (!disposed) timer = window.setTimeout(poll, 1000);
 }
 
 async function cancel() {
   if (!job.value) return;
   try { await manager.sendRequest(new SequenceAnalysisRequest(`/sequence/jobs/${job.value.jobId}/stop`)); }
-  catch (failure) { error.value = String(failure); }
+  catch (failure) { error.value = extractErrorMessage(failure); }
 }
 </script>
 
