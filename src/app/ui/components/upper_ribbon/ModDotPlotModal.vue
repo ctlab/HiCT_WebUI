@@ -46,15 +46,26 @@
               <option value="none">Do not link now</option>
             </select>
             <p class="small">Attaching replaces the current secondary source and starts a new edit journal. To retain the current journal, choose “Do not link now” and attach the saved sidecar later.</p>
-            <p v-if="!alignment" class="small">Uses Observed display. Identity colours run from blue at the threshold to red at 100%; zero/uncomputed cells are transparent. Coverage and provenance are saved in the sidecar.</p>
+            <p v-if="!alignment" class="small">Uses Observed display. The ModDotPlot identity colormap runs from blue through yellow to red at 100%; zero/uncomputed cells are transparent. Coverage and provenance are saved in the sidecar.</p>
             <p v-if="alignment" class="small">Uses Observed display with sampled alignment counts. Counts are not identity percentages. The active minimap2/mm2-plus aligner is used; zeros are transparent.</p>
           </fieldset>
+          <div v-if="job?.status === 'finished' && job.outputFile" class="alert alert-success mt-3" role="status">
+            Generation completed. Saved overlay: <code class="text-break">{{ job.outputFile }}</code>
+            <p class="mb-0">You can display this result without generating it again. A dotplot is a secondary matrix layer; sequence-search and annotation tracks are separate 1D layers.</p>
+          </div>
+          <div v-if="pendingCompatibility" class="alert alert-warning" role="alert">
+            <strong>Review overlay compatibility</strong>
+            <ul><li v-for="warning in pendingCompatibility.warnings" :key="warning">{{ warning }}</li></ul>
+            <p>The current secondary layer is retained until you confirm. Missing areas may show only the background.</p>
+            <button type="button" class="btn btn-outline-warning" :disabled="busy" @click="displaySavedResult(true)">Attach despite differences</button>
+          </div>
           <div v-if="job" class="mt-3" role="status" aria-live="polite"><span v-if="busy" class="spinner-border spinner-border-sm me-2"></span>{{ job.status }}</div>
           <pre v-if="job?.logs.length" class="analysis-logs" aria-label="ModDotPlot log">{{ job.logs.join('\n') }}</pre>
         </div>
         <footer class="modal-footer">
-          <button v-if="busy && job" type="button" class="btn btn-outline-danger" @click="cancel">Cancel generation</button>
+          <button v-if="busy && job && !displaying" type="button" class="btn btn-outline-danger" @click="cancel">Cancel generation</button>
           <button v-if="!busy" type="button" class="btn btn-outline-secondary" @click="emit('dismissed')">Close</button>
+          <button v-if="job?.status === 'finished' && job.outputFile && !pendingCompatibility" type="button" class="btn btn-outline-primary" :disabled="busy" @click="displaySavedResult()">{{ displayMode === 'none' ? 'Keep saved result' : 'Display saved result' }}</button>
           <button type="submit" class="btn btn-primary" :disabled="busy || !!unavailableReason || !resolutions.length">{{ title }}</button>
         </footer>
       </form>
@@ -69,12 +80,10 @@ import SequenceGapSettings from "./SequenceGapSettings.vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { SequenceAnalysisRequest, type SequenceAnalysisJob } from "@/app/core/net/api/SequenceAnalysisRequest";
-import { SetVisualizationOptionsRequest } from "@/app/core/net/api/request";
-import { buildColorExpression } from "@/app/core/visualization/renderPipelineWizard";
-import { modDotPlotLowerExpression } from "@/app/core/sequence/modDotPlot";
+import type { SecondarySourceStatusResponse } from "@/app/core/net/api/RequestManager";
+import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
-import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 const props = defineProps<{ mapManager: ContactMapManager; initialSelection?: boolean; kind?: "moddotplot" | "dotplot" }>();
 const alignment = props.kind === "dotplot";
 const kind = alignment ? "dotplot" : "moddotplot";
@@ -101,13 +110,15 @@ const scope = ref(props.initialSelection && selection ? "selection" : "assembly"
 const identity = ref(80), k = ref(21), sketchSize = ref(1000), delta = ref(0.5);
 const mergeCompatible = ref(true), displayMode = ref<"overlay" | "below" | "none">("below"), submitting = ref(false), error = ref("");
 const job = ref<SequenceAnalysisJob | null>(null);
-const busy = computed(() => submitting.value || !!job.value && ["submitted", "preparing", "running"].includes(job.value.status));
+const displaying = ref(false);
+const pendingCompatibility = ref<SecondarySourceStatusResponse | null>(null);
+const busy = computed(() => submitting.value || displaying.value || !!job.value && ["submitted", "preparing", "running"].includes(job.value.status));
 let disposed = false, openingResult = false, timer: number | undefined, session: string | undefined;
 useEscDismissableDialog({ priority: 1070, isOpen: () => true, canClose: () => !busy.value, requestClose: () => emit("dismissed") });
 onBeforeUnmount(() => { disposed = true; window.clearTimeout(timer); });
 async function start() {
   if (busy.value || unavailableReason.value) return;
-  submitting.value = true; error.value = ""; openingResult = false; session = api.history.applied?.session;
+  submitting.value = true; error.value = ""; pendingCompatibility.value = null; openingResult = false; session = api.history.applied?.session;
   try {
     job.value = (await api.sendRequest(new SequenceAnalysisRequest(`/sequence/${kind}/jobs`, {
       gapLengthBp: useUiSettingsStore().sequenceGapLengthBp,
@@ -131,36 +142,37 @@ async function poll() {
     if (current.status === "finished" && !openingResult) {
       openingResult = true;
       if (!current.outputFile) { error.value = "The completed job has no output file."; return; }
-      if (displayMode.value !== "none") {
-        if (session !== api.history.applied?.session) { error.value = `The map changed. Overlay saved at ${current.outputFile}; attach it to its original map.`; notifications.add("warning", error.value); return; }
-        try {
-          const response = await api.openSecondarySource(current.outputFile);
-          if (response.requiresConfirmation) throw new Error("Overlay compatibility needs review in the Tracks dialog");
-          view.setSecondaryResolutionModel(response.compatibility);
-          const options = useVisualizationOptionsStore();
-          if (options.signalDisplayMode !== "OBSERVED") {
-            options.signalDisplayMode = "OBSERVED";
-            await api.setVisualizationOptions(new SetVisualizationOptionsRequest({ options: options.asVisualizationOptions(), preserveRenderPipeline: true }));
-          }
-          const primary = buildColorExpression("PRIMARY", options.asVisualizationOptions());
-          const secondary = alignment ? { type: "colormap", mode: "LINEAR", input: { type: "source", source: "SECONDARY" },
-            startColor: "#00008000", endColor: "#000080ff", minSignal: 0, maxSignal: 20 } : modDotPlotLowerExpression(identity.value);
-          const overlay = { type: "pixel_blend", mode: "OVER", top: secondary, bottom: primary, topOpacity: 0.5, bottomOpacity: 1 };
-          await api.setRenderPipelineConfig({ enabled: true, swapUpperLower: false,
-            upperExpression: displayMode.value === "overlay" ? overlay : primary,
-            lowerExpression: displayMode.value === "overlay" ? overlay : secondary });
-          await props.mapManager.reloadTilesFromBackend();
-        } catch (failure) { error.value = `Saved at ${current.outputFile}, but could not display it: ${extractErrorMessage(failure)}`; notifications.add("error", error.value); return; }
-      }
-      try { await api.sendRequest(new SequenceAnalysisRequest("/sequence/cleanup")); }
-      catch (failure) { notifications.add("warning", `Overlay saved, but superseded-file cleanup needs retry: ${extractErrorMessage(failure)}`); }
-      notifications.add("success", `${title} completed: ${current.outputFile}. Superseded matrices are reclaimed after successful publication and detach.`);
-      emit("dismissed"); return;
+      await displaySavedResult(); return;
     }
     if (current.status === "failed") { error.value = current.error ?? `${title} failed`; notifications.add("error", error.value); return; }
     if (current.status === "cancelled") { notifications.add("info", `${title} cancelled; previous overlay retained.`); return; }
   } catch (failure) { error.value = `Progress refresh failed: ${extractErrorMessage(failure)}. Retrying…`; }
   if (!disposed) timer = window.setTimeout(poll, 1000);
+}
+async function displaySavedResult(allowMismatch = false) {
+  const current = job.value;
+  if (displaying.value || !current?.outputFile || current.status !== "finished") return;
+  displaying.value = true; error.value = "";
+  try {
+    if (displayMode.value !== "none") {
+      if (session !== api.history.applied?.session) {
+        throw new Error("The active map session changed. Open the original map before attaching this saved overlay.");
+      }
+      const response = await api.openSecondarySource(current.outputFile, allowMismatch);
+      if (response.requiresConfirmation) { pendingCompatibility.value = response; return; }
+      pendingCompatibility.value = null;
+      // Attachment starts a new history session. A later display retry must use it.
+      session = api.history.applied?.session;
+      await displaySequenceOverlay(props.mapManager, displayMode.value, kind, response, identity.value);
+    }
+    try { await api.sendRequest(new SequenceAnalysisRequest("/sequence/cleanup")); }
+    catch (failure) { notifications.add("warning", `Overlay saved, but superseded-file cleanup needs retry: ${extractErrorMessage(failure)}`); }
+    notifications.add("success", `${title} completed: ${current.outputFile}.`);
+    emit("dismissed");
+  } catch (failure) {
+    error.value = `The overlay was saved, but could not be displayed: ${extractErrorMessage(failure)}`;
+    notifications.add("warning", error.value);
+  } finally { displaying.value = false; }
 }
 async function cancel() {
   if (!job.value) return;

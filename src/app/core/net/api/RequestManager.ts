@@ -166,6 +166,7 @@ export type SecondarySourceStatusResponse = {
   requestedFilename?: string;
   warnings: string[];
   compatibility?: SecondarySourceCompatibility;
+  sequenceAnalysis?: { kind: string; minimumIdentity: number; scoreScale: number; scoreUnit: string };
 };
 
 export type NativeProcessingStatusResponse = {
@@ -372,6 +373,12 @@ class RequestManager {
         ? (json.warnings as unknown[]).map((value) => String(value))
         : [],
       compatibility,
+      sequenceAnalysis: json.sequenceAnalysis ? {
+        kind: String((json.sequenceAnalysis as Record<string, unknown>).kind ?? ""),
+        minimumIdentity: Number((json.sequenceAnalysis as Record<string, unknown>).minimumIdentity ?? 80),
+        scoreScale: Number((json.sequenceAnalysis as Record<string, unknown>).scoreScale ?? 10000),
+        scoreUnit: String((json.sequenceAnalysis as Record<string, unknown>).scoreUnit ?? ""),
+      } : undefined,
     };
   }
 

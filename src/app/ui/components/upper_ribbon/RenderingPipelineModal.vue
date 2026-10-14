@@ -142,6 +142,8 @@ import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager
 import { VisualizationManager } from "@/app/core/mapmanagers/VisualizationManager";
 import type { TrackSummaryResponse } from "@/app/core/net/api/response";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
+import { modDotPlotLowerExpression } from "@/app/core/sequence/modDotPlot";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -211,7 +213,7 @@ type PipelineExpression =
     }
   | {
       type: "colormap";
-      mode: "LINEAR";
+      mode: "LINEAR" | "MODDOTPLOT_IDENTITY";
       input: PipelineExpression;
       startColor: string;
       endColor: string;
@@ -244,6 +246,7 @@ const LOG_INPUT_NODE_TYPE = "hict/log_input";
 const BINARY_NODE_TYPE = "hict/binary";
 const CLAMP_NODE_TYPE = "hict/clamp";
 const COLORMAP_NODE_TYPE = "hict/colormap";
+const MODDOTPLOT_COLORMAP_NODE_TYPE = "hict/moddotplot_identity";
 const RGB_NODE_TYPE = "hict/rgb";
 const HSL_NODE_TYPE = "hict/hsl";
 const HSV_NODE_TYPE = "hict/hsv";
@@ -294,7 +297,7 @@ const NODE_MENU_NODE_TYPES_BY_CATEGORY: Record<(typeof NODE_MENU_CATEGORY_ORDER)
   Sources: [SOURCE_NODE_TYPE, TRACK1D_NODE_TYPE, DYNAMIC_NODE_TYPE],
   Constants: [CONSTANT_NODE_TYPE],
   Math: [UNARY_NODE_TYPE, LOG_NODE_TYPE, LOG_INPUT_NODE_TYPE, BINARY_NODE_TYPE, CLAMP_NODE_TYPE],
-  Colormaps: [COLORMAP_NODE_TYPE, RGB_NODE_TYPE, HSL_NODE_TYPE, HSV_NODE_TYPE],
+  Colormaps: [COLORMAP_NODE_TYPE, MODDOTPLOT_COLORMAP_NODE_TYPE, RGB_NODE_TYPE, HSL_NODE_TYPE, HSV_NODE_TYPE],
   Compositing: [PIXEL_BLEND_NODE_TYPE],
   Outputs: [SINK_NODE_TYPE],
 };
@@ -302,6 +305,8 @@ const NODE_MENU_NODE_TYPES_BY_CATEGORY: Record<(typeof NODE_MENU_CATEGORY_ORDER)
 const RENDERING_PRESETS = [
   { id: "primary_only", label: "Default Primary only" },
   { id: "dotplot_overlay", label: "Dotplot overlay" },
+  { id: "moddotplot_below", label: "ModDotPlot identity below diagonal" },
+  { id: "moddotplot_overlay", label: "ModDotPlot multicolor overlay" },
 ] as const;
 type RenderingPresetId = (typeof RENDERING_PRESETS)[number]["id"];
 
@@ -786,7 +791,7 @@ const parseExpression = (raw: unknown): PipelineExpression => {
   if (type === "colormap") {
     return {
       type: "colormap",
-      mode: "LINEAR",
+      mode: node.mode === "MODDOTPLOT_IDENTITY" ? "MODDOTPLOT_IDENTITY" : "LINEAR",
       input: parseExpression(node.input),
       startColor: sanitizeColor(node.startColor, "#ffffff00"),
       endColor: sanitizeColor(node.endColor, "#006000ff"),
@@ -1166,6 +1171,29 @@ const ensureNodeTypesRegistered = (): void => {
     }
   }
 
+  // Palette attribution: public/ModDotPlot-palette-NOTICE.txt.
+  class ModDotPlotColormapNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "ModDotPlot Identity";
+      this.addInput("identity score", "number");
+      this.addOutput("color", "color");
+      this.properties = { mode: "MODDOTPLOT_IDENTITY", startColor: "#313695ff", endColor: "#a50026ff", minSignal: 800000, maxSignal: 1000000 };
+      this.addWidget("number", "minimum identity (%)", 80, (value: unknown) => {
+        this.properties.minSignal = Math.min(100, Math.max(0, toFiniteNumber(value, 80))) * toFiniteNumber(this.properties.maxSignal, 1000000) / 100;
+      }, { min: 0, max: 100, precision: 1 });
+      this.size = [270, 115];
+    }
+    onDrawForeground(context: CanvasRenderingContext2D): void {
+      context.save();
+      const gradient = context.createLinearGradient(14, 0, this.size[0] - 14, 0);
+      ["#313695", "#4575b4", "#74add1", "#abd9e9", "#e0f3f8", "#ffffbf", "#fee090", "#fdae61", "#f46d43", "#d73027", "#a50026"].forEach((color, index) => gradient.addColorStop(index / 10, color));
+      context.fillStyle = gradient;
+      context.fillRect(14, 78, this.size[0] - 28, 16);
+      context.restore();
+    }
+  }
+
   class ColorSpaceNode extends LGraphNode {
     constructor(private readonly colorSpaceType: ColorSpaceNodeType) {
       super();
@@ -1313,6 +1341,9 @@ const ensureNodeTypesRegistered = (): void => {
   if (!LiteGraph.registered_node_types[CLAMP_NODE_TYPE]) {
     LiteGraph.registerNodeType(CLAMP_NODE_TYPE, ClampNode as unknown as { new (): LGraphNode });
   }
+  if (!LiteGraph.registered_node_types[MODDOTPLOT_COLORMAP_NODE_TYPE]) {
+    LiteGraph.registerNodeType(MODDOTPLOT_COLORMAP_NODE_TYPE, ModDotPlotColormapNode as unknown as { new (): LGraphNode });
+  }
   if (!LiteGraph.registered_node_types[COLORMAP_NODE_TYPE]) {
     LiteGraph.registerNodeType(COLORMAP_NODE_TYPE, ColormapNode as unknown as { new (): LGraphNode });
   }
@@ -1383,6 +1414,10 @@ const syncNodeWidgetsFromProperties = (node: LGraphNode): void => {
   if (node.type === CLAMP_NODE_TYPE) {
     setWidgetValue(node, "min", toFiniteNumber(node.properties?.minValue, 0));
     setWidgetValue(node, "max", toFiniteNumber(node.properties?.maxValue, 1));
+    return;
+  }
+  if (node.type === MODDOTPLOT_COLORMAP_NODE_TYPE) {
+    setWidgetValue(node, "minimum identity (%)", 100 * toFiniteNumber(node.properties?.minSignal, 800000) / toFiniteNumber(node.properties?.maxSignal, 1000000));
     return;
   }
   if (node.type === COLORMAP_NODE_TYPE) {
@@ -1796,7 +1831,7 @@ const createNodeForExpression = (expression: PipelineExpression): LGraphNode | n
       }
       break;
     case "colormap":
-      node = LiteGraph.createNode(COLORMAP_NODE_TYPE) as LGraphNode | null;
+      node = LiteGraph.createNode(expression.mode === "MODDOTPLOT_IDENTITY" ? MODDOTPLOT_COLORMAP_NODE_TYPE : COLORMAP_NODE_TYPE) as LGraphNode | null;
       if (node) {
         node.properties.mode = expression.mode;
         node.properties.startColor = expression.startColor;
@@ -2186,10 +2221,10 @@ const expressionFromNode = (
     };
   }
 
-  if (node.type === COLORMAP_NODE_TYPE) {
+  if (node.type === COLORMAP_NODE_TYPE || node.type === MODDOTPLOT_COLORMAP_NODE_TYPE) {
     return {
       type: "colormap",
-      mode: "LINEAR",
+      mode: node.type === MODDOTPLOT_COLORMAP_NODE_TYPE ? "MODDOTPLOT_IDENTITY" : "LINEAR",
       input: expressionFromNode(node.getInputNode(0), visited),
       startColor: sanitizeColor(node.properties?.startColor, "#ffffff00"),
       endColor: sanitizeColor(node.properties?.endColor, "#006000ff"),
@@ -2321,22 +2356,28 @@ const buildConfigPayload = (): Record<string, unknown> => ({
   lowerExpression: expressionFromSink("LOWER"),
 });
 
-const loadSelectedPreset = (): void => {
+const loadSelectedPreset = async (): Promise<void> => {
   if (!graph) {
     return;
   }
-  const preset =
-    selectedPresetId.value === "dotplot_overlay"
-      ? buildDotplotOverlayPreset()
-      : buildPrimaryOnlyPreset();
+  let preset = selectedPresetId.value === "dotplot_overlay" ? buildDotplotOverlayPreset() : buildPrimaryOnlyPreset();
+  if (selectedPresetId.value.startsWith("moddotplot_")) {
+    try {
+      const status = await props.mapManager?.networkManager.requestManager.getSecondarySourceStatus();
+      if (!status?.attached || status.sequenceAnalysis?.kind !== "moddotplot") {
+        toast("Attach a generated ModDotPlot identity overlay before using this preset."); return;
+      }
+      const primary = buildColorExpressionFromVisualizationOptions("PRIMARY");
+      const secondary = modDotPlotLowerExpression(status.sequenceAnalysis.minimumIdentity, status.sequenceAnalysis.scoreScale);
+      const blend: PipelineExpression = { type: "pixel_blend", mode: "OVER", top: secondary, bottom: primary, topOpacity: 0.65, bottomOpacity: 1 };
+      const overlay = selectedPresetId.value === "moddotplot_overlay";
+      preset = { enabled: true, swapUpperLower: false, upperExpression: overlay ? blend : primary, lowerExpression: overlay ? blend : secondary };
+    } catch (error) { toast.error(extractErrorMessage(error)); return; }
+  }
   enabled.value = preset.enabled;
   swapUpperLower.value = preset.swapUpperLower;
   buildGraphFromExpressions(preset.upperExpression, preset.lowerExpression);
-  toast.success(
-    selectedPresetId.value === "dotplot_overlay"
-      ? "Dotplot overlay preset loaded"
-      : "Primary-only preset loaded"
-  );
+  toast.success(`${RENDERING_PRESETS.find(p => p.id === selectedPresetId.value)?.label} preset loaded`);
 };
 
 const persistConfig = async (

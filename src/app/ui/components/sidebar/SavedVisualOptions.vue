@@ -57,6 +57,11 @@
       />
     </button>
   </div>
+  <div v-if="props.mapManager" class="px-2 pb-2 d-grid gap-1" aria-label="ModDotPlot visualization presets">
+    <button class="btn btn-sm btn-outline-primary" @click="applyModDotPlot('below')">ModDotPlot: Hi-C above, identity below</button>
+    <button class="btn btn-sm btn-outline-primary" @click="applyModDotPlot('overlay')">ModDotPlot: multicolor overlay</button>
+    <small class="text-muted">Identity: blue → yellow → red. Missing scores are transparent.</small>
+  </div>
   <div class="saved-visualization-options-div">
     <div v-for="[id, opt] of savedOptions" :key="id">
       <SavedVisualOptionsElement
@@ -78,6 +83,9 @@
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { Ref, ref, shallowRef, triggerRef, onMounted, watch } from "vue";
+import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
+import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
 import SavedVisualOptionsElement from "./SavedVisualOptionsElement.vue";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
@@ -90,6 +98,11 @@ import { useStyleStore } from "@/app/stores/styleStore";
 import { ColorTranslator } from "colortranslator";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
 import { useSessionStore } from "@/app/stores/sessionStore";
+async function applyModDotPlot(mode: "overlay" | "below") {
+  if (!props.mapManager) return;
+  try { await displaySequenceOverlay(props.mapManager, mode, "moddotplot"); }
+  catch (error) { useNotificationCenterStore().add("warning", extractErrorMessage(error)); }
+}
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
   visualizationOptionsStore
