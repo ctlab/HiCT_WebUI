@@ -198,7 +198,7 @@ const {
   coolerWeightsNaNCount,
 } = storeToRefs(visualizationOptionsStore);
 const matrixViewStore = useMatrixViewStore();
-const { presentationMode, activeVisualizationSource } = storeToRefs(matrixViewStore);
+const { presentationMode, activeVisualizationSource, activeVisualizationTargetId } = storeToRefs(matrixViewStore);
 
 const errorMessage: Ref<string | undefined> = ref(undefined);
 
@@ -414,11 +414,11 @@ watch(
 watch(
   () => props.mapManager,
   () => {
-    if (props.mapManager) {
+    if (props.mapManager && !props.mapManager.isDisposed) {
       liveApplyReady.value = false;
       registerSignalRangeCallback(props.mapManager);
       props.mapManager.visualizationManager
-        .loadVisualizationOptionsForSource(activeSourceForOptions())
+        .loadVisualizationOptionsForSource(activeSourceForOptions(), activeVisualizationTargetId.value)
         .then(() => {
           updateFromStore();
           liveApplyReady.value = true;
@@ -428,11 +428,12 @@ watch(
 );
 
 watch(
-  () => [activeVisualizationSource.value, presentationMode.value] as const,
+  () => [activeVisualizationSource.value, presentationMode.value, activeVisualizationTargetId.value] as const,
   () => {
+    if (!props.mapManager || props.mapManager.isDisposed) return;
     liveApplyReady.value = false;
-    props.mapManager?.visualizationManager
-      .loadVisualizationOptionsForSource(activeSourceForOptions())
+    props.mapManager.visualizationManager
+      .loadVisualizationOptionsForSource(activeSourceForOptions(), activeVisualizationTargetId.value)
       .then(() => {
         updateFromStore();
         liveApplyReady.value = true;
@@ -442,11 +443,12 @@ watch(
 );
 
 onMounted(() => {
-  if (props.mapManager) {
+  if (props.mapManager && !props.mapManager.isDisposed) {
     registerSignalRangeCallback(props.mapManager);
   }
-  props.mapManager?.visualizationManager
-    .loadVisualizationOptionsForSource(activeSourceForOptions())
+  if (!props.mapManager || props.mapManager.isDisposed) return;
+  props.mapManager.visualizationManager
+    .loadVisualizationOptionsForSource(activeSourceForOptions(), activeVisualizationTargetId.value)
     .then(() => {
       updateFromStore();
       liveApplyReady.value = true;
@@ -461,7 +463,7 @@ onBeforeUnmount(() => {
 });
 
 function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
-  return presentationMode.value !== "single" ? activeVisualizationSource.value : undefined;
+  return activeVisualizationSource.value;
 }
 
 function registerSignalRangeCallback(mapManager: ContactMapManager): void {
@@ -515,11 +517,11 @@ function applySettings() {
     toast.error("Signal range must be positive: lower threshold must be below upper threshold.");
     return;
   }
-  const source =
-    presentationMode.value !== "single" ? activeVisualizationSource.value : undefined;
+  const source = activeVisualizationSource.value;
   const action = source
     ? props.mapManager?.visualizationManager.applyVisualizationSettingsForSourceAndReload(
-        source
+        source,
+        activeVisualizationTargetId.value
       )
     : props.mapManager?.visualizationManager.applyVisualizationSettingsAndReload();
   action?.catch((error) => {

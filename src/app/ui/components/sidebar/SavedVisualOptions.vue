@@ -57,12 +57,16 @@
       />
     </button>
   </div>
-  <div v-if="props.mapManager" class="px-2 pb-2 d-grid gap-1" aria-label="ModDotPlot visualization presets">
-    <button class="btn btn-sm btn-outline-primary" @click="applyModDotPlot('below')">ModDotPlot: Hi-C above, identity below</button>
-    <button class="btn btn-sm btn-outline-primary" @click="applyModDotPlot('overlay')">ModDotPlot: multicolor overlay</button>
-    <small class="text-muted">Identity: blue → yellow → red. Missing scores are transparent.</small>
-  </div>
   <div class="saved-visualization-options-div">
+    <div v-if="props.mapManager" class="builtin-preset" aria-label="Built-in visualization preset">
+      <span>ModDotPlot: Hi-C above, identity below</span><button type="button" class="btn btn-sm btn-outline-primary" title="Load visualization preset" aria-label="Load ModDotPlot Hi-C above identity below preset" @click="applyModDotPlot('below')"><i class="bi bi-brush"></i></button>
+    </div>
+    <div v-if="props.mapManager" class="builtin-preset" aria-label="Built-in visualization preset">
+      <span>ModDotPlot: multicolor overlay</span><button type="button" class="btn btn-sm btn-outline-primary" title="Load visualization preset" aria-label="Load ModDotPlot multicolor overlay preset" @click="applyModDotPlot('overlay')"><i class="bi bi-brush"></i></button>
+    </div>
+    <div v-if="props.mapManager" class="builtin-preset" aria-label="Built-in visualization preset">
+      <span>ModDotPlot palette: active source</span><button type="button" class="btn btn-sm btn-outline-primary" title="Load visualization preset" aria-label="Load ModDotPlot palette for active source" @click="applyModDotPalette"><i class="bi bi-brush"></i></button>
+    </div>
     <div v-for="[id, opt] of savedOptions" :key="id">
       <SavedVisualOptionsElement
         v-if="opt"
@@ -98,10 +102,25 @@ import { useStyleStore } from "@/app/stores/styleStore";
 import { ColorTranslator } from "colortranslator";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
 import { useSessionStore } from "@/app/stores/sessionStore";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 async function applyModDotPlot(mode: "overlay" | "below") {
   if (!props.mapManager) return;
   try { await displaySequenceOverlay(props.mapManager, mode, "moddotplot"); }
   catch (error) { useNotificationCenterStore().add("warning", extractErrorMessage(error)); }
+}
+async function applyModDotPalette() {
+  if (!props.mapManager) return;
+  const current = visualizationOptionsStore.asVisualizationOptions();
+  const active = current.colormap instanceof SimpleLinearGradient ? current.colormap : null;
+  visualizationOptionsStore.setVisualizationOptions(new VisualizationOptions(
+    current.preLogBase, current.postLogBase, current.applyCoolerWeights,
+    current.resolutionScaling, current.resolutionLinearScaling,
+    new SimpleLinearGradient(new ColorTranslator("#313695", { legacyCSS: true }),
+      new ColorTranslator("#a50026", { legacyCSS: true }), active?.minSignal ?? 0, active?.maxSignal ?? 1),
+    current.autoThresholdEnabled, current.autoThresholdQuantile, current.signalDisplayMode,
+    current.coolerWeightsNaNPolicy, current.coolerWeightsHaveNaNs, current.coolerWeightsNaNCount));
+  await props.mapManager.visualizationManager.applyVisualizationSettingsForSourceAndReload(
+    activeVisualizationSource.value, activeVisualizationTargetId.value);
 }
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
@@ -116,6 +135,8 @@ onMounted(() => {
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const sessionStore = useSessionStore();
+const matrixViewStore = useMatrixViewStore();
+const { activeVisualizationSource, activeVisualizationTargetId } = storeToRefs(matrixViewStore);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -673,6 +694,10 @@ function importOptionsFromFile() {
   /* padding-top: 15px; */
   padding-right: 10px;
 }
+
+.builtin-preset { display: flex; width: calc(100% - 8px); min-height: 32px; margin-left: 8px; border: 1px solid #dee2e6; }
+.builtin-preset span { flex: 1; min-width: 0; padding: 0.32rem 0.45rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.builtin-preset .btn { flex: 0 0 34px; border-top: 0; border-right: 0; border-bottom: 0; border-radius: 0; }
 
 .saved-visual-title {
   font-size: 0.92rem;

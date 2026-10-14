@@ -13,6 +13,10 @@ export interface SequenceSearchSettings {
   gapLengthBp?: number;
   startBp?: number;
   endBp?: number;
+  forwardColor?: string;
+  reverseColor?: string;
+  outputFilename?: string;
+  overwrite?: boolean;
 }
 
 export interface SequenceAnalysisJob {
@@ -27,6 +31,9 @@ export interface SequenceAnalysisJob {
   snapshot: string;
   sequenceLength: number;
   mapFilename: string;
+  requestedThreads?: number;
+  effectiveThreads?: number;
+  threadMode?: string;
 }
 
 /** Uses the normal request/error/notification path, including backend error messages. */

@@ -53,6 +53,7 @@ type PipelineSignalProfile = {
 };
 
 type ColormapTarget = {
+  id: string;
   node: Record<string, unknown>;
   profile: PipelineSignalProfile;
   minSignal: number;
@@ -317,7 +318,8 @@ const extractPipelineSignalProfile = (
 
 const collectColormapTargets = (
   expression: unknown,
-  output: ColormapTarget[]
+  output: ColormapTarget[],
+  path = "root"
 ): void => {
   if (!isRecord(expression)) {
     return;
@@ -327,6 +329,7 @@ const collectColormapTargets = (
     const profile = extractPipelineSignalProfile(expression.input);
     if (profile) {
       output.push({
+        id: path,
         node: expression,
         profile,
         minSignal: toFiniteNumber(expression.minSignal, 0),
@@ -346,9 +349,23 @@ const collectColormapTargets = (
     "alpha",
   ].forEach((key) => {
     if (key in expression) {
-      collectColormapTargets(expression[key], output);
+      collectColormapTargets(expression[key], output, `${path}.${key}`);
     }
   });
+};
+
+export type VisualizationPipelineTarget = {
+  id: string;
+  source: SourceName;
+  label: string;
+  mode: string;
+};
+
+const collectConfigColormapTargets = (config: Record<string, unknown>): ColormapTarget[] => {
+  const targets: ColormapTarget[] = [];
+  collectColormapTargets(config.upperExpression, targets, "upper");
+  collectColormapTargets(config.lowerExpression, targets, "lower");
+  return targets;
 };
 
 const collectTopLayerSources = (
@@ -399,8 +416,11 @@ const replaceColormapNode = (
   replacement: Record<string, unknown>
 ): void => {
   const previousStartColor = target.node.startColor;
+  const previousMode = String(target.node.mode ?? "LINEAR").toUpperCase();
   target.node.type = "colormap";
-  target.node.mode = replacement.mode ?? "LINEAR";
+  target.node.mode = previousMode === "MODDOTPLOT_IDENTITY"
+    ? "MODDOTPLOT_IDENTITY"
+    : replacement.mode ?? "LINEAR";
   target.node.input = cloneRecord(replacement.input);
   target.node.startColor = preserveMinimumAlpha(
     replacement.startColor,
@@ -546,6 +566,7 @@ class VisualizationManager {
   private readonly moveEndListener?: EventsKey;
   private expectedProfileSyncInFlight = false;
   private pendingExpectedProfileRefresh = false;
+  private readonly pendingOptionRequests = new Set<Promise<unknown>>();
 
   public constructor(public readonly mapManager: ContactMapManager) {
     this.moveEndListener = this.mapManager.getMap().on("moveend", () => {
@@ -559,37 +580,64 @@ class VisualizationManager {
     }
   }
 
+  public async waitForPendingOptionRequests(): Promise<void> {
+    while (this.pendingOptionRequests.size > 0) {
+      await Promise.allSettled([...this.pendingOptionRequests]);
+    }
+  }
+
+  private trackOptionRequest<T>(request: Promise<T>): Promise<T> {
+    this.pendingOptionRequests.add(request);
+    void request.then(
+      () => this.pendingOptionRequests.delete(request),
+      () => this.pendingOptionRequests.delete(request)
+    );
+    return request;
+  }
+
   public fetchVisualizationOptions(): Promise<VisualizationOptions> {
-    return this.mapManager.networkManager.requestManager
+    if (this.mapManager.isDisposed) {
+      return Promise.resolve(this.visualizationOptionsStore.asVisualizationOptions());
+    }
+    const request = this.mapManager.networkManager.requestManager
       .getVisualizationOptions(new GetVisualizationOptionsRequest({}))
       .then((options) => {
-        this.visualizationOptionsStore.setVisualizationOptions(options);
-        window.dispatchEvent(
-          new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
-            detail: { source: "server_fetch", options },
-          })
-        );
+        if (!this.mapManager.isDisposed) {
+          this.visualizationOptionsStore.setVisualizationOptions(options);
+          window.dispatchEvent(
+            new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
+              detail: { source: "server_fetch", options },
+            })
+          );
+        }
         return options;
       });
+    return this.trackOptionRequest(request);
   }
 
   public async loadVisualizationOptionsForSource(
-    source?: SourceName
+    source?: SourceName,
+    targetId?: string | null
   ): Promise<VisualizationOptions> {
+    if (this.mapManager.isDisposed) {
+      return this.visualizationOptionsStore.asVisualizationOptions();
+    }
     if (!source) {
       return this.fetchVisualizationOptions();
     }
     const pipelineConfig = await this.getActiveRenderPipelineConfig();
+    if (this.mapManager.isDisposed) {
+      return this.visualizationOptionsStore.asVisualizationOptions();
+    }
     if (!pipelineConfig) {
       return this.fetchVisualizationOptions();
     }
-    const targets: ColormapTarget[] = [];
-    collectColormapTargets(pipelineConfig.upperExpression, targets);
-    collectColormapTargets(pipelineConfig.lowerExpression, targets);
+    const targets = collectConfigColormapTargets(pipelineConfig);
     const topLayerSources = new Set<SourceName>();
     collectTopLayerSources(pipelineConfig.upperExpression, topLayerSources);
     collectTopLayerSources(pipelineConfig.lowerExpression, topLayerSources);
-    const target = targets.find((candidate) => candidate.profile.source === source);
+    const sourceTargets = targets.filter((candidate) => candidate.profile.source === source);
+    const target = sourceTargets.find((candidate) => candidate.id === targetId) ?? sourceTargets[0];
     if (!target) {
       return this.fetchVisualizationOptions();
     }
@@ -607,6 +655,21 @@ class VisualizationManager {
     return options;
   }
 
+  public async getVisualizationPipelineTargets(): Promise<VisualizationPipelineTarget[]> {
+    const config = await this.getActiveRenderPipelineConfig();
+    if (!config) return [];
+    const counts = new Map<SourceName, number>();
+    return collectConfigColormapTargets(config).map((target) => {
+      const index = (counts.get(target.profile.source) ?? 0) + 1;
+      counts.set(target.profile.source, index);
+      const half = target.id.startsWith("upper") ? "upper" : "lower";
+      const mode = String(target.node.mode ?? "LINEAR");
+      return { id: target.id, source: target.profile.source,
+        label: `${half} ${mode === "MODDOTPLOT_IDENTITY" ? "identity" : "colormap"} ${index}`,
+        mode };
+    });
+  }
+
   private async getActiveRenderPipelineConfig(): Promise<Record<string, unknown> | null> {
     const config =
       await this.mapManager.networkManager.requestManager
@@ -618,18 +681,17 @@ class VisualizationManager {
   private updateRenderPipelineSource(
     config: Record<string, unknown>,
     source: SourceName,
-    options: VisualizationOptions
+    options: VisualizationOptions,
+    targetId?: string | null
   ): boolean {
-    const targets: ColormapTarget[] = [];
-    collectColormapTargets(config.upperExpression, targets);
-    collectColormapTargets(config.lowerExpression, targets);
+    const targets = collectConfigColormapTargets(config);
     const replacement = buildColorExpression(source, options) as unknown as Record<
       string,
       unknown
     >;
     let changed = false;
     for (const target of targets) {
-      if (target.profile.source === source) {
+      if (target.profile.source === source && (!targetId || target.id === targetId)) {
         replaceColormapNode(target, replacement);
         changed = true;
       }
@@ -900,6 +962,7 @@ class VisualizationManager {
     bounds: ViewportPixelBounds,
     config?: Record<string, unknown>,
     sourceFilter?: SourceName,
+    targetId?: string | null,
     behavior?: {
       requireAutoThresholdEnabled?: boolean;
       quantile?: number;
@@ -922,7 +985,7 @@ class VisualizationManager {
     collectColormapTargets(activeConfig.upperExpression, targets);
     collectColormapTargets(activeConfig.lowerExpression, targets);
     const filteredTargets = sourceFilter
-      ? targets.filter((target) => target.profile.source === sourceFilter)
+      ? targets.filter((target) => target.profile.source === sourceFilter && (!targetId || target.id === targetId))
       : targets;
     if (filteredTargets.length === 0) {
       return false;
@@ -984,6 +1047,7 @@ class VisualizationManager {
   private async syncPipelineAutoThresholdToViewport(
     config?: Record<string, unknown>,
     sourceFilter?: SourceName,
+    targetId?: string | null,
     behavior?: {
       requireAutoThresholdEnabled?: boolean;
       quantile?: number;
@@ -998,6 +1062,7 @@ class VisualizationManager {
       bounds,
       config,
       sourceFilter,
+      targetId,
       behavior
     );
   }
@@ -1014,6 +1079,7 @@ class VisualizationManager {
       await this.syncPipelineAutoThresholdForBounds(
         bounds,
         pipelineConfig,
+        undefined,
         undefined,
         {
           requireAutoThresholdEnabled: false,
@@ -1155,7 +1221,8 @@ class VisualizationManager {
   }
 
   public async applyVisualizationSettingsForSourceAndReload(
-    source: SourceName
+    source: SourceName,
+    targetId?: string | null
   ): Promise<VisualizationOptions> {
     const pipelineConfig = await this.getActiveRenderPipelineConfig();
     if (!pipelineConfig) {
@@ -1163,9 +1230,9 @@ class VisualizationManager {
     }
 
     const options = this.visualizationOptionsStore.asVisualizationOptions();
-    const changed = this.updateRenderPipelineSource(pipelineConfig, source, options);
+    const changed = this.updateRenderPipelineSource(pipelineConfig, source, options, targetId);
     if (!changed) {
-      const hydrated = await this.loadVisualizationOptionsForSource(source);
+      const hydrated = await this.loadVisualizationOptionsForSource(source, targetId);
       await this.mapManager.reloadTilesFromBackend();
       return hydrated;
     }
@@ -1174,11 +1241,11 @@ class VisualizationManager {
       pipelineConfig
     );
     if (options.autoThresholdEnabled) {
-      await this.syncPipelineAutoThresholdToViewport(pipelineConfig, source).catch(
+      await this.syncPipelineAutoThresholdToViewport(pipelineConfig, source, targetId).catch(
         () => false
       );
     }
-    const hydrated = await this.loadVisualizationOptionsForSource(source);
+    const hydrated = await this.loadVisualizationOptionsForSource(source, targetId);
     await this.mapManager.reloadTilesFromBackend();
     return hydrated;
   }

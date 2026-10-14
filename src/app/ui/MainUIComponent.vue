@@ -417,6 +417,7 @@ function syncUiChromePalette(): void {
 
 function resetState() {
   mapManager.value?.dispose();
+  networkManager.mapManager = undefined;
   filename.value = "";
   fastaFilename.value = "";
   mapManager.value = undefined;
@@ -424,10 +425,10 @@ function resetState() {
 }
 
 function onClosed() {
-  networkManager.requestManager
-    .closeFile()
-    .catch(() => undefined)
-    .finally(() => resetState());
+  const manager = mapManager.value;
+  resetState();
+  void (manager?.visualizationManager.waitForPendingOptionRequests() ?? Promise.resolve())
+    .finally(() => networkManager.requestManager.closeFile().catch(() => undefined));
 }
 
 function onAttached() {
@@ -743,13 +744,14 @@ function onSaveSession(): void {
       ? fastaFilename.value
       : manager.getOptions().fastaFilename;
   const session = {
-    version: 1,
+    version: 2,
     filename: currentFilename ?? "",
     fastaFilename: currentFastaFilename ?? "",
     agpFilename: lastAgpFilename.value ?? "",
     visualizationOptions: serializeCurrentVisualizationOptions(),
     backgroundColor: mapBackgroundColor.value?.RGBA ?? "rgba(255,255,255,1)",
     trackStyles: manager.getLayersManager().getTrackStylePreset(),
+    axisTrackVisibility: manager.linearTrackManager.getAxisTrackVisibilityState(),
     savedLocations: sessionStore.savedLocations,
     savedVisualizationPresets: sessionStore.savedVisualizationPresets,
     view: {
@@ -1005,6 +1007,13 @@ async function onOpenSession(file: File): Promise<void> {
         .getLayersManager()
         .applyTrackStylePreset(trackStyles as never);
     }
+
+    const axisTrackVisibility = session["axisTrackVisibility"] as
+      | { horizontalHidden?: string[]; verticalHidden?: string[] }
+      | undefined;
+    mapManager.value?.linearTrackManager.applyAxisTrackVisibilityState(
+      axisTrackVisibility
+    );
 
     const savedLocs = (session["savedLocations"] as unknown[]) ?? [];
     sessionStore.setSavedLocations(savedLocs as SessionSavedLocation[]);

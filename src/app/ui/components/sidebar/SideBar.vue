@@ -115,6 +115,9 @@
                 <i class="bi bi-shuffle"></i>
               </button>
             </div>
+            <select v-if="activeSourceTargets.length > 1" v-model="activeVisualizationTargetId" class="form-select form-select-sm mt-2" aria-label="Rendering pipeline colormap target">
+              <option v-for="target in activeSourceTargets" :key="target.id" :value="target.id">{{ target.label }}</option>
+            </select>
           </div>
           <VisualziationSettingsEditor :map-manager="props.mapManager" />
 
@@ -142,7 +145,7 @@ import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import AssemblyHistory from "../AssemblyHistory.vue";
 import LayerComponent from "@/app/ui/components/sidebar/LayerComponent.vue";
 import SavedLocations from "@/app/ui/components/sidebar/SavedLocations.vue";
-import { computed, ref, watch, type Ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import { CommonEventManager } from "@/app/core/mapmanagers/CommonEventManager";
 import { BorderStyle, NamePlacement } from "@/app/core/tracks/Track2DSymmetric";
 import Style from "ol/style/Style";
@@ -161,9 +164,12 @@ const matrixViewStore = useMatrixViewStore();
 const activeSidebarPanel = ref<"visualization" | "entities" | "history">("visualization");
 
 const { mapBackgroundColor } = storeToRefs(stylesStore);
-const { presentationMode, activeVisualizationSource, layersSwapped } =
+const { presentationMode, activeVisualizationSource, activeVisualizationTargetId, layersSwapped } =
   storeToRefs(matrixViewStore);
-const hasTwoSources = computed(() => presentationMode.value !== "single");
+const secondaryAttached = ref(false);
+const pipelineTargets = ref<import("@/app/core/mapmanagers/VisualizationManager").VisualizationPipelineTarget[]>([]);
+const hasTwoSources = computed(() => presentationMode.value !== "single" || secondaryAttached.value);
+const activeSourceTargets = computed(() => pipelineTargets.value.filter(target => target.source === activeVisualizationSource.value));
 /// @ts-expect-error "Style objects are not cloneable"
 const backgroundColorStyle: Ref<Style> = ref(
   new Style({
@@ -187,6 +193,26 @@ watch(
 const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
+
+async function refreshVisualizationSources(): Promise<void> {
+  if (!props.mapManager || props.mapManager.isDisposed) return;
+  const [status, targets] = await Promise.all([
+    props.mapManager.networkManager.requestManager.getSecondarySourceStatus().catch(() => null),
+    props.mapManager.visualizationManager.getVisualizationPipelineTargets().catch(() => []),
+  ]);
+  secondaryAttached.value = Boolean(status?.attached);
+  pipelineTargets.value = targets;
+  const matching = targets.filter(target => target.source === activeVisualizationSource.value);
+  if (!matching.some(target => target.id === activeVisualizationTargetId.value))
+    activeVisualizationTargetId.value = matching[0]?.id ?? null;
+}
+
+watch(() => [props.mapManager, presentationMode.value, activeVisualizationSource.value] as const,
+  () => { void refreshVisualizationSources(); }, { immediate: true });
+
+const onRenderPipelineChanged = () => { void refreshVisualizationSources(); };
+onMounted(() => window.addEventListener("hict:render-pipeline-changed", onRenderPipelineChanged));
+onUnmounted(() => window.removeEventListener("hict:render-pipeline-changed", onRenderPipelineChanged));
 
 class LayerDescriptor {
   constructor(

@@ -3,6 +3,7 @@ import type { SecondarySourceStatusResponse } from "@/app/core/net/api/RequestMa
 import { SetVisualizationOptionsRequest } from "@/app/core/net/api/request";
 import { buildColorExpression } from "@/app/core/visualization/renderPipelineWizard";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 import { modDotPlotLowerExpression } from "./modDotPlot";
 
 export async function displaySequenceOverlay(manager: ContactMapManager,
@@ -27,5 +28,9 @@ export async function displaySequenceOverlay(manager: ContactMapManager,
   await api.setRenderPipelineConfig({ enabled: true, swapUpperLower: false,
     upperExpression: mode === "overlay" ? overlay : primary,
     lowerExpression: mode === "overlay" ? overlay : secondary });
+  const matrixView = useMatrixViewStore();
+  matrixView.setPresentationMode(mode === "overlay" ? "overlay" : "split");
+  matrixView.setActiveVisualizationSource("SECONDARY");
+  matrixView.setLayersSwapped(false);
   await manager.reloadTilesFromBackend();
 }

@@ -35,6 +35,10 @@
     @mouseleave="onMouseLeaveFeature"
   >
     <canvas ref="trackCanvas"></canvas>
+    <button v-for="(track, index) in axisTracks" :key="track.trackId" type="button" class="track-close-button"
+      :style="{ top: `calc(${(index + 0.5) * 100 / axisTracks.length}% - 10px)` }"
+      :title="`Hide ${track.name} horizontally`" :aria-label="`Hide ${track.name} horizontally`"
+      @pointerdown.stop @click.stop="hideTrack(track.trackId)"><i class="bi bi-x"></i></button>
     <div ref="statusOverlay" class="track-status-overlay"></div>
     <div
       v-if="featureTooltipVisible"
@@ -80,7 +84,9 @@ const props = defineProps<{
 const trackCanvas = ref<HTMLCanvasElement | null>(null);
 const statusOverlay = ref<HTMLDivElement | null>(null);
 const trackHost = ref<HTMLDivElement | null>(null);
+const axisTracks = ref(props.mapManager?.linearTrackManager.getVisibleTracksForAxis("horizontal") ?? []);
 let unsubscribeRenderState: (() => void) | undefined;
+let unsubscribeTrackList: (() => void) | undefined;
 let draggingPointerId: number | null = null;
 let dragStartClientX = 0;
 let dragCenterX = 0;
@@ -120,6 +126,7 @@ const bindCanvas = () => {
 
 const bindSubscriptions = () => {
   unsubscribeRenderState?.();
+  unsubscribeTrackList?.();
   if (statusOverlay.value) {
     statusOverlay.value.textContent = props.mapManager ? "No tracks loaded" : "";
   }
@@ -136,7 +143,12 @@ const bindSubscriptions = () => {
         }
       }
     );
+  unsubscribeTrackList = props.mapManager.linearTrackManager.subscribeTrackList(() => {
+    axisTracks.value = props.mapManager?.linearTrackManager.getVisibleTracksForAxis("horizontal") ?? [];
+  });
 };
+
+const hideTrack = (trackId: string) => props.mapManager?.linearTrackManager.setTrackVisibleOnAxis(trackId, "horizontal", false);
 
 const hideFeatureTooltip = (): void => {
   featureTooltipVisible.value = false;
@@ -374,6 +386,7 @@ watch(
 onBeforeUnmount(() => {
   props.mapManager?.linearTrackManager.registerCanvas("horizontal", null);
   unsubscribeRenderState?.();
+  unsubscribeTrackList?.();
   hideFeatureTooltip();
 });
 </script>
@@ -402,6 +415,8 @@ onBeforeUnmount(() => {
 .track-chip-list {
   display: none;
 }
+.track-close-button { position: absolute; right: 3px; z-index: 12; width: 20px; height: 20px; padding: 0; border: 1px solid #adb5bd; border-radius: 3px; background: rgba(255,255,255,.9); color: #495057; line-height: 18px; }
+.track-close-button:hover { color: #b02a37; border-color: #b02a37; }
 
 .track-status-overlay {
   position: absolute;

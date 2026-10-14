@@ -245,6 +245,10 @@
                     :checked="track.visible"
                     @change="onToggleVisible(track.trackId, ($event.target as HTMLInputElement).checked)"
                   />
+                  <div class="btn-group" role="group" aria-label="Track axis visibility">
+                    <button type="button" class="btn btn-sm" :class="axisVisible(track.trackId, 'horizontal') ? 'btn-outline-primary' : 'btn-outline-secondary'" :title="`${axisVisible(track.trackId, 'horizontal') ? 'Hide' : 'Show'} ${track.name} horizontally`" :aria-label="`${axisVisible(track.trackId, 'horizontal') ? 'Hide' : 'Show'} ${track.name} horizontally`" @click="toggleAxis(track.trackId, 'horizontal')"><i class="bi bi-arrows"></i></button>
+                    <button type="button" class="btn btn-sm" :class="axisVisible(track.trackId, 'vertical') ? 'btn-outline-primary' : 'btn-outline-secondary'" :title="`${axisVisible(track.trackId, 'vertical') ? 'Hide' : 'Show'} ${track.name} vertically`" :aria-label="`${axisVisible(track.trackId, 'vertical') ? 'Hide' : 'Show'} ${track.name} vertically`" @click="toggleAxis(track.trackId, 'vertical')"><i class="bi bi-arrows-vertical"></i></button>
+                  </div>
                   <input
                     type="color"
                     class="form-control form-control-color"
@@ -973,6 +977,15 @@ const onToggleVisible = async (trackId: string, visible: boolean) => {
   } catch (err) {
     toast.error(String(err));
   }
+};
+
+const axisVisible = (trackId: string, orientation: "horizontal" | "vertical") =>
+  props.mapManager?.linearTrackManager.isTrackVisibleOnAxis(trackId, orientation) ?? true;
+
+const toggleAxis = (trackId: string, orientation: "horizontal" | "vertical") => {
+  if (!props.mapManager) return;
+  props.mapManager.linearTrackManager.setTrackVisibleOnAxis(trackId, orientation,
+    !props.mapManager.linearTrackManager.isTrackVisibleOnAxis(trackId, orientation));
 };
 
 const onChangeColor = async (trackId: string, color: string) => {

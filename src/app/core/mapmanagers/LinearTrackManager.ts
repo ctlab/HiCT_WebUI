@@ -37,8 +37,14 @@ import type {
   TrackSummaryResponse,
   TracksPrecomputeStatusResponse,
 } from "@/app/core/net/api/response";
+import { packIntervalsIntoLanes } from "./featurePacking";
 
-type Orientation = "horizontal" | "vertical";
+export type TrackOrientation = "horizontal" | "vertical";
+type Orientation = TrackOrientation;
+export interface AxisTrackVisibilityState {
+  horizontalHidden: string[];
+  verticalHidden: string[];
+}
 type TrackTextPalette = {
   primary: string;
   muted: string;
@@ -61,6 +67,10 @@ class LinearTrackManager {
   private horizontalResizeObserver: ResizeObserver | null = null;
   private verticalResizeObserver: ResizeObserver | null = null;
   private tracks: TrackSummaryResponse[] = [];
+  private readonly hiddenByAxis: Record<Orientation, Set<string>> = {
+    horizontal: new Set<string>(),
+    vertical: new Set<string>(),
+  };
   private readonly trackLogBases = new Map<string, number>();
   private renderRequestId = 0;
   private readonly moveEndListener?: EventsKey;
@@ -207,6 +217,43 @@ class LinearTrackManager {
 
   public getTracksSnapshot(): TrackSummaryResponse[] {
     return this.tracks.slice();
+  }
+
+  public isTrackVisibleOnAxis(trackId: string, orientation: Orientation): boolean {
+    return !this.hiddenByAxis[orientation].has(trackId);
+  }
+
+  public getVisibleTracksForAxis(orientation: Orientation): TrackSummaryResponse[] {
+    return this.tracks.filter(track => track.visible && this.isTrackVisibleOnAxis(track.trackId, orientation));
+  }
+
+  public getAxisTrackVisibilityState(): AxisTrackVisibilityState {
+    return {
+      horizontalHidden: [...this.hiddenByAxis.horizontal].sort(),
+      verticalHidden: [...this.hiddenByAxis.vertical].sort(),
+    };
+  }
+
+  public applyAxisTrackVisibilityState(state?: Partial<AxisTrackVisibilityState>): void {
+    const known = new Set(this.tracks.map(track => track.trackId));
+    this.hiddenByAxis.horizontal = new Set(
+      (state?.horizontalHidden ?? []).filter(trackId => known.has(trackId))
+    );
+    this.hiddenByAxis.vertical = new Set(
+      (state?.verticalHidden ?? []).filter(trackId => known.has(trackId))
+    );
+    this.invalidateQueryCache();
+    this.notifyTrackListChanged();
+    void this.render({ allowFetch: false });
+  }
+
+  public setTrackVisibleOnAxis(trackId: string, orientation: Orientation, visible: boolean): void {
+    if (!this.tracks.some(track => track.trackId === trackId)) return;
+    if (visible) this.hiddenByAxis[orientation].delete(trackId);
+    else this.hiddenByAxis[orientation].add(trackId);
+    this.invalidateQueryCache();
+    this.notifyTrackListChanged();
+    void this.render({ allowFetch: false });
   }
 
   public async refreshTrackList(): Promise<TrackSummaryResponse[]> {
@@ -927,7 +974,7 @@ class LinearTrackManager {
     ctx.fillStyle = this.resolveTrackBackgroundColor();
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const fallbackTracks = this.tracks
-      .filter((track) => track.visible)
+      .filter((track) => track.visible && this.isTrackVisibleOnAxis(track.trackId, orientation))
       .map((track) => ({
         trackId: track.trackId,
         name: track.name,
@@ -940,8 +987,8 @@ class LinearTrackManager {
         statusMessage: null,
         analysisWarning: null,
       }));
-    const tracks =
-      (response.tracks ?? []).length > 0 ? response.tracks : fallbackTracks;
+    const responseTracks = (response.tracks ?? []).filter(track => this.isTrackVisibleOnAxis(track.trackId, orientation));
+    const tracks = responseTracks.length > 0 ? responseTracks : fallbackTracks;
     this.lastRenderedSnapshot[orientation] = {
       tracks,
       viewport,
@@ -1016,12 +1063,22 @@ class LinearTrackManager {
         renderStyle === "FEATURE"
           ? this.sortFeatureBinsForDraw(track.bins)
           : track.bins;
+      const featurePacking = renderStyle === "FEATURE"
+        ? packIntervalsIntoLanes(binsToRender,
+            bin => this.resolveBinIntervalPx(bin, bpResolution).startPx,
+            bin => this.resolveBinIntervalPx(bin, bpResolution).endPx)
+        : { lanes: new Map<TrackBinResponse, number>(), laneCount: 1 };
+      const crossSpan = Math.max(1, laneInnerEnd - laneInnerStart);
+      const maxFeatureLanes = Math.max(1, Math.floor(crossSpan / 4));
+      const shownFeatureLanes = Math.max(1, Math.min(featurePacking.laneCount, maxFeatureLanes));
+      const summaryLane = featurePacking.laneCount > maxFeatureLanes ? shownFeatureLanes - 1 : -1;
+      const densityDifference = summaryLane >= 0
+        ? new Int32Array((orientation === "horizontal" ? canvas.width : canvas.height) + 1)
+        : null;
       ctx.fillStyle = track.color ?? "#4e79a7";
       for (const bin of binsToRender) {
-        const matchStatus = bin.attributes?.matchStatus;
-        ctx.fillStyle = renderStyle === "FEATURE" && matchStatus && ["fragmented", "rearranged", "partial"].includes(matchStatus)
-          ? "#d26914"
-          : track.color ?? "#4e79a7";
+        const itemRgb = renderStyle === "FEATURE" ? this.bedRgbToCss(bin.attributes?.itemRgb) : undefined;
+        ctx.fillStyle = itemRgb ?? track.color ?? "#4e79a7";
         const interval = this.resolveBinIntervalPx(bin, bpResolution);
         if (!interval.visible || interval.endPx <= viewport.startPx || interval.startPx >= viewport.endPx) {
           continue;
@@ -1032,6 +1089,9 @@ class LinearTrackManager {
         const isSelectedFeature =
           renderStyle === "FEATURE" &&
           this.matchesSelectedFeature(track.trackId, bin);
+        const featureLane = featurePacking.lanes.get(bin) ?? 0;
+        const packedStart = laneInnerStart + crossSpan * Math.min(featureLane, shownFeatureLanes - 1) / shownFeatureLanes;
+        const packedEnd = laneInnerStart + crossSpan * (Math.min(featureLane, shownFeatureLanes - 1) + 1) / shownFeatureLanes;
 
         if (orientation === "horizontal") {
           const x0ByPx = Math.floor(viewport.pxToScreen(startPx));
@@ -1044,6 +1104,11 @@ class LinearTrackManager {
           if (x1 <= x0 || x1ByPx === x0ByPx) {
             continue;
           }
+          if (renderStyle === "FEATURE" && densityDifference && featureLane >= summaryLane) {
+            densityDifference[x0] += Math.max(1, bin.count ?? 1);
+            densityDifference[Math.min(densityDifference.length - 1, x1)] -= Math.max(1, bin.count ?? 1);
+            continue;
+          }
           if (renderStyle === "SIGNAL") {
             const normalizedValue = scaleTransform.normalize(bin.value ?? 0);
             const barHeight = (laneInnerEnd - laneInnerStart) * normalizedValue;
@@ -1054,8 +1119,8 @@ class LinearTrackManager {
               ctx,
               bin,
               viewport,
-              laneInnerStart,
-              laneInnerEnd,
+              packedStart,
+              packedEnd,
               canvas.width,
               x0,
               x1,
@@ -1073,6 +1138,11 @@ class LinearTrackManager {
           if (y1 <= y0 || y1ByPx === y0ByPx) {
             continue;
           }
+          if (renderStyle === "FEATURE" && densityDifference && featureLane >= summaryLane) {
+            densityDifference[y0] += Math.max(1, bin.count ?? 1);
+            densityDifference[Math.min(densityDifference.length - 1, y1)] -= Math.max(1, bin.count ?? 1);
+            continue;
+          }
           if (renderStyle === "SIGNAL") {
             const normalizedValue = scaleTransform.normalize(bin.value ?? 0);
             const barWidth = (laneInnerEnd - laneInnerStart) * normalizedValue;
@@ -1083,13 +1153,28 @@ class LinearTrackManager {
               ctx,
               bin,
               viewport,
-              laneInnerStart,
-              laneInnerEnd,
+              packedStart,
+              packedEnd,
               canvas.height,
               y0,
               y1,
               isSelectedFeature
             );
+          }
+        }
+      }
+      if (densityDifference && summaryLane >= 0) {
+        const summaryStart = laneInnerStart + crossSpan * summaryLane / shownFeatureLanes;
+        const summaryEnd = laneInnerStart + crossSpan * (summaryLane + 1) / shownFeatureLanes;
+        let density = 0, runStart = 0, runDensity = 0;
+        for (let pixel = 0; pixel < densityDifference.length; pixel++) {
+          density += densityDifference[pixel];
+          if (density !== runDensity) {
+            if (runDensity > 0) {
+              if (orientation === "horizontal") this.drawHorizontalFeatureDensityBin(ctx, summaryStart, summaryEnd, runStart, pixel, runDensity);
+              else this.drawVerticalFeatureDensityBin(ctx, summaryStart, summaryEnd, runStart, pixel, runDensity);
+            }
+            runStart = pixel; runDensity = density;
           }
         }
       }
@@ -1444,6 +1529,15 @@ class LinearTrackManager {
       );
       ctx.restore();
     }
+    if (bin.attributes?.disruptedMatch === "true") {
+      ctx.save();
+      ctx.strokeStyle = "rgba(245, 124, 0, 0.98)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 2]);
+      ctx.strokeRect(x0 + 0.5, laneInnerStart + 0.5,
+        Math.max(1, x1 - x0 - 1), Math.max(1, laneInnerEnd - laneInnerStart - 1));
+      ctx.restore();
+    }
   }
 
   private drawVerticalFeatureBin(
@@ -1557,6 +1651,15 @@ class LinearTrackManager {
         Math.max(1, laneInnerEnd - laneInnerStart - 1),
         Math.max(1, y1 - y0 - 1)
       );
+      ctx.restore();
+    }
+    if (bin.attributes?.disruptedMatch === "true") {
+      ctx.save();
+      ctx.strokeStyle = "rgba(245, 124, 0, 0.98)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 2]);
+      ctx.strokeRect(laneInnerStart + 0.5, y0 + 0.5,
+        Math.max(1, laneInnerEnd - laneInnerStart - 1), Math.max(1, y1 - y0 - 1));
       ctx.restore();
     }
   }
@@ -1688,6 +1791,13 @@ class LinearTrackManager {
       (bin.strand !== "+" && bin.strand !== "-") &&
       (!bin.blocks || bin.blocks.length === 0)
     );
+  }
+
+  private bedRgbToCss(value?: string): string | undefined {
+    if (!value) return undefined;
+    const channels = value.split(",").map(part => Number(part.trim()));
+    if (channels.length !== 3 || channels.some(channel => !Number.isInteger(channel) || channel < 0 || channel > 255)) return undefined;
+    return `rgb(${channels[0]}, ${channels[1]}, ${channels[2]})`;
   }
 
   private drawHorizontalFeatureDensityBin(

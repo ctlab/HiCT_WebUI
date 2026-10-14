@@ -939,15 +939,17 @@ class RequestManager {
   public async setRenderPipelineConfig(
     config: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    return this.sendRequest(new SetRenderPipelineRequest(config)).then(
-      (response) => response.data as Record<string, unknown>
-    );
+    const response = await this.sendRequest(new SetRenderPipelineRequest(config));
+    if (typeof window !== "undefined")
+      window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
+    return response.data as Record<string, unknown>;
   }
 
   public async resetRenderPipelineConfig(): Promise<Record<string, unknown>> {
-    return this.sendRequest(new ResetRenderPipelineRequest()).then(
-      (response) => response.data as Record<string, unknown>
-    );
+    const response = await this.sendRequest(new ResetRenderPipelineRequest());
+    if (typeof window !== "undefined")
+      window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
+    return response.data as Record<string, unknown>;
   }
 
   public async listFASTAFiles(): Promise<string[]> {

@@ -33,9 +33,18 @@
               <div class="col-sm-6"><label for="moddotplot-k" class="form-label">k-mer length</label><input id="moddotplot-k" v-model.number="k" type="number" min="1" max="65535" step="1" class="form-control" required /></div>
               <div class="col-sm-6"><label for="moddotplot-sketch" class="form-label">Target sketch size</label><input id="moddotplot-sketch" v-model.number="sketchSize" type="number" min="1" max="1000000" step="1" class="form-control" required /></div>
               <div class="col-sm-6"><label for="moddotplot-delta" class="form-label">Neighbor expansion (fraction of window)</label><input id="moddotplot-delta" v-model.number="delta" type="number" min="0" max="1" step="0.1" class="form-control" required /></div>
+              <div class="col-sm-6"><label for="moddotplot-threads" class="form-label">Worker threads</label><input id="moddotplot-threads" v-model.number="threads" type="number" min="-1" max="256" step="1" class="form-control" required /><small class="form-text">-1 uses all allocated logical CPUs; 0 chooses automatically; 1 is single-threaded.</small></div>
             </div>
             <div v-else class="row g-3">
-              <div class="col-sm-6" v-for="option in alignmentOptions" :key="option.key"><label :for="'dotplot-' + option.key" class="form-label">{{ option.label }}</label><input :id="'dotplot-' + option.key" v-model.number="alignmentSettings[option.key]" type="number" :min="1" :max="option.max" step="1" class="form-control" required /></div>
+              <div class="col-sm-6" v-for="option in alignmentOptions" :key="option.key"><label :for="'dotplot-' + option.key" class="form-label">{{ option.label }}</label><input :id="'dotplot-' + option.key" v-model.number="alignmentSettings[option.key]" type="number" :min="option.min ?? 1" :max="option.max" step="1" class="form-control" required /><small v-if="option.key === 'threads'" class="form-text">-1 uses all allocated CPUs; 0 chooses automatically.</small></div>
+            </div>
+            <div class="form-check mt-3">
+              <input id="analysis-save-data" v-model="saveReusable" type="checkbox" class="form-check-input" />
+              <label for="analysis-save-data" class="form-check-label">Save a reusable copy under DATA_DIR</label>
+            </div>
+            <div v-if="saveReusable" class="row g-3 mt-0">
+              <div class="col-sm-9"><label for="analysis-output" class="form-label">Output path</label><input id="analysis-output" v-model.trim="outputFilename" class="form-control" required :placeholder="defaultOutputFilename" /><small class="form-text">Relative to DATA_DIR; parent folders are created.</small></div>
+              <div class="col-sm-3 form-check align-self-end pb-2"><input id="analysis-overwrite" v-model="overwrite" type="checkbox" class="form-check-input" /><label for="analysis-overwrite" class="form-check-label">Overwrite</label></div>
             </div>
             <label class="form-check mt-3"><input v-model="mergeCompatible" type="checkbox" class="form-check-input" />Accumulate compatible regions; replace scores within this rectangle</label>
             <p class="small">Different settings create a separate overlay. After a successful update, the superseded matrix is removed once detached. Logs and provenance are retained. Cancellation or failure retains the previous matrix.</p>
@@ -59,7 +68,7 @@
             <p>The current secondary layer is retained until you confirm. Missing areas may show only the background.</p>
             <button type="button" class="btn btn-outline-warning" :disabled="busy" @click="displaySavedResult(true)">Attach despite differences</button>
           </div>
-          <div v-if="job" class="mt-3" role="status" aria-live="polite"><span v-if="busy" class="spinner-border spinner-border-sm me-2"></span>{{ job.status }}</div>
+          <div v-if="job" class="mt-3" role="status" aria-live="polite"><span v-if="busy" class="spinner-border spinner-border-sm me-2"></span>{{ job.status }}<span v-if="job.effectiveThreads"> · {{ job.effectiveThreads }} worker{{ job.effectiveThreads === 1 ? '' : 's' }}</span></div>
           <pre v-if="job?.logs.length" class="analysis-logs" aria-label="ModDotPlot log">{{ job.logs.join('\n') }}</pre>
         </div>
         <footer class="modal-footer">
@@ -88,11 +97,11 @@ const props = defineProps<{ mapManager: ContactMapManager; initialSelection?: bo
 const alignment = props.kind === "dotplot";
 const kind = alignment ? "dotplot" : "moddotplot";
 const title = alignment ? "Generate dotplot from active assembly" : "Generate ModDotPlot";
-const alignmentSettings = ref({ k: 15, window: 10, chainScore: 40, sampleBp: 100, minAlignmentLength: 100, threads: 4 });
-const alignmentOptions: {key: keyof typeof alignmentSettings.value; label: string; max: number}[] = [
+const alignmentSettings = ref({ k: 15, window: 10, chainScore: 40, sampleBp: 100, minAlignmentLength: 100, threads: -1 });
+const alignmentOptions: {key: keyof typeof alignmentSettings.value; label: string; min?: number; max: number}[] = [
   {key:"k", label:"Minimizer k", max:28}, {key:"window",label:"Minimizer window",max:255},
   {key:"chainScore",label:"Minimum chain score",max:1000000}, {key:"sampleBp",label:"Sample every (bp)",max:1000000},
-  {key:"minAlignmentLength",label:"Minimum alignment length (bp)",max:100000000}, {key:"threads",label:"Alignment threads",max:256},
+  {key:"minAlignmentLength",label:"Minimum alignment length (bp)",max:100000000}, {key:"threads",label:"Alignment threads",min:-1,max:256},
 ];
 const emit = defineEmits<{ (e: "dismissed"): void }>();
 const api = props.mapManager.networkManager.requestManager, notifications = useNotificationCenterStore();
@@ -108,6 +117,10 @@ const availableResolutions = [...view.resolutions].sort((a, b) => a - b);
 const resolutions = ref([view.currentViewState.resolutionDesciptor.bpResolution]);
 const scope = ref(props.initialSelection && selection ? "selection" : "assembly");
 const identity = ref(80), k = ref(21), sketchSize = ref(1000), delta = ref(0.5);
+const uiSettings = useUiSettingsStore();
+const threads = ref(uiSettings.modDotPlotThreads);
+const saveReusable = ref(false), overwrite = ref(false), outputFilename = ref("");
+const defaultOutputFilename = `sequence-analysis/${kind}.hict.hdf5`;
 const mergeCompatible = ref(true), displayMode = ref<"overlay" | "below" | "none">("below"), submitting = ref(false), error = ref("");
 const job = ref<SequenceAnalysisJob | null>(null);
 const displaying = ref(false);
@@ -121,12 +134,14 @@ async function start() {
   submitting.value = true; error.value = ""; pendingCompatibility.value = null; openingResult = false; session = api.history.applied?.session;
   try {
     job.value = (await api.sendRequest(new SequenceAnalysisRequest(`/sequence/${kind}/jobs`, {
-      gapLengthBp: useUiSettingsStore().sequenceGapLengthBp,
+      gapLengthBp: uiSettings.sequenceGapLengthBp,
       scope: scope.value, region: scope.value === "selection" ? selection : undefined,
-      resolutions: resolutions.value, identity: identity.value, k: k.value, sketchSize: sketchSize.value,
-      delta: delta.value, mergeCompatible: mergeCompatible.value,
-      ...(alignment ? alignmentSettings.value : {}),
+      resolutions: resolutions.value, mergeCompatible: mergeCompatible.value,
+      ...(alignment ? alignmentSettings.value : { identity: identity.value, k: k.value,
+        sketchSize: sketchSize.value, delta: delta.value, threads: threads.value }),
+      ...(saveReusable.value ? { outputFilename: outputFilename.value || defaultOutputFilename, overwrite: overwrite.value } : {}),
     }))).data;
+    if (!alignment) uiSettings.modDotPlotThreads = threads.value;
     notifications.add("info", `${title} submitted. The captured assembly is used throughout the calculation.`);
     timer = window.setTimeout(poll, 300);
   } catch (failure) { error.value = extractErrorMessage(failure); }

@@ -58,6 +58,19 @@
                 <div class="col-sm-6"><label class="form-label">Maximum subject records per query<input v-model.number="maxTargets" type="number" min="1" max="1000000" step="1" required class="form-control" /></label></div>
                 <small class="form-text">Uses blastn-short if any query is shorter than 50 bases, otherwise blastn. Low-complexity masking is off. Separate gap-free scaffold segments are searched as independent subjects; the target limit can omit weaker matches.</small>
               </template>
+              <div class="col-sm-6">
+                <label for="search-forward-color" class="form-label">Forward strand color</label>
+                <input id="search-forward-color" v-model="forwardColor" type="color" class="form-control form-control-color" />
+              </div>
+              <div class="col-sm-6">
+                <label for="search-reverse-color" class="form-label">Reverse strand color</label>
+                <input id="search-reverse-color" v-model="reverseColor" type="color" class="form-control form-control-color" />
+              </div>
+            </div>
+            <div class="form-check mt-3"><input id="search-save-data" v-model="saveReusable" type="checkbox" class="form-check-input" /><label for="search-save-data" class="form-check-label">Save reusable BED under DATA_DIR</label></div>
+            <div v-if="saveReusable" class="row g-3 mt-0">
+              <div class="col-sm-9"><label for="search-output" class="form-label">BED output path</label><input id="search-output" v-model.trim="outputFilename" class="form-control" required placeholder="sequence-analysis/search-results.bed" /><small class="form-text">Relative to DATA_DIR; parent folders are created.</small></div>
+              <div class="col-sm-3 form-check align-self-end pb-2"><input id="search-overwrite" v-model="overwrite" type="checkbox" class="form-check-input" /><label for="search-overwrite" class="form-check-label">Overwrite</label></div>
             </div>
           </fieldset>
           <div v-if="job" class="mt-3" role="status" aria-live="polite">
@@ -101,6 +114,9 @@ const scope = ref<"assembly" | "selection">(props.initialSelection && selection 
 const bothStrands = ref(true), degenerate = ref(false), mismatches = ref(1);
 const mode = ref<"exact" | "substitutions" | "blast">("exact");
 const evalue = ref(10), identity = ref(70), coverage = ref(50), maxTargets = ref(500);
+const uiSettings = useUiSettingsStore();
+const forwardColor = ref(uiSettings.sequenceForwardColor), reverseColor = ref(uiSettings.sequenceReverseColor);
+const saveReusable = ref(false), overwrite = ref(false), outputFilename = ref("");
 const readiness = useSequenceReadiness(manager);
 const blastAvailable = computed(() => readiness.available("blastn"));
 const blastUnavailableReason = computed(() => readiness.reason("blastn"));
@@ -120,13 +136,17 @@ async function start() {
   error.value = ""; submitting.value = true; openingResult = false;
   sourceSession = manager.history.applied?.session;
   const settings: SequenceSearchSettings = {
-    gapLengthBp: useUiSettingsStore().sequenceGapLengthBp,
+    gapLengthBp: uiSettings.sequenceGapLengthBp,
     queries: queries.value, scope: scope.value, mode: mode.value,
     bothStrands: bothStrands.value, degenerate: mode.value === "exact" && degenerate.value,
     mismatches: mismatches.value, threads: -1,
     evalue: evalue.value, identity: identity.value, coverage: coverage.value, maxTargets: maxTargets.value,
+    forwardColor: forwardColor.value, reverseColor: reverseColor.value,
+    ...(saveReusable.value ? { outputFilename: outputFilename.value || "sequence-analysis/search-results.bed", overwrite: overwrite.value } : {}),
     ...(scope.value === "selection" && selection ? selection : {}),
   };
+  uiSettings.sequenceForwardColor = forwardColor.value;
+  uiSettings.sequenceReverseColor = reverseColor.value;
   try {
     job.value = (await manager.sendRequest(new SequenceAnalysisRequest("/sequence/search/jobs", settings))).data;
     notifications.add("info", `Sequence search submitted (${scope.value}, ${bothStrands.value ? 'both strands' : 'forward strand'}, ${mode.value}).`);

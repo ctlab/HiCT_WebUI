@@ -27,6 +27,12 @@ const persistRef = <T>(key: string, value: { value: T }) => {
 export const useUiSettingsStore = defineStore("uiSettings", () => {
   const sequenceGapLengthBp = ref(readStored("hict.sequence.gapLengthBp", 1000));
   persistRef("hict.sequence.gapLengthBp", sequenceGapLengthBp);
+  const sequenceForwardColor = ref(readStored("hict.sequence.forwardColor", "#dc2626"));
+  const sequenceReverseColor = ref(readStored("hict.sequence.reverseColor", "#2563eb"));
+  const modDotPlotThreads = ref(readStored("hict.sequence.modDotPlotThreads", -1));
+  persistRef("hict.sequence.forwardColor", sequenceForwardColor);
+  persistRef("hict.sequence.reverseColor", sequenceReverseColor);
+  persistRef("hict.sequence.modDotPlotThreads", modDotPlotThreads);
   const customZoomSliderEnabled = ref(false);
   const binaryTileTransportEnabled = ref(false);
   const rulerCoordinateMode = ref<"global" | "contig" | "scaffold">(
@@ -81,6 +87,9 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
 
   return {
     sequenceGapLengthBp,
+    sequenceForwardColor,
+    sequenceReverseColor,
+    modDotPlotThreads,
     customZoomSliderEnabled,
     binaryTileTransportEnabled,
     rulerCoordinateMode,

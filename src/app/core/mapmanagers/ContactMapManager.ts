@@ -50,6 +50,10 @@ import { useStyleStore } from "@/app/stores/styleStore";
 
 class ContactMapManager {
   private disposed = false;
+
+  public get isDisposed(): boolean {
+    return this.disposed;
+  }
   public readonly map: Map;
   public readonly contigDimensionHolder: ContigDimensionHolder;
   public readonly scaffoldHolder: ScaffoldHolder;

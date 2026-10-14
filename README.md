@@ -16,6 +16,11 @@ Visit [releases page](https://github.com/ctlab/HiCT_WebUI/releases) to obtain bi
 * Export of FASTA for assembly;
 * Export FASTA context of assembly for the selected region;
 * Import of AGP assembly description files (only without split contigs).
+* PRIMARY/SECONDARY and rendering-branch contrast controls with reusable visualization presets;
+* ModDotPlot and alignment-dotplot generation with allocation-aware worker controls and optional reusable outputs under the server data directory;
+* Exact, substitution and BLAST sequence search as strand-colored BED tracks;
+* Packed overlapping BED/GFF/GTF features with bounded density fallback;
+* Independent horizontal and vertical track hiding, restored from Tracks and Layers and retained in sessions.
 
 ## Operation instructions:
 Make [HiCT server](https://github.com/ctlab/HiCT_Server) available at `http://localhost:5000` either by starting it locally or by using port forwarding from remote server. Put HiCT files into server's data directory (you can convert Coolers using [HiCT_Utils](https://github.com/ctlab/HiCT_Utils)). Start Electron-based Web UI by unzipping binary distribution and launching `.exe` file (Windows) or by launching `.AppImage` file (linux, make sure you've made `chmod +x` for it). 
