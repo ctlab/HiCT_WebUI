@@ -1,7 +1,7 @@
 {
   "exportType": "visualizationOptions",
   "data": {
-    "savedLocations": [
+    "savedVisualizationPresets": [
       {
         "option_id": 0,
         "options": {
@@ -487,6 +487,33 @@
         "signalThresholds": {
           "lowerSignalBound": 0,
           "upperSignalBound": 1
+        }
+      },
+      {
+        "option_id": 11,
+        "name": "ModDotPlot: Hi-C above, identity below",
+        "action": {
+          "type": "sequence-overlay",
+          "mode": "below",
+          "kind": "moddotplot"
+        }
+      },
+      {
+        "option_id": 12,
+        "name": "ModDotPlot: multicolor overlay",
+        "action": {
+          "type": "sequence-overlay",
+          "mode": "overlay",
+          "kind": "moddotplot"
+        }
+      },
+      {
+        "option_id": 13,
+        "name": "ModDotPlot palette: active source",
+        "action": {
+          "type": "active-source-palette",
+          "startColor": "#313695",
+          "endColor": "#a50026"
         }
       }
     ]

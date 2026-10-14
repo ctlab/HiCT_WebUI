@@ -8,11 +8,12 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run build:web && npm run electron:compile",
-    "build:web": "run-p type-check test:api-dto test:map-resolution test:map-viewport test:feature-packing build-only",
+    "build:web": "run-p type-check test:api-dto test:map-resolution test:map-viewport test:feature-packing test:visualization-presets build-only",
     "test:api-dto": "node scripts/check-api-dto-regressions.mjs",
     "test:map-resolution": "node scripts/check-map-resolution-model.mjs",
     "test:map-viewport": "node scripts/check-map-viewport.mjs",
     "test:feature-packing": "node scripts/check-feature-packing.mjs",
+    "test:visualization-presets": "node scripts/check-visualization-presets.mjs",
     "preview": "vite preview --port 4173",
     "build-only": "vite build",
     "type-check": "vue-tsc --noEmit",

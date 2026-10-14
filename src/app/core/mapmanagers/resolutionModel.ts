@@ -177,6 +177,20 @@ export function getFinestVisibleResolutionDescriptor(
     : primaryDescriptor;
 }
 
+export function getSecondaryResolutionForDisplay(
+  primaryDescriptor: LayerResolutionDescriptor,
+  secondaryDescriptor: LayerResolutionDescriptor | undefined,
+  exactResolutionOnly: boolean
+): LayerResolutionDescriptor | undefined {
+  if (
+    exactResolutionOnly &&
+    secondaryDescriptor?.bpResolution !== primaryDescriptor.bpResolution
+  ) {
+    return undefined;
+  }
+  return secondaryDescriptor;
+}
+
 export function getResolutionDescriptorForViewResolution(
   set: SourceResolutionDescriptorSet,
   viewResolution: number

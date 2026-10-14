@@ -14,7 +14,9 @@ export async function displaySequenceOverlay(manager: ContactMapManager,
   if (!status.attached) throw new Error("Attach a generated overlay first using Tools → Generate ModDotPlot or View → Tracks and layers.");
   if (kind === "moddotplot" && status.sequenceAnalysis?.kind !== "moddotplot")
     throw new Error("This preset requires a ModDotPlot identity overlay. Alignment dotplots contain counts, not identity percentages.");
-  manager.viewAndLayersManager.setSecondaryResolutionModel(status.compatibility);
+  manager.viewAndLayersManager.setSecondaryResolutionModel(status.compatibility, {
+    exactResolutionOnly: Boolean(status.sequenceAnalysis),
+  });
   const options = useVisualizationOptionsStore();
   if (options.signalDisplayMode !== "OBSERVED") {
     options.signalDisplayMode = "OBSERVED";

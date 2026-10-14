@@ -68,6 +68,7 @@ import {
   calculateMaximumScaledImageSize as calculateMaximumScaledImageSizeForSets,
   getNavigationResolutionModel as getNavigationResolutionModelForSets,
   getFinestVisibleResolutionDescriptor,
+  getSecondaryResolutionForDisplay,
   getResolutionDescriptorForViewResolution,
   getVectorResolutionTuples as getVectorResolutionTuplesForSets,
   type LayerResolutionBorders,
@@ -185,6 +186,7 @@ class HiCViewAndLayersManager {
   public tileSize: number;
   private primaryResolutionSet: SourceResolutionDescriptorSet;
   private secondaryResolutionSet?: SourceResolutionDescriptorSet;
+  private secondaryExactResolutionOnly = false;
   private wheelZoomInteraction?: ContigMouseWheelZoom;
   private coordinateBaseBp: number;
   private enabledBpResolutions?: Set<number>;
@@ -1495,28 +1497,47 @@ class HiCViewAndLayersManager {
     secondary?: LayerResolutionDescriptor;
   } {
     const viewResolution = this.view.getResolution() ?? 0;
+    const primary = this.viewResolutionToSourceResolutionDescriptor(
+      "PRIMARY",
+      viewResolution
+    );
+    const secondary = this.secondaryResolutionSet
+      ? this.viewResolutionToSourceResolutionDescriptor(
+          "SECONDARY",
+          viewResolution
+        )
+      : undefined;
     return {
-      primary: this.viewResolutionToSourceResolutionDescriptor(
-        "PRIMARY",
-        viewResolution
+      primary,
+      secondary: getSecondaryResolutionForDisplay(
+        primary,
+        secondary,
+        this.secondaryExactResolutionOnly
       ),
-      secondary: this.secondaryResolutionSet
-        ? this.viewResolutionToSourceResolutionDescriptor(
-            "SECONDARY",
-            viewResolution
-          )
-        : undefined,
     };
   }
 
   public getFinestVisibleSourceResolutionDescriptor(
     viewResolution: number = this.view.getResolution() ?? 0
   ): LayerResolutionDescriptor {
-    return getFinestVisibleResolutionDescriptor(
+    const descriptor = getFinestVisibleResolutionDescriptor(
       this.primaryResolutionSet,
       this.secondaryResolutionSet,
       viewResolution
     );
+    if (
+      this.secondaryExactResolutionOnly &&
+      descriptor.sourceName === "SECONDARY"
+    ) {
+      const primary = this.viewResolutionToSourceResolutionDescriptor(
+        "PRIMARY",
+        viewResolution
+      );
+      return descriptor.bpResolution === primary.bpResolution
+        ? descriptor
+        : primary;
+    }
+    return descriptor;
   }
 
   public getDimensionHolderForSource(
@@ -1557,7 +1578,8 @@ class HiCViewAndLayersManager {
   }
 
   public setSecondaryResolutionModel(
-    compatibility?: SecondarySourceCompatibility
+    compatibility?: SecondarySourceCompatibility,
+    options?: { exactResolutionOnly?: boolean }
   ): void {
     const previousBaseBp = this.coordinateBaseBp;
     const nextBaseBp =
@@ -1578,6 +1600,9 @@ class HiCViewAndLayersManager {
 
     this.removeSourceHiCDataLayers("SECONDARY");
     this.secondaryResolutionSet = undefined;
+    this.secondaryExactResolutionOnly = Boolean(
+      compatibility && options?.exactResolutionOnly
+    );
     if (baseChanged) {
       this.removeSourceHiCDataLayers("PRIMARY");
       this.coordinateBaseBp = nextBaseBp;

@@ -1063,12 +1063,14 @@ const currentStep = computed(() => visibleSteps.value[currentStepIndex.value]);
 const requiresSecondarySource = computed(() => viewMode.value !== "single");
 
 const availablePresets = computed(() =>
-  mergeVisualizationPresets(sessionStore.savedVisualizationPresets).map((preset) => ({
-    id: `${preset.origin}:${preset.option_id}`,
-    label:
-      preset.origin === "session" ? `${preset.name} (session)` : preset.name,
-    preset,
-  }))
+  mergeVisualizationPresets(sessionStore.savedVisualizationPresets)
+    .filter((preset) => preset.action === undefined)
+    .map((preset) => ({
+      id: `${preset.origin}:${preset.option_id}`,
+      label:
+        preset.origin === "session" ? `${preset.name} (session)` : preset.name,
+      preset,
+    }))
 );
 
 const presetById = (id: string): VisualizationPresetRecord | null => {
@@ -1983,7 +1985,8 @@ const refreshSecondaryResolutionModelFromBackend = async (
     return;
   }
   mapManager.viewAndLayersManager.setSecondaryResolutionModel(
-    secondaryStatus.compatibility
+    secondaryStatus.compatibility,
+    { exactResolutionOnly: Boolean(secondaryStatus.sequenceAnalysis) }
   );
 };
 
@@ -2066,7 +2069,8 @@ const runWizard = async (): Promise<void> => {
           );
       }
       mapManager.viewAndLayersManager.setSecondaryResolutionModel(
-        secondaryStatus.compatibility
+        secondaryStatus.compatibility,
+        { exactResolutionOnly: Boolean(secondaryStatus.sequenceAnalysis) }
       );
       secondaryStatus.warnings.forEach((warning) =>
         toast.message(warning, {

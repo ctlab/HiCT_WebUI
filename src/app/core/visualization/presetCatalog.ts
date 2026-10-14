@@ -21,7 +21,10 @@
 
 import type { TrackStylePresetBundle } from "@/app/core/tracks/TrackStylePreset";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
-import type { SessionVisualizationPreset } from "@/app/stores/sessionStore";
+import type {
+  SessionVisualizationPreset,
+  VisualizationPresetAction,
+} from "@/app/stores/sessionStore";
 import VisualizationOptions from "./VisualizationOptions";
 import Colormap from "./colormap/Colormap";
 import SimpleLinearGradient from "./colormap/SimpleLinearGradient";
@@ -37,6 +40,7 @@ export type VisualizationPresetRecord = {
     lowerSignalBound?: number;
     upperSignalBound?: number;
   };
+  action?: VisualizationPresetAction;
   origin: "builtin" | "session";
 };
 
@@ -54,6 +58,29 @@ const safeColor = (value: unknown, fallback: string): ColorTranslator => {
   } catch {
     return new ColorTranslator(fallback, { legacyCSS: true });
   }
+};
+
+export const parseVisualizationPresetAction = (
+  raw: unknown
+): VisualizationPresetAction | undefined => {
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+  if (
+    raw.type === "sequence-overlay" &&
+    (raw.mode === "overlay" || raw.mode === "below") &&
+    (raw.kind === "moddotplot" || raw.kind === "dotplot")
+  ) {
+    return { type: raw.type, mode: raw.mode, kind: raw.kind };
+  }
+  if (raw.type === "active-source-palette") {
+    return {
+      type: raw.type,
+      startColor: safeColor(raw.startColor, "#313695").RGBA,
+      endColor: safeColor(raw.endColor, "#a50026").RGBA,
+    };
+  }
+  return undefined;
 };
 
 export const serializeVisualizationOptions = (
@@ -203,6 +230,7 @@ const toPresetRecord = (
       lowerSignalBound?: number;
       upperSignalBound?: number;
     };
+    action?: unknown;
   },
   optionId: number,
   origin: "builtin" | "session"
@@ -212,6 +240,7 @@ const toPresetRecord = (
   options: deserializeVisualizationOptions(option.options ?? {}),
   backgroundColor: option.backgroundColor ?? "rgba(255,255,255,1.0)",
   trackStyles: option.trackStyles,
+  action: parseVisualizationPresetAction(option.action),
   signalThresholds:
     option.signalThresholds ??
     getVisualizationSignalThresholds(
@@ -230,6 +259,7 @@ const extractBuiltinPresetRows = (): Array<{
     lowerSignalBound?: number;
     upperSignalBound?: number;
   };
+  action?: unknown;
 }> => {
   const data = isRecord(defaultOptions)
     ? ((defaultOptions as UnknownRecord).data as UnknownRecord | undefined)
@@ -252,6 +282,7 @@ const extractBuiltinPresetRows = (): Array<{
       lowerSignalBound?: number;
       upperSignalBound?: number;
     };
+    action?: unknown;
   }>;
 };
 
@@ -273,6 +304,7 @@ export const mergeVisualizationPresets = (
         backgroundColor: preset.backgroundColor,
         trackStyles: preset.trackStyles as TrackStylePresetBundle | undefined,
         signalThresholds: preset.signalThresholds,
+        action: preset.action,
       },
       index,
       "session"

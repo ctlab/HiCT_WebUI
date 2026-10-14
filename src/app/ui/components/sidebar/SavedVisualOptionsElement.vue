@@ -75,6 +75,10 @@ import { useStyleStore } from "@/app/stores/styleStore";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import { ColorTranslator } from "colortranslator";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import type { VisualizationPresetAction } from "@/app/stores/sessionStore";
+import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
+import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
 
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
@@ -84,7 +88,11 @@ const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const matrixViewStore = useMatrixViewStore();
-const { presentationMode, activeVisualizationSource } = storeToRefs(matrixViewStore);
+const {
+  presentationMode,
+  activeVisualizationSource,
+  activeVisualizationTargetId,
+} = storeToRefs(matrixViewStore);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -94,6 +102,7 @@ const props = defineProps<{
   backgroundColor: ColorTranslator;
   trackStyles?: TrackStylePresetBundle;
   signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
+  action?: VisualizationPresetAction;
 }>();
 
 const emits = defineEmits<{
@@ -110,8 +119,57 @@ const showRenameButton = ref(false);
 
 const name = ref(props.name);
 
-function setOptionsPreset() {
+async function setOptionsPreset() {
   if (props.mapManager) {
+    if (props.action?.type === "sequence-overlay") {
+      try {
+        await displaySequenceOverlay(
+          props.mapManager,
+          props.action.mode,
+          props.action.kind
+        );
+      } catch (error) {
+        useNotificationCenterStore().add("warning", extractErrorMessage(error));
+      }
+      return;
+    }
+    if (props.action?.type === "active-source-palette") {
+      const current = visualizationOptionsStore.asVisualizationOptions();
+      const active =
+        current.colormap instanceof SimpleLinearGradient
+          ? current.colormap
+          : null;
+      visualizationOptionsStore.setVisualizationOptions(
+        new VisualizationOptions(
+          current.preLogBase,
+          current.postLogBase,
+          current.applyCoolerWeights,
+          current.resolutionScaling,
+          current.resolutionLinearScaling,
+          new SimpleLinearGradient(
+            new ColorTranslator(props.action.startColor, { legacyCSS: true }),
+            new ColorTranslator(props.action.endColor, { legacyCSS: true }),
+            active?.minSignal ?? 0,
+            active?.maxSignal ?? 1
+          ),
+          current.autoThresholdEnabled,
+          current.autoThresholdQuantile,
+          current.signalDisplayMode,
+          current.coolerWeightsNaNPolicy,
+          current.coolerWeightsHaveNaNs,
+          current.coolerWeightsNaNCount
+        )
+      );
+      try {
+        await props.mapManager.visualizationManager.applyVisualizationSettingsForSourceAndReload(
+          activeVisualizationSource.value,
+          activeVisualizationTargetId.value
+        );
+      } catch (error) {
+        useNotificationCenterStore().add("warning", extractErrorMessage(error));
+      }
+      return;
+    }
     // console.log("Setting preset: ", props.visualizationOptions);
     visualizationOptionsStore.setVisualizationOptions(
       props.visualizationOptions
@@ -140,7 +198,8 @@ function setOptionsPreset() {
       presentationMode.value === "single" ? undefined : activeVisualizationSource.value;
     const action = source
       ? props.mapManager?.visualizationManager.applyVisualizationSettingsForSourceAndReload(
-          source
+          source,
+          activeVisualizationTargetId.value
         )
       : props.mapManager
         ? props.mapManager.visualizationManager

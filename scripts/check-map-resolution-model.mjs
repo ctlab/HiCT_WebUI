@@ -35,6 +35,7 @@ const {
   getFinestVisibleResolutionDescriptor,
   getNavigationResolutionModel,
   getResolutionDescriptorForViewResolution,
+  getSecondaryResolutionForDisplay,
   getVectorResolutionTuples,
 } = sandbox.module.exports;
 
@@ -213,6 +214,52 @@ assert.equal(
   calculateMaximumScaledImageSize(primaryCoarse, secondaryFine),
   1200000,
   "projection extent must cover the largest scaled source pyramid"
+);
+
+const oneResolutionOverlay = buildSourceResolutionDescriptorSet(
+  "SECONDARY",
+  [5000],
+  [60000],
+  250
+);
+const primaryAt5000 = getResolutionDescriptorForViewResolution(
+  primaryCoarse,
+  30
+);
+const primaryAt10000 = getResolutionDescriptorForViewResolution(
+  primaryCoarse,
+  50
+);
+const overlayAtAnyZoom = getResolutionDescriptorForViewResolution(
+  oneResolutionOverlay,
+  50
+);
+assert.equal(
+  getSecondaryResolutionForDisplay(
+    primaryAt5000,
+    overlayAtAnyZoom,
+    true
+  )?.bpResolution,
+  5000,
+  "a sequence overlay must remain visible at its generated resolution"
+);
+assert.equal(
+  getSecondaryResolutionForDisplay(
+    primaryAt10000,
+    overlayAtAnyZoom,
+    true
+  ),
+  undefined,
+  "a sequence overlay must be transparent when the active primary resolution is unavailable"
+);
+assert.equal(
+  getSecondaryResolutionForDisplay(
+    primaryAt10000,
+    overlayAtAnyZoom,
+    false
+  )?.bpResolution,
+  5000,
+  "ordinary dual-map overlays must retain independent-pyramid behavior"
 );
 
 const primaryFine = buildSourceResolutionDescriptorSet(

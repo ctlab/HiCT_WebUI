@@ -58,15 +58,6 @@
     </button>
   </div>
   <div class="saved-visualization-options-div">
-    <div v-if="props.mapManager" class="builtin-preset" aria-label="Built-in visualization preset">
-      <span>ModDotPlot: Hi-C above, identity below</span><button type="button" class="btn btn-sm btn-outline-primary" title="Load visualization preset" aria-label="Load ModDotPlot Hi-C above identity below preset" @click="applyModDotPlot('below')"><i class="bi bi-brush"></i></button>
-    </div>
-    <div v-if="props.mapManager" class="builtin-preset" aria-label="Built-in visualization preset">
-      <span>ModDotPlot: multicolor overlay</span><button type="button" class="btn btn-sm btn-outline-primary" title="Load visualization preset" aria-label="Load ModDotPlot multicolor overlay preset" @click="applyModDotPlot('overlay')"><i class="bi bi-brush"></i></button>
-    </div>
-    <div v-if="props.mapManager" class="builtin-preset" aria-label="Built-in visualization preset">
-      <span>ModDotPlot palette: active source</span><button type="button" class="btn btn-sm btn-outline-primary" title="Load visualization preset" aria-label="Load ModDotPlot palette for active source" @click="applyModDotPalette"><i class="bi bi-brush"></i></button>
-    </div>
     <div v-for="[id, opt] of savedOptions" :key="id">
       <SavedVisualOptionsElement
         v-if="opt"
@@ -76,6 +67,7 @@
         :background-color="opt.backgroundColor"
         :track-styles="opt.trackStyles"
         :signal-thresholds="opt.signalThresholds"
+        :action="opt.action"
         :name="opt.name"
         @remove="removeOption"
         @rename="renameOption"
@@ -87,9 +79,6 @@
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { Ref, ref, shallowRef, triggerRef, onMounted, watch } from "vue";
-import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
-import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
-import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
 import SavedVisualOptionsElement from "./SavedVisualOptionsElement.vue";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
@@ -102,26 +91,8 @@ import { useStyleStore } from "@/app/stores/styleStore";
 import { ColorTranslator } from "colortranslator";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
 import { useSessionStore } from "@/app/stores/sessionStore";
-import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
-async function applyModDotPlot(mode: "overlay" | "below") {
-  if (!props.mapManager) return;
-  try { await displaySequenceOverlay(props.mapManager, mode, "moddotplot"); }
-  catch (error) { useNotificationCenterStore().add("warning", extractErrorMessage(error)); }
-}
-async function applyModDotPalette() {
-  if (!props.mapManager) return;
-  const current = visualizationOptionsStore.asVisualizationOptions();
-  const active = current.colormap instanceof SimpleLinearGradient ? current.colormap : null;
-  visualizationOptionsStore.setVisualizationOptions(new VisualizationOptions(
-    current.preLogBase, current.postLogBase, current.applyCoolerWeights,
-    current.resolutionScaling, current.resolutionLinearScaling,
-    new SimpleLinearGradient(new ColorTranslator("#313695", { legacyCSS: true }),
-      new ColorTranslator("#a50026", { legacyCSS: true }), active?.minSignal ?? 0, active?.maxSignal ?? 1),
-    current.autoThresholdEnabled, current.autoThresholdQuantile, current.signalDisplayMode,
-    current.coolerWeightsNaNPolicy, current.coolerWeightsHaveNaNs, current.coolerWeightsNaNCount));
-  await props.mapManager.visualizationManager.applyVisualizationSettingsForSourceAndReload(
-    activeVisualizationSource.value, activeVisualizationTargetId.value);
-}
+import type { VisualizationPresetAction } from "@/app/stores/sessionStore";
+import { parseVisualizationPresetAction } from "@/app/core/visualization/presetCatalog";
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
   visualizationOptionsStore
@@ -135,8 +106,6 @@ onMounted(() => {
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const sessionStore = useSessionStore();
-const matrixViewStore = useMatrixViewStore();
-const { activeVisualizationSource, activeVisualizationTargetId } = storeToRefs(matrixViewStore);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -155,6 +124,7 @@ const savedOptions = shallowRef(
         lowerSignalBound?: number;
         upperSignalBound?: number;
       };
+      action?: VisualizationPresetAction;
     }
   >()
 );
@@ -227,6 +197,7 @@ function exportOptions() {
     name: string;
     trackStyles?: TrackStylePresetBundle;
     signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
+    action?: VisualizationPresetAction;
   }[] = [];
 
   savedOptions.value.forEach((v) =>
@@ -237,6 +208,7 @@ function exportOptions() {
       backgroundColor: colorToString(v.backgroundColor),
       trackStyles: v.trackStyles,
       signalThresholds: v.signalThresholds ?? extractSignalThresholds(v.options),
+      action: v.action,
     })
   );
 
@@ -268,6 +240,7 @@ function syncSessionStore() {
     name: string;
     trackStyles?: TrackStylePresetBundle;
     signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
+    action?: VisualizationPresetAction;
   }[] = [];
   savedOptions.value.forEach((v) =>
     values.push({
@@ -277,6 +250,7 @@ function syncSessionStore() {
       backgroundColor: colorToString(v.backgroundColor),
       trackStyles: v.trackStyles,
       signalThresholds: extractSignalThresholds(v.options),
+      action: v.action,
     })
   );
   sessionStore.setSavedVisualizationPresets(values);
@@ -298,6 +272,7 @@ function loadFromSessionStore() {
       backgroundColor,
       trackStyles: opt.trackStyles as TrackStylePresetBundle | undefined,
       signalThresholds: opt.signalThresholds,
+      action: opt.action,
     });
   });
   triggerSavedOptions();
@@ -314,6 +289,7 @@ watch(
       name: v.name,
       trackStyles: v.trackStyles,
       signalThresholds: v.signalThresholds ?? extractSignalThresholds(v.options),
+      action: v.action,
     }));
     const next = sessionStore.savedVisualizationPresets;
     if (JSON.stringify(current) !== JSON.stringify(next)) {
@@ -355,7 +331,7 @@ function importJSONResults(jsonPreResult: unknown) {
       filename: string;
       savedLocations?: {
         option_id: number;
-        options: Record<string, unknown>;
+        options?: Record<string, unknown>;
         backgroundColor?: string | ColorTranslator;
         name?: string;
         trackStyles?: TrackStylePresetBundle;
@@ -363,10 +339,11 @@ function importJSONResults(jsonPreResult: unknown) {
           lowerSignalBound?: number;
           upperSignalBound?: number;
         };
+        action?: unknown;
       }[];
       savedVisualizationPresets?: {
         option_id: number;
-        options: Record<string, unknown>;
+        options?: Record<string, unknown>;
         backgroundColor?: string | ColorTranslator;
         name?: string;
         trackStyles?: TrackStylePresetBundle;
@@ -374,6 +351,7 @@ function importJSONResults(jsonPreResult: unknown) {
           lowerSignalBound?: number;
           upperSignalBound?: number;
         };
+        action?: unknown;
       }[];
     };
   };
@@ -411,11 +389,12 @@ function importJSONResults(jsonPreResult: unknown) {
 
     const newOption = {
       option_id: newId,
-      options: deserializeVisualizationOptions(option.options),
+      options: deserializeVisualizationOptions(option.options ?? {}),
       backgroundColor,
       trackStyles: option.trackStyles,
       name: option.name ?? `Imported preset ${newId}`,
       signalThresholds: option.signalThresholds,
+      action: parseVisualizationPresetAction(option.action),
     };
     const key = buildPresetKey(newOption);
     if (!existingKeys.has(key)) {
@@ -574,6 +553,7 @@ function buildPresetKey(opt: {
   backgroundColor: ColorTranslator;
   trackStyles?: TrackStylePresetBundle;
   signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
+  action?: VisualizationPresetAction;
 }): string {
   const payload = {
     name: opt.name,
@@ -581,6 +561,7 @@ function buildPresetKey(opt: {
     backgroundColor: colorToString(opt.backgroundColor),
     trackStyles: opt.trackStyles ?? null,
     signalThresholds: opt.signalThresholds ?? null,
+    action: opt.action ?? null,
   };
   return stableStringify(payload);
 }
@@ -694,10 +675,6 @@ function importOptionsFromFile() {
   /* padding-top: 15px; */
   padding-right: 10px;
 }
-
-.builtin-preset { display: flex; width: calc(100% - 8px); min-height: 32px; margin-left: 8px; border: 1px solid #dee2e6; }
-.builtin-preset span { flex: 1; min-width: 0; padding: 0.32rem 0.45rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.builtin-preset .btn { flex: 0 0 34px; border-top: 0; border-right: 0; border-bottom: 0; border-radius: 0; }
 
 .saved-visual-title {
   font-size: 0.92rem;

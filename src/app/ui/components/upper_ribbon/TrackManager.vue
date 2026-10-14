@@ -706,7 +706,8 @@ const refreshSecondaryStatus = async () => {
     secondaryStatus.value =
       await props.mapManager.networkManager.requestManager.getSecondarySourceStatus();
     props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
-      secondaryStatus.value.attached ? secondaryStatus.value.compatibility : undefined
+      secondaryStatus.value.attached ? secondaryStatus.value.compatibility : undefined,
+      { exactResolutionOnly: Boolean(secondaryStatus.value.sequenceAnalysis) }
     );
     if (!secondaryStatus.value.attached) {
       selectedSecondaryFile.value = "";
@@ -886,7 +887,8 @@ const onAttachSecondarySource = async () => {
     pendingSecondaryProbe.value = null;
     secondaryStatus.value = response;
     props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
-      response.compatibility
+      response.compatibility,
+      { exactResolutionOnly: Boolean(response.sequenceAnalysis) }
     );
     await props.mapManager.reloadTilesFromBackend();
     await refreshSecondaryStatus();
@@ -914,7 +916,8 @@ const onProceedSecondaryWithMismatch = async () => {
         true
       );
     props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
-      secondaryStatus.value.compatibility
+      secondaryStatus.value.compatibility,
+      { exactResolutionOnly: Boolean(secondaryStatus.value.sequenceAnalysis) }
     );
     selectedSecondaryFile.value = filenameToOpen;
     await props.mapManager.reloadTilesFromBackend();
