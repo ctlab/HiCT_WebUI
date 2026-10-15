@@ -45,6 +45,8 @@ type ViewportPixelBounds = {
 
 type PipelineSignalProfile = {
   source: SourceName;
+  signalDivisor: number;
+  hasExplicitSignalDivisor: boolean;
   preLogBase: number | null;
   postLogBase: number | null;
   applyCoolerWeights: boolean;
@@ -253,6 +255,8 @@ const extractPipelineSignalProfile = (
         String(expression.source ?? "PRIMARY").trim().toUpperCase() === "SECONDARY"
           ? "SECONDARY"
           : "PRIMARY",
+      signalDivisor: 1,
+      hasExplicitSignalDivisor: false,
       preLogBase: null,
       postLogBase: null,
       applyCoolerWeights: false,
@@ -279,6 +283,26 @@ const extractPipelineSignalProfile = (
       };
     }
     return null;
+  }
+  if (type === "binary" && String(expression.op ?? "").trim().toUpperCase() === "DIV") {
+    const inputProfile = extractPipelineSignalProfile(expression.left);
+    const divisorNode = expression.right;
+    if (
+      !inputProfile ||
+      !isRecord(divisorNode) ||
+      String(divisorNode.type ?? "").trim().toLowerCase() !== "constant"
+    ) {
+      return null;
+    }
+    const divisor = Number(divisorNode.value);
+    if (!Number.isFinite(divisor) || divisor <= 0) {
+      return null;
+    }
+    return {
+      ...inputProfile,
+      signalDivisor: inputProfile.signalDivisor * divisor,
+      hasExplicitSignalDivisor: true,
+    };
   }
   if (type === "binary" && String(expression.op ?? "").trim().toUpperCase() === "MUL") {
     const left = expression.left;
@@ -359,6 +383,7 @@ export type VisualizationPipelineTarget = {
   source: SourceName;
   label: string;
   mode: string;
+  displayUnit: "PERCENT" | null;
 };
 
 const collectConfigColormapTargets = (config: Record<string, unknown>): ColormapTarget[] => {
@@ -421,7 +446,9 @@ const replaceColormapNode = (
   target.node.mode = previousMode === "MODDOTPLOT_IDENTITY"
     ? "MODDOTPLOT_IDENTITY"
     : replacement.mode ?? "LINEAR";
-  target.node.input = cloneRecord(replacement.input);
+  target.node.input = previousMode === "MODDOTPLOT_IDENTITY"
+    ? target.node.input
+    : cloneRecord(replacement.input);
   target.node.startColor = preserveMinimumAlpha(
     replacement.startColor,
     previousStartColor
@@ -539,6 +566,7 @@ const transformSignalsForProfile = (
     if (!Number.isFinite(signal) || signal < 0) {
       signal = 0;
     }
+    signal /= profile.signalDivisor;
     if (preLogDivisor != null && preLogDivisor > 0) {
       signal = Math.log1p(signal) / preLogDivisor;
     }
@@ -708,7 +736,11 @@ class VisualizationManager {
       const mode = String(target.node.mode ?? "LINEAR");
       return { id: target.id, source: target.profile.source,
         label: `${half} ${mode === "MODDOTPLOT_IDENTITY" ? "identity" : "colormap"} ${index}`,
-        mode };
+        mode,
+        displayUnit:
+          mode === "MODDOTPLOT_IDENTITY" && target.profile.hasExplicitSignalDivisor
+            ? "PERCENT"
+            : null };
     });
   }
 

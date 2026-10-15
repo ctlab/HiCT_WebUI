@@ -25,7 +25,9 @@
   </div>
   <div class="w-100">
     <div class="threshold-compact-card">
-      <div class="threshold-card-title">Range / Thresholds</div>
+      <div class="threshold-card-title">
+        Range / Thresholds{{ percentageSignalScale ? " (%)" : "" }}
+      </div>
       <div class="threshold-input-grid">
         <label class="threshold-field">
           <span>Lower</span>
@@ -222,6 +224,7 @@ const sliderBoundsManual: Ref<boolean> = ref(false);
 const sliderLogScale: Ref<boolean> = ref(false);
 const syncingFromColormap: Ref<boolean> = ref(false);
 const liveApplyReady: Ref<boolean> = ref(false);
+const percentageSignalScale: Ref<boolean> = ref(false);
 let registeredRangeMapManager: ContactMapManager | undefined;
 let liveApplyTimer: number | undefined;
 let optionsHydrationGeneration = 0;
@@ -454,6 +457,7 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
   if (!manager || manager.isDisposed) return;
   const generation = ++optionsHydrationGeneration;
   liveApplyReady.value = false;
+  percentageSignalScale.value = false;
   if (liveApplyTimer !== undefined) {
     window.clearTimeout(liveApplyTimer);
     liveApplyTimer = undefined;
@@ -464,6 +468,16 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
       activeVisualizationTargetId.value
     );
     if (generation !== optionsHydrationGeneration || manager.isDisposed) return;
+    const targets = await manager.visualizationManager.getVisualizationPipelineTargets();
+    if (generation !== optionsHydrationGeneration || manager.isDisposed) return;
+    const sourceTargets = targets.filter(
+      (target) => target.source === activeVisualizationSource.value
+    );
+    const activeTarget =
+      sourceTargets.find(
+        (target) => target.id === activeVisualizationTargetId.value
+      ) ?? sourceTargets[0];
+    percentageSignalScale.value = activeTarget?.displayUnit === "PERCENT";
     updateFromStore();
     await new Promise<void>((resolve) => queueMicrotask(resolve));
     if (generation === optionsHydrationGeneration && !manager.isDisposed) {
@@ -485,6 +499,15 @@ function registerSignalRangeCallback(mapManager: ContactMapManager): void {
 }
 
 function updateSignalRange(ranges: CurrentSignalRangeResponse): void {
+  if (percentageSignalScale.value) {
+    signalMin.value = 0;
+    signalMax.value = 100;
+    if (!sliderBoundsManual.value) {
+      sliderLowerLimit.value = 0;
+      sliderUpperLimit.value = 100;
+    }
+    return;
+  }
   const nextMin = finiteOr(ranges.globalMinSignal, signalMin.value);
   const nextMax = finiteOr(ranges.globalMaxSignal, signalMax.value);
   if (nextMax > nextMin) {
@@ -510,6 +533,13 @@ function updateFromStore() {
         }
         if (toColor.value?.RGBA !== grad.endColorRGBA?.RGBA) {
           toColor.value = grad.endColorRGBA;
+        }
+        if (percentageSignalScale.value) {
+          signalMin.value = 0;
+          signalMax.value = 100;
+          sliderBoundsManual.value = false;
+          sliderLowerLimit.value = 0;
+          sliderUpperLimit.value = 100;
         }
         queueMicrotask(() => {
           syncingFromColormap.value = false;

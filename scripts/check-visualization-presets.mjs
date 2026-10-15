@@ -28,6 +28,10 @@ const tileSourcePath = path.join(
   repoRoot,
   "src/app/core/VersionedXYZSource.ts"
 );
+const modDotPlotPath = path.join(
+  repoRoot,
+  "src/app/core/sequence/modDotPlot.ts"
+);
 
 const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
 const presets = catalog?.data?.savedVisualizationPresets;
@@ -82,17 +86,38 @@ assert.match(
   /loadGeneration === this\.visualizationOptionsLoadGeneration/,
   "source-specific option hydration must reject out-of-order responses"
 );
+assert.match(
+  visualizationManagerSource,
+  /previousMode === "MODDOTPLOT_IDENTITY"[\s\S]*\? target\.node\.input[\s\S]*: cloneRecord\(replacement\.input\)/,
+  "identity threshold edits must preserve the fixed-point-to-percentage pipeline node"
+);
 const settingsEditorSource = fs.readFileSync(settingsEditorPath, "utf8");
 assert.match(
   settingsEditorSource,
   /generation !== optionsHydrationGeneration/,
   "the live editor must not apply a stale source hydration"
 );
+assert.match(
+  settingsEditorSource,
+  /if \(percentageSignalScale\.value\) \{[\s\S]*sliderLowerLimit\.value = 0;[\s\S]*sliderUpperLimit\.value = 100;/,
+  "percentage identity targets must keep the threshold slider on a 0-100 scale"
+);
 const tileSource = fs.readFileSync(tileSourcePath, "utf8");
 assert.match(
   tileSource,
   /invalidatePendingTileRequests\(\)/,
   "visualization reloads must invalidate in-flight tile requests"
+);
+const modDotPlotSource = fs.readFileSync(modDotPlotPath, "utf8");
+assert.match(
+  modDotPlotSource,
+  /op:\s*"DIV"[\s\S]*right:\s*\{\s*type:\s*"constant"[\s\S]*value:\s*scale/,
+  "ModDotPlot presets must convert stored fixed-point scores to percentages"
+);
+assert.match(
+  modDotPlotSource,
+  /minSignal:\s*minimumIdentity,\s*maxSignal:\s*100/,
+  "ModDotPlot colormap thresholds must use the familiar 0-100 percentage scale"
 );
 
 const componentSource = fs.readFileSync(componentPath, "utf8");

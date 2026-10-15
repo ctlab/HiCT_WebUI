@@ -1178,9 +1178,9 @@ const ensureNodeTypesRegistered = (): void => {
       this.title = "ModDotPlot Identity";
       this.addInput("identity score", "number");
       this.addOutput("color", "color");
-      this.properties = { mode: "MODDOTPLOT_IDENTITY", startColor: "#31369500", endColor: "#a50026ff", minSignal: 800000, maxSignal: 1000000 };
+      this.properties = { mode: "MODDOTPLOT_IDENTITY", startColor: "#31369500", endColor: "#a50026ff", minSignal: 80, maxSignal: 100 };
       this.addWidget("number", "minimum identity (%)", 80, (value: unknown) => {
-        this.properties.minSignal = Math.min(100, Math.max(0, toFiniteNumber(value, 80))) * toFiniteNumber(this.properties.maxSignal, 1000000) / 100;
+        this.properties.minSignal = Math.min(100, Math.max(0, toFiniteNumber(value, 80))) * toFiniteNumber(this.properties.maxSignal, 100) / 100;
       }, { min: 0, max: 100, precision: 1 });
       this.size = [270, 115];
     }
@@ -1417,7 +1417,7 @@ const syncNodeWidgetsFromProperties = (node: LGraphNode): void => {
     return;
   }
   if (node.type === MODDOTPLOT_COLORMAP_NODE_TYPE) {
-    setWidgetValue(node, "minimum identity (%)", 100 * toFiniteNumber(node.properties?.minSignal, 800000) / toFiniteNumber(node.properties?.maxSignal, 1000000));
+    setWidgetValue(node, "minimum identity (%)", 100 * toFiniteNumber(node.properties?.minSignal, 80) / toFiniteNumber(node.properties?.maxSignal, 100));
     return;
   }
   if (node.type === COLORMAP_NODE_TYPE) {
