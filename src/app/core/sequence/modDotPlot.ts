@@ -7,7 +7,9 @@ export function modDotPlotLowerExpression(minimumIdentity: number, scale = 10000
     type: "colormap" as const,
     mode: "MODDOTPLOT_IDENTITY" as const,
     input: { type: "source" as const, source: "SECONDARY" as const },
-    startColor: "#313695ff", endColor: "#a50026ff",
+    // Keep missing and below-threshold cells transparent even if an older
+    // server falls back from the identity colormap to linear interpolation.
+    startColor: "#31369500", endColor: "#a50026ff",
     minSignal: minimumIdentity * scale, maxSignal: 100 * scale,
   };
 }

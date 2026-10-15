@@ -512,7 +512,7 @@
         "name": "ModDotPlot palette: active source",
         "action": {
           "type": "active-source-palette",
-          "startColor": "#313695",
+          "startColor": "#31369500",
           "endColor": "#a50026"
         }
       }

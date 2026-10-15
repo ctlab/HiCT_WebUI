@@ -38,6 +38,8 @@ import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinear
 class VersionedXYZContactMapSource extends XYZ {
   protected sourceVersion: number;
   private tileGeneration = 0;
+  private tileRequestEpoch = 0;
+  private readonly activeTileRequests = new Set<XMLHttpRequest>();
 
   constructor(
     protected readonly layersManager: HiCViewAndLayersManager,
@@ -76,10 +78,19 @@ class VersionedXYZContactMapSource extends XYZ {
     src: string
   ): void {
     const xhr = new XMLHttpRequest();
+    const requestEpoch = this.tileRequestEpoch;
+    let settled = false;
+    const settle = (callback: () => void): void => {
+      if (settled) return;
+      settled = true;
+      this.activeTileRequests.delete(xhr);
+      if (requestEpoch !== this.tileRequestEpoch) return;
+      callback();
+    };
     xhr.responseType = "json";
-    xhr.addEventListener("loadend", () => {
+    xhr.addEventListener("load", () => settle(() => {
       const data = xhr.response;
-      if (data && data.image) {
+      if (xhr.status >= 200 && xhr.status < 300 && data && data.image) {
         image.src = data.image;
         // ImageTile's load/decode listener marks it ready. Receiving JSON is
         // not image completion; rendercomplete must wait for decoded pixels.
@@ -101,8 +112,8 @@ class VersionedXYZContactMapSource extends XYZ {
           tile.setState(TileState.ERROR);
         }
       }
-    });
-    xhr.addEventListener("error", () => {
+    }));
+    xhr.addEventListener("error", () => settle(() => {
       // @ts-expect-error If tile was loaded successfully at least once, last response is saved
       if (tile.lastResponse) {
         // @ts-expect-error If tile was loaded successfully at least once, last response is saved
@@ -110,8 +121,10 @@ class VersionedXYZContactMapSource extends XYZ {
       } else {
         tile.setState(TileState.ERROR);
       }
-    });
+    }));
+    xhr.addEventListener("abort", () => settle(() => undefined));
     xhr.open("GET", src);
+    this.activeTileRequests.add(xhr);
     xhr.send();
   }
 
@@ -141,8 +154,17 @@ class VersionedXYZContactMapSource extends XYZ {
       format: "BINARY_FLOAT32",
     };
     const xhr = new XMLHttpRequest();
+    const requestEpoch = this.tileRequestEpoch;
+    let settled = false;
+    const settle = (callback: () => void): void => {
+      if (settled) return;
+      settled = true;
+      this.activeTileRequests.delete(xhr);
+      if (requestEpoch !== this.tileRequestEpoch) return;
+      callback();
+    };
     xhr.responseType = "arraybuffer";
-    xhr.addEventListener("loadend", () => {
+    xhr.addEventListener("load", () => settle(() => {
       const rows = Number.parseInt(xhr.getResponseHeader("x-hict-rows") || "0", 10);
       const cols = Number.parseInt(xhr.getResponseHeader("x-hict-cols") || "0", 10);
       const response = xhr.response;
@@ -167,8 +189,8 @@ class VersionedXYZContactMapSource extends XYZ {
       } else {
         tile.setState(TileState.ERROR);
       }
-    });
-    xhr.addEventListener("error", () => {
+    }));
+    xhr.addEventListener("error", () => settle(() => {
       // @ts-expect-error dynamic cache field
       if (tile.lastResponse?.image) {
         // @ts-expect-error dynamic cache field
@@ -176,9 +198,11 @@ class VersionedXYZContactMapSource extends XYZ {
       } else {
         tile.setState(TileState.ERROR);
       }
-    });
+    }));
+    xhr.addEventListener("abort", () => settle(() => undefined));
     xhr.open("POST", `${host}/matrix/query`);
     xhr.setRequestHeader("Content-Type", "application/json");
+    this.activeTileRequests.add(xhr);
     xhr.send(JSON.stringify(payload));
   }
 
@@ -317,6 +341,7 @@ class VersionedXYZContactMapSource extends XYZ {
    * do_reload
    */
   public do_reload() {
+    this.invalidatePendingTileRequests();
     this.tileCache.expireCache({});
     this.tileCache.clear();
     ++this.sourceVersion;
@@ -325,11 +350,19 @@ class VersionedXYZContactMapSource extends XYZ {
   }
 
   public reloadWithVersion(version: number) {
+    this.invalidatePendingTileRequests();
     this.tileCache.expireCache({});
     this.tileCache.clear();
     this.sourceVersion = Math.max(0, Math.floor(version));
     this.installTileUrlFunction();
     this.changed();
+  }
+
+  private invalidatePendingTileRequests(): void {
+    ++this.tileRequestEpoch;
+    const requests = [...this.activeTileRequests];
+    this.activeTileRequests.clear();
+    requests.forEach((request) => request.abort());
   }
 
   private installTileUrlFunction(): void {

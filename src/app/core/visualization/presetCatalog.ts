@@ -76,7 +76,7 @@ export const parseVisualizationPresetAction = (
   if (raw.type === "active-source-palette") {
     return {
       type: raw.type,
-      startColor: safeColor(raw.startColor, "#313695").RGBA,
+      startColor: safeColor(raw.startColor, "#31369500").RGBA,
       endColor: safeColor(raw.endColor, "#a50026").RGBA,
     };
   }

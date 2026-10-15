@@ -224,6 +224,7 @@ const syncingFromColormap: Ref<boolean> = ref(false);
 const liveApplyReady: Ref<boolean> = ref(false);
 let registeredRangeMapManager: ContactMapManager | undefined;
 let liveApplyTimer: number | undefined;
+let optionsHydrationGeneration = 0;
 const LOG_SLIDER_FLOOR_FRACTION = 1e-10;
 const LIVE_APPLY_DELAY_MS = 350;
 
@@ -415,14 +416,8 @@ watch(
   () => props.mapManager,
   () => {
     if (props.mapManager && !props.mapManager.isDisposed) {
-      liveApplyReady.value = false;
       registerSignalRangeCallback(props.mapManager);
-      props.mapManager.visualizationManager
-        .loadVisualizationOptionsForSource(activeSourceForOptions(), activeVisualizationTargetId.value)
-        .then(() => {
-          updateFromStore();
-          liveApplyReady.value = true;
-        });
+      void hydrateOptionsForActiveSource();
     }
   }
 );
@@ -431,14 +426,7 @@ watch(
   () => [activeVisualizationSource.value, presentationMode.value, activeVisualizationTargetId.value] as const,
   () => {
     if (!props.mapManager || props.mapManager.isDisposed) return;
-    liveApplyReady.value = false;
-    props.mapManager.visualizationManager
-      .loadVisualizationOptionsForSource(activeSourceForOptions(), activeVisualizationTargetId.value)
-      .then(() => {
-        updateFromStore();
-        liveApplyReady.value = true;
-      })
-      .catch(() => undefined);
+    void hydrateOptionsForActiveSource();
   }
 );
 
@@ -447,12 +435,7 @@ onMounted(() => {
     registerSignalRangeCallback(props.mapManager);
   }
   if (!props.mapManager || props.mapManager.isDisposed) return;
-  props.mapManager.visualizationManager
-    .loadVisualizationOptionsForSource(activeSourceForOptions(), activeVisualizationTargetId.value)
-    .then(() => {
-      updateFromStore();
-      liveApplyReady.value = true;
-    });
+  void hydrateOptionsForActiveSource();
 });
 
 onBeforeUnmount(() => {
@@ -464,6 +447,33 @@ onBeforeUnmount(() => {
 
 function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
   return activeVisualizationSource.value;
+}
+
+async function hydrateOptionsForActiveSource(): Promise<void> {
+  const manager = props.mapManager;
+  if (!manager || manager.isDisposed) return;
+  const generation = ++optionsHydrationGeneration;
+  liveApplyReady.value = false;
+  if (liveApplyTimer !== undefined) {
+    window.clearTimeout(liveApplyTimer);
+    liveApplyTimer = undefined;
+  }
+  try {
+    await manager.visualizationManager.loadVisualizationOptionsForSource(
+      activeSourceForOptions(),
+      activeVisualizationTargetId.value
+    );
+    if (generation !== optionsHydrationGeneration || manager.isDisposed) return;
+    updateFromStore();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    if (generation === optionsHydrationGeneration && !manager.isDisposed) {
+      liveApplyReady.value = true;
+    }
+  } catch {
+    if (generation === optionsHydrationGeneration) {
+      liveApplyReady.value = true;
+    }
+  }
 }
 
 function registerSignalRangeCallback(mapManager: ContactMapManager): void {

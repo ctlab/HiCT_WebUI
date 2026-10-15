@@ -16,6 +16,18 @@ const wizardPath = path.join(
   repoRoot,
   "src/app/ui/components/upper_ribbon/FileWizardModal.vue"
 );
+const visualizationManagerPath = path.join(
+  repoRoot,
+  "src/app/core/mapmanagers/VisualizationManager.ts"
+);
+const settingsEditorPath = path.join(
+  repoRoot,
+  "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue"
+);
+const tileSourcePath = path.join(
+  repoRoot,
+  "src/app/core/VersionedXYZSource.ts"
+);
 
 const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
 const presets = catalog?.data?.savedVisualizationPresets;
@@ -50,12 +62,37 @@ assert.deepEqual(
       name: "ModDotPlot palette: active source",
       action: {
         type: "active-source-palette",
-        startColor: "#313695",
+        startColor: "#31369500",
         endColor: "#a50026",
       },
     },
   ],
   "ModDotPlot actions must be normal catalog records"
+);
+
+assert.match(
+  actionPresets[2].action.startColor,
+  /00$/,
+  "the ModDotPlot palette must keep zero-valued cells transparent"
+);
+
+const visualizationManagerSource = fs.readFileSync(visualizationManagerPath, "utf8");
+assert.match(
+  visualizationManagerSource,
+  /loadGeneration === this\.visualizationOptionsLoadGeneration/,
+  "source-specific option hydration must reject out-of-order responses"
+);
+const settingsEditorSource = fs.readFileSync(settingsEditorPath, "utf8");
+assert.match(
+  settingsEditorSource,
+  /generation !== optionsHydrationGeneration/,
+  "the live editor must not apply a stale source hydration"
+);
+const tileSource = fs.readFileSync(tileSourcePath, "utf8");
+assert.match(
+  tileSource,
+  /invalidatePendingTileRequests\(\)/,
+  "visualization reloads must invalidate in-flight tile requests"
 );
 
 const componentSource = fs.readFileSync(componentPath, "utf8");

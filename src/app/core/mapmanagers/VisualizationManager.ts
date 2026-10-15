@@ -567,6 +567,7 @@ class VisualizationManager {
   private expectedProfileSyncInFlight = false;
   private pendingExpectedProfileRefresh = false;
   private readonly pendingOptionRequests = new Set<Promise<unknown>>();
+  private visualizationOptionsLoadGeneration = 0;
 
   public constructor(public readonly mapManager: ContactMapManager) {
     this.moveEndListener = this.mapManager.getMap().on("moveend", () => {
@@ -596,13 +597,17 @@ class VisualizationManager {
   }
 
   public fetchVisualizationOptions(): Promise<VisualizationOptions> {
+    const loadGeneration = ++this.visualizationOptionsLoadGeneration;
     if (this.mapManager.isDisposed) {
       return Promise.resolve(this.visualizationOptionsStore.asVisualizationOptions());
     }
     const request = this.mapManager.networkManager.requestManager
       .getVisualizationOptions(new GetVisualizationOptionsRequest({}))
       .then((options) => {
-        if (!this.mapManager.isDisposed) {
+        if (
+          !this.mapManager.isDisposed &&
+          loadGeneration === this.visualizationOptionsLoadGeneration
+        ) {
           this.visualizationOptionsStore.setVisualizationOptions(options);
           window.dispatchEvent(
             new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
@@ -619,18 +624,52 @@ class VisualizationManager {
     source?: SourceName,
     targetId?: string | null
   ): Promise<VisualizationOptions> {
+    const loadGeneration = ++this.visualizationOptionsLoadGeneration;
     if (this.mapManager.isDisposed) {
       return this.visualizationOptionsStore.asVisualizationOptions();
     }
     if (!source) {
-      return this.fetchVisualizationOptions();
+      const options = await this.mapManager.networkManager.requestManager
+        .getVisualizationOptions(new GetVisualizationOptionsRequest({}));
+      if (
+        !this.mapManager.isDisposed &&
+        loadGeneration === this.visualizationOptionsLoadGeneration
+      ) {
+        this.visualizationOptionsStore.setVisualizationOptions(options);
+        window.dispatchEvent(
+          new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
+            detail: { source: "server_fetch", options },
+          })
+        );
+      }
+      return loadGeneration === this.visualizationOptionsLoadGeneration
+        ? options
+        : this.visualizationOptionsStore.asVisualizationOptions();
     }
     const pipelineConfig = await this.getActiveRenderPipelineConfig();
-    if (this.mapManager.isDisposed) {
+    if (
+      this.mapManager.isDisposed ||
+      loadGeneration !== this.visualizationOptionsLoadGeneration
+    ) {
       return this.visualizationOptionsStore.asVisualizationOptions();
     }
     if (!pipelineConfig) {
-      return this.fetchVisualizationOptions();
+      const options = await this.mapManager.networkManager.requestManager
+        .getVisualizationOptions(new GetVisualizationOptionsRequest({}));
+      if (
+        !this.mapManager.isDisposed &&
+        loadGeneration === this.visualizationOptionsLoadGeneration
+      ) {
+        this.visualizationOptionsStore.setVisualizationOptions(options);
+        window.dispatchEvent(
+          new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
+            detail: { source: "server_fetch", options },
+          })
+        );
+      }
+      return loadGeneration === this.visualizationOptionsLoadGeneration
+        ? options
+        : this.visualizationOptionsStore.asVisualizationOptions();
     }
     const targets = collectConfigColormapTargets(pipelineConfig);
     const topLayerSources = new Set<SourceName>();
@@ -646,13 +685,16 @@ class VisualizationManager {
       this.visualizationOptionsStore.asVisualizationOptions(),
       topLayerSources.has(source)
     );
-    this.visualizationOptionsStore.setVisualizationOptions(options);
-    window.dispatchEvent(
-      new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
-        detail: { source: "pipeline_source_fetch", options },
-      })
-    );
-    return options;
+    if (loadGeneration === this.visualizationOptionsLoadGeneration) {
+      this.visualizationOptionsStore.setVisualizationOptions(options);
+      window.dispatchEvent(
+        new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
+          detail: { source: "pipeline_source_fetch", options },
+        })
+      );
+      return options;
+    }
+    return this.visualizationOptionsStore.asVisualizationOptions();
   }
 
   public async getVisualizationPipelineTargets(): Promise<VisualizationPipelineTarget[]> {

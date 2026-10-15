@@ -1178,7 +1178,7 @@ const ensureNodeTypesRegistered = (): void => {
       this.title = "ModDotPlot Identity";
       this.addInput("identity score", "number");
       this.addOutput("color", "color");
-      this.properties = { mode: "MODDOTPLOT_IDENTITY", startColor: "#313695ff", endColor: "#a50026ff", minSignal: 800000, maxSignal: 1000000 };
+      this.properties = { mode: "MODDOTPLOT_IDENTITY", startColor: "#31369500", endColor: "#a50026ff", minSignal: 800000, maxSignal: 1000000 };
       this.addWidget("number", "minimum identity (%)", 80, (value: unknown) => {
         this.properties.minSignal = Math.min(100, Math.max(0, toFiniteNumber(value, 80))) * toFiniteNumber(this.properties.maxSignal, 1000000) / 100;
       }, { min: 0, max: 100, precision: 1 });
