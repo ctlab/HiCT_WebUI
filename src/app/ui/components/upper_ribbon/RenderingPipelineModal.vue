@@ -43,7 +43,7 @@
             </button>
             <button type="button" class="btn-close" @click="dismissModal"></button>
           </div>
-          <div v-if="!previewMode" class="modal-body">
+          <div v-show="!previewMode" class="modal-body">
             <div class="alert alert-warning py-2 mb-3">
               Normalization dropdown updates this pipeline, but pipeline edits are not fully back-synced to checkbox controls. Expected and O/E views fall back to the standard renderer because custom pipelines operate on per-pixel signals.
             </div>
@@ -97,7 +97,7 @@
               Loading pipeline configuration…
             </div>
           </div>
-          <div v-if="!previewMode" class="modal-footer">
+          <div v-show="!previewMode" class="modal-footer">
             <button class="btn btn-outline-danger me-auto" :disabled="saving" @click="resetConfig">
               Reset
             </button>
@@ -135,6 +135,7 @@
       </div>
     </div>
   </div>
+  <SignalHistogramModal v-if="histogramExpression && mapManager" :map-manager="mapManager" :expression="histogramExpression" @dismissed="histogramExpression = null" />
 </template>
 
 <script setup lang="ts">
@@ -142,8 +143,10 @@ import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager
 import { VisualizationManager } from "@/app/core/mapmanagers/VisualizationManager";
 import type { TrackSummaryResponse } from "@/app/core/net/api/response";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
+import SignalHistogramModal from "./SignalHistogramModal.vue";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { modDotPlotLowerExpression } from "@/app/core/sequence/modDotPlot";
+import { restorePipelineEditorGraph, pipelineExpressionSignature } from "@/app/core/visualization/pipelineEditorState";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -186,7 +189,7 @@ type PixelBlendMode =
 type PipelineExpression =
   | { type: "source"; source: SourceName }
   | { type: "track1d"; trackId: string; axis: TrackAxis }
-  | { type: "constant"; value: number }
+  | { type: "constant"; value: number; rangeSource?: SourceName; rangeOutput?: "selectedMin" | "selectedMax" }
   | { type: "dynamic"; field: DynamicField }
   | { type: "unary"; op: UnaryOp; input: PipelineExpression }
   | {
@@ -219,6 +222,8 @@ type PipelineExpression =
       endColor: string;
       minSignal: number;
       maxSignal: number;
+      min?: PipelineExpression;
+      max?: PipelineExpression;
     }
   | {
       type: ColorSpaceNodeType;
@@ -239,6 +244,8 @@ type PipelineExpression =
 const SOURCE_NODE_TYPE = "hict/source";
 const TRACK1D_NODE_TYPE = "hict/track1d";
 const CONSTANT_NODE_TYPE = "hict/constant";
+const RANGE_NODE_TYPE = "hict/signal_range";
+const HISTOGRAM_NODE_TYPE = "hict/histogram";
 const DYNAMIC_NODE_TYPE = "hict/dynamic";
 const UNARY_NODE_TYPE = "hict/unary";
 const LOG_NODE_TYPE = "hict/log";
@@ -295,11 +302,11 @@ const NODE_MENU_CATEGORY_ORDER = [
 ] as const;
 const NODE_MENU_NODE_TYPES_BY_CATEGORY: Record<(typeof NODE_MENU_CATEGORY_ORDER)[number], string[]> = {
   Sources: [SOURCE_NODE_TYPE, TRACK1D_NODE_TYPE, DYNAMIC_NODE_TYPE],
-  Constants: [CONSTANT_NODE_TYPE],
+  Constants: [CONSTANT_NODE_TYPE, RANGE_NODE_TYPE],
   Math: [UNARY_NODE_TYPE, LOG_NODE_TYPE, LOG_INPUT_NODE_TYPE, BINARY_NODE_TYPE, CLAMP_NODE_TYPE],
   Colormaps: [COLORMAP_NODE_TYPE, MODDOTPLOT_COLORMAP_NODE_TYPE, RGB_NODE_TYPE, HSL_NODE_TYPE, HSV_NODE_TYPE],
   Compositing: [PIXEL_BLEND_NODE_TYPE],
-  Outputs: [SINK_NODE_TYPE],
+  Outputs: [SINK_NODE_TYPE, HISTOGRAM_NODE_TYPE],
 };
 
 const RENDERING_PRESETS = [
@@ -332,6 +339,8 @@ const loading = ref(false);
 const saving = ref(false);
 const previewing = ref(false);
 const previewMode = ref(false);
+const histogramExpression = ref<Record<string, unknown> | null>(null);
+const rangeNodes = new Map<string, LGraphNode>();
 const selectedPresetId = ref<RenderingPresetId>("primary_only");
 const graphHost = ref<HTMLDivElement | null>(null);
 const graphCanvasRef = ref<HTMLCanvasElement | null>(null);
@@ -729,6 +738,8 @@ const parseExpression = (raw: unknown): PipelineExpression => {
     return {
       type: "constant",
       value: toFiniteNumber(node.value, 0),
+      ...(node.rangeSource ? { rangeSource: toSourceName(node.rangeSource),
+        rangeOutput: node.rangeOutput === "selectedMax" ? "selectedMax" as const : "selectedMin" as const } : {}),
     };
   }
   if (type === "dynamic") {
@@ -797,6 +808,8 @@ const parseExpression = (raw: unknown): PipelineExpression => {
       endColor: sanitizeColor(node.endColor, "#006000ff"),
       minSignal: toFiniteNumber(node.minSignal ?? 0, 0),
       maxSignal: toFiniteNumber(node.maxSignal ?? 1, 1),
+      ...(node.min ? { min: parseExpression(node.min) } : {}),
+      ...(node.max ? { max: parseExpression(node.max) } : {}),
     };
   }
   if (type === "rgb" || type === "hsl" || type === "hsv") {
@@ -1096,11 +1109,38 @@ const ensureNodeTypesRegistered = (): void => {
     }
   }
 
+  class RangeNode extends LGraphNode {
+    constructor() {
+      super(); this.title = "Signal range";
+      this.addOutput("selectedMin", "number"); this.addOutput("selectedMax", "number");
+      this.properties = { source: "PRIMARY", selectedMin: 0, selectedMax: 1 };
+      this.addWidget("combo", "source", "PRIMARY", (v: unknown) => { this.properties.source = toSourceName(v); }, { values: ["PRIMARY", "SECONDARY"] });
+      this.addWidget("number", "selectedMin", 0, (v: unknown) => { this.properties.selectedMin = toFiniteNumber(v, 0); });
+      this.addWidget("number", "selectedMax", 1, (v: unknown) => { this.properties.selectedMax = toFiniteNumber(v, 1); });
+      this.size = [240, 135];
+    }
+  }
+
+  class HistogramNode extends LGraphNode {
+    constructor() {
+      super(); this.title = "Histogram"; this.addInput("signal", "number");
+      this.addWidget("button", "Inspect distribution", "", () => {
+        if (!this.getInputNode(0)) { toast.error("Connect a numeric signal to the histogram first."); return; }
+        window.dispatchEvent(new CustomEvent("hict:pipeline-histogram", {
+          detail: { node: this.getInputNode(0), outputSlot: this.getInputLink(0)?.origin_slot ?? 0 },
+        }));
+      });
+      this.size = [240, 80];
+    }
+  }
+
   class ColormapNode extends LGraphNode {
     constructor() {
       super();
       this.title = "Linear Colormap";
       this.addInput("signal", "number");
+      this.addInput("minSignal", "number");
+      this.addInput("maxSignal", "number");
       this.addOutput("color", "color");
       this.properties = {
         mode: "LINEAR",
@@ -1145,13 +1185,13 @@ const ensureNodeTypesRegistered = (): void => {
       this.addWidget("number", "max", this.properties.maxSignal, (value: unknown) => {
         this.properties.maxSignal = toFiniteNumber(value, 1);
       });
-      this.size = [250, 188];
+      this.size = [250, 300];
     }
 
     onDrawForeground(context: CanvasRenderingContext2D): void {
       const start = sanitizeColor(this.properties.startColor, "#ffffff00");
       const end = sanitizeColor(this.properties.endColor, "#006000ff");
-      const rectY = 28;
+      const rectY = this.size[1] - 20;
       const rectW = 48;
       const rectH = 12;
       context.save();
@@ -1163,7 +1203,7 @@ const ensureNodeTypesRegistered = (): void => {
       context.fillRect(84, rectY, rectW, rectH);
       context.strokeStyle = "#d1d5db";
       context.strokeRect(84, rectY, rectW, rectH);
-      context.fillStyle = "#e5e7eb";
+      context.fillStyle = "#374151";
       context.font = "10px sans-serif";
       context.fillText("start", 17, rectY - 3);
       context.fillText("end", 85, rectY - 3);
@@ -1177,6 +1217,8 @@ const ensureNodeTypesRegistered = (): void => {
       super();
       this.title = "ModDotPlot Identity";
       this.addInput("identity score", "number");
+      this.addInput("minSignal", "number");
+      this.addInput("maxSignal", "number");
       this.addOutput("color", "color");
       this.properties = { mode: "MODDOTPLOT_IDENTITY", startColor: "#31369500", endColor: "#a50026ff", minSignal: 80, maxSignal: 100 };
       this.addWidget("number", "minimum identity (%)", 80, (value: unknown) => {
@@ -1297,6 +1339,8 @@ const ensureNodeTypesRegistered = (): void => {
     [Track1DNode, "1D track", "Sources"],
     [DynamicNode, "Dynamic", "Sources"],
     [ConstantNode, "Constant", "Constants"],
+    [RangeNode, "Signal range", "Constants"],
+    [HistogramNode, "Histogram", "Outputs"],
     [UnaryNode, "Unary", "Math"],
     [LogNode, "Log (base)", "Math"],
     [LogInputNode, "Log (base input)", "Math"],
@@ -1323,6 +1367,8 @@ const ensureNodeTypesRegistered = (): void => {
   if (!LiteGraph.registered_node_types[CONSTANT_NODE_TYPE]) {
     LiteGraph.registerNodeType(CONSTANT_NODE_TYPE, ConstantNode as unknown as { new (): LGraphNode });
   }
+  if (!LiteGraph.registered_node_types[RANGE_NODE_TYPE]) LiteGraph.registerNodeType(RANGE_NODE_TYPE, RangeNode as unknown as { new (): LGraphNode });
+  if (!LiteGraph.registered_node_types[HISTOGRAM_NODE_TYPE]) LiteGraph.registerNodeType(HISTOGRAM_NODE_TYPE, HistogramNode as unknown as { new (): LGraphNode });
   if (!LiteGraph.registered_node_types[DYNAMIC_NODE_TYPE]) {
     LiteGraph.registerNodeType(DYNAMIC_NODE_TYPE, DynamicNode as unknown as { new (): LGraphNode });
   }
@@ -1378,6 +1424,12 @@ const setWidgetValue = (node: LGraphNode, widgetName: string, value: unknown): v
 };
 
 const syncNodeWidgetsFromProperties = (node: LGraphNode): void => {
+  if (node.type === RANGE_NODE_TYPE) {
+    setWidgetValue(node, "source", toSourceName(node.properties?.source));
+    setWidgetValue(node, "selectedMin", toFiniteNumber(node.properties?.selectedMin, 0));
+    setWidgetValue(node, "selectedMax", toFiniteNumber(node.properties?.selectedMax, 1));
+    return;
+  }
   if (node.type === SOURCE_NODE_TYPE) {
     setWidgetValue(node, "source", toSourceName(node.properties?.source));
     return;
@@ -1651,7 +1703,7 @@ const estimateNodeHeight = (expression: PipelineExpression): number => {
     case "clamp":
       return 104;
     case "colormap":
-      return 148;
+      return 480;
     case "rgb":
     case "hsl":
     case "hsv":
@@ -1881,7 +1933,7 @@ const positionExpressionTree = (
     return null;
   }
   const nodeHeight = Number(node.size?.[1] ?? estimateNodeHeight(expression));
-  const nodeY = topY + Math.max(0, (subtreeHeight - nodeHeight) / 2);
+  const nodeY = expression.type === "colormap" ? topY : topY + Math.max(0, (subtreeHeight - nodeHeight) / 2);
   const nodeX = sinkX - (depth + 1) * GRAPH_HORIZONTAL_GAP;
   node.pos = [nodeX, nodeY];
 
@@ -1896,6 +1948,32 @@ const positionExpressionTree = (
       heightCache
     );
     inputNode?.connect(0, node, 0);
+    if (expression.type === "colormap") {
+      const findSource = (value: PipelineExpression): SourceName => {
+        if (value.type === "source") return value.source;
+        if ("input" in value) return findSource(value.input);
+        if (value.type === "binary") return findSource(value.left);
+        return "PRIMARY";
+      };
+      const source = expression.min?.type === "constant" && expression.min.rangeSource
+        ? expression.min.rangeSource : findSource(expression.input);
+      const low = expression.min?.type === "constant" ? expression.min.value : expression.minSignal;
+      const high = expression.max?.type === "constant" ? expression.max.value : expression.maxSignal;
+      const key = JSON.stringify([source, low, high]);
+      let range = rangeNodes.get(key);
+      if (!range) {
+        range = LiteGraph.createNode(RANGE_NODE_TYPE) as LGraphNode;
+        range.properties = { source, selectedMin: low, selectedMax: high };
+        range.title = `${source} signal range`;
+        range.pos = [nodeX, nodeY + nodeHeight + 30];
+        graph?.add(range); rangeNodes.set(key, range);
+        setWidgetValue(range, "source", source); setWidgetValue(range, "selectedMin", low); setWidgetValue(range, "selectedMax", high);
+      }
+      for (const [slot, child] of [[1, expression.min], [2, expression.max]] as const) {
+        if (!child || child.type === "constant") range.connect(slot - 1, node, slot);
+        else positionExpressionTree(child, depth + 1, nodeY + nodeHeight + slot * 180, sinkX, heightCache)?.connect(0, node, slot);
+      }
+    }
   }
 
   if (expression.type === "log_input") {
@@ -2035,7 +2113,11 @@ const buildGraphFromExpressions = (
   if (!graph) {
     return;
   }
+  const currentViewport = graphCanvas && graph.serialize().nodes.length > 2
+    ? { scale: graphCanvas.ds.scale, offset: Array.from(graphCanvas.ds.offset) }
+    : undefined;
   clearGraph();
+  rangeNodes.clear();
   createSinkNodes();
 
   const upperSink = upperSinkId != null ? graph.getNodeById(upperSinkId) : null;
@@ -2129,21 +2211,40 @@ const buildGraphFromExpressions = (
     ? GRAPH_TOP_PADDING + upperHeight + GRAPH_TOP_PADDING
     : lowerTopY + lowerHeight + GRAPH_TOP_PADDING;
   fitGraphView(totalWidth, totalHeight);
+  if (currentViewport && graphCanvas) {
+    graphCanvas.ds.scale = currentViewport.scale;
+    graphCanvas.ds.offset[0] = currentViewport.offset[0];
+    graphCanvas.ds.offset[1] = currentViewport.offset[1];
+  } else {
+    restoreGraphViewport();
+  }
   graphCanvas?.draw(true, true);
 };
 
 const expressionFromNode = (
   node: LGraphNode | null,
-  visited: Set<number>
+  visited: Set<number>,
+  outputSlot = 0
 ): PipelineExpression => {
   if (!node) {
     return defaultSignalExpression();
   }
   const nodeId = node.id ?? -1;
   if (visited.has(nodeId)) {
-    return defaultSignalExpression();
+    throw new Error("The rendering pipeline contains a cycle. Remove the cyclic connection before applying it.");
   }
+  visited = new Set(visited);
   visited.add(nodeId);
+
+  const input = (slot: number): PipelineExpression => expressionFromNode(
+    node.getInputNode(slot), visited, node.getInputLink(slot)?.origin_slot ?? 0
+  );
+
+  if (node.type === RANGE_NODE_TYPE) {
+    const output = outputSlot === 1 ? "selectedMax" : "selectedMin";
+    return { type: "constant", value: toFiniteNumber(node.properties[output], outputSlot === 1 ? 1 : 0),
+      rangeSource: toSourceName(node.properties.source), rangeOutput: output };
+  }
 
   if (node.type === SOURCE_NODE_TYPE) {
     return {
@@ -2178,14 +2279,14 @@ const expressionFromNode = (
     return {
       type: "unary",
       op: toUnaryOp(node.properties?.op),
-      input: expressionFromNode(node.getInputNode(0), visited),
+      input: input(0),
     };
   }
 
   if (node.type === LOG_NODE_TYPE) {
     return {
       type: "log",
-      input: expressionFromNode(node.getInputNode(0), visited),
+      input: input(0),
       base: toFiniteNumber(node.properties?.base, 10),
     };
   }
@@ -2193,9 +2294,9 @@ const expressionFromNode = (
   if (node.type === LOG_INPUT_NODE_TYPE) {
     return {
       type: "log_input",
-      input: expressionFromNode(node.getInputNode(0), visited),
+      input: input(0),
       base: node.getInputNode(1)
-        ? expressionFromNode(node.getInputNode(1), visited)
+        ? input(1)
         : {
             type: "constant",
             value: toFiniteNumber(node.properties?.base, 10),
@@ -2207,29 +2308,34 @@ const expressionFromNode = (
     return {
       type: "binary",
       op: toBinaryOp(node.properties?.op),
-      left: expressionFromNode(node.getInputNode(0), visited),
-      right: expressionFromNode(node.getInputNode(1), visited),
+      left: input(0),
+      right: input(1),
     };
   }
 
   if (node.type === CLAMP_NODE_TYPE) {
     return {
       type: "clamp",
-      input: expressionFromNode(node.getInputNode(0), visited),
+      input: input(0),
       minValue: toFiniteNumber(node.properties?.minValue, 0),
       maxValue: toFiniteNumber(node.properties?.maxValue, 1),
     };
   }
 
   if (node.type === COLORMAP_NODE_TYPE || node.type === MODDOTPLOT_COLORMAP_NODE_TYPE) {
+    const boundary = (slot: number): PipelineExpression | undefined => {
+      return node.getInputNode(slot) ? input(slot) : undefined;
+    };
+    const min = boundary(1), max = boundary(2);
     return {
       type: "colormap",
       mode: node.type === MODDOTPLOT_COLORMAP_NODE_TYPE ? "MODDOTPLOT_IDENTITY" : "LINEAR",
-      input: expressionFromNode(node.getInputNode(0), visited),
+      input: input(0),
       startColor: sanitizeColor(node.properties?.startColor, "#ffffff00"),
       endColor: sanitizeColor(node.properties?.endColor, "#006000ff"),
-      minSignal: toFiniteNumber(node.properties?.minSignal, 0),
-      maxSignal: toFiniteNumber(node.properties?.maxSignal, 1),
+      minSignal: min?.type === "constant" ? min.value : toFiniteNumber(node.properties?.minSignal, 0),
+      maxSignal: max?.type === "constant" ? max.value : toFiniteNumber(node.properties?.maxSignal, 1),
+      min, max,
     };
   }
 
@@ -2240,16 +2346,16 @@ const expressionFromNode = (
     });
 
     const c1 = node.getInputNode(0)
-      ? expressionFromNode(node.getInputNode(0), visited)
+      ? input(0)
       : fallbackConstant(node.properties?.c1 ?? 0);
     const c2 = node.getInputNode(1)
-      ? expressionFromNode(node.getInputNode(1), visited)
+      ? input(1)
       : fallbackConstant(node.properties?.c2 ?? 1);
     const c3 = node.getInputNode(2)
-      ? expressionFromNode(node.getInputNode(2), visited)
+      ? input(2)
       : fallbackConstant(node.properties?.c3 ?? 1);
     const alpha = node.getInputNode(3)
-      ? expressionFromNode(node.getInputNode(3), visited)
+      ? input(3)
       : fallbackConstant(node.properties?.alpha ?? 255);
 
     if (node.type === RGB_NODE_TYPE) {
@@ -2271,10 +2377,10 @@ const expressionFromNode = (
       type: "pixel_blend",
       mode: toPixelBlendMode(node.properties?.mode),
       top: node.getInputNode(0)
-        ? ensureColorRootExpression(expressionFromNode(node.getInputNode(0), visited))
+        ? ensureColorRootExpression(input(0))
         : topFallback,
       bottom: node.getInputNode(1)
-        ? ensureColorRootExpression(expressionFromNode(node.getInputNode(1), visited))
+        ? ensureColorRootExpression(input(1))
         : bottomFallback,
       topOpacity: toFiniteNumber(node.properties?.topOpacity, 1),
       bottomOpacity: toFiniteNumber(node.properties?.bottomOpacity, 1),
@@ -2294,7 +2400,64 @@ const expressionFromSink = (branch: "UPPER" | "LOWER"): PipelineExpression => {
   }
   const sinkNode = graph.getNodeById(sinkId);
   const sourceNode = sinkNode?.getInputNode(0) ?? null;
-  return ensureColorRootExpression(expressionFromNode(sourceNode, new Set<number>()));
+  return ensureColorRootExpression(expressionFromNode(sourceNode, new Set<number>(), sinkNode?.getInputLink(0)?.origin_slot ?? 0));
+};
+
+const editorStateKey = () => `hict.renderPipeline.editor.v1:${props.mapManager?.networkManager.host ?? ""}`;
+let lastServerSignature = "";
+const expressionPairSignature = (upper: PipelineExpression, lower: PipelineExpression): string =>
+  pipelineExpressionSignature([upper, lower]);
+const captureEditorState = () => ({
+  liteGraph: graph?.serialize() ?? null,
+  viewport: graphCanvas ? { scale: graphCanvas.ds.scale, offset: Array.from(graphCanvas.ds.offset) } : null,
+});
+const applyEditorViewport = (value: unknown): void => {
+  if (!graphCanvas || !value || typeof value !== "object") return;
+  const view = value as { scale?: number; offset?: number[] };
+  if (typeof view.scale === "number" && Number.isFinite(view.scale) && view.scale > 0 && view.scale <= 10 &&
+      Array.isArray(view.offset) && view.offset.length === 2 && view.offset.every(Number.isFinite)) {
+    graphCanvas.ds.scale = view.scale;
+    graphCanvas.ds.offset[0] = view.offset[0];
+    graphCanvas.ds.offset[1] = view.offset[1];
+  }
+};
+const restoreEditorState = (state: { liteGraph?: unknown; viewport?: unknown }, upper: PipelineExpression, lower: PipelineExpression): void => {
+  if (!graphCanvas) return;
+  const candidate = restorePipelineEditorGraph(state.liteGraph,
+    new Set(Object.values(NODE_MENU_NODE_TYPES_BY_CATEGORY).flat()));
+  const sinks = candidate.findNodesByType(SINK_NODE_TYPE);
+  const upperSinks = sinks.filter(node => node.properties.branch === "UPPER");
+  const lowerSinks = sinks.filter(node => node.properties.branch === "LOWER");
+  if (sinks.length !== 2 || upperSinks.length !== 1 || lowerSinks.length !== 1)
+    throw new Error("The editor graph must contain one upper and one lower sink.");
+  const fromSink = (sink: LGraphNode) => ensureColorRootExpression(expressionFromNode(
+    sink.getInputNode(0), new Set(), sink.getInputLink(0)?.origin_slot ?? 0));
+  if (expressionPairSignature(fromSink(upperSinks[0]), fromSink(lowerSinks[0])) !== expressionPairSignature(upper, lower))
+    throw new Error("Editor graph does not match the rendering expressions.");
+  graph?.stop();
+  graphCanvas.setGraph(candidate);
+  graph = candidate;
+  (graph as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  graph.onNodeAdded = node => stylePipelineNode(node);
+  for (const stored of graph.serialize().nodes) {
+    const node = graph.getNodeById(stored.id);
+    if (node) syncNodeWidgetsFromProperties(node);
+  }
+  upperSinkId = upperSinks[0].id;
+  lowerSinkId = lowerSinks[0].id;
+  rangeNodes.clear();
+  applyGraphTheme();
+  updateTrackNodeWidgets();
+  applyEditorViewport(state.viewport);
+  graphCanvas.draw(true, true);
+};
+const rememberEditorState = (): void => {
+  if (!graph || !lastServerSignature) return;
+  try {
+    if (expressionPairSignature(expressionFromSink("UPPER"), expressionFromSink("LOWER")) !== lastServerSignature) return;
+    const encoded = JSON.stringify(captureEditorState());
+    if (encoded.length <= 2_000_000) sessionStorage.setItem(editorStateKey(), encoded);
+  } catch { /* Storage may be disabled; never change rendering state to persist layout. */ }
 };
 
 const exportGraphToFile = (): void => {
@@ -2306,7 +2469,7 @@ const exportGraphToFile = (): void => {
       swapUpperLower: swapUpperLower.value,
       upperExpression: expressionFromSink("UPPER"),
       lowerExpression: expressionFromSink("LOWER"),
-      liteGraph: graph?.serialize?.() ?? null,
+      ...captureEditorState(),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
@@ -2329,16 +2492,19 @@ const onImportFileSelected = async (event: Event): Promise<void> => {
     return;
   }
   try {
+    if (file.size > 2_000_000) throw new Error("Pipeline files must be smaller than 2 MB.");
     const text = await file.text();
     const parsed = JSON.parse(text) as Record<string, unknown>;
     const importedEnabled = parsed.enabled;
     const importedSwap = parsed.swapUpperLower;
     const upperRaw = parsed.upperExpression ?? parsed.upper;
     const lowerRaw = parsed.lowerExpression ?? parsed.lower;
+    const upper = parseExpression(upperRaw), lower = parseExpression(lowerRaw);
+    if (parsed.liteGraph) restoreEditorState(parsed, upper, lower);
+    else buildGraphFromExpressions(upper, lower);
     enabled.value = typeof importedEnabled === "boolean" ? importedEnabled : enabled.value;
     swapUpperLower.value =
       typeof importedSwap === "boolean" ? importedSwap : swapUpperLower.value;
-    buildGraphFromExpressions(parseExpression(upperRaw), parseExpression(lowerRaw));
     toast.success("Pipeline graph imported");
   } catch (error) {
     toast.error(`Import failed: ${String(error)}`);
@@ -2385,9 +2551,10 @@ const persistConfig = async (
   successMessage?: string
 ): Promise<void> => {
   const manager = ensureMapManager();
-  await manager.networkManager.requestManager.setRenderPipelineConfig(
-    buildConfigPayload()
-  );
+  const payload = buildConfigPayload();
+  await manager.networkManager.requestManager.setRenderPipelineConfig(payload);
+  lastServerSignature = expressionPairSignature(parseExpression(payload.upperExpression), parseExpression(payload.lowerExpression));
+  rememberEditorState();
   if (reloadTiles) {
     await manager.reloadTilesFromBackend();
   }
@@ -2396,7 +2563,29 @@ const persistConfig = async (
   }
 };
 
+const GRAPH_VIEW_KEY = "hict.renderPipeline.viewport.v1";
+const restoreGraphViewport = (): void => {
+  if (!graphCanvas) return;
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(GRAPH_VIEW_KEY) ?? "null");
+    if (saved && Number.isFinite(saved.scale) && saved.scale > 0 &&
+        Array.isArray(saved.offset) && saved.offset.length === 2 && saved.offset.every(Number.isFinite)) {
+      graphCanvas.ds.scale = saved.scale;
+      graphCanvas.ds.offset[0] = saved.offset[0];
+      graphCanvas.ds.offset[1] = saved.offset[1];
+    }
+  } catch { /* Browser storage can be disabled. */ }
+};
+
 const destroyGraphRuntime = (): void => {
+  rememberEditorState();
+  if (graphCanvas) {
+    try {
+      sessionStorage.setItem(GRAPH_VIEW_KEY, JSON.stringify({
+        scale: graphCanvas.ds.scale, offset: Array.from(graphCanvas.ds.offset),
+      }));
+    } catch { /* View persistence is optional when storage is unavailable. */ }
+  }
   cleanupColorPicker();
   cleanupContextMenus();
   resizeObserver?.disconnect();
@@ -2413,6 +2602,14 @@ const destroyGraphRuntime = (): void => {
 
 const restoreGraphRuntime = async (): Promise<void> => {
   await nextTick();
+  if (graph && graphCanvas) {
+    fitGraphCanvas();
+    graphCanvas.startRendering();
+    if (pendingVisualizationSync.value) await loadConfig();
+    previewSnapshot.value = null;
+    pendingVisualizationSync.value = false;
+    return;
+  }
   initializeGraph();
   await refreshTrackOptions();
   if (previewSnapshot.value && !pendingVisualizationSync.value) {
@@ -2458,18 +2655,7 @@ const togglePreviewMode = (): void => {
   cleanupColorPicker();
   cleanupContextMenus();
   if (!previewMode.value) {
-    if (graph) {
-      previewSnapshot.value = {
-        enabled: enabled.value,
-        swapUpperLower: swapUpperLower.value,
-        upperExpression: expressionFromSink("UPPER"),
-        lowerExpression: expressionFromSink("LOWER"),
-      };
-    } else {
-      previewSnapshot.value = null;
-    }
-    previewMode.value = true;
-    destroyGraphRuntime();
+    void previewConfig();
     return;
   }
   previewMode.value = false;
@@ -2490,7 +2676,7 @@ const previewConfig = async (): Promise<void> => {
     };
     await persistConfig(true);
     previewMode.value = true;
-    destroyGraphRuntime();
+    graphCanvas?.stopRendering();
   } catch (error) {
     toast.error(String(error));
   } finally {
@@ -2498,7 +2684,10 @@ const previewConfig = async (): Promise<void> => {
   }
 };
 
-const onVisualizationOptionsUpdated = (): void => {
+const onVisualizationOptionsUpdated = (event: Event): void => {
+  // Hydrating the sidebar does not change the graph and must not rebuild it.
+  const source = (event as CustomEvent<{ source?: string }>).detail?.source;
+  if (source === "server_fetch" || source === "pipeline_source_fetch") return;
   if (previewMode.value || loading.value || saving.value) {
     pendingVisualizationSync.value = true;
     return;
@@ -2534,7 +2723,16 @@ const loadConfig = async (): Promise<void> => {
     swapUpperLower.value = Boolean(response.swapUpperLower ?? false);
     const upperExpression = parseExpression(response.upperExpression ?? response.upper);
     const lowerExpression = parseExpression(response.lowerExpression ?? response.lower);
-    buildGraphFromExpressions(upperExpression, lowerExpression);
+    lastServerSignature = expressionPairSignature(upperExpression, lowerExpression);
+    let restored = false;
+    try {
+      const cached = sessionStorage.getItem(editorStateKey());
+      if (cached) {
+        restoreEditorState(JSON.parse(cached), upperExpression, lowerExpression);
+        restored = true;
+      }
+    } catch { /* Stale editor state must never replace newer server expressions. */ }
+    if (!restored) buildGraphFromExpressions(upperExpression, lowerExpression);
   } catch (error) {
     toast.error(String(error));
   } finally {
@@ -2562,6 +2760,8 @@ const resetConfig = async (): Promise<void> => {
   try {
     const manager = ensureMapManager();
     const response = await manager.networkManager.requestManager.resetRenderPipelineConfig();
+    lastServerSignature = "";
+    try { sessionStorage.removeItem(editorStateKey()); } catch { /* Optional browser storage. */ }
     enabled.value = Boolean(response.enabled ?? false);
     swapUpperLower.value = Boolean(response.swapUpperLower ?? false);
     buildGraphFromExpressions(
@@ -2577,7 +2777,18 @@ const resetConfig = async (): Promise<void> => {
   }
 };
 
+const onHistogramRequested = (event: Event): void => {
+  const detail = (event as CustomEvent<LGraphNode | { node: LGraphNode; outputSlot: number }>).detail;
+  const node = "node" in detail ? detail.node : detail;
+  const outputSlot = "node" in detail ? detail.outputSlot : 0;
+  if (node.graph !== graph) return;
+  try {
+    histogramExpression.value = expressionFromNode(node, new Set(), outputSlot) as unknown as Record<string, unknown>;
+  } catch (error) { toast.error(error instanceof Error ? error.message : "Cannot inspect this signal."); }
+};
+
 onMounted(() => {
+  window.addEventListener("hict:pipeline-histogram", onHistogramRequested);
   initializeGraph();
   window.addEventListener("resize", fitGraphCanvas);
   window.addEventListener(
@@ -2588,6 +2799,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("hict:pipeline-histogram", onHistogramRequested);
   previewMode.value = false;
   cleanupColorPicker();
   window.removeEventListener("resize", fitGraphCanvas);
@@ -2638,6 +2850,14 @@ onBeforeUnmount(() => {
 .pipeline-root .modal.pipeline-preview .pipeline-dialog {
   height: auto;
   min-height: 0;
+}
+
+.pipeline-root .modal.pipeline-preview {
+  pointer-events: none;
+}
+
+.pipeline-root .modal.pipeline-preview .modal-content {
+  pointer-events: auto;
 }
 
 .pipeline-root .modal.pipeline-preview .modal-content {

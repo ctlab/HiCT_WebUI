@@ -49,4 +49,20 @@ const props = defineProps<{
   flex: 1 1 auto;
   min-height: 0;
 }
+
+@media (max-width: 700px) {
+  .workspace-component {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    grid-template-rows: minmax(440px, 65vh) auto;
+    overflow: auto;
+  }
+  .workspace-component :deep(.sidebar) {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    max-height: none;
+  }
+}
 </style>

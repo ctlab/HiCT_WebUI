@@ -1,3 +1,38 @@
+/** Bounds of a transformed map rectangle after clipping it to the viewport. */
+export function visibleMapBounds(
+  corners: number[][],
+  size: number[]
+): { left: number; top: number; width: number; height: number } | undefined {
+  if (corners.length !== 4 || size.length !== 2 ||
+      !size.every(value => Number.isFinite(value) && value > 0) ||
+      !corners.every(point => point.length === 2 && point.every(Number.isFinite))) return undefined;
+  // Clip the convex quadrilateral, not its bounding box: a rotated map can be
+  // wholly outside a viewport even when their axis-aligned bounds overlap.
+  let polygon = corners;
+  for (const [axis, edge, direction] of [[0, 0, 1], [0, size[0], -1], [1, 0, 1], [1, size[1], -1]]) {
+    const clipped: number[][] = [];
+    for (let i = 0; i < polygon.length; i++) {
+      const start = polygon[i], end = polygon[(i + 1) % polygon.length];
+      const startInside = direction * (start[axis] - edge) >= 0;
+      const endInside = direction * (end[axis] - edge) >= 0;
+      if (startInside !== endInside) {
+        const fraction = (edge - start[axis]) / (end[axis] - start[axis]);
+        const point = start.map((value, index) => value + fraction * (end[index] - value));
+        point[axis] = edge;
+        clipped.push(point);
+      }
+      if (endInside) clipped.push(end);
+    }
+    polygon = clipped;
+  }
+  if (!polygon.length) return undefined;
+  const left = Math.min(...polygon.map(point => point[0]));
+  const top = Math.min(...polygon.map(point => point[1]));
+  const width = Math.max(...polygon.map(point => point[0])) - left;
+  const height = Math.max(...polygon.map(point => point[1])) - top;
+  return width > 0 && height > 0 ? { left, top, width, height } : undefined;
+}
+
 /** Crop a captured map and its aligned rulers/tracks without rasterizing vectors. */
 export function cropSelectionScene(
   scene: { svg: SVGSVGElement; canvas: HTMLCanvasElement },
@@ -10,16 +45,20 @@ export function cropSelectionScene(
     throw new Error("Selected region is outside the rendered export scene");
   const ns = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(ns, "svg");
+  // Match the raster canvas page size. Fractional SVG dimensions cause editors
+  // to round the page and rescale otherwise pixel-aligned heatmap images.
+  const pageWidth = Math.ceil(marginLeft + width);
+  const pageHeight = Math.ceil(marginTop + height);
   svg.setAttribute("xmlns", ns);
-  svg.setAttribute("width", String(marginLeft + width));
-  svg.setAttribute("height", String(marginTop + height));
-  svg.setAttribute("viewBox", `0 0 ${marginLeft + width} ${marginTop + height}`);
+  svg.setAttribute("width", String(pageWidth));
+  svg.setAttribute("height", String(pageHeight));
+  svg.setAttribute("viewBox", `0 0 ${pageWidth} ${pageHeight}`);
   const defs = document.createElementNS(ns, "defs");
   const id = `hict-selection-${crypto.randomUUID()}`;
   svg.append(defs);
   let copyIndex = 0;
   const canvas = document.createElement("canvas");
-  canvas.width = Math.ceil(marginLeft + width); canvas.height = Math.ceil(marginTop + height);
+  canvas.width = pageWidth; canvas.height = pageHeight;
   const context = canvas.getContext("2d")!;
   for (const [sx, sy, w, h, dx, dy] of [
     [0, 0, marginLeft, marginTop, 0, 0],

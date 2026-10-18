@@ -350,14 +350,24 @@ const collectColormapTargets = (
   }
   const type = String(expression.type ?? "").trim().toLowerCase();
   if (type === "colormap") {
-    const profile = extractPipelineSignalProfile(expression.input);
+    let profile = extractPipelineSignalProfile(expression.input);
+    if (!profile) {
+      const sources = new Set<SourceName>();
+      const visit = (node: unknown): void => {
+        if (!isRecord(node)) return;
+        if (node.type === "source") sources.add(node.source === "SECONDARY" ? "SECONDARY" : "PRIMARY");
+        Object.values(node).forEach(visit);
+      };
+      visit(expression.input);
+      if (sources.size === 1) profile = extractPipelineSignalProfile({ type: "source", source: [...sources][0] });
+    }
     if (profile) {
       output.push({
         id: path,
         node: expression,
         profile,
-        minSignal: toFiniteNumber(expression.minSignal, 0),
-        maxSignal: toFiniteNumber(expression.maxSignal, 1),
+        minSignal: toFiniteNumber(isRecord(expression.min) && expression.min.type === "constant" ? expression.min.value : expression.minSignal, 0),
+        maxSignal: toFiniteNumber(isRecord(expression.max) && expression.max.type === "constant" ? expression.max.value : expression.maxSignal, 1),
       });
     }
   }
@@ -446,9 +456,8 @@ const replaceColormapNode = (
   target.node.mode = previousMode === "MODDOTPLOT_IDENTITY"
     ? "MODDOTPLOT_IDENTITY"
     : replacement.mode ?? "LINEAR";
-  target.node.input = previousMode === "MODDOTPLOT_IDENTITY"
-    ? target.node.input
-    : cloneRecord(replacement.input);
+  // Contrast and palette edits must not reconstruct (and lose) the user's
+  // processing graph. Normalization is edited explicitly in the pipeline.
   target.node.startColor = preserveMinimumAlpha(
     replacement.startColor,
     previousStartColor
@@ -456,6 +465,11 @@ const replaceColormapNode = (
   target.node.endColor = replacement.endColor;
   target.node.minSignal = replacement.minSignal;
   target.node.maxSignal = replacement.maxSignal;
+  for (const [key, value] of [["min", replacement.minSignal], ["max", replacement.maxSignal]] as const) {
+    const previous = target.node[key];
+    target.node[key] = { ...(isRecord(previous) ? previous : {}), type: "constant", value,
+      rangeSource: target.profile.source, rangeOutput: key === "min" ? "selectedMin" : "selectedMax" };
+  }
 };
 
 const visualizationOptionsFromTarget = (
@@ -742,6 +756,15 @@ class VisualizationManager {
             ? "PERCENT"
             : null };
     });
+  }
+
+  public async getSourceSignalExpression(source: SourceName, targetId?: string | null): Promise<Record<string, unknown>> {
+    const config = await this.getActiveRenderPipelineConfig();
+    if (!config) return (buildColorExpression(source, this.visualizationOptionsStore.asVisualizationOptions()) as unknown as Record<string, unknown>).input as Record<string, unknown>;
+    const targets = collectConfigColormapTargets(config).filter(target => target.profile.source === source);
+    const target = targets.find(target => target.id === targetId) ?? targets[0];
+    if (!target || !isRecord(target.node.input)) throw new Error(`No numeric colormap input is available for ${source}.`);
+    return cloneRecord(target.node.input);
   }
 
   private async getActiveRenderPipelineConfig(): Promise<Record<string, unknown> | null> {
@@ -1043,6 +1066,8 @@ class VisualizationManager {
       reloadTiles?: boolean;
     }
   ): Promise<boolean> {
+    const api = this.mapManager.networkManager.requestManager;
+    const revision = api.renderPipelineRevision;
     const options = this.visualizationOptionsStore.asVisualizationOptions();
     if (
       (behavior?.requireAutoThresholdEnabled ?? true) &&
@@ -1054,6 +1079,7 @@ class VisualizationManager {
     if (!activeConfig) {
       return false;
     }
+    const originalConfig = JSON.stringify(activeConfig);
 
     const targets: ColormapTarget[] = [];
     collectColormapTargets(activeConfig.upperExpression, targets);
@@ -1105,10 +1131,13 @@ class VisualizationManager {
       }
     }
 
+    // Queries can finish after a newer explicit edit; never commit that obsolete snapshot.
+    const latestConfig = await this.getActiveRenderPipelineConfig();
+    if (api.renderPipelineRevision !== revision || JSON.stringify(latestConfig) !== originalConfig)
+      return false;
     if (!changed) {
       return true;
     }
-
     await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
       activeConfig
     );
@@ -1142,15 +1171,19 @@ class VisualizationManager {
   }
 
   public async applyOpeningFullMapQuantileThreshold(
-    quantile = OPENING_THRESHOLD_QUANTILE
+    quantile = OPENING_THRESHOLD_QUANTILE,
+    expectedPipelineRevision = this.mapManager.networkManager.requestManager.renderPipelineRevision
   ): Promise<number | null> {
+    const api = this.mapManager.networkManager.requestManager;
+    if (api.renderPipelineRevision !== expectedPipelineRevision || this.mapManager.isDisposed) return null;
     const bounds = this.resolveOpeningFullMapPixelBounds();
     if (!bounds) {
       return null;
     }
     const pipelineConfig = await this.getActiveRenderPipelineConfig();
+    if (api.renderPipelineRevision !== expectedPipelineRevision || this.mapManager.isDisposed) return null;
     if (pipelineConfig) {
-      await this.syncPipelineAutoThresholdForBounds(
+      const applied = await this.syncPipelineAutoThresholdForBounds(
         bounds,
         pipelineConfig,
         undefined,
@@ -1161,6 +1194,7 @@ class VisualizationManager {
           reloadTiles: false,
         }
       ).catch(() => false);
+      if (!applied || this.mapManager.isDisposed) return null;
       const current = this.visualizationOptionsStore.asVisualizationOptions();
       this.visualizationOptionsStore.setVisualizationOptions(
         new VisualizationOptions(
@@ -1201,6 +1235,7 @@ class VisualizationManager {
       options.colormap.minSignal,
       options.colormap.maxSignal
     );
+    if (api.renderPipelineRevision !== expectedPipelineRevision || this.mapManager.isDisposed) return null;
     const updatedMaxSignal =
       nextUpperBound != null &&
       Number.isFinite(nextUpperBound) &&
@@ -1314,11 +1349,6 @@ class VisualizationManager {
     await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
       pipelineConfig
     );
-    if (options.autoThresholdEnabled) {
-      await this.syncPipelineAutoThresholdToViewport(pipelineConfig, source, targetId).catch(
-        () => false
-      );
-    }
     const hydrated = await this.loadVisualizationOptionsForSource(source, targetId);
     await this.mapManager.reloadTilesFromBackend();
     return hydrated;

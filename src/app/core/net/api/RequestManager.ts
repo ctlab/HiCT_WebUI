@@ -21,6 +21,7 @@
 
 import { chooseMissingComponents, AgpImportCancelledError } from "../agpImportChoice";
 import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
+import type { WorkspaceState } from "@/app/core/mapmanagers/WorkspaceState";
 import type { AssemblyInfo } from "../../domain/AssemblyInfo";
 import {
   AssemblyInfoDTO,
@@ -229,6 +230,9 @@ const assemblyMutationPaths = new Set([
 const assemblySessionPaths = new Set(["/open", "/close", "/secondary/open", "/secondary/close", "/secondary/set_assembly_source"]);
 
 class RequestManager {
+  private workspaceVersion?: { session: string; revision: number };
+  public renderPipelineRevision = 0;
+  public sequenceRevision = 0;
   public readonly history = shallowReactive({ summary: null as HistorySummary | null, applied: null as HistorySummary | null, busy: 0 });
 
   public async getAssemblyHistory(offset?: number): Promise<HistoryPage> {
@@ -512,7 +516,10 @@ class RequestManager {
       new OpenFileRequest({ filename: filename, fastaFilename: fastaFilename })
     )
       .then((response) => response.data)
-      .then((json) => new OpenFileResponseDTO(json).toEntity());
+      .then((json) => {
+        this.workspaceVersion = json.workspaceVersion;
+        return new OpenFileResponseDTO(json).toEntity();
+      });
   }
 
   public async getOpenProgress(): Promise<{ stage: string; progress: number }> {
@@ -572,12 +579,14 @@ class RequestManager {
 
   public async closeFile(): Promise<void> {
     await this.sendRequest(new CloseFileRequest());
+    this.workspaceVersion = undefined;
   }
 
   public async attachSession(): Promise<{
     filename: string;
     fastaFilename: string;
     response: OpenFileResponse;
+    workspaceState?: WorkspaceState;
   }> {
     return this.sendRequest(new AttachSessionRequest())
       .then((response) => response.data as Record<string, unknown>)
@@ -586,11 +595,12 @@ class RequestManager {
           throw new Error(String((json as Record<string, unknown>).error));
         }
         const filename = (json["filename"] as string) ?? "";
+        this.workspaceVersion = json.workspaceVersion as typeof this.workspaceVersion;
         const fastaFilename = (json["fastaFilename"] as string) ?? "";
         const response = new OpenFileResponseDTO(
           json["openFileResponse"] as Record<string, unknown>
         ).toEntity();
-        return { filename, fastaFilename, response };
+        return { filename, fastaFilename, response, workspaceState: json.workspaceState as WorkspaceState | undefined };
       });
   }
 
@@ -602,6 +612,15 @@ class RequestManager {
     )
       .then((response) => response.data)
       .then((json) => new CurrentSignalRangeResponseDTO(json).toEntity());
+  }
+
+  public async saveWorkspaceState(filename: string, state: WorkspaceState): Promise<void> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    const expectedVersion = this.workspaceVersion;
+    if (!expectedVersion) throw new Error("Attach to a compatible server before saving workspace settings.");
+    const response = await axios.post(`${host}/workspace/state`, { filename, state, expectedVersion });
+    // A delayed save from the previous map must not replace an Open/Attach token.
+    if (this.workspaceVersion === expectedVersion) this.workspaceVersion = response.data.workspaceVersion;
   }
 
   public async listFiles(): Promise<string[]> {
@@ -939,6 +958,7 @@ class RequestManager {
   public async setRenderPipelineConfig(
     config: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
+    ++this.renderPipelineRevision;
     const response = await this.sendRequest(new SetRenderPipelineRequest(config));
     if (typeof window !== "undefined")
       window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
@@ -946,6 +966,7 @@ class RequestManager {
   }
 
   public async resetRenderPipelineConfig(): Promise<Record<string, unknown>> {
+    ++this.renderPipelineRevision;
     const response = await this.sendRequest(new ResetRenderPipelineRequest());
     if (typeof window !== "undefined")
       window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
@@ -962,7 +983,12 @@ class RequestManager {
   ): Promise<FastaLinkResponse> {
     return this.sendRequest(request)
       .then((response) => response.data)
-      .then((json) => new FastaLinkResponseDTO(json).toEntity())
+      .then((json) => {
+        const result = new FastaLinkResponseDTO(json).toEntity();
+        this.sequenceRevision++;
+        this.networkManager.mapManager?.getMap().render();
+        return result;
+      })
       .catch((err) => {
         throw new Error(extractErrorMessage(err, "Cannot link FASTA file"));
       });
@@ -1122,6 +1148,28 @@ class RequestManager {
       .catch(() => "Changelog for this build was not detected");
   }
 
+  public async querySequenceRegion(startBp: number, endBp: number, signal?: AbortSignal): Promise<{ linked: boolean; startBp?: number; sequence?: string }> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    return (await axios.post(`${host}/sequence/region`, { startBp, endBp }, { signal })).data;
+  }
+
+  public async querySignalStatistics(options: {
+    bpResolution: number;
+    metadataOnly?: boolean;
+    revision?: string;
+    startRowPx?: number;
+    startColPx?: number;
+    expression?: Record<string, unknown>;
+    signal?: AbortSignal;
+  }): Promise<{
+    revision: string; size: number; rows?: number; cols?: number;
+    min?: number | null; max?: number | null; count?: number;
+  }> {
+    const { signal, ...request } = options;
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    return (await axios.post(`${host}/matrix/statistics`, request, { signal })).data;
+  }
+
   public async queryMatrixFloat32(options: {
     bpResolution: number;
     startRowPx: number;
@@ -1130,6 +1178,8 @@ class RequestManager {
     endColPx: number;
     source?: "PRIMARY" | "SECONDARY";
     signalMode?: "RAW_COUNTS" | "COOLER_WEIGHTED" | "TRADITIONAL_NORMALIZED" | "PIPELINE_SIGNAL";
+    expression?: Record<string, unknown>;
+    signal?: AbortSignal;
   }): Promise<{
     rows: number;
     cols: number;
@@ -1148,9 +1198,11 @@ class RequestManager {
         source: options.source ?? "PRIMARY",
         signalMode: options.signalMode ?? "TRADITIONAL_NORMALIZED",
         format: "BINARY_FLOAT32",
+        expression: options.expression,
       },
       {
         responseType: "arraybuffer",
+        signal: options.signal,
         headers: {
           Accept: "application/octet-stream",
         },

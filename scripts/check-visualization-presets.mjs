@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
+import vm from "node:vm";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const catalogPath = path.join(
@@ -86,11 +88,26 @@ assert.match(
   /loadGeneration === this\.visualizationOptionsLoadGeneration/,
   "source-specific option hydration must reject out-of-order responses"
 );
-assert.match(
-  visualizationManagerSource,
-  /previousMode === "MODDOTPLOT_IDENTITY"[\s\S]*\? target\.node\.input[\s\S]*: cloneRecord\(replacement\.input\)/,
-  "identity threshold edits must preserve the fixed-point-to-percentage pipeline node"
+const contrastCode = visualizationManagerSource.slice(
+  visualizationManagerSource.indexOf("const replaceColormapNode ="),
+  visualizationManagerSource.indexOf("const visualizationOptionsFromTarget =")
 );
+const contrastContext = vm.createContext({
+  isRecord: value => value !== null && typeof value === "object",
+  preserveMinimumAlpha: value => value,
+});
+vm.runInContext(ts.transpileModule(contrastCode + "\nglobalThis.replace = replaceColormapNode;", {
+  compilerOptions: { target: ts.ScriptTarget.ES2020 },
+}).outputText, contrastContext);
+for (const mode of ["LINEAR", "MODDOTPLOT_IDENTITY"]) {
+  const input = { type: "binary", op: "DIV", left: { type: "source", source: "SECONDARY" }, right: { type: "constant", value: 100 } };
+  const target = { node: { type: "colormap", mode, input }, profile: { source: "SECONDARY" } };
+  contrastContext.replace(target, { input: { type: "log", base: 2 }, minSignal: 86, maxSignal: 100 });
+  assert.strictEqual(target.node.input, input, "contrast edits must retain the exact signal graph");
+  assert.equal(target.node.min.value, 86);
+  assert.equal(target.node.max.value, 100);
+  assert.equal(target.node.mode, mode);
+}
 const settingsEditorSource = fs.readFileSync(settingsEditorPath, "utf8");
 assert.match(
   settingsEditorSource,

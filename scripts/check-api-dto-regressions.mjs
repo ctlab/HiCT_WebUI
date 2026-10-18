@@ -168,11 +168,13 @@ const adapterSource = ts.transpileModule(readFileSync(resolve(projectRoot,
 let responseRevision=2;
 let sentHeaders;
 let serializationFailure=false;
+let pendingWorkspace;
 const notificationErrors=[];
 const adapterExports={};
 vm.runInNewContext(adapterSource,{exports:adapterExports,console,require:name=>{
   if(name==='vue')return {shallowReactive:value=>value};
   if(name==='axios')return {post:async(url,payload,config)=>{
+    if(url.endsWith('/workspace/state'))return new Promise((resolve,reject)=>{pendingWorkspace={payload,resolve,reject};});
     sentHeaders=config.headers;
     return {data:{},headers:{'x-hict-history':JSON.stringify({session:'s',revision:responseRevision,currentId:responseRevision,position:responseRevision,size:responseRevision+1,canUndo:true,canRedo:false})}};
   }};
@@ -201,3 +203,22 @@ await assert.rejects(adapter.sendRequest({requestPath:'/unscaffold_all'}), /Seri
 assert.equal(adapter.history.busy,0,'Serialization failure must release the edit guard');
 assert.equal(notificationErrors.length,1,'Serialization failure must be visible');
 console.log('Synchronous serialization failures release edit guard and notify the user.');
+
+const originalVersion={session:'workspace-a',revision:0};
+adapter.workspaceVersion=originalVersion;
+const save=adapter.saveWorkspaceState('same.hict.hdf5',{version:1});
+assert.equal(pendingWorkspace.payload.expectedVersion,originalVersion);
+pendingWorkspace.resolve({data:{workspaceVersion:{session:'workspace-a',revision:1}}});
+await save;
+assert.equal(adapter.workspaceVersion.revision,1);
+const delayed=adapter.saveWorkspaceState('same.hict.hdf5',{version:1});
+const attachedVersion={session:'workspace-b',revision:4};
+adapter.workspaceVersion=attachedVersion;
+pendingWorkspace.resolve({data:{workspaceVersion:{session:'workspace-a',revision:2}}});
+await delayed;
+assert.equal(adapter.workspaceVersion,attachedVersion,'A late save cannot replace a newer Open/Attach token');
+const rejected=adapter.saveWorkspaceState('same.hict.hdf5',{version:1});
+pendingWorkspace.reject(new Error('Workspace conflict'));
+await assert.rejects(rejected,/Workspace conflict/);
+assert.equal(adapter.workspaceVersion,attachedVersion,'Rejected saves cannot advance the version');
+console.log('Workspace autosaves preserve Open/Attach tokens across delayed responses and conflicts.');

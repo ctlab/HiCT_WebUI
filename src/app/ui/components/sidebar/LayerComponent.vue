@@ -24,12 +24,12 @@
     <span class="layer-name">{{ layerName }}</span>
     <div class="button-block">
       <i
-        v-if="visible"
+        v-if="layerName !== 'Background' && visible"
         class="bi bi-eye-fill visibility-btn"
         @click="updateVisibility"
       ></i>
       <i
-        v-if="!visible"
+        v-if="layerName !== 'Background' && !visible"
         class="bi bi-eye-slash visibility-btn"
         @click="updateVisibility"
       ></i>
@@ -38,7 +38,7 @@
         :getDefaultColor="getBaseColor"
         @onColorChanged="updateBackgroundColor"
       ></ColorPickerRectangle>
-      <div class="tri-square border-style-btn" @click="updateBorderStyle">
+      <div v-if="layerName !== 'Background'" class="tri-square border-style-btn" @click="updateBorderStyle">
         <i v-if="bordersStyle === 0" class="bi bi-square"></i>
         <i v-if="bordersStyle === 1" class="bi bi-arrow-down-left"></i>
         <i v-if="bordersStyle === 2" class="bi bi-arrow-up-right"></i>
@@ -55,6 +55,10 @@
           @click="openStyleEditor"
         ></i>
         <div class="dropdown-menu p-3 track-style-menu">
+          <label v-if="layerName === 'Contigs' || layerName === 'Scaffolds'" class="form-check mb-2">
+            <input type="checkbox" class="form-check-input" v-model="borderOutline" />
+            Black border outline
+          </label>
           <div class="mb-2">
             <label class="form-label" for="track-border-width"
               >Border width</label
@@ -156,7 +160,7 @@
           </div>
         </div>
       </div>
-      <div v-else class="edit-spacer"></div>
+      <div v-else-if="layerName !== 'Background'" class="edit-spacer"></div>
     </div>
   </div>
 </template>
@@ -181,6 +185,7 @@ const props = defineProps<{
   getLabelOutline?: () => boolean;
   getLabelOutlineWidth?: () => number;
   getIncludeInSvg?: () => boolean;
+  getBorderOutline?: () => boolean;
 }>();
 
 function getBaseColor(): ColorTranslator {
@@ -217,7 +222,8 @@ const emit = defineEmits<{
     labelBold: boolean,
     labelOutline: boolean,
     labelOutlineWidth: number,
-    includeInSvg: boolean
+    includeInSvg: boolean,
+    borderOutline: boolean
   ): void;
 }>();
 
@@ -232,6 +238,7 @@ const labelBold: Ref<boolean> = ref(true);
 const labelOutline: Ref<boolean> = ref(true);
 const labelOutlineWidth: Ref<number> = ref(2);
 const includeInSvg: Ref<boolean> = ref(true);
+const borderOutline = ref(false);
 
 const bordersStyle: Ref<number> = ref(
   props.layerName.includes("names") ? BorderStyle.TOP : 0
@@ -278,6 +285,7 @@ function getDefaultFillColor(): ColorTranslator {
 }
 
 function openStyleEditor() {
+  borderOutline.value = props.getBorderOutline?.() ?? false;
   if (!props.getDefaultColor) return;
   const style = props.getDefaultColor();
   const strokeWidth = style?.getStroke()?.getWidth();
@@ -316,7 +324,8 @@ function applyStyle() {
     labelBold.value,
     labelOutline.value,
     labelOutlineWidth.value,
-    includeInSvg.value
+    includeInSvg.value,
+    borderOutline.value
   );
 }
 

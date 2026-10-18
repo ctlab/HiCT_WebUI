@@ -84,12 +84,20 @@ class VersionedXYZContactMapSource extends XYZ {
       if (settled) return;
       settled = true;
       this.activeTileRequests.delete(xhr);
-      if (requestEpoch !== this.tileRequestEpoch) return;
+      if (requestEpoch !== this.tileRequestEpoch) {
+        // Release the map's loading slot even when this source generation is obsolete.
+        tile.setState(TileState.EMPTY);
+        return;
+      }
       callback();
     };
     xhr.responseType = "json";
     xhr.addEventListener("load", () => settle(() => {
       const data = xhr.response;
+      if (data?.cancelled === true || xhr.getResponseHeader("x-hict-cancelled") === "true") {
+        tile.setState(TileState.EMPTY);
+        return;
+      }
       if (xhr.status >= 200 && xhr.status < 300 && data && data.image) {
         image.src = data.image;
         // ImageTile's load/decode listener marks it ready. Receiving JSON is
@@ -122,7 +130,7 @@ class VersionedXYZContactMapSource extends XYZ {
         tile.setState(TileState.ERROR);
       }
     }));
-    xhr.addEventListener("abort", () => settle(() => undefined));
+    xhr.addEventListener("abort", () => settle(() => tile.setState(TileState.EMPTY)));
     xhr.open("GET", src);
     this.activeTileRequests.add(xhr);
     xhr.send();
@@ -160,11 +168,18 @@ class VersionedXYZContactMapSource extends XYZ {
       if (settled) return;
       settled = true;
       this.activeTileRequests.delete(xhr);
-      if (requestEpoch !== this.tileRequestEpoch) return;
+      if (requestEpoch !== this.tileRequestEpoch) {
+        tile.setState(TileState.EMPTY);
+        return;
+      }
       callback();
     };
     xhr.responseType = "arraybuffer";
     xhr.addEventListener("load", () => settle(() => {
+      if (xhr.getResponseHeader("x-hict-cancelled") === "true") {
+        tile.setState(TileState.EMPTY);
+        return;
+      }
       const rows = Number.parseInt(xhr.getResponseHeader("x-hict-rows") || "0", 10);
       const cols = Number.parseInt(xhr.getResponseHeader("x-hict-cols") || "0", 10);
       const response = xhr.response;
@@ -199,7 +214,7 @@ class VersionedXYZContactMapSource extends XYZ {
         tile.setState(TileState.ERROR);
       }
     }));
-    xhr.addEventListener("abort", () => settle(() => undefined));
+    xhr.addEventListener("abort", () => settle(() => tile.setState(TileState.EMPTY)));
     xhr.open("POST", `${host}/matrix/query`);
     xhr.setRequestHeader("Content-Type", "application/json");
     this.activeTileRequests.add(xhr);

@@ -114,6 +114,9 @@
         </div>
       </div>
 
+      <div class="small text-muted" role="status" aria-live="polite" data-testid="exact-range-status">
+        {{ percentageSignalScale ? "Percentage scale: 0-100" : rangeStatus }}
+      </div>
       <div class="threshold-toolbar">
         <div class="form-check form-switch threshold-log-switch">
           <input
@@ -189,6 +192,7 @@ import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinear
 import { ColorTranslator } from "colortranslator";
 import type { CurrentSignalRangeResponse } from "@/app/core/net/api/response";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import { scanExactSignalRange, type ExactRange } from "@/app/core/visualization/exactSignalRange";
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const {
   preLogBase,
@@ -228,6 +232,13 @@ const percentageSignalScale: Ref<boolean> = ref(false);
 let registeredRangeMapManager: ContactMapManager | undefined;
 let liveApplyTimer: number | undefined;
 let optionsHydrationGeneration = 0;
+let rangeController: AbortController | undefined;
+let rangeRequestKey = "";
+let rangeTimer: number | undefined;
+let rangeGeneration = 0;
+let rangeProbe = 0;
+const rangeStatus = ref("Exact limits pending");
+const rangeCache = new Map<string, ExactRange>();
 const LOG_SLIDER_FLOOR_FRACTION = 1e-10;
 const LIVE_APPLY_DELAY_MS = 350;
 
@@ -434,6 +445,7 @@ watch(
 );
 
 onMounted(() => {
+  window.addEventListener("hict:render-pipeline-changed", onPipelineChanged);
   if (props.mapManager && !props.mapManager.isDisposed) {
     registerSignalRangeCallback(props.mapManager);
   }
@@ -442,6 +454,11 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("hict:render-pipeline-changed", onPipelineChanged);
+  ++rangeGeneration;
+  ++rangeProbe;
+  window.clearTimeout(rangeTimer);
+  rangeController?.abort();
   if (liveApplyTimer !== undefined) {
     window.clearTimeout(liveApplyTimer);
     liveApplyTimer = undefined;
@@ -452,9 +469,18 @@ function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
   return activeVisualizationSource.value;
 }
 
+function onPipelineChanged(): void {
+  void hydrateOptionsForActiveSource();
+}
+
 async function hydrateOptionsForActiveSource(): Promise<void> {
   const manager = props.mapManager;
   if (!manager || manager.isDisposed) return;
+  ++rangeProbe;
+  ++rangeGeneration;
+  rangeController?.abort();
+  rangeRequestKey = "";
+  rangeStatus.value = "Exact limits pending";
   const generation = ++optionsHydrationGeneration;
   liveApplyReady.value = false;
   percentageSignalScale.value = false;
@@ -479,6 +505,8 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
       ) ?? sourceTargets[0];
     percentageSignalScale.value = activeTarget?.displayUnit === "PERCENT";
     updateFromStore();
+    rangeRequestKey = "";
+    void refreshProcessedRange();
     await new Promise<void>((resolve) => queueMicrotask(resolve));
     if (generation === optionsHydrationGeneration && !manager.isDisposed) {
       liveApplyReady.value = true;
@@ -508,6 +536,9 @@ function updateSignalRange(ranges: CurrentSignalRangeResponse): void {
     }
     return;
   }
+  void refreshProcessedRange();
+  // Tile ranges describe the traditional renderer, not arbitrary graph inputs.
+  if (props.mapManager) return;
   const nextMin = finiteOr(ranges.globalMinSignal, signalMin.value);
   const nextMax = finiteOr(ranges.globalMaxSignal, signalMax.value);
   if (nextMax > nextMin) {
@@ -516,6 +547,66 @@ function updateSignalRange(ranges: CurrentSignalRangeResponse): void {
     if (!sliderBoundsManual.value) {
       sliderLowerLimit.value = nextMin;
       sliderUpperLimit.value = nextMax;
+    }
+  }
+}
+
+function refreshProcessedRange(): void {
+  window.clearTimeout(rangeTimer);
+  rangeTimer = window.setTimeout(() => void fetchProcessedRange(), 250);
+}
+
+async function fetchProcessedRange(): Promise<void> {
+  const manager = props.mapManager;
+  const probe = ++rangeProbe;
+  if (!manager || manager.isDisposed || percentageSignalScale.value) {
+    ++rangeGeneration;
+    rangeController?.abort();
+    rangeRequestKey = "";
+    return;
+  }
+  let generation: number | undefined;
+  try {
+    const bpResolution = manager.viewAndLayersManager.currentViewState.resolutionDesciptor.bpResolution;
+    const expression = await manager.visualizationManager.getSourceSignalExpression(
+      activeVisualizationSource.value, activeVisualizationTargetId.value);
+    const api = manager.networkManager.requestManager;
+    const snapshot = await api.querySignalStatistics({ bpResolution, metadataOnly: true });
+    if (probe !== rangeProbe || manager.isDisposed) return;
+    const key = JSON.stringify([bpResolution, expression, snapshot.revision, snapshot.size]);
+    if (key === rangeRequestKey) return;
+    generation = ++rangeGeneration;
+    rangeController?.abort();
+    const controller = new AbortController(); rangeController = controller;
+    rangeRequestKey = key;
+    const range = rangeCache.get(key) ?? await scanExactSignalRange(snapshot,
+      (startRowPx, startColPx) => {
+        if (manager.isDisposed || manager.viewAndLayersManager.currentViewState.resolutionDesciptor.bpResolution !== bpResolution)
+          controller.abort();
+        return api.querySignalStatistics({ bpResolution, expression,
+          revision: snapshot.revision, startRowPx, startColPx, signal: controller.signal });
+      },
+      controller.signal, (completed, total) => {
+        rangeStatus.value = `Exact limits: ${((100 * completed) / total).toFixed(1)}% (${completed}/${total} blocks)`;
+      });
+    if (controller.signal.aborted || generation !== rangeGeneration) return;
+    rangeCache.set(key, range);
+    const oldestKey = rangeCache.keys().next().value;
+    if (rangeCache.size > 8 && oldestKey !== undefined) rangeCache.delete(oldestKey);
+    signalMin.value = range.min;
+    signalMax.value = range.max > range.min ? range.max : range.min + 1;
+    if (!sliderBoundsManual.value) {
+      sliderLowerLimit.value = signalMin.value;
+      sliderUpperLimit.value = signalMax.value;
+    }
+    rangeStatus.value = `Exact limits: ${formatSignal(range.min)} - ${formatSignal(range.max)}`;
+  } catch (error) {
+    if ((generation === undefined ? probe !== rangeProbe : generation !== rangeGeneration) || manager.isDisposed) return;
+    rangeRequestKey = "";
+    rangeStatus.value = "Exact limits unavailable; previous bounds retained";
+    if ((error as { response?: { status?: number } })?.response?.status === 409) {
+      rangeStatus.value = "Exact limits pending";
+      refreshProcessedRange();
     }
   }
 }
@@ -576,12 +667,13 @@ function onCoolerWeightsNaNPolicyChanged(): void {
     applySettings();
     return;
   }
+  const pipelineRevision = manager.networkManager.requestManager.renderPipelineRevision;
   manager.visualizationManager
     .sendVisualizationOptionsToServer({
       skipAutoThresholdRefresh: true,
       preserveCustomPipeline: true,
     })
-    .then(() => manager.visualizationManager.applyOpeningFullMapQuantileThreshold())
+    .then(() => manager.visualizationManager.applyOpeningFullMapQuantileThreshold(undefined, pipelineRevision))
     .then(() => manager.reloadTilesFromBackend())
     .catch((error) => {
       toast.error(String(error ?? "Failed to apply Cooler weight policy"));

@@ -585,18 +585,18 @@ class HiCViewAndLayersManager {
       this.secondaryResolutionSet
     );
     const overzoomFactor = 1024;
-    const minResolution = Math.max(
-      1 / overzoomFactor,
-      minPixelResolution / overzoomFactor
-    );
-    const maxResolution = Math.max(
-      maxPixelResolution * overzoomFactor,
-      maximumScaledImageSize
-    );
+    const minResolution = Math.min(minPixelResolution / overzoomFactor,
+      ...navigationModel.pixelResolutionSet.map((pixel, index) =>
+        pixel / Math.max(1, navigationModel.resolutions?.[index] ?? 1) / 16));
+    const size = this.mapManager.getMap()?.getSize();
+    const maxResolution = size && size[0] > 0 && size[1] > 0
+      ? Math.max((extent[2] - extent[0]) / size[0], (extent[3] - extent[1]) / size[1])
+      : Math.max(maxPixelResolution, maximumScaledImageSize);
     return {
       minResolution,
       maxResolution,
       constrainResolution: false,
+      smoothResolutionConstraint: false,
       zoomFactor: 2,
       showFullExtent: true,
       constrainOnlyCenter: true,
@@ -617,10 +617,21 @@ class HiCViewAndLayersManager {
   }
 
   public fitViewToActiveExtent(): void {
+    this.updateZoomLimit();
     this.fitViewToExtent(this.getActiveMapExtent());
     this.updateCurrentHiCViewState();
     this.scheduleRulerRender();
     this.mapManager.getMap().changed();
+  }
+
+  public updateZoomLimit(): void {
+    const size = this.mapManager.getMap().getSize();
+    if (!size || size[0] <= 0 || size[1] <= 0) return;
+    const extent = this.getActiveMapExtent();
+    const maxResolution = Math.max((extent[2] - extent[0]) / size[0], (extent[3] - extent[1]) / size[1]);
+    if (!Number.isFinite(maxResolution) || maxResolution <= 0 || this.view.getMaxResolution() === maxResolution) return;
+    // Retain the View object, center and resolution when changing its limits.
+    this.view.applyOptions_(this.view.getUpdatedOptions_(this.createViewOptions(extent)));
   }
 
   public setAxisScopes(
@@ -921,7 +932,7 @@ class HiCViewAndLayersManager {
       this.view.fit(extent, {
         size,
         nearest: false,
-        padding: [12, 12, 12, 12],
+        padding: [0, 0, 0, 0],
       });
       return;
     }
@@ -1256,6 +1267,7 @@ class HiCViewAndLayersManager {
       borderColor,
       fillColor,
       width: track.options.width,
+      borderOutline: track.options.borderOutline,
       labelSize: track.getLabelSize(),
       labelOffsetMultiplier: track.getLabelOffsetMultiplier(),
       labelBold: track.getLabelBold(),
@@ -1274,6 +1286,7 @@ class HiCViewAndLayersManager {
     track.options.borderColor = preset.borderColor;
     track.options.fillColor = preset.fillColor;
     track.options.width = Math.max(1, preset.width);
+    track.options.borderOutline = preset.borderOutline ?? false;
     track.setLabelSize(preset.labelSize ?? track.getLabelSize());
     if (preset.labelOffsetMultiplier !== undefined) {
       track.setLabelOffsetMultiplier(preset.labelOffsetMultiplier);
@@ -1406,15 +1419,11 @@ class HiCViewAndLayersManager {
         }
       );
       layerSource.do_reload();
-      const borders = set.layerResolutionBorders.get(layerResolution);
+      // Visibility is selected from the enabled resolution model below. Static
+      // pyramid bounds would hide that layer when finer resolutions are disabled.
       const layer = new TileLayer({
         source: layerSource,
-        minResolution: this.toFiniteResolutionBound(
-          borders?.minResolutionInclusive
-        ),
-        maxResolution: this.toFiniteResolutionBound(
-          borders?.maxResolutionExclusive
-        ),
+        visible: false,
         zIndex,
       });
       layer.set("sourceName", set.sourceName);
@@ -1844,11 +1853,11 @@ class HiCViewAndLayersManager {
       this.mapManager.getMap().getControls().clear();
       const hRuler = document.getElementById("horizontal-ruler-div");
       if (hRuler) {
-        hRuler.replaceChildren();
+        hRuler.querySelectorAll("canvas:not(.sequence-axis), .hict-ruler-tooltip").forEach(element => element.remove());
       }
       const vRuler = document.getElementById("vertical-ruler-div");
       if (vRuler) {
-        vRuler.replaceChildren();
+        vRuler.querySelectorAll("canvas:not(.sequence-axis), .hict-ruler-tooltip").forEach(element => element.remove());
       }
     } catch (e: unknown) {
       console.log("Error while disposing controls", e);
@@ -2371,12 +2380,6 @@ class HiCViewAndLayersManager {
     this.reloadTiles();
     this.reloadTracks();
     this.mapManager.map.changed();
-  }
-
-  private toFiniteResolutionBound(
-    bound: number | undefined
-  ): number | undefined {
-    return Number.isFinite(bound) ? bound : undefined;
   }
 
   public getActiveVectorResolutionDescriptor(): LayerResolutionDescriptor {

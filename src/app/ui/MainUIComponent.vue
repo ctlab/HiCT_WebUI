@@ -158,6 +158,9 @@
       @fastaLinked="onFastaLinked"
       @wizardRequested="wizardOpen = true"
     ></UpperFrame>
+    <div v-if="workspaceConflict" class="alert alert-warning workspace-conflict" role="alert">
+      Workspace settings changed in another window. Attach again to restore the latest saved view.
+    </div>
     <WorkspaceComponent
       :mapManager="mapManager"
       :filename="filename"
@@ -179,6 +182,7 @@
 
 <script setup lang="ts">
 import BenchmarkFeature from "ol/Feature";
+import { captureWorkspace, restoreWorkspace } from "@/app/core/mapmanagers/WorkspaceState";
 import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
 import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
 import {
@@ -211,6 +215,7 @@ import {
   type SessionVisualizationPreset,
 } from "@/app/stores/sessionStore";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import { GetVisualizationOptionsRequest } from "@/app/core/net/api/request";
 import {
   dismissTopmostEscDialog,
   hasAnyOpenEscDialog,
@@ -259,6 +264,28 @@ let openProgressInFlight = false;
 const wizardOpen = ref(false);
 const coolerWeightsNaNPromptVisible = ref(false);
 let lastCoolerWeightsNaNPromptKey = "";
+let workspaceTimer: number | undefined;
+let workspaceSaveInFlight = false;
+let workspaceRestoring = false;
+const workspaceConflict = ref(false);
+let lastWorkspaceSnapshot = "";
+
+async function persistWorkspace(): Promise<void> {
+  const manager = mapManager.value;
+  if (!manager || manager.isExporting || workspaceRestoring || workspaceConflict.value || openProgressVisible.value || workspaceSaveInFlight) return;
+  const state = captureWorkspace(manager);
+  const snapshot = JSON.stringify(state);
+  if (snapshot === lastWorkspaceSnapshot) return;
+  workspaceSaveInFlight = true;
+  try {
+    await networkManager.requestManager.saveWorkspaceState(manager.getOptions().filename, state);
+    if (manager === mapManager.value) lastWorkspaceSnapshot = snapshot;
+  } catch (error) {
+    if (manager === mapManager.value && (error as { response?: { status?: number } })?.response?.status === 409) {
+      workspaceConflict.value = true;
+    } else console.warn("Could not persist workspace for Attach", error);
+  } finally { workspaceSaveInFlight = false; }
+}
 
 useEscDismissableDialog({
   priority: 1050,
@@ -347,8 +374,8 @@ async function maybePromptCoolerWeightsNaNs(): Promise<void> {
   if (!manager) {
     return;
   }
-  const options = await manager.visualizationManager
-    .fetchVisualizationOptions()
+  const options = await manager.networkManager.requestManager
+    .getVisualizationOptions(new GetVisualizationOptionsRequest({}))
     .catch(() => null);
   if (!options?.coolerWeightsHaveNaNs) {
     return;
@@ -372,12 +399,13 @@ async function chooseCoolerWeightsNaNPolicy(
   if (!manager) {
     return;
   }
+  const pipelineRevision = manager.networkManager.requestManager.renderPipelineRevision;
   try {
     await manager.visualizationManager.sendVisualizationOptionsToServer({
       skipAutoThresholdRefresh: true,
       preserveCustomPipeline: true,
     });
-    await manager.visualizationManager.applyOpeningFullMapQuantileThreshold();
+    await manager.visualizationManager.applyOpeningFullMapQuantileThreshold(undefined, pipelineRevision);
     await manager.reloadTilesFromBackend();
     await manager.stabilizeInitialViewport({ fit: false });
   } catch (error) {
@@ -416,6 +444,8 @@ function syncUiChromePalette(): void {
 }
 
 function resetState() {
+  lastWorkspaceSnapshot = "";
+  workspaceConflict.value = false;
   mapManager.value?.dispose();
   networkManager.mapManager = undefined;
   filename.value = "";
@@ -431,7 +461,9 @@ function onClosed() {
     .finally(() => networkManager.requestManager.closeFile().catch(() => undefined));
 }
 
-function onAttached() {
+async function onAttached() {
+  await persistWorkspace();
+  workspaceRestoring = true;
   networkManager.requestManager
     .attachSession()
     .then(
@@ -439,6 +471,7 @@ function onAttached() {
         filename: attachedName,
         fastaFilename: attachedFastaName,
         response,
+        workspaceState,
       }) => {
         if (!attachedName) {
           toast.error("No active session to attach");
@@ -461,9 +494,17 @@ function onAttached() {
         mapManager.value = newManager;
         networkManager.mapManager = mapManager.value;
         newManager.initializeMap();
-        void newManager
-          .stabilizeInitialViewport({ fit: false })
-          .then(() => maybePromptCoolerWeightsNaNs());
+        const secondary = await networkManager.requestManager.getSecondarySourceStatus();
+        newManager.viewAndLayersManager.setSecondaryResolutionModel(
+          secondary.attached ? secondary.compatibility : undefined,
+          { exactResolutionOnly: Boolean(secondary.sequenceAnalysis) }
+        );
+        await newManager.stabilizeInitialViewport({ fit: !workspaceState });
+        await newManager.linearTrackManager.refreshTrackList();
+        restoreWorkspace(newManager, workspaceState);
+        lastWorkspaceSnapshot = JSON.stringify(captureWorkspace(newManager));
+        workspaceConflict.value = false;
+        maybePromptCoolerWeightsNaNs();
         toast.success("Attached to session " + attachedName);
       }
     )
@@ -473,7 +514,7 @@ function onAttached() {
         err?.message ??
         "Failed to attach session";
       toast.error(message);
-    });
+    }).finally(() => { workspaceRestoring = false; });
 }
 
 async function openFileWithOptions(
@@ -481,12 +522,14 @@ async function openFileWithOptions(
   ffname: string | undefined,
   options?: { applyDefaultPreset?: boolean }
 ): Promise<void> {
+  lastWorkspaceSnapshot = "";
   startOpenProgress();
   try {
     const openFileResponse = await networkManager.requestManager.openFile(
       fname,
       ffname
     );
+    workspaceConflict.value = false;
     filename.value = fname;
     // Opening applies a preset again; ask again instead of silently reusing its NaN policy.
     lastCoolerWeightsNaNPromptKey = "";
@@ -1083,9 +1126,11 @@ watch(
 onMounted(() => {
   window.addEventListener("keydown", handleGlobalEscape, true);
   syncUiChromePalette();
+  workspaceTimer = window.setInterval(() => { void persistWorkspace(); }, 1000);
 });
 
 onUnmounted(() => {
+  if (workspaceTimer !== undefined) window.clearInterval(workspaceTimer);
   window.removeEventListener("keydown", handleGlobalEscape, true);
   stopOpenProgress();
 });
@@ -1116,6 +1161,13 @@ function onFileSelected(newFilename: string) {
 
 .open-progress-modal {
   z-index: 1055;
+}
+.workspace-conflict {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  border-radius: 0;
+  font-size: 14px;
 }
 .open-progress-backdrop {
   z-index: 1050;

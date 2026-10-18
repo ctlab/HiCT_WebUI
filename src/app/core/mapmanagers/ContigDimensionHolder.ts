@@ -422,7 +422,7 @@ export default class ContigDimensionHolder {
     if (contig_direction !== ContigDirection.FORWARD) {
       const contig_length_bp =
         this.contigDescriptors[contig_ord].contigLengthBp;
-      const first_bin_length_in_bp = contig_length_bp % resolution;
+      const first_bin_length_in_bp = contig_length_bp % resolution || resolution;
       if (in_contig_offset_bins >= 1) {
         return (
           contig_start_bp +
@@ -448,7 +448,7 @@ export default class ContigDimensionHolder {
     if (contig_direction !== ContigDirection.FORWARD) {
       const contig_length_bp =
         this.contigDescriptors[contig_ord].contigLengthBp;
-      const first_bin_length_in_bp = contig_length_bp % resolution;
+      const first_bin_length_in_bp = contig_length_bp % resolution || resolution;
       if (in_contig_offset_bins >= 1) {
         return (
           contig_start_bp +
@@ -537,7 +537,7 @@ export default class ContigDimensionHolder {
     if (contig_direction !== ContigDirection.FORWARD) {
       const contig_length_bp =
         this.contigDescriptors[contig_ord].contigLengthBp;
-      const last_bin_length_bp = contig_length_bp % resolution;
+      const last_bin_length_bp = contig_length_bp % resolution || resolution;
       if (in_contig_offset_bp < last_bin_length_bp) {
         return contig_start_bins;
       }
@@ -587,7 +587,7 @@ export default class ContigDimensionHolder {
     if (contig_direction !== ContigDirection.FORWARD) {
       const contig_length_bp =
         this.contigDescriptors[contig_ord].contigLengthBp;
-      const last_bin_length_bp = contig_length_bp % resolution;
+      const last_bin_length_bp = contig_length_bp % resolution || resolution;
       if (in_contig_offset_bp < last_bin_length_bp) {
         return contig_start_px;
       }
@@ -608,6 +608,25 @@ export default class ContigDimensionHolder {
       0,
       (this.prefix_sum_px.get(resolution) ?? [])[this.contig_count] - 1
     );
+  }
+
+  public getFractionalBpOfPx(px: number, resolution: number): number {
+    const total = this.prefix_sum_px.get(resolution)?.[this.contig_count] ?? 0;
+    if (px >= total) return this.prefix_sum_bp[this.contig_count];
+    const bin = Math.max(0, Math.floor(px));
+    const order = this.getContigOrderByPx(bin, resolution);
+    const start = this.getStartBpOfPx(bin, resolution);
+    const end = Math.min(start + resolution, this.prefix_sum_bp[order + 1],
+      bin + 1 < total ? this.getStartBpOfPx(bin + 1, resolution) : Infinity);
+    return start + Math.max(0, px - bin) * (end - start);
+  }
+
+  public getFractionalPxOfBp(bp: number, resolution: number): number {
+    const bin = this.getPxContainingBp(bp, resolution);
+    const start = this.getFractionalBpOfPx(bin, resolution);
+    const order = this.getContigOrderByPx(bin, resolution);
+    const end = Math.min(this.getFractionalBpOfPx(bin + 1, resolution), this.prefix_sum_bp[order + 1]);
+    return bin + (bp - start) / Math.max(1, end - start);
   }
 
   public getContigNameByBp(bp: number): string {

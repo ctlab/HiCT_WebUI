@@ -42,6 +42,7 @@
           :getLabelOutline="layer.getLabelOutline"
           :getLabelOutlineWidth="layer.getLabelOutlineWidth"
           :getIncludeInSvg="layer.getIncludeInSvg"
+          :getBorderOutline="() => getBorderOutline(layer.name)"
           :enableStyleEditor="layer.enableStyleEditor"
           :current-border-style="currentBorderStyle(layer.name)"
           @onColorChanged="onColorChanged"
@@ -448,8 +449,14 @@ function onStyleChanged(
   labelBold: boolean,
   labelOutline: boolean,
   labelOutlineWidth: number,
-  includeInSvg: boolean
+  includeInSvg: boolean,
+  borderOutline: boolean
 ) {
+  const holder = props.mapManager?.getLayersManager().track2DHolder;
+  if (holder && (layerName === 'Contigs' || layerName === 'Scaffolds')) {
+    const track = layerName === 'Contigs' ? holder.contigBordersTrack : holder.scaffoldBordersTrack;
+    track.options.borderOutline = borderOutline;
+  }
   switch (layerName) {
     case "Contigs":
       getEventManager()?.onContigBorderWidthChanged(borderWidth);
@@ -499,6 +506,11 @@ function onStyleChanged(
       toast.error(`Method for ${layerName} is undefined`);
       console.error(`Method for ${layerName} is undefined`);
   }
+}
+
+function getBorderOutline(name: string): boolean {
+  const holder = props.mapManager?.getLayersManager().track2DHolder;
+  return (name === 'Contigs' ? holder?.contigBordersTrack : holder?.scaffoldBordersTrack)?.options.borderOutline ?? false;
 }
 
 function getEventManager(): CommonEventManager | undefined {

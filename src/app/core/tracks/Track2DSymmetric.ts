@@ -65,6 +65,7 @@ interface Track2DSymmetricOptions {
   borderColor: Color | ColorLike;
   fillColor: Color | ColorLike;
   width: number;
+  borderOutline: boolean;
   zIndex: number;
   labelSize: number;
   labelOffsetMultiplier: number;
@@ -97,6 +98,7 @@ abstract class Track2DSymmetric extends Track2D {
       borderColor?: Color | ColorLike;
       fillColor?: Color | ColorLike;
       width?: number | undefined;
+      borderOutline?: boolean;
       zIndex?: number | undefined;
       labelSize?: number | undefined;
       labelOffsetMultiplier?: number | undefined;
@@ -111,6 +113,7 @@ abstract class Track2DSymmetric extends Track2D {
       borderColor: opt_options?.borderColor ?? [0xff, 0xaa, 0xcc, 1.0],
       fillColor: opt_options?.fillColor ?? [0x77, 0x77, 0x77, 0.1],
       width: opt_options?.width ?? 2,
+      borderOutline: opt_options?.borderOutline ?? false,
       zIndex: opt_options?.zIndex ?? 0,
       labelSize: opt_options?.labelSize ?? 12,
       labelOffsetMultiplier: opt_options?.labelOffsetMultiplier ?? 1.25,
@@ -390,7 +393,7 @@ abstract class WithRing extends Track2DSymmetric {
       }),
       zIndex: this.options.zIndex + 1,
     });
-    return () => [outlineStyle, innerStyle];
+    return () => this.options.borderOutline ? [outlineStyle, innerStyle] : [innerStyle];
   }
   protected drawPolygon(
     topLeft: Array<number>,
@@ -438,7 +441,7 @@ class ContigBordersTrack2D extends WithRing {
       {
         borderColor: "rgba(255, 64, 64, 1.0)",
         fillColor: "rgba(0, 127, 127, 0.0)",
-        width: 2,
+        width: 1,
         zIndex: 11,
       }
     );
@@ -588,7 +591,7 @@ class ScaffoldBordersTrack2D extends WithRing {
       {
         fillColor: "rgba(64, 64, 255, 0.0)",
         borderColor: "rgba(255, 255, 0, 1)",
-        width: 4,
+        width: 1,
         zIndex: 12,
       }
     );

@@ -1704,6 +1704,13 @@ function onAssemblyAGPRequest() {
   flex-grow: 0;
 }
 
+@media (max-width: 700px) {
+  .navbar-bar { height: auto; min-height: 56px; }
+  .navbar-bar .container-fluid { flex-wrap: wrap; }
+  .navbar-bar .navbar-collapse { flex-basis: 100%; }
+  .navbar-bar .navbar-nav { flex-wrap: wrap; }
+}
+
 .navbar-bar :deep(.navbar-brand),
 .navbar-bar :deep(.nav-link),
 .navbar-bar :deep(.dropdown-item),

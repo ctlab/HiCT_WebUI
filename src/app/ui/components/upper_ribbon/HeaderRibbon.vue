@@ -194,6 +194,9 @@
         <select v-model="exportScope" class="form-select form-select-sm export-scope" aria-label="Export area" title="Area used by SVG, PNG and PDF exports">
           <option value="viewport">Viewport</option><option value="whole-map">Whole map</option>
         </select>
+        <label class="d-flex align-items-center gap-1 text-nowrap" title="Remove the area outside the map from exports">
+          <input type="checkbox" v-model="cropExportToMap" aria-label="Crop export to map" /> Crop
+        </label>
         <button
           id="export-svg-button"
           class="btn btn-sm btn-outline-primary"
@@ -606,6 +609,7 @@ function cycleRulerMode(): void {
 }
 
 const exportScope = ref<"viewport" | "whole-map">("viewport");
+const cropExportToMap = ref(true);
 
 async function exportSvg() {
   if (!props.mapManager || exportingType.value) return;
@@ -642,6 +646,7 @@ async function exportSvg() {
         backgroundColor: mapBackgroundColor.value.RGBA,
         metadata,
         scope: exportScope.value,
+        cropToMap: cropExportToMap.value,
       }
     );
   } catch (e) {
@@ -685,6 +690,7 @@ async function exportPng() {
         backgroundColor: mapBackgroundColor.value.RGBA,
         metadata,
         scope: exportScope.value,
+        cropToMap: cropExportToMap.value,
       }
     );
   } catch (e) {
@@ -728,6 +734,7 @@ async function exportPdf() {
         backgroundColor: mapBackgroundColor.value.RGBA,
         metadata,
         scope: exportScope.value,
+        cropToMap: cropExportToMap.value,
       }
     );
   } catch (e) {
@@ -1330,7 +1337,7 @@ function onNormalizationChanged() {
 
   text-align: center;
 
-  width: 115px;
+  width: auto;
   height: 30px;
 
   /* Global/07. Light */
@@ -1359,7 +1366,7 @@ function onNormalizationChanged() {
   align-items: center;
   padding: 4px 8px;
 
-  min-width: 140px;
+  min-width: 2.45rem;
   height: 30px;
 
   /* Global/07. Light */
@@ -1383,6 +1390,7 @@ function onNormalizationChanged() {
 
 .export-group .btn,
 #reload-tiles-button {
+  flex-direction: row;
   align-items: center;
   display: inline-flex;
   gap: 0.25rem;
@@ -1434,6 +1442,12 @@ function onNormalizationChanged() {
   #right-header-block {
     justify-content: flex-start;
     margin-left: 0;
+  }
+
+  #left-header-block,
+  #right-header-block,
+  .export-group {
+    flex-wrap: wrap;
   }
 }
 

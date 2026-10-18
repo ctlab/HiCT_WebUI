@@ -10,6 +10,10 @@ import VectorLayer from "ol/layer/Vector.js";
 import VectorSource from "ol/source/Vector.js";
 import Feature from "ol/Feature.js";
 import Point from "ol/geom/Point.js";
+import TileLayer from "ol/layer/Tile.js";
+import TileGrid from "ol/tilegrid/TileGrid.js";
+import XYZ from "ol/source/XYZ.js";
+import { inView } from "ol/layer/Layer.js";
 
 // Exercise the production managers with a real OpenLayers View. Only unrelated
 // UI imports and the network/assembly facade are replaced for this Node test.
@@ -37,8 +41,20 @@ function loadManager(name, imports = {}) {
   return exports;
 }
 
+const resolutionModel = loadManager("resolutionModel");
+class TestTileSource extends XYZ {
+  constructor(_manager, _index, _bp, _source, options) {
+    super(options);
+  }
+  do_reload() {}
+}
 const { HiCViewAndLayersManager, ActiveTool } = loadManager(
-  "HiCViewAndLayersManager"
+  "HiCViewAndLayersManager", {
+    "ol/layer/Tile": { default: TileLayer },
+    "ol/tilegrid/TileGrid": { default: TileGrid },
+    "../VersionedXYZSource": { VersionedXYZContactMapSource: TestTileSource },
+    "./resolutionModel": resolutionModel,
+  }
 );
 class Request {
   constructor(options) {
@@ -69,6 +85,7 @@ function fixture() {
     pixelResolutionSet: [1, 5, 10],
   });
   manager.calculateMaximumScaledImageSize = () => 10000;
+  manager.mapManager = { getMap: () => ({ getSize: () => [800, 600] }) };
   manager.view = new View({
     ...manager.createViewOptions(manager.fullGlobalExtent),
     center: [4200, -3700],
@@ -171,6 +188,49 @@ function snapshot(view) {
 }
 
 async function checkViewport() {
+  {
+    const { manager } = fixture();
+    manager.primaryResolutionSet = resolutionModel.buildSourceResolutionDescriptorSet(
+      "PRIMARY", [1000, 5000, 10000, 25000], [10000, 2000, 1000, 400], 1000
+    );
+    manager.secondaryResolutionSet = resolutionModel.buildSourceResolutionDescriptorSet(
+      "SECONDARY", [5000], [2000], 1000
+    );
+    manager.secondaryExactResolutionOnly = true;
+    manager.layersZIndices = { HIC_MAP_LAYER_Z_INDEX: 0 };
+    manager.mapManager.getOptions = () => ({ tileSize: 256 });
+    manager.mapManager.getMap = () => ({ addLayer() {} });
+    for (const key of Object.keys(manager.layersHolder)) manager.layersHolder[key] = [];
+    manager.layersHolder.primaryHiCDataLayers = [];
+    manager.layersHolder.secondaryHiCDataLayers = [];
+    manager.layersHolder.primaryBpResolutionToHiCDataLayer = new Map();
+    manager.layersHolder.secondaryBpResolutionToHiCDataLayer = new Map();
+    manager.layersHolder.bpResolutionToHiCDataLayer = new Map();
+    manager.refreshVisibleBuiltinVectorSources = () => {};
+    manager.addSourceHiCDataLayers(manager.primaryResolutionSet);
+    manager.addSourceHiCDataLayers(manager.secondaryResolutionSet);
+    for (const [enabled, viewResolution, expected, secondary] of [
+      [[5000, 10000], 5 / 16, 5000, true],
+      [[5000, 10000], 9, 5000, true],
+      [[5000, 10000], 10, 10000, false],
+      [[5000, 10000], 100, 10000, false],
+      [[5000], 100, 5000, true],
+      [null, 0.5, 1000, false],
+      [null, 5, 5000, true],
+      [null, 25, 25000, false],
+    ]) {
+      manager.enabledBpResolutions = enabled && new Set(enabled);
+      manager.view.getResolution = () => viewResolution;
+      manager.updateCurrentHiCViewState();
+      const renderable = (layers) => layers.filter(layer =>
+        inView(layer.getLayerState(), { resolution: viewResolution, zoom: 10 })
+      ).map(layer => layer.get("bpResolution"));
+      assert.deepEqual(renderable(manager.layersHolder.primaryHiCDataLayers), [expected],
+        `selected primary must actually render at ${viewResolution}, enabled=${enabled}`);
+      assert.deepEqual(renderable(manager.layersHolder.secondaryHiCDataLayers), secondary ? [5000] : [],
+        "generated overlays render only at an exact available primary resolution");
+    }
+  }
   {
     const { manager } = fixture();
     const resolutions = [1000, 5000, 10000];
@@ -356,7 +416,7 @@ async function checkViewport() {
       [2000, -1500],
       "explicit scope choice still fits"
     );
-    assert.notEqual(manager.view.getResolution(), 2.5);
+    assert.equal(manager.view.getResolution(), 2.5, "scope fits without padding");
   }
 
   for (const scale of [1, 4]) {
@@ -418,12 +478,19 @@ checkViewport().catch((error) => {
 const { ContactMapManager } = loadManager("ContactMapManager");
 const closedMap = Object.create(ContactMapManager.prototype);
 closedMap.disposed = false;
+closedMap.sequenceRenderers = new Set();
+const releaseSequenceRenderer = closedMap.registerSequenceRenderer(async () => {});
+assert.equal(closedMap.sequenceRenderers.size, 1);
+releaseSequenceRenderer();
+assert.equal(closedMap.sequenceRenderers.size, 0);
+closedMap.registerSequenceRenderer(async () => {});
 closedMap.visualizationManager = { dispose() {} };
 closedMap.linearTrackManager = { dispose() {} };
 closedMap.clearOverviewMapTarget = () => {};
 closedMap.viewAndLayersManager = { dispose() {} };
 closedMap.map = { setTarget() {}, updateSize() { throw Error("rendered a closed map"); } };
 closedMap.dispose();
+assert.equal(closedMap.sequenceRenderers.size, 0, "Dispose releases sequence renderer callbacks");
 closedMap.refreshWorkspaceLayout();
 closedMap.scheduleWorkspaceLayoutRefresh();
 closedMap.reloadVisuals();

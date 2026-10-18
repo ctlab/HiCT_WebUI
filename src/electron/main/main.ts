@@ -177,17 +177,21 @@ function configureSecurity(baseUrl: URL): void {
   ipcMain.handle(
     "hict:save-export",
     async (
-      _event,
+      event,
       payload: { filename?: string; bytes?: number[] }
     ): Promise<{ saved: boolean; path?: string }> => {
       const filename =
         typeof payload.filename === "string" && payload.filename.trim().length > 0
           ? payload.filename.trim()
           : "hict-export.bin";
-      const result = await dialog.showSaveDialog({
+      const parent = BrowserWindow.fromWebContents(event.sender);
+      const options = {
         title: "Save HiCT export",
         defaultPath: filename,
-      });
+      };
+      const result = parent
+        ? await dialog.showSaveDialog(parent, options)
+        : await dialog.showSaveDialog(options);
       if (result.canceled || !result.filePath) {
         return { saved: false };
       }
@@ -219,7 +223,9 @@ function configureSecurity(baseUrl: URL): void {
             "script-src 'self' 'unsafe-eval' 'unsafe-inline'; " +
             "style-src 'self' 'unsafe-inline'; " +
             `img-src 'self' data: blob: ${httpOrigin} ${httpSameHostAllPorts} http://127.0.0.1:* http://localhost:*; ` +
-            `connect-src 'self' ${httpOrigin} ${httpSameHostAllPorts} ${wsOrigin} ${wsSameHostAllPorts} http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; ` +
+            // svg2pdf reads temporary in-memory PNG blobs through XHR. Keep
+            // data: and external network origins excluded from connect-src.
+            `connect-src 'self' blob: ${httpOrigin} ${httpSameHostAllPorts} ${wsOrigin} ${wsSameHostAllPorts} http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; ` +
             "font-src 'self' data:;"
         ],
       },
@@ -239,8 +245,13 @@ if (process.platform === "win32") {
 
 let mainWindow: BrowserWindow | undefined;
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const baseUrl = normalizeAllowedUrl(requestedUrl());
+  if (process.env.HICT_RESET_WEBUI === "1") {
+    await session.defaultSession.clearStorageData();
+    await session.defaultSession.clearCache();
+    console.error("HICT_WEBUI_RESET_COMPLETE");
+  }
   configureSecurity(baseUrl);
   mainWindow = createWindow(baseUrl);
 

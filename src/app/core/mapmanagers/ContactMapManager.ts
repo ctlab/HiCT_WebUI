@@ -359,6 +359,7 @@ class ContactMapManager {
   private refreshWorkspaceLayout(options?: { renderTracks?: boolean }): void {
     if (this.disposed) return;
     this.map.updateSize();
+    this.viewAndLayersManager.updateZoomLimit();
     this.viewAndLayersManager.updateCurrentHiCViewState();
     this.viewAndLayersManager.scheduleRulerRender();
     if (options?.renderTracks !== false) {
@@ -1061,10 +1062,20 @@ class ContactMapManager {
   }
 
   private exportInProgress = false;
+  public get isExporting(): boolean { return this.exportInProgress; }
+  private readonly sequenceRenderers = new Set<() => Promise<void>>();
+  public registerSequenceRenderer(render: () => Promise<void>): () => void {
+    this.sequenceRenderers.add(render);
+    return () => { this.sequenceRenderers.delete(render); };
+  }
+  private async renderSequenceTracks(): Promise<void> {
+    for (const render of this.sequenceRenderers) await render();
+  }
 
   private async buildViewportExportSvg(options?: {
     backgroundColor?: string; metadata?: Record<string, unknown>;
     includeWorkspaceComposite?: boolean; scope?: "viewport" | "whole-map" | "selection";
+    cropToMap?: boolean; progress?: (value: number) => void;
   }): Promise<{svg: SVGSVGElement; canvas: HTMLCanvasElement}> {
     if (this.exportInProgress) throw new Error("An export is already running.");
     const workspace = document.querySelector(".interactive-workspace") as HTMLElement | null;
@@ -1074,11 +1085,41 @@ class ContactMapManager {
     const selection = options?.scope === "selection" ? this.viewAndLayersManager.selectionInteractions.contigSelectExtent.getExtent()?.slice() : undefined;
     if (options?.scope === "selection" && (!selection || selection[2] <= selection[0] || selection[3] <= selection[1])) throw new Error("Select a nonempty rectangle before exporting.");
     const history=this.networkManager.requestManager.history.applied;
+    const workspaceStyle = workspace.getAttribute("style");
+    const descriptor = this.viewAndLayersManager.currentViewState.resolutionDesciptor;
+    const pixels = this.viewAndLayersManager.getActiveMapPixelBounds(descriptor.bpResolution);
+    const dataExtent = [pixels.colStartPx * descriptor.pixelResolution, -pixels.rowEndPx * descriptor.pixelResolution,
+      pixels.colEndPx * descriptor.pixelResolution, -pixels.rowStartPx * descriptor.pixelResolution];
     const interactions=this.map.getInteractions().getArray().map(item => [item,item.getActive()] as const);
     this.exportInProgress=true;
     try {
+      options?.progress?.(0.05);
       interactions.forEach(([item])=>item.setActive(false));
-      if (whole) this.viewAndLayersManager.fitViewToActiveExtent();
+      if (whole) {
+        const extent = dataExtent;
+        const scale = this.viewAndLayersManager.currentViewState.resolutionDesciptor.pixelResolution;
+        const mapRect = this.map.getViewport().getBoundingClientRect(), sceneRect = workspace.getBoundingClientRect();
+        const width = Math.ceil((extent[2] - extent[0]) / scale);
+        const height = Math.ceil((extent[3] - extent[1]) / scale);
+        const totalWidth = width + mapRect.left - sceneRect.left;
+        const totalHeight = height + mapRect.top - sceneRect.top;
+        if (totalWidth > 16384 || totalHeight > 16384 || totalWidth * totalHeight > 64 * 1024 * 1024)
+          throw new Error("The whole map is too large for an image at this resolution. Select a coarser resolution or export a selection.");
+        workspace.style.width = `${totalWidth}px`;
+        workspace.style.height = `${totalHeight}px`;
+        workspace.style.maxWidth = "none";
+        workspace.style.maxHeight = "none";
+        workspace.style.minWidth = `${totalWidth}px`;
+        workspace.style.minHeight = `${totalHeight}px`;
+        workspace.style.flexShrink = "0";
+        await this.waitForNextAnimationFrame();
+        this.map.updateSize();
+        this.viewAndLayersManager.updateZoomLimit();
+        view.setRotation(0);
+        view.setCenter([(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2]);
+        view.setResolution(scale);
+        this.viewAndLayersManager.updateCurrentHiCViewState();
+      }
       if (selection) { view.setRotation(0); view.fit(selection, { size: this.map.getSize(), padding: [1, 1, 1, 1] }); }
       if (selection) {
         const a = this.map.getPixelFromCoordinate([selection[0], selection[3]]), b = this.map.getPixelFromCoordinate([selection[2], selection[1]]);
@@ -1087,11 +1128,14 @@ class ContactMapManager {
       }
       await document.fonts.ready;
       await this.linearTrackManager.render({allowFetch:true});
+      await this.renderSequenceTracks();
+      options?.progress?.(0.2);
       await new Promise<void>((resolve,reject)=>{
         const done=()=>{window.clearTimeout(timer);resolve();};
         const timer=window.setTimeout(()=>{this.map.un("rendercomplete",done);reject(new Error("The map did not finish rendering for export. Retry after loading completes."));},60000);
         this.map.once("rendercomplete",done);this.map.renderSync();
       });
+      options?.progress?.(0.4);
       const {captureCanvasScene}=await import("../export/CanvasScene");
       const svg=await captureCanvasScene(workspace,async()=>{
         this.map.getLayers().forEach(layer=>layer.changed());
@@ -1099,20 +1143,35 @@ class ContactMapManager {
         this.minimap?.getLayers().forEach(layer=>layer.changed());this.minimap?.renderSync();
         this.viewAndLayersManager.scheduleRulerRender();
         await this.linearTrackManager.render({allowFetch:false});
+        await this.renderSequenceTracks();
         await this.waitForNextAnimationFrame();await this.waitForNextAnimationFrame();
       },options?.metadata);
+      const { prepareSvgForEditors } = await import("../export/SvgCompatibility");
+      prepareSvgForEditors(svg.svg);
+      options?.progress?.(0.65);
       if (history !== this.networkManager.requestManager.history.applied) throw new Error("The assembly changed during export. Please export the updated view again.");
-      if (selection) {
-        const a = this.map.getPixelFromCoordinate([selection[0], selection[3]]);
-        const b = this.map.getPixelFromCoordinate([selection[2], selection[1]]);
+      const cropExtent = selection ?? (options?.cropToMap !== false ? dataExtent : undefined);
+      if (cropExtent) {
+        const size = this.map.getSize()!;
+        const { cropSelectionScene, visibleMapBounds } = await import("../export/SelectionScene");
+        const bounds = visibleMapBounds([
+          [cropExtent[0], cropExtent[3]], [cropExtent[2], cropExtent[3]],
+          [cropExtent[2], cropExtent[1]], [cropExtent[0], cropExtent[1]],
+        ].map(point => this.map.getPixelFromCoordinate(point)), size);
+        if (!bounds) throw new Error("The map is outside the viewport. Fit the map before exporting.");
         const mapRect = this.map.getViewport().getBoundingClientRect(), sceneRect = workspace.getBoundingClientRect();
         const marginLeft = mapRect.left - sceneRect.left, marginTop = mapRect.top - sceneRect.top;
-        const { cropSelectionScene } = await import("../export/SelectionScene");
-        return cropSelectionScene(svg, { left: marginLeft + a[0], top: marginTop + a[1],
-          width: b[0] - a[0], height: b[1] - a[1], marginLeft, marginTop });
+        return cropSelectionScene(svg, { left: marginLeft + bounds.left, top: marginTop + bounds.top,
+          width: bounds.width, height: bounds.height, marginLeft, marginTop });
       }
       return svg;
     } finally {
+      if (whole) {
+        if (workspaceStyle === null) workspace.removeAttribute("style");
+        else workspace.setAttribute("style", workspaceStyle);
+        this.map.updateSize();
+        this.viewAndLayersManager.updateZoomLimit();
+      }
       this.linearTrackManager.exportLabelBounds = undefined;
       if((whole || selection) && !this.disposed){view.setCenter(center);view.setResolution(resolution);view.setRotation(rotation);this.map.renderSync();this.viewAndLayersManager.scheduleRulerRender();void this.linearTrackManager.render();}
       interactions.forEach(([item,active])=>item.setActive(active));
@@ -1122,33 +1181,41 @@ class ContactMapManager {
 
   public async exportCurrentMapSvg(progressCallback?: (progress:number)=>void, options?: {
     backgroundColor?:string;metadata?:Record<string,unknown>;includeWorkspaceComposite?:boolean;scope?:"viewport"|"whole-map"|"selection";
+    cropToMap?: boolean;
   }):Promise<void> {
-    const {svg}=await this.buildViewportExportSvg(options);
+    const {svg}=await this.buildViewportExportSvg({...options, progress: progressCallback});
     const {embedSvgFonts}=await import("../rendering/MapFonts");await embedSvgFonts(svg);
+    progressCallback?.(0.9);
     await this.saveExportBlob(new Blob([new XMLSerializer().serializeToString(svg)],{type:"image/svg+xml"}),`${this.options.filename}.svg`);
     progressCallback?.(1);
   }
 
   public async exportCurrentMapPng(progressCallback?: (progress:number)=>void, options?: {
     backgroundColor?:string;metadata?:Record<string,unknown>;includeWorkspaceComposite?:boolean;scope?:"viewport"|"whole-map"|"selection";
+    cropToMap?: boolean;
   }):Promise<void> {
-    const {canvas}=await this.buildViewportExportSvg(options);
+    const {canvas}=await this.buildViewportExportSvg({...options, progress: progressCallback});
     const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error("PNG encoding failed.")),"image/png"));
+    progressCallback?.(0.9);
     await this.saveExportBlob(blob,`${this.options.filename}.png`);progressCallback?.(1);
   }
 
   public async exportCurrentMapPdf(progressCallback?: (progress:number)=>void, options?: {
     backgroundColor?:string;metadata?:Record<string,unknown>;includeWorkspaceComposite?:boolean;scope?:"viewport"|"whole-map"|"selection";
+    cropToMap?: boolean;
   }):Promise<void> {
-    const {svg}=await this.buildViewportExportSvg(options);
+    const {svg}=await this.buildViewportExportSvg({...options, progress: progressCallback});
     const width=Number(svg.getAttribute("width")),height=Number(svg.getAttribute("height"));
     const {jsPDF}=await import("jspdf");await import("svg2pdf.js");
     const {embedPdfFonts,configureMapPdfFonts}=await import("../rendering/MapFonts");configureMapPdfFonts(jsPDF);
-    const {prepareSvgForPdf,configurePdfTransparency}=await import("../export/PdfCompatibility");
+    const {renderSvgToPdf,configurePdfTransparency}=await import("../export/PdfCompatibility");
     const pdf=new jsPDF({compress:true,orientation:width>=height?"landscape":"portrait",unit:"px",format:[width,height],hotfixes:["px_scaling"]});
     configurePdfTransparency(pdf);
     await embedPdfFonts(pdf);
-    await pdf.svg(prepareSvgForPdf(svg),{x:0,y:0,width,height});
+    progressCallback?.(0.75);
+    await this.waitForNextAnimationFrame();
+    await renderSvgToPdf(pdf,svg,width,height);
+    progressCallback?.(0.9);
     await this.saveExportBlob(pdf.output("blob"),`${this.options.filename}.pdf`);progressCallback?.(1);
   }
 
@@ -1355,6 +1422,7 @@ class ContactMapManager {
   public dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.sequenceRenderers.clear();
     this.visualizationManager.dispose();
     this.linearTrackManager.dispose();
     this.clearOverviewMapTarget();

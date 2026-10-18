@@ -764,7 +764,7 @@ class RulerControl extends Control {
     );
     context.stroke();
 
-    const fontSize = tick.major ? 11 : 9;
+    const fontSize = tick.major ? 13 : 11;
     const font = `${tick.major ? "bold" : "normal"} ${fontSize}px HiCT Sans`;
     if (this.direction === "horizontal") {
       const textX = this.clamp(
@@ -793,7 +793,7 @@ class RulerControl extends Control {
         true,
         false
       );
-      if (tick.major && (tick.contigLabel || tick.scaffoldLabel)) {
+      if (this.rulerCoordinateMode.value !== "global" && tick.major && (tick.contigLabel || tick.scaffoldLabel)) {
         this.drawRotatedText(
           [tick.contigLabel, tick.scaffoldLabel].filter(Boolean).join(" / "),
           textX,
@@ -821,7 +821,7 @@ class RulerControl extends Control {
       true,
       false
     );
-    if (tick.major && (tick.contigLabel || tick.scaffoldLabel)) {
+    if (this.rulerCoordinateMode.value !== "global" && tick.major && (tick.contigLabel || tick.scaffoldLabel)) {
       this.drawRotatedText(
         [tick.contigLabel, tick.scaffoldLabel].filter(Boolean).join(" / "),
         Math.max(2, coord[0] - tickLength - 4),

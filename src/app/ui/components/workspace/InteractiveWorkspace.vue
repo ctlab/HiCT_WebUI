@@ -44,11 +44,19 @@
         class="interactive-workspace_corner_minimap interactive-workspace_corner_minimap--compact"
       ></div>
     </div>
-    <div class="interactive-workspace_horizontal_ruler" id="horizontal-ruler-div"></div>
+    <div class="interactive-workspace_horizontal_ruler">
+      <div id="horizontal-ruler-div" class="ruler-surface" style="position: absolute"
+        :class="{ 'ruler-surface--sequence-horizontal': horizontalSequencePresent }"></div>
+      <SequenceAxisTrack :map-manager="props.mapManager" axis="horizontal" @presence="horizontalSequencePresent = $event" />
+    </div>
     <div class="interactive-workspace_vertical_tracks">
       <VerticalIGVTrack :map-manager="props.mapManager"></VerticalIGVTrack>
     </div>
-    <div class="interactive-workspace_vertical_ruler" id="vertical-ruler-div"></div>
+    <div class="interactive-workspace_vertical_ruler">
+      <div id="vertical-ruler-div" class="ruler-surface" style="position: absolute"
+        :class="{ 'ruler-surface--sequence-vertical': verticalSequencePresent }"></div>
+      <SequenceAxisTrack :map-manager="props.mapManager" axis="vertical" @presence="verticalSequencePresent = $event" />
+    </div>
     <div class="interactive-workspace_content">
       <ContactMap :map-manager="props.mapManager"></ContactMap>
     </div>
@@ -75,6 +83,7 @@ import {
 import HorizontalIGVTrack from "../tracks/HorizontalIGVTrack.vue";
 import ContactMap from "../../contactmap/ContactMap.vue";
 import VerticalIGVTrack from "../tracks/VerticalIGVTrack.vue";
+import SequenceAxisTrack from "../tracks/SequenceAxisTrack.vue";
 
 import { useStyleStore } from "@/app/stores/styleStore";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -105,6 +114,12 @@ const cornerMiniMapTarget = ref<HTMLElement | null>(null);
 const cornerMiniMapFallbackTarget = ref<HTMLElement | null>(null);
 
 const visibleTrackCount = ref(0);
+const horizontalSequencePresent = ref(false);
+const verticalSequencePresent = ref(false);
+watch([horizontalSequencePresent, verticalSequencePresent], async () => {
+  await nextTick();
+  props.mapManager?.viewAndLayersManager.scheduleRulerRender();
+});
 let unsubscribeTrackList: (() => void) | undefined;
 const horizontalTrackPanelSizePx = ref(140);
 const verticalTrackPanelSizePx = ref(140);
@@ -259,7 +274,7 @@ const horizontalTrackPanelCssSize = computed(() =>
 const verticalTrackPanelCssSize = computed(() =>
   visibleTrackCount.value > 0 ? `${verticalTrackPanelSizePx.value}px` : "0px"
 );
-const rulerPanelCssSize = "44px";
+const rulerPanelCssSize = "64px";
 </script>
 
 <style scoped>
@@ -349,10 +364,22 @@ const rulerPanelCssSize = "44px";
 
 .interactive-workspace_horizontal_ruler {
   grid-area: horizontal-ruler;
+  position: relative;
   overflow: hidden;
   border-right: 1px solid black;
   border-bottom: 1px solid black;
   background: inherit;
+}
+
+.ruler-surface {
+  inset: 0;
+  overflow: hidden;
+}
+.ruler-surface--sequence-horizontal {
+  bottom: 24px;
+}
+.ruler-surface--sequence-vertical {
+  right: 24px;
 }
 
 .interactive-workspace_vertical_tracks {
@@ -361,6 +388,7 @@ const rulerPanelCssSize = "44px";
 
 .interactive-workspace_vertical_ruler {
   grid-area: vertical-ruler;
+  position: relative;
   overflow: hidden;
   border-right: 1px solid black;
   border-bottom: 1px solid black;

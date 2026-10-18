@@ -17,6 +17,7 @@
         </div>
         <button v-if="item.kind !== 'selection'" role="menuitem" @click="beginRename(item)">Rename…</button>
         <template v-if="item.kind === 'selection'">
+          <button role="menuitem" @click="items = []; histogramOpen = true">Signal histogram...</button>
           <button role="menuitem" @click="openAnalysis('dotplot')">Generate dotplot for selection…</button>
           <button role="menuitem" @click="openAnalysis('moddotplot')">Generate ModDotPlot for selection…</button>
           <button role="menuitem" @click="openAnalysis('search')">Find sequences in selection…</button>
@@ -93,6 +94,7 @@
   </Teleport>
   <ModDotPlotModal v-if="analysis === 'moddotplot' || analysis === 'dotplot'" :kind="analysis" :map-manager="props.mapManager" :initial-selection="true" @dismissed="analysis = null" />
   <SequenceSearchModal v-if="analysis === 'search'" :map-manager="props.mapManager" :initial-selection="true" @dismissed="analysis = null" />
+  <SignalHistogramModal v-if="histogramOpen" :map-manager="props.mapManager" selection @dismissed="histogramOpen = false" />
 </template>
 <script setup lang="ts">
 import {
@@ -115,7 +117,9 @@ import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { containsCoordinate } from "ol/extent";
 import ModDotPlotModal from "@/app/ui/components/upper_ribbon/ModDotPlotModal.vue";
 import SequenceSearchModal from "@/app/ui/components/upper_ribbon/SequenceSearchModal.vue";
+import SignalHistogramModal from "@/app/ui/components/upper_ribbon/SignalHistogramModal.vue";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
+const histogramOpen = ref(false);
 const analysis = ref<"search" | "moddotplot" | "dotplot" | null>(null);
 type Item = {
   kind: "contig" | "scaffold" | "selection";
