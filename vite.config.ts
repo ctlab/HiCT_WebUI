@@ -142,6 +142,8 @@ export default defineConfig({
     // https: true,
   },
   build: {
+    // Monterey's WKWebView (Tauri) must parse the same assets as newer browsers.
+    target: ["es2020", "safari15"],
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       output: {

@@ -19,6 +19,9 @@
     "icon": [
       "../public/favicon.ico"
     ],
-    "targets": "all"
+    "targets": "all",
+    "macOS": {
+      "minimumSystemVersion": "12.3"
+    }
   }
 }
