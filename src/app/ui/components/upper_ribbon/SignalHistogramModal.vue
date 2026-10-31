@@ -42,32 +42,8 @@
           </select></label
         >
       </div>
-      <div class="histogram-chart">
-        <svg
-          v-if="result"
-          viewBox="0 0 640 220"
-          role="img"
-          aria-label="Signal value distribution"
-        >
-          <rect
-            v-for="(count, i) in result.counts"
-            :key="i"
-            :x="i * 10"
-            :y="200 - (180 * count) / peak"
-            width="9"
-            :height="(180 * count) / peak"
-            :data-count="count"
-            fill="#337ab7"
-          >
-            <title>{{ count.toLocaleString() }} values</title>
-          </rect>
-          <text x="0" y="217" font-size="12">
-            {{ result.min.toPrecision(5) }}
-          </text>
-          <text x="640" y="217" text-anchor="end" font-size="12">
-            {{ result.max.toPrecision(5) }}
-          </text>
-        </svg>
+      <InteractiveHistogram v-if="result" :values="result.values" />
+      <div v-if="loading" class="histogram-chart">
         <span
           v-if="loading"
           class="spinner-border"
@@ -88,7 +64,8 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import InteractiveHistogram from "./InteractiveHistogram.vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import {
   diagnosticBounds,
@@ -106,10 +83,9 @@ const emit = defineEmits<{ (event: "dismissed"): void }>();
 const source = ref<"PRIMARY" | "SECONDARY">("PRIMARY"),
   signalMode = ref<SignalMode>("RAW_COUNTS");
 const triangle = ref<"both" | "upper" | "lower">("both");
-const result = ref<SignalHistogram>(),
+const result = shallowRef<SignalHistogram>(),
   loading = ref(false),
   error = ref("");
-const peak = computed(() => Math.max(1, ...(result.value?.counts ?? [])));
 const domainLabel = computed(
   () =>
     ({
@@ -194,9 +170,5 @@ watch(
   height: 230px;
   display: grid;
   place-items: center;
-}
-.histogram-chart svg {
-  width: 100%;
-  height: 100%;
 }
 </style>

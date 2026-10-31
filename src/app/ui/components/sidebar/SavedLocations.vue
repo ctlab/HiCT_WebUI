@@ -130,6 +130,7 @@
           class="btn btn-outline-success"
           type="button"
           title="Rename contig"
+          aria-label="Rename contig"
           v-if="contigDirty.has(contig.contigId)"
           @click="renameContig(contig.contigId)"
         >
@@ -139,6 +140,7 @@
           class="btn btn-outline-secondary"
           type="button"
           title="Reset contig name"
+          aria-label="Reset contig name"
           @click="resetContigName(contig.contigId)"
         >
           <i class="bi bi-arrow-counterclockwise"></i>
@@ -147,6 +149,7 @@
           class="btn btn-outline-primary"
           type="button"
           title="Go to contig"
+          aria-label="Go to contig"
           @click="goToContig(contig.contigId)"
         >
           <i class="bi bi-eye"></i>
@@ -184,6 +187,7 @@
           class="btn btn-outline-success"
           type="button"
           title="Rename scaffold"
+          aria-label="Rename scaffold"
           v-if="scaffoldDirty.has(scaffold.scaffoldId)"
           @click="renameScaffold(scaffold.scaffoldId)"
         >
@@ -193,6 +197,7 @@
           class="btn btn-outline-secondary"
           type="button"
           title="Reset scaffold name"
+          aria-label="Reset scaffold name"
           @click="resetScaffoldName(scaffold.scaffoldId)"
         >
           <i class="bi bi-arrow-counterclockwise"></i>
@@ -201,6 +206,7 @@
           class="btn btn-outline-primary"
           type="button"
           title="Go to scaffold"
+          aria-label="Go to scaffold"
           @click="goToScaffold(scaffold.scaffoldId)"
         >
           <i class="bi bi-eye"></i>

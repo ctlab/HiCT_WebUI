@@ -76,12 +76,16 @@
           <div v-if="job" class="mt-3" role="status" aria-live="polite">
             <span v-if="busy" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
             {{ job.status }}<span v-if="job.status === 'finished'">: {{ job.hits }} matches</span>
+            <span v-if="displaying">; opening result track...</span>
           </div>
+          <p v-if="job?.status === 'finished' && job.outputFile" class="small mt-2">Saved BED: {{ job.outputFile }}</p>
+          <p v-if="job?.status === 'finished' && job.hits === 0" class="alert alert-info">No matching sequence found. No track was added.</p>
           <pre v-if="job?.logs.length" class="sequence-logs mt-2" aria-label="Sequence search log">{{ job.logs.join('\n') }}</pre>
         </div>
         <footer class="modal-footer">
           <button v-if="busy && job" type="button" class="btn btn-outline-danger" @click="cancel">Cancel search</button>
           <button v-if="!busy" type="button" class="btn btn-outline-secondary" @click="emit('dismissed')">Close</button>
+          <button v-if="job?.status === 'finished' && job.hits > 0" type="button" class="btn btn-primary" :disabled="busy" @click="displayResult">Open result track</button>
           <button type="submit" class="btn btn-primary" :disabled="busy || !!unavailableReason || !queries.trim()">Find sequences</button>
         </footer>
       </form>
@@ -91,7 +95,7 @@
 
 <script setup lang="ts">
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
-import { ref, computed, onBeforeUnmount, onMounted } from "vue";
+import { ref, computed, onBeforeUnmount } from "vue";
 import { useSequenceReadiness } from "./useSequenceReadiness";
 import SequenceGapSettings from "./SequenceGapSettings.vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
@@ -123,17 +127,21 @@ const blastUnavailableReason = computed(() => readiness.reason("blastn"));
 const unavailableReason = computed(() => readiness.reason(mode.value === "blast" ? "blastn" : "seqkit"));
 const submitting = ref(false), error = ref("");
 const job = ref<SequenceAnalysisJob | null>(null);
-const busy = computed(() => submitting.value || !!job.value && ["submitted", "preparing", "running"].includes(job.value.status));
+const displaying = ref(false);
+const busy = computed(() => submitting.value || displaying.value || !!job.value && ["submitted", "preparing", "running"].includes(job.value.status));
 let timer: number | undefined;
 let disposed = false;
 let openingResult = false;
 let sourceSession: string | undefined;
+let tracksBeforeDelivery: Set<string> | undefined;
 useEscDismissableDialog({ priority: 1070, isOpen: () => true, canClose: () => !busy.value, requestClose: () => emit("dismissed") });
 onBeforeUnmount(() => { disposed = true; window.clearTimeout(timer); });
 
 async function start() {
   if (busy.value || unavailableReason.value) return;
   error.value = ""; submitting.value = true; openingResult = false;
+  tracksBeforeDelivery = undefined;
+  job.value = null;
   sourceSession = manager.history.applied?.session;
   const settings: SequenceSearchSettings = {
     gapLengthBp: uiSettings.sequenceGapLengthBp,
@@ -164,24 +172,52 @@ async function poll() {
     job.value = current;
     if (current.status === "finished" && !openingResult) {
       openingResult = true;
-      if (sourceSession !== manager.history.applied?.session) {
-        error.value = `The map changed while searching. Result saved at ${current.outputFile}; open it on the original map.`;
-        notifications.add("warning", error.value); return;
-      }
-      if (current.hits > 0 && current.outputFile) {
-        try { await props.mapManager.linearTrackManager.openTrack(current.outputFile, `Sequence search (${current.hits} matches)`); }
-        catch (failure) {
-          error.value = `Search finished, but the track could not be opened: ${extractErrorMessage(failure)}. The result is saved at ${current.outputFile}.`;
-          notifications.add("error", error.value); return;
-        }
-      }
-      notifications.add("success", `Sequence search completed: ${current.hits} matches. ${current.hits > 0 ? 'The track follows assembly edits; disrupted matches are marked.' : 'No matching sequence found.'}`);
-      emit("dismissed"); return;
+      error.value = "";
+      if (current.hits > 0) await displayResult();
+      else notifications.add("info", "Sequence search completed: no matching sequence found.");
+      return;
     }
     if (current.status === "failed") { error.value = current.error ?? "Sequence analysis failed"; notifications.add("error", error.value); return; }
     if (current.status === "cancelled") { notifications.add("info", "Sequence search cancelled."); return; }
   } catch (failure) { error.value = `Could not refresh search progress: ${extractErrorMessage(failure)}. Retrying…`; }
   if (!disposed) timer = window.setTimeout(poll, 1000);
+}
+
+async function displayResult() {
+  const current = job.value;
+  if (!current || current.status !== "finished" || displaying.value) return;
+  if (sourceSession !== manager.history.applied?.session) {
+    error.value = `The map changed while searching. Result saved at ${current.outputFile}; open it on the original map.`;
+    notifications.add("warning", error.value); return;
+  }
+  if (!current.outputFile) { error.value = "Search finished without a BED output path. Check the server log."; return; }
+  displaying.value = true; error.value = "";
+  try {
+    const tracks = props.mapManager.linearTrackManager;
+    // A previous POST may have succeeded even if the subsequent refresh failed.
+    // Reconcile before retrying so a temporary network error cannot duplicate tracks.
+    // Delivery must not wait for unrelated tracks to finish their viewport queries.
+    await tracks.refreshTrackList(false);
+    tracksBeforeDelivery ??= new Set(tracks.getTracksSnapshot().map(t => t.trackId));
+    const isResultTrack = (t: { trackId: string; sourceFile: string }) =>
+      t.sourceFile === current.outputFile && !tracksBeforeDelivery!.has(t.trackId);
+    if (!tracks.getTracksSnapshot().some(isResultTrack))
+      await tracks.openTrack(current.outputFile, `Sequence search (${current.hits} matches)`, false);
+    const track = tracks.getTracksSnapshot().find(isResultTrack);
+    if (!track) throw new Error("The server did not return the result track. Try opening it again.");
+    if (!track.visible) await tracks.updateTrack(track.trackId, { visible: true });
+    tracks.setTrackVisibleOnAxis(track.trackId, "horizontal", true);
+    tracks.setTrackVisibleOnAxis(track.trackId, "vertical", true);
+    props.mapManager.scheduleWorkspaceLayoutRefresh();
+    if (disposed) return;
+    notifications.add("success", `Sequence search completed: ${current.hits} matches. Result track added on both axes.`);
+    emit("dismissed");
+  } catch (failure) {
+    if (!disposed) {
+      error.value = `Search finished, but the track could not be opened: ${extractErrorMessage(failure)}. Use Open result track to retry without repeating the search.`;
+      notifications.add("error", error.value);
+    }
+  } finally { displaying.value = false; }
 }
 
 async function cancel() {

@@ -256,12 +256,14 @@ class LinearTrackManager {
     void this.render({ allowFetch: false });
   }
 
-  public async refreshTrackList(): Promise<TrackSummaryResponse[]> {
+  public async refreshTrackList(waitForRender = true): Promise<TrackSummaryResponse[]> {
     this.tracks = await this.mapManager.networkManager.requestManager.listTracks();
     this.syncTrackRenderSettings();
     this.invalidateQueryCache();
     this.notifyTrackListChanged();
-    await this.render();
+    const rendering = this.render();
+    if (waitForRender) await rendering;
+    else void rendering.catch(error => console.error("Failed to render 1D tracks", error));
     return this.tracks.slice();
   }
 
@@ -291,12 +293,12 @@ class LinearTrackManager {
     );
   }
 
-  public async openTrack(filename: string, name?: string): Promise<void> {
+  public async openTrack(filename: string, name?: string, waitForRender = true): Promise<void> {
     await this.mapManager.networkManager.requestManager.openTrack(
       filename,
       name
     );
-    await this.refreshTrackList();
+    await this.refreshTrackList(waitForRender);
   }
 
   public async openCoolerWeightsTrack(

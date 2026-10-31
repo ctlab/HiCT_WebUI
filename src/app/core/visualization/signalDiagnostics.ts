@@ -13,6 +13,8 @@ export type SignalMode =
   | "TRADITIONAL_NORMALIZED"
   | "PIPELINE_SIGNAL";
 export type SignalHistogram = {
+  /** Bounded query samples retained for local rebinning without repeated I/O. */
+  values: Float32Array;
   min: number;
   max: number;
   counts: number[];
@@ -117,7 +119,7 @@ export function diagnosticBounds(
 export function histogram(
   values: Float32Array,
   bins = 64
-): Omit<SignalHistogram, "sampled" | "resolution" | "domain"> {
+): Omit<SignalHistogram, "sampled" | "resolution" | "domain" | "values"> {
   let min = Infinity,
     max = -Infinity,
     count = 0;
@@ -223,6 +225,7 @@ export async function querySignalHistogram(
   }
   return {
     ...histogram(values.subarray(0, count)),
+    values: values.subarray(0, count),
     sampled: tileCount > maxTiles,
     resolution: bounds.bpResolution,
     domain,
