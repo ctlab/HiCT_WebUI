@@ -297,9 +297,15 @@ const verticalTrackPanelCssSize = computed(() =>
 const horizontalRulerCssSize = computed(() =>
   horizontalSequencePresent.value ? "96px" : "64px"
 );
-const verticalRulerCssSize = computed(() =>
-  verticalSequencePresent.value ? "96px" : "64px"
-);
+const verticalRulerCssSize = computed(() => {
+  if (!verticalSequencePresent.value) return "64px";
+  const coordinates = props.mapManager?.getContigDimensionHolder().prefix_sum_bp;
+  const maximum = coordinates?.[coordinates.length - 1] ?? 0;
+  // At base zoom labels use complete coordinates. Reserve space for those
+  // digits, the tick/outline, and the 32px FASTA strip instead of clipping them.
+  const labelCharacters = Math.ceil(maximum).toLocaleString().length;
+  return `${Math.max(112, 58 + labelCharacters * 9)}px`;
+});
 </script>
 
 <style scoped>
