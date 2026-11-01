@@ -20,12 +20,7 @@
  -->
 
 <template>
-  <div
-    ref="workspaceRoot"
-    :class="iwsClass"
-    :style="iwcStyle"
-  >
-    <SequenceDetailView v-if="sequenceViewOpen && props.mapManager" :map-manager="props.mapManager" @close="closeSequenceView" />
+  <div ref="workspaceRoot" :class="iwsClass" :style="iwcStyle">
     <div class="interactive-workspace_corner_track">
       <div
         v-if="visibleTrackCount > 0"
@@ -46,17 +41,35 @@
       ></div>
     </div>
     <div class="interactive-workspace_horizontal_ruler">
-      <div id="horizontal-ruler-div" class="ruler-surface" style="position: absolute"
-        :class="{ 'ruler-surface--sequence-horizontal': horizontalSequencePresent }"></div>
-      <SequenceAxisTrack :map-manager="props.mapManager" axis="horizontal" @presence="horizontalSequencePresent = $event" />
+      <div
+        id="horizontal-ruler-div"
+        class="ruler-surface"
+        style="position: absolute"
+        :class="{
+          'ruler-surface--sequence-horizontal': horizontalSequencePresent,
+        }"
+      ></div>
+      <SequenceAxisTrack
+        :map-manager="props.mapManager"
+        axis="horizontal"
+        @presence="horizontalSequencePresent = $event"
+      />
     </div>
     <div class="interactive-workspace_vertical_tracks">
       <VerticalIGVTrack :map-manager="props.mapManager"></VerticalIGVTrack>
     </div>
     <div class="interactive-workspace_vertical_ruler">
-      <div id="vertical-ruler-div" class="ruler-surface" style="position: absolute"
-        :class="{ 'ruler-surface--sequence-vertical': verticalSequencePresent }"></div>
-      <SequenceAxisTrack :map-manager="props.mapManager" axis="vertical" @presence="verticalSequencePresent = $event" />
+      <div
+        id="vertical-ruler-div"
+        class="ruler-surface"
+        style="position: absolute"
+        :class="{ 'ruler-surface--sequence-vertical': verticalSequencePresent }"
+      ></div>
+      <SequenceAxisTrack
+        :map-manager="props.mapManager"
+        axis="vertical"
+        @presence="verticalSequencePresent = $event"
+      />
     </div>
     <div class="interactive-workspace_content">
       <ContactMap :map-manager="props.mapManager"></ContactMap>
@@ -85,10 +98,16 @@ import HorizontalIGVTrack from "../tracks/HorizontalIGVTrack.vue";
 import ContactMap from "../../contactmap/ContactMap.vue";
 import VerticalIGVTrack from "../tracks/VerticalIGVTrack.vue";
 import SequenceAxisTrack from "../tracks/SequenceAxisTrack.vue";
-import SequenceDetailView from "../tracks/SequenceDetailView.vue";
 
 import { useStyleStore } from "@/app/stores/styleStore";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 import { storeToRefs } from "pinia";
 
 const stylesStore = useStyleStore();
@@ -118,30 +137,19 @@ const cornerMiniMapFallbackTarget = ref<HTMLElement | null>(null);
 const visibleTrackCount = ref(0);
 const horizontalSequencePresent = ref(false);
 const verticalSequencePresent = ref(false);
-const sequenceViewOpen = ref(false);
-function closeSequenceView() {
-  sequenceViewOpen.value=false;
-  const manager=props.mapManager;
-  if(!manager)return;
-  const size=manager.getMap().getSize()??[1,1];
-  const descriptor=manager.viewAndLayersManager.currentViewState.resolutionDesciptor;
-  manager.getView().setResolution(descriptor.pixelResolution/Math.max(1,Math.min(...size)));
-}
 watch([horizontalSequencePresent, verticalSequencePresent], async () => {
-  if(horizontalSequencePresent.value && verticalSequencePresent.value)sequenceViewOpen.value=true;
   await nextTick();
+  props.mapManager?.scheduleWorkspaceLayoutRefresh();
   props.mapManager?.viewAndLayersManager.scheduleRulerRender();
 });
 let unsubscribeTrackList: (() => void) | undefined;
 const horizontalTrackPanelSizePx = ref(140);
 const verticalTrackPanelSizePx = ref(140);
-let trackPanelResizeState:
-  | {
-      orientation: "horizontal" | "vertical";
-      startPointer: number;
-      startSize: number;
-    }
-  | null = null;
+let trackPanelResizeState: {
+  orientation: "horizontal" | "vertical";
+  startPointer: number;
+  startSize: number;
+} | null = null;
 
 const bindTrackVisibility = () => {
   unsubscribeTrackList?.();
@@ -150,9 +158,10 @@ const bindTrackVisibility = () => {
     return;
   }
   const syncVisibleCount = () => {
-    visibleTrackCount.value = props.mapManager
-      ?.linearTrackManager.getTracksSnapshot()
-      .filter((track) => track.visible).length ?? 0;
+    visibleTrackCount.value =
+      props.mapManager?.linearTrackManager
+        .getTracksSnapshot()
+        .filter((track) => track.visible).length ?? 0;
   };
   syncVisibleCount();
   unsubscribeTrackList = props.mapManager.linearTrackManager.subscribeTrackList(
@@ -188,7 +197,6 @@ onMounted(() => {
 watch(
   () => props.mapManager,
   () => {
-    sequenceViewOpen.value=false;
     bindTrackVisibility();
     void refreshWorkspaceAfterLayout();
   }
@@ -268,8 +276,7 @@ const startTrackPanelResize = (
   }
   trackPanelResizeState = {
     orientation,
-    startPointer:
-      orientation === "horizontal" ? event.clientY : event.clientX,
+    startPointer: orientation === "horizontal" ? event.clientY : event.clientX,
     startSize:
       orientation === "horizontal"
         ? horizontalTrackPanelSizePx.value
@@ -287,7 +294,12 @@ const horizontalTrackPanelCssSize = computed(() =>
 const verticalTrackPanelCssSize = computed(() =>
   visibleTrackCount.value > 0 ? `${verticalTrackPanelSizePx.value}px` : "0px"
 );
-const rulerPanelCssSize = "64px";
+const horizontalRulerCssSize = computed(() =>
+  horizontalSequencePresent.value ? "96px" : "64px"
+);
+const verticalRulerCssSize = computed(() =>
+  verticalSequencePresent.value ? "96px" : "64px"
+);
 </script>
 
 <style scoped>
@@ -296,8 +308,12 @@ const rulerPanelCssSize = "64px";
   height: 100%;
   position: relative;
   display: grid;
-  grid-template-rows: v-bind(horizontalTrackPanelCssSize) v-bind(rulerPanelCssSize) 1fr;
-  grid-template-columns: v-bind(verticalTrackPanelCssSize) v-bind(rulerPanelCssSize) 1fr;
+  grid-template-rows: v-bind(horizontalTrackPanelCssSize) v-bind(
+      horizontalRulerCssSize
+    ) 1fr;
+  grid-template-columns: v-bind(verticalTrackPanelCssSize) v-bind(
+      verticalRulerCssSize
+    ) 1fr;
   grid-template-areas:
     "corner-track corner-tracks-ruler horizontal-tracks"
     "corner-ruler-tracks corner-ruler horizontal-ruler"
@@ -389,10 +405,10 @@ const rulerPanelCssSize = "64px";
   overflow: hidden;
 }
 .ruler-surface--sequence-horizontal {
-  top: 24px;
+  top: 32px;
 }
 .ruler-surface--sequence-vertical {
-  left: 24px;
+  left: 32px;
 }
 
 .interactive-workspace_vertical_tracks {

@@ -81,7 +81,7 @@
       <div v-if="props.mapManager" class="sidebar-panel-content">
         <template v-if="activeSidebarPanel === 'visualization'">
           <div v-if="hasTwoSources" class="visualization-source-selector px-2 pt-2">
-            <div class="source-selection-label">Source selection</div>
+            <div class="source-selection-label">Layer</div>
             <div class="visualization-source-row">
               <div
                 class="btn-group flex-grow-1"
@@ -92,17 +92,19 @@
                   type="button"
                   class="btn btn-sm"
                   :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
+                  :aria-pressed="activeVisualizationSource === 'PRIMARY'"
                   @click="selectVisualizationSource('PRIMARY')"
                 >
-                  PRIMARY
+                  Primary
                 </button>
                 <button
                   type="button"
                   class="btn btn-sm"
                   :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
+                  :aria-pressed="activeVisualizationSource === 'SECONDARY'"
                   @click="selectVisualizationSource('SECONDARY')"
                 >
-                  SECONDARY
+                  Secondary
                 </button>
               </div>
               <button
@@ -641,9 +643,12 @@ function selectVisualizationSource(source: "PRIMARY" | "SECONDARY"): void {
 
 .visualization-source-selector {
   background: var(--hict-surface-bg, #ffffff);
-  box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.075);
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 12px;
 }
 
+.visualization-source-row .btn { font-size: .8rem; min-height: 32px; font-weight: 500; }
+.visualization-source-selector select { font-size: .8rem; border-radius: 7px; }
 .visualization-source-row {
   display: flex;
   align-items: stretch;
