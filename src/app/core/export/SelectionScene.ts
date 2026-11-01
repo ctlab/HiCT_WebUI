@@ -109,13 +109,30 @@ export function includeMapCaptions(svg: SVGSVGElement,
   try {
     const inverse = svg.getScreenCTM()?.inverse();
     if (!inverse) return bounds;
-    for (const text of Array.from(svg.querySelectorAll<SVGTextElement>("[data-hict-map-content] text"))) {
+    for (const text of Array.from(svg.querySelectorAll<SVGTextElement>("text"))) {
       if (!text.textContent?.trim()) continue;
       const box = text.getBBox(), matrix = text.getScreenCTM();
       if (!matrix || !box.width || !box.height) continue;
       const transform = inverse.multiply(matrix);
       const points = [[box.x,box.y],[box.x+box.width,box.y],[box.x,box.y+box.height],
         [box.x+box.width,box.y+box.height]].map(([x,y])=>new DOMPoint(x,y).matrixTransform(transform));
+      const x0=Math.min(...points.map(p=>p.x)), x1=Math.max(...points.map(p=>p.x)),
+        y0=Math.min(...points.map(p=>p.y)), y1=Math.max(...points.map(p=>p.y));
+      if (!text.closest("[data-hict-map-content]")) {
+        // Aligned rulers/tracks can center a label on the final data tick.
+        // Retain its overhang instead of cutting it at the heatmap boundary.
+        // Test against the original crop, so unrelated ticks cannot grow it
+        // repeatedly all the way to the edge of the workspace.
+        if (x1 <= mapBox.left && y0 < bounds.top+bounds.height && y1 > bounds.top) {
+          top=Math.min(top,Math.max(mapBox.top,y0-4));
+          bottom=Math.max(bottom,Math.min(mapBox.top+mapBox.height,y1+4));
+        }
+        if (y1 <= mapBox.top && x0 < bounds.left+bounds.width && x1 > bounds.left) {
+          left=Math.min(left,Math.max(mapBox.left,x0-4));
+          right=Math.max(right,Math.min(mapBox.left+mapBox.width,x1+4));
+        }
+        continue;
+      }
       const l=Math.max(mapBox.left, Math.min(...points.map(p=>p.x))-4),
         t=Math.max(mapBox.top, Math.min(...points.map(p=>p.y))-4),
         r=Math.min(mapBox.left+mapBox.width, Math.max(...points.map(p=>p.x))+4),

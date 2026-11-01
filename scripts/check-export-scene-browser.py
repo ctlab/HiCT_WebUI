@@ -42,6 +42,13 @@ with sync_playwright() as pw:
       if(crop.height<130) throw Error('Caption below map was cropped');
       const cropped=exports.cropSelectionScene(scene,{...crop,marginLeft:0,marginTop:0});
       if(!cropped.svg.textContent.includes('SCAFFOLD_LABEL')) throw Error('Lost vector label');
+      const ns='http://www.w3.org/2000/svg';
+      const ruler=document.createElementNS(ns,'text');
+      ruler.setAttribute('x','2');ruler.setAttribute('y','105');
+      ruler.textContent='END';scene.svg.append(ruler);
+      const withRuler=exports.includeMapCaptions(scene.svg,{left:50,top:50,width:50,height:50},
+        {left:50,top:50,width:150,height:150});
+      if(withRuler.top+withRuler.height<109) throw Error('Terminal ruler label was cropped');
       let failed=false;
       try { await exports.captureCanvasScene(workspace,async()=>{throw Error('render failure')}); }
       catch {failed=true;}
