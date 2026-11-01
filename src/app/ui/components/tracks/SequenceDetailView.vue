@@ -1,139 +1,166 @@
 <template>
-  <Teleport to="body">
+  <section
+    ref="surface"
+    class="sequence-detail"
+    role="region"
+    tabindex="-1"
+    aria-label="FASTA sequence view"
+    @keydown.esc.prevent="emit('close')"
+  >
+    <header>
+      <div>
+        <h2>FASTA sequence view</h2>
+        <p>
+          Sequence zoom · Read-only · Coordinates include scaffold gaps · A
+          <span class="a">●</span> C <span class="c">●</span> G
+          <span class="g">●</span> T <span class="t">●</span>
+        </p>
+      </div>
+      <button class="btn btn-primary" @click="emit('close')">
+        Return to contact map
+      </button>
+    </header>
+    <p class="coordinate-note">
+      Configured scaffold separators and imported AGP gaps appear as Ns. These
+      bases have no contact bins. Annotation tracks are projected onto the same
+      sequence coordinates; gaps contain no annotation signal. Returning
+      restores the gap-free contact map.
+    </p>
     <section
-      ref="surface"
-      class="sequence-detail"
-      role="dialog"
-      aria-modal="true"
-      tabindex="-1"
-      aria-label="FASTA sequence view"
-      @keydown.esc.prevent="emit('close')"
+      v-for="(axis, index) in axes"
+      :key="index"
+      class="sequence-window"
+      :aria-label="axis.label"
     >
-      <header>
-        <div>
-          <h2>FASTA sequence view</h2>
-          <p>
-            Read-only · Coordinates include scaffold gaps · A
-            <span class="a">●</span> C <span class="c">●</span> G
-            <span class="g">●</span> T <span class="t">●</span>
-          </p>
-        </div>
-        <button class="btn btn-primary" @click="emit('close')">
-          Return to contact map
-        </button>
-      </header>
-      <p class="coordinate-note">
-        Configured scaffold separators and imported AGP gaps appear as Ns. These
-        bases have no contact bins. Contact-map coordinates and other tracks
-        remain unchanged when you return.
-      </p>
-      <section
-        v-for="(axis, index) in axes"
-        :key="index"
-        class="sequence-window"
-        :aria-label="axis.label"
+      <h3>{{ axis.label }}</h3>
+      <form
+        class="navigation"
+        @submit.prevent="navigate(index, axis.input - 1)"
       >
-        <h3>{{ axis.label }}</h3>
-        <form
-          class="navigation"
-          @submit.prevent="navigate(index, axis.input - 1)"
+        <button
+          type="button"
+          class="btn btn-outline-primary"
+          :disabled="axis.busy || !axis.data || axis.data.startBp === 0"
+          @click="navigate(index, (axis.data?.startBp ?? 0) - count)"
         >
-          <button
-            type="button"
-            class="btn btn-outline-primary"
-            :disabled="axis.busy || !axis.data || axis.data.startBp === 0"
-            @click="navigate(index, (axis.data?.startBp ?? 0) - count)"
-          >
-            ← Previous {{ count }} bases
-          </button>
-          <label
-            >First sequence base
-            <input
-              v-model.number="axis.input"
-              type="number"
-              min="1"
-              :max="axis.data?.totalLength"
-              required
-              class="form-control"
-          /></label>
-          <button
-            type="submit"
-            class="btn btn-outline-primary"
-            :disabled="axis.busy"
-          >
-            Go
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline-primary"
-            :disabled="
-              axis.busy ||
-              !axis.data ||
-              (axis.data.startBp ?? 0) + (axis.data.sequence?.length ?? 0) >=
-                (axis.data.totalLength ?? 0)
-            "
-            @click="navigate(index, (axis.data?.startBp ?? 0) + count)"
-          >
-            Next {{ count }} bases →
-          </button>
-          <span v-if="axis.data"
-            >of {{ axis.data.totalLength?.toLocaleString() }} bp</span
-          >
-        </form>
-        <p v-if="axis.busy" role="status">Loading sequence…</p>
-        <p v-if="axis.error" role="alert" class="text-danger">
-          {{ axis.error }}
-        </p>
+          ← Previous {{ count }} bases
+        </button>
+        <label
+          >First sequence base
+          <input
+            v-model.number="axis.input"
+            type="number"
+            min="1"
+            :max="axis.data?.totalLength"
+            required
+            class="form-control"
+        /></label>
+        <button
+          type="submit"
+          class="btn btn-outline-primary"
+          :disabled="axis.busy"
+        >
+          Go
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-primary"
+          :disabled="
+            axis.busy ||
+            !axis.data ||
+            (axis.data.startBp ?? 0) + (axis.data.sequence?.length ?? 0) >=
+              (axis.data.totalLength ?? 0)
+          "
+          @click="navigate(index, (axis.data?.startBp ?? 0) + count)"
+        >
+          Next {{ count }} bases →
+        </button>
+        <span v-if="axis.data"
+          >of {{ axis.data.totalLength?.toLocaleString() }} bp</span
+        >
+      </form>
+      <p v-if="axis.busy" role="status">Loading sequence…</p>
+      <p v-if="axis.error" role="alert" class="text-danger">
+        {{ axis.error }}
+      </p>
+      <div v-if="axis.data && !axis.busy" class="sequence-axis-viewport">
         <div
-          v-if="axis.data && !axis.busy"
-          class="bases"
-          tabindex="0"
-          :aria-label="`${axis.label}: use arrow keys to navigate, hover a base for provenance`"
-          @keydown.left.prevent="
-            navigate(index, (axis.data?.startBp ?? 0) - count)
-          "
-          @keydown.right.prevent="
-            navigate(index, (axis.data?.startBp ?? 0) + count)
-          "
+          class="sequence-axis-content"
+          :style="{ width: `${(axis.data.sequence?.length ?? count) * 18}px` }"
         >
-          <span
-            v-for="base in bases(axis.data)"
-            :key="base.position"
-            class="base"
-            :class="base.letter.toLowerCase()"
-            :style="base.boundary"
-            :title="base.description"
-            @mouseenter="metadata = base.description"
-            @click="metadata = base.description"
+          <canvas
+            v-if="axis.trackCount"
+            :ref="(element) => setTrackCanvas(index, element)"
+            class="sequence-annotations"
+            :aria-busy="axis.trackBusy"
+            :width="(axis.data.sequence?.length ?? count) * 18"
+            :height="axis.trackCount * 60"
+            :aria-label="`${axis.label} annotations in sequence coordinates`"
+            @mousemove="showTrackMetadata(index, $event)"
+            @mouseleave="clearTrackMetadata(index)"
+          ></canvas>
+          <div
+            class="bases"
+            tabindex="0"
+            :aria-label="`${axis.label}: use arrow keys to navigate, hover a base for provenance`"
+            @keydown.left.prevent="
+              navigate(index, (axis.data?.startBp ?? 0) - count)
+            "
+            @keydown.right.prevent="
+              navigate(index, (axis.data?.startBp ?? 0) + count)
+            "
           >
-            <span class="position">{{
-              (base.position + 1).toLocaleString()
-            }}</span
-            >{{ base.letter }}
-          </span>
+            <span
+              v-for="base in bases(axis.data)"
+              :key="base.position"
+              class="base"
+              :class="base.letter.toLowerCase()"
+              :style="base.boundary"
+              :title="base.description"
+              @mouseenter="metadata = base.description"
+              @click="metadata = base.description"
+            >
+              {{ base.letter }}
+            </span>
+          </div>
+          <div class="sequence-ruler" aria-label="Sequence coordinate ruler">
+            <span
+              v-for="(base, baseIndex) in bases(axis.data)"
+              :key="base.position"
+              :style="{ left: `${baseIndex * 18}px` }"
+              v-show="baseIndex % 10 === 0"
+              >{{ (base.position + 1).toLocaleString() }}</span
+            >
+          </div>
         </div>
-        <p v-if="axis.data" class="range">
-          Sequence {{ ((axis.data.startBp ?? 0) + 1).toLocaleString() }}–{{
-            (
-              (axis.data.startBp ?? 0) + (axis.data.sequence?.length ?? 0)
-            ).toLocaleString()
-          }}
-          · Borders use your contig and scaffold styles.
-        </p>
-      </section>
-      <aside aria-live="polite">
-        <strong>Base provenance</strong>
-        <pre>{{
-          metadata ||
-          "Hover or click a base to see its sequence, assembly and original FASTA coordinates. Arrow keys move the focused sequence window."
-        }}</pre>
-      </aside>
+      </div>
+      <p v-if="axis.trackBusy" role="status">Loading annotations…</p>
+      <p v-if="axis.trackError" role="alert" class="text-danger">
+        {{ axis.trackError }}
+      </p>
+      <p v-if="axis.data" class="range">
+        Sequence {{ ((axis.data.startBp ?? 0) + 1).toLocaleString() }}–{{
+          (
+            (axis.data.startBp ?? 0) + (axis.data.sequence?.length ?? 0)
+          ).toLocaleString()
+        }}
+        · Borders use your contig and scaffold styles.
+      </p>
     </section>
-  </Teleport>
+    <aside aria-live="polite">
+      <strong>Base provenance</strong>
+      <pre>{{
+        metadata ||
+        "Hover or click a base to see its sequence, assembly and original FASTA coordinates. Arrow keys move the focused sequence window."
+      }}</pre>
+    </aside>
+  </section>
 </template>
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import axios from "axios";
+import { unByKey } from "ol/Observable";
+import type { EventsKey } from "ol/events";
 import { coordinateLowerBound } from "@/app/core/visualization/sequenceBoundaries";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
@@ -159,15 +186,130 @@ const axes = ref<
     busy: boolean;
     error: string;
     data?: Region;
+    trackCount: number;
+    trackBusy: boolean;
+    trackError: string;
   }[]
 >([
-  { label: "Column axis", input: 1, busy: false, error: "" },
-  { label: "Row axis", input: 1, busy: false, error: "" },
+  {
+    label: "Column axis",
+    input: 1,
+    busy: false,
+    error: "",
+    trackCount: 0,
+    trackBusy: false,
+    trackError: "",
+  },
+  {
+    label: "Row axis",
+    input: 1,
+    busy: false,
+    error: "",
+    trackCount: 0,
+    trackBusy: false,
+    trackError: "",
+  },
 ]);
 const metadata = ref("");
 const surface = ref<HTMLElement>();
-let app: HTMLElement | null = null;
-let appWasInert = false;
+const trackGenerations = [0, 0];
+const trackCanvases: (HTMLCanvasElement | undefined)[] = [];
+const trackHovers: (
+  | Awaited<
+      ReturnType<
+        ContactMapManager["linearTrackManager"]["renderSequenceTracks"]
+      >
+    >
+  | undefined
+)[] = [];
+let unsubscribeTracks: (() => void) | undefined;
+let disposed = false;
+const borderRevision = ref(0);
+let borderListener: EventsKey | undefined;
+let borderSignature = "";
+function setTrackCanvas(index: number, element: unknown) {
+  trackCanvases[index] =
+    element instanceof HTMLCanvasElement ? element : undefined;
+}
+function clearTrackMetadata(index: number) {
+  trackCanvases[index]?.removeAttribute("title");
+}
+function showTrackMetadata(index: number, event: MouseEvent) {
+  const canvas = trackCanvases[index];
+  if (!canvas) return;
+  const hit = trackHovers[index]?.hover(event.offsetX, event.offsetY);
+  if (!hit) {
+    clearTrackMetadata(index);
+    return;
+  }
+  const details =
+    hit.kind === "feature"
+      ? [
+          hit.label,
+          hit.featureType,
+          hit.strand,
+          ...Object.entries(hit.attributes ?? {}).map(
+            ([key, value]) => `${key}: ${value}`
+          ),
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : `Value: ${hit.value}`;
+  canvas.title = `${hit.trackName}\nCurrent assembly: ${hit.startBp + 1}–${
+    hit.endBp
+  } bp\n${details}`;
+  metadata.value = canvas.title;
+}
+async function renderTracks(index: number, controller: AbortController) {
+  const axis = axes.value[index],
+    data = axis.data;
+  const generation = ++trackGenerations[index];
+  const current = () =>
+    !disposed &&
+    requests[index] === controller &&
+    trackGenerations[index] === generation;
+  if (!data || !current()) return;
+  axis.trackCount = props.mapManager.linearTrackManager.getVisibleTracksForAxis(
+    index === 0 ? "horizontal" : "vertical"
+  ).length;
+  axis.trackError = "";
+  axis.trackBusy = axis.trackCount > 0;
+  trackHovers[index] = undefined;
+  await nextTick();
+  const canvas = trackCanvases[index];
+  if (!current()) return;
+  if (!canvas) {
+    axis.trackBusy = false;
+    return;
+  }
+  try {
+    // Both sequences are displayed left-to-right; each uses its original axis visibility.
+    const rendered =
+      await props.mapManager.linearTrackManager.renderSequenceTracks(
+        canvas,
+        index === 0 ? "horizontal" : "vertical",
+        {
+          start: data.startBp ?? 0,
+          end: (data.startBp ?? 0) + (data.sequence?.length ?? 0),
+          segments: data.segments ?? [],
+          signal: controller.signal,
+          isCurrent: current,
+        },
+        "horizontal"
+      );
+    if (!current()) return;
+    trackHovers[index] = rendered;
+    axis.trackError = rendered?.errors.join("; ") ?? "";
+    if (axis.trackError)
+      notifications.add("warning", `Sequence annotations: ${axis.trackError}`);
+  } catch (error) {
+    if (!current() || axios.isCancel(error)) return;
+    axis.trackError = extractErrorMessage(error);
+    notifications.add("warning", `Sequence annotations: ${axis.trackError}`);
+  } finally {
+    if (current()) axis.trackBusy = false;
+  }
+}
 const requests: (AbortController | undefined)[] = [];
 const notifications = useNotificationCenterStore();
 async function navigate(
@@ -206,6 +348,8 @@ async function navigate(
       throw new Error("Link a FASTA file to display sequence bases.");
     axis.data = result;
     axis.input = (result.startBp ?? 0) + 1;
+    axis.busy = false;
+    await renderTracks(index, controller);
   } catch (error) {
     if (requests[index] !== controller || axios.isCancel(error)) return;
     axis.error = extractErrorMessage(error);
@@ -215,6 +359,7 @@ async function navigate(
   }
 }
 function bases(data: Region) {
+  void borderRevision.value;
   const tracks = props.mapManager.viewAndLayersManager.track2DHolder;
   return [...(data.sequence ?? "")].map((letter, index) => {
     const position = (data.startBp ?? 0) + index;
@@ -280,13 +425,58 @@ function bases(data: Region) {
           boundary.boxShadow = "-1px 0 0 1px rgba(0,0,0,0.9)";
       }
     }
+    if (segment?.gap && position === segment.start) {
+      const previous = data.segments?.find((s) => !s.gap && s.end === position);
+      if (
+        previous?.assemblyEnd !== null &&
+        previous?.assemblyEnd !== undefined
+      ) {
+        const scaffolds = props.mapManager.scaffoldHolder.scaffoldBordersSorted;
+        const i = coordinateLowerBound(
+          scaffolds,
+          previous.assemblyEnd,
+          ([b]) => b.endBP
+        );
+        const track =
+          scaffolds[i]?.[0].endBP === previous.assemblyEnd
+            ? tracks.scaffoldBordersTrack
+            : tracks.contigBordersTrack;
+        if (track.getStyleType() !== 3) {
+          const color = track.options.borderColor;
+          const css = Array.isArray(color)
+            ? `rgba(${color[0]},${color[1]},${color[2]},${color[3] ?? 1})`
+            : color;
+          boundary.borderLeft = `${track.options.width}px solid ${css}`;
+          if (track.options.borderOutline)
+            boundary.boxShadow = "-1px 0 0 1px rgba(0,0,0,0.9)";
+        }
+      }
+    }
     return { letter: letter.toUpperCase(), position, description, boundary };
   });
 }
 onMounted(() => {
-  app = document.querySelector("#app");
-  appWasInert = app?.hasAttribute("inert") ?? false;
-  app?.setAttribute("inert", "");
+  borderListener = props.mapManager.getMap().on("rendercomplete", () => {
+    const tracks = props.mapManager.viewAndLayersManager.track2DHolder;
+    const signature = JSON.stringify([
+      tracks.contigBordersTrack.options,
+      tracks.contigBordersTrack.getStyleType(),
+      tracks.scaffoldBordersTrack.options,
+      tracks.scaffoldBordersTrack.getStyleType(),
+    ]);
+    if (signature !== borderSignature) {
+      borderSignature = signature;
+      borderRevision.value++;
+    }
+  });
+  unsubscribeTracks = props.mapManager.linearTrackManager.subscribeTrackList(
+    () => {
+      requests.forEach((controller, index) => {
+        if (controller && !axes.value[index].busy)
+          void renderTracks(index, controller);
+      });
+    }
+  );
   surface.value?.focus();
   const m = props.mapManager,
     descriptor = m.viewAndLayersManager.currentViewState.resolutionDesciptor;
@@ -308,16 +498,18 @@ onMounted(() => {
   }
 });
 onBeforeUnmount(() => {
-  if (!appWasInert) app?.removeAttribute("inert");
+  disposed = true;
+  if (borderListener) unByKey(borderListener);
+  unsubscribeTracks?.();
   requests.forEach((r) => r?.abort());
   props.mapManager.networkManager.requestManager.sequenceViewReadOnly = false;
 });
 </script>
 <style scoped>
 .sequence-detail {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 2000;
+  z-index: 20;
   background: #fff;
   color: #17212c;
   padding: 24px;
@@ -365,10 +557,28 @@ header p,
 }
 .bases {
   display: flex;
-  overflow-x: auto;
-  padding: 30px 3px 10px;
-  min-height: 70px;
+  padding: 4px 0;
+  min-height: 28px;
   border-bottom: 1px solid #ccd4dc;
+  background: #fff;
+}
+.sequence-axis-viewport {
+  overflow-x: auto;
+}
+.sequence-annotations {
+  display: block;
+}
+.sequence-ruler {
+  position: relative;
+  height: 28px;
+  background: #fff;
+  color: #17212c;
+}
+.sequence-ruler span {
+  position: absolute;
+  top: 4px;
+  font: 11px sans-serif;
+  white-space: nowrap;
 }
 .base {
   position: relative;

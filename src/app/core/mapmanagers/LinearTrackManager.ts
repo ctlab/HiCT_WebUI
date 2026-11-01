@@ -38,6 +38,7 @@ import type {
   TracksPrecomputeStatusResponse,
 } from "@/app/core/net/api/response";
 import { packIntervalsIntoLanes } from "./featurePacking";
+import { projectSequenceTrackBins, type SequenceAxisSegment } from "../visualization/sequenceTrackProjection";
 
 export type TrackOrientation = "horizontal" | "vertical";
 type Orientation = TrackOrientation;
@@ -430,6 +431,62 @@ class LinearTrackManager {
     return canvas;
   }
 
+  /** Render a padded sequence window using the same styles as map annotations.
+   * This detached canvas never changes the map's hover/search/render caches. */
+  public async renderSequenceTracks(
+    canvas: HTMLCanvasElement,
+    orientation: Orientation,
+    options: { start: number; end: number; segments: readonly SequenceAxisSegment[];
+      signal?: AbortSignal; isCurrent: () => boolean },
+    drawOrientation: Orientation = orientation
+  ): Promise<{ hover: (axis: number, cross: number) => TrackHoverInfo | null; errors: string[] } | null> {
+    const visible = this.getVisibleTracksForAxis(orientation);
+    if (!visible.length) return null;
+    const real = options.segments.filter(s => !s.gap && s.assemblyStart !== null && s.end > s.start);
+    const bpResolution = this.mapManager.getLayersManager().currentViewState.resolutionDesciptor.bpResolution;
+    const width = drawOrientation === "horizontal" ? canvas.width : canvas.height;
+    const api = this.mapManager.networkManager.requestManager;
+    const version = api.history.applied;
+    const response: TrackQueryResponse = real.length
+      ? await this.mapManager.networkManager.requestManager.queryTracks1DByUnits({
+          unit: "BP", start: real[0].assemblyStart!,
+          end: real[real.length - 1].assemblyStart! + real[real.length - 1].end - real[real.length - 1].start,
+          widthPx: Math.max(1, width), bpResolution,
+        }, options.signal)
+      : { startBp: 0, endBp: 0, startPx: 0, endPx: 0, widthPx: width, bpResolution, tracks: [] };
+    if (options.signal?.aborted || !options.isCurrent()) return null;
+    // Track queries run concurrently with edits. A read-after check rejects any
+    // intervening journal revision instead of drawing annotations from a different
+    // assembly than the already fetched sequence. History reads never advance the
+    // client's applied coordinate version.
+    if (real.length && version) {
+      const page = await api.getAssemblyHistory();
+      if (options.signal?.aborted || !options.isCurrent()) return null;
+      if (page.summary?.session !== version.session || page.summary?.revision !== version.revision)
+        throw new Error("The assembly changed in another client. Return to the contact map and refresh it before viewing sequence annotations.");
+    }
+    const ids = new Set(visible.map(t => t.trackId));
+    const tracks = response.tracks.filter(t => ids.has(t.trackId)).map(t => ({
+      ...t, bins: projectSequenceTrackBins(t.bins, options.segments),
+    }));
+    // Preserve visible track labels even in an entirely synthetic gap.
+    if (!real.length) for (const t of visible) tracks.push({
+      trackId: t.trackId, name: t.name, type: t.type, color: t.color,
+      renderStyle: t.renderStyle, bins: [], maxValue: 0, error: null,
+      statusMessage: "Scaffold gap: no annotation data", analysisWarning: null,
+    });
+    const viewport: ViewportGeometry = {
+      startBp: response.startBp, endBp: response.endBp,
+      startPx: options.start, endPx: options.end, bpResolution,
+      visibleWidthPx: width, scopeStartPx: options.start, scopeEndPx: options.end,
+      pxToScreen: px => (px - options.start) * width / Math.max(1, options.end - options.start),
+    };
+    this.drawTrackCanvas(canvas, drawOrientation, { ...response, tracks }, viewport, undefined, false, orientation);
+    const snapshot = { tracks, viewport, canvasWidth: canvas.width, canvasHeight: canvas.height, renderedAtMs: Date.now() };
+    return { hover: (axis, cross) => this.getTrackHoverAt(drawOrientation, axis, cross, snapshot),
+      errors: tracks.flatMap(t => t.error ? [`${t.name}: ${t.error}`] : []) };
+  }
+
   private isViewInteracting(): boolean {
     const view = this.mapManager.getView();
     return view.getInteracting() || view.getAnimating();
@@ -513,9 +570,9 @@ class LinearTrackManager {
   public getTrackHoverAt(
     orientation: Orientation,
     axisOffsetPx: number,
-    crossOffsetPx: number
+    crossOffsetPx: number,
+    snapshot = this.lastRenderedSnapshot[orientation]
   ): TrackHoverInfo | null {
-    const snapshot = this.lastRenderedSnapshot[orientation];
     if (!snapshot || snapshot.tracks.length === 0) {
       return null;
     }
@@ -965,7 +1022,9 @@ class LinearTrackManager {
     orientation: Orientation,
     response: TrackQueryResponse,
     viewport: ViewportGeometry,
-    statusMessage?: string
+    statusMessage?: string,
+    publishState = true,
+    visibilityOrientation: Orientation = orientation
   ): void {
     const ctx = canvas.getContext("2d");
     if (!ctx) {
@@ -976,7 +1035,7 @@ class LinearTrackManager {
     ctx.fillStyle = this.resolveTrackBackgroundColor();
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const fallbackTracks = this.tracks
-      .filter((track) => track.visible && this.isTrackVisibleOnAxis(track.trackId, orientation))
+      .filter((track) => track.visible && this.isTrackVisibleOnAxis(track.trackId, visibilityOrientation))
       .map((track) => ({
         trackId: track.trackId,
         name: track.name,
@@ -989,9 +1048,9 @@ class LinearTrackManager {
         statusMessage: null,
         analysisWarning: null,
       }));
-    const responseTracks = (response.tracks ?? []).filter(track => this.isTrackVisibleOnAxis(track.trackId, orientation));
+    const responseTracks = (response.tracks ?? []).filter(track => this.isTrackVisibleOnAxis(track.trackId, visibilityOrientation));
     const tracks = responseTracks.length > 0 ? responseTracks : fallbackTracks;
-    this.lastRenderedSnapshot[orientation] = {
+    if (publishState) this.lastRenderedSnapshot[orientation] = {
       tracks,
       viewport,
       canvasWidth: canvas.width,
@@ -1009,7 +1068,7 @@ class LinearTrackManager {
         8,
         textPalette
       );
-      this.setRenderState(orientation, {
+      if (publishState) this.setRenderState(orientation, {
         statusMessage: statusMessage ?? "No tracks loaded",
         trackCount: 0,
       });
@@ -1277,12 +1336,12 @@ class LinearTrackManager {
           );
         }
       }
-      this.refreshFeatureSearchCache(track, track.bins);
+      if (publishState) this.refreshFeatureSearchCache(track, track.bins);
     });
     const hasAnySignal = tracks.some((track) => track.bins.length > 0);
     const firstError = tracks.find((track) => track.error)?.error;
     const pendingMessage = tracks.find((track) => track.statusMessage)?.statusMessage;
-    this.setRenderState(orientation, {
+    if (publishState) this.setRenderState(orientation, {
       statusMessage: firstError
         ? firstError
         : hasAnySignal

@@ -6,7 +6,7 @@
       title="Redo (Ctrl+Y or Ctrl+Shift+Z)" aria-label="Redo assembly edit" @click="restore('redo')">↷ Redo</button>
     <button v-if="outOfDate" class="btn btn-sm btn-warning" :disabled="busy"
       title="The server assembly changed in another client" @click="restore('restore', summary?.currentId)">Refresh assembly</button>
-    <span class="small text-muted" aria-live="polite">{{ busy ? 'Updating assembly…' : summary ? `State ${summary.position + 1} of ${summary.size}` : 'No assembly open' }}</span>
+    <span class="small text-muted" aria-live="polite">{{ manager.sequenceViewReadOnly ? 'Sequence view · read-only' : busy ? 'Updating assembly…' : summary ? `State ${summary.position + 1} of ${summary.size}` : 'No assembly open' }}</span>
     <section v-if="expanded && summary" id="assembly-journal" class="assembly-journal" aria-label="Edit journal">
       <div class="d-flex justify-content-between align-items-center">
         <strong>Edit journal</strong>

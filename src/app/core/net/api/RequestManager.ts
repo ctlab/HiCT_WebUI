@@ -815,7 +815,7 @@ class RequestManager {
     end: number;
     widthPx: number;
     bpResolution: number;
-  }): Promise<TrackQueryResponse> {
+  }, signal?: AbortSignal): Promise<TrackQueryResponse> {
     const payload: {
       unit: "PIXELS" | "BINS" | "BP";
       widthPx: number;
@@ -841,7 +841,7 @@ class RequestManager {
       payload.startBP = options.start;
       payload.endBP = options.end;
     }
-    return this.sendRequest(new QueryTracks1DRequest(payload))
+    return this.sendRequest(new QueryTracks1DRequest(payload), { signal }, { suppressErrorToast: true })
       .then((response) => response.data)
       .then((json) => new TrackQueryResponseDTO(json).toEntity());
   }
