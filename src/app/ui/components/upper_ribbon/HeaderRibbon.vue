@@ -191,17 +191,18 @@
           <i class="bi bi-rulers me-1" aria-hidden="true"></i>
           <span class="ruler-button-label">{{ rulerModeLabel }}</span>
         </button>
-        <select v-model="exportScope" class="form-select form-select-sm export-scope" aria-label="Export area" title="Area used by SVG, PNG and PDF exports">
+        <span v-if="props.mapManager?.networkManager.requestManager.sequenceViewReadOnly" class="text-nowrap px-2">Sequence windows</span>
+        <select v-else v-model="exportScope" class="form-select form-select-sm export-scope" aria-label="Export area" title="Area used by SVG, PNG and PDF exports">
           <option value="viewport">Viewport</option><option value="whole-map">Whole map</option>
         </select>
-        <label class="d-flex align-items-center gap-1 text-nowrap" title="Remove the area outside the map from exports">
+        <label v-if="!props.mapManager?.networkManager.requestManager.sequenceViewReadOnly" class="d-flex align-items-center gap-1 text-nowrap" title="Remove the area outside the map from exports">
           <input type="checkbox" v-model="cropExportToMap" aria-label="Crop export to map" /> Crop
         </label>
         <button
           id="export-svg-button"
           class="btn btn-sm btn-outline-primary"
           type="button"
-          :disabled="exportingType !== null || props.mapManager?.networkManager.requestManager.sequenceViewReadOnly"
+          :disabled="exportingType !== null"
           @click="exportSvg"
           title="Export selected area as SVG"
         >
@@ -217,7 +218,7 @@
           id="export-png-button"
           class="btn btn-sm btn-outline-primary"
           type="button"
-          :disabled="exportingType !== null || props.mapManager?.networkManager.requestManager.sequenceViewReadOnly"
+          :disabled="exportingType !== null"
           @click="exportPng"
           title="Export selected area as PNG"
         >
@@ -233,7 +234,7 @@
           id="export-pdf-button"
           class="btn btn-sm btn-outline-primary"
           type="button"
-          :disabled="exportingType !== null || props.mapManager?.networkManager.requestManager.sequenceViewReadOnly"
+          :disabled="exportingType !== null"
           @click="exportPdf"
           title="Export selected area as PDF"
         >

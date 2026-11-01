@@ -1063,6 +1063,11 @@ class ContactMapManager {
 
   private exportInProgress = false;
   public get isExporting(): boolean { return this.exportInProgress; }
+  private sequenceViewExporter?: (options?: { metadata?: Record<string, unknown>; progress?: (value: number) => void }) => Promise<{ svg: SVGSVGElement; canvas: HTMLCanvasElement }>;
+  public registerSequenceViewExporter(exporter: NonNullable<ContactMapManager["sequenceViewExporter"]>): () => void {
+    this.sequenceViewExporter = exporter;
+    return () => { if (this.sequenceViewExporter === exporter) this.sequenceViewExporter = undefined; };
+  }
   private readonly sequenceRenderers = new Set<() => Promise<void>>();
   public registerSequenceRenderer(render: () => Promise<void>): () => void {
     this.sequenceRenderers.add(render);
@@ -1077,9 +1082,13 @@ class ContactMapManager {
     includeWorkspaceComposite?: boolean; scope?: "viewport" | "whole-map" | "selection";
     cropToMap?: boolean; progress?: (value: number) => void;
   }): Promise<{svg: SVGSVGElement; canvas: HTMLCanvasElement}> {
-    if (this.networkManager.requestManager.sequenceViewReadOnly)
-      throw new Error("Return to the contact map before exporting a map image.");
     if (this.exportInProgress) throw new Error("An export is already running.");
+    if (this.networkManager.requestManager.sequenceViewReadOnly) {
+      if (!this.sequenceViewExporter || this.disposed) throw new Error("Wait for the sequence view to finish loading before exporting.");
+      this.exportInProgress = true;
+      try { return await this.sequenceViewExporter(options); }
+      finally { this.exportInProgress = false; }
+    }
     const workspace = document.querySelector(".interactive-workspace") as HTMLElement | null;
     if (!workspace || this.disposed) throw new Error("Open a map before exporting.");
     const view=this.map.getView(), center=view.getCenter()?.slice(), resolution=view.getResolution(), rotation=view.getRotation();
@@ -1440,6 +1449,7 @@ class ContactMapManager {
     if (this.disposed) return;
     this.disposed = true;
     this.sequenceRenderers.clear();
+    this.sequenceViewExporter = undefined;
     this.visualizationManager.dispose();
     this.linearTrackManager.dispose();
     this.clearOverviewMapTarget();

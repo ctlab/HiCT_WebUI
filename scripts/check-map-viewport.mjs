@@ -512,3 +512,29 @@ for (const [requested, expected] of [
   assert.deepEqual(actual ? Array.from(actual) : null, expected);
 }
 console.log("Minimap preserves viewport coordinates and clips every edge without inflation.");
+
+async function checkSequenceExportLifecycle() {
+  const manager = Object.create(ContactMapManager.prototype);
+  manager.networkManager = { requestManager: { sequenceViewReadOnly: true } };
+  manager.disposed = false;
+  await assert.rejects(manager.buildViewportExportSvg(), /finish loading/);
+  const firstRelease = manager.registerSequenceViewExporter(async () => { throw Error('old callback'); });
+  let finish;
+  const result = { svg: {}, canvas: {} };
+  const release = manager.registerSequenceViewExporter(() => new Promise(resolve => { finish = resolve; }));
+  firstRelease(); // A stale component must not unregister its replacement.
+  const pending = manager.buildViewportExportSvg();
+  assert.equal(manager.isExporting, true);
+  await assert.rejects(manager.buildViewportExportSvg(), /already running/);
+  finish(result);
+  assert.equal(await pending, result);
+  assert.equal(manager.isExporting, false);
+  release();
+  manager.registerSequenceViewExporter(async () => { throw Error('assembly changed'); });
+  await assert.rejects(manager.buildViewportExportSvg(), /assembly changed/);
+  assert.equal(manager.isExporting, false, 'Failed export must release its guard');
+  manager.disposed = true;
+  await assert.rejects(manager.buildViewportExportSvg(), /finish loading/);
+  console.log('Sequence export callback ownership, concurrency, failure recovery and disposal guards passed.');
+}
+await checkSequenceExportLifecycle();

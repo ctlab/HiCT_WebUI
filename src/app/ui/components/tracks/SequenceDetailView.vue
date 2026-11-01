@@ -5,7 +5,7 @@
     role="region"
     tabindex="-1"
     aria-label="FASTA sequence view"
-    @keydown.esc.prevent="emit('close')"
+    @keydown.esc.prevent="closeView"
   >
     <header>
       <div>
@@ -16,7 +16,7 @@
           <span class="g">●</span> T <span class="t">●</span>
         </p>
       </div>
-      <button class="btn btn-primary" @click="emit('close')">
+      <button class="btn btn-primary" @click="closeView" :disabled="exporting">
         Return to contact map
       </button>
     </header>
@@ -40,7 +40,9 @@
         <button
           type="button"
           class="btn btn-outline-primary"
-          :disabled="axis.busy || !axis.data || axis.data.startBp === 0"
+          :disabled="
+            exporting || axis.busy || !axis.data || axis.data.startBp === 0
+          "
           @click="navigate(index, (axis.data?.startBp ?? 0) - count)"
         >
           ← Previous {{ count }} bases
@@ -49,6 +51,7 @@
           >First sequence base
           <input
             v-model.number="axis.input"
+            :disabled="exporting"
             type="number"
             min="1"
             :max="axis.data?.totalLength"
@@ -58,7 +61,7 @@
         <button
           type="submit"
           class="btn btn-outline-primary"
-          :disabled="axis.busy"
+          :disabled="exporting || axis.busy"
         >
           Go
         </button>
@@ -66,6 +69,7 @@
           type="button"
           class="btn btn-outline-primary"
           :disabled="
+            exporting ||
             axis.busy ||
             !axis.data ||
             (axis.data.startBp ?? 0) + (axis.data.sequence?.length ?? 0) >=
@@ -168,10 +172,14 @@ import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 const props = defineProps<{ mapManager: ContactMapManager }>();
 const emit = defineEmits<{ (event: "close"): void }>();
+const exporting = ref(false);
+const closeView = () => {
+  if (!exporting.value) emit("close");
+};
 useEscDismissableDialog({
   priority: 10,
   isOpen: () => true,
-  requestClose: () => emit("close"),
+  requestClose: closeView,
 });
 type Region = Awaited<
   ReturnType<
@@ -223,6 +231,7 @@ const trackHovers: (
   | undefined
 )[] = [];
 let unsubscribeTracks: (() => void) | undefined;
+let unregisterExporter: (() => void) | undefined;
 let disposed = false;
 const borderRevision = ref(0);
 let borderListener: EventsKey | undefined;
@@ -317,6 +326,7 @@ async function navigate(
   start: number,
   assemblyAnchorBp?: number
 ) {
+  if (exporting.value) return;
   const axis = axes.value[index];
   if (!Number.isSafeInteger(start)) {
     axis.error = "Enter a whole-number sequence position.";
@@ -456,6 +466,52 @@ function bases(data: Region) {
   });
 }
 onMounted(() => {
+  unregisterExporter = props.mapManager.registerSequenceViewExporter(
+    async (options) => {
+      if (
+        disposed ||
+        axes.value.some(
+          (axis) =>
+            axis.busy ||
+            axis.trackBusy ||
+            axis.error ||
+            axis.trackError ||
+            !axis.data
+        )
+      )
+        throw new Error(
+          "Wait for both sequence windows and their annotations to finish loading before exporting."
+        );
+      exporting.value = true;
+      try {
+        const { captureSequenceScene } = await import(
+          "@/app/core/export/SequenceScene"
+        );
+        const viewports = surface.value?.querySelectorAll<HTMLElement>(
+          ".sequence-axis-viewport"
+        );
+        if (!viewports || viewports.length !== axes.value.length)
+          throw new Error("Sequence windows are not available for export.");
+        return await captureSequenceScene(
+          props.mapManager,
+          axes.value.map((axis, index) => ({
+            label: axis.label,
+            orientation: index === 0 ? "horizontal" : "vertical",
+            start: axis.data!.startBp ?? 0,
+            sequence: axis.data!.sequence ?? "",
+            segments: axis.data!.segments ?? [],
+            width: viewports[index].clientWidth,
+            scrollLeft: viewports[index].scrollLeft,
+            bases: bases(axis.data!),
+          })),
+          options?.metadata,
+          options?.progress
+        );
+      } finally {
+        exporting.value = false;
+      }
+    }
+  );
   borderListener = props.mapManager.getMap().on("rendercomplete", () => {
     const tracks = props.mapManager.viewAndLayersManager.track2DHolder;
     const signature = JSON.stringify([
@@ -501,6 +557,7 @@ onBeforeUnmount(() => {
   disposed = true;
   if (borderListener) unByKey(borderListener);
   unsubscribeTracks?.();
+  unregisterExporter?.();
   requests.forEach((r) => r?.abort());
   props.mapManager.networkManager.requestManager.sequenceViewReadOnly = false;
 });
