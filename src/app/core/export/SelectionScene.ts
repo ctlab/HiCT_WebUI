@@ -96,3 +96,33 @@ export function cropSelectionScene(
   }
   return { svg, canvas };
 }
+
+/** Include visible map captions outside the heatmap while leaving track cropping aligned. */
+export function includeMapCaptions(svg: SVGSVGElement,
+  bounds: {left: number; top: number; width: number; height: number},
+  mapBox: {left: number; top: number; width: number; height: number}
+): typeof bounds {
+  const holder = document.createElement("div");
+  holder.style.cssText = "position:fixed;left:0;top:0;visibility:hidden;pointer-events:none";
+  holder.append(svg); document.body.append(holder);
+  let left = bounds.left, top = bounds.top, right = left+bounds.width, bottom = top+bounds.height;
+  try {
+    const inverse = svg.getScreenCTM()?.inverse();
+    if (!inverse) return bounds;
+    for (const text of Array.from(svg.querySelectorAll<SVGTextElement>("[data-hict-map-content] text"))) {
+      if (!text.textContent?.trim()) continue;
+      const box = text.getBBox(), matrix = text.getScreenCTM();
+      if (!matrix || !box.width || !box.height) continue;
+      const transform = inverse.multiply(matrix);
+      const points = [[box.x,box.y],[box.x+box.width,box.y],[box.x,box.y+box.height],
+        [box.x+box.width,box.y+box.height]].map(([x,y])=>new DOMPoint(x,y).matrixTransform(transform));
+      const l=Math.max(mapBox.left, Math.min(...points.map(p=>p.x))-4),
+        t=Math.max(mapBox.top, Math.min(...points.map(p=>p.y))-4),
+        r=Math.min(mapBox.left+mapBox.width, Math.max(...points.map(p=>p.x))+4),
+        b=Math.min(mapBox.top+mapBox.height, Math.max(...points.map(p=>p.y))+4);
+      if (r<=l || b<=t) continue;
+      left=Math.min(left,l); top=Math.min(top,t); right=Math.max(right,r); bottom=Math.max(bottom,b);
+    }
+    return {left,top,width:right-left,height:bottom-top};
+  } finally { svg.remove(); holder.remove(); }
+}

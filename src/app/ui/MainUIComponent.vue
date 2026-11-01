@@ -181,6 +181,7 @@
 </template>
 
 <script setup lang="ts">
+import { pipelineTransferIssues } from "@/app/core/visualization/transferVisualization";
 import BenchmarkFeature from "ol/Feature";
 import { captureWorkspace, restoreWorkspace } from "@/app/core/mapmanagers/WorkspaceState";
 import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
@@ -239,9 +240,9 @@ const networkManager: NetworkManager = new NetworkManager(
 // Opt-in automation access. Opening, editing and rendering use native handlers.
 if ((window as any).__HICT_BENCHMARK_ENABLED__) {
   (window as any).__hictBenchmark = {
-    open: (name: string, host: string) => {
+    open: (name: string, host: string, fasta?: string) => {
       networkManager.onHostChanged(host);
-      return openFileWithOptions(name, undefined);
+      return openFileWithOptions(name, fasta);
     },
     manager: () => mapManager.value,
     feature: (properties: Record<string, unknown>) => new BenchmarkFeature(properties),
@@ -525,13 +526,20 @@ async function openFileWithOptions(
   lastWorkspaceSnapshot = "";
   startOpenProgress();
   try {
+    // Keep appearance, never assembly coordinates/history, when switching files.
+    // The Wizard supplies its own explicit preset after opening.
+    const previous = options?.applyDefaultPreset !== false ? mapManager.value : undefined;
+    await previous?.visualizationManager.waitForPendingOptionRequests();
+    const appearance = previous ? visualizationOptionsStore.asVisualizationOptions() : undefined;
+    const styles = previous?.viewAndLayersManager.getTrackStylePreset();
+    const pipeline = previous ? await networkManager.requestManager.getRenderPipelineConfig() : undefined;
     const openFileResponse = await networkManager.requestManager.openFile(
       fname,
       ffname
     );
     workspaceConflict.value = false;
     filename.value = fname;
-    // Opening applies a preset again; ask again instead of silently reusing its NaN policy.
+    // New maps may have different missing weights: ask again for this dataset.
     lastCoolerWeightsNaNPromptKey = "";
     fastaFilename.value = ffname ?? "";
     mapManager.value?.dispose();
@@ -550,7 +558,27 @@ async function openFileWithOptions(
     networkManager.mapManager = mapManager.value;
     newManager.initializeMap();
     await newManager.stabilizeInitialViewport({ fit: true });
-    if (options?.applyDefaultPreset !== false) {
+    if (appearance) {
+      // Read the new map's weight diagnostics before restoring user choices.
+      await newManager.visualizationManager.fetchVisualizationOptions();
+      visualizationOptionsStore.setVisualizationOptions({
+        ...appearance,
+        coolerWeightsHaveNaNs: visualizationOptionsStore.coolerWeightsHaveNaNs,
+        coolerWeightsNaNCount: visualizationOptionsStore.coolerWeightsNaNCount,
+      });
+      await newManager.visualizationManager.sendVisualizationOptionsToServer({ skipAutoThresholdRefresh: true });
+      if (styles) newManager.viewAndLayersManager.applyTrackStylePreset(styles);
+      if (pipeline?.enabled) {
+        const issues = pipelineTransferIssues(pipeline);
+        if (issues.length === 0) {
+          await networkManager.requestManager.setRenderPipelineConfig(pipeline);
+        } else {
+          toast.message(`Colors and thresholds retained. The custom pipeline needs ${issues.join(" and ")}; reattach them before reapplying it.`);
+        }
+      }
+      await newManager.reloadTilesFromBackend();
+      await maybePromptCoolerWeightsNaNs();
+    } else if (options?.applyDefaultPreset !== false) {
       await applyDefaultVisualizationPreset();
     } else {
       await maybePromptCoolerWeightsNaNs();

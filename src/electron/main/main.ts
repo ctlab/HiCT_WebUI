@@ -21,9 +21,9 @@
  */
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, session } from "electron";
-import { writeFile } from "node:fs/promises";
+import { writeFile, readFile, stat, mkdir } from "node:fs/promises";
 import { isIP } from "node:net";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const DEFAULT_HICT_URL = "http://127.0.0.1:8080/";
@@ -185,9 +185,16 @@ function configureSecurity(baseUrl: URL): void {
           ? payload.filename.trim()
           : "hict-export.bin";
       const parent = BrowserWindow.fromWebContents(event.sender);
+      let directory = process.env.HICT_EXPORT_DIR;
+      const preferencePath = join(app.getPath("userData"), "last-export-directory.txt");
+      try {
+        const saved = await readFile(preferencePath, "utf8");
+        if ((await stat(saved)).isDirectory()) directory = saved;
+      } catch { /* First export, removed folder or unreadable preference: use default. */ }
+      const safeFilename = filename.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_");
       const options = {
         title: "Save HiCT export",
-        defaultPath: filename,
+        defaultPath: directory ? join(directory, safeFilename) : safeFilename,
       };
       const result = parent
         ? await dialog.showSaveDialog(parent, options)
@@ -197,6 +204,13 @@ function configureSecurity(baseUrl: URL): void {
       }
       const bytes = Array.isArray(payload.bytes) ? payload.bytes : [];
       await writeFile(result.filePath, Buffer.from(bytes));
+      // Only remember a successfully written export, never a cancelled/failed one.
+      try {
+        await mkdir(dirname(preferencePath), { recursive: true });
+        await writeFile(preferencePath, dirname(result.filePath), "utf8");
+      } catch (error) {
+        console.warn("Export saved, but its destination could not be remembered:", error);
+      }
       return { saved: true, path: result.filePath };
     }
   );

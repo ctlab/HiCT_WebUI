@@ -158,3 +158,16 @@ assert.match(
 );
 
 console.log("Visualization preset catalog regression check passed.");
+
+// Only carry pipelines whose inputs still exist when opening a different map.
+const transferExports = {};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(repoRoot,
+  'src/app/core/visualization/transferVisualization.ts'), 'utf8'), {
+  compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}
+}).outputText, {exports: transferExports});
+const transferIssues = transferExports.pipelineTransferIssues;
+assert.equal(transferIssues({upperExpression: {type:'colormap', input:{type:'source', source:'PRIMARY'}}}).length, 0);
+assert.equal(transferIssues({lowerExpression: {type:'track1d', trackId:'__builtin_cooler_weights__'}}).length, 0);
+assert.equal(transferIssues({upperExpression: {type:'pixel_blend', top:{type:'source',source:'SECONDARY'},
+  bottom:{type:'track1d',trackId:'old-map-track'}}}).length, 2);
+console.log('Visualization transfer preserves portable expressions and identifies stale map inputs.');

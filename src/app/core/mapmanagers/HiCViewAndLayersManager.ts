@@ -1,3 +1,4 @@
+import { sequenceZoomResolution } from "../visualization/sequenceZoom";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -19,6 +20,7 @@
  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+import { aggregateTileSignals } from "../visualization/tileSignalRange";
 import { Extent, Select } from "ol/interaction";
 import { Projection } from "ol/proj";
 import type Layer from "ol/layer/Layer";
@@ -570,6 +572,15 @@ class HiCViewAndLayersManager {
     );
   }
 
+  private exportMaxResolution: number | undefined;
+
+  /** Whole-map export reserves caption margins; fitting the heatmap to the canvas would erase them. */
+  public setExportMaxResolution(resolution: number | undefined): void {
+    if (resolution !== undefined && (!Number.isFinite(resolution) || resolution <= 0))
+      throw new Error("Invalid export resolution");
+    this.exportMaxResolution = resolution;
+  }
+
   private createViewOptions(extent: number[]): ViewOptions {
     const navigationModel = this.getNavigationResolutionModel();
     const minPixelResolution =
@@ -585,16 +596,18 @@ class HiCViewAndLayersManager {
       this.secondaryResolutionSet
     );
     const overzoomFactor = 1024;
+    // OpenLayers rounds this limit up to a power-of-two zoom level. Reserve
+    // one extra level so the 12-pixel nucleotide zoom remains reachable.
     const minResolution = Math.min(minPixelResolution / overzoomFactor,
       ...navigationModel.pixelResolutionSet.map((pixel, index) =>
-        pixel / Math.max(1, navigationModel.resolutions?.[index] ?? 1) / 16));
+        pixel / Math.max(1, navigationModel.resolutions?.[index] ?? 1) / 32));
     const size = this.mapManager.getMap()?.getSize();
     const maxResolution = size && size[0] > 0 && size[1] > 0
       ? Math.max((extent[2] - extent[0]) / size[0], (extent[3] - extent[1]) / size[1])
       : Math.max(maxPixelResolution, maximumScaledImageSize);
     return {
       minResolution,
-      maxResolution,
+      maxResolution: Math.max(maxResolution, this.exportMaxResolution ?? 0),
       constrainResolution: false,
       smoothResolutionConstraint: false,
       zoomFactor: 2,
@@ -628,7 +641,7 @@ class HiCViewAndLayersManager {
     const size = this.mapManager.getMap().getSize();
     if (!size || size[0] <= 0 || size[1] <= 0) return;
     const extent = this.getActiveMapExtent();
-    const maxResolution = Math.max((extent[2] - extent[0]) / size[0], (extent[3] - extent[1]) / size[1]);
+    const maxResolution = Math.max((extent[2] - extent[0]) / size[0], (extent[3] - extent[1]) / size[1], this.exportMaxResolution ?? 0);
     if (!Number.isFinite(maxResolution) || maxResolution <= 0 || this.view.getMaxResolution() === maxResolution) return;
     // Retain the View object, center and resolution when changing its limits.
     this.view.applyOptions_(this.view.getUpdatedOptions_(this.createViewOptions(extent)));
@@ -1024,7 +1037,27 @@ class HiCViewAndLayersManager {
     this.applyLayerScopeExtent(this.activeAxisScopeExtent);
   }
 
+  private previousSequenceZoomResolution: number | undefined;
+  private sequenceZoomPending = false;
   public async onViewResolutionChanged(): Promise<void> {
+    const requested=this.view.getResolution();
+    if(requested && !this.mapManager.isExporting && this.mapManager.networkManager.requestManager.hasLinkedFasta) {
+      const model=this.getNavigationResolutionModel();
+      const index=model.resolutions.indexOf(Math.min(...model.resolutions));
+      const target=sequenceZoomResolution(this.previousSequenceZoomResolution,requested,
+        model.pixelResolutionSet[index],model.resolutions[index],this.mapManager.getMap().getSize()??[1,1]);
+      if(target!==requested && !this.sequenceZoomPending) {
+        // OpenLayers is still applying its target during change:resolution.
+        // Defer the jump so its enclosing state update cannot restore the old target.
+        this.sequenceZoomPending=true;
+        queueMicrotask(()=>{
+          this.sequenceZoomPending=false;
+          if(this.mapManager.isDisposed || this.view.getResolution()!==requested)return;
+          this.previousSequenceZoomResolution=target;
+          this.view.cancelAnimations();this.view.setResolution(target);
+        });
+      } else if(!this.sequenceZoomPending) this.previousSequenceZoomResolution=requested;
+    } else this.previousSequenceZoomResolution=requested;
     this.updateCurrentHiCViewState();
     this.reapplyAxisScopes({
       renderLinearTracks: false,
@@ -1044,6 +1077,20 @@ class HiCViewAndLayersManager {
   public onTileSizeChanged(tileSize: number): void {
     this.tileSize = tileSize;
     this.reloadTiles();
+  }
+
+  public loadedViewportSignalRange(source: MatrixSourceName, expression: unknown) {
+    const descriptor = this.currentViewState.resolutionDesciptor;
+    const layers = source === "SECONDARY" ? this.layersHolder.secondaryHiCDataLayers : this.layersHolder.primaryHiCDataLayers;
+    const extent = this.view.calculateExtent(this.mapManager.getMap().getSize());
+    const signals = layers.flatMap(layer => {
+      if (!layer.getVisible()) return [];
+      const tiles = layer.getSource();
+      return tiles instanceof VersionedXYZContactMapSource ? tiles.loadedViewportSignals(extent) : [];
+    });
+    // The secondary source can use its own coarser resolution.
+    const resolution = signals.find(tile => tile.source === source)?.bpResolution ?? descriptor.bpResolution;
+    return aggregateTileSignals(signals, source, resolution, expression);
   }
 
   public addContrastSliderCallback(

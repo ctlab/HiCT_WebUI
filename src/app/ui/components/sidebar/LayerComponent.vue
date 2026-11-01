@@ -38,11 +38,18 @@
         :getDefaultColor="getBaseColor"
         @onColorChanged="updateBackgroundColor"
       ></ColorPickerRectangle>
-      <div v-if="layerName !== 'Background'" class="tri-square border-style-btn" @click="updateBorderStyle">
+      <div v-if="layerName !== 'Background' && !layerName.endsWith('names')" class="tri-square border-style-btn" @click="updateBorderStyle">
         <i v-if="bordersStyle === 0" class="bi bi-square"></i>
         <i v-if="bordersStyle === 1" class="bi bi-arrow-down-left"></i>
         <i v-if="bordersStyle === 2" class="bi bi-arrow-up-right"></i>
       </div>
+      <select v-if="layerName.endsWith('names')" class="form-select form-select-sm caption-placement"
+        :aria-label="`${layerName} caption side`" title="Caption position" v-model.number="bordersStyle"
+        @change="visible = true; emit('onBorderStyleChanged', layerName, bordersStyle)">
+        <option :value="BorderStyle.TOP">Above</option><option :value="BorderStyle.BOTTOM">Below</option>
+        <option :value="BorderStyle.LEFT">Left</option><option :value="BorderStyle.RIGHT">Right</option>
+        <option :value="BorderStyle.FULL">Inside</option>
+      </select>
       <div
         v-if="enableStyleEditor"
         class="dropdown dropdown-sm"
@@ -336,6 +343,7 @@ function resetStyle() {
 </script>
 
 <style scoped>
+.caption-placement { width: 5.5rem; font-size: 0.8rem; }
 .layer-record {
   /* layer */
 

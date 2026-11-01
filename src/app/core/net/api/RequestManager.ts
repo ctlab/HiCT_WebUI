@@ -233,6 +233,10 @@ class RequestManager {
   private workspaceVersion?: { session: string; revision: number };
   public renderPipelineRevision = 0;
   public sequenceRevision = 0;
+  public hasLinkedFasta = false;
+  private readonly sequenceViewState = shallowReactive({ readOnly: false });
+  public get sequenceViewReadOnly(): boolean { return this.sequenceViewState.readOnly; }
+  public set sequenceViewReadOnly(value: boolean) { this.sequenceViewState.readOnly = value; }
   public readonly history = shallowReactive({ summary: null as HistorySummary | null, applied: null as HistorySummary | null, busy: 0 });
 
   public async getAssemblyHistory(offset?: number): Promise<HistoryPage> {
@@ -447,6 +451,11 @@ class RequestManager {
     const host = this.networkManager.host.replace(/\/+$/, "");
     const path = request.requestPath.replace(/^\/+/, "");
     const mutation = assemblyMutationPaths.has(request.requestPath);
+    if (this.sequenceViewReadOnly && (mutation || request.requestPath === "/assembly/history/restore")) {
+      const message = "Return to the contact map before editing the assembly.";
+      if (!options?.suppressErrorToast) toast(message);
+      throw new Error(message);
+    }
     const tracked = mutation || assemblySessionPaths.has(request.requestPath) || request.requestPath === "/assembly/history/restore";
     const summary = this.history.applied;
     const sequenceSnapshot = request.requestPath.startsWith("/sequence/") && request.requestPath.endsWith("/jobs");
@@ -518,6 +527,8 @@ class RequestManager {
       .then((response) => response.data)
       .then((json) => {
         this.workspaceVersion = json.workspaceVersion;
+        this.hasLinkedFasta = false;
+        this.sequenceRevision++;
         return new OpenFileResponseDTO(json).toEntity();
       });
   }
@@ -580,6 +591,8 @@ class RequestManager {
   public async closeFile(): Promise<void> {
     await this.sendRequest(new CloseFileRequest());
     this.workspaceVersion = undefined;
+    this.hasLinkedFasta = false;
+    this.sequenceRevision++;
   }
 
   public async attachSession(): Promise<{
@@ -597,6 +610,8 @@ class RequestManager {
         const filename = (json["filename"] as string) ?? "";
         this.workspaceVersion = json.workspaceVersion as typeof this.workspaceVersion;
         const fastaFilename = (json["fastaFilename"] as string) ?? "";
+        this.hasLinkedFasta = Boolean(fastaFilename);
+        this.sequenceRevision++;
         const response = new OpenFileResponseDTO(
           json["openFileResponse"] as Record<string, unknown>
         ).toEntity();
@@ -986,6 +1001,7 @@ class RequestManager {
       .then((json) => {
         const result = new FastaLinkResponseDTO(json).toEntity();
         this.sequenceRevision++;
+        this.hasLinkedFasta = result.linked;
         this.networkManager.mapManager?.getMap().render();
         return result;
       })
@@ -1148,9 +1164,16 @@ class RequestManager {
       .catch(() => "Changelog for this build was not detected");
   }
 
-  public async querySequenceRegion(startBp: number, endBp: number, signal?: AbortSignal): Promise<{ linked: boolean; startBp?: number; sequence?: string }> {
+  public async querySequenceRegion(startBp: number, endBp: number, signal?: AbortSignal,
+    options: { includeGaps?: boolean; assemblyAnchorBp?: number } = {}): Promise<{ linked: boolean; startBp?: number; sequence?: string; totalLength?: number;
+    coordinateSystem?: string; segments?: {start:number;end:number;assemblyStart:number|null;assemblyEnd:number|null;
+      source:string|null;sourceStart:number|null;sourceEnd:number|null;contig:string|null;scaffold:string|null;
+      reversed:boolean;gap:boolean}[] }> {
     const host = this.networkManager.host.replace(/\/+$/, "");
-    return (await axios.post(`${host}/sequence/region`, { startBp, endBp }, { signal })).data;
+    const version=this.history.applied;
+    const headers=version ? { "X-HiCT-History-Session": version.session,
+      "X-HiCT-History-Revision": String(version.revision) } : undefined;
+    return (await axios.post(`${host}/sequence/region`, { startBp, endBp, ...options }, { signal, headers })).data;
   }
 
   public async querySignalStatistics(options: {

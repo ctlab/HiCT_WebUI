@@ -1077,6 +1077,8 @@ class ContactMapManager {
     includeWorkspaceComposite?: boolean; scope?: "viewport" | "whole-map" | "selection";
     cropToMap?: boolean; progress?: (value: number) => void;
   }): Promise<{svg: SVGSVGElement; canvas: HTMLCanvasElement}> {
+    if (this.networkManager.requestManager.sequenceViewReadOnly)
+      throw new Error("Return to the contact map before exporting a map image.");
     if (this.exportInProgress) throw new Error("An export is already running.");
     const workspace = document.querySelector(".interactive-workspace") as HTMLElement | null;
     if (!workspace || this.disposed) throw new Error("Open a map before exporting.");
@@ -1099,8 +1101,13 @@ class ContactMapManager {
         const extent = dataExtent;
         const scale = this.viewAndLayersManager.currentViewState.resolutionDesciptor.pixelResolution;
         const mapRect = this.map.getViewport().getBoundingClientRect(), sceneRect = workspace.getBoundingClientRect();
-        const width = Math.ceil((extent[2] - extent[0]) / scale);
-        const height = Math.ceil((extent[3] - extent[1]) / scale);
+        const tracks = this.viewAndLayersManager.track2DHolder;
+        const padding = Math.ceil(Math.max(
+          tracks.contigBordersTrack.labelExportPadding(this.getContigDimensionHolder().contigDescriptors.map(c=>c.contigName)),
+          tracks.scaffoldBordersTrack.labelExportPadding(Array.from(this.scaffoldHolder.scaffoldTable.values()).map(s=>s.scaffoldName))
+        ));
+        const width = Math.ceil((extent[2] - extent[0]) / scale) + 2 * padding;
+        const height = Math.ceil((extent[3] - extent[1]) / scale) + 2 * padding;
         const totalWidth = width + mapRect.left - sceneRect.left;
         const totalHeight = height + mapRect.top - sceneRect.top;
         if (totalWidth > 16384 || totalHeight > 16384 || totalWidth * totalHeight > 64 * 1024 * 1024)
@@ -1112,6 +1119,7 @@ class ContactMapManager {
         workspace.style.minWidth = `${totalWidth}px`;
         workspace.style.minHeight = `${totalHeight}px`;
         workspace.style.flexShrink = "0";
+        this.viewAndLayersManager.setExportMaxResolution(scale);
         await this.waitForNextAnimationFrame();
         this.map.updateSize();
         this.viewAndLayersManager.updateZoomLimit();
@@ -1140,12 +1148,14 @@ class ContactMapManager {
       const svg=await captureCanvasScene(workspace,async()=>{
         this.map.getLayers().forEach(layer=>layer.changed());
         this.map.renderSync();
-        this.minimap?.getLayers().forEach(layer=>layer.changed());this.minimap?.renderSync();
         this.viewAndLayersManager.scheduleRulerRender();
         await this.linearTrackManager.render({allowFetch:false});
         await this.renderSequenceTracks();
         await this.waitForNextAnimationFrame();await this.waitForNextAnimationFrame();
-      },options?.metadata);
+      },options?.metadata, {
+        mapRoot: this.map.getViewport(),
+        excludedRoots: this.minimap ? [this.minimap.getTargetElement()] : [],
+      });
       const { prepareSvgForEditors } = await import("../export/SvgCompatibility");
       prepareSvgForEditors(svg.svg);
       options?.progress?.(0.65);
@@ -1161,12 +1171,19 @@ class ContactMapManager {
         if (!bounds) throw new Error("The map is outside the viewport. Fit the map before exporting.");
         const mapRect = this.map.getViewport().getBoundingClientRect(), sceneRect = workspace.getBoundingClientRect();
         const marginLeft = mapRect.left - sceneRect.left, marginTop = mapRect.top - sceneRect.top;
-        return cropSelectionScene(svg, { left: marginLeft + bounds.left, top: marginTop + bounds.top,
-          width: bounds.width, height: bounds.height, marginLeft, marginTop });
+        let crop = { left: marginLeft + bounds.left, top: marginTop + bounds.top,
+          width: bounds.width, height: bounds.height };
+        if (!selection) {
+          const { includeMapCaptions } = await import("../export/SelectionScene");
+          crop = includeMapCaptions(svg.svg, crop,
+            {left:marginLeft,top:marginTop,width:size[0],height:size[1]});
+        }
+        return cropSelectionScene(svg, { ...crop, marginLeft, marginTop });
       }
       return svg;
     } finally {
       if (whole) {
+        this.viewAndLayersManager.setExportMaxResolution(undefined);
         if (workspaceStyle === null) workspace.removeAttribute("style");
         else workspace.setAttribute("style", workspaceStyle);
         this.map.updateSize();

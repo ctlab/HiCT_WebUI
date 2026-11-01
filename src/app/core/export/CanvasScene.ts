@@ -366,8 +366,12 @@ const methods = [
 export async function captureCanvasScene(
   workspace: HTMLElement,
   render: () => Promise<void>,
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
+  options?: { excludedRoots?: readonly HTMLElement[]; mapRoot?: HTMLElement }
 ): Promise<{ svg: SVGSVGElement; canvas: HTMLCanvasElement }> {
+  // Navigation widgets remain visible in the app but are not scientific content.
+  const included = (canvas: HTMLCanvasElement) => workspace.contains(canvas) &&
+    !(options?.excludedRoots ?? []).some(root => root.contains(canvas));
   const proto = CanvasRenderingContext2D.prototype as unknown as Record<
     string,
     (...a: unknown[]) => unknown
@@ -384,7 +388,7 @@ export async function captureCanvasScene(
         this: CanvasRenderingContext2D,
         ...args: unknown[]
       ) {
-        if (workspace.contains(this.canvas)) {
+        if (included(this.canvas)) {
           let scene = scenes.get(this.canvas);
           if (!scene) {
             scene = new Scene(this);
@@ -431,6 +435,7 @@ export async function captureCanvasScene(
   compositeContext.fillStyle = getComputedStyle(workspace).backgroundColor;
   compositeContext.fillRect(0, 0, composite.width, composite.height);
   for (const canvas of Array.from(workspace.querySelectorAll("canvas"))) {
+    if (!included(canvas)) continue;
     const bounds = canvas.getBoundingClientRect();
     if (bounds.width <= 0 || bounds.height <= 0) continue;
     let opacity = 1;
@@ -473,6 +478,7 @@ export async function captureCanvasScene(
       overflow: "hidden",
       opacity,
     });
+    if (options?.mapRoot?.contains(canvas)) container.setAttribute("data-hict-map-content", "true");
     const scene = scenes.get(canvas);
     const style = getComputedStyle(canvas),
       transform =

@@ -25,6 +25,7 @@
     :class="iwsClass"
     :style="iwcStyle"
   >
+    <SequenceDetailView v-if="sequenceViewOpen && props.mapManager" :map-manager="props.mapManager" @close="closeSequenceView" />
     <div class="interactive-workspace_corner_track">
       <div
         v-if="visibleTrackCount > 0"
@@ -84,6 +85,7 @@ import HorizontalIGVTrack from "../tracks/HorizontalIGVTrack.vue";
 import ContactMap from "../../contactmap/ContactMap.vue";
 import VerticalIGVTrack from "../tracks/VerticalIGVTrack.vue";
 import SequenceAxisTrack from "../tracks/SequenceAxisTrack.vue";
+import SequenceDetailView from "../tracks/SequenceDetailView.vue";
 
 import { useStyleStore } from "@/app/stores/styleStore";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -116,7 +118,17 @@ const cornerMiniMapFallbackTarget = ref<HTMLElement | null>(null);
 const visibleTrackCount = ref(0);
 const horizontalSequencePresent = ref(false);
 const verticalSequencePresent = ref(false);
+const sequenceViewOpen = ref(false);
+function closeSequenceView() {
+  sequenceViewOpen.value=false;
+  const manager=props.mapManager;
+  if(!manager)return;
+  const size=manager.getMap().getSize()??[1,1];
+  const descriptor=manager.viewAndLayersManager.currentViewState.resolutionDesciptor;
+  manager.getView().setResolution(descriptor.pixelResolution/Math.max(1,Math.min(...size)));
+}
 watch([horizontalSequencePresent, verticalSequencePresent], async () => {
+  if(horizontalSequencePresent.value && verticalSequencePresent.value)sequenceViewOpen.value=true;
   await nextTick();
   props.mapManager?.viewAndLayersManager.scheduleRulerRender();
 });
@@ -176,6 +188,7 @@ onMounted(() => {
 watch(
   () => props.mapManager,
   () => {
+    sequenceViewOpen.value=false;
     bindTrackVisibility();
     void refreshWorkspaceAfterLayout();
   }
@@ -376,10 +389,10 @@ const rulerPanelCssSize = "64px";
   overflow: hidden;
 }
 .ruler-surface--sequence-horizontal {
-  bottom: 24px;
+  top: 24px;
 }
 .ruler-surface--sequence-vertical {
-  right: 24px;
+  left: 24px;
 }
 
 .interactive-workspace_vertical_tracks {

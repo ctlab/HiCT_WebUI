@@ -167,6 +167,8 @@ const adapterSource = ts.transpileModule(readFileSync(resolve(projectRoot,
 }).outputText;
 let responseRevision=2;
 let sentHeaders;
+let sentPayload;
+let requestsSent=0;
 let serializationFailure=false;
 let pendingWorkspace;
 const notificationErrors=[];
@@ -174,6 +176,7 @@ const adapterExports={};
 vm.runInNewContext(adapterSource,{exports:adapterExports,console,require:name=>{
   if(name==='vue')return {shallowReactive:value=>value};
   if(name==='axios')return {post:async(url,payload,config)=>{
+    requestsSent++;sentPayload=payload;
     if(url.endsWith('/workspace/state'))return new Promise((resolve,reject)=>{pendingWorkspace={payload,resolve,reject};});
     sentHeaders=config.headers;
     return {data:{},headers:{'x-hict-history':JSON.stringify({session:'s',revision:responseRevision,currentId:responseRevision,position:responseRevision,size:responseRevision+1,canUndo:true,canRedo:false})}};
@@ -196,6 +199,19 @@ assert.equal(sentHeaders['X-HiCT-History-Revision'],'1');
 assert.equal(adapter.history.applied.revision,3);
 assert.equal(adapter.history.busy,0);
 console.log('History reads cannot authorize edits on stale displayed coordinates.');
+
+await adapter.querySequenceRegion(0,60,undefined,{includeGaps:true,assemblyAnchorBp:5000});
+assert.equal(sentHeaders['X-HiCT-History-Revision'],'3');
+assert.equal(sentPayload.includeGaps,true);
+assert.equal(sentPayload.assemblyAnchorBp,5000);
+adapter.sequenceViewReadOnly=true;
+const sentBefore=requestsSent;
+for(const requestPath of ['/reverse_selection_range','/assembly/history/restore'])
+  await assert.rejects(adapter.sendRequest({requestPath},undefined,{suppressErrorToast:true}),/Return to the contact map/);
+assert.equal(requestsSent,sentBefore,'Read-only sequence view cannot send mutations');
+assert.equal(adapter.history.busy,0);
+adapter.sequenceViewReadOnly=false;
+console.log('FASTA reads carry the displayed revision; sequence view prevents edits and history restoration.');
 
 serializationFailure=true;
 adapter.getAssemblyHistory=async()=>{};

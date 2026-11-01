@@ -415,6 +415,8 @@ function currentBorderStyle(name: string): BorderStyle | undefined {
     case NamePlacement.TOP: return BorderStyle.TOP;
     case NamePlacement.BOTTOM: return BorderStyle.BOTTOM;
     case NamePlacement.CENTER: return BorderStyle.FULL;
+    case NamePlacement.LEFT: return BorderStyle.LEFT;
+    case NamePlacement.RIGHT: return BorderStyle.RIGHT;
     default: return BorderStyle.NONE;
   }
 }

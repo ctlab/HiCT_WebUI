@@ -40,7 +40,7 @@ import { hasAnyOpenEscDialog } from "@/app/ui/escapeDialogRegistry";
 const props = defineProps<{ networkManager: NetworkManager; expanded: boolean }>();
 const manager = props.networkManager.requestManager;
 const summary = computed(() => manager.history.summary);
-const busy = computed(() => manager.history.busy > 0);
+const busy = computed(() => manager.history.busy > 0 || manager.sequenceViewReadOnly);
 const outOfDate = computed(() => summary.value && (
   summary.value.session !== manager.history.applied?.session || summary.value.revision !== manager.history.applied?.revision
 ));

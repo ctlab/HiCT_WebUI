@@ -564,10 +564,11 @@ class RulerControl extends Control {
     if (px < scopeStartPx || px >= scopeEndPx) {
       return null;
     }
-    const bp = this.contigDimensionHolder.getStartBpOfPx(
-      px,
-      resolutionDescriptor.bpResolution
-    );
+    const bp = fraction * resolutionDescriptor.bpResolution <= 1
+      ? Math.floor(this.contigDimensionHolder.getFractionalBpOfPx(
+        Math.max(scopeStartPx, Math.min(scopeEndPx, unclampedPx)),
+        resolutionDescriptor.bpResolution))
+      : this.contigDimensionHolder.getStartBpOfPx(px, resolutionDescriptor.bpResolution);
     const bin = this.contigDimensionHolder.pixelToBin(
       px,
       resolutionDescriptor.bpResolution
@@ -626,19 +627,19 @@ class RulerControl extends Control {
       screens[screens.length - 1] = axisEnd;
     }
 
-    const mapPxValues = screens.map((screen) =>
-      this.screenPositionToMapPx(
+    const nucleotideScale = options.fraction * options.resolutionDescriptor.bpResolution <= 1;
+    const mapPxValues = screens.map((screen) => nucleotideScale
+      ? Math.max(0, Math.min(options.pixelMapSize, (screen-options.mapStartScreen)*options.fraction))
+      : this.screenPositionToMapPx(
         screen,
         options.mapStartScreen,
         options.fraction,
         options.pixelMapSize
       )
     );
-    const bpValues = mapPxValues.map((mapPx) =>
-      this.contigDimensionHolder.getStartBpOfPx(
-        mapPx,
-        options.resolutionDescriptor.bpResolution
-      )
+    const bpValues = mapPxValues.map((mapPx) => nucleotideScale
+      ? Math.floor(this.contigDimensionHolder.getFractionalBpOfPx(mapPx, options.resolutionDescriptor.bpResolution))
+      : this.contigDimensionHolder.getStartBpOfPx(mapPx, options.resolutionDescriptor.bpResolution)
     );
     const maxBp = Math.max(
       ...bpValues.map((bp) =>
@@ -676,7 +677,7 @@ class RulerControl extends Control {
         bp,
         major,
         boundary,
-        label:
+        label: nucleotideScale ? `${prefix}${Math.round(coordinateValue).toLocaleString()}` :
           major || delta <= 0
             ? `${prefix}${this.formatBpLabel(anchor, 0)}`
             : `+${this.formatBpLabel(delta, 0)}`,

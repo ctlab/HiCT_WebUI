@@ -201,7 +201,7 @@
           id="export-svg-button"
           class="btn btn-sm btn-outline-primary"
           type="button"
-          :disabled="exportingType !== null"
+          :disabled="exportingType !== null || props.mapManager?.networkManager.requestManager.sequenceViewReadOnly"
           @click="exportSvg"
           title="Export selected area as SVG"
         >
@@ -217,7 +217,7 @@
           id="export-png-button"
           class="btn btn-sm btn-outline-primary"
           type="button"
-          :disabled="exportingType !== null"
+          :disabled="exportingType !== null || props.mapManager?.networkManager.requestManager.sequenceViewReadOnly"
           @click="exportPng"
           title="Export selected area as PNG"
         >
@@ -233,7 +233,7 @@
           id="export-pdf-button"
           class="btn btn-sm btn-outline-primary"
           type="button"
-          :disabled="exportingType !== null"
+          :disabled="exportingType !== null || props.mapManager?.networkManager.requestManager.sequenceViewReadOnly"
           @click="exportPdf"
           title="Export selected area as PDF"
         >

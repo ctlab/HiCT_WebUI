@@ -27,12 +27,18 @@ async fn save_export(
     filename: String,
     bytes: Vec<u8>,
 ) -> Result<Option<String>, String> {
+    use tauri::Manager;
+    let preference_path = window.app_handle().path().app_config_dir().ok()
+        .map(|path| path.join("last-export-directory.txt"));
+    let remembered = preference_path.as_ref()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .filter(|path| std::path::Path::new(path).is_dir());
     let safe_filename = sanitize_export_filename(&filename);
     let mut dialog = rfd::AsyncFileDialog::new()
         .set_parent(&window)
         .set_title("Save HiCT export")
         .set_file_name(&safe_filename);
-    if let Ok(directory) = env::var("HICT_EXPORT_DIR") {
+    if let Some(directory) = remembered.or_else(|| env::var("HICT_EXPORT_DIR").ok()) {
         dialog = dialog.set_directory(directory);
     }
     let Some(file) = dialog.save_file().await else {
@@ -41,6 +47,15 @@ async fn save_export(
     file.write(&bytes)
         .await
         .map_err(|error| format!("Failed to save export: {error}"))?;
+    if let (Some(preference), Some(directory)) = (preference_path, file.path().parent()) {
+        let remember = || -> std::io::Result<()> {
+            if let Some(parent) = preference.parent() { std::fs::create_dir_all(parent)?; }
+            std::fs::write(preference, directory.to_string_lossy().as_bytes())
+        };
+        if let Err(error) = remember() {
+            eprintln!("Export saved, but its destination could not be remembered: {error}");
+        }
+    }
     Ok(Some(file.path().to_string_lossy().to_string()))
 }
 

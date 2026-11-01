@@ -73,7 +73,7 @@
         :style="thresholdSliderVars"
       >
         <div class="threshold-range-track" :style="thresholdTrackStyle"></div>
-        <input
+        <label class="threshold-slider-row"><span>Lower</span><input
           class="threshold-range-input threshold-range-input_lower"
           type="range"
           :min="sliderPositionMin"
@@ -82,8 +82,8 @@
           :value="lowerSliderValue"
           aria-label="Lower threshold"
           @input="onLowerRangeInput"
-        />
-        <input
+        /></label>
+        <label class="threshold-slider-row"><span>Upper</span><input
           class="threshold-range-input threshold-range-input_upper"
           type="range"
           :min="sliderPositionMin"
@@ -92,7 +92,7 @@
           :value="upperSliderValue"
           aria-label="Upper threshold"
           @input="onUpperRangeInput"
-        />
+        /></label>
         <div class="threshold-range-labels">
           <input
             v-model.number="sliderLowerLimit"
@@ -116,6 +116,9 @@
 
       <div class="small text-muted" role="status" aria-live="polite" data-testid="exact-range-status">
         {{ percentageSignalScale ? "Percentage scale: 0-100" : rangeStatus }}
+        <button v-if="!percentageSignalScale" type="button" class="btn btn-link btn-sm"
+          title="Reads the entire resolution; may take a long time on large maps"
+          @click="fetchExactRange">Scan whole map</button>
       </div>
       <div class="threshold-toolbar">
         <div class="form-check form-switch threshold-log-switch">
@@ -237,7 +240,10 @@ let rangeRequestKey = "";
 let rangeTimer: number | undefined;
 let rangeGeneration = 0;
 let rangeProbe = 0;
-const rangeStatus = ref("Exact limits pending");
+const rangeStatus = ref("Waiting for visible tile limits");
+let activeRangeExpression: Record<string, unknown> | undefined;
+let rangeMap: ContactMapManager | undefined;
+const onViewportRangeChanged = () => refreshProcessedRange();
 const rangeCache = new Map<string, ExactRange>();
 const LOG_SLIDER_FLOOR_FRACTION = 1e-10;
 const LIVE_APPLY_DELAY_MS = 350;
@@ -455,6 +461,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("hict:render-pipeline-changed", onPipelineChanged);
+  rangeMap?.getMap().un("moveend", onViewportRangeChanged);
+  rangeMap?.getMap().un("rendercomplete", onViewportRangeChanged);
   ++rangeGeneration;
   ++rangeProbe;
   window.clearTimeout(rangeTimer);
@@ -480,7 +488,8 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
   ++rangeGeneration;
   rangeController?.abort();
   rangeRequestKey = "";
-  rangeStatus.value = "Exact limits pending";
+  rangeStatus.value = "Waiting for visible tile limits";
+  activeRangeExpression = undefined;
   const generation = ++optionsHydrationGeneration;
   liveApplyReady.value = false;
   percentageSignalScale.value = false;
@@ -504,6 +513,9 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
         (target) => target.id === activeVisualizationTargetId.value
       ) ?? sourceTargets[0];
     percentageSignalScale.value = activeTarget?.displayUnit === "PERCENT";
+    activeRangeExpression = await manager.visualizationManager.getSourceSignalExpression(
+      activeVisualizationSource.value, activeVisualizationTargetId.value);
+    if (generation !== optionsHydrationGeneration || manager.isDisposed) return;
     updateFromStore();
     rangeRequestKey = "";
     void refreshProcessedRange();
@@ -523,6 +535,11 @@ function registerSignalRangeCallback(mapManager: ContactMapManager): void {
     return;
   }
   registeredRangeMapManager = mapManager;
+  rangeMap?.getMap().un("moveend", onViewportRangeChanged);
+  rangeMap?.getMap().un("rendercomplete", onViewportRangeChanged);
+  rangeMap = mapManager;
+  mapManager.getMap().on("moveend", onViewportRangeChanged);
+  mapManager.getMap().on("rendercomplete", onViewportRangeChanged);
   mapManager.addContrastSliderCallback(updateSignalRange);
 }
 
@@ -556,7 +573,24 @@ function refreshProcessedRange(): void {
   rangeTimer = window.setTimeout(() => void fetchProcessedRange(), 250);
 }
 
-async function fetchProcessedRange(): Promise<void> {
+function fetchProcessedRange(): void {
+  const manager = props.mapManager;
+  if (!manager || manager.isDisposed || percentageSignalScale.value || !activeRangeExpression) return;
+  const range = manager.viewAndLayersManager.loadedViewportSignalRange(activeVisualizationSource.value, activeRangeExpression);
+  if (!range || !range.processed.count || range.processed.min == null || range.processed.max == null) {
+    rangeStatus.value = "No visible finite tile limits yet; previous bounds retained";
+    return;
+  }
+  signalMin.value = range.processed.min;
+  signalMax.value = range.processed.max;
+  if (!sliderBoundsManual.value) {
+    sliderLowerLimit.value = signalMin.value;
+    sliderUpperLimit.value = signalMax.value;
+  }
+  rangeStatus.value = `Loaded viewport tiles (${range.tiles}): ${formatSignal(range.processed.min)} – ${formatSignal(range.processed.max)}; raw ${formatSignal(range.raw.min ?? 0)} – ${formatSignal(range.raw.max ?? 0)}`;
+}
+
+async function fetchExactRange(): Promise<void> {
   const manager = props.mapManager;
   const probe = ++rangeProbe;
   if (!manager || manager.isDisposed || percentageSignalScale.value) {
@@ -699,7 +733,7 @@ function onLowerRangeInput(event: Event): void {
     return;
   }
   const actual = fromSliderPosition(value);
-  const minGap = Math.max((sliderMax.value - sliderMin.value) / 1_000_000, Number.EPSILON);
+  const minGap = Math.max(Math.abs(upperBound.value) * Number.EPSILON, Number.MIN_VALUE);
   lowerBound.value = Math.min(actual, upperBound.value - minGap);
 }
 
@@ -709,7 +743,7 @@ function onUpperRangeInput(event: Event): void {
     return;
   }
   const actual = fromSliderPosition(value);
-  const minGap = Math.max((sliderMax.value - sliderMin.value) / 1_000_000, Number.EPSILON);
+  const minGap = Math.max(Math.abs(lowerBound.value) * Number.EPSILON, Number.MIN_VALUE);
   upperBound.value = Math.max(actual, lowerBound.value + minGap);
 }
 
@@ -849,33 +883,21 @@ function formatSignal(value: number): string {
   font-size: 0.82rem;
 }
 
-.threshold-range-slider {
-  position: relative;
-  padding: 0.48rem 0.35rem 0;
-  min-height: 2.75rem;
-}
-
+.threshold-range-slider { padding: 0.2rem 0.35rem 0; }
 .threshold-range-track {
-  position: absolute;
-  left: 0.35rem;
-  right: 0.35rem;
-  top: 0.83rem;
-  height: 0.34rem;
-  border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  pointer-events: none;
+  height: 0.34rem; margin-bottom: 0.4rem; border-radius: 999px;
+  border: 1px solid rgba(0,0,0,0.15);
 }
-
+.threshold-slider-row {
+  display: grid; grid-template-columns: 2.8rem minmax(0,1fr);
+  align-items: center; gap: 0.4rem; min-height: 1.5rem;
+  font-size: 0.75rem; color: var(--hict-surface-fg, #343a40);
+}
 .threshold-range-input {
-  position: absolute;
-  left: 0.35rem;
-  right: 0.35rem;
-  top: 0.42rem;
-  width: calc(100% - 0.7rem);
-  pointer-events: none;
-  appearance: none;
-  background: transparent;
+  width: 100%; margin: 0; height: 0.35rem; appearance: none;
+  background: #dbe1e7; border-radius: 999px; cursor: pointer;
 }
+.threshold-range-input:focus-visible { outline: 2px solid #0d6efd; outline-offset: 4px; }
 
 .threshold-range-input::-webkit-slider-thumb {
   appearance: none;
@@ -919,7 +941,7 @@ function formatSignal(value: number): string {
   grid-template-columns: 4.4rem minmax(0, 1fr) 4.4rem;
   align-items: center;
   gap: 0.35rem;
-  margin-top: 1.2rem;
+  margin-top: 0.35rem;
   font-size: 0.75rem;
   color: #5c6773;
 }

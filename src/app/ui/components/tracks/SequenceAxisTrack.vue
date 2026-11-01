@@ -5,6 +5,8 @@
     class="sequence-axis"
     :class="axis"
     aria-label="Assembly FASTA bases"
+    @mousemove="showBaseMetadata"
+    @mouseleave="clearBaseMetadata"
   ></canvas>
 </template>
 <script setup lang="ts">
@@ -12,6 +14,10 @@ import { onBeforeUnmount, ref, watch } from "vue";
 import { unByKey } from "ol/Observable";
 import type { EventsKey } from "ol/events";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
+import axios from "axios";
+import { coordinateLowerBound } from "@/app/core/visualization/sequenceBoundaries";
 const props = defineProps<{
   mapManager?: ContactMapManager;
   axis: "horizontal" | "vertical";
@@ -19,10 +25,40 @@ const props = defineProps<{
 const emit = defineEmits<{ (event: "presence", value: boolean): void }>();
 const canvas = ref<HTMLCanvasElement>();
 const visible = ref(false);
+const notifications = useNotificationCenterStore();
+let lastFailure = "";
 let listeners: EventsKey[] = [],
   timer: number | undefined,
   generation = 0;
-let cached: { key: string; sequence: string } | undefined;
+type Region = Awaited<
+  ReturnType<
+    ContactMapManager["networkManager"]["requestManager"]["querySequenceRegion"]
+  >
+>;
+let cached: { key: string; response: Region } | undefined;
+let renderedBases: { screen: number; label: string }[] = [];
+function clearBaseMetadata() {
+  canvas.value?.removeAttribute("title");
+}
+function showBaseMetadata(event: MouseEvent) {
+  const target = canvas.value;
+  if (!target) return;
+  const box = target.getBoundingClientRect();
+  const position =
+    props.axis === "horizontal"
+      ? event.clientX - box.left
+      : event.clientY - box.top;
+  let closest: typeof renderedBases[number] | undefined;
+  for (const base of renderedBases)
+    if (
+      !closest ||
+      Math.abs(base.screen - position) < Math.abs(closest.screen - position)
+    )
+      closest = base;
+  if (closest && Math.abs(closest.screen - position) <= 10)
+    target.title = closest.label;
+  else clearBaseMetadata();
+}
 let request: AbortController | undefined;
 let unregisterExportRenderer: (() => void) | undefined;
 const colors: Record<string, string> = {
@@ -38,9 +74,15 @@ function setVisible(value: boolean) {
 function schedule(event?: { type?: string }) {
   if (props.mapManager?.isExporting) return;
   ++generation;
+  renderedBases = [];
+  clearBaseMetadata();
   request?.abort();
   request = undefined;
-  if (event?.type === "change:center" || event?.type === "change:resolution" || event?.type === "moveend")
+  if (
+    event?.type === "change:center" ||
+    event?.type === "change:resolution" ||
+    event?.type === "moveend"
+  )
     visible.value = false;
   window.clearTimeout(timer);
   timer = window.setTimeout(() => void render(generation), 80);
@@ -88,11 +130,11 @@ async function render(id: number) {
     manager.getOptions().filename,
   ]);
   try {
-    let sequence = cached?.key === key ? cached.sequence : undefined;
-    if (sequence === undefined) {
+    let response = cached?.key === key ? cached.response : undefined;
+    if (response === undefined) {
       const controller = new AbortController();
       request = controller;
-      const response =
+      response =
         await manager.networkManager.requestManager.querySequenceRegion(
           start,
           end,
@@ -103,10 +145,12 @@ async function render(id: number) {
         setVisible(false);
         return;
       }
-      sequence = response.sequence ?? "";
-      cached = { key, sequence };
+      cached = { key, response };
     }
     if (id !== generation || manager.isDisposed) return;
+    lastFailure = "";
+    const sequence = response.sequence ?? "";
+    renderedBases = [];
     setVisible(true);
     const length = map.getSize()?.[horizontal ? 0 : 1] ?? 1;
     target.width = horizontal ? length : 24;
@@ -124,6 +168,32 @@ async function render(id: number) {
         horizontal ? [pixel, 0] : [0, -pixel]
       )[horizontal ? 0 : 1];
       const base = sequence[i].toUpperCase();
+      const position = start + i;
+      const segment = response.segments?.find(
+        (s) => s.start <= position && s.end > position
+      );
+      let label = `${base} · Current assembly: ${(
+        position + 1
+      ).toLocaleString()} bp`;
+      if (
+        segment &&
+        !segment.gap &&
+        segment.sourceStart !== null &&
+        segment.sourceEnd !== null
+      ) {
+        const original = segment.reversed
+          ? segment.sourceEnd - (position - segment.start)
+          : segment.sourceStart + (position - segment.start) + 1;
+        label += `\nOriginal FASTA: ${
+          segment.source
+        }:${original.toLocaleString()} (${
+          segment.reversed ? "−" : "+"
+        } strand)`;
+        label += `\nContig: ${segment.contig}\nScaffold: ${
+          segment.scaffold ?? "unplaced"
+        }`;
+      }
+      renderedBases.push({ screen, label });
       context.fillStyle = colors[base] ?? "#666666";
       context.fillText(
         base,
@@ -131,8 +201,64 @@ async function render(id: number) {
         horizontal ? 12 : screen
       );
     }
-  } catch {
-    if (id === generation) setVisible(false);
+    const tracks = manager.viewAndLayersManager.track2DHolder;
+    const drawBoundary = (
+      bp: number,
+      track: typeof tracks.contigBordersTrack
+    ) => {
+      if (bp < start || bp > end || track.getStyleType() === 3) return;
+      const pixel = holder.getFractionalPxOfBp(bp, resolution) * scale;
+      const screen = map.getPixelFromCoordinate(
+        horizontal ? [pixel, 0] : [0, -pixel]
+      )[horizontal ? 0 : 1];
+      const line = () => {
+        context.beginPath();
+        context.moveTo(horizontal ? screen : 0, horizontal ? 0 : screen);
+        context.lineTo(horizontal ? screen : 24, horizontal ? 24 : screen);
+        context.stroke();
+      };
+      if (track.options.borderOutline) {
+        context.strokeStyle = "rgba(0,0,0,0.9)";
+        context.lineWidth = track.options.width + 3;
+        line();
+      }
+      const color = track.options.borderColor;
+      context.strokeStyle = Array.isArray(color)
+        ? `rgba(${color[0]},${color[1]},${color[2]},${color[3] ?? 1})`
+        : color;
+      context.lineWidth = track.options.width;
+      line();
+    };
+    for (
+      let i = coordinateLowerBound(holder.prefix_sum_bp, start, (bp) => bp);
+      i < holder.prefix_sum_bp.length && holder.prefix_sum_bp[i] <= end;
+      i++
+    )
+      drawBoundary(holder.prefix_sum_bp[i], tracks.contigBordersTrack);
+    const scaffolds = manager.scaffoldHolder.scaffoldBordersSorted;
+    for (
+      let i = Math.max(
+        0,
+        coordinateLowerBound(scaffolds, start, ([b]) => b.startBP) - 1
+      );
+      i < scaffolds.length && scaffolds[i][0].startBP <= end;
+      i++
+    ) {
+      const [borders] = scaffolds[i];
+      drawBoundary(borders.startBP, tracks.scaffoldBordersTrack);
+      drawBoundary(borders.endBP, tracks.scaffoldBordersTrack);
+    }
+  } catch (error) {
+    if (id === generation) {
+      setVisible(false);
+      if (!axios.isCancel(error)) {
+        const message = `FASTA track could not be displayed: ${extractErrorMessage(
+          error
+        )}`;
+        if (message !== lastFailure) notifications.add("warning", message);
+        lastFailure = message;
+      }
+    }
   } finally {
     if (id === generation) request = undefined;
   }
@@ -149,6 +275,7 @@ watch(
     listeners.forEach(unByKey);
     listeners = [];
     cached = undefined;
+    lastFailure = "";
     setVisible(false);
     if (manager) {
       unregisterExportRenderer = manager.registerSequenceRenderer(async () => {
@@ -181,17 +308,18 @@ onBeforeUnmount(() => {
 .sequence-axis {
   position: absolute;
   z-index: 2;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: help;
 }
 .horizontal {
   left: 0;
-  bottom: 0;
+  top: 0;
   width: 100%;
   height: 24px;
 }
 .vertical {
   top: 0;
-  right: 0;
+  left: 0;
   width: 24px;
   height: 100%;
 }

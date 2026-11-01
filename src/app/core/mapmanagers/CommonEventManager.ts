@@ -62,6 +62,10 @@ class CommonEventManager {
     startBP: number;
     endBP: number;
   } | null {
+    if (this.mapManager.networkManager.requestManager.sequenceViewReadOnly) {
+      toast("Return to the contact map before editing the assembly.");
+      return null;
+    }
     const selectedArray =
       this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
         .getArray()
@@ -172,6 +176,8 @@ class CommonEventManager {
         return NamePlacement.BOTTOM;
       case BorderStyle.TOP:
         return NamePlacement.TOP;
+      case BorderStyle.LEFT: return NamePlacement.LEFT;
+      case BorderStyle.RIGHT: return NamePlacement.RIGHT;
       case BorderStyle.NONE:
       default:
         return NamePlacement.HIDDEN;

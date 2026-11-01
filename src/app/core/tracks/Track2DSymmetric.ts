@@ -80,6 +80,8 @@ export enum NamePlacement {
   TOP = 0,
   BOTTOM = 1,
   HIDDEN = 2,
+  LEFT = 3,
+  RIGHT = 4,
 }
 
 abstract class Track2DSymmetric extends Track2D {
@@ -239,6 +241,40 @@ abstract class Track2DSymmetric extends Track2D {
         textAlign: "center",
       }),
     });
+  }
+
+  /** Text offsets stay in CSS pixels at every zoom and matrix resolution. */
+  protected labelLayout(label: string, from: number, to: number, scale: number,
+    viewport?: TrackViewport): { point: number[]; style: Style } | undefined {
+    const resolution = viewport?.resolution ?? scale;
+    const width = this.measureLabelWidthPx(label,
+      `${this.options.labelBold ? "bold " : ""}${this.options.labelSize}px HiCT Sans`);
+    const span = (to - from) * scale / resolution;
+    if (this.namePlacement === NamePlacement.HIDDEN || span < this.options.labelSize * 2) return;
+    if (this.namePlacement === NamePlacement.CENTER && width > span * 0.9) return;
+    const mid = (from + to) / 2 * scale;
+    const offset = this.options.labelSize * this.options.labelOffsetMultiplier;
+    const point = [mid, -mid];
+    const style = this.createLabelStyle(label), text = style.getText()!;
+    switch (this.namePlacement) {
+      case NamePlacement.TOP: point[1] = -from * scale; text.setOffsetY(-offset); break;
+      case NamePlacement.BOTTOM: point[1] = -to * scale; text.setOffsetY(offset); break;
+      case NamePlacement.LEFT: point[0] = from * scale; text.setTextAlign("right"); text.setOffsetX(-offset); break;
+      case NamePlacement.RIGHT: point[0] = to * scale; text.setTextAlign("left"); text.setOffsetX(offset); break;
+    }
+    // Offset text may remain visible when its anchor has moved outside the view.
+    const radius = (width + offset + this.options.labelSize) * resolution;
+    if (viewport && !intersects(viewport.extent,
+      [point[0]-radius, point[1]-radius, point[0]+radius, point[1]+radius])) return;
+    return { point, style };
+  }
+
+  /** Conservative export padding; measured only when an export is requested. */
+  public labelExportPadding(labels: string[]): number {
+    if (this.namePlacement === NamePlacement.HIDDEN || this.namePlacement === NamePlacement.CENTER) return 0;
+    const offset = this.options.labelSize * this.options.labelOffsetMultiplier + this.options.labelOutlineWidth + 4;
+    return labels.reduce((max, label) => Math.max(max, this.measureLabelWidthPx(label,
+      `${this.options.labelBold ? "bold " : ""}${this.options.labelSize}px HiCT Sans`) + offset), offset);
   }
 
   protected measureLabelWidthPx(
@@ -404,6 +440,8 @@ abstract class WithRing extends Track2DSymmetric {
   ): SimpleGeometry {
     const ring: Array<Array<number>> = (() => {
       switch (this.borderStyle) {
+        case BorderStyle.LEFT:
+        case BorderStyle.RIGHT:
         case BorderStyle.FULL:
           return [topLeft, topRight, botRight, botLeft];
         case BorderStyle.TOP:
@@ -420,6 +458,8 @@ abstract class WithRing extends Track2DSymmetric {
       c[1] *= pixelResolution;
     }
     switch (this.borderStyle) {
+      case BorderStyle.LEFT:
+      case BorderStyle.RIGHT:
       case BorderStyle.FULL:
       case BorderStyle.NONE:
         return new Polygon([ring]);
@@ -537,37 +577,20 @@ class ContigBordersTrack2D extends WithRing {
               this.features.get(resolution)?.push(polygonFeature);
             }
 
-            if (this.namePlacement !== NamePlacement.HIDDEN) {
-              const rectWidthPx = toPx - fromPx;
-              const labelWidthPx = this.measureLabelWidthPx(cd.contigName);
-              if (rectWidthPx > 0 && labelWidthPx < rectWidthPx * 0.9) {
-                const labelOffset =
-                  this.options.labelSize * this.options.labelOffsetMultiplier;
-                const labelY =
-                  this.namePlacement === NamePlacement.CENTER
-                    ? -(fromPx + toPx) / 2
-                    : this.namePlacement === NamePlacement.TOP
-                    ? -fromPx + labelOffset
-                    : -toPx - labelOffset;
-                const midPx = (fromPx + toPx) / 2;
-                if (this.labelIntersectsViewport(cd.contigName,
-                  midPx * pixelResolution, labelY * pixelResolution, viewport)) {
-                  const labelPoint = new Point([
-                    midPx * pixelResolution,
-                    labelY * pixelResolution,
-                  ]);
+            const layout = this.labelLayout(cd.contigName, fromPx, toPx, pixelResolution, viewport);
+            if (layout) {
+              const labelPoint = new Point(layout.point);
                   const labelFeature = new Feature({
                     name: `ContigName-${cd.contigName}-bp${resolution}`,
                     geometry: labelPoint,
                   });
-                  labelFeature.setStyle(this.createLabelStyle(cd.contigName));
+                  labelFeature.setStyle(layout.style);
                   labelFeature.set("trackType", "contigNames");
                   labelFeature.set("bpResolution", resolution);
                   labelFeature.set("pixelResolution", pixelResolution);
                   labelFeature.set("contigDescriptor", cd);
-                  this.features.get(resolution)?.push(labelFeature);
-                }
-              }
+
+              this.features.get(resolution)?.push(labelFeature);
             }
 
             break;
@@ -682,41 +705,20 @@ class ScaffoldBordersTrack2D extends WithRing {
               this.features.get(bpResolution)?.push(polygonFeature);
             }
 
-            if (this.namePlacement !== NamePlacement.HIDDEN) {
-              const rectWidthPx = toPx - fromPx;
-              const labelWidthPx = this.measureLabelWidthPx(
-                scaffoldDescriptor.scaffoldName
-              );
-              if (rectWidthPx > 0 && labelWidthPx < rectWidthPx * 0.9) {
-                const labelOffset =
-                  this.options.labelSize * this.options.labelOffsetMultiplier;
-                const labelY =
-                  this.namePlacement === NamePlacement.CENTER
-                    ? -(fromPx + toPx) / 2
-                    : this.namePlacement === NamePlacement.TOP
-                    ? -fromPx + labelOffset
-                    : -toPx - labelOffset;
-                const midPx = (fromPx + toPx) / 2;
-                if (this.labelIntersectsViewport(scaffoldDescriptor.scaffoldName,
-                  midPx * pixelResolution, labelY * pixelResolution, viewport)) {
-                  const labelPoint = new Point([
-                    midPx * pixelResolution,
-                    labelY * pixelResolution,
-                  ]);
+            const layout = this.labelLayout(scaffoldDescriptor.scaffoldName, fromPx, toPx, pixelResolution, viewport);
+            if (layout) {
+              const labelPoint = new Point(layout.point);
                   const labelFeature = new Feature({
                     name: `ScaffoldName-${scaffoldDescriptor.scaffoldName}-bp${bpResolution}`,
                     geometry: labelPoint,
                   });
-                  labelFeature.setStyle(
-                    this.createLabelStyle(scaffoldDescriptor.scaffoldName)
-                  );
+                  labelFeature.setStyle(layout.style);
                   labelFeature.set("trackType", "scaffoldNames");
                   labelFeature.set("bpResolution", bpResolution);
                   labelFeature.set("pixelResolution", pixelResolution);
                   labelFeature.set("scaffolDescriptor", scaffoldDescriptor);
-                  this.features.get(bpResolution)?.push(labelFeature);
-                }
-              }
+
+              this.features.get(bpResolution)?.push(labelFeature);
             }
           }
         );
@@ -993,6 +995,8 @@ enum BorderStyle {
   BOTTOM,
   TOP,
   NONE,
+  LEFT,
+  RIGHT,
 }
 
 export {

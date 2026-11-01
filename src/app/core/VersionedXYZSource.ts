@@ -19,6 +19,8 @@
  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+import { intersects } from "ol/extent";
+import type { TileSignals } from "./visualization/tileSignalRange";
 import { ImageTile } from "ol";
 import TileState from "ol/TileState";
 import XYZ, { type Options as XYZOptions } from "ol/source/XYZ";
@@ -70,6 +72,18 @@ class VersionedXYZContactMapSource extends XYZ {
       this.loadPngTile(imageTile, image, src);
     });
     this.do_reload();
+  }
+
+  public loadedViewportSignals(extent: number[]): TileSignals[] {
+    const values: TileSignals[] = [];
+    const grid = this.getTileGrid();
+    if (!grid) return values;
+    this.tileCache.forEach(tile => {
+      if (!intersects(extent, grid.getTileCoordExtent(tile.getTileCoord()))) return;
+      const signals = (tile as ImageTile & { lastResponse?: { signals?: TileSignals } }).lastResponse?.signals;
+      if (signals) values.push(signals);
+    });
+    return values;
   }
 
   private loadPngTile(
@@ -160,6 +174,7 @@ class VersionedXYZContactMapSource extends XYZ {
       source: this.sourceName,
       signalMode: "PIPELINE_SIGNAL",
       format: "BINARY_FLOAT32",
+      includeTileStatistics: true,
     };
     const xhr = new XMLHttpRequest();
     const requestEpoch = this.tileRequestEpoch;
@@ -194,7 +209,7 @@ class VersionedXYZContactMapSource extends XYZ {
         const dataUrl = this.renderSignalTile(values, rows, cols);
         image.src = dataUrl;
         // @ts-expect-error dynamic cache field
-        tile.lastResponse = { image: dataUrl };
+        tile.lastResponse = { image: dataUrl, signals: this.decodeTileStatistics(xhr.getResponseHeader("x-hict-tile-statistics")) };
         return;
       }
       // @ts-expect-error dynamic cache field
@@ -219,6 +234,11 @@ class VersionedXYZContactMapSource extends XYZ {
     xhr.setRequestHeader("Content-Type", "application/json");
     this.activeTileRequests.add(xhr);
     xhr.send(JSON.stringify(payload));
+  }
+
+  private decodeTileStatistics(header: string | null): TileSignals | undefined {
+    if (!header) return;
+    try { return JSON.parse(header) as TileSignals; } catch { return; }
   }
 
   private parseTileUrl(src: string):
