@@ -21,9 +21,14 @@ function formatFeatureCoordinates(
   const from = first.inContigBp + 1;
   const to = last.inContigBp + 1;
   if (first.contigId === last.contigId) {
-    return `${formatLocus(first.contigName, from)}-${to.toLocaleString("en-US")}`;
+    return `${formatLocus(first.contigName, from)}-${to.toLocaleString(
+      "en-US"
+    )}`;
   }
-  return `${formatLocus(first.contigName, from)}-${formatLocus(last.contigName, to)}`;
+  return `${formatLocus(first.contigName, from)}-${formatLocus(
+    last.contigName,
+    to
+  )}`;
 }
 
 /**
@@ -59,7 +64,10 @@ export function buildTrackContextMenu(
             updatedAtMs: Date.now(),
           }),
       },
-      { label: "Copy feature name", run: () => void copyText(name, "Feature name") },
+      {
+        label: "Copy feature name",
+        run: () => void copyText(name, "Feature name"),
+      },
       {
         label: "Copy coordinates",
         run: () =>
@@ -80,7 +88,8 @@ export function buildTrackContextMenu(
     },
     {
       label: "Tracks and layers…",
-      run: () => window.dispatchEvent(new CustomEvent(OPEN_TRACK_MANAGER_EVENT)),
+      run: () =>
+        window.dispatchEvent(new CustomEvent(OPEN_TRACK_MANAGER_EVENT)),
     }
   );
   return { title: lane?.trackName ?? "Tracks", items };

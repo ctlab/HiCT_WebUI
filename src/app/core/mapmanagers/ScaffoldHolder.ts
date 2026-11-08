@@ -34,9 +34,13 @@ type SortedScaffoldSegment = [
 ];
 
 class ScaffoldHolder {
-  public scaffoldTable: Map<ScaffoldId, ScaffoldDescriptor> = markRaw(new Map());
+  public scaffoldTable: Map<ScaffoldId, ScaffoldDescriptor> = markRaw(
+    new Map()
+  );
 
-  public scaffoldBordersBp: Map<ScaffoldId, ScaffoldBordersBP> = markRaw(new Map());
+  public scaffoldBordersBp: Map<ScaffoldId, ScaffoldBordersBP> = markRaw(
+    new Map()
+  );
 
   public scaffoldBordersSorted: SortedScaffoldSegment[] = markRaw([]);
 

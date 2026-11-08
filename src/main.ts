@@ -115,7 +115,7 @@ const pushNotification = (
   level: NotificationLevel,
   message: string,
   options?: { skipConsole?: boolean }
-) : number => {
+): number => {
   if (!options?.skipConsole) {
     switch (level) {
       case "error":
@@ -154,9 +154,13 @@ toast.message = ((message: unknown, data?: unknown) => {
   // Existing user-facing warning toasts use this explicit yellow style. Keep
   // them in the journal without turning an expected validation notice into a
   // developer-console warning or a second error toast.
-  const warning = (data as { style?: Record<string, unknown> } | undefined)
-    ?.style?.["background-color"] === "lightyellow";
-  pushNotification(warning ? "warning" : "message", normalized, { skipConsole: warning });
+  const warning =
+    (data as { style?: Record<string, unknown> } | undefined)?.style?.[
+      "background-color"
+    ] === "lightyellow";
+  pushNotification(warning ? "warning" : "message", normalized, {
+    skipConsole: warning,
+  });
   return originalToastMessage(normalized, data as never);
 }) as typeof toast.message;
 
@@ -178,13 +182,18 @@ console.error = (...args: unknown[]) => {
     pushNotification("error", "WebUI error (see console for details)", {
       skipConsole: true,
     });
-    if (errorToastStore.webuiErrorToastsEnabled) originalToastError("WebUI error (see console for details)");
+    if (errorToastStore.webuiErrorToastsEnabled)
+      originalToastError("WebUI error (see console for details)");
   }
 };
 
 console.warn = (...args: unknown[]) => {
   originalConsoleWarn(...args);
-  pushNotification("warning", args.map(stringifyNotificationMessage).join(" "), { skipConsole: true });
+  pushNotification(
+    "warning",
+    args.map(stringifyNotificationMessage).join(" "),
+    { skipConsole: true }
+  );
 };
 
 window.addEventListener("error", (event) => {

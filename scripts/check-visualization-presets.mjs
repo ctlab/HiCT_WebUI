@@ -37,7 +37,10 @@ const modDotPlotPath = path.join(
 
 const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
 const presets = catalog?.data?.savedVisualizationPresets;
-assert.ok(Array.isArray(presets), "preset catalog must use savedVisualizationPresets");
+assert.ok(
+  Array.isArray(presets),
+  "preset catalog must use savedVisualizationPresets"
+);
 assert.equal(
   new Set(presets.map((preset) => preset.option_id)).size,
   presets.length,
@@ -82,7 +85,10 @@ assert.match(
   "the ModDotPlot palette must keep zero-valued cells transparent"
 );
 
-const visualizationManagerSource = fs.readFileSync(visualizationManagerPath, "utf8");
+const visualizationManagerSource = fs.readFileSync(
+  visualizationManagerPath,
+  "utf8"
+);
 assert.match(
   visualizationManagerSource,
   /loadGeneration === this\.visualizationOptionsLoadGeneration/,
@@ -93,17 +99,39 @@ const contrastCode = visualizationManagerSource.slice(
   visualizationManagerSource.indexOf("const visualizationOptionsFromTarget =")
 );
 const contrastContext = vm.createContext({
-  isRecord: value => value !== null && typeof value === "object",
-  preserveMinimumAlpha: value => value,
+  isRecord: (value) => value !== null && typeof value === "object",
+  preserveMinimumAlpha: (value) => value,
 });
-vm.runInContext(ts.transpileModule(contrastCode + "\nglobalThis.replace = replaceColormapNode;", {
-  compilerOptions: { target: ts.ScriptTarget.ES2020 },
-}).outputText, contrastContext);
+vm.runInContext(
+  ts.transpileModule(
+    contrastCode + "\nglobalThis.replace = replaceColormapNode;",
+    {
+      compilerOptions: { target: ts.ScriptTarget.ES2020 },
+    }
+  ).outputText,
+  contrastContext
+);
 for (const mode of ["LINEAR", "MODDOTPLOT_IDENTITY"]) {
-  const input = { type: "binary", op: "DIV", left: { type: "source", source: "SECONDARY" }, right: { type: "constant", value: 100 } };
-  const target = { node: { type: "colormap", mode, input }, profile: { source: "SECONDARY" } };
-  contrastContext.replace(target, { input: { type: "log", base: 2 }, minSignal: 86, maxSignal: 100 });
-  assert.strictEqual(target.node.input, input, "contrast edits must retain the exact signal graph");
+  const input = {
+    type: "binary",
+    op: "DIV",
+    left: { type: "source", source: "SECONDARY" },
+    right: { type: "constant", value: 100 },
+  };
+  const target = {
+    node: { type: "colormap", mode, input },
+    profile: { source: "SECONDARY" },
+  };
+  contrastContext.replace(target, {
+    input: { type: "log", base: 2 },
+    minSignal: 86,
+    maxSignal: 100,
+  });
+  assert.strictEqual(
+    target.node.input,
+    input,
+    "contrast edits must retain the exact signal graph"
+  );
   assert.equal(target.node.min.value, 86);
   assert.equal(target.node.max.value, 100);
   assert.equal(target.node.mode, mode);
@@ -161,13 +189,50 @@ console.log("Visualization preset catalog regression check passed.");
 
 // Only carry pipelines whose inputs still exist when opening a different map.
 const transferExports = {};
-vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(repoRoot,
-  'src/app/core/visualization/transferVisualization.ts'), 'utf8'), {
-  compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}
-}).outputText, {exports: transferExports});
+vm.runInNewContext(
+  ts.transpileModule(
+    fs.readFileSync(
+      path.join(
+        repoRoot,
+        "src/app/core/visualization/transferVisualization.ts"
+      ),
+      "utf8"
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  { exports: transferExports }
+);
 const transferIssues = transferExports.pipelineTransferIssues;
-assert.equal(transferIssues({upperExpression: {type:'colormap', input:{type:'source', source:'PRIMARY'}}}).length, 0);
-assert.equal(transferIssues({lowerExpression: {type:'track1d', trackId:'__builtin_cooler_weights__'}}).length, 0);
-assert.equal(transferIssues({upperExpression: {type:'pixel_blend', top:{type:'source',source:'SECONDARY'},
-  bottom:{type:'track1d',trackId:'old-map-track'}}}).length, 2);
-console.log('Visualization transfer preserves portable expressions and identifies stale map inputs.');
+assert.equal(
+  transferIssues({
+    upperExpression: {
+      type: "colormap",
+      input: { type: "source", source: "PRIMARY" },
+    },
+  }).length,
+  0
+);
+assert.equal(
+  transferIssues({
+    lowerExpression: { type: "track1d", trackId: "__builtin_cooler_weights__" },
+  }).length,
+  0
+);
+assert.equal(
+  transferIssues({
+    upperExpression: {
+      type: "pixel_blend",
+      top: { type: "source", source: "SECONDARY" },
+      bottom: { type: "track1d", trackId: "old-map-track" },
+    },
+  }).length,
+  2
+);
+console.log(
+  "Visualization transfer preserves portable expressions and identifies stale map inputs."
+);

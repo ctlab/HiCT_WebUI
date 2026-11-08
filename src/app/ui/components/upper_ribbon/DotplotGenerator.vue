@@ -23,26 +23,60 @@
 <template>
   <Teleport to="body">
     <div class="modal-backdrop fade show dotplot-backdrop"></div>
-    <div class="modal fade show dotplot-root" style="display: block" tabindex="-1" role="dialog">
-      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable dotplot-dialog">
+    <div
+      class="modal fade show dotplot-root"
+      style="display: block"
+      tabindex="-1"
+      role="dialog"
+    >
+      <div
+        class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable dotplot-dialog"
+      >
         <div class="modal-content">
           <div class="modal-header">
             <div>
               <h5 class="modal-title">Generate self-alignment dotplots</h5>
               <small class="text-muted">
-                Builds self-alignment maps from FASTA files using the configured dotplot toolchain.
+                Builds self-alignment maps from FASTA files using the configured
+                dotplot toolchain.
               </small>
             </div>
-            <button type="button" class="btn-close" @click="emit('dismissed')"></button>
+            <button
+              type="button"
+              class="btn-close"
+              @click="emit('dismissed')"
+            ></button>
           </div>
           <div class="modal-body">
-            <div v-if="errorMessage" class="alert alert-danger">{{ errorMessage }}</div>
+            <div v-if="errorMessage" class="alert alert-danger">
+              {{ errorMessage }}
+            </div>
             <div v-if="step === 'select'">
               <div class="batch-actions">
-                <button class="btn btn-sm btn-outline-primary" @click="selectAll">Select All</button>
-                <button class="btn btn-sm btn-outline-secondary" @click="selectNone">Select None</button>
-                <button class="btn btn-sm btn-outline-secondary" @click="invertSelection">Invert Selection</button>
-                <button class="btn btn-sm btn-outline-secondary" @click="viewCurrentJobs">View current dotplot jobs</button>
+                <button
+                  class="btn btn-sm btn-outline-primary"
+                  @click="selectAll"
+                >
+                  Select All
+                </button>
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  @click="selectNone"
+                >
+                  Select None
+                </button>
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  @click="invertSelection"
+                >
+                  Invert Selection
+                </button>
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  @click="viewCurrentJobs"
+                >
+                  View current dotplot jobs
+                </button>
               </div>
               <FileSelectionTable
                 :entries="fastaEntries"
@@ -61,36 +95,61 @@
               <div class="alert alert-warning dotplot-ram-warning">
                 <strong>Memory warning.</strong>
                 <div class="mt-1">
-                  Dotplot generation can require a large amount of RAM, depending on genome assembly size.
-                  Machines with less than 64 GB of memory may not be enough for large inputs.
+                  Dotplot generation can require a large amount of RAM,
+                  depending on genome assembly size. Machines with less than 64
+                  GB of memory may not be enough for large inputs.
                 </div>
                 <details class="mt-2">
                   <summary>Show cluster guidance</summary>
                   <div class="mt-2">
-                    If you have access to a Linux-powered cluster with enough resources, you can run HiCT in remote
-                    server mode and connect to it with SSH port forwarding for HTTP 5000 and 8080.
+                    If you have access to a Linux-powered cluster with enough
+                    resources, you can run HiCT in remote server mode and
+                    connect to it with SSH port forwarding for HTTP 5000 and
+                    8080.
                   </div>
                 </details>
               </div>
               <div class="row g-3">
                 <div class="col-md-4">
-                  <label class="form-label">Base dotplot resolution, bp/bin</label>
-                  <input v-model.number="binSize" type="number" min="1" class="form-control" />
-                  <small class="text-muted">Fine values such as 25 are supported when the toolchain can handle the output size.</small>
+                  <label class="form-label"
+                    >Base dotplot resolution, bp/bin</label
+                  >
+                  <input
+                    v-model.number="binSize"
+                    type="number"
+                    min="1"
+                    class="form-control"
+                  />
+                  <small class="text-muted"
+                    >Fine values such as 25 are supported when the toolchain can
+                    handle the output size.</small
+                  >
                 </div>
                 <div class="col-md-8">
                   <label class="form-label">Zoom resolutions</label>
-                  <input v-model.trim="resolutions" type="text" class="form-control" />
+                  <input
+                    v-model.trim="resolutions"
+                    type="text"
+                    class="form-control"
+                  />
                   <small class="text-muted">
-                    Comma-separated. Leave empty to mirror the reference map if selected, otherwise derive a pyramid up to roughly 500 px per axis.
+                    Comma-separated. Leave empty to mirror the reference map if
+                    selected, otherwise derive a pyramid up to roughly 500 px
+                    per axis.
                   </small>
                 </div>
                 <div class="col-md-12">
-                  <label class="form-label">Reference .hict.hdf5 map for resolution sync (optional)</label>
+                  <label class="form-label"
+                    >Reference .hict.hdf5 map for resolution sync
+                    (optional)</label
+                  >
                   <div class="input-group">
                     <input
                       class="form-control"
-                      :value="referenceMapFilename || 'No reference map: derive zoom resolutions automatically'"
+                      :value="
+                        referenceMapFilename ||
+                        'No reference map: derive zoom resolutions automatically'
+                      "
                       readonly
                     />
                     <button
@@ -110,63 +169,120 @@
                     </button>
                   </div>
                   <small class="text-muted">
-                    When selected and zoom resolutions are empty, the dotplot reuses this map's resolutions and adds finer intermediate levels from the base dotplot resolution.
+                    When selected and zoom resolutions are empty, the dotplot
+                    reuses this map's resolutions and adds finer intermediate
+                    levels from the base dotplot resolution.
                   </small>
                 </div>
                 <div class="col-md-12">
-                  <label class="form-label">Apply AGP to FASTA before self-alignment (optional)</label>
+                  <label class="form-label"
+                    >Apply AGP to FASTA before self-alignment (optional)</label
+                  >
                   <select v-model="assemblyAgpFilename" class="form-select">
                     <option value="">Use FASTA as-is</option>
-                    <option v-for="file in agpFiles" :key="file" :value="file">{{ file }}</option>
+                    <option v-for="file in agpFiles" :key="file" :value="file">
+                      {{ file }}
+                    </option>
                   </select>
                   <small class="text-muted">
-                    Use this when the dotplot should be generated for a scaffolded assembly state. The AGP-defined sequence is written to a temporary FASTA before mm2-plus/minimap2 runs.
+                    Use this when the dotplot should be generated for a
+                    scaffolded assembly state. The AGP-defined sequence is
+                    written to a temporary FASTA before mm2-plus/minimap2 runs.
                   </small>
                 </div>
                 <div v-if="dotplotOffsetWarnings.length" class="col-12">
                   <div class="alert alert-warning py-2 mb-0">
                     <strong>Overlay alignment warning.</strong>
                     <ul class="mb-0 ps-3">
-                      <li v-for="warning in dotplotOffsetWarnings" :key="warning">{{ warning }}</li>
+                      <li
+                        v-for="warning in dotplotOffsetWarnings"
+                        :key="warning"
+                      >
+                        {{ warning }}
+                      </li>
                     </ul>
                   </div>
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Minimizer k-mer length</label>
-                  <input v-model.number="minimizerK" type="number" min="5" class="form-control" />
+                  <input
+                    v-model.number="minimizerK"
+                    type="number"
+                    min="5"
+                    class="form-control"
+                  />
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Minimizer window size</label>
-                  <input v-model.number="minimizerWindow" type="number" min="1" class="form-control" />
+                  <input
+                    v-model.number="minimizerWindow"
+                    type="number"
+                    min="1"
+                    class="form-control"
+                  />
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Aligner -m chain score</label>
-                  <input v-model.number="minChainScore" type="number" min="0" class="form-control" />
+                  <input
+                    v-model.number="minChainScore"
+                    type="number"
+                    min="0"
+                    class="form-control"
+                  />
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Drop near-diagonal bins</label>
-                  <input v-model.number="dropNearDiagonalBins" type="number" min="0" class="form-control" />
+                  <input
+                    v-model.number="dropNearDiagonalBins"
+                    type="number"
+                    min="0"
+                    class="form-control"
+                  />
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">PAF sample step, bp</label>
-                  <input v-model.number="sampleBp" type="number" min="1" class="form-control" />
+                  <input
+                    v-model.number="sampleBp"
+                    type="number"
+                    min="1"
+                    class="form-control"
+                  />
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Minimum alignment length</label>
-                  <input v-model.number="minAlignmentLength" type="number" min="0" class="form-control" />
+                  <input
+                    v-model.number="minAlignmentLength"
+                    type="number"
+                    min="0"
+                    class="form-control"
+                  />
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Aligner threads</label>
-                  <input v-model.number="alignmentThreads" type="number" min="-1" title="-1: automatic server CPU allocation" class="form-control" />
+                  <input
+                    v-model.number="alignmentThreads"
+                    type="number"
+                    min="-1"
+                    title="-1: automatic server CPU allocation"
+                    class="form-control"
+                  />
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Conversion threads</label>
-                  <input v-model.number="conversionThreads" type="number" min="-1" title="-1: automatic server CPU allocation" class="form-control" />
+                  <input
+                    v-model.number="conversionThreads"
+                    type="number"
+                    min="-1"
+                    title="-1: automatic server CPU allocation"
+                    class="form-control"
+                  />
                 </div>
                 <div class="col-md-6">
                   <label class="form-label">Self-alignment engine</label>
                   <select v-model="alignerPreference" class="form-select">
-                    <option value="auto">Auto (mm2-plus AVX-512 -> AVX2 -> minimap2)</option>
+                    <option value="auto">
+                      Auto (mm2-plus AVX-512 -> AVX2 -> minimap2)
+                    </option>
                     <option value="mm2plus">mm2-plus best available</option>
                     <option value="mm2plus-avx512">mm2-plus AVX-512</option>
                     <option value="mm2plus-avx2">mm2-plus AVX2</option>
@@ -175,52 +291,94 @@
                 </div>
                 <div class="col-md-6">
                   <label class="form-label">Extra aligner arguments</label>
-                  <input v-model.trim="extraMinimap2Args" type="text" class="form-control" placeholder="e.g. -f 0.0002" />
-                  <small class="text-muted">Passed as separate arguments without a shell; leave empty for HiCT defaults.</small>
+                  <input
+                    v-model.trim="extraMinimap2Args"
+                    type="text"
+                    class="form-control"
+                    placeholder="e.g. -f 0.0002"
+                  />
+                  <small class="text-muted"
+                    >Passed as separate arguments without a shell; leave empty
+                    for HiCT defaults.</small
+                  >
                 </div>
                 <div class="col-12">
                   <label class="form-label">Alignment command preview</label>
-                  <pre class="dotplot-command-preview">{{ alignerCommandPreview }}</pre>
+                  <pre class="dotplot-command-preview">{{
+                    alignerCommandPreview
+                  }}</pre>
                   <small class="text-muted">
-                    The final PAF path is a runtime temporary file; arguments and selected aligner match the current settings.
+                    The final PAF path is a runtime temporary file; arguments
+                    and selected aligner match the current settings.
                   </small>
                 </div>
                 <div class="col-md-3 d-flex align-items-end">
                   <div class="form-check form-switch">
-                    <input id="dotplot-skip-diag" v-model="skipDiagonal" class="form-check-input" type="checkbox" />
-                    <label class="form-check-label" for="dotplot-skip-diag">Skip exact diagonal</label>
+                    <input
+                      id="dotplot-skip-diag"
+                      v-model="skipDiagonal"
+                      class="form-check-input"
+                      type="checkbox"
+                    />
+                    <label class="form-check-label" for="dotplot-skip-diag"
+                      >Skip exact diagonal</label
+                    >
                   </div>
                 </div>
                 <div class="col-md-3 d-flex align-items-end">
                   <div class="form-check form-switch">
-                    <input id="dotplot-overwrite" v-model="overwrite" class="form-check-input" type="checkbox" />
-                    <label class="form-check-label" for="dotplot-overwrite">Overwrite outputs</label>
+                    <input
+                      id="dotplot-overwrite"
+                      v-model="overwrite"
+                      class="form-check-input"
+                      type="checkbox"
+                    />
+                    <label class="form-check-label" for="dotplot-overwrite"
+                      >Overwrite outputs</label
+                    >
                   </div>
                 </div>
               </div>
               <div class="alert alert-info mt-3 mb-0">
-                Packaged builds use mm2-plus or minimap2 for self-alignment, HiCT's integrated Java/native PAF writer, and hictk for <code>load</code>/<code>zoomify</code>.
+                Packaged builds use mm2-plus or minimap2 for self-alignment,
+                HiCT's integrated Java/native PAF writer, and hictk for
+                <code>load</code>/<code>zoomify</code>.
               </div>
             </div>
 
             <div v-else>
               <h6>Dotplot jobs</h6>
-              <div v-if="jobs.length === 0" class="alert alert-light border">No dotplot jobs are currently known.</div>
+              <div v-if="jobs.length === 0" class="alert alert-light border">
+                No dotplot jobs are currently known.
+              </div>
               <div v-else class="dotplot-job-list">
-                <div v-for="job in jobs" :key="job.jobId" class="dotplot-job card">
+                <div
+                  v-for="job in jobs"
+                  :key="job.jobId"
+                  class="dotplot-job card"
+                >
                   <div class="card-body">
                     <div class="d-flex justify-content-between gap-3">
                       <div>
                         <strong>{{ job.sourceFilename }}</strong>
                         <div class="text-muted">{{ job.outputFilename }}</div>
                       </div>
-                      <span class="status-pill" :class="job.status">{{ job.status }}</span>
+                      <span class="status-pill" :class="job.status">{{
+                        job.status
+                      }}</span>
                     </div>
                     <div class="progress mt-2" style="height: 8px">
                       <div
                         class="progress-bar progress-bar-striped"
-                        :class="{ 'progress-bar-animated': job.status === 'running' || job.status === 'queued' }"
-                        :style="{ width: `${Math.round((job.overallProgress || 0) * 100)}%` }"
+                        :class="{
+                          'progress-bar-animated':
+                            job.status === 'running' || job.status === 'queued',
+                        }"
+                        :style="{
+                          width: `${Math.round(
+                            (job.overallProgress || 0) * 100
+                          )}%`,
+                        }"
                       ></div>
                     </div>
                     <div v-if="isActiveJob(job)" class="dotplot-job-actions">
@@ -229,11 +387,21 @@
                         :disabled="isCancellingJob(job.jobId)"
                         @click="cancelDotplotJob(job)"
                       >
-                        {{ isCancellingJob(job.jobId) ? "Cancelling..." : "Cancel" }}
+                        {{
+                          isCancellingJob(job.jobId)
+                            ? "Cancelling..."
+                            : "Cancel"
+                        }}
                       </button>
                     </div>
-                    <small class="d-block mt-2">{{ job.currentStageLabel || job.stageDetail || job.toolchainSummary }}</small>
-                    <pre v-if="job.error" class="dotplot-error mt-2">{{ job.error }}</pre>
+                    <small class="d-block mt-2">{{
+                      job.currentStageLabel ||
+                      job.stageDetail ||
+                      job.toolchainSummary
+                    }}</small>
+                    <pre v-if="job.error" class="dotplot-error mt-2">{{
+                      job.error
+                    }}</pre>
                     <details v-if="job.logs.length" class="mt-2">
                       <summary>Logs</summary>
                       <pre class="dotplot-logs">{{ job.logs.join("\n") }}</pre>
@@ -244,16 +412,31 @@
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" @click="step === 'select' ? emit('dismissed') : (step = 'select')">
+            <button
+              class="btn btn-secondary"
+              @click="step === 'select' ? emit('dismissed') : (step = 'select')"
+            >
               {{ step === "select" ? "Dismiss" : "Back" }}
             </button>
-            <button v-if="step === 'select'" class="btn btn-primary" :disabled="selection.size === 0" @click="step = 'settings'">
+            <button
+              v-if="step === 'select'"
+              class="btn btn-primary"
+              :disabled="selection.size === 0"
+              @click="step = 'settings'"
+            >
               Continue
             </button>
-            <button v-else-if="step === 'settings'" class="btn btn-success" :disabled="submitting" @click="startDotplots">
+            <button
+              v-else-if="step === 'settings'"
+              class="btn btn-success"
+              :disabled="submitting"
+              @click="startDotplots"
+            >
               Start
             </button>
-            <button v-else class="btn btn-outline-primary" @click="refreshJobs">Refresh</button>
+            <button v-else class="btn btn-outline-primary" @click="refreshJobs">
+              Refresh
+            </button>
           </div>
         </div>
       </div>
@@ -273,10 +456,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+  type Ref,
+} from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
 import { StartDotplotJobsRequest } from "@/app/core/net/api/request";
-import type { ConversionJobResponse, ConversionToolchainStatusResponse } from "@/app/core/net/api/response";
+import type {
+  ConversionJobResponse,
+  ConversionToolchainStatusResponse,
+} from "@/app/core/net/api/response";
 import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
 import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
@@ -297,7 +490,8 @@ const fastaFiles: Ref<string[]> = ref([]);
 const allFiles: Ref<string[]> = ref([]);
 const selection: Ref<Set<string>> = ref(new Set<string>());
 const jobs: Ref<ConversionJobResponse[]> = ref([]);
-const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> = ref(null);
+const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> =
+  ref(null);
 const errorMessage: Ref<string> = ref("");
 const submitting = ref(false);
 const refreshingJobs = ref(false);
@@ -371,23 +565,38 @@ const selectedAlignerCommand = computed(() => {
     case "mm2plus-avx512":
       return status.mm2PlusAvx512Command ?? "<mm2-plus AVX-512 unavailable>";
     case "mm2plus":
-      return status.mm2PlusAvx512Command ?? status.mm2PlusAvx2Command ?? "<mm2-plus unavailable>";
+      return (
+        status.mm2PlusAvx512Command ??
+        status.mm2PlusAvx2Command ??
+        "<mm2-plus unavailable>"
+      );
     default:
-      return status.selectedDotplotAlignerCommand ??
+      return (
+        status.selectedDotplotAlignerCommand ??
         status.mm2PlusAvx512Command ??
         status.mm2PlusAvx2Command ??
         status.minimap2Command ??
-        "<no dotplot aligner available>";
+        "<no dotplot aligner available>"
+      );
   }
 });
 const alignerCommandPreview = computed(() => {
   const fasta = selectedFastaPaths.value[0] ?? "<selected FASTA>";
-  const prefix = stripFastaSuffix(fasta.split(/[\\/]/).pop() ?? fasta) + `.self.k${safeInteger(minimizerK.value, 17)}w${safeInteger(minimizerWindow.value, 5)}`;
-  const alignmentFasta = assemblyAgpFilename.value ? `<processing-dir>/${prefix}.agp-applied.fasta` : fasta;
+  const prefix =
+    stripFastaSuffix(fasta.split(/[\\/]/).pop() ?? fasta) +
+    `.self.k${safeInteger(minimizerK.value, 17)}w${safeInteger(
+      minimizerWindow.value,
+      5
+    )}`;
+  const alignmentFasta = assemblyAgpFilename.value
+    ? `<processing-dir>/${prefix}.agp-applied.fasta`
+    : fasta;
   const args = [
     selectedAlignerCommand.value,
     "-t",
-    alignmentThreads.value > 0 ? String(Math.trunc(alignmentThreads.value)) : "<server-auto>",
+    alignmentThreads.value > 0
+      ? String(Math.trunc(alignmentThreads.value))
+      : "<server-auto>",
     "-k",
     String(safeInteger(minimizerK.value, 17)),
     "-w",
@@ -405,7 +614,9 @@ const alignerCommandPreview = computed(() => {
   }
   args.push(...parsePreviewExtraArgs(extraMinimap2Args.value));
   args.push(alignmentFasta, alignmentFasta);
-  return `${args.map(shellQuote).join(" ")} > ${shellQuote(`<processing-dir>/${prefix}.paf`)}`;
+  return `${args.map(shellQuote).join(" ")} > ${shellQuote(
+    `<processing-dir>/${prefix}.paf`
+  )}`;
 });
 
 function onSelectionUpdated(files: string[]): void {
@@ -474,13 +685,23 @@ async function startDotplots(): Promise<void> {
         minimizerWindow: Math.max(1, Math.trunc(minimizerWindow.value || 5)),
         minChainScore: Math.max(0, Math.trunc(minChainScore.value || 40)),
         skipDiagonal: skipDiagonal.value,
-        dropNearDiagonalBins: Math.max(0, Math.trunc(dropNearDiagonalBins.value || 0)),
+        dropNearDiagonalBins: Math.max(
+          0,
+          Math.trunc(dropNearDiagonalBins.value || 0)
+        ),
         sampleBp: Math.max(1, Math.trunc(sampleBp.value || 250)),
-        minAlignmentLength: Math.max(0, Math.trunc(minAlignmentLength.value || 50)),
+        minAlignmentLength: Math.max(
+          0,
+          Math.trunc(minAlignmentLength.value || 50)
+        ),
         extraMinimap2Args: extraMinimap2Args.value.trim() || undefined,
         alignerPreference: alignerPreference.value,
-        alignmentThreads: alignmentThreads.value > 0 ? Math.trunc(alignmentThreads.value) : -1,
-        conversionThreads: conversionThreads.value > 0 ? Math.trunc(conversionThreads.value) : -1,
+        alignmentThreads:
+          alignmentThreads.value > 0 ? Math.trunc(alignmentThreads.value) : -1,
+        conversionThreads:
+          conversionThreads.value > 0
+            ? Math.trunc(conversionThreads.value)
+            : -1,
         overwrite: overwrite.value,
       })
     );
@@ -610,7 +831,11 @@ watch(() => [step.value, hasActiveJobs.value] as const, syncAutoRefresh);
 watch(
   () => props.initialReferenceMapFilename,
   (filename) => {
-    if (!referenceMapFilename.value && filename && isHictMapFilename(filename)) {
+    if (
+      !referenceMapFilename.value &&
+      filename &&
+      isHictMapFilename(filename)
+    ) {
       referenceMapFilename.value = filename;
     }
   },
@@ -619,14 +844,19 @@ watch(
 
 onMounted(async () => {
   try {
-    toolchainStatus.value = await props.networkManager.requestManager.getConversionToolchainStatus();
+    toolchainStatus.value =
+      await props.networkManager.requestManager.getConversionToolchainStatus();
   } catch (error) {
     console.warn("Failed to inspect dotplot toolchain", error);
   }
   try {
     allFiles.value = await props.networkManager.requestManager.listFiles();
-    fastaFiles.value = await props.networkManager.requestManager.listFASTAFiles();
-    if (props.initialFastaFilename && fastaFiles.value.includes(props.initialFastaFilename)) {
+    fastaFiles.value =
+      await props.networkManager.requestManager.listFASTAFiles();
+    if (
+      props.initialFastaFilename &&
+      fastaFiles.value.includes(props.initialFastaFilename)
+    ) {
       selection.value = new Set([props.initialFastaFilename]);
     }
     await refreshJobs();

@@ -28,7 +28,9 @@
       <div>
         <p>
           <strong>Status:</strong>
-          <span class="status-pill" :class="statusClass">{{ statusLabel }}</span>
+          <span class="status-pill" :class="statusClass">{{
+            statusLabel
+          }}</span>
         </p>
         <p>
           <strong>Input:</strong> {{ job.sourceFilename }} ({{
@@ -101,9 +103,7 @@
       </div>
     </div>
 
-    <div v-if="job.error" class="error-message">
-      Error: {{ job.error }}
-    </div>
+    <div v-if="job.error" class="error-message">Error: {{ job.error }}</div>
     <div
       v-if="job.toolchainNotices.length || job.toolchainCitations.length"
       class="toolchain-meta"
@@ -189,9 +189,11 @@ function updateState(): void {
 }
 
 function onStopClicked(): void {
-  props.networkManager.requestManager.stopConversionJob(props.jobId).catch((e) => {
-    errorMessage.value = e;
-  });
+  props.networkManager.requestManager
+    .stopConversionJob(props.jobId)
+    .catch((e) => {
+      errorMessage.value = e;
+    });
 }
 
 function stopTimer(): void {
@@ -254,7 +256,9 @@ const primaryProgressMeta = computed(() => {
   if (job.value?.currentStageLabel && job.value?.stageDetail) {
     return `(${job.value.stageDetail})`;
   }
-  return `(elapsed ${formatDuration(job.value?.resolutionElapsedMillis)}, eta ${formatDuration(job.value?.resolutionEtaMillis)})`;
+  return `(elapsed ${formatDuration(
+    job.value?.resolutionElapsedMillis
+  )}, eta ${formatDuration(job.value?.resolutionEtaMillis)})`;
 });
 
 function formatPercent(value: number | undefined): string {

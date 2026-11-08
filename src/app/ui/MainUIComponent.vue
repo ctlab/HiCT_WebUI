@@ -90,9 +90,7 @@
                 type="button"
                 class="btn-close"
                 aria-label="Close"
-                @click="
-                  chooseCoolerWeightsNaNPolicy('DISABLE_WEIGHTS', false)
-                "
+                @click="chooseCoolerWeightsNaNPolicy('DISABLE_WEIGHTS', false)"
               ></button>
             </div>
             <div class="modal-body">
@@ -103,23 +101,22 @@
                   visualizationOptionsStore.coolerWeightsNaNCount === 1
                     ? ""
                     : "s"
-                }}. NaN weights normally mark bins excluded from Cooler balancing
-                (for example, low-coverage bins); they do not by themselves mean
-                balancing failed.
+                }}. NaN weights normally mark bins excluded from Cooler
+                balancing (for example, low-coverage bins); they do not by
+                themselves mean balancing failed.
               </p>
               <p class="mb-0">
-                Weight 0 masks these bins. Weight 1 retains their unbalanced signal,
-                which can dominate balanced bins whose weights are much smaller.
-                Masking changes the display, not the stored contact counts.
+                Weight 0 masks these bins. Weight 1 retains their unbalanced
+                signal, which can dominate balanced bins whose weights are much
+                smaller. Masking changes the display, not the stored contact
+                counts.
               </p>
             </div>
             <div class="modal-footer cooler-weights-nan-actions">
               <button
                 type="button"
                 class="btn btn-primary"
-                @click="
-                  chooseCoolerWeightsNaNPolicy('DISABLE_WEIGHTS', false)
-                "
+                @click="chooseCoolerWeightsNaNPolicy('DISABLE_WEIGHTS', false)"
               >
                 Do not use Cooler weights
               </button>
@@ -158,8 +155,13 @@
       @fastaLinked="onFastaLinked"
       @wizardRequested="wizardOpen = true"
     ></UpperFrame>
-    <div v-if="workspaceConflict" class="alert alert-warning workspace-conflict" role="alert">
-      Workspace settings changed in another window. Attach again to restore the latest saved view.
+    <div
+      v-if="workspaceConflict"
+      class="alert alert-warning workspace-conflict"
+      role="alert"
+    >
+      Workspace settings changed in another window. Attach again to restore the
+      latest saved view.
     </div>
     <WorkspaceComponent
       :mapManager="mapManager"
@@ -172,19 +174,29 @@
     >
       <h2 id="empty-workspace-title">No contact map open</h2>
       <p>
-        Open a <code>.hict.hdf5</code>, <code>.mcool</code> or <code>.hic</code> map from the
-        server data folder, or reconnect to a map that is already open on the server.
+        Open a <code>.hict.hdf5</code>, <code>.mcool</code> or
+        <code>.hic</code> map from the server data folder, or reconnect to a map
+        that is already open on the server.
       </p>
       <div class="empty-workspace-actions">
-        <button type="button" class="btn btn-primary" @click="wizardOpen = true">
+        <button
+          type="button"
+          class="btn btn-primary"
+          @click="wizardOpen = true"
+        >
           <i class="bi bi-folder2-open me-1"></i>Open map…
         </button>
-        <button type="button" class="btn btn-outline-secondary" @click="onAttached">
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          @click="onAttached"
+        >
           <i class="bi bi-plug me-1"></i>Attach to open session
         </button>
       </div>
       <p class="empty-workspace-hint">
-        More options (manual open, sessions, conversion) are in the <strong>File</strong> menu.
+        More options (manual open, sessions, conversion) are in the
+        <strong>File</strong> menu.
       </p>
     </section>
     <NotificationCenterModal></NotificationCenterModal>
@@ -205,7 +217,10 @@
 <script setup lang="ts">
 import { pipelineTransferIssues } from "@/app/core/visualization/transferVisualization";
 import BenchmarkFeature from "ol/Feature";
-import { captureWorkspace, restoreWorkspace } from "@/app/core/mapmanagers/WorkspaceState";
+import {
+  captureWorkspace,
+  restoreWorkspace,
+} from "@/app/core/mapmanagers/WorkspaceState";
 import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
 import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
 import {
@@ -267,18 +282,17 @@ if ((window as any).__HICT_BENCHMARK_ENABLED__) {
       return openFileWithOptions(name, fasta);
     },
     manager: () => mapManager.value,
-    feature: (properties: Record<string, unknown>) => new BenchmarkFeature(properties),
+    feature: (properties: Record<string, unknown>) =>
+      new BenchmarkFeature(properties),
   };
 }
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const sessionStore = useSessionStore();
-watch(
-  fastaFilename,
-  (v) => sessionStore.setLinkedFastaFilename(v ?? ""),
-  { immediate: true }
-);
+watch(fastaFilename, (v) => sessionStore.setLinkedFastaFilename(v ?? ""), {
+  immediate: true,
+});
 function fileBasename(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
@@ -321,7 +335,15 @@ let lastWorkspaceSnapshot = "";
 
 async function persistWorkspace(): Promise<void> {
   const manager = mapManager.value;
-  if (!manager || manager.isExporting || workspaceRestoring || workspaceConflict.value || openProgressVisible.value || workspaceSaveInFlight) return;
+  if (
+    !manager ||
+    manager.isExporting ||
+    workspaceRestoring ||
+    workspaceConflict.value ||
+    openProgressVisible.value ||
+    workspaceSaveInFlight
+  )
+    return;
   // Serializing the workspace costs time; the next tick after motion stops saves it.
   const view = manager.getView();
   if (view.getAnimating() || view.getInteracting()) return;
@@ -330,13 +352,21 @@ async function persistWorkspace(): Promise<void> {
   if (snapshot === lastWorkspaceSnapshot) return;
   workspaceSaveInFlight = true;
   try {
-    await networkManager.requestManager.saveWorkspaceState(manager.getOptions().filename, state);
+    await networkManager.requestManager.saveWorkspaceState(
+      manager.getOptions().filename,
+      state
+    );
     if (manager === mapManager.value) lastWorkspaceSnapshot = snapshot;
   } catch (error) {
-    if (manager === mapManager.value && (error as { response?: { status?: number } })?.response?.status === 409) {
+    if (
+      manager === mapManager.value &&
+      (error as { response?: { status?: number } })?.response?.status === 409
+    ) {
       workspaceConflict.value = true;
     } else console.warn("Could not persist workspace for Attach", error);
-  } finally { workspaceSaveInFlight = false; }
+  } finally {
+    workspaceSaveInFlight = false;
+  }
 }
 
 useEscDismissableDialog({
@@ -467,13 +497,17 @@ async function chooseCoolerWeightsNaNPolicy(
   if (!manager) {
     return;
   }
-  const pipelineRevision = manager.networkManager.requestManager.renderPipelineRevision;
+  const pipelineRevision =
+    manager.networkManager.requestManager.renderPipelineRevision;
   try {
     await manager.visualizationManager.sendVisualizationOptionsToServer({
       skipAutoThresholdRefresh: true,
       preserveCustomPipeline: true,
     });
-    await manager.visualizationManager.applyOpeningFullMapQuantileThreshold(undefined, pipelineRevision);
+    await manager.visualizationManager.applyOpeningFullMapQuantileThreshold(
+      undefined,
+      pipelineRevision
+    );
     await manager.reloadTilesFromBackend();
     await manager.stabilizeInitialViewport({ fit: false });
   } catch (error) {
@@ -500,10 +534,7 @@ function syncUiChromePalette(): void {
   );
   root.style.setProperty("--hict-surface-fg", "rgba(18, 25, 35, 0.96)");
   root.style.setProperty("--hict-surface-muted", "rgba(73, 84, 99, 0.88)");
-  root.style.setProperty(
-    "--hict-surface-border",
-    "rgba(15, 23, 38, 0.18)"
-  );
+  root.style.setProperty("--hict-surface-border", "rgba(15, 23, 38, 0.18)");
   root.style.setProperty(
     "--hict-surface-shadow",
     "0 20px 55px rgba(15, 23, 38, 0.18)"
@@ -526,8 +557,12 @@ function resetState() {
 function onClosed() {
   const manager = mapManager.value;
   resetState();
-  void (manager?.visualizationManager.waitForPendingOptionRequests() ?? Promise.resolve())
-    .finally(() => networkManager.requestManager.closeFile().catch(() => undefined));
+  void (
+    manager?.visualizationManager.waitForPendingOptionRequests() ??
+    Promise.resolve()
+  ).finally(() =>
+    networkManager.requestManager.closeFile().catch(() => undefined)
+  );
 }
 
 async function onAttached() {
@@ -563,7 +598,8 @@ async function onAttached() {
         mapManager.value = newManager;
         networkManager.mapManager = mapManager.value;
         newManager.initializeMap();
-        const secondary = await networkManager.requestManager.getSecondarySourceStatus();
+        const secondary =
+          await networkManager.requestManager.getSecondarySourceStatus();
         newManager.viewAndLayersManager.setSecondaryResolutionModel(
           secondary.attached ? secondary.compatibility : undefined,
           { exactResolutionOnly: Boolean(secondary.sequenceAnalysis) }
@@ -583,7 +619,10 @@ async function onAttached() {
         err?.message ??
         "Failed to attach session";
       toast.error(message);
-    }).finally(() => { workspaceRestoring = false; });
+    })
+    .finally(() => {
+      workspaceRestoring = false;
+    });
 }
 
 async function openFileWithOptions(
@@ -596,11 +635,16 @@ async function openFileWithOptions(
   try {
     // Keep appearance, never assembly coordinates/history, when switching files.
     // The Wizard supplies its own explicit preset after opening.
-    const previous = options?.applyDefaultPreset !== false ? mapManager.value : undefined;
+    const previous =
+      options?.applyDefaultPreset !== false ? mapManager.value : undefined;
     await previous?.visualizationManager.waitForPendingOptionRequests();
-    const appearance = previous ? visualizationOptionsStore.asVisualizationOptions() : undefined;
+    const appearance = previous
+      ? visualizationOptionsStore.asVisualizationOptions()
+      : undefined;
     const styles = previous?.viewAndLayersManager.getTrackStylePreset();
-    const pipeline = previous ? await networkManager.requestManager.getRenderPipelineConfig() : undefined;
+    const pipeline = previous
+      ? await networkManager.requestManager.getRenderPipelineConfig()
+      : undefined;
     const openFileResponse = await networkManager.requestManager.openFile(
       fname,
       ffname
@@ -634,14 +678,20 @@ async function openFileWithOptions(
         coolerWeightsHaveNaNs: visualizationOptionsStore.coolerWeightsHaveNaNs,
         coolerWeightsNaNCount: visualizationOptionsStore.coolerWeightsNaNCount,
       });
-      await newManager.visualizationManager.sendVisualizationOptionsToServer({ skipAutoThresholdRefresh: true });
+      await newManager.visualizationManager.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+      });
       if (styles) newManager.viewAndLayersManager.applyTrackStylePreset(styles);
       if (pipeline?.enabled) {
         const issues = pipelineTransferIssues(pipeline);
         if (issues.length === 0) {
           await networkManager.requestManager.setRenderPipelineConfig(pipeline);
         } else {
-          toast.message(`Colors and thresholds retained. The custom pipeline needs ${issues.join(" and ")}; reattach them before reapplying it.`);
+          toast.message(
+            `Colors and thresholds retained. The custom pipeline needs ${issues.join(
+              " and "
+            )}; reattach them before reapplying it.`
+          );
         }
       }
       await newManager.reloadTilesFromBackend();
@@ -890,7 +940,8 @@ function onSaveSession(): void {
     visualizationOptions: serializeCurrentVisualizationOptions(),
     backgroundColor: mapBackgroundColor.value?.RGBA ?? "rgba(255,255,255,1)",
     trackStyles: manager.getLayersManager().getTrackStylePreset(),
-    axisTrackVisibility: manager.linearTrackManager.getAxisTrackVisibilityState(),
+    axisTrackVisibility:
+      manager.linearTrackManager.getAxisTrackVisibilityState(),
     savedLocations: sessionStore.savedLocations,
     savedVisualizationPresets: sessionStore.savedVisualizationPresets,
     view: {
@@ -962,7 +1013,9 @@ function sessionNameStem(sessionFileName: string): string {
 
 function scoreSessionMapCandidate(candidate: string, stem: string): number {
   if (!stem) return 0;
-  const candidateBase = stripHiCTMapSuffix(pathBasename(candidate)).toLowerCase();
+  const candidateBase = stripHiCTMapSuffix(
+    pathBasename(candidate)
+  ).toLowerCase();
   const candidatePath = candidate.toLowerCase();
   if (candidateBase === stem) return 1000;
   if (candidateBase.startsWith(stem)) return 800;
@@ -1092,7 +1145,9 @@ async function onOpenSession(file: File): Promise<void> {
       const signalDisplayMode =
         visRaw["signalDisplayMode"] === "EXPECTED" ||
         visRaw["signalDisplayMode"] === "OBSERVED_OVER_EXPECTED"
-          ? (visRaw["signalDisplayMode"] as "EXPECTED" | "OBSERVED_OVER_EXPECTED")
+          ? (visRaw["signalDisplayMode"] as
+              | "EXPECTED"
+              | "OBSERVED_OVER_EXPECTED")
           : "OBSERVED";
       const coolerWeightsNaNPolicy =
         visRaw["coolerWeightsNaNPolicy"] === "DISABLE_WEIGHTS" ||
@@ -1104,11 +1159,11 @@ async function onOpenSession(file: File): Promise<void> {
       const coolerWeightsHaveNaNs =
         typeof visRaw["coolerWeightsHaveNaNs"] === "boolean"
           ? visRaw["coolerWeightsHaveNaNs"]
-          : (currentOptions.coolerWeightsHaveNaNs ?? false);
+          : currentOptions.coolerWeightsHaveNaNs ?? false;
       const rawCoolerWeightsNaNCount = Number(visRaw["coolerWeightsNaNCount"]);
       const coolerWeightsNaNCount = Number.isFinite(rawCoolerWeightsNaNCount)
         ? Math.max(0, rawCoolerWeightsNaNCount)
-        : (currentOptions.coolerWeightsNaNCount ?? 0);
+        : currentOptions.coolerWeightsNaNCount ?? 0;
       const cmapObj = new SimpleLinearGradient(
         safeColorTranslator(startColor, "rgba(0,255,0,0.0)"),
         safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
@@ -1222,7 +1277,9 @@ watch(
 onMounted(() => {
   window.addEventListener("keydown", handleGlobalEscape, true);
   syncUiChromePalette();
-  workspaceTimer = window.setInterval(() => { void persistWorkspace(); }, 1000);
+  workspaceTimer = window.setInterval(() => {
+    void persistWorkspace();
+  }, 1000);
 });
 
 onUnmounted(() => {
@@ -1233,7 +1290,9 @@ onUnmounted(() => {
 
 function onFileSelected(newFilename: string) {
   if (newFilename === filename.value && newFilename) {
-    toast.message("This file is already open. Use File > Close, then open it again to reset the assembly.");
+    toast.message(
+      "This file is already open. Use File > Close, then open it again to reset the assembly."
+    );
     return;
   }
   if (newFilename !== filename.value) {

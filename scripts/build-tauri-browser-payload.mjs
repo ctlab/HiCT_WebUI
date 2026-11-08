@@ -23,7 +23,17 @@
 
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,49 +43,89 @@ const tauriDir = resolve(repoDir, "src-tauri");
 const tauriConfigPath = resolve(tauriDir, "tauri.conf.json");
 const args = parseArgs(process.argv.slice(2));
 const platform = args.platform ?? detectPlatform();
-const macosMinimum = process.env.MACOSX_DEPLOYMENT_TARGET ??
-  process.env.MACOS_DEPLOYMENT_TARGET ?? "12.3";
+const macosMinimum =
+  process.env.MACOSX_DEPLOYMENT_TARGET ??
+  process.env.MACOS_DEPLOYMENT_TARGET ??
+  "12.3";
 if (platform.startsWith("darwin_")) {
   const [major, minor] = macosMinimum.split(".").map(Number);
-  if (!/^\d+\.\d+(\.\d+)?$/.test(macosMinimum) || major < 12 || (major === 12 && minor < 3)) {
-    throw new Error("HiCT's macOS browser requires a deployment target of 12.3 or newer.");
+  if (
+    !/^\d+\.\d+(\.\d+)?$/.test(macosMinimum) ||
+    major < 12 ||
+    (major === 12 && minor < 3)
+  ) {
+    throw new Error(
+      "HiCT's macOS browser requires a deployment target of 12.3 or newer."
+    );
   }
-  if (process.env.MACOSX_DEPLOYMENT_TARGET && process.env.MACOS_DEPLOYMENT_TARGET &&
-      process.env.MACOSX_DEPLOYMENT_TARGET !== process.env.MACOS_DEPLOYMENT_TARGET) {
+  if (
+    process.env.MACOSX_DEPLOYMENT_TARGET &&
+    process.env.MACOS_DEPLOYMENT_TARGET &&
+    process.env.MACOSX_DEPLOYMENT_TARGET !== process.env.MACOS_DEPLOYMENT_TARGET
+  ) {
     throw new Error("Conflicting macOS deployment targets.");
   }
   // These builders invoke cargo directly, without the Tauri CLI.
   process.env.MACOSX_DEPLOYMENT_TARGET = macosMinimum;
 }
-const outputDir = resolve(args.output ?? join(repoDir, "..", "HiCT_JVM", "browsers-dist", platform, "tauri"));
-const executableName = platform === "windows_x86_64" ? "hict-tauri-browser.exe" : "hict-tauri-browser";
-const cargoTargetDir = process.env.CARGO_TARGET_DIR ? resolve(process.env.CARGO_TARGET_DIR) : resolve(tauriDir, "target");
+const outputDir = resolve(
+  args.output ??
+    join(repoDir, "..", "HiCT_JVM", "browsers-dist", platform, "tauri")
+);
+const executableName =
+  platform === "windows_x86_64"
+    ? "hict-tauri-browser.exe"
+    : "hict-tauri-browser";
+const cargoTargetDir = process.env.CARGO_TARGET_DIR
+  ? resolve(process.env.CARGO_TARGET_DIR)
+  : resolve(tauriDir, "target");
 const builtExecutable = resolve(cargoTargetDir, "release", executableName);
 const generatedIconPngBase64 = [
-  "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"
+  "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",
 ].join("");
 
-if (!["linux_x86_64", "windows_x86_64", "darwin_arm64", "darwin_x86_64"].includes(platform)) {
+if (
+  !["linux_x86_64", "windows_x86_64", "darwin_arm64", "darwin_x86_64"].includes(
+    platform
+  )
+) {
   throw new Error(`Unsupported Tauri browser payload platform: ${platform}`);
 }
 if (!existsSync(resolve(repoDir, "dist", "index.html"))) {
-  throw new Error("HiCT_WebUI dist/index.html was not found. Run npm run build first.");
+  throw new Error(
+    "HiCT_WebUI dist/index.html was not found. Run npm run build first."
+  );
 }
 ensureTauriConventionalIcons();
 validateTauriIconConfig(platform);
 validateTauriCapabilities();
 if (!args.skipBuild) {
-  run("cargo", ["build", "--release", "--locked", "--manifest-path", resolve(tauriDir, "Cargo.toml")], repoDir);
+  run(
+    "cargo",
+    [
+      "build",
+      "--release",
+      "--locked",
+      "--manifest-path",
+      resolve(tauriDir, "Cargo.toml"),
+    ],
+    repoDir
+  );
 }
 if (!existsSync(builtExecutable)) {
-  throw new Error(`Tauri browser executable was not found at ${builtExecutable}`);
+  throw new Error(
+    `Tauri browser executable was not found at ${builtExecutable}`
+  );
 }
 
 rmSync(outputDir, { recursive: true, force: true });
 mkdirSync(join(outputDir, "bin"), { recursive: true });
 mkdirSync(join(outputDir, "licenses"), { recursive: true });
 
-const command = platform === "windows_x86_64" ? "bin/hict-tauri-browser.exe" : "bin/hict-tauri-browser";
+const command =
+  platform === "windows_x86_64"
+    ? "bin/hict-tauri-browser.exe"
+    : "bin/hict-tauri-browser";
 cpSync(builtExecutable, join(outputDir, command));
 if (platform !== "windows_x86_64") {
   chmodExecutable(join(outputDir, command));
@@ -96,11 +146,15 @@ writeFileSync(
     "Rust code under their upstream licenses. See cargo-metadata.json for the",
     "exact dependency names, versions, license strings and repositories captured",
     "from the build graph.",
-    ""
+    "",
   ].join("\n"),
   "utf8"
 );
-writeFileSync(join(outputDir, "licenses", "cargo-metadata.json"), cargoMetadata(), "utf8");
+writeFileSync(
+  join(outputDir, "licenses", "cargo-metadata.json"),
+  cargoMetadata(),
+  "utf8"
+);
 
 const manifest = {
   name: "HiCT Tauri WebView",
@@ -108,39 +162,47 @@ const manifest = {
   priority: 10,
   command,
   arguments: [],
-  license: "HiCT MIT; Tauri stack MIT/Apache-2.0 and dependency-specific licenses; system WebView runtime under OS/vendor terms",
+  license:
+    "HiCT MIT; Tauri stack MIT/Apache-2.0 and dependency-specific licenses; system WebView runtime under OS/vendor terms",
   notices: [
     "licenses/TAURI_BROWSER_NOTICE.txt",
-    "licenses/cargo-metadata.json"
+    "licenses/cargo-metadata.json",
   ],
   runtimeRequirements: {
     linux: {
       libraries: [
         "libwebkit2gtk-4.1.so.0",
         "libjavascriptcoregtk-4.1.so.0",
-        "libgtk-3.so.0"
+        "libgtk-3.so.0",
       ],
       installHints: {
-        "Debian/Ubuntu": "sudo apt-get install libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 libgtk-3-0",
+        "Debian/Ubuntu":
+          "sudo apt-get install libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 libgtk-3-0",
         "Fedora/RHEL": "sudo dnf install webkit2gtk4.1 gtk3",
         "Arch Linux": "sudo pacman -S webkit2gtk-4.1 gtk3",
-        "openSUSE": "sudo zypper install libwebkit2gtk-4_1-0 gtk3"
-      }
+        openSUSE: "sudo zypper install libwebkit2gtk-4_1-0 gtk3",
+      },
     },
     windows: {
       runtime: "Microsoft Edge WebView2 Runtime",
-      detection: "EdgeUpdate Clients {F3017226-FE2A-4295-8BDF-00C3A9A7E4C5} pv registry value or standard Microsoft/EdgeWebView installation directory"
+      detection:
+        "EdgeUpdate Clients {F3017226-FE2A-4295-8BDF-00C3A9A7E4C5} pv registry value or standard Microsoft/EdgeWebView installation directory",
     },
     macos: {
       runtime: "WKWebView",
       minimumSystemVersion: macosMinimum,
-      detection: "Built into macOS; no separate browser runtime is bundled or required."
-    }
+      detection:
+        "Built into macOS; no separate browser runtime is bundled or required.",
+    },
   },
   sizeBytes: directorySize(outputDir),
-  sha256: sha256OfTree(outputDir)
+  sha256: sha256OfTree(outputDir),
 };
-writeFileSync(join(outputDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+writeFileSync(
+  join(outputDir, "manifest.json"),
+  `${JSON.stringify(manifest, null, 2)}\n`,
+  "utf8"
+);
 
 console.log(`Prepared HiCT Tauri browser payload for ${platform}`);
 console.log(`  output: ${outputDir}`);
@@ -177,7 +239,9 @@ function detectPlatform() {
   if (process.platform === "darwin") {
     return process.arch === "arm64" ? "darwin_arm64" : "darwin_x86_64";
   }
-  throw new Error(`Unsupported platform for HiCT Tauri browser payload: ${process.platform}`);
+  throw new Error(
+    `Unsupported platform for HiCT Tauri browser payload: ${process.platform}`
+  );
 }
 
 function run(command, commandArgs, cwd) {
@@ -186,7 +250,11 @@ function run(command, commandArgs, cwd) {
     throw result.error;
   }
   if (result.status !== 0) {
-    throw new Error(`${command} ${commandArgs.join(" ")} failed with exit code ${result.status}`);
+    throw new Error(
+      `${command} ${commandArgs.join(" ")} failed with exit code ${
+        result.status
+      }`
+    );
   }
 }
 
@@ -231,15 +299,26 @@ function validateTauriIconConfig(currentPlatform) {
   const config = JSON.parse(readFileSync(tauriConfigPath, "utf8"));
   const icons = config.bundle?.icon ?? [];
   if (!Array.isArray(icons) || icons.length === 0) {
-    throw new Error("src-tauri/tauri.conf.json must define bundle.icon; Windows Tauri builds require an .ico resource.");
+    throw new Error(
+      "src-tauri/tauri.conf.json must define bundle.icon; Windows Tauri builds require an .ico resource."
+    );
   }
   const resolvedIcons = icons.map((icon) => resolve(tauriDir, icon));
-  const missingIcons = resolvedIcons.filter((iconPath) => !existsSync(iconPath));
+  const missingIcons = resolvedIcons.filter(
+    (iconPath) => !existsSync(iconPath)
+  );
   if (missingIcons.length > 0) {
-    throw new Error(`Tauri icon file(s) do not exist: ${missingIcons.join(", ")}`);
+    throw new Error(
+      `Tauri icon file(s) do not exist: ${missingIcons.join(", ")}`
+    );
   }
-  if (currentPlatform === "windows_x86_64" && !resolvedIcons.some((iconPath) => iconPath.toLowerCase().endsWith(".ico"))) {
-    throw new Error("Windows Tauri payload builds require at least one .ico path in bundle.icon.");
+  if (
+    currentPlatform === "windows_x86_64" &&
+    !resolvedIcons.some((iconPath) => iconPath.toLowerCase().endsWith(".ico"))
+  ) {
+    throw new Error(
+      "Windows Tauri payload builds require at least one .ico path in bundle.icon."
+    );
   }
 }
 
@@ -255,8 +334,14 @@ function validateTauriCapabilities() {
     }
     const capabilityPath = resolve(capabilitiesDir, entry);
     const capability = JSON.parse(readFileSync(capabilityPath, "utf8"));
-    validateTauriPermissionIdentifiers(capabilityPath, capability.permissions ?? []);
-    validateTauriRemoteUrlPatterns(capabilityPath, capability.remote?.urls ?? []);
+    validateTauriPermissionIdentifiers(
+      capabilityPath,
+      capability.permissions ?? []
+    );
+    validateTauriRemoteUrlPatterns(
+      capabilityPath,
+      capability.remote?.urls ?? []
+    );
   }
 }
 
@@ -265,7 +350,8 @@ function validateTauriPermissionIdentifiers(capabilityPath, permissions) {
     throw new Error(`${capabilityPath}: permissions must be an array.`);
   }
 
-  const identifierPattern = /^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*:)?[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+  const identifierPattern =
+    /^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*:)?[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
   for (const permission of permissions) {
     if (typeof permission === "string") {
       if (!identifierPattern.test(permission)) {
@@ -274,7 +360,11 @@ function validateTauriPermissionIdentifiers(capabilityPath, permissions) {
             "Use lowercase kebab-case, for example 'allow-quit-app'."
         );
       }
-    } else if (permission && typeof permission === "object" && typeof permission.identifier === "string") {
+    } else if (
+      permission &&
+      typeof permission === "object" &&
+      typeof permission.identifier === "string"
+    ) {
       if (!identifierPattern.test(permission.identifier)) {
         throw new Error(
           `${capabilityPath}: invalid Tauri permission identifier '${permission.identifier}'. ` +
@@ -282,7 +372,11 @@ function validateTauriPermissionIdentifiers(capabilityPath, permissions) {
         );
       }
     } else {
-      throw new Error(`${capabilityPath}: unsupported Tauri permission entry: ${JSON.stringify(permission)}`);
+      throw new Error(
+        `${capabilityPath}: unsupported Tauri permission entry: ${JSON.stringify(
+          permission
+        )}`
+      );
     }
   }
 }
@@ -294,7 +388,9 @@ function validateTauriRemoteUrlPatterns(capabilityPath, urls) {
 
   for (const url of urls) {
     if (typeof url !== "string") {
-      throw new Error(`${capabilityPath}: remote URL patterns must be strings.`);
+      throw new Error(
+        `${capabilityPath}: remote URL patterns must be strings.`
+      );
     }
     if (/\[[^\]]+\]/.test(url)) {
       throw new Error(
@@ -306,14 +402,30 @@ function validateTauriRemoteUrlPatterns(capabilityPath, urls) {
 }
 
 function cargoMetadata() {
-  const result = spawnSync("cargo", ["metadata", "--locked", "--format-version", "1", "--manifest-path", resolve(tauriDir, "Cargo.toml")], {
-    cwd: repoDir,
-    encoding: "utf8"
-  });
+  const result = spawnSync(
+    "cargo",
+    [
+      "metadata",
+      "--locked",
+      "--format-version",
+      "1",
+      "--manifest-path",
+      resolve(tauriDir, "Cargo.toml"),
+    ],
+    {
+      cwd: repoDir,
+      encoding: "utf8",
+    }
+  );
   if (result.error || result.status !== 0) {
-    return JSON.stringify({
-      error: result.error?.message ?? result.stderr ?? "cargo metadata failed"
-    }, null, 2);
+    return JSON.stringify(
+      {
+        error:
+          result.error?.message ?? result.stderr ?? "cargo metadata failed",
+      },
+      null,
+      2
+    );
   }
   const metadata = JSON.parse(result.stdout);
   const packages = metadata.packages
@@ -321,9 +433,13 @@ function cargoMetadata() {
       name: pkg.name,
       version: pkg.version,
       license: pkg.license,
-      repository: pkg.repository
+      repository: pkg.repository,
     }))
-    .sort((left, right) => `${left.name}@${left.version}`.localeCompare(`${right.name}@${right.version}`));
+    .sort((left, right) =>
+      `${left.name}@${left.version}`.localeCompare(
+        `${right.name}@${right.version}`
+      )
+    );
   return `${JSON.stringify({ packages }, null, 2)}\n`;
 }
 

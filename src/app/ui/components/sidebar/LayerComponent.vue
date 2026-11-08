@@ -38,16 +38,30 @@
         :getDefaultColor="getBaseColor"
         @onColorChanged="updateBackgroundColor"
       ></ColorPickerRectangle>
-      <div v-if="layerName !== 'Background' && !layerName.endsWith('names')" class="tri-square border-style-btn" @click="updateBorderStyle">
+      <div
+        v-if="layerName !== 'Background' && !layerName.endsWith('names')"
+        class="tri-square border-style-btn"
+        @click="updateBorderStyle"
+      >
         <i v-if="bordersStyle === 0" class="bi bi-square"></i>
         <i v-if="bordersStyle === 1" class="bi bi-arrow-down-left"></i>
         <i v-if="bordersStyle === 2" class="bi bi-arrow-up-right"></i>
       </div>
-      <select v-if="layerName.endsWith('names')" class="form-select form-select-sm caption-placement"
-        :aria-label="`${displayName} caption side`" title="Caption position" v-model.number="bordersStyle"
-        @change="visible = true; emit('onBorderStyleChanged', layerName, bordersStyle)">
-        <option :value="BorderStyle.TOP">Above</option><option :value="BorderStyle.BOTTOM">Below</option>
-        <option :value="BorderStyle.LEFT">Left</option><option :value="BorderStyle.RIGHT">Right</option>
+      <select
+        v-if="layerName.endsWith('names')"
+        class="form-select form-select-sm caption-placement"
+        :aria-label="`${displayName} caption side`"
+        title="Caption position"
+        v-model.number="bordersStyle"
+        @change="
+          visible = true;
+          emit('onBorderStyleChanged', layerName, bordersStyle);
+        "
+      >
+        <option :value="BorderStyle.TOP">Above</option>
+        <option :value="BorderStyle.BOTTOM">Below</option>
+        <option :value="BorderStyle.LEFT">Left</option>
+        <option :value="BorderStyle.RIGHT">Right</option>
         <option :value="BorderStyle.FULL">Inside</option>
       </select>
       <div
@@ -62,8 +76,15 @@
           @click="openStyleEditor"
         ></i>
         <div class="dropdown-menu p-3 track-style-menu">
-          <label v-if="layerName === 'Contigs' || layerName === 'Scaffolds'" class="form-check mb-2">
-            <input type="checkbox" class="form-check-input" v-model="borderOutline" />
+          <label
+            v-if="layerName === 'Contigs' || layerName === 'Scaffolds'"
+            class="form-check mb-2"
+          >
+            <input
+              type="checkbox"
+              class="form-check-input"
+              v-model="borderOutline"
+            />
             Black border outline
           </label>
           <div class="mb-2">
@@ -254,7 +275,9 @@ const DISPLAY_NAMES: Record<string, string> = {
   Cnames: "Contig names",
   Snames: "Scaffold names",
 };
-const displayName = computed(() => DISPLAY_NAMES[props.layerName] ?? props.layerName);
+const displayName = computed(
+  () => DISPLAY_NAMES[props.layerName] ?? props.layerName
+);
 
 // Contig names default below and scaffold names above, so they do not share a line.
 const bordersStyle: Ref<number> = ref(
@@ -266,11 +289,15 @@ const bordersStyle: Ref<number> = ref(
 );
 const visible: Ref<boolean> = ref(true);
 
-watch(() => props.currentBorderStyle, (style) => {
-  if (style === undefined) return;
-  visible.value = style !== BorderStyle.NONE;
-  if (visible.value) bordersStyle.value = style;
-}, { immediate: true });
+watch(
+  () => props.currentBorderStyle,
+  (style) => {
+    if (style === undefined) return;
+    visible.value = style !== BorderStyle.NONE;
+    if (visible.value) bordersStyle.value = style;
+  },
+  { immediate: true }
+);
 
 function updateVisibility() {
   visible.value = !visible.value;
@@ -357,7 +384,12 @@ function resetStyle() {
 </script>
 
 <style scoped>
-.caption-placement { width: 4.9rem; font-size: 0.8rem; padding-left: 0.4rem; padding-right: 1.4rem; }
+.caption-placement {
+  width: 4.9rem;
+  font-size: 0.8rem;
+  padding-left: 0.4rem;
+  padding-right: 1.4rem;
+}
 .layer-record {
   /* layer */
 

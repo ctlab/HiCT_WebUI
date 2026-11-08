@@ -195,7 +195,9 @@ export default class BinMousePosition extends MousePosition {
             this.element.style.position = "absolute";
             this.element.style.inset = "0";
             this.element.style.pointerEvents = "none";
-            html = `<div style="${overlayStyle(osdSettings?.osdOverlayPosition)}">`;
+            html = `<div style="${overlayStyle(
+              osdSettings?.osdOverlayPosition
+            )}">`;
             appendLine(
               "global",
               "Global projection coordinate: " + coordinate.map(Math.floor)
@@ -244,9 +246,9 @@ export default class BinMousePosition extends MousePosition {
               appendLine(
                 "pixels",
                 "Position: px1=" +
-                int_coordinates_px[0] +
-                " px2=" +
-                int_coordinates_px[1]
+                  int_coordinates_px[0] +
+                  " px2=" +
+                  int_coordinates_px[1]
               );
             }
 
@@ -258,9 +260,9 @@ export default class BinMousePosition extends MousePosition {
               appendLine(
                 "bins",
                 "Position: bin1=" +
-                int_coordinates_bins[0] +
-                " bin2=" +
-                int_coordinates_bins[1]
+                  int_coordinates_bins[0] +
+                  " bin2=" +
+                  int_coordinates_bins[1]
               );
               const bp1 = dimensionHolder.getStartBpOfPx(
                 int_coordinates_px[0],
@@ -292,9 +294,9 @@ export default class BinMousePosition extends MousePosition {
                 appendLine(
                   "inContig",
                   "In-contig bp: ctg1=+" +
-                  locus1.inContigBp +
-                  " ctg2=+" +
-                  locus2.inContigBp
+                    locus1.inContigBp +
+                    " ctg2=+" +
+                    locus2.inContigBp
                 );
               }
               if (this.scaffold_holder?.getScaffoldLocusByBp) {
@@ -305,23 +307,25 @@ export default class BinMousePosition extends MousePosition {
                 appendLine(
                   "scaffolds",
                   "Scaffolds: scf1=" +
-                  (scaffold1 ? scaffold1.scaffoldName : "unscaffolded") +
-                  " scf2=" +
-                  (scaffold2 ? scaffold2.scaffoldName : "unscaffolded")
+                    (scaffold1 ? scaffold1.scaffoldName : "unscaffolded") +
+                    " scf2=" +
+                    (scaffold2 ? scaffold2.scaffoldName : "unscaffolded")
                 );
                 appendLine(
                   "inScaffold",
                   "In-scaffold bp: scf1=" +
-                  (scaffold1 ? "+" + scaffold1.inScaffoldBp : "n/a") +
-                  " scf2=" +
-                  (scaffold2 ? "+" + scaffold2.inScaffoldBp : "n/a")
+                    (scaffold1 ? "+" + scaffold1.inScaffoldBp : "n/a") +
+                    " scf2=" +
+                    (scaffold2 ? "+" + scaffold2.inScaffoldBp : "n/a")
                 );
               }
             }
 
             const orderedFields = [
               ...fieldOrder,
-              ...Object.keys(osdLines).filter((field) => !fieldOrder.includes(field)),
+              ...Object.keys(osdLines).filter(
+                (field) => !fieldOrder.includes(field)
+              ),
             ];
             const orderedLines = orderedFields
               .map((field) => osdLines[field])

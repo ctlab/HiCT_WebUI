@@ -559,6 +559,8 @@ onBeforeUnmount(() => {
   unsubscribeTracks?.();
   unregisterExporter?.();
   requests.forEach((r) => r?.abort());
+  // The request manager is a shared service object, not component state.
+  // eslint-disable-next-line vue/no-mutating-props
   props.mapManager.networkManager.requestManager.sequenceViewReadOnly = false;
 });
 </script>

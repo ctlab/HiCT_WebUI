@@ -44,9 +44,19 @@
       <i class="bi bi-box-arrow-up-left"></i>
     </button>
 
-    <button class="btn btn-outline-primary" type="button" title="Unscaffold all"
-      aria-label="Unscaffold all" :disabled="!props.mapManager || props.mapManager.networkManager.requestManager.history.busy > 0"
-      @click="unscaffoldAllClicked"><i class="bi bi-box-arrow-up-right"></i></button>
+    <button
+      class="btn btn-outline-primary"
+      type="button"
+      title="Unscaffold all"
+      aria-label="Unscaffold all"
+      :disabled="
+        !props.mapManager ||
+        props.mapManager.networkManager.requestManager.history.busy > 0
+      "
+      @click="unscaffoldAllClicked"
+    >
+      <i class="bi bi-box-arrow-up-right"></i>
+    </button>
     <button
       class="btn btn-outline-primary"
       type="button"
@@ -70,8 +80,11 @@ const props = defineProps<{
 }>();
 
 async function unscaffoldAllClicked() {
-  try { await props.mapManager?.eventManager.onUnscaffoldAllClicked(); }
-  catch (error) { toast.error(String(error)); }
+  try {
+    await props.mapManager?.eventManager.onUnscaffoldAllClicked();
+  } catch (error) {
+    toast.error(String(error));
+  }
 }
 
 function addScaffoldClicked() {

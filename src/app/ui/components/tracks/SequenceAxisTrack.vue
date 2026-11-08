@@ -4,7 +4,11 @@
     ref="canvas"
     class="sequence-axis"
     :class="[axis, { dragging }]"
-    :style="axis === 'horizontal' ? { height: `${stripSize}px` } : { width: `${stripSize}px` }"
+    :style="
+      axis === 'horizontal'
+        ? { height: `${stripSize}px` }
+        : { width: `${stripSize}px` }
+    "
     role="img"
     tabindex="0"
     aria-label="FASTA track (forward strand, optionally reverse complement below). Drag to pan; scroll or double-click to zoom. Arrow keys pan; plus and minus zoom."
@@ -41,7 +45,11 @@
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { complementBase, sequenceStripSize, strandRows } from "@/app/core/visualization/sequenceStrands";
+import {
+  complementBase,
+  sequenceStripSize,
+  strandRows,
+} from "@/app/core/visualization/sequenceStrands";
 import { coordinateLowerBound } from "@/app/core/visualization/sequenceBoundaries";
 import { unByKey } from "ol/Observable";
 import type { EventsKey } from "ol/events";
@@ -59,7 +67,9 @@ import {
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { SequenceAnalysisRequest } from "@/app/core/net/api/SequenceAnalysisRequest";
 const settings = useUiSettingsStore();
-const stripSize = computed(() => sequenceStripSize(settings.sequenceShowReverseStrand));
+const stripSize = computed(() =>
+  sequenceStripSize(settings.sequenceShowReverseStrand)
+);
 const hoverText = ref("");
 const hoverPoint = ref({ x: 0, y: 0 });
 const dragging = ref(false);
@@ -198,7 +208,10 @@ async function refreshGapSetting() {
   }
 }
 watch(() => settings.sequenceGapLengthBp, refreshGapSetting);
-watch(() => settings.sequenceShowReverseStrand, () => schedule());
+watch(
+  () => settings.sequenceShowReverseStrand,
+  () => schedule()
+);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -295,8 +308,13 @@ function onContextMenu(event: MouseEvent) {
         disabled: !base,
         run: () => {
           if (!base) return;
-          const locus = manager.getContigDimensionHolder().getContigLocusByBp(base.bp);
-          void copyText(formatLocus(locus.contigName, locus.inContigBp + 1), "Position");
+          const locus = manager
+            .getContigDimensionHolder()
+            .getContigLocusByBp(base.bp);
+          void copyText(
+            formatLocus(locus.contigName, locus.inContigBp + 1),
+            "Position"
+          );
         },
       },
       {
@@ -381,12 +399,22 @@ function drawStrandMarkers(
   context.save();
   context.font = "bold 13px 'HiCT Sans', sans-serif";
   for (const row of rows) {
-    const glyph = row.strand === "forward" ? (horizontal ? "→" : "↓") : horizontal ? "←" : "↑";
+    const glyph =
+      row.strand === "forward"
+        ? horizontal
+          ? "→"
+          : "↓"
+        : horizontal
+        ? "←"
+        : "↑";
     const x = horizontal ? 1 : row.start + 1;
     const y = horizontal ? row.start + 1 : 1;
     const w = horizontal ? 18 : row.end - row.start - 2;
     const h = horizontal ? row.end - row.start - 2 : 18;
-    context.fillStyle = row.strand === "forward" ? "rgba(226,232,240,0.95)" : "rgba(30,41,59,0.9)";
+    context.fillStyle =
+      row.strand === "forward"
+        ? "rgba(226,232,240,0.95)"
+        : "rgba(30,41,59,0.9)";
     context.fillRect(x, y, w, h);
     context.fillStyle = row.strand === "forward" ? "#0f172a" : "#f8fafc";
     context.fillText(glyph, x + w / 2, y + h / 2);
@@ -473,7 +501,14 @@ async function render(id: number, allowFetch = true) {
     }
     if (response === undefined) {
       let flight = inFlight;
-      if (!(flight && flight.key === key && flight.start <= start && flight.end >= end)) {
+      if (
+        !(
+          flight &&
+          flight.key === key &&
+          flight.start <= start &&
+          flight.end >= end
+        )
+      ) {
         flight?.controller.abort();
         const controller = new AbortController();
         const extra = Math.min(512, Math.max(32, end - start));
@@ -482,12 +517,19 @@ async function render(id: number, allowFetch = true) {
           holder.prefix_sum_bp[holder.prefix_sum_bp.length - 1],
           end + extra
         );
-        const promise = manager.networkManager.requestManager.querySequenceRegion(
-          fetchStart,
-          fetchEnd,
-          controller.signal
-        );
-        const started = { key, start: fetchStart, end: fetchEnd, controller, promise };
+        const promise =
+          manager.networkManager.requestManager.querySequenceRegion(
+            fetchStart,
+            fetchEnd,
+            controller.signal
+          );
+        const started = {
+          key,
+          start: fetchStart,
+          end: fetchEnd,
+          controller,
+          promise,
+        };
         flight = started;
         inFlight = started;
         const clear = () => {
@@ -558,9 +600,17 @@ async function render(id: number, allowFetch = true) {
         }`;
       }
       const complement = complementBase(base);
-      const reverseLabel = label
-        .replace(`${base} · Current assembly:`, `${complement} · Reverse strand (−), complement of ${base} · Current assembly:`);
-      renderedBases.push({ screen, label: `${label}\nForward strand (+)`, reverseLabel, bp: position, base });
+      const reverseLabel = label.replace(
+        `${base} · Current assembly:`,
+        `${complement} · Reverse strand (−), complement of ${base} · Current assembly:`
+      );
+      renderedBases.push({
+        screen,
+        label: `${label}\nForward strand (+)`,
+        reverseLabel,
+        bp: position,
+        base,
+      });
       for (const row of rows) {
         const letter = row.strand === "forward" ? base : complement;
         context.fillStyle = colors[letter] ?? "#666666";
@@ -584,7 +634,10 @@ async function render(id: number, allowFetch = true) {
       const line = () => {
         context.beginPath();
         context.moveTo(horizontal ? screen : 0, horizontal ? 0 : screen);
-        context.lineTo(horizontal ? screen : thickness, horizontal ? thickness : screen);
+        context.lineTo(
+          horizontal ? screen : thickness,
+          horizontal ? thickness : screen
+        );
         context.stroke();
       };
       if (track.options.borderOutline) {

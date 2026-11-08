@@ -27,17 +27,41 @@ function load(relative, overrides = {}) {
 const { histogram, querySignalHistogram, histogramSignalDomain } = load(
   "../src/app/core/visualization/signalDiagnostics.ts"
 );
-const { histogramPlotBins } = load("../src/app/core/visualization/histogramPlot.ts");
-const logarithmic = histogramPlotBins(new Float32Array([0, 0, -1, 1, 10, 100, 1000, NaN]), 3, true, false);
+const { histogramPlotBins } = load(
+  "../src/app/core/visualization/histogramPlot.ts"
+);
+const logarithmic = histogramPlotBins(
+  new Float32Array([0, 0, -1, 1, 10, 100, 1000, NaN]),
+  3,
+  true,
+  false
+);
 assert.deepEqual([...logarithmic.counts], [1, 1, 2]);
 assert.equal(logarithmic.zeros, 2);
 assert.equal(logarithmic.negatives, 1);
 assert.equal(logarithmic.nonfinite, 1);
 assert.deepEqual([...logarithmic.edges], [1, 10, 100, 1000]);
-assert.equal(histogramPlotBins(new Float32Array([0, -2]), 64, true, false).counts.length, 0);
-assert.deepEqual([...histogramPlotBins(new Float32Array([37, 37]), 64, true, false).counts], [2]);
-assert.equal(histogramPlotBins(new Float32Array([-1, 0, 1]), 64, false, true).counts.reduce((a,b)=>a+b), 2);
-assert.throws(() => histogramPlotBins(new Float32Array([1]), 0, false, false), /bins/);
+assert.equal(
+  histogramPlotBins(new Float32Array([0, -2]), 64, true, false).counts.length,
+  0
+);
+assert.deepEqual(
+  [...histogramPlotBins(new Float32Array([37, 37]), 64, true, false).counts],
+  [2]
+);
+assert.equal(
+  histogramPlotBins(
+    new Float32Array([-1, 0, 1]),
+    64,
+    false,
+    true
+  ).counts.reduce((a, b) => a + b),
+  2
+);
+assert.throws(
+  () => histogramPlotBins(new Float32Array([1]), 0, false, false),
+  /bins/
+);
 assert.throws(() => histogram(new Float32Array([NaN, Infinity])), /No finite/);
 const constant = histogram(new Float32Array([86, 86, NaN]));
 assert.equal(constant.min, 86);

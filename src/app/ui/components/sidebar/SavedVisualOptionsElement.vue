@@ -217,20 +217,24 @@ async function setOptionsPreset() {
     }
     stylesStore.setMapBackground(props.backgroundColor);
     if (props.trackStyles) {
-      props.mapManager.getLayersManager().applyTrackStylePreset(props.trackStyles);
+      props.mapManager
+        .getLayersManager()
+        .applyTrackStylePreset(props.trackStyles);
     }
     const source =
-      presentationMode.value === "single" ? undefined : activeVisualizationSource.value;
+      presentationMode.value === "single"
+        ? undefined
+        : activeVisualizationSource.value;
     const action = source
       ? props.mapManager?.visualizationManager.applyVisualizationSettingsForSourceAndReload(
           source,
           activeVisualizationTargetId.value
         )
       : props.mapManager
-        ? props.mapManager.visualizationManager
-            .sendVisualizationOptionsToServer()
-            .then(() => props.mapManager?.reloadTiles())
-        : undefined;
+      ? props.mapManager.visualizationManager
+          .sendVisualizationOptionsToServer()
+          .then(() => props.mapManager?.reloadTiles())
+      : undefined;
     action?.catch((error) => {
       console.error("Failed to apply visualization preset", error);
     });

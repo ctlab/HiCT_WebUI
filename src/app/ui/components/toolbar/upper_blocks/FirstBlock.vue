@@ -150,10 +150,9 @@ function zoomIn() {
       const currentResolutionDescriptor =
         props.mapManager?.viewAndLayersManager.currentViewState
           .resolutionDesciptor;
-      const minBpResolution =
-        props.mapManager?.viewAndLayersManager
-          ?.getNavigationResolutionModel()
-          .resolutions.reduce((a, b) => Math.min(a, b));
+      const minBpResolution = props.mapManager?.viewAndLayersManager
+        ?.getNavigationResolutionModel()
+        .resolutions.reduce((a, b) => Math.min(a, b));
       const [x_px, y_px] = [center[0], -center[1]].map((p) =>
         Math.floor(p / currentResolutionDescriptor.pixelResolution)
       );
@@ -224,10 +223,9 @@ function zoomOut() {
       const currentResolutionDescriptor =
         props.mapManager?.viewAndLayersManager.currentViewState
           .resolutionDesciptor;
-      const maxBpResolution =
-        props.mapManager?.viewAndLayersManager
-          ?.getNavigationResolutionModel()
-          .resolutions.reduce((a, b) => Math.max(a, b));
+      const maxBpResolution = props.mapManager?.viewAndLayersManager
+        ?.getNavigationResolutionModel()
+        .resolutions.reduce((a, b) => Math.max(a, b));
       const [x_px, y_px] = [center[0], -center[1]].map((p) =>
         Math.floor(p / currentResolutionDescriptor.pixelResolution)
       );
@@ -466,7 +464,9 @@ function slideByCounterDiagonal() {
           // Old position is not set or close to the main diagonal at current resolution
           toast.success("Already close to the main diagonal");
         } else {
-          toast.message("Returning to the previous position along counter-diagonal");
+          toast.message(
+            "Returning to the previous position along counter-diagonal"
+          );
           view.animate({
             center: [
               last_x_px * currentResolutionDescriptor.pixelResolution,

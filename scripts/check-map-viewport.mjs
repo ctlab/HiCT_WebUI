@@ -49,7 +49,8 @@ class TestTileSource extends XYZ {
   do_reload() {}
 }
 const { HiCViewAndLayersManager, ActiveTool } = loadManager(
-  "HiCViewAndLayersManager", {
+  "HiCViewAndLayersManager",
+  {
     "ol/layer/Tile": { default: TileLayer },
     "ol/tilegrid/TileGrid": { default: TileGrid },
     "../VersionedXYZSource": { VersionedXYZContactMapSource: TestTileSource },
@@ -190,17 +191,26 @@ function snapshot(view) {
 async function checkViewport() {
   {
     const { manager } = fixture();
-    manager.primaryResolutionSet = resolutionModel.buildSourceResolutionDescriptorSet(
-      "PRIMARY", [1000, 5000, 10000, 25000], [10000, 2000, 1000, 400], 1000
-    );
-    manager.secondaryResolutionSet = resolutionModel.buildSourceResolutionDescriptorSet(
-      "SECONDARY", [5000], [2000], 1000
-    );
+    manager.primaryResolutionSet =
+      resolutionModel.buildSourceResolutionDescriptorSet(
+        "PRIMARY",
+        [1000, 5000, 10000, 25000],
+        [10000, 2000, 1000, 400],
+        1000
+      );
+    manager.secondaryResolutionSet =
+      resolutionModel.buildSourceResolutionDescriptorSet(
+        "SECONDARY",
+        [5000],
+        [2000],
+        1000
+      );
     manager.secondaryExactResolutionOnly = true;
     manager.layersZIndices = { HIC_MAP_LAYER_Z_INDEX: 0 };
     manager.mapManager.getOptions = () => ({ tileSize: 256 });
     manager.mapManager.getMap = () => ({ addLayer() {} });
-    for (const key of Object.keys(manager.layersHolder)) manager.layersHolder[key] = [];
+    for (const key of Object.keys(manager.layersHolder))
+      manager.layersHolder[key] = [];
     manager.layersHolder.primaryHiCDataLayers = [];
     manager.layersHolder.secondaryHiCDataLayers = [];
     manager.layersHolder.primaryBpResolutionToHiCDataLayer = new Map();
@@ -222,13 +232,25 @@ async function checkViewport() {
       manager.enabledBpResolutions = enabled && new Set(enabled);
       manager.view.getResolution = () => viewResolution;
       manager.updateCurrentHiCViewState();
-      const renderable = (layers) => layers.filter(layer =>
-        inView(layer.getLayerState(), { resolution: viewResolution, zoom: 10 })
-      ).map(layer => layer.get("bpResolution"));
-      assert.deepEqual(renderable(manager.layersHolder.primaryHiCDataLayers), [expected],
-        `selected primary must actually render at ${viewResolution}, enabled=${enabled}`);
-      assert.deepEqual(renderable(manager.layersHolder.secondaryHiCDataLayers), secondary ? [5000] : [],
-        "generated overlays render only at an exact available primary resolution");
+      const renderable = (layers) =>
+        layers
+          .filter((layer) =>
+            inView(layer.getLayerState(), {
+              resolution: viewResolution,
+              zoom: 10,
+            })
+          )
+          .map((layer) => layer.get("bpResolution"));
+      assert.deepEqual(
+        renderable(manager.layersHolder.primaryHiCDataLayers),
+        [expected],
+        `selected primary must actually render at ${viewResolution}, enabled=${enabled}`
+      );
+      assert.deepEqual(
+        renderable(manager.layersHolder.secondaryHiCDataLayers),
+        secondary ? [5000] : [],
+        "generated overlays render only at an exact available primary resolution"
+      );
     }
   }
   {
@@ -416,7 +438,11 @@ async function checkViewport() {
       [2000, -1500],
       "explicit scope choice still fits"
     );
-    assert.equal(manager.view.getResolution(), 2.5, "scope fits without padding");
+    assert.equal(
+      manager.view.getResolution(),
+      2.5,
+      "scope fits without padding"
+    );
   }
 
   for (const scale of [1, 4]) {
@@ -479,7 +505,9 @@ const { ContactMapManager } = loadManager("ContactMapManager");
 const closedMap = Object.create(ContactMapManager.prototype);
 closedMap.disposed = false;
 closedMap.sequenceRenderers = new Set();
-const releaseSequenceRenderer = closedMap.registerSequenceRenderer(async () => {});
+const releaseSequenceRenderer = closedMap.registerSequenceRenderer(
+  async () => {}
+);
 assert.equal(closedMap.sequenceRenderers.size, 1);
 releaseSequenceRenderer();
 assert.equal(closedMap.sequenceRenderers.size, 0);
@@ -488,9 +516,18 @@ closedMap.visualizationManager = { dispose() {} };
 closedMap.linearTrackManager = { dispose() {} };
 closedMap.clearOverviewMapTarget = () => {};
 closedMap.viewAndLayersManager = { dispose() {} };
-closedMap.map = { setTarget() {}, updateSize() { throw Error("rendered a closed map"); } };
+closedMap.map = {
+  setTarget() {},
+  updateSize() {
+    throw Error("rendered a closed map");
+  },
+};
 closedMap.dispose();
-assert.equal(closedMap.sequenceRenderers.size, 0, "Dispose releases sequence renderer callbacks");
+assert.equal(
+  closedMap.sequenceRenderers.size,
+  0,
+  "Dispose releases sequence renderer callbacks"
+);
 closedMap.refreshWorkspaceLayout();
 closedMap.scheduleWorkspaceLayoutRefresh();
 closedMap.reloadVisuals();
@@ -501,27 +538,51 @@ const minimapManager = Object.create(ContactMapManager.prototype);
 const minimapBounds = [0, -100, 100, 0];
 for (const [requested, expected] of [
   [[-50, -150, 150, 50], minimapBounds],
-  [[-20, -60, 40, -20], [0, -60, 40, -20]],
-  [[60, -60, 120, -20], [60, -60, 100, -20]],
-  [[20, -40, 60, 20], [20, -40, 60, 0]],
-  [[20, -120, 60, -60], [20, -100, 60, -60]],
-  [[10, -20, 10.01, -19.99], [10, -20, 10.01, -19.99]],
+  [
+    [-20, -60, 40, -20],
+    [0, -60, 40, -20],
+  ],
+  [
+    [60, -60, 120, -20],
+    [60, -60, 100, -20],
+  ],
+  [
+    [20, -40, 60, 20],
+    [20, -40, 60, 0],
+  ],
+  [
+    [20, -120, 60, -60],
+    [20, -100, 60, -60],
+  ],
+  [
+    [10, -20, 10.01, -19.99],
+    [10, -20, 10.01, -19.99],
+  ],
   [[120, -40, 150, -20], null],
 ]) {
   const actual = minimapManager.clampExtentToBounds(requested, minimapBounds);
   assert.deepEqual(actual ? Array.from(actual) : null, expected);
 }
-console.log("Minimap preserves viewport coordinates and clips every edge without inflation.");
+console.log(
+  "Minimap preserves viewport coordinates and clips every edge without inflation."
+);
 
 async function checkSequenceExportLifecycle() {
   const manager = Object.create(ContactMapManager.prototype);
   manager.networkManager = { requestManager: { sequenceViewReadOnly: true } };
   manager.disposed = false;
   await assert.rejects(manager.buildViewportExportSvg(), /finish loading/);
-  const firstRelease = manager.registerSequenceViewExporter(async () => { throw Error('old callback'); });
+  const firstRelease = manager.registerSequenceViewExporter(async () => {
+    throw Error("old callback");
+  });
   let finish;
   const result = { svg: {}, canvas: {} };
-  const release = manager.registerSequenceViewExporter(() => new Promise(resolve => { finish = resolve; }));
+  const release = manager.registerSequenceViewExporter(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
   firstRelease(); // A stale component must not unregister its replacement.
   const pending = manager.buildViewportExportSvg();
   assert.equal(manager.isExporting, true);
@@ -530,11 +591,19 @@ async function checkSequenceExportLifecycle() {
   assert.equal(await pending, result);
   assert.equal(manager.isExporting, false);
   release();
-  manager.registerSequenceViewExporter(async () => { throw Error('assembly changed'); });
+  manager.registerSequenceViewExporter(async () => {
+    throw Error("assembly changed");
+  });
   await assert.rejects(manager.buildViewportExportSvg(), /assembly changed/);
-  assert.equal(manager.isExporting, false, 'Failed export must release its guard');
+  assert.equal(
+    manager.isExporting,
+    false,
+    "Failed export must release its guard"
+  );
   manager.disposed = true;
   await assert.rejects(manager.buildViewportExportSvg(), /finish loading/);
-  console.log('Sequence export callback ownership, concurrency, failure recovery and disposal guards passed.');
+  console.log(
+    "Sequence export callback ownership, concurrency, failure recovery and disposal guards passed."
+  );
 }
 await checkSequenceExportLifecycle();

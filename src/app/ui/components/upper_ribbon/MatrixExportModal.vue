@@ -22,11 +22,17 @@
 <template>
   <div class="modal-backdrop fade show"></div>
   <div class="modal fade show export-matrix-shell" tabindex="-1" role="dialog">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div
+      class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"
+    >
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Export matrix to Cooler</h5>
-          <button type="button" class="btn-close" @click="emit('dismissed')"></button>
+          <button
+            type="button"
+            class="btn-close"
+            @click="emit('dismissed')"
+          ></button>
         </div>
         <div class="modal-body">
           <div v-if="errorMessage" class="alert alert-danger py-2">
@@ -34,11 +40,14 @@
           </div>
 
           <div class="job-history-panel mb-3">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div
+              class="d-flex flex-wrap align-items-center justify-content-between gap-2"
+            >
               <div>
                 <strong>Conversion jobs</strong>
                 <small class="text-muted d-block">
-                  Reopen this window and use this list to check exports started earlier.
+                  Reopen this window and use this list to check exports started
+                  earlier.
                 </small>
               </div>
               <button
@@ -47,7 +56,10 @@
                 :disabled="jobsLoading"
                 @click="loadConversionJobs"
               >
-                <span v-if="jobsLoading" class="spinner-border spinner-border-sm me-1"></span>
+                <span
+                  v-if="jobsLoading"
+                  class="spinner-border spinner-border-sm me-1"
+                ></span>
                 Refresh jobs
               </button>
             </div>
@@ -64,7 +76,8 @@
                   {{ job.outputFilename || job.sourceFilename }}
                 </span>
                 <span class="job-history-meta">
-                  {{ job.direction }} · {{ job.status }} · {{ Math.round((job.overallProgress ?? 0) * 100) }}%
+                  {{ job.direction }} · {{ job.status }} ·
+                  {{ Math.round((job.overallProgress ?? 0) * 100) }}%
                 </span>
               </button>
             </div>
@@ -79,7 +92,11 @@
                 readonly
                 :value="sourceFilename || 'Select .hict.hdf5 matrix'"
               />
-              <button class="btn btn-outline-secondary" type="button" @click="selectorKind = 'source'">
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                @click="selectorKind = 'source'"
+              >
                 Browse...
               </button>
             </div>
@@ -95,7 +112,8 @@
               @input="outputFilenameTouched = true"
             />
             <small class="text-muted">
-              Relative to the HiCT data directory. Use .cool for one selected resolution, or .mcool for multiple resolutions.
+              Relative to the HiCT data directory. Use .cool for one selected
+              resolution, or .mcool for multiple resolutions.
             </small>
           </div>
 
@@ -113,7 +131,8 @@
               </label>
             </div>
             <small class="text-muted">
-              Turn this off to export the matrix exactly as saved, or to apply a custom AGP file.
+              Turn this off to export the matrix exactly as saved, or to apply a
+              custom AGP file.
             </small>
           </div>
 
@@ -124,9 +143,16 @@
                 class="form-control"
                 type="text"
                 readonly
-                :value="customAgpFilename || 'No AGP selected; export saved matrix layout'"
+                :value="
+                  customAgpFilename ||
+                  'No AGP selected; export saved matrix layout'
+                "
               />
-              <button class="btn btn-outline-secondary" type="button" @click="selectorKind = 'agp'">
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                @click="selectorKind = 'agp'"
+              >
                 Browse...
               </button>
               <button
@@ -159,11 +185,23 @@
             </div>
             <div class="col-md-2">
               <label class="form-label">Level</label>
-              <input v-model.number="compression" class="form-control" type="number" min="0" max="9" />
+              <input
+                v-model.number="compression"
+                class="form-control"
+                type="number"
+                min="0"
+                max="9"
+              />
             </div>
             <div class="col-md-2">
               <label class="form-label">Threads</label>
-              <input v-model.number="parallelism" class="form-control" type="number" min="-1" title="-1: automatic server CPU allocation" />
+              <input
+                v-model.number="parallelism"
+                class="form-control"
+                type="number"
+                min="-1"
+                title="-1: automatic server CPU allocation"
+              />
             </div>
           </div>
 
@@ -180,7 +218,8 @@
             </label>
           </div>
           <small class="text-muted d-block mb-3">
-            Disabled by default: only the finest resolution is exported, so you can zoomify later if needed.
+            Disabled by default: only the finest resolution is exported, so you
+            can zoomify later if needed.
           </small>
 
           <div class="form-check form-switch mb-2">
@@ -196,7 +235,8 @@
             </label>
           </div>
           <small class="text-muted d-block mb-3">
-            Enabled by default. Auto and hictk-assisted modes run ICE balancing so downstream Cooler tools can use generated weights.
+            Enabled by default. Auto and hictk-assisted modes run ICE balancing
+            so downstream Cooler tools can use generated weights.
           </small>
 
           <div class="form-check mb-3">
@@ -218,7 +258,11 @@
           />
         </div>
         <div class="modal-footer">
-          <button class="btn btn-secondary" type="button" @click="emit('dismissed')">
+          <button
+            class="btn btn-secondary"
+            type="button"
+            @click="emit('dismissed')"
+          >
             Dismiss
           </button>
           <button
@@ -227,7 +271,10 @@
             :disabled="submitting || !sourceFilename"
             @click="startExport"
           >
-            <span v-if="submitting" class="spinner-border spinner-border-sm me-2"></span>
+            <span
+              v-if="submitting"
+              class="spinner-border spinner-border-sm me-2"
+            ></span>
             Export Cooler
           </button>
         </div>
@@ -238,9 +285,15 @@
   <UniversalFileSelector
     v-if="selectorKind"
     :network-manager="props.networkManager"
-    :title="selectorKind === 'source' ? 'Select source .hict.hdf5' : 'Select custom AGP'"
+    :title="
+      selectorKind === 'source'
+        ? 'Select source .hict.hdf5'
+        : 'Select custom AGP'
+    "
     :file-type="selectorKind === 'source' ? '.hict.hdf5' : '.agp'"
-    :file-name-predicate="selectorKind === 'source' ? isHictFilename : isAgpFilename"
+    :file-name-predicate="
+      selectorKind === 'source' ? isHictFilename : isAgpFilename
+    "
     @selected="onFileSelected"
     @dismissed="selectorKind = null"
   />
@@ -295,7 +348,10 @@ watch(
   [sourceFilename, exportAllResolutions],
   () => {
     if (!outputFilenameTouched.value) {
-      outputFilename.value = defaultOutputFilename(sourceFilename.value, exportAllResolutions.value);
+      outputFilename.value = defaultOutputFilename(
+        sourceFilename.value,
+        exportAllResolutions.value
+      );
     }
   },
   { immediate: true }
@@ -313,7 +369,10 @@ function onFileSelected(filename: string): void {
   if (selectorKind.value === "source") {
     sourceFilename.value = filename;
     if (!outputFilenameTouched.value) {
-      outputFilename.value = defaultOutputFilename(filename, exportAllResolutions.value);
+      outputFilename.value = defaultOutputFilename(
+        filename,
+        exportAllResolutions.value
+      );
     }
   } else if (selectorKind.value === "agp") {
     customAgpFilename.value = filename;
@@ -321,7 +380,10 @@ function onFileSelected(filename: string): void {
   selectorKind.value = null;
 }
 
-function defaultOutputFilename(filename: string, allResolutions: boolean): string {
+function defaultOutputFilename(
+  filename: string,
+  allResolutions: boolean
+): string {
   if (!filename) {
     return "";
   }
@@ -338,15 +400,28 @@ function loadConversionJobs(): void {
     .listConversionJobs()
     .then((jobs) => {
       recentJobs.value = jobs
-        .filter((job) => job.direction === "hict-to-mcool" || ["queued", "running"].includes((job.status ?? "").toLowerCase()))
+        .filter(
+          (job) =>
+            job.direction === "hict-to-mcool" ||
+            ["queued", "running"].includes((job.status ?? "").toLowerCase())
+        )
         .sort((a, b) => {
-          const aRunning = ["queued", "running"].includes((a.status ?? "").toLowerCase()) ? 1 : 0;
-          const bRunning = ["queued", "running"].includes((b.status ?? "").toLowerCase()) ? 1 : 0;
+          const aRunning = ["queued", "running"].includes(
+            (a.status ?? "").toLowerCase()
+          )
+            ? 1
+            : 0;
+          const bRunning = ["queued", "running"].includes(
+            (b.status ?? "").toLowerCase()
+          )
+            ? 1
+            : 0;
           return bRunning - aRunning;
         });
     })
     .catch((error: unknown) => {
-      errorMessage.value = error instanceof Error ? error.message : String(error);
+      errorMessage.value =
+        error instanceof Error ? error.message : String(error);
     })
     .finally(() => {
       jobsLoading.value = false;
@@ -362,22 +437,30 @@ async function startExport(): Promise<void> {
   errorMessage.value = "";
   jobId.value = "";
   try {
-    const response = await props.networkManager.requestManager.startConversionJob(
-      new StartConversionJobRequest({
-        filename: sourceFilename.value,
-        direction: "hict-to-mcool",
-        outputFilename: outputFilename.value || defaultOutputFilename(sourceFilename.value, exportAllResolutions.value),
-        useCurrentAssembly: useCurrentAssembly.value,
-        assemblyFilename: useCurrentAssembly.value ? undefined : customAgpFilename.value || undefined,
-        overwrite: overwrite.value,
-        compression: compression.value,
-        compressionAlgorithm: compressionAlgorithm.value,
-        parallelism: parallelism.value,
-        exportMode: exportMode.value,
-        exportAllResolutions: exportAllResolutions.value,
-        balanceExportedCoolers: balanceExportedCoolers.value,
-      })
-    );
+    const response =
+      await props.networkManager.requestManager.startConversionJob(
+        new StartConversionJobRequest({
+          filename: sourceFilename.value,
+          direction: "hict-to-mcool",
+          outputFilename:
+            outputFilename.value ||
+            defaultOutputFilename(
+              sourceFilename.value,
+              exportAllResolutions.value
+            ),
+          useCurrentAssembly: useCurrentAssembly.value,
+          assemblyFilename: useCurrentAssembly.value
+            ? undefined
+            : customAgpFilename.value || undefined,
+          overwrite: overwrite.value,
+          compression: compression.value,
+          compressionAlgorithm: compressionAlgorithm.value,
+          parallelism: parallelism.value,
+          exportMode: exportMode.value,
+          exportAllResolutions: exportAllResolutions.value,
+          balanceExportedCoolers: balanceExportedCoolers.value,
+        })
+      );
     jobId.value = response.jobId;
     loadConversionJobs();
   } catch (error: unknown) {

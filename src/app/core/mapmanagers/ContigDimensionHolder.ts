@@ -151,7 +151,10 @@ export default class ContigDimensionHolder {
     );
   }
 
-  private isShownPixelInterval(contigOrder: number, resolution: number): boolean {
+  private isShownPixelInterval(
+    contigOrder: number,
+    resolution: number
+  ): boolean {
     const prefixSumPx = this.prefix_sum_px.get(resolution);
     const descriptor = this.contigDescriptors[contigOrder];
     return (
@@ -174,8 +177,7 @@ export default class ContigDimensionHolder {
     prefixSum[0] = 0;
 
     for (let i = 0; i < count; ++i) {
-      prefixSum[i + 1] =
-        prefixSum[i] + descriptors[i].contigLengthBp;
+      prefixSum[i + 1] = prefixSum[i] + descriptors[i].contigLengthBp;
     }
     this.prefix_sum_bp = prefixSum;
   }
@@ -202,9 +204,8 @@ export default class ContigDimensionHolder {
       const descriptor = descriptors[ctgOrder];
       for (const resolution of resolutions) {
         const resolutionPrefixSum = prefixSumBins.get(resolution);
-        const lengthBinsAtResolution = descriptor.contigLengthBins.get(
-          resolution
-        );
+        const lengthBinsAtResolution =
+          descriptor.contigLengthBins.get(resolution);
         if (!resolutionPrefixSum || lengthBinsAtResolution === undefined) {
           throw new Error(
             `Unknown resolution ${resolution} in updatePrefixSumBins`
@@ -245,7 +246,9 @@ export default class ContigDimensionHolder {
           resolution
         );
         if (!resolutionPrefixSum) {
-          throw new Error(`Unknown resolution ${resolution} in updatePrefixSumPx`);
+          throw new Error(
+            `Unknown resolution ${resolution} in updatePrefixSumPx`
+          );
         }
         switch (hideTypeAtResolution) {
           case ContigHideType.AUTO_HIDDEN:
@@ -308,15 +311,12 @@ export default class ContigDimensionHolder {
   ): number {
     const resolution_prefix_sum = this.prefix_sum_px.get(resolution);
     if (resolution_prefix_sum) {
-      const maxValue = resolution_prefix_sum[resolution_prefix_sum.length - 1] - 1;
+      const maxValue =
+        resolution_prefix_sum[resolution_prefix_sum.length - 1] - 1;
       if (maxValue < 0) {
         return 0;
       }
-      return CommonUtils.clamp(
-        coordinate,
-        0,
-        maxValue
-      );
+      return CommonUtils.clamp(coordinate, 0, maxValue);
     } else {
       throw new Error("Missing resolution: " + resolution);
     }
@@ -400,7 +400,11 @@ export default class ContigDimensionHolder {
     if (contig_ord_containing_px >= 0) {
       return contig_ord_containing_px;
     }
-    for (let contigOrder = 0; contigOrder < this.contig_count; contigOrder += 1) {
+    for (
+      let contigOrder = 0;
+      contigOrder < this.contig_count;
+      contigOrder += 1
+    ) {
       if (containsPx(contigOrder)) {
         return contigOrder;
       }
@@ -422,7 +426,8 @@ export default class ContigDimensionHolder {
     if (contig_direction !== ContigDirection.FORWARD) {
       const contig_length_bp =
         this.contigDescriptors[contig_ord].contigLengthBp;
-      const first_bin_length_in_bp = contig_length_bp % resolution || resolution;
+      const first_bin_length_in_bp =
+        contig_length_bp % resolution || resolution;
       if (in_contig_offset_bins >= 1) {
         return (
           contig_start_bp +
@@ -448,7 +453,8 @@ export default class ContigDimensionHolder {
     if (contig_direction !== ContigDirection.FORWARD) {
       const contig_length_bp =
         this.contigDescriptors[contig_ord].contigLengthBp;
-      const first_bin_length_in_bp = contig_length_bp % resolution || resolution;
+      const first_bin_length_in_bp =
+        contig_length_bp % resolution || resolution;
       if (in_contig_offset_bins >= 1) {
         return (
           contig_start_bp +
@@ -616,8 +622,11 @@ export default class ContigDimensionHolder {
     const bin = Math.max(0, Math.floor(px));
     const order = this.getContigOrderByPx(bin, resolution);
     const start = this.getStartBpOfPx(bin, resolution);
-    const end = Math.min(start + resolution, this.prefix_sum_bp[order + 1],
-      bin + 1 < total ? this.getStartBpOfPx(bin + 1, resolution) : Infinity);
+    const end = Math.min(
+      start + resolution,
+      this.prefix_sum_bp[order + 1],
+      bin + 1 < total ? this.getStartBpOfPx(bin + 1, resolution) : Infinity
+    );
     return start + Math.max(0, px - bin) * (end - start);
   }
 
@@ -625,7 +634,10 @@ export default class ContigDimensionHolder {
     const bin = this.getPxContainingBp(bp, resolution);
     const start = this.getFractionalBpOfPx(bin, resolution);
     const order = this.getContigOrderByPx(bin, resolution);
-    const end = Math.min(this.getFractionalBpOfPx(bin + 1, resolution), this.prefix_sum_bp[order + 1]);
+    const end = Math.min(
+      this.getFractionalBpOfPx(bin + 1, resolution),
+      this.prefix_sum_bp[order + 1]
+    );
     return bin + (bp - start) / Math.max(1, end - start);
   }
 

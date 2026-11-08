@@ -29,7 +29,8 @@ export function packIntervalsIntoLanes<T>(
       for (let parent = 0; ; ) {
         let child = parent * 2 + 1;
         if (child >= heap.length) break;
-        if (child + 1 < heap.length && less(heap[child + 1], heap[child])) child++;
+        if (child + 1 < heap.length && less(heap[child + 1], heap[child]))
+          child++;
         if (!less(heap[child], heap[parent])) break;
         [heap[parent], heap[child]] = [heap[child], heap[parent]];
         parent = child;

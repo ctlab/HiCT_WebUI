@@ -75,7 +75,10 @@ function manualChunk(id: string): string | undefined {
   if (normalizedId.includes("/src/app/core/visualization/")) {
     return "app-visualization";
   }
-  if (normalizedId.includes("/src/app/core/tracks/") || normalizedId.includes("/src/app/ui/components/tracks/")) {
+  if (
+    normalizedId.includes("/src/app/core/tracks/") ||
+    normalizedId.includes("/src/app/ui/components/tracks/")
+  ) {
     return "app-tracks";
   }
   if (normalizedId.includes("/src/app/core/net/")) {

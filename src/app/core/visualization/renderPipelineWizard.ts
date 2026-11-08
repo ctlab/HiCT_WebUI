@@ -75,7 +75,9 @@ const cloneExpression = <T>(value: T): T =>
   JSON.parse(JSON.stringify(value)) as T;
 
 const safeHexa = (value: string, fallback: string): string => {
-  const normalized = String(value ?? fallback).trim().toLowerCase();
+  const normalized = String(value ?? fallback)
+    .trim()
+    .toLowerCase();
   if (/^#[0-9a-f]{8}$/.test(normalized)) {
     return normalized;
   }
@@ -231,9 +233,7 @@ export const buildWizardRenderPipelineConfig = (options: {
       topOpacity:
         typeof options.topOpacity === "number" ? options.topOpacity : 0.5,
       bottomOpacity:
-        typeof options.bottomOpacity === "number"
-          ? options.bottomOpacity
-          : 1.0,
+        typeof options.bottomOpacity === "number" ? options.bottomOpacity : 1.0,
     };
     return {
       enabled: true,

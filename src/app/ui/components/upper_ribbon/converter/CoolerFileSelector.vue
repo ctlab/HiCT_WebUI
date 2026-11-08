@@ -139,7 +139,6 @@ onMounted(() => {
       loading.value = false;
     });
 });
-
 </script>
 
 <style scoped>

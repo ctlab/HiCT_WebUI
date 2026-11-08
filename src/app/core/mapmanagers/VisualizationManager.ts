@@ -118,7 +118,10 @@ const selectNthNumber = (values: number[], index: number): number | null => {
   return values[target] ?? null;
 };
 
-const computeFiniteQuantile = (values: Float32Array, quantile: number): number | null => {
+const computeFiniteQuantile = (
+  values: Float32Array,
+  quantile: number
+): number | null => {
   const filtered: number[] = [];
   for (const value of values) {
     if (Number.isFinite(value) && value > 0) {
@@ -158,8 +161,8 @@ const resolveSafeAutoUpperBound = (
     quantileValue != null && quantileValue > minSignal + minGap
       ? quantileValue
       : maxValue != null && maxValue > minSignal + minGap
-        ? maxValue
-        : null;
+      ? maxValue
+      : null;
   if (candidate == null || !Number.isFinite(candidate)) {
     return null;
   }
@@ -177,7 +180,10 @@ const toFiniteNumber = (value: unknown, fallback: number): number => {
   return Number.isFinite(numeric) ? numeric : fallback;
 };
 
-const safeColorTranslator = (value: unknown, fallback: string): ColorTranslator => {
+const safeColorTranslator = (
+  value: unknown,
+  fallback: string
+): ColorTranslator => {
   if (typeof value !== "string" || value.length > 128) {
     return new ColorTranslator(fallback, { legacyCSS: true });
   }
@@ -210,7 +216,11 @@ const withAlphaZero = (value: unknown, fallback: string): string => {
 
 const normalizePositiveLogBase = (value: unknown): number | null => {
   const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric <= 0 || Math.abs(numeric - 1) < 1e-9) {
+  if (
+    !Number.isFinite(numeric) ||
+    numeric <= 0 ||
+    Math.abs(numeric - 1) < 1e-9
+  ) {
     return null;
   }
   return numeric;
@@ -218,27 +228,49 @@ const normalizePositiveLogBase = (value: unknown): number | null => {
 
 const isDynamicFieldNode = (value: unknown, field: string): boolean =>
   isRecord(value) &&
-  String(value.type ?? "").trim().toLowerCase() === "dynamic" &&
-  String(value.field ?? "").trim().toUpperCase() === field;
+  String(value.type ?? "")
+    .trim()
+    .toLowerCase() === "dynamic" &&
+  String(value.field ?? "")
+    .trim()
+    .toUpperCase() === field;
 
-const isCoolerWeightsTrackNode = (value: unknown, axis: "ROW" | "COL"): boolean =>
+const isCoolerWeightsTrackNode = (
+  value: unknown,
+  axis: "ROW" | "COL"
+): boolean =>
   isRecord(value) &&
-  String(value.type ?? "").trim().toLowerCase() === "track1d" &&
+  String(value.type ?? "")
+    .trim()
+    .toLowerCase() === "track1d" &&
   String(value.trackId ?? "").trim() === BUILTIN_COOLER_WEIGHTS_TRACK_ID &&
-  String(value.axis ?? "").trim().toUpperCase() === axis;
+  String(value.axis ?? "")
+    .trim()
+    .toUpperCase() === axis;
 
 const isCoolerWeightsExpression = (value: unknown): boolean => {
-  if (!isRecord(value) || String(value.type ?? "").trim().toLowerCase() !== "binary") {
+  if (
+    !isRecord(value) ||
+    String(value.type ?? "")
+      .trim()
+      .toLowerCase() !== "binary"
+  ) {
     return false;
   }
-  if (String(value.op ?? "").trim().toUpperCase() !== "MUL") {
+  if (
+    String(value.op ?? "")
+      .trim()
+      .toUpperCase() !== "MUL"
+  ) {
     return false;
   }
   const left = value.left;
   const right = value.right;
   return (
-    (isCoolerWeightsTrackNode(left, "ROW") && isCoolerWeightsTrackNode(right, "COL")) ||
-    (isCoolerWeightsTrackNode(left, "COL") && isCoolerWeightsTrackNode(right, "ROW"))
+    (isCoolerWeightsTrackNode(left, "ROW") &&
+      isCoolerWeightsTrackNode(right, "COL")) ||
+    (isCoolerWeightsTrackNode(left, "COL") &&
+      isCoolerWeightsTrackNode(right, "ROW"))
   );
 };
 
@@ -248,11 +280,15 @@ const extractPipelineSignalProfile = (
   if (!isRecord(expression)) {
     return null;
   }
-  const type = String(expression.type ?? "").trim().toLowerCase();
+  const type = String(expression.type ?? "")
+    .trim()
+    .toLowerCase();
   if (type === "source") {
     return {
       source:
-        String(expression.source ?? "PRIMARY").trim().toUpperCase() === "SECONDARY"
+        String(expression.source ?? "PRIMARY")
+          .trim()
+          .toUpperCase() === "SECONDARY"
           ? "SECONDARY"
           : "PRIMARY",
       signalDivisor: 1,
@@ -284,13 +320,20 @@ const extractPipelineSignalProfile = (
     }
     return null;
   }
-  if (type === "binary" && String(expression.op ?? "").trim().toUpperCase() === "DIV") {
+  if (
+    type === "binary" &&
+    String(expression.op ?? "")
+      .trim()
+      .toUpperCase() === "DIV"
+  ) {
     const inputProfile = extractPipelineSignalProfile(expression.left);
     const divisorNode = expression.right;
     if (
       !inputProfile ||
       !isRecord(divisorNode) ||
-      String(divisorNode.type ?? "").trim().toLowerCase() !== "constant"
+      String(divisorNode.type ?? "")
+        .trim()
+        .toLowerCase() !== "constant"
     ) {
       return null;
     }
@@ -304,7 +347,12 @@ const extractPipelineSignalProfile = (
       hasExplicitSignalDivisor: true,
     };
   }
-  if (type === "binary" && String(expression.op ?? "").trim().toUpperCase() === "MUL") {
+  if (
+    type === "binary" &&
+    String(expression.op ?? "")
+      .trim()
+      .toUpperCase() === "MUL"
+  ) {
     const left = expression.left;
     const right = expression.right;
     const childProfile =
@@ -348,26 +396,43 @@ const collectColormapTargets = (
   if (!isRecord(expression)) {
     return;
   }
-  const type = String(expression.type ?? "").trim().toLowerCase();
+  const type = String(expression.type ?? "")
+    .trim()
+    .toLowerCase();
   if (type === "colormap") {
     let profile = extractPipelineSignalProfile(expression.input);
     if (!profile) {
       const sources = new Set<SourceName>();
       const visit = (node: unknown): void => {
         if (!isRecord(node)) return;
-        if (node.type === "source") sources.add(node.source === "SECONDARY" ? "SECONDARY" : "PRIMARY");
+        if (node.type === "source")
+          sources.add(node.source === "SECONDARY" ? "SECONDARY" : "PRIMARY");
         Object.values(node).forEach(visit);
       };
       visit(expression.input);
-      if (sources.size === 1) profile = extractPipelineSignalProfile({ type: "source", source: [...sources][0] });
+      if (sources.size === 1)
+        profile = extractPipelineSignalProfile({
+          type: "source",
+          source: [...sources][0],
+        });
     }
     if (profile) {
       output.push({
         id: path,
         node: expression,
         profile,
-        minSignal: toFiniteNumber(isRecord(expression.min) && expression.min.type === "constant" ? expression.min.value : expression.minSignal, 0),
-        maxSignal: toFiniteNumber(isRecord(expression.max) && expression.max.type === "constant" ? expression.max.value : expression.maxSignal, 1),
+        minSignal: toFiniteNumber(
+          isRecord(expression.min) && expression.min.type === "constant"
+            ? expression.min.value
+            : expression.minSignal,
+          0
+        ),
+        maxSignal: toFiniteNumber(
+          isRecord(expression.max) && expression.max.type === "constant"
+            ? expression.max.value
+            : expression.maxSignal,
+          1
+        ),
       });
     }
   }
@@ -398,7 +463,9 @@ export type VisualizationPipelineTarget = {
   displayUnit: "PERCENT" | null;
 };
 
-const collectConfigColormapTargets = (config: Record<string, unknown>): ColormapTarget[] => {
+const collectConfigColormapTargets = (
+  config: Record<string, unknown>
+): ColormapTarget[] => {
   const targets: ColormapTarget[] = [];
   collectColormapTargets(config.upperExpression, targets, "upper");
   collectColormapTargets(config.lowerExpression, targets, "lower");
@@ -412,22 +479,33 @@ const collectTopLayerSources = (
   if (!isRecord(expression)) {
     return;
   }
-  if (String(expression.type ?? "").trim().toLowerCase() === "pixel_blend") {
+  if (
+    String(expression.type ?? "")
+      .trim()
+      .toLowerCase() === "pixel_blend"
+  ) {
     const topTargets: ColormapTarget[] = [];
     collectColormapTargets(expression.top, topTargets);
     topTargets.forEach((target) => output.add(target.profile.source));
   }
-  ["input", "left", "right", "top", "bottom", "c1", "c2", "c3", "alpha"].forEach(
-    (key) => {
-      if (key in expression) {
-        collectTopLayerSources(expression[key], output);
-      }
+  [
+    "input",
+    "left",
+    "right",
+    "top",
+    "bottom",
+    "c1",
+    "c2",
+    "c3",
+    "alpha",
+  ].forEach((key) => {
+    if (key in expression) {
+      collectTopLayerSources(expression[key], output);
     }
-  );
+  });
 };
 
-const cloneRecord = <T>(value: T): T =>
-  JSON.parse(JSON.stringify(value)) as T;
+const cloneRecord = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 const isTransparentMinimumColor = (color: unknown): boolean =>
   typeof color === "string" &&
@@ -455,9 +533,10 @@ const replaceColormapNode = (
   const previousStartColor = target.node.startColor;
   const previousMode = String(target.node.mode ?? "LINEAR").toUpperCase();
   target.node.type = "colormap";
-  target.node.mode = previousMode === "MODDOTPLOT_IDENTITY"
-    ? "MODDOTPLOT_IDENTITY"
-    : replacement.mode ?? "LINEAR";
+  target.node.mode =
+    previousMode === "MODDOTPLOT_IDENTITY"
+      ? "MODDOTPLOT_IDENTITY"
+      : replacement.mode ?? "LINEAR";
   // Contrast and palette edits must not reconstruct (and lose) the user's
   // processing graph. Normalization is edited explicitly in the pipeline.
   target.node.startColor = preserveMinimumAlpha(
@@ -467,10 +546,18 @@ const replaceColormapNode = (
   target.node.endColor = replacement.endColor;
   target.node.minSignal = replacement.minSignal;
   target.node.maxSignal = replacement.maxSignal;
-  for (const [key, value] of [["min", replacement.minSignal], ["max", replacement.maxSignal]] as const) {
+  for (const [key, value] of [
+    ["min", replacement.minSignal],
+    ["max", replacement.maxSignal],
+  ] as const) {
     const previous = target.node[key];
-    target.node[key] = { ...(isRecord(previous) ? previous : {}), type: "constant", value,
-      rangeSource: target.profile.source, rangeOutput: key === "min" ? "selectedMin" : "selectedMax" };
+    target.node[key] = {
+      ...(isRecord(previous) ? previous : {}),
+      type: "constant",
+      value,
+      rangeSource: target.profile.source,
+      rangeOutput: key === "min" ? "selectedMin" : "selectedMax",
+    };
   }
 };
 
@@ -548,7 +635,11 @@ const swapPixelBlendLayers = (expression: unknown): boolean => {
     return false;
   }
   let changed = false;
-  if (String(expression.type ?? "").trim().toLowerCase() === "pixel_blend") {
+  if (
+    String(expression.type ?? "")
+      .trim()
+      .toLowerCase() === "pixel_blend"
+  ) {
     const top = expression.top;
     expression.top = expression.bottom;
     expression.bottom = top;
@@ -557,13 +648,21 @@ const swapPixelBlendLayers = (expression: unknown): boolean => {
     expression.bottomOpacity = topOpacity;
     changed = true;
   }
-  ["input", "left", "right", "top", "bottom", "c1", "c2", "c3", "alpha"].forEach(
-    (key) => {
-      if (key in expression && swapPixelBlendLayers(expression[key])) {
-        changed = true;
-      }
+  [
+    "input",
+    "left",
+    "right",
+    "top",
+    "bottom",
+    "c1",
+    "c2",
+    "c3",
+    "alpha",
+  ].forEach((key) => {
+    if (key in expression && swapPixelBlendLayers(expression[key])) {
+      changed = true;
     }
-  );
+  });
   return changed;
 };
 
@@ -643,7 +742,9 @@ class VisualizationManager {
   public fetchVisualizationOptions(): Promise<VisualizationOptions> {
     const loadGeneration = ++this.visualizationOptionsLoadGeneration;
     if (this.mapManager.isDisposed) {
-      return Promise.resolve(this.visualizationOptionsStore.asVisualizationOptions());
+      return Promise.resolve(
+        this.visualizationOptionsStore.asVisualizationOptions()
+      );
     }
     const request = this.mapManager.networkManager.requestManager
       .getVisualizationOptions(new GetVisualizationOptionsRequest({}))
@@ -654,9 +755,12 @@ class VisualizationManager {
         ) {
           this.visualizationOptionsStore.setVisualizationOptions(options);
           window.dispatchEvent(
-            new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
-              detail: { source: "server_fetch", options },
-            })
+            new CustomEvent(
+              VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+              {
+                detail: { source: "server_fetch", options },
+              }
+            )
           );
         }
         return options;
@@ -673,17 +777,22 @@ class VisualizationManager {
       return this.visualizationOptionsStore.asVisualizationOptions();
     }
     if (!source) {
-      const options = await this.mapManager.networkManager.requestManager
-        .getVisualizationOptions(new GetVisualizationOptionsRequest({}));
+      const options =
+        await this.mapManager.networkManager.requestManager.getVisualizationOptions(
+          new GetVisualizationOptionsRequest({})
+        );
       if (
         !this.mapManager.isDisposed &&
         loadGeneration === this.visualizationOptionsLoadGeneration
       ) {
         this.visualizationOptionsStore.setVisualizationOptions(options);
         window.dispatchEvent(
-          new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
-            detail: { source: "server_fetch", options },
-          })
+          new CustomEvent(
+            VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+            {
+              detail: { source: "server_fetch", options },
+            }
+          )
         );
       }
       return loadGeneration === this.visualizationOptionsLoadGeneration
@@ -698,17 +807,22 @@ class VisualizationManager {
       return this.visualizationOptionsStore.asVisualizationOptions();
     }
     if (!pipelineConfig) {
-      const options = await this.mapManager.networkManager.requestManager
-        .getVisualizationOptions(new GetVisualizationOptionsRequest({}));
+      const options =
+        await this.mapManager.networkManager.requestManager.getVisualizationOptions(
+          new GetVisualizationOptionsRequest({})
+        );
       if (
         !this.mapManager.isDisposed &&
         loadGeneration === this.visualizationOptionsLoadGeneration
       ) {
         this.visualizationOptionsStore.setVisualizationOptions(options);
         window.dispatchEvent(
-          new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
-            detail: { source: "server_fetch", options },
-          })
+          new CustomEvent(
+            VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+            {
+              detail: { source: "server_fetch", options },
+            }
+          )
         );
       }
       return loadGeneration === this.visualizationOptionsLoadGeneration
@@ -719,8 +833,12 @@ class VisualizationManager {
     const topLayerSources = new Set<SourceName>();
     collectTopLayerSources(pipelineConfig.upperExpression, topLayerSources);
     collectTopLayerSources(pipelineConfig.lowerExpression, topLayerSources);
-    const sourceTargets = targets.filter((candidate) => candidate.profile.source === source);
-    const target = sourceTargets.find((candidate) => candidate.id === targetId) ?? sourceTargets[0];
+    const sourceTargets = targets.filter(
+      (candidate) => candidate.profile.source === source
+    );
+    const target =
+      sourceTargets.find((candidate) => candidate.id === targetId) ??
+      sourceTargets[0];
     if (!target) {
       return this.fetchVisualizationOptions();
     }
@@ -732,16 +850,21 @@ class VisualizationManager {
     if (loadGeneration === this.visualizationOptionsLoadGeneration) {
       this.visualizationOptionsStore.setVisualizationOptions(options);
       window.dispatchEvent(
-        new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
-          detail: { source: "pipeline_source_fetch", options },
-        })
+        new CustomEvent(
+          VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+          {
+            detail: { source: "pipeline_source_fetch", options },
+          }
+        )
       );
       return options;
     }
     return this.visualizationOptionsStore.asVisualizationOptions();
   }
 
-  public async getVisualizationPipelineTargets(): Promise<VisualizationPipelineTarget[]> {
+  public async getVisualizationPipelineTargets(): Promise<
+    VisualizationPipelineTarget[]
+  > {
     const config = await this.getActiveRenderPipelineConfig();
     if (!config) return [];
     const counts = new Map<SourceName, number>();
@@ -750,30 +873,52 @@ class VisualizationManager {
       counts.set(target.profile.source, index);
       const half = target.id.startsWith("upper") ? "upper" : "lower";
       const mode = String(target.node.mode ?? "LINEAR");
-      return { id: target.id, source: target.profile.source, half,
-        label: `${half} ${mode === "MODDOTPLOT_IDENTITY" ? "identity" : "colormap"} ${index}`,
+      return {
+        id: target.id,
+        source: target.profile.source,
+        half,
+        label: `${half} ${
+          mode === "MODDOTPLOT_IDENTITY" ? "identity" : "colormap"
+        } ${index}`,
         mode,
         displayUnit:
-          mode === "MODDOTPLOT_IDENTITY" && target.profile.hasExplicitSignalDivisor
+          mode === "MODDOTPLOT_IDENTITY" &&
+          target.profile.hasExplicitSignalDivisor
             ? "PERCENT"
-            : null };
+            : null,
+      };
     });
   }
 
-  public async getSourceSignalExpression(source: SourceName, targetId?: string | null): Promise<Record<string, unknown>> {
+  public async getSourceSignalExpression(
+    source: SourceName,
+    targetId?: string | null
+  ): Promise<Record<string, unknown>> {
     const config = await this.getActiveRenderPipelineConfig();
-    if (!config) return (buildColorExpression(source, this.visualizationOptionsStore.asVisualizationOptions()) as unknown as Record<string, unknown>).input as Record<string, unknown>;
-    const targets = collectConfigColormapTargets(config).filter(target => target.profile.source === source);
-    const target = targets.find(target => target.id === targetId) ?? targets[0];
-    if (!target || !isRecord(target.node.input)) throw new Error(`No numeric colormap input is available for ${source}.`);
+    if (!config)
+      return (
+        buildColorExpression(
+          source,
+          this.visualizationOptionsStore.asVisualizationOptions()
+        ) as unknown as Record<string, unknown>
+      ).input as Record<string, unknown>;
+    const targets = collectConfigColormapTargets(config).filter(
+      (target) => target.profile.source === source
+    );
+    const target =
+      targets.find((target) => target.id === targetId) ?? targets[0];
+    if (!target || !isRecord(target.node.input))
+      throw new Error(`No numeric colormap input is available for ${source}.`);
     return cloneRecord(target.node.input);
   }
 
-  private async getActiveRenderPipelineConfig(): Promise<Record<string, unknown> | null> {
-    const config =
-      await this.mapManager.networkManager.requestManager
-        .getRenderPipelineConfig()
-        .catch(() => null);
+  private async getActiveRenderPipelineConfig(): Promise<Record<
+    string,
+    unknown
+  > | null> {
+    const config = await this.mapManager.networkManager.requestManager
+      .getRenderPipelineConfig()
+      .catch(() => null);
     return isRecord(config) && Boolean(config.enabled ?? false) ? config : null;
   }
 
@@ -784,13 +929,16 @@ class VisualizationManager {
     targetId?: string | null
   ): boolean {
     const targets = collectConfigColormapTargets(config);
-    const replacement = buildColorExpression(source, options) as unknown as Record<
-      string,
-      unknown
-    >;
+    const replacement = buildColorExpression(
+      source,
+      options
+    ) as unknown as Record<string, unknown>;
     let changed = false;
     for (const target of targets) {
-      if (target.profile.source === source && (!targetId || target.id === targetId)) {
+      if (
+        target.profile.source === source &&
+        (!targetId || target.id === targetId)
+      ) {
         replaceColormapNode(target, replacement);
         changed = true;
       }
@@ -810,13 +958,17 @@ class VisualizationManager {
     const resolutionIndex = Math.max(
       0,
       Math.trunc(
-        Number.isFinite(descriptor.imageSizeIndex) ? descriptor.imageSizeIndex : 0
+        Number.isFinite(descriptor.imageSizeIndex)
+          ? descriptor.imageSizeIndex
+          : 0
       )
     );
     if (resolutionIndex <= 1) {
       return { quadratic: 1, linear: 1 };
     }
-    const referenceResolution = Number(resolutions[1] ?? descriptor.bpResolution);
+    const referenceResolution = Number(
+      resolutions[1] ?? descriptor.bpResolution
+    );
     const currentResolution = Number(
       resolutions[resolutionIndex] ?? descriptor.bpResolution
     );
@@ -838,7 +990,9 @@ class VisualizationManager {
     };
   }
 
-  private resolveViewportPixelBounds(paddingPx = 0): ViewportPixelBounds | null {
+  private resolveViewportPixelBounds(
+    paddingPx = 0
+  ): ViewportPixelBounds | null {
     const size = this.mapManager.map.getSize();
     if (!size || size.length < 2 || size[0] <= 0 || size[1] <= 0) {
       return null;
@@ -853,7 +1007,9 @@ class VisualizationManager {
       return null;
     }
     const rawMapSizePx = Number(
-      this.mapManager.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex] ?? NaN
+      this.mapManager.viewAndLayersManager.imageSizes[
+        descriptor.imageSizeIndex
+      ] ?? NaN
     );
     if (!Number.isFinite(rawMapSizePx) || rawMapSizePx <= 0) {
       return null;
@@ -882,18 +1038,24 @@ class VisualizationManager {
     );
     const endColPx = Math.min(
       mapSizePx,
-      Math.max(startColPx + 1, clampUpperBound(
-        Math.ceil((extent[2] ?? 0) / descriptor.pixelResolution) + pad
-      ))
+      Math.max(
+        startColPx + 1,
+        clampUpperBound(
+          Math.ceil((extent[2] ?? 0) / descriptor.pixelResolution) + pad
+        )
+      )
     );
     const startRowPx = clampLowerBound(
       Math.floor(-(extent[3] ?? 0) / descriptor.pixelResolution) - pad
     );
     const endRowPx = Math.min(
       mapSizePx,
-      Math.max(startRowPx + 1, clampUpperBound(
-        Math.ceil(-(extent[1] ?? 0) / descriptor.pixelResolution) + pad
-      ))
+      Math.max(
+        startRowPx + 1,
+        clampUpperBound(
+          Math.ceil(-(extent[1] ?? 0) / descriptor.pixelResolution) + pad
+        )
+      )
     );
     return {
       bpResolution: descriptor.bpResolution,
@@ -1011,12 +1173,11 @@ class VisualizationManager {
     if (!bounds) {
       return null;
     }
-    const response = await this.mapManager.networkManager.requestManager.queryMatrixFloat32(
-      {
+    const response =
+      await this.mapManager.networkManager.requestManager.queryMatrixFloat32({
         ...bounds,
         signalMode: "TRADITIONAL_NORMALIZED",
-      }
-    );
+      });
     const nextUpperBound = resolveSafeAutoUpperBound(
       response.values,
       options.autoThresholdQuantile,
@@ -1087,7 +1248,11 @@ class VisualizationManager {
     collectColormapTargets(activeConfig.upperExpression, targets);
     collectColormapTargets(activeConfig.lowerExpression, targets);
     const filteredTargets = sourceFilter
-      ? targets.filter((target) => target.profile.source === sourceFilter && (!targetId || target.id === targetId))
+      ? targets.filter(
+          (target) =>
+            target.profile.source === sourceFilter &&
+            (!targetId || target.id === targetId)
+        )
       : targets;
     if (filteredTargets.length === 0) {
       return false;
@@ -1102,13 +1267,15 @@ class VisualizationManager {
       let nextUpperBound = thresholdCache.get(cacheKey);
       if (nextUpperBound === undefined) {
         const response =
-          await this.mapManager.networkManager.requestManager.queryMatrixFloat32({
-            ...bounds,
-            source: target.profile.source,
-            signalMode: target.profile.applyCoolerWeights
-              ? "COOLER_WEIGHTED"
-              : "RAW_COUNTS",
-          });
+          await this.mapManager.networkManager.requestManager.queryMatrixFloat32(
+            {
+              ...bounds,
+              source: target.profile.source,
+              signalMode: target.profile.applyCoolerWeights
+                ? "COOLER_WEIGHTED"
+                : "RAW_COUNTS",
+            }
+          );
         nextUpperBound = resolveSafeAutoUpperBound(
           transformSignalsForProfile(
             response.values,
@@ -1135,7 +1302,10 @@ class VisualizationManager {
 
     // Queries can finish after a newer explicit edit; never commit that obsolete snapshot.
     const latestConfig = await this.getActiveRenderPipelineConfig();
-    if (api.renderPipelineRevision !== revision || JSON.stringify(latestConfig) !== originalConfig)
+    if (
+      api.renderPipelineRevision !== revision ||
+      JSON.stringify(latestConfig) !== originalConfig
+    )
       return false;
     if (!changed) {
       return true;
@@ -1174,16 +1344,25 @@ class VisualizationManager {
 
   public async applyOpeningFullMapQuantileThreshold(
     quantile = OPENING_THRESHOLD_QUANTILE,
-    expectedPipelineRevision = this.mapManager.networkManager.requestManager.renderPipelineRevision
+    expectedPipelineRevision = this.mapManager.networkManager.requestManager
+      .renderPipelineRevision
   ): Promise<number | null> {
     const api = this.mapManager.networkManager.requestManager;
-    if (api.renderPipelineRevision !== expectedPipelineRevision || this.mapManager.isDisposed) return null;
+    if (
+      api.renderPipelineRevision !== expectedPipelineRevision ||
+      this.mapManager.isDisposed
+    )
+      return null;
     const bounds = this.resolveOpeningFullMapPixelBounds();
     if (!bounds) {
       return null;
     }
     const pipelineConfig = await this.getActiveRenderPipelineConfig();
-    if (api.renderPipelineRevision !== expectedPipelineRevision || this.mapManager.isDisposed) return null;
+    if (
+      api.renderPipelineRevision !== expectedPipelineRevision ||
+      this.mapManager.isDisposed
+    )
+      return null;
     if (pipelineConfig) {
       const applied = await this.syncPipelineAutoThresholdForBounds(
         bounds,
@@ -1225,19 +1404,22 @@ class VisualizationManager {
     if (!(options.colormap instanceof SimpleLinearGradient)) {
       return null;
     }
-    const response = await this.mapManager.networkManager.requestManager.queryMatrixFloat32(
-      {
+    const response =
+      await this.mapManager.networkManager.requestManager.queryMatrixFloat32({
         ...bounds,
         signalMode: "TRADITIONAL_NORMALIZED",
-      }
-    );
+      });
     const nextUpperBound = resolveSafeAutoUpperBound(
       response.values,
       quantile,
       options.colormap.minSignal,
       options.colormap.maxSignal
     );
-    if (api.renderPipelineRevision !== expectedPipelineRevision || this.mapManager.isDisposed) return null;
+    if (
+      api.renderPipelineRevision !== expectedPipelineRevision ||
+      this.mapManager.isDisposed
+    )
+      return null;
     const updatedMaxSignal =
       nextUpperBound != null &&
       Number.isFinite(nextUpperBound) &&
@@ -1294,9 +1476,12 @@ class VisualizationManager {
       .then((options) => {
         this.visualizationOptionsStore.setVisualizationOptions(options);
         window.dispatchEvent(
-          new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
-            detail: { source: "server", options },
-          })
+          new CustomEvent(
+            VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+            {
+              detail: { source: "server", options },
+            }
+          )
         );
         return options;
       })
@@ -1341,9 +1526,17 @@ class VisualizationManager {
     }
 
     const options = this.visualizationOptionsStore.asVisualizationOptions();
-    const changed = this.updateRenderPipelineSource(pipelineConfig, source, options, targetId);
+    const changed = this.updateRenderPipelineSource(
+      pipelineConfig,
+      source,
+      options,
+      targetId
+    );
     if (!changed) {
-      const hydrated = await this.loadVisualizationOptionsForSource(source, targetId);
+      const hydrated = await this.loadVisualizationOptionsForSource(
+        source,
+        targetId
+      );
       await this.mapManager.reloadTilesFromBackend();
       return hydrated;
     }
@@ -1351,7 +1544,10 @@ class VisualizationManager {
     await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
       pipelineConfig
     );
-    const hydrated = await this.loadVisualizationOptionsForSource(source, targetId);
+    const hydrated = await this.loadVisualizationOptionsForSource(
+      source,
+      targetId
+    );
     await this.mapManager.reloadTilesFromBackend();
     return hydrated;
   }

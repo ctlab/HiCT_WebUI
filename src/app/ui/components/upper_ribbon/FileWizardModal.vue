@@ -22,17 +22,28 @@
 <template>
   <div class="wizard-root">
     <div class="modal-backdrop fade show"></div>
-    <div class="modal fade show wizard-shell" style="display: block" tabindex="-1" role="dialog">
+    <div
+      class="modal fade show wizard-shell"
+      style="display: block"
+      tabindex="-1"
+      role="dialog"
+    >
       <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content wizard-content">
           <div class="modal-header">
             <div>
               <h5 class="modal-title">Open File Wizard</h5>
               <small class="text-muted">
-                Guided dataset opening, conversion reuse, layered rendering, FASTA/AGP linkage, and track precompute.
+                Guided dataset opening, conversion reuse, layered rendering,
+                FASTA/AGP linkage, and track precompute.
               </small>
             </div>
-            <button type="button" class="btn-close" :disabled="runState.running" @click="emit('dismissed')"></button>
+            <button
+              type="button"
+              class="btn-close"
+              :disabled="runState.running"
+              @click="emit('dismissed')"
+            ></button>
           </div>
           <div class="modal-body wizard-body">
             <aside class="wizard-sidebar">
@@ -44,7 +55,8 @@
                 :class="{
                   active: currentStepIndex === index,
                   completed: isStepComplete(step.id),
-                  running: runState.running && runState.currentStepId === step.id,
+                  running:
+                    runState.running && runState.currentStepId === step.id,
                 }"
                 :disabled="runState.running"
                 @click="currentStepIndex = index"
@@ -55,10 +67,17 @@
             </aside>
 
             <section class="wizard-main">
-              <div v-if="currentStep?.id === 'view-mode'" class="wizard-section">
+              <div
+                v-if="currentStep?.id === 'view-mode'"
+                class="wizard-section"
+              >
                 <h6>View Mode</h6>
                 <div class="row g-3">
-                  <div class="col-md-4" v-for="mode in viewModeCards" :key="mode.id">
+                  <div
+                    class="col-md-4"
+                    v-for="mode in viewModeCards"
+                    :key="mode.id"
+                  >
                     <button
                       type="button"
                       class="wizard-choice-card"
@@ -72,7 +91,10 @@
                 </div>
               </div>
 
-              <div v-else-if="currentStep?.id === 'sources'" class="wizard-section">
+              <div
+                v-else-if="currentStep?.id === 'sources'"
+                class="wizard-section"
+              >
                 <h6>Sources Selection</h6>
                 <div class="wizard-source-grid">
                   <div class="wizard-card">
@@ -86,9 +108,14 @@
                           class="form-control"
                           type="text"
                           readonly
-                          :value="primarySource.filename || matrixSelectorPlaceholder"
+                          :value="
+                            primarySource.filename || matrixSelectorPlaceholder
+                          "
                         />
-                        <button class="btn btn-outline-secondary" @click="openSelector('primary-matrix')">
+                        <button
+                          class="btn btn-outline-secondary"
+                          @click="openSelector('primary-matrix')"
+                        >
                           Browse…
                         </button>
                       </div>
@@ -105,11 +132,22 @@
                           Checking <strong>{{ primarySource.filename }}</strong>
                         </div>
                       </div>
-                      <div v-else-if="primarySource.resolution" class="alert alert-light border py-2 mb-0">
+                      <div
+                        v-else-if="primarySource.resolution"
+                        class="alert alert-light border py-2 mb-0"
+                      >
                         <small class="d-block">
-                          Action: <strong>{{ humanizeMatrixAction(primarySource.resolution.action) }}</strong>
+                          Action:
+                          <strong>{{
+                            humanizeMatrixAction(
+                              primarySource.resolution.action
+                            )
+                          }}</strong>
                         </small>
-                        <small class="d-block">Resolved target: {{ primarySource.resolution.resolvedFilename }}</small>
+                        <small class="d-block"
+                          >Resolved target:
+                          {{ primarySource.resolution.resolvedFilename }}</small
+                        >
                         <small
                           v-for="warning in primarySource.resolution.warnings"
                           :key="`primary-warning-${warning}`"
@@ -132,9 +170,15 @@
                           class="form-control"
                           type="text"
                           readonly
-                          :value="secondarySource.filename || matrixSelectorPlaceholder"
+                          :value="
+                            secondarySource.filename ||
+                            matrixSelectorPlaceholder
+                          "
                         />
-                        <button class="btn btn-outline-secondary" @click="openSelector('secondary-matrix')">
+                        <button
+                          class="btn btn-outline-secondary"
+                          @click="openSelector('secondary-matrix')"
+                        >
                           Browse…
                         </button>
                       </div>
@@ -148,14 +192,28 @@
                           aria-hidden="true"
                         ></div>
                         <div class="text-truncate">
-                          Checking <strong>{{ secondarySource.filename }}</strong>
+                          Checking
+                          <strong>{{ secondarySource.filename }}</strong>
                         </div>
                       </div>
-                      <div v-else-if="secondarySource.resolution" class="alert alert-light border py-2 mb-0">
+                      <div
+                        v-else-if="secondarySource.resolution"
+                        class="alert alert-light border py-2 mb-0"
+                      >
                         <small class="d-block">
-                          Action: <strong>{{ humanizeMatrixAction(secondarySource.resolution.action) }}</strong>
+                          Action:
+                          <strong>{{
+                            humanizeMatrixAction(
+                              secondarySource.resolution.action
+                            )
+                          }}</strong>
                         </small>
-                        <small class="d-block">Resolved target: {{ secondarySource.resolution.resolvedFilename }}</small>
+                        <small class="d-block"
+                          >Resolved target:
+                          {{
+                            secondarySource.resolution.resolvedFilename
+                          }}</small
+                        >
                         <small
                           v-for="warning in secondarySource.resolution.warnings"
                           :key="`secondary-warning-${warning}`"
@@ -167,29 +225,56 @@
                     </div>
                   </div>
                 </div>
-                <div v-if="requiresSecondarySource" class="alert alert-info mt-3 mb-0">
-                  Overlay and split sessions keep one assembly source authoritative and propagate that layout to the
-                  other source by matching contig names. Choose the authoritative source on the Assembly File step.
+                <div
+                  v-if="requiresSecondarySource"
+                  class="alert alert-info mt-3 mb-0"
+                >
+                  Overlay and split sessions keep one assembly source
+                  authoritative and propagate that layout to the other source by
+                  matching contig names. Choose the authoritative source on the
+                  Assembly File step.
                 </div>
-                <div v-if="selectedHicToolchainNote" class="alert alert-info mt-3 mb-0">
+                <div
+                  v-if="selectedHicToolchainNote"
+                  class="alert alert-info mt-3 mb-0"
+                >
                   <div class="fw-semibold mb-1">.hic processing with hictk</div>
-                  <div v-for="(line, index) in selectedHicToolchainNote" :key="`hictk-source-${index}-${line}`">{{ line }}</div>
+                  <div
+                    v-for="(line, index) in selectedHicToolchainNote"
+                    :key="`hictk-source-${index}-${line}`"
+                  >
+                    {{ line }}
+                  </div>
                   <div class="mt-1">
                     Project:
-                    <a :href="hictkProjectUrl" target="_blank" rel="noopener noreferrer">hictk</a>
+                    <a
+                      :href="hictkProjectUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      >hictk</a
+                    >
                   </div>
                   <div>Citation: {{ hictkCitationText }}</div>
                 </div>
-                <div v-if="hictkLoadSources.length > 0" class="alert alert-info mt-3 mb-0">
-                  <div class="fw-semibold mb-1">Additional text matrix formats</div>
+                <div
+                  v-if="hictkLoadSources.length > 0"
+                  class="alert alert-info mt-3 mb-0"
+                >
+                  <div class="fw-semibold mb-1">
+                    Additional text matrix formats
+                  </div>
                   <div>
-                    HiCT can load Hi-C Pro .matrix, COO TSV/CSV, BEDPE/bedGraph2, pairs, and validPairs files
-                    through hictk before importing them into .hict.hdf5.
+                    HiCT can load Hi-C Pro .matrix, COO TSV/CSV,
+                    BEDPE/bedGraph2, pairs, and validPairs files through hictk
+                    before importing them into .hict.hdf5.
                   </div>
                 </div>
               </div>
 
-              <div v-else-if="currentStep?.id === 'visualization'" class="wizard-section">
+              <div
+                v-else-if="currentStep?.id === 'visualization'"
+                class="wizard-section"
+              >
                 <h6>Visualization Options</h6>
                 <div class="wizard-source-grid">
                   <div class="wizard-card">
@@ -198,21 +283,41 @@
                     </div>
                     <div class="wizard-card-body">
                       <label class="form-label">Preset</label>
-                      <select v-model="primarySource.presetId" class="form-select">
-                        <option v-for="preset in availablePresets" :key="preset.id" :value="preset.id">
+                      <select
+                        v-model="primarySource.presetId"
+                        class="form-select"
+                      >
+                        <option
+                          v-for="preset in availablePresets"
+                          :key="preset.id"
+                          :value="preset.id"
+                        >
                           {{ preset.label }}
                         </option>
                       </select>
-                      <div v-if="primaryPreset" class="wizard-preset-preview mt-2">
-                        <small class="text-muted d-block">Background: {{ primaryPreset.preset.backgroundColor }}</small>
+                      <div
+                        v-if="primaryPreset"
+                        class="wizard-preset-preview mt-2"
+                      >
+                        <small class="text-muted d-block"
+                          >Background:
+                          {{ primaryPreset.preset.backgroundColor }}</small
+                        >
                         <small class="text-muted d-block">
-                          Signal view: {{ primaryPreset.preset.options.signalDisplayMode }}
+                          Signal view:
+                          {{ primaryPreset.preset.options.signalDisplayMode }}
                         </small>
                         <small class="text-muted d-block">
                           Thresholds:
-                          {{ primaryPreset.preset.signalThresholds?.lowerSignalBound ?? 0 }}
+                          {{
+                            primaryPreset.preset.signalThresholds
+                              ?.lowerSignalBound ?? 0
+                          }}
                           →
-                          {{ primaryPreset.preset.signalThresholds?.upperSignalBound ?? 1 }}
+                          {{
+                            primaryPreset.preset.signalThresholds
+                              ?.upperSignalBound ?? 1
+                          }}
                         </small>
                       </div>
                     </div>
@@ -224,29 +329,54 @@
                     </div>
                     <div class="wizard-card-body">
                       <label class="form-label">Preset</label>
-                      <select v-model="secondarySource.presetId" class="form-select">
-                        <option v-for="preset in availablePresets" :key="preset.id" :value="preset.id">
+                      <select
+                        v-model="secondarySource.presetId"
+                        class="form-select"
+                      >
+                        <option
+                          v-for="preset in availablePresets"
+                          :key="preset.id"
+                          :value="preset.id"
+                        >
                           {{ preset.label }}
                         </option>
                       </select>
-                      <div v-if="secondaryPreset" class="wizard-preset-preview mt-2">
-                        <small class="text-muted d-block">Background: {{ secondaryPreset.preset.backgroundColor }}</small>
+                      <div
+                        v-if="secondaryPreset"
+                        class="wizard-preset-preview mt-2"
+                      >
+                        <small class="text-muted d-block"
+                          >Background:
+                          {{ secondaryPreset.preset.backgroundColor }}</small
+                        >
                         <small class="text-muted d-block">
-                          Signal view: {{ secondaryPreset.preset.options.signalDisplayMode }}
+                          Signal view:
+                          {{ secondaryPreset.preset.options.signalDisplayMode }}
                         </small>
                         <small class="text-muted d-block">
                           Thresholds:
-                          {{ secondaryPreset.preset.signalThresholds?.lowerSignalBound ?? 0 }}
+                          {{
+                            secondaryPreset.preset.signalThresholds
+                              ?.lowerSignalBound ?? 0
+                          }}
                           →
-                          {{ secondaryPreset.preset.signalThresholds?.upperSignalBound ?? 1 }}
+                          {{
+                            secondaryPreset.preset.signalThresholds
+                              ?.upperSignalBound ?? 1
+                          }}
                         </small>
                       </div>
                     </div>
                   </div>
                 </div>
-                <div v-if="usesExpectedPreset" class="alert alert-info mt-3 mb-0">
-                  Expected and O/E are computed independently inside each scaffold. If the opened assembly has no
-                  scaffolds yet, each contig is treated as its own scaffold for expected-value estimation.
+                <div
+                  v-if="usesExpectedPreset"
+                  class="alert alert-info mt-3 mb-0"
+                >
+                  Expected and O/E are computed independently inside each
+                  scaffold. If the opened assembly has no scaffolds yet, each
+                  contig is treated as its own scaffold for expected-value
+                  estimation.
                 </div>
                 <div v-if="requiresSecondarySource" class="wizard-card mt-3">
                   <div class="wizard-card-header">
@@ -257,153 +387,364 @@
                       <div class="col-md-6">
                         <label class="form-label">Pixel blend mode</label>
                         <select v-model="blendMode" class="form-select">
-                          <option v-for="mode in BLEND_MODES" :key="mode" :value="mode">{{ mode }}</option>
+                          <option
+                            v-for="mode in BLEND_MODES"
+                            :key="mode"
+                            :value="mode"
+                          >
+                            {{ mode }}
+                          </option>
                         </select>
                       </div>
                       <div class="col-md-3">
-                        <label class="form-label">Top opacity (secondary)</label>
-                        <input v-model.number="topOpacity" class="form-control" type="number" min="0" max="1" step="0.05" />
+                        <label class="form-label"
+                          >Top opacity (secondary)</label
+                        >
+                        <input
+                          v-model.number="topOpacity"
+                          class="form-control"
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                        />
                       </div>
                       <div class="col-md-3">
-                        <label class="form-label">Bottom opacity (primary)</label>
-                        <input v-model.number="bottomOpacity" class="form-control" type="number" min="0" max="1" step="0.05" />
+                        <label class="form-label"
+                          >Bottom opacity (primary)</label
+                        >
+                        <input
+                          v-model.number="bottomOpacity"
+                          class="form-control"
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                        />
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div v-else-if="currentStep?.id === 'tracks'" class="wizard-section">
-                <div class="d-flex justify-content-between align-items-center mb-2">
+              <div
+                v-else-if="currentStep?.id === 'tracks'"
+                class="wizard-section"
+              >
+                <div
+                  class="d-flex justify-content-between align-items-center mb-2"
+                >
                   <h6 class="mb-0">1D tracks</h6>
-                  <button class="btn btn-outline-primary btn-sm" @click="openSelector('track')">Add tracks…</button>
+                  <button
+                    class="btn btn-outline-primary btn-sm"
+                    @click="openSelector('track')"
+                  >
+                    Add tracks…
+                  </button>
                 </div>
-                <div v-if="selectedTracks.length === 0" class="alert alert-light border">
+                <div
+                  v-if="selectedTracks.length === 0"
+                  class="alert alert-light border"
+                >
                   No tracks selected. This step is optional.
                 </div>
                 <div v-else class="wizard-track-list">
-                  <div v-for="track in selectedTracks" :key="track.filename" class="wizard-track-item">
-                    <div class="d-flex justify-content-between align-items-start gap-3">
+                  <div
+                    v-for="track in selectedTracks"
+                    :key="track.filename"
+                    class="wizard-track-item"
+                  >
+                    <div
+                      class="d-flex justify-content-between align-items-start gap-3"
+                    >
                       <div>
-                        <strong>{{ track.displayName || track.filename.split('/').pop() }}</strong>
+                        <strong>{{
+                          track.displayName || track.filename.split("/").pop()
+                        }}</strong>
                         <code class="d-block">{{ track.filename }}</code>
-                        <small v-if="track.compatibility" class="d-block text-muted">
+                        <small
+                          v-if="track.compatibility"
+                          class="d-block text-muted"
+                        >
                           {{ track.compatibility.message }}
                         </small>
-                        <small v-if="track.precomputeProbe" class="d-block text-muted">
+                        <small
+                          v-if="track.precomputeProbe"
+                          class="d-block text-muted"
+                        >
                           Precompute cache:
                           {{
                             track.precomputeProbe.cacheCurrent
                               ? "current"
                               : track.precomputeProbe.cacheAvailable
-                                ? "stale"
-                                : "missing"
+                              ? "stale"
+                              : "missing"
                           }}
                         </small>
                       </div>
-                      <button class="btn btn-outline-danger btn-sm" @click="removeTrack(track.filename)">
+                      <button
+                        class="btn btn-outline-danger btn-sm"
+                        @click="removeTrack(track.filename)"
+                      >
                         Remove
                       </button>
                     </div>
                     <div class="row g-2 mt-2">
                       <div class="col-md-6">
                         <label class="form-label">Display name</label>
-                        <input v-model="track.displayName" class="form-control form-control-sm" type="text" placeholder="Optional" />
+                        <input
+                          v-model="track.displayName"
+                          class="form-control form-control-sm"
+                          type="text"
+                          placeholder="Optional"
+                        />
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div v-else-if="currentStep?.id === 'conversion'" class="wizard-section">
+              <div
+                v-else-if="currentStep?.id === 'conversion'"
+                class="wizard-section"
+              >
                 <h6>Map Files Conversion</h6>
                 <div class="wizard-card mb-3">
                   <div class="wizard-card-body">
                     <div class="form-check">
-                      <input id="primary-force-conversion" v-model="primarySource.forceConversion" class="form-check-input" type="checkbox" />
-                      <label class="form-check-label" for="primary-force-conversion">
-                        Force primary conversion even when cached output is current
+                      <input
+                        id="primary-force-conversion"
+                        v-model="primarySource.forceConversion"
+                        class="form-check-input"
+                        type="checkbox"
+                      />
+                      <label
+                        class="form-check-label"
+                        for="primary-force-conversion"
+                      >
+                        Force primary conversion even when cached output is
+                        current
                       </label>
                     </div>
                     <div v-if="requiresSecondarySource" class="form-check mt-2">
-                      <input id="secondary-force-conversion" v-model="secondarySource.forceConversion" class="form-check-input" type="checkbox" />
-                      <label class="form-check-label" for="secondary-force-conversion">
-                        Force secondary conversion even when cached output is current
+                      <input
+                        id="secondary-force-conversion"
+                        v-model="secondarySource.forceConversion"
+                        class="form-check-input"
+                        type="checkbox"
+                      />
+                      <label
+                        class="form-check-label"
+                        for="secondary-force-conversion"
+                      >
+                        Force secondary conversion even when cached output is
+                        current
                       </label>
                     </div>
                     <div class="form-check mt-2">
-                      <input id="drop-caches-before-run" v-model="dropCachesBeforeRun" class="form-check-input" type="checkbox" />
-                      <label class="form-check-label" for="drop-caches-before-run">
+                      <input
+                        id="drop-caches-before-run"
+                        v-model="dropCachesBeforeRun"
+                        class="form-check-input"
+                        type="checkbox"
+                      />
+                      <label
+                        class="form-check-label"
+                        for="drop-caches-before-run"
+                      >
                         Drop all precomputed caches before running the wizard
                       </label>
                     </div>
-                    <div v-if="hasSelectedCoolerSource" class="form-check form-switch mt-3">
-                      <input id="build-resolution-pyramid" v-model="buildResolutionPyramid" class="form-check-input" type="checkbox" />
-                      <label class="form-check-label" for="build-resolution-pyramid">
+                    <div
+                      v-if="hasSelectedCoolerSource"
+                      class="form-check form-switch mt-3"
+                    >
+                      <input
+                        id="build-resolution-pyramid"
+                        v-model="buildResolutionPyramid"
+                        class="form-check-input"
+                        type="checkbox"
+                      />
+                      <label
+                        class="form-check-label"
+                        for="build-resolution-pyramid"
+                      >
                         Build optimized resolution pyramid with hictk
                       </label>
                       <div class="form-text">
-                        Enabled by default. HiCT will zoomify converted Cooler inputs before import so sparse or single-resolution files open with a complete set of map resolutions.
+                        Enabled by default. HiCT will zoomify converted Cooler
+                        inputs before import so sparse or single-resolution
+                        files open with a complete set of map resolutions.
                       </div>
                     </div>
-                    <div v-if="hasSelectedCoolerSource" class="form-check form-switch mt-3">
-                      <input id="balance-input-coolers" v-model="balanceInputCoolers" class="form-check-input" type="checkbox" />
-                      <label class="form-check-label" for="balance-input-coolers">
+                    <div
+                      v-if="hasSelectedCoolerSource"
+                      class="form-check form-switch mt-3"
+                    >
+                      <input
+                        id="balance-input-coolers"
+                        v-model="balanceInputCoolers"
+                        class="form-check-input"
+                        type="checkbox"
+                      />
+                      <label
+                        class="form-check-label"
+                        for="balance-input-coolers"
+                      >
                         Balance input Coolers with hictk
                       </label>
                       <div class="form-text">
-                        Enabled by default for .cool/.mcool inputs. HiCT will run hictk ICE balancing before importing so Cooler weights are available immediately.
+                        Enabled by default for .cool/.mcool inputs. HiCT will
+                        run hictk ICE balancing before importing so Cooler
+                        weights are available immediately.
                       </div>
                     </div>
-                    <div v-if="toolchainStatus && !toolchainStatus.hicConversionAvailable" class="alert alert-warning mt-3 mb-0">
+                    <div
+                      v-if="
+                        toolchainStatus &&
+                        !toolchainStatus.hicConversionAvailable
+                      "
+                      class="alert alert-warning mt-3 mb-0"
+                    >
                       {{ toolchainStatus.summary }}
                     </div>
-                    <div v-if="selectedHicToolchainNote" class="alert alert-info mt-3 mb-0">
-                      <div class="fw-semibold mb-1">.hic processing with hictk</div>
-                      <div v-for="(line, index) in selectedHicToolchainNote" :key="`conversion-hictk-${index}-${line}`">
+                    <div
+                      v-if="selectedHicToolchainNote"
+                      class="alert alert-info mt-3 mb-0"
+                    >
+                      <div class="fw-semibold mb-1">
+                        .hic processing with hictk
+                      </div>
+                      <div
+                        v-for="(line, index) in selectedHicToolchainNote"
+                        :key="`conversion-hictk-${index}-${line}`"
+                      >
                         {{ line }}
                       </div>
                       <div class="mt-1">
                         Project:
-                        <a :href="hictkProjectUrl" target="_blank" rel="noopener noreferrer">hictk</a>
+                        <a
+                          :href="hictkProjectUrl"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          >hictk</a
+                        >
                       </div>
                       <div>Citation: {{ hictkCitationText }}</div>
                     </div>
-                    <div v-for="source in conversionSidecarSources" :key="`sidecar-${source.role}`" class="wizard-sidecar-card mt-3">
+                    <div
+                      v-for="source in conversionSidecarSources"
+                      :key="`sidecar-${source.role}`"
+                      class="wizard-sidecar-card mt-3"
+                    >
                       <div class="fw-semibold mb-2">
-                        {{ source.role === "primary" ? "Primary" : "Secondary" }} {{ source.formatLabel }} options
+                        {{
+                          source.role === "primary" ? "Primary" : "Secondary"
+                        }}
+                        {{ source.formatLabel }} options
                       </div>
                       <div v-if="source.needsBinTable" class="mb-2">
                         <label class="form-label">BED3+ bin table</label>
                         <div class="input-group">
-                          <input class="form-control" type="text" readonly :value="source.draft.binTableFilename || 'Auto-detect same-stem .bed when possible'" />
-                          <button class="btn btn-outline-secondary" @click="openSelector(source.role === 'primary' ? 'primary-bin-table' : 'secondary-bin-table')">Browse…</button>
-                          <button class="btn btn-outline-danger" :disabled="!source.draft.binTableFilename" @click="source.draft.binTableFilename = ''">Clear</button>
+                          <input
+                            class="form-control"
+                            type="text"
+                            readonly
+                            :value="
+                              source.draft.binTableFilename ||
+                              'Auto-detect same-stem .bed when possible'
+                            "
+                          />
+                          <button
+                            class="btn btn-outline-secondary"
+                            @click="
+                              openSelector(
+                                source.role === 'primary'
+                                  ? 'primary-bin-table'
+                                  : 'secondary-bin-table'
+                              )
+                            "
+                          >
+                            Browse…
+                          </button>
+                          <button
+                            class="btn btn-outline-danger"
+                            :disabled="!source.draft.binTableFilename"
+                            @click="source.draft.binTableFilename = ''"
+                          >
+                            Clear
+                          </button>
                         </div>
                         <small class="text-muted">
-                          Hi-C Pro .matrix requires the matching bin BED. Generic COO can auto-generate a synthetic 1 bp bin table for plain text or .gz input.
+                          Hi-C Pro .matrix requires the matching bin BED.
+                          Generic COO can auto-generate a synthetic 1 bp bin
+                          table for plain text or .gz input.
                         </small>
                       </div>
                       <div v-if="source.needsChromSizes" class="row g-2">
                         <div class="col-md-8">
                           <label class="form-label">Chrom sizes</label>
                           <div class="input-group">
-                            <input class="form-control" type="text" readonly :value="source.draft.chromSizesFilename || 'Select .chrom.sizes file'" />
-                            <button class="btn btn-outline-secondary" @click="openSelector(source.role === 'primary' ? 'primary-chrom-sizes' : 'secondary-chrom-sizes')">Browse…</button>
-                            <button class="btn btn-outline-danger" :disabled="!source.draft.chromSizesFilename" @click="source.draft.chromSizesFilename = ''">Clear</button>
+                            <input
+                              class="form-control"
+                              type="text"
+                              readonly
+                              :value="
+                                source.draft.chromSizesFilename ||
+                                'Select .chrom.sizes file'
+                              "
+                            />
+                            <button
+                              class="btn btn-outline-secondary"
+                              @click="
+                                openSelector(
+                                  source.role === 'primary'
+                                    ? 'primary-chrom-sizes'
+                                    : 'secondary-chrom-sizes'
+                                )
+                              "
+                            >
+                              Browse…
+                            </button>
+                            <button
+                              class="btn btn-outline-danger"
+                              :disabled="!source.draft.chromSizesFilename"
+                              @click="source.draft.chromSizesFilename = ''"
+                            >
+                              Clear
+                            </button>
                           </div>
                         </div>
                         <div class="col-md-4">
                           <label class="form-label">Bin size</label>
-                          <input v-model.number="source.draft.binSize" class="form-control" type="number" min="1" step="1" placeholder="required" />
+                          <input
+                            v-model.number="source.draft.binSize"
+                            class="form-control"
+                            type="number"
+                            min="1"
+                            step="1"
+                            placeholder="required"
+                          />
                         </div>
                         <small class="text-muted">
-                          BEDPE/bedGraph2 and validPairs inputs need chromosome lengths plus a target bin size.
+                          BEDPE/bedGraph2 and validPairs inputs need chromosome
+                          lengths plus a target bin size.
                         </small>
                       </div>
-                      <div v-if="source.supportsFloatCounts" class="form-check mt-2">
-                        <input :id="`${source.role}-count-as-float`" v-model="source.draft.countAsFloat" class="form-check-input" type="checkbox" />
-                        <label class="form-check-label" :for="`${source.role}-count-as-float`">
+                      <div
+                        v-if="source.supportsFloatCounts"
+                        class="form-check mt-2"
+                      >
+                        <input
+                          :id="`${source.role}-count-as-float`"
+                          v-model="source.draft.countAsFloat"
+                          class="form-check-input"
+                          type="checkbox"
+                        />
+                        <label
+                          class="form-check-label"
+                          :for="`${source.role}-count-as-float`"
+                        >
                           Counts are floating-point values
                         </label>
                       </div>
@@ -417,14 +758,22 @@
                   </li>
                   <li v-if="requiresSecondarySource" class="list-group-item">
                     Secondary:
-                    <strong>{{ describeConversionPlan(secondarySource) }}</strong>
+                    <strong>{{
+                      describeConversionPlan(secondarySource)
+                    }}</strong>
                   </li>
                 </ul>
               </div>
 
-              <div v-else-if="currentStep?.id === 'fasta'" class="wizard-section">
+              <div
+                v-else-if="currentStep?.id === 'fasta'"
+                class="wizard-section"
+              >
                 <h6>FASTA files</h6>
-                <div v-if="selectedHicSourceCount > 0" class="alert alert-warning mb-3">
+                <div
+                  v-if="selectedHicSourceCount > 0"
+                  class="alert alert-warning mb-3"
+                >
                   {{ hicAssemblyAndFastaWarning }}
                 </div>
                 <div class="wizard-source-grid">
@@ -434,8 +783,20 @@
                     </div>
                     <div class="wizard-card-body">
                       <div class="input-group">
-                        <input class="form-control" type="text" readonly :value="primaryFasta || 'Optional FASTA for primary source'" />
-                        <button class="btn btn-outline-secondary" @click="openSelector('primary-fasta')">Browse…</button>
+                        <input
+                          class="form-control"
+                          type="text"
+                          readonly
+                          :value="
+                            primaryFasta || 'Optional FASTA for primary source'
+                          "
+                        />
+                        <button
+                          class="btn btn-outline-secondary"
+                          @click="openSelector('primary-fasta')"
+                        >
+                          Browse…
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -445,8 +806,21 @@
                     </div>
                     <div class="wizard-card-body">
                       <div class="input-group">
-                        <input class="form-control" type="text" readonly :value="secondaryFasta || 'Optional FASTA for secondary source'" />
-                        <button class="btn btn-outline-secondary" @click="openSelector('secondary-fasta')">Browse…</button>
+                        <input
+                          class="form-control"
+                          type="text"
+                          readonly
+                          :value="
+                            secondaryFasta ||
+                            'Optional FASTA for secondary source'
+                          "
+                        />
+                        <button
+                          class="btn btn-outline-secondary"
+                          @click="openSelector('secondary-fasta')"
+                        >
+                          Browse…
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -459,12 +833,27 @@
                   <div class="wizard-card">
                     <div class="wizard-card-header">
                       <strong>Primary assembly</strong>
-                      <SequenceGapSettings :request-manager="props.networkManager.requestManager" />
+                      <SequenceGapSettings
+                        :request-manager="props.networkManager.requestManager"
+                      />
                     </div>
                     <div class="wizard-card-body">
                       <div class="input-group">
-                        <input class="form-control" type="text" readonly :value="primaryAgp || 'Optional .agp or Juicebox .assembly for primary source'" />
-                        <button class="btn btn-outline-secondary" @click="openSelector('primary-agp')">Browse…</button>
+                        <input
+                          class="form-control"
+                          type="text"
+                          readonly
+                          :value="
+                            primaryAgp ||
+                            'Optional .agp or Juicebox .assembly for primary source'
+                          "
+                        />
+                        <button
+                          class="btn btn-outline-secondary"
+                          @click="openSelector('primary-agp')"
+                        >
+                          Browse…
+                        </button>
                         <button
                           v-if="primaryAgp?.toLowerCase().endsWith('.assembly')"
                           class="btn btn-outline-primary"
@@ -474,10 +863,14 @@
                         </button>
                       </div>
                       <small class="text-muted d-block mt-2">
-                        .agp is loaded after opening. .assembly is passed to .hic conversion; for already converted
-                        matrices it must be converted to AGP before applying layout.
+                        .agp is loaded after opening. .assembly is passed to
+                        .hic conversion; for already converted matrices it must
+                        be converted to AGP before applying layout.
                       </small>
-                      <div v-if="selectedHicSourceCount > 0" class="alert alert-warning mt-3 mb-0">
+                      <div
+                        v-if="selectedHicSourceCount > 0"
+                        class="alert alert-warning mt-3 mb-0"
+                      >
                         {{ hicAssemblyAndFastaWarning }}
                       </div>
                     </div>
@@ -488,17 +881,35 @@
                     </div>
                     <div class="wizard-card-body">
                       <div class="input-group">
-                        <input class="form-control" type="text" readonly :value="secondaryAgp || 'Optional .agp or Juicebox .assembly for secondary source'" />
-                        <button class="btn btn-outline-secondary" @click="openSelector('secondary-agp')">Browse…</button>
+                        <input
+                          class="form-control"
+                          type="text"
+                          readonly
+                          :value="
+                            secondaryAgp ||
+                            'Optional .agp or Juicebox .assembly for secondary source'
+                          "
+                        />
                         <button
-                          v-if="secondaryAgp?.toLowerCase().endsWith('.assembly')"
+                          class="btn btn-outline-secondary"
+                          @click="openSelector('secondary-agp')"
+                        >
+                          Browse…
+                        </button>
+                        <button
+                          v-if="
+                            secondaryAgp?.toLowerCase().endsWith('.assembly')
+                          "
                           class="btn btn-outline-primary"
                           @click="convertAssemblySelectionToAgp('secondary')"
                         >
                           Convert to AGP
                         </button>
                       </div>
-                      <div v-if="selectedHicSourceCount > 0" class="alert alert-warning mt-3 mb-0">
+                      <div
+                        v-if="selectedHicSourceCount > 0"
+                        class="alert alert-warning mt-3 mb-0"
+                      >
                         {{ hicAssemblyAndFastaWarning }}
                       </div>
                     </div>
@@ -514,12 +925,15 @@
                         <button
                           type="button"
                           class="wizard-choice-card"
-                          :class="{ selected: overlayAssemblySource === 'PRIMARY' }"
+                          :class="{
+                            selected: overlayAssemblySource === 'PRIMARY',
+                          }"
                           @click="overlayAssemblySource = 'PRIMARY'"
                         >
                           <strong>Primary controls overlay</strong>
                           <small>
-                            Primary AGP/current layout is propagated to secondary; hidden contigs stay hidden in both
+                            Primary AGP/current layout is propagated to
+                            secondary; hidden contigs stay hidden in both
                             layers.
                           </small>
                         </button>
@@ -528,40 +942,61 @@
                         <button
                           type="button"
                           class="wizard-choice-card"
-                          :class="{ selected: overlayAssemblySource === 'SECONDARY' }"
+                          :class="{
+                            selected: overlayAssemblySource === 'SECONDARY',
+                          }"
                           @click="overlayAssemblySource = 'SECONDARY'"
                         >
                           <strong>Secondary controls overlay</strong>
                           <small>
-                            Secondary AGP/current layout is propagated to primary when the dotplot or companion source
-                            is already scaffolded.
+                            Secondary AGP/current layout is propagated to
+                            primary when the dotplot or companion source is
+                            already scaffolded.
                           </small>
                         </button>
                       </div>
                     </div>
                     <small class="text-muted d-block mt-2">
-                      For correctly coupled overlays, apply only the AGP for the selected authoritative source. A
-                      non-authoritative AGP is kept as metadata and is not loaded into the active map state.
+                      For correctly coupled overlays, apply only the AGP for the
+                      selected authoritative source. A non-authoritative AGP is
+                      kept as metadata and is not loaded into the active map
+                      state.
                     </small>
                   </div>
                 </div>
               </div>
 
-              <div v-else-if="currentStep?.id === 'track-precompute'" class="wizard-section">
+              <div
+                v-else-if="currentStep?.id === 'track-precompute'"
+                class="wizard-section"
+              >
                 <h6>Track Precomputing</h6>
                 <div class="form-check">
-                  <input id="enable-track-precompute" v-model="precomputeTracks" class="form-check-input" type="checkbox" />
+                  <input
+                    id="enable-track-precompute"
+                    v-model="precomputeTracks"
+                    class="form-check-input"
+                    type="checkbox"
+                  />
                   <label class="form-check-label" for="enable-track-precompute">
                     Precompute selected tracks after opening
                   </label>
                 </div>
                 <div class="form-check mt-2" v-if="precomputeTracks">
-                  <input id="force-track-precompute" v-model="forceTrackPrecompute" class="form-check-input" type="checkbox" />
+                  <input
+                    id="force-track-precompute"
+                    v-model="forceTrackPrecompute"
+                    class="form-check-input"
+                    type="checkbox"
+                  />
                   <label class="form-check-label" for="force-track-precompute">
                     Force track precompute and overwrite existing sidecars
                   </label>
                 </div>
-                <div v-if="runState.trackPrecomputeStatus" class="alert alert-light border mt-3">
+                <div
+                  v-if="runState.trackPrecomputeStatus"
+                  class="alert alert-light border mt-3"
+                >
                   <div
                     v-for="item in runState.trackPrecomputeStatus.tracks"
                     :key="item.trackId"
@@ -569,40 +1004,69 @@
                   >
                     <div class="d-flex justify-content-between">
                       <small>{{ item.trackName }}</small>
-                      <small>{{ item.status }} {{ Math.round(item.progress * 100) }}%</small>
+                      <small
+                        >{{ item.status }}
+                        {{ Math.round(item.progress * 100) }}%</small
+                      >
                     </div>
                     <div class="progress" style="height: 6px">
                       <div
                         class="progress-bar"
                         role="progressbar"
-                        :style="{ width: `${Math.round(item.progress * 100)}%` }"
+                        :style="{
+                          width: `${Math.round(item.progress * 100)}%`,
+                        }"
                       ></div>
                     </div>
-                    <small v-if="item.currentTask" class="text-muted d-block">{{ item.currentTask }}</small>
-                    <small v-if="item.error" class="text-danger d-block">{{ item.error }}</small>
+                    <small v-if="item.currentTask" class="text-muted d-block">{{
+                      item.currentTask
+                    }}</small>
+                    <small v-if="item.error" class="text-danger d-block">{{
+                      item.error
+                    }}</small>
                   </div>
                 </div>
               </div>
 
-              <div v-else-if="currentStep?.id === 'notes'" class="wizard-section">
+              <div
+                v-else-if="currentStep?.id === 'notes'"
+                class="wizard-section"
+              >
                 <h6>Notes and Warnings</h6>
                 <div class="wizard-check-list">
                   <div
                     v-for="item in wizardCheckItems"
                     :key="item.id"
                     class="alert wizard-check"
-                    :class="item.kind === 'pass' ? 'alert-success' : item.kind === 'warning' ? 'alert-warning' : 'alert-danger'"
+                    :class="
+                      item.kind === 'pass'
+                        ? 'alert-success'
+                        : item.kind === 'warning'
+                        ? 'alert-warning'
+                        : 'alert-danger'
+                    "
                   >
                     <div class="d-flex align-items-start gap-2">
-                      <div v-if="item.kind === 'pending'" class="spinner-border spinner-border-sm mt-1" role="status"></div>
+                      <div
+                        v-if="item.kind === 'pending'"
+                        class="spinner-border spinner-border-sm mt-1"
+                        role="status"
+                      ></div>
                       <div class="flex-grow-1">
                         <strong>{{ item.title }}</strong>
                         <div>{{ item.message }}</div>
-                        <div v-if="item.fixable" class="btn-group btn-group-sm mt-2">
+                        <div
+                          v-if="item.fixable"
+                          class="btn-group btn-group-sm mt-2"
+                        >
                           <button
                             type="button"
                             class="btn"
-                            :class="fixableIssuePolicy[item.id] !== 'discard' ? 'btn-primary' : 'btn-outline-primary'"
+                            :class="
+                              fixableIssuePolicy[item.id] !== 'discard'
+                                ? 'btn-primary'
+                                : 'btn-outline-primary'
+                            "
                             @click="fixableIssuePolicy[item.id] = 'ignore'"
                           >
                             Ignore
@@ -610,7 +1074,11 @@
                           <button
                             type="button"
                             class="btn"
-                            :class="fixableIssuePolicy[item.id] === 'discard' ? 'btn-warning' : 'btn-outline-warning'"
+                            :class="
+                              fixableIssuePolicy[item.id] === 'discard'
+                                ? 'btn-warning'
+                                : 'btn-outline-warning'
+                            "
                             @click="fixableIssuePolicy[item.id] = 'discard'"
                           >
                             Discard
@@ -622,7 +1090,10 @@
                 </div>
               </div>
 
-              <div v-else-if="currentStep?.id === 'finish'" class="wizard-section">
+              <div
+                v-else-if="currentStep?.id === 'finish'"
+                class="wizard-section"
+              >
                 <h6 class="d-flex align-items-center gap-2">
                   <div
                     v-if="runState.running"
@@ -633,39 +1104,71 @@
                   <span>Final Checks</span>
                 </h6>
                 <div class="alert alert-light border">
-                  <div><strong>View Mode:</strong> {{ currentViewModeLabel }}</div>
-                  <div><strong>Primary source:</strong> {{ primarySource.filename || "not selected" }}</div>
-                  <div v-if="requiresSecondarySource"><strong>Secondary source:</strong> {{ secondarySource.filename || "not selected" }}</div>
-                  <div><strong>Tracks:</strong> {{ selectedTracks.length }}</div>
-                  <div><strong>Primary assembly:</strong> {{ primaryAgp || "not selected" }}</div>
-                  <div v-if="requiresSecondarySource"><strong>Secondary assembly:</strong> {{ secondaryAgp || "not selected" }}</div>
-                  <div v-if="requiresSecondarySource"><strong>Overlay assembly source:</strong> {{ overlayAssemblySource }}</div>
+                  <div>
+                    <strong>View Mode:</strong> {{ currentViewModeLabel }}
+                  </div>
+                  <div>
+                    <strong>Primary source:</strong>
+                    {{ primarySource.filename || "not selected" }}
+                  </div>
+                  <div v-if="requiresSecondarySource">
+                    <strong>Secondary source:</strong>
+                    {{ secondarySource.filename || "not selected" }}
+                  </div>
+                  <div>
+                    <strong>Tracks:</strong> {{ selectedTracks.length }}
+                  </div>
+                  <div>
+                    <strong>Primary assembly:</strong>
+                    {{ primaryAgp || "not selected" }}
+                  </div>
+                  <div v-if="requiresSecondarySource">
+                    <strong>Secondary assembly:</strong>
+                    {{ secondaryAgp || "not selected" }}
+                  </div>
+                  <div v-if="requiresSecondarySource">
+                    <strong>Overlay assembly source:</strong>
+                    {{ overlayAssemblySource }}
+                  </div>
                 </div>
                 <div class="wizard-check-list mb-3">
                   <div
                     v-for="item in wizardCheckItems"
                     :key="`final-${item.id}`"
                     class="alert wizard-check"
-                    :class="item.kind === 'pass' ? 'alert-success' : item.kind === 'warning' ? 'alert-warning' : 'alert-danger'"
+                    :class="
+                      item.kind === 'pass'
+                        ? 'alert-success'
+                        : item.kind === 'warning'
+                        ? 'alert-warning'
+                        : 'alert-danger'
+                    "
                   >
                     <strong>{{ item.title }}</strong>
                     <div>{{ item.message }}</div>
                   </div>
                 </div>
                 <div v-if="runState.running" class="alert alert-info">
-                  <div class="d-flex justify-content-between align-items-center">
+                  <div
+                    class="d-flex justify-content-between align-items-center"
+                  >
                     <strong>{{ currentRunStepLabel }}</strong>
                     <span>{{ runState.currentMessage }}</span>
                   </div>
                   <div v-if="runState.currentConversion" class="mt-2">
                     <small class="d-block">
-                      {{ runState.currentConversion.sourceFilename }} → {{ runState.currentConversion.outputFilename }}
+                      {{ runState.currentConversion.sourceFilename }} →
+                      {{ runState.currentConversion.outputFilename }}
                     </small>
                     <div class="progress mt-1" style="height: 8px">
                       <div
                         class="progress-bar progress-bar-striped progress-bar-animated"
                         role="progressbar"
-                        :style="{ width: `${Math.round(runState.currentConversion.overallProgress * 100)}%` }"
+                        :style="{
+                          width: `${Math.round(
+                            runState.currentConversion.overallProgress * 100
+                          )}%`,
+                        }"
                       ></div>
                     </div>
                     <details
@@ -677,26 +1180,44 @@
                       <summary>
                         Conversion log
                         <span class="text-muted fw-normal">
-                          ({{ conversionLogVisibleLineCount }} line{{ conversionLogVisibleLineCount === 1 ? "" : "s" }}
-                          <span v-if="conversionLogTruncated">, tail only</span>)
+                          ({{ conversionLogVisibleLineCount }} line{{
+                            conversionLogVisibleLineCount === 1 ? "" : "s"
+                          }}
+                          <span v-if="conversionLogTruncated">, tail only</span
+                          >)
                         </span>
                       </summary>
-                      <pre v-if="conversionLogExpanded">{{ conversionLogText }}</pre>
+                      <pre v-if="conversionLogExpanded">{{
+                        conversionLogText
+                      }}</pre>
                     </details>
                   </div>
                 </div>
-                <div v-if="runState.error" class="alert alert-danger">{{ runState.error }}</div>
-                <div v-if="runState.completed && !runState.error" class="alert alert-success">
+                <div v-if="runState.error" class="alert alert-danger">
+                  {{ runState.error }}
+                </div>
+                <div
+                  v-if="runState.completed && !runState.error"
+                  class="alert alert-success"
+                >
                   Wizard completed successfully.
                 </div>
               </div>
             </section>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" :disabled="runState.running" @click="emit('dismissed')">
+            <button
+              class="btn btn-secondary"
+              :disabled="runState.running"
+              @click="emit('dismissed')"
+            >
               {{ runState.completed ? "Close" : "Cancel" }}
             </button>
-            <button class="btn btn-outline-secondary" :disabled="runState.running || currentStepIndex === 0" @click="goBack">
+            <button
+              class="btn btn-outline-secondary"
+              :disabled="runState.running || currentStepIndex === 0"
+              @click="goBack"
+            >
               Back
             </button>
             <button
@@ -769,7 +1290,15 @@ import { useSessionStore } from "@/app/stores/sessionStore";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { ColorTranslator } from "colortranslator";
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
 import { toast } from "vue-sonner";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
@@ -899,12 +1428,14 @@ const viewModeCards: Array<{
   {
     id: "overlay",
     label: "Two maps overlaid",
-    description: "Open primary and secondary sources and blend full-map colors per pixel.",
+    description:
+      "Open primary and secondary sources and blend full-map colors per pixel.",
   },
   {
     id: "split",
     label: "Upper/lower triangular",
-    description: "Open two sources and render primary on the upper triangle and secondary on the lower triangle.",
+    description:
+      "Open two sources and render primary on the upper triangle and secondary on the lower triangle.",
   },
 ];
 
@@ -1002,8 +1533,7 @@ const updateConversionLogMetadata = (): void => {
     ? logs.length
     : Math.min(logs.length, MAX_CONVERSION_LOG_LINES);
   conversionLogTruncated.value =
-    logs.length > MAX_CONVERSION_LOG_LINES ||
-    hasNotice;
+    logs.length > MAX_CONVERSION_LOG_LINES || hasNotice;
 };
 
 const renderConversionLogText = (): void => {
@@ -1040,7 +1570,9 @@ const scheduleConversionLogRender = (immediate = false): void => {
 };
 
 const onConversionLogToggle = (event: Event): void => {
-  conversionLogExpanded.value = (event.currentTarget as HTMLDetailsElement).open;
+  conversionLogExpanded.value = (
+    event.currentTarget as HTMLDetailsElement
+  ).open;
   scheduleConversionLogRender(true);
 };
 
@@ -1089,13 +1621,17 @@ const secondaryPreset = computed(() => {
 });
 
 const currentViewModeLabel = computed(
-  () => viewModeCards.find((mode) => mode.id === viewMode.value)?.label ?? viewMode.value
+  () =>
+    viewModeCards.find((mode) => mode.id === viewMode.value)?.label ??
+    viewMode.value
 );
 
 const currentRunStepLabel = computed(
   () =>
     steps.find((step) => step.id === runState.currentStepId)?.label ??
-    (runState.currentStepId === "conversion" ? "Map Files Conversion" : "Running")
+    (runState.currentStepId === "conversion"
+      ? "Map Files Conversion"
+      : "Running")
 );
 
 const findPresetIdByName = (name: string): string =>
@@ -1104,7 +1640,8 @@ const findPresetIdByName = (name: string): string =>
   "";
 
 const findOptionalPresetIdByName = (name: string): string =>
-  availablePresets.value.find((preset) => preset.preset.name === name)?.id ?? "";
+  availablePresets.value.find((preset) => preset.preset.name === name)?.id ??
+  "";
 
 const findSecondaryOverlayPresetId = (): string =>
   findOptionalPresetIdByName("Dotplot overlay black") ||
@@ -1119,10 +1656,11 @@ const usesExpectedPreset = computed(
       secondaryPreset.value?.preset.options.signalDisplayMode !== "OBSERVED")
 );
 
-const selectedHicSourceCount = computed(() =>
-  [primarySource, secondarySource]
-    .filter((source, index) => index === 0 || requiresSecondarySource.value)
-    .filter((source) => source.filename.toLowerCase().endsWith(".hic")).length
+const selectedHicSourceCount = computed(
+  () =>
+    [primarySource, secondarySource]
+      .filter((source, index) => index === 0 || requiresSecondarySource.value)
+      .filter((source) => source.filename.toLowerCase().endsWith(".hic")).length
 );
 
 const matrixSelectorFileTypes =
@@ -1135,13 +1673,17 @@ const hictkLoadSources = computed(() =>
     .filter((source) => isHictkLoadFilename(source.filename))
 );
 
-const hictkConversionSourceCount = computed(() =>
-  [primarySource, secondarySource]
-    .filter((source, index) => index === 0 || requiresSecondarySource.value)
-    .filter((source) => {
-      const lowered = source.filename.toLowerCase();
-      return (lowered.endsWith(".hic") || isHictkLoadFilename(lowered)) && !isResolvedDirectly(source);
-    }).length
+const hictkConversionSourceCount = computed(
+  () =>
+    [primarySource, secondarySource]
+      .filter((source, index) => index === 0 || requiresSecondarySource.value)
+      .filter((source) => {
+        const lowered = source.filename.toLowerCase();
+        return (
+          (lowered.endsWith(".hic") || isHictkLoadFilename(lowered)) &&
+          !isResolvedDirectly(source)
+        );
+      }).length
 );
 
 const conversionSidecarSources = computed(() =>
@@ -1153,11 +1695,23 @@ const conversionSidecarSources = computed(() =>
     .map((entry) => ({
       ...entry,
       formatLabel: hictkLoadFormatLabel(entry.draft.filename),
-      needsBinTable: isHicProMatrixFilename(entry.draft.filename) || isCooFilename(entry.draft.filename),
-      needsChromSizes: isBg2Filename(entry.draft.filename) || isValidPairsFilename(entry.draft.filename),
-      supportsFloatCounts: isCooFilename(entry.draft.filename) || isHicProMatrixFilename(entry.draft.filename) || isBg2Filename(entry.draft.filename),
+      needsBinTable:
+        isHicProMatrixFilename(entry.draft.filename) ||
+        isCooFilename(entry.draft.filename),
+      needsChromSizes:
+        isBg2Filename(entry.draft.filename) ||
+        isValidPairsFilename(entry.draft.filename),
+      supportsFloatCounts:
+        isCooFilename(entry.draft.filename) ||
+        isHicProMatrixFilename(entry.draft.filename) ||
+        isBg2Filename(entry.draft.filename),
     }))
-    .filter((entry) => entry.needsBinTable || entry.needsChromSizes || entry.supportsFloatCounts)
+    .filter(
+      (entry) =>
+        entry.needsBinTable ||
+        entry.needsChromSizes ||
+        entry.supportsFloatCounts
+    )
 );
 
 const hictkProjectUrl = "https://github.com/paulsengroup/hictk";
@@ -1197,16 +1751,16 @@ const selectedHicToolchainCommandText = computed(() => {
   if (!status) {
     return "";
   }
-  return status.hictkCommand ? `Selected executable: ${status.hictkCommand}` : "Selected executable: unavailable";
+  return status.hictkCommand
+    ? `Selected executable: ${status.hictkCommand}`
+    : "Selected executable: unavailable";
 });
 
 const selectedHicToolchainNote = computed(() => {
   if (selectedHicSourceCount.value === 0) {
     return null;
   }
-  const lines = [
-    "HiCT processes .hic files with hictk.",
-  ];
+  const lines = ["HiCT processes .hic files with hictk."];
   lines.push(selectedHicToolchainAvailabilityText.value);
   if (selectedHicToolchainCommandText.value) {
     lines.push(selectedHicToolchainCommandText.value);
@@ -1238,7 +1792,10 @@ const wizardBlockingIssues = computed(() => {
     .filter((source, index) => index === 0 || requiresSecondarySource.value)
     .filter((source) => {
       const lowered = source.filename.toLowerCase();
-      return (lowered.endsWith(".hic") || isHictkLoadFilename(lowered)) && !isResolvedDirectly(source);
+      return (
+        (lowered.endsWith(".hic") || isHictkLoadFilename(lowered)) &&
+        !isResolvedDirectly(source)
+      );
     });
   if (
     sourcesNeedingToolchain.length > 0 &&
@@ -1250,8 +1807,17 @@ const wizardBlockingIssues = computed(() => {
     );
   }
   conversionSidecarSources.value.forEach((source) => {
-    if (source.needsChromSizes && (!source.draft.chromSizesFilename || !source.draft.binSize || source.draft.binSize <= 0)) {
-      issues.push(`${source.role === "primary" ? "Primary" : "Secondary"} ${source.formatLabel} conversion requires chrom sizes and a positive bin size.`);
+    if (
+      source.needsChromSizes &&
+      (!source.draft.chromSizesFilename ||
+        !source.draft.binSize ||
+        source.draft.binSize <= 0)
+    ) {
+      issues.push(
+        `${source.role === "primary" ? "Primary" : "Secondary"} ${
+          source.formatLabel
+        } conversion requires chrom sizes and a positive bin size.`
+      );
     }
   });
   if (viewMode.value !== "single" && usesExpectedPreset.value) {
@@ -1271,7 +1837,10 @@ const wizardNotes = computed(() => {
     source.resolution?.warnings.forEach((warning) => notes.push(warning));
   }
   selectedTracks.value.forEach((track) => {
-    if (track.compatibility?.status === "warning" || track.compatibility?.status === "error") {
+    if (
+      track.compatibility?.status === "warning" ||
+      track.compatibility?.status === "error"
+    ) {
       notes.push(`${track.filename}: ${track.compatibility.message}`);
     }
     if (track.precomputeProbe && !track.precomputeProbe.cacheCurrent) {
@@ -1346,12 +1915,15 @@ const wizardCheckItems = computed<WizardCheckItem[]>(() => {
     );
   }
   if (primaryAgp.value) {
-    const isAuthoritative = !requiresSecondarySource.value || overlayAssemblySource.value === "PRIMARY";
+    const isAuthoritative =
+      !requiresSecondarySource.value ||
+      overlayAssemblySource.value === "PRIMARY";
     items.push({
       id: "primary-assembly",
       kind: !isAuthoritative
         ? "warning"
-        : primaryAgp.value.toLowerCase().endsWith(".agp") || primarySource.filename.toLowerCase().endsWith(".hic")
+        : primaryAgp.value.toLowerCase().endsWith(".agp") ||
+          primarySource.filename.toLowerCase().endsWith(".hic")
         ? "pass"
         : "warning",
       title: "Primary assembly",
@@ -1360,7 +1932,10 @@ const wizardCheckItems = computed<WizardCheckItem[]>(() => {
         : primaryAgp.value.toLowerCase().endsWith(".assembly")
         ? "Juicebox .assembly will be passed to .hic conversion. For already converted matrices, convert it to AGP before applying layout."
         : "AGP will be loaded after the primary matrix is opened.",
-      fixable: isAuthoritative && primaryAgp.value.toLowerCase().endsWith(".assembly") && !primarySource.filename.toLowerCase().endsWith(".hic"),
+      fixable:
+        isAuthoritative &&
+        primaryAgp.value.toLowerCase().endsWith(".assembly") &&
+        !primarySource.filename.toLowerCase().endsWith(".hic"),
     });
   }
   if (secondaryAgp.value && requiresSecondarySource.value) {
@@ -1369,7 +1944,8 @@ const wizardCheckItems = computed<WizardCheckItem[]>(() => {
       id: "secondary-assembly",
       kind: !isAuthoritative
         ? "warning"
-        : secondaryAgp.value.toLowerCase().endsWith(".agp") || secondarySource.filename.toLowerCase().endsWith(".hic")
+        : secondaryAgp.value.toLowerCase().endsWith(".agp") ||
+          secondarySource.filename.toLowerCase().endsWith(".hic")
         ? "pass"
         : "warning",
       title: "Secondary assembly",
@@ -1378,7 +1954,10 @@ const wizardCheckItems = computed<WizardCheckItem[]>(() => {
         : secondaryAgp.value.toLowerCase().endsWith(".assembly")
         ? "Juicebox .assembly will be passed to .hic conversion. For already converted matrices, convert it to AGP before applying layout."
         : "AGP will be loaded after the secondary matrix is opened.",
-      fixable: isAuthoritative && secondaryAgp.value.toLowerCase().endsWith(".assembly") && !secondarySource.filename.toLowerCase().endsWith(".hic"),
+      fixable:
+        isAuthoritative &&
+        secondaryAgp.value.toLowerCase().endsWith(".assembly") &&
+        !secondarySource.filename.toLowerCase().endsWith(".hic"),
     });
   }
   if (selectedTracks.value.length === 0) {
@@ -1393,9 +1972,16 @@ const wizardCheckItems = computed<WizardCheckItem[]>(() => {
       const status = track.compatibility?.status ?? "ok";
       items.push({
         id: `track-${track.filename}`,
-        kind: status === "error" ? "warning" : status === "warning" ? "warning" : "pass",
+        kind:
+          status === "error"
+            ? "warning"
+            : status === "warning"
+            ? "warning"
+            : "pass",
         title: `Track: ${track.displayName || track.filename}`,
-        message: track.compatibility?.message ?? "Track will be opened and precomputed.",
+        message:
+          track.compatibility?.message ??
+          "Track will be opened and precomputed.",
         fixable: status === "error" || status === "warning",
       });
     }
@@ -1416,7 +2002,13 @@ const wizardCheckItems = computed<WizardCheckItem[]>(() => {
       message: "FASTA will be linked to the secondary source.",
     });
   }
-  if ([primarySource, secondarySource].some((source, index) => source.filename.toLowerCase().endsWith(".hic") && (index === 0 || requiresSecondarySource.value))) {
+  if (
+    [primarySource, secondarySource].some(
+      (source, index) =>
+        source.filename.toLowerCase().endsWith(".hic") &&
+        (index === 0 || requiresSecondarySource.value)
+    )
+  ) {
     items.push({
       id: "hic-conversion-guidance",
       kind: "warning",
@@ -1430,7 +2022,10 @@ const wizardCheckItems = computed<WizardCheckItem[]>(() => {
       .filter((source, index) => index === 0 || requiresSecondarySource.value)
       .some((source) => {
         const lowered = source.filename.toLowerCase();
-        return (lowered.endsWith(".hic") || isHictkLoadFilename(lowered)) && !isResolvedDirectly(source);
+        return (
+          (lowered.endsWith(".hic") || isHictkLoadFilename(lowered)) &&
+          !isResolvedDirectly(source)
+        );
       });
     if (hasHicConversion) {
       items.push({
@@ -1454,7 +2049,10 @@ const canAdvanceFromCurrentStep = computed(() => {
         (!requiresSecondarySource.value || secondarySource.filename.length > 0)
       );
     case "visualization":
-      return Boolean(primaryPreset.value) && (!requiresSecondarySource.value || Boolean(secondaryPreset.value));
+      return (
+        Boolean(primaryPreset.value) &&
+        (!requiresSecondarySource.value || Boolean(secondaryPreset.value))
+      );
     default:
       return true;
   }
@@ -1476,9 +2074,11 @@ const isCoolerFilename = (name: string): boolean => {
   return lowered.endsWith(".cool") || lowered.endsWith(".mcool");
 };
 
-const hasSelectedCoolerSource = computed(() =>
-  isCoolerFilename(primarySource.filename) ||
-  (requiresSecondarySource.value && isCoolerFilename(secondarySource.filename))
+const hasSelectedCoolerSource = computed(
+  () =>
+    isCoolerFilename(primarySource.filename) ||
+    (requiresSecondarySource.value &&
+      isCoolerFilename(secondarySource.filename))
 );
 
 const stripCompressionSuffix = (name: string): string =>
@@ -1500,7 +2100,11 @@ const isCooFilename = (name: string): boolean => {
 
 const isBg2Filename = (name: string): boolean => {
   const lowered = stripCompressionSuffix(name.toLowerCase());
-  return lowered.endsWith(".bg2") || lowered.endsWith(".bedgraph2") || lowered.endsWith(".bedpe");
+  return (
+    lowered.endsWith(".bg2") ||
+    lowered.endsWith(".bedgraph2") ||
+    lowered.endsWith(".bedpe")
+  );
 };
 
 const isPairsFilename = (name: string): boolean =>
@@ -1535,11 +2139,16 @@ const hictkLoadFormatLabel = (name: string): string => {
   return "matrix";
 };
 
-const isBinTableFilename = (name: string): boolean => name.toLowerCase().endsWith(".bed");
+const isBinTableFilename = (name: string): boolean =>
+  name.toLowerCase().endsWith(".bed");
 
 const isChromSizesFilename = (name: string): boolean => {
   const lowered = name.toLowerCase();
-  return lowered.endsWith(".chrom.sizes") || lowered.endsWith(".chromsizes") || lowered.endsWith(".chrom_sizes.txt");
+  return (
+    lowered.endsWith(".chrom.sizes") ||
+    lowered.endsWith(".chromsizes") ||
+    lowered.endsWith(".chrom_sizes.txt")
+  );
 };
 
 const isTrackFilename = (name: string): boolean => {
@@ -1609,7 +2218,10 @@ const isStepComplete = (stepId: WizardStepId): boolean => {
         (!requiresSecondarySource.value || secondarySource.filename.length > 0)
       );
     case "visualization":
-      return Boolean(primaryPreset.value) && (!requiresSecondarySource.value || Boolean(secondaryPreset.value));
+      return (
+        Boolean(primaryPreset.value) &&
+        (!requiresSecondarySource.value || Boolean(secondaryPreset.value))
+      );
     case "tracks":
       return selectedTracks.value.length > 0;
     case "finish":
@@ -1640,7 +2252,8 @@ const openSelector = (kind: SelectorKind): void => {
   if (kind === "track") {
     selectorState.title = "Select 1D track files";
     selectorState.fileType = ".bed, .vcf, .gff, .gtf, .bw, .bigwig, .bam";
-    selectorState.note = "Track caches are fingerprinted and can be reused when unchanged.";
+    selectorState.note =
+      "Track caches are fingerprinted and can be reused when unchanged.";
     selectorState.predicate = isTrackFilename;
     return;
   }
@@ -1650,28 +2263,40 @@ const openSelector = (kind: SelectorKind): void => {
         ? "Select primary FASTA"
         : "Select secondary FASTA";
     selectorState.fileType = ".fasta, .fa, .fna, .fas";
-    selectorState.note = "FASTA linkage is optional but required for FASTA export.";
+    selectorState.note =
+      "FASTA linkage is optional but required for FASTA export.";
     selectorState.predicate = isFastaFilename;
     return;
   }
   if (kind === "primary-bin-table" || kind === "secondary-bin-table") {
-    selectorState.title = kind === "primary-bin-table" ? "Select primary BED bin table" : "Select secondary BED bin table";
+    selectorState.title =
+      kind === "primary-bin-table"
+        ? "Select primary BED bin table"
+        : "Select secondary BED bin table";
     selectorState.fileType = ".bed";
-    selectorState.note = "BED3+ bin table used by hictk load for Hi-C Pro .matrix or generic COO input.";
+    selectorState.note =
+      "BED3+ bin table used by hictk load for Hi-C Pro .matrix or generic COO input.";
     selectorState.predicate = isBinTableFilename;
     return;
   }
   if (kind === "primary-chrom-sizes" || kind === "secondary-chrom-sizes") {
-    selectorState.title = kind === "primary-chrom-sizes" ? "Select primary chrom sizes" : "Select secondary chrom sizes";
+    selectorState.title =
+      kind === "primary-chrom-sizes"
+        ? "Select primary chrom sizes"
+        : "Select secondary chrom sizes";
     selectorState.fileType = ".chrom.sizes";
-    selectorState.note = "Chromosome sizes used by hictk load for BEDPE/bedGraph2 or validPairs input.";
+    selectorState.note =
+      "Chromosome sizes used by hictk load for BEDPE/bedGraph2 or validPairs input.";
     selectorState.predicate = isChromSizesFilename;
     return;
   }
   selectorState.title =
-    kind === "primary-agp" ? "Select primary assembly file" : "Select secondary assembly file";
+    kind === "primary-agp"
+      ? "Select primary assembly file"
+      : "Select secondary assembly file";
   selectorState.fileType = ".agp, .assembly";
-  selectorState.note = ".agp files are loaded after opening. Juicebox .assembly files are passed into .hic conversion when selected for a .hic source.";
+  selectorState.note =
+    ".agp files are loaded after opening. Juicebox .assembly files are passed into .hic conversion when selected for a .hic source.";
   selectorState.predicate = isAssemblyLayoutFilename;
 };
 
@@ -1693,10 +2318,11 @@ const resolveMatrixSource = async (
   source.resolution = null;
   source.resolving = true;
   try {
-    const response = await props.networkManager.requestManager.resolveMatrixSource(filename, {
-      buildResolutionPyramid: buildResolutionPyramid.value,
-      balanceInputCoolers: balanceInputCoolers.value,
-    });
+    const response =
+      await props.networkManager.requestManager.resolveMatrixSource(filename, {
+        buildResolutionPyramid: buildResolutionPyramid.value,
+        balanceInputCoolers: balanceInputCoolers.value,
+      });
     if (source.resolveRequestId !== requestId) {
       return;
     }
@@ -1818,11 +2444,13 @@ const convertAssemblySelectionToAgp = async (
   ) {
     return;
   }
-  const result = await props.networkManager.requestManager.convertAssemblyToAgp({
-    filename,
-    outputFilename,
-    overwrite: true,
-  });
+  const result = await props.networkManager.requestManager.convertAssemblyToAgp(
+    {
+      filename,
+      outputFilename,
+      overwrite: true,
+    }
+  );
   if (source === "primary") {
     primaryAgp.value = result.outputFilename;
   } else {
@@ -1850,7 +2478,8 @@ const describeConversionPlan = (source: SourceDraft): string => {
     source.resolution.action === "CONVERSION_REQUIRED"
   ) {
     return `convert to ${
-      source.resolution.expectedOutputFilename ?? source.resolution.resolvedFilename
+      source.resolution.expectedOutputFilename ??
+      source.resolution.resolvedFilename
     }`;
   }
   if (source.resolution.action === "REUSE_CONVERTED") {
@@ -1859,9 +2488,13 @@ const describeConversionPlan = (source: SourceDraft): string => {
   return `open ${source.resolution.resolvedFilename}`;
 };
 
-const waitForConversionJob = async (jobId: string): Promise<ConversionJobResponse> => {
-  while (true) {
-    const job = await props.networkManager.requestManager.getConversionJob(jobId);
+const waitForConversionJob = async (
+  jobId: string
+): Promise<ConversionJobResponse> => {
+  for (;;) {
+    const job = await props.networkManager.requestManager.getConversionJob(
+      jobId
+    );
     runState.currentConversion = job;
     runState.currentMessage = job.currentStageLabel || job.status;
     const normalizedStatus = (job.status ?? "").toLowerCase();
@@ -1879,7 +2512,9 @@ const waitForConversionJob = async (jobId: string): Promise<ConversionJobRespons
       normalizedStatus === "cancelled" ||
       normalizedStatus === "canceled"
     ) {
-      throw new Error(job.error || `Conversion job ${jobId} ended with status ${job.status}`);
+      throw new Error(
+        job.error || `Conversion job ${jobId} ended with status ${job.status}`
+      );
     }
     await sleep(750);
   }
@@ -1904,9 +2539,10 @@ const ensureOpenedFilename = async (source: SourceDraft): Promise<string> => {
     canConvertSource(source) &&
     (buildResolutionPyramid.value || balanceInputCoolers.value);
   if (
-    (!(source.forceConversion && canConvertSource(source))) &&
+    !(source.forceConversion && canConvertSource(source)) &&
     !forceCoolerPreparation &&
-    (resolution.action === "OPEN_DIRECT" || resolution.action === "REUSE_CONVERTED")
+    (resolution.action === "OPEN_DIRECT" ||
+      resolution.action === "REUSE_CONVERTED")
   ) {
     return resolution.resolvedFilename;
   }
@@ -1932,17 +2568,19 @@ const ensureOpenedFilename = async (source: SourceDraft): Promise<string> => {
   return finishedJob.outputFilename;
 };
 
-const waitForTrackPrecompute = async (): Promise<TracksPrecomputeStatusResponse> => {
-  while (true) {
-    const status = await props.networkManager.requestManager.getTracksPrecomputeStatus();
-    runState.trackPrecomputeStatus = status;
-    runState.currentMessage = `Running jobs: ${status.runningJobs}`;
-    if (status.runningJobs <= 0) {
-      return status;
+const waitForTrackPrecompute =
+  async (): Promise<TracksPrecomputeStatusResponse> => {
+    for (;;) {
+      const status =
+        await props.networkManager.requestManager.getTracksPrecomputeStatus();
+      runState.trackPrecomputeStatus = status;
+      runState.currentMessage = `Running jobs: ${status.runningJobs}`;
+      if (status.runningJobs <= 0) {
+        return status;
+      }
+      await sleep(750);
     }
-    await sleep(750);
-  }
-};
+  };
 
 const applyWizardPresentationState = (): void => {
   matrixViewStore.setPresentationMode(viewMode.value);
@@ -1956,8 +2594,12 @@ const applyWizardPresentationState = (): void => {
 
 const applyAssemblyInfoToMap = (assemblyInfo: AssemblyInfo): void => {
   const mapManager = props.networkManager.mapManager;
-  mapManager?.contigDimensionHolder.updateContigData(assemblyInfo.contigDescriptors);
-  mapManager?.scaffoldHolder.updateScaffoldData(assemblyInfo.scaffoldDescriptors);
+  mapManager?.contigDimensionHolder.updateContigData(
+    assemblyInfo.contigDescriptors
+  );
+  mapManager?.scaffoldHolder.updateScaffoldData(
+    assemblyInfo.scaffoldDescriptors
+  );
   mapManager?.getLayersManager().reapplyAxisScopes();
   mapManager?.reloadVisuals();
   mapManager?.refreshOverviewMinimap();
@@ -1968,7 +2610,8 @@ const applyAssemblyInfoToMap = (assemblyInfo: AssemblyInfo): void => {
 const setAuthoritativeAssemblySource = async (
   source: OverlayAssemblySource
 ): Promise<void> => {
-  const result = await props.networkManager.requestManager.setAssemblyInfoSource(source);
+  const result =
+    await props.networkManager.requestManager.setAssemblyInfoSource(source);
   applyAssemblyInfoToMap(result.assemblyInfo);
 };
 
@@ -2011,7 +2654,9 @@ const onFinishClicked = async (): Promise<void> => {
 
 const runWizard = async (): Promise<void> => {
   if (!canRunWizard.value) {
-    currentStepIndex.value = visibleSteps.value.findIndex((step) => step.id === "notes");
+    currentStepIndex.value = visibleSteps.value.findIndex(
+      (step) => step.id === "notes"
+    );
     return;
   }
   runState.running = true;
@@ -2022,7 +2667,9 @@ const runWizard = async (): Promise<void> => {
   runState.trackPrecomputeStatus = null;
   runState.currentStepId = "finish";
   runState.currentMessage = "Final checks";
-  currentStepIndex.value = visibleSteps.value.findIndex((step) => step.id === "finish");
+  currentStepIndex.value = visibleSteps.value.findIndex(
+    (step) => step.id === "finish"
+  );
   await waitForNextPaint();
   try {
     if (dropCachesBeforeRun.value) {
@@ -2039,18 +2686,26 @@ const runWizard = async (): Promise<void> => {
 
     runState.currentStepId = "finish";
     runState.currentMessage = `Opening ${primaryOpenedFilename}`;
-    await props.networkManager.requestManager.sendRequest(new SequenceAnalysisRequest("/sequence/settings", {
-      gapLengthBp: useUiSettingsStore().sequenceGapLengthBp,
-    }));
-    await props.openPrimaryDataset(primaryOpenedFilename, primaryFasta.value || undefined, {
-      applyDefaultPreset: false,
-    });
+    await props.networkManager.requestManager.sendRequest(
+      new SequenceAnalysisRequest("/sequence/settings", {
+        gapLengthBp: useUiSettingsStore().sequenceGapLengthBp,
+      })
+    );
+    await props.openPrimaryDataset(
+      primaryOpenedFilename,
+      primaryFasta.value || undefined,
+      {
+        applyDefaultPreset: false,
+      }
+    );
     await nextTick();
 
     const mapManager =
       props.mapManager ?? props.networkManager.mapManager ?? undefined;
     if (!mapManager) {
-      throw new Error("Primary dataset was opened, but the map manager is not ready");
+      throw new Error(
+        "Primary dataset was opened, but the map manager is not ready"
+      );
     }
 
     if (requiresSecondarySource.value && secondaryOpenedFilename) {
@@ -2081,7 +2736,9 @@ const runWizard = async (): Promise<void> => {
         })
       );
     } else {
-      await props.networkManager.requestManager.closeSecondarySource().catch(() => undefined);
+      await props.networkManager.requestManager
+        .closeSecondarySource()
+        .catch(() => undefined);
       mapManager.viewAndLayersManager.setSecondaryResolutionModel(undefined);
     }
 
@@ -2095,7 +2752,9 @@ const runWizard = async (): Promise<void> => {
       { legacyCSS: true }
     );
     styleStore.setMapBackground(backgroundColor);
-    visualizationOptionsStore.setVisualizationOptions(primaryPresetRecord.options);
+    visualizationOptionsStore.setVisualizationOptions(
+      primaryPresetRecord.options
+    );
     applyWizardPresentationState();
     await nextTick();
     await mapManager.visualizationManager.sendVisualizationOptionsToServer({
@@ -2155,7 +2814,10 @@ const runWizard = async (): Promise<void> => {
       }
       runState.currentMessage = "Refreshing overlay resolution model";
       await refreshSecondaryResolutionModelFromBackend(mapManager);
-    } else if (primaryAgp.value && primaryAgp.value.toLowerCase().endsWith(".agp")) {
+    } else if (
+      primaryAgp.value &&
+      primaryAgp.value.toLowerCase().endsWith(".agp")
+    ) {
       runState.currentStepId = "agp";
       runState.currentMessage = `Loading ${primaryAgp.value}`;
       await props.networkManager.requestManager.loadAGP(

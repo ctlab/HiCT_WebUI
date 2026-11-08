@@ -206,8 +206,8 @@ class TrackBinResponseDTO extends InboundDTO<TrackBinResponse> {
       (this.json["thickStartPx"] as number) ?? null,
       (this.json["thickEndPx"] as number) ?? null,
       (this.json["featureType"] as string) ?? null,
-      ((this.json["blocks"] as Record<string, unknown>[]) ?? []).map(
-        (block) => new TrackBinBlockResponseDTO(block).toEntity()
+      ((this.json["blocks"] as Record<string, unknown>[]) ?? []).map((block) =>
+        new TrackBinBlockResponseDTO(block).toEntity()
       ),
       this.parseAttributes(this.json["attributes"])
     );
@@ -373,7 +373,7 @@ class FileEntryResponseDTO extends InboundDTO<FileEntryResponse> {
       (this.json["sizeBytes"] as number) ?? -1,
       (this.json["modifiedAtMs"] as number) ?? 0,
       (this.json["extension"] as string) ?? "",
-      ((this.json["type"] as string) === "directory" ? "directory" : "file"),
+      (this.json["type"] as string) === "directory" ? "directory" : "file",
       Boolean(this.json["symbolicLink"] ?? false)
     );
   }
@@ -459,16 +459,20 @@ class WorkerCancellationDomainDiagnosticsResponseDTO extends InboundDTO<WorkerCa
     return new WorkerCancellationDomainDiagnosticsResponse(
       (this.json["currentGeneration"] as number) ?? 0,
       (this.json["trackedTaskCount"] as number) ?? 0,
-      ((this.json["trackedTasksByGeneration"] as Record<string, number>) ?? {})
+      (this.json["trackedTasksByGeneration"] as Record<string, number>) ?? {}
     );
   }
 }
 
 class WorkerSchedulerDiagnosticsResponseDTO extends InboundDTO<WorkerSchedulerDiagnosticsResponse> {
   public toEntity(): WorkerSchedulerDiagnosticsResponse {
-    const poolsJson = (this.json["pools"] as Record<string, Record<string, unknown>>) ?? {};
+    const poolsJson =
+      (this.json["pools"] as Record<string, Record<string, unknown>>) ?? {};
     const cancellationJson =
-      (this.json["cancellationDomains"] as Record<string, Record<string, unknown>>) ?? {};
+      (this.json["cancellationDomains"] as Record<
+        string,
+        Record<string, unknown>
+      >) ?? {};
     const pools = Object.fromEntries(
       Object.entries(poolsJson).map(([priority, payload]) => [
         priority,
@@ -518,8 +522,8 @@ class FastaLinkCompatibilityResponseDTO extends InboundDTO<FastaLinkCompatibilit
       this.json["sameOrderLengthAndOriginalNames"] as boolean,
       this.json["sameOrderLengthAndSourceNames"] as boolean,
       this.json["sameLengthMultiset"] as boolean,
-      ((this.json["mismatches"] as Record<string, unknown>[]) ?? []).map((item) =>
-        new FastaLinkMismatchResponseDTO(item).toEntity()
+      ((this.json["mismatches"] as Record<string, unknown>[]) ?? []).map(
+        (item) => new FastaLinkMismatchResponseDTO(item).toEntity()
       ),
       Boolean(this.json["sourceIntervalsCovered"])
     );

@@ -19,7 +19,10 @@
  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-import { chooseMissingComponents, AgpImportCancelledError } from "../agpImportChoice";
+import {
+  chooseMissingComponents,
+  AgpImportCancelledError,
+} from "../agpImportChoice";
 import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 import type { WorkspaceState } from "@/app/core/mapmanagers/WorkspaceState";
 import type { AssemblyInfo } from "../../domain/AssemblyInfo";
@@ -168,7 +171,12 @@ export type SecondarySourceStatusResponse = {
   requestedFilename?: string;
   warnings: string[];
   compatibility?: SecondarySourceCompatibility;
-  sequenceAnalysis?: { kind: string; minimumIdentity: number; scoreScale: number; scoreUnit: string };
+  sequenceAnalysis?: {
+    kind: string;
+    minimumIdentity: number;
+    scoreScale: number;
+    scoreUnit: string;
+  };
 };
 
 export type NativeProcessingStatusResponse = {
@@ -214,21 +222,46 @@ export type ServerStatisticsResponse = {
 };
 
 import { shallowReactive } from "vue";
-import { UnscaffoldAllRequest, AssemblyHistoryRequest, RestoreAssemblyHistoryRequest } from "./request";
+import {
+  UnscaffoldAllRequest,
+  AssemblyHistoryRequest,
+  RestoreAssemblyHistoryRequest,
+} from "./request";
 export type HistorySummary = {
-  session: string; revision: number; currentId: number; position: number; size: number;
-  canUndo: boolean; canRedo: boolean;
+  session: string;
+  revision: number;
+  currentId: number;
+  position: number;
+  size: number;
+  canUndo: boolean;
+  canRedo: boolean;
 };
 export type HistoryPage = {
-  summary: HistorySummary | null; offset: number;
+  summary: HistorySummary | null;
+  offset: number;
   entries: { id: number; label: string; timestamp: string }[];
 };
 const assemblyMutationPaths = new Set([
-  "/reverse_selection_range", "/move_selection_range", "/split_contig_at_bin",
-  "/unscaffold_all", "/group_contigs_into_scaffold", "/ungroup_contigs_from_scaffold", "/move_selection_to_debris",
-  "/load_agp", "/apply_juicebox_assembly", "/names/contig", "/names/scaffold", "/names/import",
+  "/reverse_selection_range",
+  "/move_selection_range",
+  "/split_contig_at_bin",
+  "/unscaffold_all",
+  "/group_contigs_into_scaffold",
+  "/ungroup_contigs_from_scaffold",
+  "/move_selection_to_debris",
+  "/load_agp",
+  "/apply_juicebox_assembly",
+  "/names/contig",
+  "/names/scaffold",
+  "/names/import",
 ]);
-const assemblySessionPaths = new Set(["/open", "/close", "/secondary/open", "/secondary/close", "/secondary/set_assembly_source"]);
+const assemblySessionPaths = new Set([
+  "/open",
+  "/close",
+  "/secondary/open",
+  "/secondary/close",
+  "/secondary/set_assembly_source",
+]);
 
 class RequestManager {
   private workspaceVersion?: { session: string; revision: number };
@@ -236,22 +269,43 @@ class RequestManager {
   public sequenceRevision = 0;
   public hasLinkedFasta = false;
   private readonly sequenceViewState = shallowReactive({ readOnly: false });
-  public get sequenceViewReadOnly(): boolean { return this.sequenceViewState.readOnly; }
-  public set sequenceViewReadOnly(value: boolean) { this.sequenceViewState.readOnly = value; }
-  public readonly history = shallowReactive({ summary: null as HistorySummary | null, applied: null as HistorySummary | null, busy: 0 });
+  public get sequenceViewReadOnly(): boolean {
+    return this.sequenceViewState.readOnly;
+  }
+  public set sequenceViewReadOnly(value: boolean) {
+    this.sequenceViewState.readOnly = value;
+  }
+  public readonly history = shallowReactive({
+    summary: null as HistorySummary | null,
+    applied: null as HistorySummary | null,
+    busy: 0,
+  });
 
   public async getAssemblyHistory(offset?: number): Promise<HistoryPage> {
-    const response = await this.sendRequest(new AssemblyHistoryRequest({ offset, limit: 100 }));
+    const response = await this.sendRequest(
+      new AssemblyHistoryRequest({ offset, limit: 100 })
+    );
     return response.data as HistoryPage;
   }
 
-  public async restoreAssemblyHistory(action: "undo" | "redo" | "restore", id?: number): Promise<void> {
+  public async restoreAssemblyHistory(
+    action: "undo" | "redo" | "restore",
+    id?: number
+  ): Promise<void> {
     const summary = this.history.summary;
     if (!summary || this.history.busy) return;
-    const response = await this.sendRequest(new RestoreAssemblyHistoryRequest({
-      session: summary.session, revision: summary.revision, action, id, assemblyFormat: "compact-v1",
-    }));
-    const assembly = new AssemblyInfoDTO(this.normalizeAssemblyInfo(response.data)).toEntity();
+    const response = await this.sendRequest(
+      new RestoreAssemblyHistoryRequest({
+        session: summary.session,
+        revision: summary.revision,
+        action,
+        id,
+        assemblyFormat: "compact-v1",
+      })
+    );
+    const assembly = new AssemblyInfoDTO(
+      this.normalizeAssemblyInfo(response.data)
+    ).toEntity();
     const manager = this.networkManager.mapManager;
     if (!manager) return;
     manager.deactivateTranslocation();
@@ -382,12 +436,24 @@ class RequestManager {
         ? (json.warnings as unknown[]).map((value) => String(value))
         : [],
       compatibility,
-      sequenceAnalysis: json.sequenceAnalysis ? {
-        kind: String((json.sequenceAnalysis as Record<string, unknown>).kind ?? ""),
-        minimumIdentity: Number((json.sequenceAnalysis as Record<string, unknown>).minimumIdentity ?? 80),
-        scoreScale: Number((json.sequenceAnalysis as Record<string, unknown>).scoreScale ?? 10000),
-        scoreUnit: String((json.sequenceAnalysis as Record<string, unknown>).scoreUnit ?? ""),
-      } : undefined,
+      sequenceAnalysis: json.sequenceAnalysis
+        ? {
+            kind: String(
+              (json.sequenceAnalysis as Record<string, unknown>).kind ?? ""
+            ),
+            minimumIdentity: Number(
+              (json.sequenceAnalysis as Record<string, unknown>)
+                .minimumIdentity ?? 80
+            ),
+            scoreScale: Number(
+              (json.sequenceAnalysis as Record<string, unknown>).scoreScale ??
+                10000
+            ),
+            scoreUnit: String(
+              (json.sequenceAnalysis as Record<string, unknown>).scoreUnit ?? ""
+            ),
+          }
+        : undefined,
     };
   }
 
@@ -405,7 +471,9 @@ class RequestManager {
       nativeSessionActive: Boolean(json.nativeSessionActive ?? false),
       nativeOperationCount: Number(json.nativeOperationCount ?? 0),
       nativeFailedOperationCount: Number(json.nativeFailedOperationCount ?? 0),
-      nativeHdf5BackendAvailable: Boolean(json.nativeHdf5BackendAvailable ?? false),
+      nativeHdf5BackendAvailable: Boolean(
+        json.nativeHdf5BackendAvailable ?? false
+      ),
     };
   }
 
@@ -437,8 +505,12 @@ class RequestManager {
       endpoints: endpointsRaw.map((endpoint) => ({
         path: String(endpoint.path ?? ""),
         totalRequests: Number(endpoint.totalRequests ?? 0),
-        requestsPerSecondLast10s: Number(endpoint.requestsPerSecondLast10s ?? 0),
-        requestsPerSecondLast60s: Number(endpoint.requestsPerSecondLast60s ?? 0),
+        requestsPerSecondLast10s: Number(
+          endpoint.requestsPerSecondLast10s ?? 0
+        ),
+        requestsPerSecondLast60s: Number(
+          endpoint.requestsPerSecondLast60s ?? 0
+        ),
       })),
       nativeProcessing: this.parseNativeProcessingStatus(nativeProcessingRaw),
     };
@@ -452,18 +524,29 @@ class RequestManager {
     const host = this.networkManager.host.replace(/\/+$/, "");
     const path = request.requestPath.replace(/^\/+/, "");
     const mutation = assemblyMutationPaths.has(request.requestPath);
-    if (this.sequenceViewReadOnly && (mutation || request.requestPath === "/assembly/history/restore")) {
+    if (
+      this.sequenceViewReadOnly &&
+      (mutation || request.requestPath === "/assembly/history/restore")
+    ) {
       const message = "Return to the contact map before editing the assembly.";
       if (!options?.suppressErrorToast) toast(message);
       throw new Error(message);
     }
-    const tracked = mutation || assemblySessionPaths.has(request.requestPath) || request.requestPath === "/assembly/history/restore";
+    const tracked =
+      mutation ||
+      assemblySessionPaths.has(request.requestPath) ||
+      request.requestPath === "/assembly/history/restore";
     const summary = this.history.applied;
-    const sequenceSnapshot = request.requestPath.startsWith("/sequence/") && request.requestPath.endsWith("/jobs");
-    const historyHeaders = (mutation || sequenceSnapshot) && summary ? {
-      "X-HiCT-History-Session": summary.session,
-      "X-HiCT-History-Revision": String(summary.revision),
-    } : {};
+    const sequenceSnapshot =
+      request.requestPath.startsWith("/sequence/") &&
+      request.requestPath.endsWith("/jobs");
+    const historyHeaders =
+      (mutation || sequenceSnapshot) && summary
+        ? {
+            "X-HiCT-History-Session": summary.session,
+            "X-HiCT-History-Revision": String(summary.revision),
+          }
+        : {};
     if (tracked) this.history.busy++;
     const mergedConfig: AxiosRequestConfig = {
       ...(axiosConfig ?? {}),
@@ -473,12 +556,14 @@ class RequestManager {
         ...((axiosConfig ?? {}).headers ?? {}),
       },
     };
-    return Promise.resolve().then(() => axios
-      .post(
-        `${host}/${path}`,
-        HiCTAPIRequestDTO.toDTOClass(request).toDTO(),
-        mergedConfig
-      ))
+    return Promise.resolve()
+      .then(() =>
+        axios.post(
+          `${host}/${path}`,
+          HiCTAPIRequestDTO.toDTOClass(request).toDTO(),
+          mergedConfig
+        )
+      )
       .then((req) => {
         if (typeof req.data === "string") {
           try {
@@ -496,11 +581,19 @@ class RequestManager {
         if (typeof header === "string") {
           const next = JSON.parse(header) as HistorySummary | null;
           const current = this.history.summary;
-          if (!next || !current || next.session !== current.session || next.revision > current.revision)
+          if (
+            !next ||
+            !current ||
+            next.session !== current.session ||
+            next.revision > current.revision
+          )
             this.history.summary = next;
           // Listing history may observe another client's edit. It must not advance
           // the coordinate guard until this client's assembly model is refreshed.
-          if (tracked && req.data?.requiresMissingComponentsChoice !== true || request.requestPath === "/attach")
+          if (
+            (tracked && req.data?.requiresMissingComponentsChoice !== true) ||
+            request.requestPath === "/attach"
+          )
             this.history.applied = next;
         }
         this.notifyInboundPayload(req.data);
@@ -508,14 +601,20 @@ class RequestManager {
       })
       .catch((err) => {
         const errorToastStore = useErrorToastStore();
-        if (!options?.suppressErrorToast && errorToastStore.requestErrorToastsEnabled) {
+        if (
+          !options?.suppressErrorToast &&
+          errorToastStore.requestErrorToastsEnabled
+        ) {
           const message = extractErrorMessage(err, "Request failed");
           toast.error(message);
         }
         // A failed/conflicting command can leave another client's newer journal.
         if (tracked) void this.getAssemblyHistory().catch(() => undefined);
         throw err;
-      }).finally(() => { if (tracked) this.history.busy--; });
+      })
+      .finally(() => {
+        if (tracked) this.history.busy--;
+      });
   }
 
   public async openFile(
@@ -624,14 +723,20 @@ class RequestManager {
           throw new Error(String((json as Record<string, unknown>).error));
         }
         const filename = (json["filename"] as string) ?? "";
-        this.workspaceVersion = json.workspaceVersion as typeof this.workspaceVersion;
+        this.workspaceVersion =
+          json.workspaceVersion as typeof this.workspaceVersion;
         const fastaFilename = (json["fastaFilename"] as string) ?? "";
         this.hasLinkedFasta = Boolean(fastaFilename);
         this.sequenceRevision++;
         const response = new OpenFileResponseDTO(
           json["openFileResponse"] as Record<string, unknown>
         ).toEntity();
-        return { filename, fastaFilename, response, workspaceState: json.workspaceState as WorkspaceState | undefined };
+        return {
+          filename,
+          fastaFilename,
+          response,
+          workspaceState: json.workspaceState as WorkspaceState | undefined,
+        };
       });
   }
 
@@ -645,13 +750,24 @@ class RequestManager {
       .then((json) => new CurrentSignalRangeResponseDTO(json).toEntity());
   }
 
-  public async saveWorkspaceState(filename: string, state: WorkspaceState): Promise<void> {
+  public async saveWorkspaceState(
+    filename: string,
+    state: WorkspaceState
+  ): Promise<void> {
     const host = this.networkManager.host.replace(/\/+$/, "");
     const expectedVersion = this.workspaceVersion;
-    if (!expectedVersion) throw new Error("Attach to a compatible server before saving workspace settings.");
-    const response = await axios.post(`${host}/workspace/state`, { filename, state, expectedVersion });
+    if (!expectedVersion)
+      throw new Error(
+        "Attach to a compatible server before saving workspace settings."
+      );
+    const response = await axios.post(`${host}/workspace/state`, {
+      filename,
+      state,
+      expectedVersion,
+    });
     // A delayed save from the previous map must not replace an Open/Attach token.
-    if (this.workspaceVersion === expectedVersion) this.workspaceVersion = response.data.workspaceVersion;
+    if (this.workspaceVersion === expectedVersion)
+      this.workspaceVersion = response.data.workspaceVersion;
   }
 
   public async listFiles(): Promise<string[]> {
@@ -699,7 +815,9 @@ class RequestManager {
       readonly balanceInputCoolers?: boolean;
     } = {}
   ): Promise<MatrixSourceResolutionResponse> {
-    return this.sendRequest(new ResolveMatrixSourceRequest({ filename, ...options }))
+    return this.sendRequest(
+      new ResolveMatrixSourceRequest({ filename, ...options })
+    )
       .then((response) => response.data)
       .then((json) => new MatrixSourceResolutionResponseDTO(json).toEntity());
   }
@@ -733,7 +851,9 @@ class RequestManager {
     color?: string,
     source?: "PRIMARY" | "SECONDARY"
   ): Promise<TrackSummaryResponse> {
-    return this.sendRequest(new OpenCoolerWeightsTrackRequest({ name, color, source }))
+    return this.sendRequest(
+      new OpenCoolerWeightsTrackRequest({ name, color, source })
+    )
       .then((response) => response.data)
       .then((json) => new TrackSummaryResponseDTO(json).toEntity());
   }
@@ -825,13 +945,16 @@ class RequestManager {
       .then((json) => new TrackQueryResponseDTO(json).toEntity());
   }
 
-  public async queryTracks1DByUnits(options: {
-    unit: "PIXELS" | "BINS" | "BP";
-    start: number;
-    end: number;
-    widthPx: number;
-    bpResolution: number;
-  }, signal?: AbortSignal): Promise<TrackQueryResponse> {
+  public async queryTracks1DByUnits(
+    options: {
+      unit: "PIXELS" | "BINS" | "BP";
+      start: number;
+      end: number;
+      widthPx: number;
+      bpResolution: number;
+    },
+    signal?: AbortSignal
+  ): Promise<TrackQueryResponse> {
     const payload: {
       unit: "PIXELS" | "BINS" | "BP";
       widthPx: number;
@@ -857,7 +980,11 @@ class RequestManager {
       payload.startBP = options.start;
       payload.endBP = options.end;
     }
-    return this.sendRequest(new QueryTracks1DRequest(payload), { signal }, { suppressErrorToast: true })
+    return this.sendRequest(
+      new QueryTracks1DRequest(payload),
+      { signal },
+      { suppressErrorToast: true }
+    )
       .then((response) => response.data)
       .then((json) => new TrackQueryResponseDTO(json).toEntity());
   }
@@ -990,7 +1117,9 @@ class RequestManager {
     config: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
     ++this.renderPipelineRevision;
-    const response = await this.sendRequest(new SetRenderPipelineRequest(config));
+    const response = await this.sendRequest(
+      new SetRenderPipelineRequest(config)
+    );
     if (typeof window !== "undefined")
       window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
     return response.data as Record<string, unknown>;
@@ -1036,7 +1165,11 @@ class RequestManager {
     filename: string;
     outputFilename?: string;
     overwrite?: boolean;
-  }): Promise<{ status: string; inputFilename: string; outputFilename: string }> {
+  }): Promise<{
+    status: string;
+    inputFilename: string;
+    outputFilename: string;
+  }> {
     return this.sendRequest(new ConvertAssemblyToAgpRequest(options)).then(
       (response) => response.data
     );
@@ -1175,21 +1308,53 @@ class RequestManager {
         if (typeof data === "string") {
           return data;
         }
-        return String(data?.text ?? "Changelog for this build was not detected");
+        return String(
+          data?.text ?? "Changelog for this build was not detected"
+        );
       })
       .catch(() => "Changelog for this build was not detected");
   }
 
-  public async querySequenceRegion(startBp: number, endBp: number, signal?: AbortSignal,
-    options: { includeGaps?: boolean; assemblyAnchorBp?: number } = {}): Promise<{ linked: boolean; startBp?: number; sequence?: string; totalLength?: number;
-    coordinateSystem?: string; segments?: {start:number;end:number;assemblyStart:number|null;assemblyEnd:number|null;
-      source:string|null;sourceStart:number|null;sourceEnd:number|null;contig:string|null;scaffold:string|null;
-      reversed:boolean;gap:boolean}[] }> {
+  public async querySequenceRegion(
+    startBp: number,
+    endBp: number,
+    signal?: AbortSignal,
+    options: { includeGaps?: boolean; assemblyAnchorBp?: number } = {}
+  ): Promise<{
+    linked: boolean;
+    startBp?: number;
+    sequence?: string;
+    totalLength?: number;
+    coordinateSystem?: string;
+    segments?: {
+      start: number;
+      end: number;
+      assemblyStart: number | null;
+      assemblyEnd: number | null;
+      source: string | null;
+      sourceStart: number | null;
+      sourceEnd: number | null;
+      contig: string | null;
+      scaffold: string | null;
+      reversed: boolean;
+      gap: boolean;
+    }[];
+  }> {
     const host = this.networkManager.host.replace(/\/+$/, "");
-    const version=this.history.applied;
-    const headers=version ? { "X-HiCT-History-Session": version.session,
-      "X-HiCT-History-Revision": String(version.revision) } : undefined;
-    return (await axios.post(`${host}/sequence/region`, { startBp, endBp, ...options }, { signal, headers })).data;
+    const version = this.history.applied;
+    const headers = version
+      ? {
+          "X-HiCT-History-Session": version.session,
+          "X-HiCT-History-Revision": String(version.revision),
+        }
+      : undefined;
+    return (
+      await axios.post(
+        `${host}/sequence/region`,
+        { startBp, endBp, ...options },
+        { signal, headers }
+      )
+    ).data;
   }
 
   public async querySignalStatistics(options: {
@@ -1201,12 +1366,18 @@ class RequestManager {
     expression?: Record<string, unknown>;
     signal?: AbortSignal;
   }): Promise<{
-    revision: string; size: number; rows?: number; cols?: number;
-    min?: number | null; max?: number | null; count?: number;
+    revision: string;
+    size: number;
+    rows?: number;
+    cols?: number;
+    min?: number | null;
+    max?: number | null;
+    count?: number;
   }> {
     const { signal, ...request } = options;
     const host = this.networkManager.host.replace(/\/+$/, "");
-    return (await axios.post(`${host}/matrix/statistics`, request, { signal })).data;
+    return (await axios.post(`${host}/matrix/statistics`, request, { signal }))
+      .data;
   }
 
   public async queryMatrixFloat32(options: {
@@ -1216,7 +1387,11 @@ class RequestManager {
     startColPx: number;
     endColPx: number;
     source?: "PRIMARY" | "SECONDARY";
-    signalMode?: "RAW_COUNTS" | "COOLER_WEIGHTED" | "TRADITIONAL_NORMALIZED" | "PIPELINE_SIGNAL";
+    signalMode?:
+      | "RAW_COUNTS"
+      | "COOLER_WEIGHTED"
+      | "TRADITIONAL_NORMALIZED"
+      | "PIPELINE_SIGNAL";
     expression?: Record<string, unknown>;
     signal?: AbortSignal;
   }): Promise<{
@@ -1281,14 +1456,25 @@ class RequestManager {
     try {
       let response = await this.sendRequest(request);
       if (response.data.requiresMissingComponentsChoice === true) {
-        const policy = await chooseMissingComponents(response.data.importReport);
+        const policy = await chooseMissingComponents(
+          response.data.importReport
+        );
         if (!policy) throw new AgpImportCancelledError();
-        response = await this.sendRequest(new LoadAGPRequest({ ...request.options, missingComponentsPolicy: policy }));
+        response = await this.sendRequest(
+          new LoadAGPRequest({
+            ...request.options,
+            missingComponentsPolicy: policy,
+          })
+        );
       }
       const asmInfo = new AssemblyInfoDTO(response.data).toEntity();
       if (options.updateAssemblyState !== false) {
-        this.networkManager.mapManager?.contigDimensionHolder.updateContigData(asmInfo.contigDescriptors);
-        this.networkManager.mapManager?.scaffoldHolder.updateScaffoldData(asmInfo.scaffoldDescriptors);
+        this.networkManager.mapManager?.contigDimensionHolder.updateContigData(
+          asmInfo.contigDescriptors
+        );
+        this.networkManager.mapManager?.scaffoldHolder.updateScaffoldData(
+          asmInfo.scaffoldDescriptors
+        );
         this.networkManager.mapManager?.getLayersManager().reapplyAxisScopes();
         this.networkManager.mapManager?.reloadVisuals();
       }
@@ -1299,7 +1485,9 @@ class RequestManager {
     }
   }
 
-  public async applyJuiceboxAssembly(request: ApplyJuiceboxAssemblyRequest): Promise<AssemblyInfo> {
+  public async applyJuiceboxAssembly(
+    request: ApplyJuiceboxAssemblyRequest
+  ): Promise<AssemblyInfo> {
     return this.sendRequest(request)
       .then((response) => response.data)
       .then((json) => new AssemblyInfoDTO(json).toEntity())
@@ -1369,7 +1557,9 @@ class RequestManager {
 
   public async unscaffoldAll(): Promise<AssemblyInfo> {
     const response = await this.sendRequest(new UnscaffoldAllRequest());
-    return new AssemblyInfoDTO(this.normalizeAssemblyInfo(response.data)).toEntity();
+    return new AssemblyInfoDTO(
+      this.normalizeAssemblyInfo(response.data)
+    ).toEntity();
   }
 
   public async ungroupContigsFromScaffold(

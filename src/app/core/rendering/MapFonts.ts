@@ -106,13 +106,24 @@ let pdfFontCollectionConfigured = false;
 export function configureMapPdfFonts(Pdf: typeof jsPDF): void {
   if (pdfFontCollectionConfigured) return;
   pdfFontCollectionConfigured = true;
-  Pdf.API.events.push(["putFont", (options: {
-    font: { fontName: string; encoding: string };
-    out: (...lines: string[]) => unknown;
-  }) => {
-    if (!options.font.fontName.startsWith("HiCT ") || options.font.encoding !== "Identity-H") return;
-    const write = options.out;
-    options.out = (...lines) => write(...lines.map(line =>
-      line === "/Ordering (Identity-H)" ? "/Ordering (Identity)" : line));
-  }]);
+  Pdf.API.events.push([
+    "putFont",
+    (options: {
+      font: { fontName: string; encoding: string };
+      out: (...lines: string[]) => unknown;
+    }) => {
+      if (
+        !options.font.fontName.startsWith("HiCT ") ||
+        options.font.encoding !== "Identity-H"
+      )
+        return;
+      const write = options.out;
+      options.out = (...lines) =>
+        write(
+          ...lines.map((line) =>
+            line === "/Ordering (Identity-H)" ? "/Ordering (Identity)" : line
+          )
+        );
+    },
+  ]);
 }

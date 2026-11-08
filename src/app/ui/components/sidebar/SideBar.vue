@@ -24,15 +24,29 @@
     <button
       type="button"
       class="sidebar-collapse-toggle"
-      :title="sidebarCollapsed ? 'Show side panel' : 'Hide side panel (more room for the map)'"
+      :title="
+        sidebarCollapsed
+          ? 'Show side panel'
+          : 'Hide side panel (more room for the map)'
+      "
       :aria-label="sidebarCollapsed ? 'Show side panel' : 'Hide side panel'"
       :aria-expanded="!sidebarCollapsed"
       @click="toggleSidebarCollapsed"
     >
-      <i :class="sidebarCollapsed ? 'bi bi-chevron-double-left' : 'bi bi-chevron-double-right'"></i>
+      <i
+        :class="
+          sidebarCollapsed
+            ? 'bi bi-chevron-double-left'
+            : 'bi bi-chevron-double-right'
+        "
+      ></i>
     </button>
-    <div v-if="!props.mapManager && !sidebarCollapsed" class="sidebar-empty-hint">
-      Settings for borders, colors, presets, contigs and the edit journal appear here once a map is open.
+    <div
+      v-if="!props.mapManager && !sidebarCollapsed"
+      class="sidebar-empty-hint"
+    >
+      Settings for borders, colors, presets, contigs and the edit journal appear
+      here once a map is open.
     </div>
     <div id="upper-block" v-show="!sidebarCollapsed">
       <!-- <div id="minimap">
@@ -50,10 +64,18 @@
         aria-controls="layers-block"
         @click="toggleLayersBlock"
       >
-        <i :class="layersBlockExpanded ? 'bi bi-chevron-down' : 'bi bi-chevron-right'"></i>
+        <i
+          :class="
+            layersBlockExpanded ? 'bi bi-chevron-down' : 'bi bi-chevron-right'
+          "
+        ></i>
         Borders &amp; labels
       </button>
-      <div id="layers-block" v-if="props.mapManager" v-show="layersBlockExpanded">
+      <div
+        id="layers-block"
+        v-if="props.mapManager"
+        v-show="layersBlockExpanded"
+      >
         <!-- Instantiate layer components here using v-for -->
         <LayerComponent
           v-for="layer in layers"
@@ -81,7 +103,11 @@
           <button
             type="button"
             class="btn btn-sm"
-            :class="activeSidebarPanel === 'visualization' ? 'btn-primary' : 'btn-outline-primary'"
+            :class="
+              activeSidebarPanel === 'visualization'
+                ? 'btn-primary'
+                : 'btn-outline-primary'
+            "
             @click="activeSidebarPanel = 'visualization'"
           >
             Visualization
@@ -89,22 +115,42 @@
           <button
             type="button"
             class="btn btn-sm"
-            :class="activeSidebarPanel === 'entities' ? 'btn-primary' : 'btn-outline-primary'"
+            :class="
+              activeSidebarPanel === 'entities'
+                ? 'btn-primary'
+                : 'btn-outline-primary'
+            "
             @click="activeSidebarPanel = 'entities'"
           >
             Entities
           </button>
-          <button type="button" class="btn btn-sm"
-            :class="activeSidebarPanel === 'history' ? 'btn-primary' : 'btn-outline-primary'"
-            :aria-pressed="activeSidebarPanel === 'history'" @click="activeSidebarPanel = 'history'">Journal</button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            :class="
+              activeSidebarPanel === 'history'
+                ? 'btn-primary'
+                : 'btn-outline-primary'
+            "
+            :aria-pressed="activeSidebarPanel === 'history'"
+            @click="activeSidebarPanel = 'history'"
+          >
+            Journal
+          </button>
         </div>
       </div>
 
-      <AssemblyHistory v-if="props.mapManager"
-        :network-manager="props.mapManager.networkManager" :expanded="activeSidebarPanel === 'history'" />
+      <AssemblyHistory
+        v-if="props.mapManager"
+        :network-manager="props.mapManager.networkManager"
+        :expanded="activeSidebarPanel === 'history'"
+      />
       <div v-if="props.mapManager" class="sidebar-panel-content">
         <template v-if="activeSidebarPanel === 'visualization'">
-          <div v-if="showLayerSelector" class="visualization-source-selector px-2 pt-2">
+          <div
+            v-if="showLayerSelector"
+            class="visualization-source-selector px-2 pt-2"
+          >
             <div class="source-selection-label">Layer</div>
             <div v-if="hasTwoSources" class="visualization-source-row">
               <div
@@ -115,9 +161,17 @@
                 <button
                   type="button"
                   class="btn btn-sm"
-                  :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
+                  :class="
+                    activeVisualizationSource === 'PRIMARY'
+                      ? 'btn-primary'
+                      : 'btn-outline-primary'
+                  "
                   :aria-pressed="activeVisualizationSource === 'PRIMARY'"
-                  :title="primaryMapFilename ? `Primary: ${primaryMapFilename}` : 'Primary source'"
+                  :title="
+                    primaryMapFilename
+                      ? `Primary: ${primaryMapFilename}`
+                      : 'Primary source'
+                  "
                   @click="selectVisualizationSource('PRIMARY')"
                 >
                   Primary
@@ -125,9 +179,17 @@
                 <button
                   type="button"
                   class="btn btn-sm"
-                  :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
+                  :class="
+                    activeVisualizationSource === 'SECONDARY'
+                      ? 'btn-primary'
+                      : 'btn-outline-primary'
+                  "
                   :aria-pressed="activeVisualizationSource === 'SECONDARY'"
-                  :title="secondaryMapFilename ? `Secondary: ${secondaryMapFilename}` : 'Secondary source'"
+                  :title="
+                    secondaryMapFilename
+                      ? `Secondary: ${secondaryMapFilename}`
+                      : 'Secondary source'
+                  "
                   @click="selectVisualizationSource('SECONDARY')"
                 >
                   Secondary
@@ -136,7 +198,11 @@
               <button
                 type="button"
                 class="btn btn-sm layer-swap-button"
-                :class="layersSwapped ? 'btn-secondary active' : 'btn-outline-secondary'"
+                :class="
+                  layersSwapped
+                    ? 'btn-secondary active'
+                    : 'btn-outline-secondary'
+                "
                 title="Swap sources (which map is drawn on top)"
                 aria-label="Swap sources"
                 @click="swapSources"
@@ -144,29 +210,54 @@
                 <i class="bi bi-shuffle"></i>
               </button>
             </div>
-            <div class="visualization-half-row" :class="{ 'mt-2': hasTwoSources }">
-              <div class="half-stack" role="group" aria-label="Triangle to edit">
+            <div
+              class="visualization-half-row"
+              :class="{ 'mt-2': hasTwoSources }"
+            >
+              <div
+                class="half-stack"
+                role="group"
+                aria-label="Triangle to edit"
+              >
                 <button
                   v-for="half in (['upper', 'lower'] as const)"
                   :key="half"
                   type="button"
                   class="btn btn-sm half-button"
-                  :class="isHalfActive(half) ? 'btn-primary' : 'btn-outline-primary'"
+                  :class="
+                    isHalfActive(half) ? 'btn-primary' : 'btn-outline-primary'
+                  "
                   :aria-pressed="isHalfActive(half)"
                   :disabled="!halfAvailable(half)"
-                  :title="!halfAvailable(half)
-                    ? `${sourceLabel} is not drawn in the ${half} triangle`
-                    : halvesLinked && sourceSpansBothHalves
-                    ? `Edit only the ${half} triangle (unlinks the triangles)`
-                    : `Edit the ${half} triangle`"
+                  :title="
+                    !halfAvailable(half)
+                      ? `${sourceLabel} is not drawn in the ${half} triangle`
+                      : halvesLinked && sourceSpansBothHalves
+                      ? `Edit only the ${half} triangle (unlinks the triangles)`
+                      : `Edit the ${half} triangle`
+                  "
                   @click="selectHalf(half)"
                 >
                   <svg class="half-icon" viewBox="0 0 16 16" aria-hidden="true">
-                    <rect x="1.5" y="1.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3" />
-                    <path :d="half === 'upper' ? 'M2 2H14V14Z' : 'M2 2V14H14Z'" fill="currentColor" />
+                    <rect
+                      x="1.5"
+                      y="1.5"
+                      width="13"
+                      height="13"
+                      rx="1.5"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                    />
+                    <path
+                      :d="half === 'upper' ? 'M2 2H14V14Z' : 'M2 2V14H14Z'"
+                      fill="currentColor"
+                    />
                   </svg>
                   {{ half === "upper" ? "Upper" : "Lower" }} triangle
-                  <span v-if="halfLabelSuffix(half)" class="half-mode">{{ halfLabelSuffix(half) }}</span>
+                  <span v-if="halfLabelSuffix(half)" class="half-mode">{{
+                    halfLabelSuffix(half)
+                  }}</span>
                 </button>
               </div>
               <button
@@ -175,15 +266,20 @@
                 :class="halvesLinked ? 'btn-primary' : 'btn-outline-secondary'"
                 :aria-pressed="halvesLinked"
                 :disabled="!sourceSpansBothHalves"
-                :title="!sourceSpansBothHalves
-                  ? `${sourceLabel} is drawn in one triangle only`
-                  : halvesLinked
-                  ? 'Linked: changes apply to both triangles. Click to edit one triangle.'
-                  : 'Unlinked: changes apply to the selected triangle only. Click to link.'"
+                :title="
+                  !sourceSpansBothHalves
+                    ? `${sourceLabel} is drawn in one triangle only`
+                    : halvesLinked
+                    ? 'Linked: changes apply to both triangles. Click to edit one triangle.'
+                    : 'Unlinked: changes apply to the selected triangle only. Click to link.'
+                "
                 aria-label="Link upper and lower triangles"
                 @click="toggleHalvesLinked"
               >
-                <i class="bi" :class="halvesLinked ? 'bi-lock-fill' : 'bi-unlock'"></i>
+                <i
+                  class="bi"
+                  :class="halvesLinked ? 'bi-lock-fill' : 'bi-unlock'"
+                ></i>
               </button>
               <button
                 type="button"
@@ -204,7 +300,13 @@
               class="form-select form-select-sm mt-2"
               aria-label="Rendering pipeline colormap target"
             >
-              <option v-for="target in activeHalfTargets" :key="target.id" :value="target.id">{{ target.label }}</option>
+              <option
+                v-for="target in activeHalfTargets"
+                :key="target.id"
+                :value="target.id"
+              >
+                {{ target.label }}
+              </option>
             </select>
           </div>
           <VisualziationSettingsEditor :map-manager="props.mapManager" />
@@ -214,7 +316,9 @@
           </div> -->
 
           <div id="saved-visual-settings">
-            <SavedVisualOptions :map-manager="props.mapManager"></SavedVisualOptions>
+            <SavedVisualOptions
+              :map-manager="props.mapManager"
+            ></SavedVisualOptions>
           </div>
         </template>
 
@@ -250,7 +354,9 @@ import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 
 const stylesStore = useStyleStore();
 const matrixViewStore = useMatrixViewStore();
-const activeSidebarPanel = ref<"visualization" | "entities" | "history">("visualization");
+const activeSidebarPanel = ref<"visualization" | "entities" | "history">(
+  "visualization"
+);
 
 // Per-viewer layout conveniences; storage can be unavailable (private mode).
 function readLayoutFlag(key: string, fallback: boolean): boolean {
@@ -269,7 +375,9 @@ function writeLayoutFlag(key: string, value: boolean): void {
   }
 }
 const sidebarCollapsed = ref(readLayoutFlag("hict.sidebar.collapsed", false));
-const layersBlockExpanded = ref(readLayoutFlag("hict.sidebar.layersExpanded", true));
+const layersBlockExpanded = ref(
+  readLayoutFlag("hict.sidebar.layersExpanded", true)
+);
 function toggleSidebarCollapsed(): void {
   sidebarCollapsed.value = !sidebarCollapsed.value;
   writeLayoutFlag("hict.sidebar.collapsed", sidebarCollapsed.value);
@@ -280,9 +388,8 @@ function toggleLayersBlock(): void {
 }
 
 const { mapBackgroundColor } = storeToRefs(stylesStore);
-const { openMapFilename: primaryMapFilename, secondaryMapFilename } = storeToRefs(
-  useSessionStore()
-);
+const { openMapFilename: primaryMapFilename, secondaryMapFilename } =
+  storeToRefs(useSessionStore());
 const {
   presentationMode,
   activeVisualizationSource,
@@ -292,20 +399,37 @@ const {
   activeVisualizationHalf,
 } = storeToRefs(matrixViewStore);
 const secondaryAttached = ref(false);
-const pipelineTargets = ref<import("@/app/core/mapmanagers/VisualizationManager").VisualizationPipelineTarget[]>([]);
-const hasTwoSources = computed(() => presentationMode.value !== "single" || secondaryAttached.value);
-const activeSourceTargets = computed(() => pipelineTargets.value.filter(target => target.source === activeVisualizationSource.value));
-const sourceSpansBothHalves = computed(() =>
-  activeSourceTargets.value.some(target => target.half === "upper") &&
-  activeSourceTargets.value.some(target => target.half === "lower"));
-const showLayerSelector = computed(() => hasTwoSources.value || sourceSpansBothHalves.value);
-const sourceLabel = computed(() => activeVisualizationSource.value === "SECONDARY" ? "Secondary" : "Primary");
+const pipelineTargets = ref<
+  import("@/app/core/mapmanagers/VisualizationManager").VisualizationPipelineTarget[]
+>([]);
+const hasTwoSources = computed(
+  () => presentationMode.value !== "single" || secondaryAttached.value
+);
+const activeSourceTargets = computed(() =>
+  pipelineTargets.value.filter(
+    (target) => target.source === activeVisualizationSource.value
+  )
+);
+const sourceSpansBothHalves = computed(
+  () =>
+    activeSourceTargets.value.some((target) => target.half === "upper") &&
+    activeSourceTargets.value.some((target) => target.half === "lower")
+);
+const showLayerSelector = computed(
+  () => hasTwoSources.value || sourceSpansBothHalves.value
+);
+const sourceLabel = computed(() =>
+  activeVisualizationSource.value === "SECONDARY" ? "Secondary" : "Primary"
+);
 
 function halfAvailable(half: "upper" | "lower"): boolean {
-  return activeSourceTargets.value.some(target => target.half === half);
+  return activeSourceTargets.value.some((target) => target.half === half);
 }
 const activeHalfTargets = computed(() =>
-  activeSourceTargets.value.filter(target => target.half === activeVisualizationHalf.value));
+  activeSourceTargets.value.filter(
+    (target) => target.half === activeVisualizationHalf.value
+  )
+);
 
 /// @ts-expect-error "Style objects are not cloneable"
 const backgroundColorStyle: Ref<Style> = ref(
@@ -333,11 +457,17 @@ const props = defineProps<{
 
 function isHalfActive(half: "upper" | "lower"): boolean {
   if (!halfAvailable(half)) return false;
-  return halvesLinked.value || !sourceSpansBothHalves.value || activeVisualizationHalf.value === half;
+  return (
+    halvesLinked.value ||
+    !sourceSpansBothHalves.value ||
+    activeVisualizationHalf.value === half
+  );
 }
 
 function halfLabelSuffix(half: "upper" | "lower"): string {
-  const target = activeSourceTargets.value.find(candidate => candidate.half === half);
+  const target = activeSourceTargets.value.find(
+    (candidate) => candidate.half === half
+  );
   return target?.mode === "MODDOTPLOT_IDENTITY" ? "identity" : "";
 }
 
@@ -348,28 +478,49 @@ function halfLabelSuffix(half: "upper" | "lower"): string {
 function syncActiveTarget(): void {
   const targets = activeSourceTargets.value;
   if (halvesLinked.value || !sourceSpansBothHalves.value) {
-    if (activeVisualizationTargetId.value !== null) activeVisualizationTargetId.value = null;
+    if (activeVisualizationTargetId.value !== null)
+      activeVisualizationTargetId.value = null;
     return;
   }
-  const inHalf = targets.filter(target => target.half === activeVisualizationHalf.value);
-  if (inHalf.some(target => target.id === activeVisualizationTargetId.value)) return;
+  const inHalf = targets.filter(
+    (target) => target.half === activeVisualizationHalf.value
+  );
+  if (inHalf.some((target) => target.id === activeVisualizationTargetId.value))
+    return;
   activeVisualizationTargetId.value = inHalf[0]?.id ?? targets[0]?.id ?? null;
 }
 
 async function refreshVisualizationSources(): Promise<void> {
   if (!props.mapManager || props.mapManager.isDisposed) return;
   const [status, targets] = await Promise.all([
-    props.mapManager.networkManager.requestManager.getSecondarySourceStatus().catch(() => null),
-    props.mapManager.visualizationManager.getVisualizationPipelineTargets().catch(() => []),
+    props.mapManager.networkManager.requestManager
+      .getSecondarySourceStatus()
+      .catch(() => null),
+    props.mapManager.visualizationManager
+      .getVisualizationPipelineTargets()
+      .catch(() => []),
   ]);
   secondaryAttached.value = Boolean(status?.attached);
   pipelineTargets.value = targets;
   syncActiveTarget();
 }
 
-watch(() => [props.mapManager, presentationMode.value, activeVisualizationSource.value] as const,
-  () => { void refreshVisualizationSources(); }, { immediate: true });
-watch(() => [halvesLinked.value, activeVisualizationHalf.value] as const, syncActiveTarget);
+watch(
+  () =>
+    [
+      props.mapManager,
+      presentationMode.value,
+      activeVisualizationSource.value,
+    ] as const,
+  () => {
+    void refreshVisualizationSources();
+  },
+  { immediate: true }
+);
+watch(
+  () => [halvesLinked.value, activeVisualizationHalf.value] as const,
+  syncActiveTarget
+);
 
 function selectHalf(half: "upper" | "lower"): void {
   matrixViewStore.setActiveVisualizationHalf(half);
@@ -380,9 +531,21 @@ function toggleHalvesLinked(): void {
   matrixViewStore.setHalvesLinked(!halvesLinked.value);
 }
 
-const onRenderPipelineChanged = () => { void refreshVisualizationSources(); };
-onMounted(() => window.addEventListener("hict:render-pipeline-changed", onRenderPipelineChanged));
-onUnmounted(() => window.removeEventListener("hict:render-pipeline-changed", onRenderPipelineChanged));
+const onRenderPipelineChanged = () => {
+  void refreshVisualizationSources();
+};
+onMounted(() =>
+  window.addEventListener(
+    "hict:render-pipeline-changed",
+    onRenderPipelineChanged
+  )
+);
+onUnmounted(() =>
+  window.removeEventListener(
+    "hict:render-pipeline-changed",
+    onRenderPipelineChanged
+  )
+);
 
 class LayerDescriptor {
   constructor(
@@ -415,8 +578,7 @@ const layers: Ref<LayerDescriptor[]> = ref([
     () =>
       props.mapManager
         ?.getLayersManager()
-        .track2DHolder.contigBordersTrack.getLabelOffsetMultiplier() ?? 1.25
-    ,
+        .track2DHolder.contigBordersTrack.getLabelOffsetMultiplier() ?? 1.25,
     () =>
       props.mapManager
         ?.getLayersManager()
@@ -429,7 +591,9 @@ const layers: Ref<LayerDescriptor[]> = ref([
       props.mapManager
         ?.getLayersManager()
         .track2DHolder.contigBordersTrack.getLabelOutlineWidth() ?? 2,
-    () => props.mapManager?.getLayersManager().getExportTrackFlags().contigBorders ?? true
+    () =>
+      props.mapManager?.getLayersManager().getExportTrackFlags()
+        .contigBorders ?? true
   ),
   new LayerDescriptor(
     "Scaffolds",
@@ -446,8 +610,7 @@ const layers: Ref<LayerDescriptor[]> = ref([
     () =>
       props.mapManager
         ?.getLayersManager()
-        .track2DHolder.scaffoldBordersTrack.getLabelOffsetMultiplier() ?? 1.25
-    ,
+        .track2DHolder.scaffoldBordersTrack.getLabelOffsetMultiplier() ?? 1.25,
     () =>
       props.mapManager
         ?.getLayersManager()
@@ -460,14 +623,19 @@ const layers: Ref<LayerDescriptor[]> = ref([
       props.mapManager
         ?.getLayersManager()
         .track2DHolder.scaffoldBordersTrack.getLabelOutlineWidth() ?? 2,
-    () => props.mapManager?.getLayersManager().getExportTrackFlags().scaffoldBorders ?? true
+    () =>
+      props.mapManager?.getLayersManager().getExportTrackFlags()
+        .scaffoldBorders ?? true
   ),
   new LayerDescriptor(
     "Cnames",
     () => {
       const color =
-        props.mapManager?.getLayersManager().track2DHolder.contigBordersTrack.getLabelColor() ??
-        props.mapManager?.getLayersManager().track2DHolder.contigBordersTrack.options.borderColor;
+        props.mapManager
+          ?.getLayersManager()
+          .track2DHolder.contigBordersTrack.getLabelColor() ??
+        props.mapManager?.getLayersManager().track2DHolder.contigBordersTrack
+          .options.borderColor;
       return new Style({
         stroke: new Stroke({
           color: color as string,
@@ -483,8 +651,7 @@ const layers: Ref<LayerDescriptor[]> = ref([
     () =>
       props.mapManager
         ?.getLayersManager()
-        .track2DHolder.contigBordersTrack.getLabelOffsetMultiplier() ?? 1.25
-    ,
+        .track2DHolder.contigBordersTrack.getLabelOffsetMultiplier() ?? 1.25,
     () =>
       props.mapManager
         ?.getLayersManager()
@@ -497,14 +664,19 @@ const layers: Ref<LayerDescriptor[]> = ref([
       props.mapManager
         ?.getLayersManager()
         .track2DHolder.contigBordersTrack.getLabelOutlineWidth() ?? 2,
-    () => props.mapManager?.getLayersManager().getExportTrackFlags().contigNames ?? true
+    () =>
+      props.mapManager?.getLayersManager().getExportTrackFlags().contigNames ??
+      true
   ),
   new LayerDescriptor(
     "Snames",
     () => {
       const color =
-        props.mapManager?.getLayersManager().track2DHolder.scaffoldBordersTrack.getLabelColor() ??
-        props.mapManager?.getLayersManager().track2DHolder.scaffoldBordersTrack.options.borderColor;
+        props.mapManager
+          ?.getLayersManager()
+          .track2DHolder.scaffoldBordersTrack.getLabelColor() ??
+        props.mapManager?.getLayersManager().track2DHolder.scaffoldBordersTrack
+          .options.borderColor;
       return new Style({
         stroke: new Stroke({
           color: color as string,
@@ -520,8 +692,7 @@ const layers: Ref<LayerDescriptor[]> = ref([
     () =>
       props.mapManager
         ?.getLayersManager()
-        .track2DHolder.scaffoldBordersTrack.getLabelOffsetMultiplier() ?? 1.25
-    ,
+        .track2DHolder.scaffoldBordersTrack.getLabelOffsetMultiplier() ?? 1.25,
     () =>
       props.mapManager
         ?.getLayersManager()
@@ -534,7 +705,9 @@ const layers: Ref<LayerDescriptor[]> = ref([
       props.mapManager
         ?.getLayersManager()
         .track2DHolder.scaffoldBordersTrack.getLabelOutlineWidth() ?? 2,
-    () => props.mapManager?.getLayersManager().getExportTrackFlags().scaffoldNames ?? true
+    () =>
+      props.mapManager?.getLayersManager().getExportTrackFlags()
+        .scaffoldNames ?? true
   ),
   new LayerDescriptor("Background", () => backgroundColorStyle.value),
 ]);
@@ -577,16 +750,24 @@ function currentBorderStyle(name: string): BorderStyle | undefined {
   if (!manager || name === "Background") return undefined;
   // Explicit style revisions keep the controls synchronized with loaded presets.
   void manager.trackStyleState.revision.value;
-  const track = name === "Contigs" || name === "Cnames"
-    ? manager.track2DHolder.contigBordersTrack : manager.track2DHolder.scaffoldBordersTrack;
+  const track =
+    name === "Contigs" || name === "Cnames"
+      ? manager.track2DHolder.contigBordersTrack
+      : manager.track2DHolder.scaffoldBordersTrack;
   if (!name.endsWith("names")) return track.getStyleType();
   switch (track.getNamePlacement()) {
-    case NamePlacement.TOP: return BorderStyle.TOP;
-    case NamePlacement.BOTTOM: return BorderStyle.BOTTOM;
-    case NamePlacement.CENTER: return BorderStyle.FULL;
-    case NamePlacement.LEFT: return BorderStyle.LEFT;
-    case NamePlacement.RIGHT: return BorderStyle.RIGHT;
-    default: return BorderStyle.NONE;
+    case NamePlacement.TOP:
+      return BorderStyle.TOP;
+    case NamePlacement.BOTTOM:
+      return BorderStyle.BOTTOM;
+    case NamePlacement.CENTER:
+      return BorderStyle.FULL;
+    case NamePlacement.LEFT:
+      return BorderStyle.LEFT;
+    case NamePlacement.RIGHT:
+      return BorderStyle.RIGHT;
+    default:
+      return BorderStyle.NONE;
   }
 }
 
@@ -624,8 +805,11 @@ function onStyleChanged(
   borderOutline: boolean
 ) {
   const holder = props.mapManager?.getLayersManager().track2DHolder;
-  if (holder && (layerName === 'Contigs' || layerName === 'Scaffolds')) {
-    const track = layerName === 'Contigs' ? holder.contigBordersTrack : holder.scaffoldBordersTrack;
+  if (holder && (layerName === "Contigs" || layerName === "Scaffolds")) {
+    const track =
+      layerName === "Contigs"
+        ? holder.contigBordersTrack
+        : holder.scaffoldBordersTrack;
     track.options.borderOutline = borderOutline;
   }
   switch (layerName) {
@@ -681,7 +865,12 @@ function onStyleChanged(
 
 function getBorderOutline(name: string): boolean {
   const holder = props.mapManager?.getLayersManager().track2DHolder;
-  return (name === 'Contigs' ? holder?.contigBordersTrack : holder?.scaffoldBordersTrack)?.options.borderOutline ?? false;
+  return (
+    (name === "Contigs"
+      ? holder?.contigBordersTrack
+      : holder?.scaffoldBordersTrack
+    )?.options.borderOutline ?? false
+  );
 }
 
 function getEventManager(): CommonEventManager | undefined {
@@ -695,7 +884,9 @@ function swapSources(): void {
     .swapRenderPipelineSourcesAndReload()
     .then((swapped) => {
       if (!swapped) {
-        toast.message("Both sources are not blended in the same triangle; nothing to swap");
+        toast.message(
+          "Both sources are not blended in the same triangle; nothing to swap"
+        );
         return;
       }
       matrixViewStore.toggleLayersSwapped();
@@ -888,8 +1079,15 @@ function selectVisualizationSource(source: "PRIMARY" | "SECONDARY"): void {
   padding-bottom: 12px;
 }
 
-.visualization-source-row .btn { font-size: .8rem; min-height: 32px; font-weight: 500; }
-.visualization-source-selector select { font-size: .8rem; border-radius: 7px; }
+.visualization-source-row .btn {
+  font-size: 0.8rem;
+  min-height: 32px;
+  font-weight: 500;
+}
+.visualization-source-selector select {
+  font-size: 0.8rem;
+  border-radius: 7px;
+}
 .visualization-source-row {
   display: flex;
   align-items: stretch;

@@ -95,7 +95,10 @@ import {
 } from "../api/request";
 import { ColormapDTO, OutboundDTO, VisualizationOptionsDTO } from "./dto";
 
-import { AssemblyHistoryRequest, RestoreAssemblyHistoryRequest } from "../api/request";
+import {
+  AssemblyHistoryRequest,
+  RestoreAssemblyHistoryRequest,
+} from "../api/request";
 import { SequenceAnalysisRequest } from "../api/SequenceAnalysisRequest";
 
 abstract class HiCTAPIRequestDTO<
@@ -114,7 +117,11 @@ abstract class HiCTAPIRequestDTO<
         return { toDTO: () => (entity as SequenceAnalysisRequest).options };
       case entity instanceof AssemblyHistoryRequest:
       case entity instanceof RestoreAssemblyHistoryRequest:
-        return { toDTO: () => (entity as AssemblyHistoryRequest | RestoreAssemblyHistoryRequest).options };
+        return {
+          toDTO: () =>
+            (entity as AssemblyHistoryRequest | RestoreAssemblyHistoryRequest)
+              .options,
+        };
       case entity instanceof GetCurrentSignalRangeRequest:
         return new GetCurrentSignalRangeRequestDTO(
           entity as GetCurrentSignalRangeRequest
@@ -202,7 +209,9 @@ abstract class HiCTAPIRequestDTO<
           entity as OpenCoolerWeightsTrackRequest
         );
       case entity instanceof ProbeTrackCompatibilityRequest:
-        return new ProbeTrackCompatibilityRequestDTO(entity as ProbeTrackCompatibilityRequest);
+        return new ProbeTrackCompatibilityRequestDTO(
+          entity as ProbeTrackCompatibilityRequest
+        );
       case entity instanceof ListTracksRequest:
         return new ListTracksRequestDTO(entity);
       case entity instanceof UpdateTrackRequest:
@@ -222,9 +231,13 @@ abstract class HiCTAPIRequestDTO<
           entity as GetTrackFeatureContextRequest
         );
       case entity instanceof StartTracksPrecomputeRequest:
-        return new StartTracksPrecomputeRequestDTO(entity as StartTracksPrecomputeRequest);
+        return new StartTracksPrecomputeRequestDTO(
+          entity as StartTracksPrecomputeRequest
+        );
       case entity instanceof GetTracksPrecomputeStatusRequest:
-        return new GetTracksPrecomputeStatusRequestDTO(entity as GetTracksPrecomputeStatusRequest);
+        return new GetTracksPrecomputeStatusRequestDTO(
+          entity as GetTracksPrecomputeStatusRequest
+        );
       case entity instanceof ProbeTrackPrecomputeCacheRequest:
         return new ProbeTrackPrecomputeCacheRequestDTO(
           entity as ProbeTrackPrecomputeCacheRequest
@@ -232,7 +245,9 @@ abstract class HiCTAPIRequestDTO<
       case entity instanceof ListConversionJobsRequest:
         return new ListConversionJobsRequestDTO(entity);
       case entity instanceof GetConversionJobRequest:
-        return new GetConversionJobRequestDTO(entity as GetConversionJobRequest);
+        return new GetConversionJobRequestDTO(
+          entity as GetConversionJobRequest
+        );
       case entity instanceof StopConversionJobRequest:
         return new StopConversionJobRequestDTO(
           entity as StopConversionJobRequest
@@ -244,7 +259,9 @@ abstract class HiCTAPIRequestDTO<
       case entity instanceof ExportNameMappingRequest:
         return new ExportNameMappingRequestDTO(entity);
       case entity instanceof ImportNameMappingRequest:
-        return new ImportNameMappingRequestDTO(entity as ImportNameMappingRequest);
+        return new ImportNameMappingRequestDTO(
+          entity as ImportNameMappingRequest
+        );
       case entity instanceof ReloadTilesRequest:
         return new ReloadTilesRequestDTO(entity);
       case entity instanceof ListFASTAFilesRequest:
@@ -288,7 +305,9 @@ abstract class HiCTAPIRequestDTO<
       case entity instanceof GetRenderPipelineRequest:
         return new GetRenderPipelineRequestDTO(entity);
       case entity instanceof SetRenderPipelineRequest:
-        return new SetRenderPipelineRequestDTO(entity as SetRenderPipelineRequest);
+        return new SetRenderPipelineRequestDTO(
+          entity as SetRenderPipelineRequest
+        );
       case entity instanceof ResetRenderPipelineRequest:
         return new ResetRenderPipelineRequestDTO(entity);
       case entity instanceof CloseFileRequest:
@@ -482,8 +501,7 @@ class SetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<SetVisualizati
       postLogBase: finiteNumberOr(options.postLogBase, -1),
       applyCoolerWeights: options.applyCoolerWeights,
       resolutionScaling: options.resolutionScaling,
-      resolutionLinearScaling:
-        options.resolutionLinearScaling,
+      resolutionLinearScaling: options.resolutionLinearScaling,
       autoThresholdEnabled: options.autoThresholdEnabled,
       autoThresholdQuantile: finiteNumberOr(
         options.autoThresholdQuantile,

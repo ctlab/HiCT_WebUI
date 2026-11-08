@@ -228,21 +228,40 @@ function onRulerContextMenu(event: Event): void {
   const detail = (event as CustomEvent<RulerMenuDetail>).detail;
   const manager = props.mapManager;
   if (!detail || !manager) return;
-  const locus = manager.getContigDimensionHolder().getContigLocusByBp(detail.bp);
+  const locus = manager
+    .getContigDimensionHolder()
+    .getContigLocusByBp(detail.bp);
   const mode = uiSettingsForStrip.rulerCoordinateMode;
   rulerMenu.value = {
     x: detail.clientX,
     y: detail.clientY,
-    title: `${detail.direction === "horizontal" ? "Horizontal" : "Vertical"} ruler`,
+    title: `${
+      detail.direction === "horizontal" ? "Horizontal" : "Vertical"
+    } ruler`,
     items: [
       {
         label: "Copy position",
         run: () =>
-          void copyText(formatLocus(locus.contigName, locus.inContigBp + 1), "Position"),
+          void copyText(
+            formatLocus(locus.contigName, locus.inContigBp + 1),
+            "Position"
+          ),
       },
-      { label: "Ruler: Global", disabled: mode === "global", run: () => setRulerMode("global") },
-      { label: "Ruler: In contig", disabled: mode === "contig", run: () => setRulerMode("contig") },
-      { label: "Ruler: In scaffold", disabled: mode === "scaffold", run: () => setRulerMode("scaffold") },
+      {
+        label: "Ruler: Global",
+        disabled: mode === "global",
+        run: () => setRulerMode("global"),
+      },
+      {
+        label: "Ruler: In contig",
+        disabled: mode === "contig",
+        run: () => setRulerMode("contig"),
+      },
+      {
+        label: "Ruler: In scaffold",
+        disabled: mode === "scaffold",
+        run: () => setRulerMode("scaffold"),
+      },
     ],
   };
 }
@@ -362,15 +381,19 @@ const horizontalRulerCssSize = computed(() =>
   horizontalSequencePresent.value ? `${64 + sequenceStripPx.value}px` : "64px"
 );
 const verticalRulerCssSize = computed(() => {
-  const coordinates = props.mapManager?.getContigDimensionHolder().prefix_sum_bp;
+  const coordinates =
+    props.mapManager?.getContigDimensionHolder().prefix_sum_bp;
   const maximum = coordinates?.[coordinates.length - 1] ?? 0;
   if (!verticalSequencePresent.value) {
     // Longest abbreviated label ("113.281M"), plus the "ctg+"/"scf+" prefix outside global mode,
     // plus tick and padding. Reserved up front because labels are never shrunk below 10px.
-    const unit = maximum >= 1e9 ? 1e9 : maximum >= 1e6 ? 1e6 : maximum >= 1e3 ? 1e3 : 1;
+    const unit =
+      maximum >= 1e9 ? 1e9 : maximum >= 1e6 ? 1e6 : maximum >= 1e3 ? 1e3 : 1;
     const digits = String(Math.max(1, Math.ceil(maximum / unit))).length;
     const labelCharacters =
-      digits + (unit > 1 ? 5 : 0) + (uiSettingsForStrip.rulerCoordinateMode === "global" ? 0 : 4);
+      digits +
+      (unit > 1 ? 5 : 0) +
+      (uiSettingsForStrip.rulerCoordinateMode === "global" ? 0 : 4);
     return `${Math.max(88, 40 + labelCharacters * 9)}px`;
   }
   // At base zoom labels use complete coordinates. Reserve space for those
@@ -387,12 +410,12 @@ const verticalRulerCssSize = computed(() => {
   height: 100%;
   position: relative;
   display: grid;
-  grid-template-rows: v-bind(horizontalTrackPanelCssSize) v-bind(
-      horizontalRulerCssSize
-    ) 1fr;
-  grid-template-columns: v-bind(verticalTrackPanelCssSize) v-bind(
-      verticalRulerCssSize
-    ) 1fr;
+  grid-template-rows:
+    v-bind(horizontalTrackPanelCssSize) v-bind(horizontalRulerCssSize)
+    1fr;
+  grid-template-columns:
+    v-bind(verticalTrackPanelCssSize) v-bind(verticalRulerCssSize)
+    1fr;
   grid-template-areas:
     "corner-track corner-tracks-ruler horizontal-tracks"
     "corner-ruler-tracks corner-ruler horizontal-ruler"

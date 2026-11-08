@@ -52,8 +52,12 @@ class CommonEventManager {
     contigDescriptors: ContigDescriptor[];
     scaffoldDescriptors: ScaffoldDescriptor[];
   }): void {
-    this.mapManager.contigDimensionHolder.updateContigData(asmInfo.contigDescriptors);
-    this.mapManager.scaffoldHolder.updateScaffoldData(asmInfo.scaffoldDescriptors);
+    this.mapManager.contigDimensionHolder.updateContigData(
+      asmInfo.contigDescriptors
+    );
+    this.mapManager.scaffoldHolder.updateScaffoldData(
+      asmInfo.scaffoldDescriptors
+    );
     this.mapManager.viewAndLayersManager.reapplyAxisScopes();
     this.mapManager.refreshOverviewMinimap();
   }
@@ -92,7 +96,9 @@ class CommonEventManager {
     const endBP = prefixSumBp[rord];
 
     if (typeof startBP !== "number" || typeof endBP !== "number") {
-      toast.error("Selected contig range is no longer available in the current assembly.");
+      toast.error(
+        "Selected contig range is no longer available in the current assembly."
+      );
       console.log(
         `Not ${actionLabel}: left border bp is`,
         startBP,
@@ -176,8 +182,10 @@ class CommonEventManager {
         return NamePlacement.BOTTOM;
       case BorderStyle.TOP:
         return NamePlacement.TOP;
-      case BorderStyle.LEFT: return NamePlacement.LEFT;
-      case BorderStyle.RIGHT: return NamePlacement.RIGHT;
+      case BorderStyle.LEFT:
+        return NamePlacement.LEFT;
+      case BorderStyle.RIGHT:
+        return NamePlacement.RIGHT;
       case BorderStyle.NONE:
       default:
         return NamePlacement.HIDDEN;
@@ -186,7 +194,9 @@ class CommonEventManager {
 
   public onContigNamePlacementChanged(style: BorderStyle): void {
     const placement = this.toNamePlacement(style);
-    this.mapManager.viewAndLayersManager.onContigNamePlacementChanged(placement);
+    this.mapManager.viewAndLayersManager.onContigNamePlacementChanged(
+      placement
+    );
   }
 
   public onScaffoldNamePlacementChanged(style: BorderStyle): void {
@@ -225,7 +235,9 @@ class CommonEventManager {
   }
 
   public onContigLabelOutlineWidthChanged(width: number): void {
-    this.mapManager.viewAndLayersManager.onContigLabelOutlineWidthChanged(width);
+    this.mapManager.viewAndLayersManager.onContigLabelOutlineWidthChanged(
+      width
+    );
   }
 
   public onScaffoldLabelOutlineWidthChanged(width: number): void {
@@ -239,7 +251,9 @@ class CommonEventManager {
   }
 
   public onScaffoldExportEnabledChanged(enabled: boolean): void {
-    this.mapManager.viewAndLayersManager.onScaffoldExportEnabledChanged(enabled);
+    this.mapManager.viewAndLayersManager.onScaffoldExportEnabledChanged(
+      enabled
+    );
   }
 
   public onContigNamesExportEnabledChanged(enabled: boolean): void {
@@ -350,7 +364,8 @@ class CommonEventManager {
   }
 
   public async onUnscaffoldAllClicked(): Promise<void> {
-    const assembly = await this.mapManager.networkManager.requestManager.unscaffoldAll();
+    const assembly =
+      await this.mapManager.networkManager.requestManager.unscaffoldAll();
     this.applyAssemblyInfo(assembly);
     this.resetSelection();
     await this.mapManager.reloadVisuals();
@@ -406,7 +421,9 @@ class CommonEventManager {
       showTranslocationStatus(false);
       this.mapManager.deactivateTranslocation();
     } else {
-      const range = this.getSelectedContigBpRange("entering translocation mode");
+      const range = this.getSelectedContigBpRange(
+        "entering translocation mode"
+      );
       if (!range) {
         return;
       }

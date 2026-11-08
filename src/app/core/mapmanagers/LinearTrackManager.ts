@@ -38,7 +38,10 @@ import type {
   TracksPrecomputeStatusResponse,
 } from "@/app/core/net/api/response";
 import { packIntervalsIntoLanes } from "./featurePacking";
-import { projectSequenceTrackBins, type SequenceAxisSegment } from "../visualization/sequenceTrackProjection";
+import {
+  projectSequenceTrackBins,
+  type SequenceAxisSegment,
+} from "../visualization/sequenceTrackProjection";
 
 export type TrackOrientation = "horizontal" | "vertical";
 type Orientation = TrackOrientation;
@@ -61,7 +64,12 @@ const MAX_CACHED_RESOLUTIONS_PER_ORIENTATION = 6;
 
 class LinearTrackManager {
   /** Temporary label anchors for a cropped export; data coordinates stay unchanged. */
-  public exportLabelBounds?: { left: number; right: number; top: number; bottom: number };
+  public exportLabelBounds?: {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  };
 
   private horizontalCanvas: HTMLCanvasElement | null = null;
   private verticalCanvas: HTMLCanvasElement | null = null;
@@ -91,12 +99,17 @@ class LinearTrackManager {
   };
   private cacheEpoch = 0;
   private readonly analysisWarnings = new Map<string, string>();
-  public getAnalysisWarning(trackId: string): string | undefined { return this.analysisWarnings.get(trackId); }
+  public getAnalysisWarning(trackId: string): string | undefined {
+    return this.analysisWarnings.get(trackId);
+  }
   private readonly lastTrackErrors = new Map<string, string>();
   private readonly prefetchExtentScreens = DEFAULT_PREFETCH_EXTENT_SCREENS;
   private pendingRefreshTimer: number | null = null;
   private readonly pendingTrackMessages = new Map<string, string>();
-  private readonly queryCache: Record<Orientation, Map<number, TrackQueryCache>> = {
+  private readonly queryCache: Record<
+    Orientation,
+    Map<number, TrackQueryCache>
+  > = {
     horizontal: new Map<number, TrackQueryCache>(),
     vertical: new Map<number, TrackQueryCache>(),
   };
@@ -150,7 +163,8 @@ class LinearTrackManager {
     if (this.resolutionListener) {
       unByKey(this.resolutionListener);
     }
-    if (this.pendingRefreshTimer !== null) window.clearTimeout(this.pendingRefreshTimer);
+    if (this.pendingRefreshTimer !== null)
+      window.clearTimeout(this.pendingRefreshTimer);
     this.pendingRefreshTimer = null;
     this.horizontalResizeObserver?.disconnect();
     this.verticalResizeObserver?.disconnect();
@@ -220,12 +234,20 @@ class LinearTrackManager {
     return this.tracks.slice();
   }
 
-  public isTrackVisibleOnAxis(trackId: string, orientation: Orientation): boolean {
+  public isTrackVisibleOnAxis(
+    trackId: string,
+    orientation: Orientation
+  ): boolean {
     return !this.hiddenByAxis[orientation].has(trackId);
   }
 
-  public getVisibleTracksForAxis(orientation: Orientation): TrackSummaryResponse[] {
-    return this.tracks.filter(track => track.visible && this.isTrackVisibleOnAxis(track.trackId, orientation));
+  public getVisibleTracksForAxis(
+    orientation: Orientation
+  ): TrackSummaryResponse[] {
+    return this.tracks.filter(
+      (track) =>
+        track.visible && this.isTrackVisibleOnAxis(track.trackId, orientation)
+    );
   }
 
   public getAxisTrackVisibilityState(): AxisTrackVisibilityState {
@@ -235,21 +257,27 @@ class LinearTrackManager {
     };
   }
 
-  public applyAxisTrackVisibilityState(state?: Partial<AxisTrackVisibilityState>): void {
-    const known = new Set(this.tracks.map(track => track.trackId));
+  public applyAxisTrackVisibilityState(
+    state?: Partial<AxisTrackVisibilityState>
+  ): void {
+    const known = new Set(this.tracks.map((track) => track.trackId));
     this.hiddenByAxis.horizontal = new Set(
-      (state?.horizontalHidden ?? []).filter(trackId => known.has(trackId))
+      (state?.horizontalHidden ?? []).filter((trackId) => known.has(trackId))
     );
     this.hiddenByAxis.vertical = new Set(
-      (state?.verticalHidden ?? []).filter(trackId => known.has(trackId))
+      (state?.verticalHidden ?? []).filter((trackId) => known.has(trackId))
     );
     this.invalidateQueryCache();
     this.notifyTrackListChanged();
     void this.render({ allowFetch: false });
   }
 
-  public setTrackVisibleOnAxis(trackId: string, orientation: Orientation, visible: boolean): void {
-    if (!this.tracks.some(track => track.trackId === trackId)) return;
+  public setTrackVisibleOnAxis(
+    trackId: string,
+    orientation: Orientation,
+    visible: boolean
+  ): void {
+    if (!this.tracks.some((track) => track.trackId === trackId)) return;
     if (visible) this.hiddenByAxis[orientation].delete(trackId);
     else this.hiddenByAxis[orientation].add(trackId);
     this.invalidateQueryCache();
@@ -257,14 +285,20 @@ class LinearTrackManager {
     void this.render({ allowFetch: false });
   }
 
-  public async refreshTrackList(waitForRender = true): Promise<TrackSummaryResponse[]> {
-    this.tracks = await this.mapManager.networkManager.requestManager.listTracks();
+  public async refreshTrackList(
+    waitForRender = true
+  ): Promise<TrackSummaryResponse[]> {
+    this.tracks =
+      await this.mapManager.networkManager.requestManager.listTracks();
     this.syncTrackRenderSettings();
     this.invalidateQueryCache();
     this.notifyTrackListChanged();
     const rendering = this.render();
     if (waitForRender) await rendering;
-    else void rendering.catch(error => console.error("Failed to render 1D tracks", error));
+    else
+      void rendering.catch((error) =>
+        console.error("Failed to render 1D tracks", error)
+      );
     return this.tracks.slice();
   }
 
@@ -294,7 +328,11 @@ class LinearTrackManager {
     );
   }
 
-  public async openTrack(filename: string, name?: string, waitForRender = true): Promise<void> {
+  public async openTrack(
+    filename: string,
+    name?: string,
+    waitForRender = true
+  ): Promise<void> {
     await this.mapManager.networkManager.requestManager.openTrack(
       filename,
       name
@@ -319,11 +357,15 @@ class LinearTrackManager {
     await this.refreshTrackList();
   }
 
-  public async reorderTrack(trackId: string, targetIndex: number): Promise<void> {
-    this.tracks = await this.mapManager.networkManager.requestManager.reorderTrack(
-      trackId,
-      targetIndex
-    );
+  public async reorderTrack(
+    trackId: string,
+    targetIndex: number
+  ): Promise<void> {
+    this.tracks =
+      await this.mapManager.networkManager.requestManager.reorderTrack(
+        trackId,
+        targetIndex
+      );
     this.syncTrackRenderSettings();
     this.invalidateQueryCache();
     this.notifyTrackListChanged();
@@ -438,24 +480,53 @@ class LinearTrackManager {
   public async renderSequenceTracks(
     canvas: HTMLCanvasElement,
     orientation: Orientation,
-    options: { start: number; end: number; segments: readonly SequenceAxisSegment[];
-      signal?: AbortSignal; isCurrent: () => boolean },
+    options: {
+      start: number;
+      end: number;
+      segments: readonly SequenceAxisSegment[];
+      signal?: AbortSignal;
+      isCurrent: () => boolean;
+    },
     drawOrientation: Orientation = orientation
-  ): Promise<{ hover: (axis: number, cross: number) => TrackHoverInfo | null; errors: string[] } | null> {
+  ): Promise<{
+    hover: (axis: number, cross: number) => TrackHoverInfo | null;
+    errors: string[];
+  } | null> {
     const visible = this.getVisibleTracksForAxis(orientation);
     if (!visible.length) return null;
-    const real = options.segments.filter(s => !s.gap && s.assemblyStart !== null && s.end > s.start);
-    const bpResolution = this.mapManager.getLayersManager().currentViewState.resolutionDesciptor.bpResolution;
-    const width = drawOrientation === "horizontal" ? canvas.width : canvas.height;
+    const real = options.segments.filter(
+      (s) => !s.gap && s.assemblyStart !== null && s.end > s.start
+    );
+    const bpResolution =
+      this.mapManager.getLayersManager().currentViewState.resolutionDesciptor
+        .bpResolution;
+    const width =
+      drawOrientation === "horizontal" ? canvas.width : canvas.height;
     const api = this.mapManager.networkManager.requestManager;
     const version = api.history.applied;
     const response: TrackQueryResponse = real.length
-      ? await this.mapManager.networkManager.requestManager.queryTracks1DByUnits({
-          unit: "BP", start: real[0].assemblyStart!,
-          end: real[real.length - 1].assemblyStart! + real[real.length - 1].end - real[real.length - 1].start,
-          widthPx: Math.max(1, width), bpResolution,
-        }, options.signal)
-      : { startBp: 0, endBp: 0, startPx: 0, endPx: 0, widthPx: width, bpResolution, tracks: [] };
+      ? await this.mapManager.networkManager.requestManager.queryTracks1DByUnits(
+          {
+            unit: "BP",
+            start: real[0].assemblyStart!,
+            end:
+              real[real.length - 1].assemblyStart! +
+              real[real.length - 1].end -
+              real[real.length - 1].start,
+            widthPx: Math.max(1, width),
+            bpResolution,
+          },
+          options.signal
+        )
+      : {
+          startBp: 0,
+          endBp: 0,
+          startPx: 0,
+          endPx: 0,
+          widthPx: width,
+          bpResolution,
+          tracks: [],
+        };
     if (options.signal?.aborted || !options.isCurrent()) return null;
     // Track queries run concurrently with edits. A read-after check rejects any
     // intervening journal revision instead of drawing annotations from a different
@@ -464,29 +535,70 @@ class LinearTrackManager {
     if (real.length && version) {
       const page = await api.getAssemblyHistory();
       if (options.signal?.aborted || !options.isCurrent()) return null;
-      if (page.summary?.session !== version.session || page.summary?.revision !== version.revision)
-        throw new Error("The assembly changed in another client. Return to the contact map and refresh it before viewing sequence annotations.");
+      if (
+        page.summary?.session !== version.session ||
+        page.summary?.revision !== version.revision
+      )
+        throw new Error(
+          "The assembly changed in another client. Return to the contact map and refresh it before viewing sequence annotations."
+        );
     }
-    const ids = new Set(visible.map(t => t.trackId));
-    const tracks = response.tracks.filter(t => ids.has(t.trackId)).map(t => ({
-      ...t, bins: projectSequenceTrackBins(t.bins, options.segments),
-    }));
+    const ids = new Set(visible.map((t) => t.trackId));
+    const tracks = response.tracks
+      .filter((t) => ids.has(t.trackId))
+      .map((t) => ({
+        ...t,
+        bins: projectSequenceTrackBins(t.bins, options.segments),
+      }));
     // Preserve visible track labels even in an entirely synthetic gap.
-    if (!real.length) for (const t of visible) tracks.push({
-      trackId: t.trackId, name: t.name, type: t.type, color: t.color,
-      renderStyle: t.renderStyle, bins: [], maxValue: 0, error: null,
-      statusMessage: "Scaffold gap: no annotation data", analysisWarning: null,
-    });
+    if (!real.length)
+      for (const t of visible)
+        tracks.push({
+          trackId: t.trackId,
+          name: t.name,
+          type: t.type,
+          color: t.color,
+          renderStyle: t.renderStyle,
+          bins: [],
+          maxValue: 0,
+          error: null,
+          statusMessage: "Scaffold gap: no annotation data",
+          analysisWarning: null,
+        });
     const viewport: ViewportGeometry = {
-      startBp: response.startBp, endBp: response.endBp,
-      startPx: options.start, endPx: options.end, bpResolution,
-      visibleWidthPx: width, scopeStartPx: options.start, scopeEndPx: options.end,
-      pxToScreen: px => (px - options.start) * width / Math.max(1, options.end - options.start),
+      startBp: response.startBp,
+      endBp: response.endBp,
+      startPx: options.start,
+      endPx: options.end,
+      bpResolution,
+      visibleWidthPx: width,
+      scopeStartPx: options.start,
+      scopeEndPx: options.end,
+      pxToScreen: (px) =>
+        ((px - options.start) * width) /
+        Math.max(1, options.end - options.start),
     };
-    this.drawTrackCanvas(canvas, drawOrientation, { ...response, tracks }, viewport, undefined, false, orientation);
-    const snapshot = { tracks, viewport, canvasWidth: canvas.width, canvasHeight: canvas.height, renderedAtMs: Date.now() };
-    return { hover: (axis, cross) => this.getTrackHoverAt(drawOrientation, axis, cross, snapshot),
-      errors: tracks.flatMap(t => t.error ? [`${t.name}: ${t.error}`] : []) };
+    this.drawTrackCanvas(
+      canvas,
+      drawOrientation,
+      { ...response, tracks },
+      viewport,
+      undefined,
+      false,
+      orientation
+    );
+    const snapshot = {
+      tracks,
+      viewport,
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      renderedAtMs: Date.now(),
+    };
+    return {
+      hover: (axis, cross) =>
+        this.getTrackHoverAt(drawOrientation, axis, cross, snapshot),
+      errors: tracks.flatMap((t) => (t.error ? [`${t.name}: ${t.error}`] : [])),
+    };
   }
 
   private isViewInteracting(): boolean {
@@ -597,7 +709,10 @@ class LinearTrackManager {
     }
     const renderStyle = (track.renderStyle ?? "SIGNAL").toUpperCase();
     for (const bin of track.bins) {
-      const interval = this.resolveBinIntervalPx(bin, snapshot.viewport.bpResolution);
+      const interval = this.resolveBinIntervalPx(
+        bin,
+        snapshot.viewport.bpResolution
+      );
       if (!interval.visible) {
         continue;
       }
@@ -608,7 +723,10 @@ class LinearTrackManager {
         continue;
       }
       const start = Math.floor(snapshot.viewport.pxToScreen(interval.startPx));
-      const end = Math.max(start + 1, Math.ceil(snapshot.viewport.pxToScreen(interval.endPx)));
+      const end = Math.max(
+        start + 1,
+        Math.ceil(snapshot.viewport.pxToScreen(interval.endPx))
+      );
       if (axisOffsetPx < start || axisOffsetPx > end) {
         continue;
       }
@@ -798,7 +916,11 @@ class LinearTrackManager {
     axisOffsetPx: number,
     crossOffsetPx: number
   ): void {
-    const hit = this.getFeatureHoverAt(orientation, axisOffsetPx, crossOffsetPx);
+    const hit = this.getFeatureHoverAt(
+      orientation,
+      axisOffsetPx,
+      crossOffsetPx
+    );
     if (!hit) {
       return;
     }
@@ -838,22 +960,25 @@ class LinearTrackManager {
       Math.round(options?.bpResolution ?? descriptor.bpResolution)
     );
     const marginScreens =
-      Number.isFinite(options?.marginScreens) && (options?.marginScreens ?? 0) >= 0
+      Number.isFinite(options?.marginScreens) &&
+      (options?.marginScreens ?? 0) >= 0
         ? Number(options?.marginScreens)
         : this.prefetchExtentScreens;
     try {
       const context =
-        await this.mapManager.networkManager.requestManager.getTrackFeatureContext({
-          unit: "BP",
-          start: Math.max(0, Math.floor(Math.min(startBp, endBp))),
-          end: Math.max(
-            Math.floor(Math.min(startBp, endBp)) + 1,
-            Math.ceil(Math.max(startBp, endBp))
-          ),
-          widthPx,
-          bpResolution,
-          marginScreens,
-        });
+        await this.mapManager.networkManager.requestManager.getTrackFeatureContext(
+          {
+            unit: "BP",
+            start: Math.max(0, Math.floor(Math.min(startBp, endBp))),
+            end: Math.max(
+              Math.floor(Math.min(startBp, endBp)) + 1,
+              Math.ceil(Math.max(startBp, endBp))
+            ),
+            widthPx,
+            bpResolution,
+            marginScreens,
+          }
+        );
       const cachedAt = Date.now();
       const query = this.refineTrackResponsePx(context.query);
       const cacheRecord: TrackQueryCache = {
@@ -890,10 +1015,7 @@ class LinearTrackManager {
     return observer;
   }
 
-  private setRenderState(
-    orientation: Orientation,
-    state: RenderState
-  ): void {
+  private setRenderState(orientation: Orientation, state: RenderState): void {
     this.renderStates[orientation] = state;
     this.renderStateSubscribers[orientation].forEach((callback) => {
       queueMicrotask(() => {
@@ -910,7 +1032,9 @@ class LinearTrackManager {
     allowFetch: boolean
   ): Promise<void> {
     const canvas =
-      orientation === "horizontal" ? this.horizontalCanvas : this.verticalCanvas;
+      orientation === "horizontal"
+        ? this.horizontalCanvas
+        : this.verticalCanvas;
     if (!canvas) {
       return;
     }
@@ -988,7 +1112,10 @@ class LinearTrackManager {
       if (requestId !== this.renderRequestId) {
         return;
       }
-      if (response.tracks.some((track) => track.statusMessage) && this.pendingRefreshTimer === null) {
+      if (
+        response.tracks.some((track) => track.statusMessage) &&
+        this.pendingRefreshTimer === null
+      ) {
         this.pendingRefreshTimer = window.setTimeout(() => {
           this.pendingRefreshTimer = null;
           this.invalidateQueryCache();
@@ -996,17 +1123,28 @@ class LinearTrackManager {
         }, 1000);
       }
       response.tracks.forEach((track) => {
-        if ((this.analysisWarnings.get(track.trackId) ?? null) !== track.analysisWarning) {
+        if (
+          (this.analysisWarnings.get(track.trackId) ?? null) !==
+          track.analysisWarning
+        ) {
           if (track.analysisWarning) {
             this.analysisWarnings.set(track.trackId, track.analysisWarning);
-            useNotificationCenterStore().add("warning", `${track.name}: ${track.analysisWarning}`);
+            useNotificationCenterStore().add(
+              "warning",
+              `${track.name}: ${track.analysisWarning}`
+            );
           } else this.analysisWarnings.delete(track.trackId);
           this.notifyTrackListChanged();
         }
         if (track.statusMessage) {
-          if (this.pendingTrackMessages.get(track.trackId) !== track.statusMessage) {
+          if (
+            this.pendingTrackMessages.get(track.trackId) !== track.statusMessage
+          ) {
             this.pendingTrackMessages.set(track.trackId, track.statusMessage);
-            useNotificationCenterStore().add("info", `${track.name}: ${track.statusMessage}`);
+            useNotificationCenterStore().add(
+              "info",
+              `${track.name}: ${track.statusMessage}`
+            );
           }
         } else {
           this.pendingTrackMessages.delete(track.trackId);
@@ -1021,12 +1159,7 @@ class LinearTrackManager {
           this.lastTrackErrors.delete(track.trackId);
         }
       });
-      this.drawTrackCanvas(
-        canvas,
-        orientation,
-        response,
-        viewport
-      );
+      this.drawTrackCanvas(canvas, orientation, response, viewport);
     } catch (error) {
       if (requestId !== this.renderRequestId) {
         return;
@@ -1068,7 +1201,11 @@ class LinearTrackManager {
     ctx.fillStyle = this.resolveTrackBackgroundColor();
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const fallbackTracks = this.tracks
-      .filter((track) => track.visible && this.isTrackVisibleOnAxis(track.trackId, visibilityOrientation))
+      .filter(
+        (track) =>
+          track.visible &&
+          this.isTrackVisibleOnAxis(track.trackId, visibilityOrientation)
+      )
       .map((track) => ({
         trackId: track.trackId,
         name: track.name,
@@ -1081,15 +1218,18 @@ class LinearTrackManager {
         statusMessage: null,
         analysisWarning: null,
       }));
-    const responseTracks = (response.tracks ?? []).filter(track => this.isTrackVisibleOnAxis(track.trackId, visibilityOrientation));
+    const responseTracks = (response.tracks ?? []).filter((track) =>
+      this.isTrackVisibleOnAxis(track.trackId, visibilityOrientation)
+    );
     const tracks = responseTracks.length > 0 ? responseTracks : fallbackTracks;
-    if (publishState) this.lastRenderedSnapshot[orientation] = {
-      tracks,
-      viewport,
-      canvasWidth: canvas.width,
-      canvasHeight: canvas.height,
-      renderedAtMs: Date.now(),
-    };
+    if (publishState)
+      this.lastRenderedSnapshot[orientation] = {
+        tracks,
+        viewport,
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        renderedAtMs: Date.now(),
+      };
     const textPalette = this.resolveTrackTextPalette();
     if (tracks.length === 0) {
       ctx.fillStyle = textPalette.muted;
@@ -1101,10 +1241,11 @@ class LinearTrackManager {
         8,
         textPalette
       );
-      if (publishState) this.setRenderState(orientation, {
-        statusMessage: statusMessage ?? "No tracks loaded",
-        trackCount: 0,
-      });
+      if (publishState)
+        this.setRenderState(orientation, {
+          statusMessage: statusMessage ?? "No tracks loaded",
+          trackCount: 0,
+        });
       return;
     }
     const descriptor =
@@ -1140,12 +1281,16 @@ class LinearTrackManager {
       const trackSummary = this.tracks.find(
         (item) => item.trackId === track.trackId
       );
-      const useLogScale =
-        renderStyle === "SIGNAL" && !!trackSummary?.logScale;
+      const useLogScale = renderStyle === "SIGNAL" && !!trackSummary?.logScale;
       const logBase = this.getTrackLogBase(track.trackId);
       const signalRange =
         renderStyle === "SIGNAL"
-          ? this.resolveSignalRange(trackSummary, track.bins, viewport, bpResolution)
+          ? this.resolveSignalRange(
+              trackSummary,
+              track.bins,
+              viewport,
+              bpResolution
+            )
           : { min: 0, max: Math.max(track.maxValue, 0) };
       const scaleTransform = this.buildScaleTransform(
         signalRange.min,
@@ -1157,24 +1302,41 @@ class LinearTrackManager {
         renderStyle === "FEATURE"
           ? this.sortFeatureBinsForDraw(track.bins)
           : track.bins;
-      const featurePacking = renderStyle === "FEATURE"
-        ? packIntervalsIntoLanes(binsToRender,
-            bin => this.resolveBinIntervalPx(bin, bpResolution).startPx,
-            bin => this.resolveBinIntervalPx(bin, bpResolution).endPx)
-        : { lanes: new Map<TrackBinResponse, number>(), laneCount: 1 };
+      const featurePacking =
+        renderStyle === "FEATURE"
+          ? packIntervalsIntoLanes(
+              binsToRender,
+              (bin) => this.resolveBinIntervalPx(bin, bpResolution).startPx,
+              (bin) => this.resolveBinIntervalPx(bin, bpResolution).endPx
+            )
+          : { lanes: new Map<TrackBinResponse, number>(), laneCount: 1 };
       const crossSpan = Math.max(1, laneInnerEnd - laneInnerStart);
       const maxFeatureLanes = Math.max(1, Math.floor(crossSpan / 4));
-      const shownFeatureLanes = Math.max(1, Math.min(featurePacking.laneCount, maxFeatureLanes));
-      const summaryLane = featurePacking.laneCount > maxFeatureLanes ? shownFeatureLanes - 1 : -1;
-      const densityDifference = summaryLane >= 0
-        ? new Int32Array((orientation === "horizontal" ? canvas.width : canvas.height) + 1)
-        : null;
+      const shownFeatureLanes = Math.max(
+        1,
+        Math.min(featurePacking.laneCount, maxFeatureLanes)
+      );
+      const summaryLane =
+        featurePacking.laneCount > maxFeatureLanes ? shownFeatureLanes - 1 : -1;
+      const densityDifference =
+        summaryLane >= 0
+          ? new Int32Array(
+              (orientation === "horizontal" ? canvas.width : canvas.height) + 1
+            )
+          : null;
       ctx.fillStyle = track.color ?? "#4e79a7";
       for (const bin of binsToRender) {
-        const itemRgb = renderStyle === "FEATURE" ? this.bedRgbToCss(bin.attributes?.itemRgb) : undefined;
+        const itemRgb =
+          renderStyle === "FEATURE"
+            ? this.bedRgbToCss(bin.attributes?.itemRgb)
+            : undefined;
         ctx.fillStyle = itemRgb ?? track.color ?? "#4e79a7";
         const interval = this.resolveBinIntervalPx(bin, bpResolution);
-        if (!interval.visible || interval.endPx <= viewport.startPx || interval.startPx >= viewport.endPx) {
+        if (
+          !interval.visible ||
+          interval.endPx <= viewport.startPx ||
+          interval.startPx >= viewport.endPx
+        ) {
           continue;
         }
         const startPx = interval.startPx;
@@ -1184,8 +1346,14 @@ class LinearTrackManager {
           renderStyle === "FEATURE" &&
           this.matchesSelectedFeature(track.trackId, bin);
         const featureLane = featurePacking.lanes.get(bin) ?? 0;
-        const packedStart = laneInnerStart + crossSpan * Math.min(featureLane, shownFeatureLanes - 1) / shownFeatureLanes;
-        const packedEnd = laneInnerStart + crossSpan * (Math.min(featureLane, shownFeatureLanes - 1) + 1) / shownFeatureLanes;
+        const packedStart =
+          laneInnerStart +
+          (crossSpan * Math.min(featureLane, shownFeatureLanes - 1)) /
+            shownFeatureLanes;
+        const packedEnd =
+          laneInnerStart +
+          (crossSpan * (Math.min(featureLane, shownFeatureLanes - 1) + 1)) /
+            shownFeatureLanes;
 
         if (orientation === "horizontal") {
           const x0ByPx = Math.floor(viewport.pxToScreen(startPx));
@@ -1198,9 +1366,14 @@ class LinearTrackManager {
           if (x1 <= x0 || x1ByPx === x0ByPx) {
             continue;
           }
-          if (renderStyle === "FEATURE" && densityDifference && featureLane >= summaryLane) {
+          if (
+            renderStyle === "FEATURE" &&
+            densityDifference &&
+            featureLane >= summaryLane
+          ) {
             densityDifference[x0] += Math.max(1, bin.count ?? 1);
-            densityDifference[Math.min(densityDifference.length - 1, x1)] -= Math.max(1, bin.count ?? 1);
+            densityDifference[Math.min(densityDifference.length - 1, x1)] -=
+              Math.max(1, bin.count ?? 1);
             continue;
           }
           if (renderStyle === "SIGNAL") {
@@ -1232,9 +1405,14 @@ class LinearTrackManager {
           if (y1 <= y0 || y1ByPx === y0ByPx) {
             continue;
           }
-          if (renderStyle === "FEATURE" && densityDifference && featureLane >= summaryLane) {
+          if (
+            renderStyle === "FEATURE" &&
+            densityDifference &&
+            featureLane >= summaryLane
+          ) {
             densityDifference[y0] += Math.max(1, bin.count ?? 1);
-            densityDifference[Math.min(densityDifference.length - 1, y1)] -= Math.max(1, bin.count ?? 1);
+            densityDifference[Math.min(densityDifference.length - 1, y1)] -=
+              Math.max(1, bin.count ?? 1);
             continue;
           }
           if (renderStyle === "SIGNAL") {
@@ -1258,28 +1436,61 @@ class LinearTrackManager {
         }
       }
       if (densityDifference && summaryLane >= 0) {
-        const summaryStart = laneInnerStart + crossSpan * summaryLane / shownFeatureLanes;
-        const summaryEnd = laneInnerStart + crossSpan * (summaryLane + 1) / shownFeatureLanes;
-        let density = 0, runStart = 0, runDensity = 0;
+        const summaryStart =
+          laneInnerStart + (crossSpan * summaryLane) / shownFeatureLanes;
+        const summaryEnd =
+          laneInnerStart + (crossSpan * (summaryLane + 1)) / shownFeatureLanes;
+        let density = 0,
+          runStart = 0,
+          runDensity = 0;
         for (let pixel = 0; pixel < densityDifference.length; pixel++) {
           density += densityDifference[pixel];
           if (density !== runDensity) {
             if (runDensity > 0) {
-              if (orientation === "horizontal") this.drawHorizontalFeatureDensityBin(ctx, summaryStart, summaryEnd, runStart, pixel, runDensity);
-              else this.drawVerticalFeatureDensityBin(ctx, summaryStart, summaryEnd, runStart, pixel, runDensity);
+              if (orientation === "horizontal")
+                this.drawHorizontalFeatureDensityBin(
+                  ctx,
+                  summaryStart,
+                  summaryEnd,
+                  runStart,
+                  pixel,
+                  runDensity
+                );
+              else
+                this.drawVerticalFeatureDensityBin(
+                  ctx,
+                  summaryStart,
+                  summaryEnd,
+                  runStart,
+                  pixel,
+                  runDensity
+                );
             }
-            runStart = pixel; runDensity = density;
+            runStart = pixel;
+            runDensity = density;
           }
         }
       }
       ctx.fillStyle = textPalette.primary;
       ctx.font = "bold 11px HiCT Sans";
       if (orientation === "horizontal") {
-        this.drawOutlinedText(ctx, (track.analysisWarning ? "⚠ " : "") + track.name, labelLeft + 6, laneStart + 4, textPalette);
+        this.drawOutlinedText(
+          ctx,
+          (track.analysisWarning ? "⚠ " : "") + track.name,
+          labelLeft + 6,
+          laneStart + 4,
+          textPalette
+        );
         if (track.error) {
           ctx.fillStyle = textPalette.error;
           ctx.font = "10px HiCT Sans";
-          this.drawOutlinedText(ctx, track.error, labelLeft + 6, laneStart + 20, textPalette);
+          this.drawOutlinedText(
+            ctx,
+            track.error,
+            labelLeft + 6,
+            laneStart + 20,
+            textPalette
+          );
         } else if (track.bins.length === 0) {
           ctx.fillStyle = textPalette.muted;
           ctx.font = "10px HiCT Sans";
@@ -1319,7 +1530,13 @@ class LinearTrackManager {
         ctx.save();
         ctx.translate(laneStart + 10, labelBottom - 4);
         ctx.rotate(-Math.PI / 2);
-        this.drawOutlinedText(ctx, (track.analysisWarning ? "⚠ " : "") + track.name, 0, 0, textPalette);
+        this.drawOutlinedText(
+          ctx,
+          (track.analysisWarning ? "⚠ " : "") + track.name,
+          0,
+          0,
+          textPalette
+        );
         ctx.restore();
         if (track.error) {
           ctx.save();
@@ -1373,15 +1590,18 @@ class LinearTrackManager {
     });
     const hasAnySignal = tracks.some((track) => track.bins.length > 0);
     const firstError = tracks.find((track) => track.error)?.error;
-    const pendingMessage = tracks.find((track) => track.statusMessage)?.statusMessage;
-    if (publishState) this.setRenderState(orientation, {
-      statusMessage: firstError
-        ? firstError
-        : hasAnySignal
-        ? ""
-        : pendingMessage ?? statusMessage ?? "No signal in current view",
-      trackCount: tracks.length,
-    });
+    const pendingMessage = tracks.find(
+      (track) => track.statusMessage
+    )?.statusMessage;
+    if (publishState)
+      this.setRenderState(orientation, {
+        statusMessage: firstError
+          ? firstError
+          : hasAnySignal
+          ? ""
+          : pendingMessage ?? statusMessage ?? "No signal in current view",
+        trackCount: tracks.length,
+      });
   }
 
   private refreshFeatureSearchCache(
@@ -1424,7 +1644,8 @@ class LinearTrackManager {
     updatedAtMs: number
   ): FeatureSearchEntry {
     const featureType = (hit.featureType ?? "").trim();
-    const label = hit.label?.trim() || `${hit.sourceName}:${hit.startBp}-${hit.endBp}`;
+    const label =
+      hit.label?.trim() || `${hit.sourceName}:${hit.startBp}-${hit.endBp}`;
     const startBp = Math.min(hit.startBp, hit.endBp);
     const endBp = Math.max(hit.startBp, hit.endBp);
     const key = `${hit.trackId}:${startBp}:${endBp}:${label}:${featureType}`;
@@ -1470,11 +1691,17 @@ class LinearTrackManager {
       if (!interval.visible) {
         continue;
       }
-      if (interval.endPx <= viewport.startPx || interval.startPx >= viewport.endPx) {
+      if (
+        interval.endPx <= viewport.startPx ||
+        interval.startPx >= viewport.endPx
+      ) {
         continue;
       }
       const axisStart = Math.floor(viewport.pxToScreen(interval.startPx));
-      const axisEnd = Math.max(axisStart + 1, Math.ceil(viewport.pxToScreen(interval.endPx)));
+      const axisEnd = Math.max(
+        axisStart + 1,
+        Math.ceil(viewport.pxToScreen(interval.endPx))
+      );
       const axisSpan = axisEnd - axisStart;
       if (axisSpan < minFeatureSpanPx) {
         continue;
@@ -1488,7 +1715,13 @@ class LinearTrackManager {
         if (drawX < lastLabelEnd + minLabelGapPx) {
           continue;
         }
-        this.drawOutlinedText(ctx, label, drawX, laneInnerStart + 14, textPalette);
+        this.drawOutlinedText(
+          ctx,
+          label,
+          drawX,
+          laneInnerStart + 14,
+          textPalette
+        );
         lastLabelEnd = drawX + textWidth;
       } else {
         const textLength = ctx.measureText(label).width;
@@ -1554,7 +1787,10 @@ class LinearTrackManager {
         coding: block.coding,
         x0: Math.max(
           x0,
-          Math.min(canvasWidth - 1, Math.floor(viewport.pxToScreen(block.startPx)))
+          Math.min(
+            canvasWidth - 1,
+            Math.floor(viewport.pxToScreen(block.startPx))
+          )
         ),
         x1: Math.max(
           x0 + 1,
@@ -1567,11 +1803,19 @@ class LinearTrackManager {
       for (const block of projectedBlocks) {
         const blockY = block.coding ? codingY : exonY;
         const blockHeight = block.coding ? codingHeight : exonHeight;
-        ctx.fillRect(block.x0, blockY, Math.max(1, block.x1 - block.x0), blockHeight);
+        ctx.fillRect(
+          block.x0,
+          blockY,
+          Math.max(1, block.x1 - block.x0),
+          blockHeight
+        );
       }
     } else {
       const thinHeight = Math.max(1, Math.round(laneHeight * 0.16));
-      const thickHeight = Math.max(thinHeight + 1, Math.round(laneHeight * 0.48));
+      const thickHeight = Math.max(
+        thinHeight + 1,
+        Math.round(laneHeight * 0.48)
+      );
       const thinY = Math.floor(laneCenter - thinHeight / 2);
       const thickY = Math.floor(laneCenter - thickHeight / 2);
       ctx.fillRect(x0, thinY, x1 - x0, thinHeight);
@@ -1589,7 +1833,10 @@ class LinearTrackManager {
         );
         const thickEndPx = Math.max(
           thickStartPx,
-          Math.max(bin.thickStartPx ?? thickStartPx, bin.thickEndPx ?? thickStartPx)
+          Math.max(
+            bin.thickStartPx ?? thickStartPx,
+            bin.thickEndPx ?? thickStartPx
+          )
         );
         const thickX0ByPx = Math.floor(viewport.pxToScreen(thickStartPx));
         const thickX1ByPx = Math.max(
@@ -1599,9 +1846,20 @@ class LinearTrackManager {
         thickX0 = Math.max(x0, Math.min(canvasWidth - 1, thickX0ByPx));
         thickX1 = Math.max(thickX0 + 1, Math.min(x1, thickX1ByPx));
       }
-      ctx.fillRect(thickX0, thickY, Math.max(1, thickX1 - thickX0), thickHeight);
+      ctx.fillRect(
+        thickX0,
+        thickY,
+        Math.max(1, thickX1 - thickX0),
+        thickHeight
+      );
     }
-    this.drawFeatureDirectionArrowsHorizontal(ctx, bin.strand, x0, x1, laneCenter);
+    this.drawFeatureDirectionArrowsHorizontal(
+      ctx,
+      bin.strand,
+      x0,
+      x1,
+      laneCenter
+    );
     this.drawFeatureTerminalTriangleHorizontal(
       ctx,
       bin.strand,
@@ -1628,8 +1886,12 @@ class LinearTrackManager {
       ctx.strokeStyle = "rgba(245, 124, 0, 0.98)";
       ctx.lineWidth = 2;
       ctx.setLineDash([3, 2]);
-      ctx.strokeRect(x0 + 0.5, laneInnerStart + 0.5,
-        Math.max(1, x1 - x0 - 1), Math.max(1, laneInnerEnd - laneInnerStart - 1));
+      ctx.strokeRect(
+        x0 + 0.5,
+        laneInnerStart + 0.5,
+        Math.max(1, x1 - x0 - 1),
+        Math.max(1, laneInnerEnd - laneInnerStart - 1)
+      );
       ctx.restore();
     }
   }
@@ -1678,7 +1940,10 @@ class LinearTrackManager {
         coding: block.coding,
         y0: Math.max(
           y0,
-          Math.min(canvasHeight - 1, Math.floor(viewport.pxToScreen(block.startPx)))
+          Math.min(
+            canvasHeight - 1,
+            Math.floor(viewport.pxToScreen(block.startPx))
+          )
         ),
         y1: Math.max(
           y0 + 1,
@@ -1691,7 +1956,12 @@ class LinearTrackManager {
       for (const block of projectedBlocks) {
         const blockX = block.coding ? codingX : exonX;
         const blockWidth = block.coding ? codingWidth : exonWidth;
-        ctx.fillRect(blockX, block.y0, blockWidth, Math.max(1, block.y1 - block.y0));
+        ctx.fillRect(
+          blockX,
+          block.y0,
+          blockWidth,
+          Math.max(1, block.y1 - block.y0)
+        );
       }
     } else {
       const thinWidth = Math.max(1, Math.round(laneWidth * 0.16));
@@ -1713,7 +1983,10 @@ class LinearTrackManager {
         );
         const thickEndPx = Math.max(
           thickStartPx,
-          Math.max(bin.thickStartPx ?? thickStartPx, bin.thickEndPx ?? thickStartPx)
+          Math.max(
+            bin.thickStartPx ?? thickStartPx,
+            bin.thickEndPx ?? thickStartPx
+          )
         );
         const thickY0ByPx = Math.floor(viewport.pxToScreen(thickStartPx));
         const thickY1ByPx = Math.max(
@@ -1725,7 +1998,13 @@ class LinearTrackManager {
       }
       ctx.fillRect(thickX, thickY0, thickWidth, Math.max(1, thickY1 - thickY0));
     }
-    this.drawFeatureDirectionArrowsVertical(ctx, bin.strand, y0, y1, laneCenter);
+    this.drawFeatureDirectionArrowsVertical(
+      ctx,
+      bin.strand,
+      y0,
+      y1,
+      laneCenter
+    );
     this.drawFeatureTerminalTriangleVertical(
       ctx,
       bin.strand,
@@ -1752,8 +2031,12 @@ class LinearTrackManager {
       ctx.strokeStyle = "rgba(245, 124, 0, 0.98)";
       ctx.lineWidth = 2;
       ctx.setLineDash([3, 2]);
-      ctx.strokeRect(laneInnerStart + 0.5, y0 + 0.5,
-        Math.max(1, laneInnerEnd - laneInnerStart - 1), Math.max(1, y1 - y0 - 1));
+      ctx.strokeRect(
+        laneInnerStart + 0.5,
+        y0 + 0.5,
+        Math.max(1, laneInnerEnd - laneInnerStart - 1),
+        Math.max(1, y1 - y0 - 1)
+      );
       ctx.restore();
     }
   }
@@ -1830,7 +2113,10 @@ class LinearTrackManager {
     if ((strand !== "+" && strand !== "-") || x1 - x0 <= 8) {
       return;
     }
-    const triangleSize = Math.max(3, Math.round((laneInnerEnd - laneInnerStart) * 0.22));
+    const triangleSize = Math.max(
+      3,
+      Math.round((laneInnerEnd - laneInnerStart) * 0.22)
+    );
     const y = Math.floor(laneCenter);
     ctx.beginPath();
     if (strand === "+") {
@@ -1860,7 +2146,10 @@ class LinearTrackManager {
     if ((strand !== "+" && strand !== "-") || y1 - y0 <= 8) {
       return;
     }
-    const triangleSize = Math.max(3, Math.round((laneInnerEnd - laneInnerStart) * 0.22));
+    const triangleSize = Math.max(
+      3,
+      Math.round((laneInnerEnd - laneInnerStart) * 0.22)
+    );
     const x = Math.floor(laneCenter);
     ctx.beginPath();
     if (strand === "+") {
@@ -1882,15 +2171,22 @@ class LinearTrackManager {
     return (
       (bin.count ?? 0) > 1 &&
       !(bin.label ?? "").trim() &&
-      (bin.strand !== "+" && bin.strand !== "-") &&
+      bin.strand !== "+" &&
+      bin.strand !== "-" &&
       (!bin.blocks || bin.blocks.length === 0)
     );
   }
 
   private bedRgbToCss(value?: string): string | undefined {
     if (!value) return undefined;
-    const channels = value.split(",").map(part => Number(part.trim()));
-    if (channels.length !== 3 || channels.some(channel => !Number.isInteger(channel) || channel < 0 || channel > 255)) return undefined;
+    const channels = value.split(",").map((part) => Number(part.trim()));
+    if (
+      channels.length !== 3 ||
+      channels.some(
+        (channel) => !Number.isInteger(channel) || channel < 0 || channel > 255
+      )
+    )
+      return undefined;
     return `rgb(${channels[0]}, ${channels[1]}, ${channels[2]})`;
   }
 
@@ -1903,7 +2199,10 @@ class LinearTrackManager {
     count: number
   ): void {
     const laneHeight = Math.max(1, laneInnerEnd - laneInnerStart);
-    const intensity = Math.min(0.72, 0.22 + Math.log10(Math.max(1, count)) * 0.16);
+    const intensity = Math.min(
+      0.72,
+      0.22 + Math.log10(Math.max(1, count)) * 0.16
+    );
     ctx.save();
     ctx.globalAlpha = intensity;
     ctx.fillRect(x0, laneInnerStart, Math.max(1, x1 - x0), laneHeight);
@@ -1922,7 +2221,10 @@ class LinearTrackManager {
     count: number
   ): void {
     const laneWidth = Math.max(1, laneInnerEnd - laneInnerStart);
-    const intensity = Math.min(0.72, 0.22 + Math.log10(Math.max(1, count)) * 0.16);
+    const intensity = Math.min(
+      0.72,
+      0.22 + Math.log10(Math.max(1, count)) * 0.16
+    );
     ctx.save();
     ctx.globalAlpha = intensity;
     ctx.fillRect(laneInnerStart, y0, laneWidth, Math.max(1, y1 - y0));
@@ -2036,7 +2338,10 @@ class LinearTrackManager {
           bpResolution
         );
     const endPx = hasProjectedPx
-      ? Math.max(startPx, Math.max(block.startPx ?? startPx, block.endPx ?? startPx))
+      ? Math.max(
+          startPx,
+          Math.max(block.startPx ?? startPx, block.endPx ?? startPx)
+        )
       : contigDimensionHolder.getPxContainingBp(
           Math.max(
             Math.max(0, Math.min(block.startBp, block.endBp)),
@@ -2053,11 +2358,20 @@ class LinearTrackManager {
       };
     }
     const intervalStart = Math.max(0, Math.min(block.startBp, block.endBp));
-    const intervalEnd = Math.max(intervalStart + 1, Math.max(block.startBp, block.endBp));
+    const intervalEnd = Math.max(
+      intervalStart + 1,
+      Math.max(block.startBp, block.endBp)
+    );
     const intervalProbeEnd = Math.max(intervalStart, intervalEnd - 1);
     const visible =
-      contigDimensionHolder.isBpVisibleAtResolution(intervalStart, bpResolution) ||
-      contigDimensionHolder.isBpVisibleAtResolution(intervalProbeEnd, bpResolution);
+      contigDimensionHolder.isBpVisibleAtResolution(
+        intervalStart,
+        bpResolution
+      ) ||
+      contigDimensionHolder.isBpVisibleAtResolution(
+        intervalProbeEnd,
+        bpResolution
+      );
     return {
       startPx,
       endPx,
@@ -2077,7 +2391,10 @@ class LinearTrackManager {
       if (!interval.visible) {
         continue;
       }
-      if (interval.endPx <= viewport.startPx || interval.startPx >= viewport.endPx) {
+      if (
+        interval.endPx <= viewport.startPx ||
+        interval.startPx >= viewport.endPx
+      ) {
         continue;
       }
       const value = Number.isFinite(bin.value) ? Math.max(0, bin.value) : 0;
@@ -2114,7 +2431,9 @@ class LinearTrackManager {
    * coordinate with the same fractional mapping as the FASTA strip and ruler,
    * clamped to the server's bin span (which stays authoritative for hidden
    * contigs). Idempotent; sequence-axis projections never pass through here. */
-  private refineTrackResponsePx(response: TrackQueryResponse): TrackQueryResponse {
+  private refineTrackResponsePx(
+    response: TrackQueryResponse
+  ): TrackQueryResponse {
     const holder = this.mapManager.getContigDimensionHolder();
     const resolution = response.bpResolution;
     if (!(holder.contig_count > 0) || !(resolution > 0)) return response;
@@ -2134,20 +2453,35 @@ class LinearTrackManager {
           const hi = Math.max(bin.startPx, bin.endPx);
           const startBp = Math.min(bin.startBp, bin.endBp);
           const endBp = Math.max(bin.startBp, bin.endBp);
-          const hasThick = finite(bin.thickStartBp) && finite(bin.thickEndBp) &&
-            finite(bin.thickStartPx) && finite(bin.thickEndPx);
+          const hasThick =
+            finite(bin.thickStartBp) &&
+            finite(bin.thickEndBp) &&
+            finite(bin.thickStartPx) &&
+            finite(bin.thickEndPx);
           return {
             ...bin,
             startPx: toPx(startBp, lo, hi),
             endPx: toPx(endBp, lo, hi),
-            thickStartPx: hasThick ? toPx(Math.min(bin.thickStartBp!, bin.thickEndBp!), lo, hi) : bin.thickStartPx,
-            thickEndPx: hasThick ? toPx(Math.max(bin.thickStartBp!, bin.thickEndBp!), lo, hi) : bin.thickEndPx,
+            thickStartPx: hasThick
+              ? toPx(Math.min(bin.thickStartBp!, bin.thickEndBp!), lo, hi)
+              : bin.thickStartPx,
+            thickEndPx: hasThick
+              ? toPx(Math.max(bin.thickStartBp!, bin.thickEndBp!), lo, hi)
+              : bin.thickEndPx,
             blocks: (bin.blocks ?? []).map((block) =>
               finite(block.startPx) && finite(block.endPx)
                 ? {
                     ...block,
-                    startPx: toPx(Math.min(block.startBp, block.endBp), Math.min(block.startPx, block.endPx), Math.max(block.startPx, block.endPx)),
-                    endPx: toPx(Math.max(block.startBp, block.endBp), Math.min(block.startPx, block.endPx), Math.max(block.startPx, block.endPx)),
+                    startPx: toPx(
+                      Math.min(block.startBp, block.endBp),
+                      Math.min(block.startPx, block.endPx),
+                      Math.max(block.startPx, block.endPx)
+                    ),
+                    endPx: toPx(
+                      Math.max(block.startBp, block.endBp),
+                      Math.min(block.startPx, block.endPx),
+                      Math.max(block.startPx, block.endPx)
+                    ),
                   }
                 : block
             ),
@@ -2174,7 +2508,10 @@ class LinearTrackManager {
           bpResolution
         );
     const endPx = hasProjectedPx
-      ? Math.max(startPx, Math.max(bin.startPx ?? startPx, bin.endPx ?? startPx))
+      ? Math.max(
+          startPx,
+          Math.max(bin.startPx ?? startPx, bin.endPx ?? startPx)
+        )
       : contigDimensionHolder.getPxContainingBp(
           Math.max(
             Math.max(0, Math.min(bin.startBp, bin.endBp)),
@@ -2186,11 +2523,20 @@ class LinearTrackManager {
       return { startPx, endPx, visible: true };
     }
     const intervalStart = Math.max(0, Math.min(bin.startBp, bin.endBp));
-    const intervalEnd = Math.max(intervalStart + 1, Math.max(bin.startBp, bin.endBp));
+    const intervalEnd = Math.max(
+      intervalStart + 1,
+      Math.max(bin.startBp, bin.endBp)
+    );
     const intervalProbeEnd = Math.max(intervalStart, intervalEnd - 1);
     const visible =
-      contigDimensionHolder.isBpVisibleAtResolution(intervalStart, bpResolution) ||
-      contigDimensionHolder.isBpVisibleAtResolution(intervalProbeEnd, bpResolution);
+      contigDimensionHolder.isBpVisibleAtResolution(
+        intervalStart,
+        bpResolution
+      ) ||
+      contigDimensionHolder.isBpVisibleAtResolution(
+        intervalProbeEnd,
+        bpResolution
+      );
     return { startPx, endPx, visible };
   }
 
@@ -2238,7 +2584,10 @@ class LinearTrackManager {
         normalize: (value: number) =>
           Math.max(
             0,
-            Math.min(1, ((Number.isFinite(value) ? value : safeMin) - safeMin) / span)
+            Math.min(
+              1,
+              ((Number.isFinite(value) ? value : safeMin) - safeMin) / span
+            )
           ),
       };
     }
@@ -2363,7 +2712,10 @@ class LinearTrackManager {
     if (scale.logScale) {
       ctx.save();
       ctx.fillStyle = textPalette.axis;
-      ctx.translate(Math.max(laneStart + 2, laneEnd - 4), Math.max(14, canvasHeight - 6));
+      ctx.translate(
+        Math.max(laneStart + 2, laneEnd - 4),
+        Math.max(14, canvasHeight - 6)
+      );
       ctx.rotate(-Math.PI / 2);
       ctx.textAlign = "left";
       this.drawOutlinedText(
@@ -2460,7 +2812,9 @@ class LinearTrackManager {
   private relativeLuminance(r: number, g: number, b: number): number {
     const normalize = (channel: number): number => {
       const srgb = Math.max(0, Math.min(255, channel)) / 255;
-      return srgb <= 0.04045 ? srgb / 12.92 : Math.pow((srgb + 0.055) / 1.055, 2.4);
+      return srgb <= 0.04045
+        ? srgb / 12.92
+        : Math.pow((srgb + 0.055) / 1.055, 2.4);
     };
     const nr = normalize(r);
     const ng = normalize(g);
@@ -2474,12 +2828,16 @@ class LinearTrackManager {
   ): number[] {
     const maxTickCount = Math.max(2, Math.min(7, Math.floor(pixelSpan / 16)));
     const minValue = Number.isFinite(scale.minValue) ? scale.minValue : 0;
-    const maxValue = Number.isFinite(scale.maxValue) ? scale.maxValue : minValue + 1;
+    const maxValue = Number.isFinite(scale.maxValue)
+      ? scale.maxValue
+      : minValue + 1;
     if (!Number.isFinite(maxValue) || maxValue <= minValue) {
       return [minValue];
     }
     if (!scale.logScale) {
-      const step = this.niceStep((maxValue - minValue) / Math.max(1, maxTickCount - 1));
+      const step = this.niceStep(
+        (maxValue - minValue) / Math.max(1, maxTickCount - 1)
+      );
       const ticks: number[] = [minValue];
       for (let value = minValue + step; value < maxValue; value += step) {
         ticks.push(value);
@@ -2517,7 +2875,9 @@ class LinearTrackManager {
     return multiplier * base;
   }
 
-  private getViewportGeometry(orientation: Orientation): ViewportGeometry | null {
+  private getViewportGeometry(
+    orientation: Orientation
+  ): ViewportGeometry | null {
     const descriptor =
       this.mapManager.getLayersManager().currentViewState.resolutionDesciptor;
     const bpResolution = descriptor.bpResolution;
@@ -2537,8 +2897,9 @@ class LinearTrackManager {
       return null;
     }
     const extent = view.calculateExtent(mapSize);
-    const activeHiCLayer =
-      this.mapManager.getLayersManager().getActiveHiCDataLayer();
+    const activeHiCLayer = this.mapManager
+      .getLayersManager()
+      .getActiveHiCDataLayer();
     const targetProjection =
       activeHiCLayer.getSource()?.getProjection() ?? view.getProjection();
     const layerPixelResolution = Number.isFinite(descriptor.pixelResolution)
@@ -2578,10 +2939,16 @@ class LinearTrackManager {
     const visibleEndScreen =
       orientation === "horizontal"
         ? Math.round(
-            Math.min(mapBoxPixelCoordinates.left + pixelMapSize / fraction, panelSize)
+            Math.min(
+              mapBoxPixelCoordinates.left + pixelMapSize / fraction,
+              panelSize
+            )
           )
         : Math.round(
-            Math.min(mapBoxPixelCoordinates.top + pixelMapSize / fraction, panelSize)
+            Math.min(
+              mapBoxPixelCoordinates.top + pixelMapSize / fraction,
+              panelSize
+            )
           );
     const safeFraction = Math.max(fraction, 1e-9);
     const pxToScreen = (px: number): number => px / safeFraction + offset;
@@ -2590,12 +2957,14 @@ class LinearTrackManager {
     // screen) features of the bin under the viewport were culled.
     const screenToPx = (screen: number, edge: "start" | "end"): number => {
       const px = (screen - offset) * safeFraction;
-      const snapped = Math.abs(px - Math.round(px)) < 1e-6 ? Math.round(px) : px;
+      const snapped =
+        Math.abs(px - Math.round(px)) < 1e-6 ? Math.round(px) : px;
       return edge === "start" ? Math.floor(snapped) : Math.ceil(snapped);
     };
     const totalPx = Math.max(0, pixelMapSize);
-    const activePixelBounds =
-      this.mapManager.getLayersManager().getActiveMapPixelBounds(bpResolution);
+    const activePixelBounds = this.mapManager
+      .getLayersManager()
+      .getActiveMapPixelBounds(bpResolution);
     const scopeStartPx =
       orientation === "horizontal"
         ? activePixelBounds.colStartPx
@@ -2624,7 +2993,8 @@ class LinearTrackManager {
     const endBp =
       this.mapManager
         .getContigDimensionHolder()
-        .getStartBpOfPx(Math.max(startPx, endPx - 1), bpResolution) + bpResolution;
+        .getStartBpOfPx(Math.max(startPx, endPx - 1), bpResolution) +
+      bpResolution;
     return {
       startBp,
       endBp,
@@ -2818,10 +3188,9 @@ class LinearTrackManager {
         targetBpResolution
       ) + 1;
     const maxStartPx = Math.max(0, totalPx - 1);
-    const activePixelBounds =
-      this.mapManager
-        .getLayersManager()
-        .getActiveMapPixelBounds(targetBpResolution);
+    const activePixelBounds = this.mapManager
+      .getLayersManager()
+      .getActiveMapPixelBounds(targetBpResolution);
     const scopeStartPx =
       orientation === "horizontal"
         ? activePixelBounds.colStartPx
@@ -2834,7 +3203,10 @@ class LinearTrackManager {
       scopeStartPx,
       Math.min(startPxRaw, Math.min(maxStartPx, scopeEndPx - 1))
     );
-    const endPx = Math.max(startPx + 1, Math.min(endPxRaw, totalPx, scopeEndPx));
+    const endPx = Math.max(
+      startPx + 1,
+      Math.min(endPxRaw, totalPx, scopeEndPx)
+    );
     return {
       startPx,
       endPx,

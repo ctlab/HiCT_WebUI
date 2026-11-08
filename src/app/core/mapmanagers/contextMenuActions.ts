@@ -8,7 +8,9 @@ export interface ContextMenuItem {
 
 /** `name:12,345`, the form accepted by genome browsers (thousands separators allowed). */
 export function formatLocus(contigName: string, inContigBp: number): string {
-  const position = Number.isFinite(inContigBp) ? Math.max(0, Math.round(inContigBp)) : 0;
+  const position = Number.isFinite(inContigBp)
+    ? Math.max(0, Math.round(inContigBp))
+    : 0;
   return `${contigName}:${position.toLocaleString("en-US")}`;
 }
 
@@ -55,6 +57,8 @@ export async function copyText(text: string, label: string): Promise<boolean> {
   } catch {
     // Reported below.
   }
-  toast.error(`Could not copy ${label.toLowerCase()}. Select and copy it manually.`);
+  toast.error(
+    `Could not copy ${label.toLowerCase()}. Select and copy it manually.`
+  );
   return false;
 }

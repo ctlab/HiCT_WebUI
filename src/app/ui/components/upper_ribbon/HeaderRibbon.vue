@@ -174,7 +174,10 @@
         type="button"
         @click="reloadTiles"
       >
-        <span><i class="bi bi-arrow-clockwise me-1"></i><span class="optional-button-label">Reload tiles</span></span>
+        <span
+          ><i class="bi bi-arrow-clockwise me-1"></i
+          ><span class="optional-button-label">Reload tiles</span></span
+        >
       </button>
       <div class="export-group">
         <button
@@ -182,7 +185,11 @@
           class="btn btn-sm btn-outline-primary"
           type="button"
           @click="osdOverlayVisible = !osdOverlayVisible"
-          :title="osdOverlayVisible ? 'Hide map information overlay' : 'Show map information overlay'"
+          :title="
+            osdOverlayVisible
+              ? 'Hide map information overlay'
+              : 'Show map information overlay'
+          "
         >
           <i class="bi bi-card-text" aria-hidden="true"></i>
           <span class="optional-button-label">OSD</span>
@@ -209,19 +216,48 @@
           title="Export the map as SVG, PNG or PDF"
         >
           <template v-if="exportingType !== null">
-            <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
-            {{ exportingType.toUpperCase() }} {{ Math.round(svgProgress * 100) }}%
+            <span
+              class="spinner-border spinner-border-sm me-1"
+              aria-hidden="true"
+            ></span>
+            {{ exportingType.toUpperCase() }}
+            {{ Math.round(svgProgress * 100) }}%
           </template>
           <template v-else>Export</template>
         </button>
-        <div class="dropdown-menu dropdown-menu-end p-2 export-menu" role="group" aria-label="Image export">
-          <span v-if="props.mapManager?.networkManager.requestManager.sequenceViewReadOnly" class="text-nowrap px-2">Sequence windows</span>
+        <div
+          class="dropdown-menu dropdown-menu-end p-2 export-menu"
+          role="group"
+          aria-label="Image export"
+        >
+          <span
+            v-if="
+              props.mapManager?.networkManager.requestManager
+                .sequenceViewReadOnly
+            "
+            class="text-nowrap px-2"
+            >Sequence windows</span
+          >
           <template v-else>
-            <select v-model="exportScope" class="form-select form-select-sm export-scope mb-2" aria-label="Export area" title="Area used by SVG, PNG and PDF exports">
-              <option value="viewport">Viewport</option><option value="whole-map">Whole map</option>
+            <select
+              v-model="exportScope"
+              class="form-select form-select-sm export-scope mb-2"
+              aria-label="Export area"
+              title="Area used by SVG, PNG and PDF exports"
+            >
+              <option value="viewport">Viewport</option>
+              <option value="whole-map">Whole map</option>
             </select>
-            <label class="d-flex align-items-center gap-1 text-nowrap mb-2" title="Crop exports to the map: no empty margin outside the contact map">
-              <input type="checkbox" v-model="cropExportToMap" aria-label="Crop export to map" /> Crop
+            <label
+              class="d-flex align-items-center gap-1 text-nowrap mb-2"
+              title="Crop exports to the map: no empty margin outside the contact map"
+            >
+              <input
+                type="checkbox"
+                v-model="cropExportToMap"
+                aria-label="Crop export to map"
+              />
+              Crop
             </label>
           </template>
           <div class="d-flex gap-1">
@@ -233,7 +269,11 @@
               @click="runExport('svg')"
               title="Export selected area as SVG"
             >
-              <i class="bi bi-box-arrow-up export-button-icon" aria-hidden="true"></i><span class="export-button-label">SVG</span>
+              <i
+                class="bi bi-box-arrow-up export-button-icon"
+                aria-hidden="true"
+              ></i
+              ><span class="export-button-label">SVG</span>
             </button>
             <button
               id="export-png-button"
@@ -243,7 +283,11 @@
               @click="runExport('png')"
               title="Export selected area as PNG"
             >
-              <i class="bi bi-box-arrow-up export-button-icon" aria-hidden="true"></i><span class="export-button-label">PNG</span>
+              <i
+                class="bi bi-box-arrow-up export-button-icon"
+                aria-hidden="true"
+              ></i
+              ><span class="export-button-label">PNG</span>
             </button>
             <button
               id="export-pdf-button"
@@ -253,7 +297,11 @@
               @click="runExport('pdf')"
               title="Export selected area as PDF"
             >
-              <i class="bi bi-box-arrow-up export-button-icon" aria-hidden="true"></i><span class="export-button-label">PDF</span>
+              <i
+                class="bi bi-box-arrow-up export-button-icon"
+                aria-hidden="true"
+              ></i
+              ><span class="export-button-label">PDF</span>
             </button>
           </div>
         </div>
@@ -466,8 +514,9 @@ function filterScopeOptions(
       option,
       score: fuzzyScore(option.searchText, normalized),
     }))
-    .filter((entry): entry is { option: ScopeOption; score: number } =>
-      entry.score !== null
+    .filter(
+      (entry): entry is { option: ScopeOption; score: number } =>
+        entry.score !== null
     )
     .sort((a, b) => a.score - b.score || a.option.order - b.option.order);
   return {
@@ -485,7 +534,9 @@ const filteredColumnScope = computed(() =>
   filterScopeOptions(columnScopeOptions.value, columnScopeFilterQuery.value)
 );
 const filteredRowScopeOptions = computed(() => filteredRowScope.value.items);
-const filteredColumnScopeOptions = computed(() => filteredColumnScope.value.items);
+const filteredColumnScopeOptions = computed(
+  () => filteredColumnScope.value.items
+);
 
 function selectScope(axis: ScopeAxis, option: ScopeOption): void {
   const selection = scopeToSelection(option);
@@ -502,10 +553,9 @@ function selectScope(axis: ScopeAxis, option: ScopeOption): void {
     columnScopeOpen.value = false;
     columnScopeIndex.value = 0;
   }
-  props.mapManager?.getLayersManager().setAxisScopes(
-    selectedRowScope.value,
-    selectedColumnScope.value
-  );
+  props.mapManager
+    ?.getLayersManager()
+    .setAxisScopes(selectedRowScope.value, selectedColumnScope.value);
 }
 
 function openScopePicker(axis: ScopeAxis): void {
@@ -554,32 +604,37 @@ function restoreScopeQuery(axis: ScopeAxis): void {
 }
 
 function copyRowScopeToColumn(): void {
-  const nextColumn = normalizeSelectionForAxis(selectedRowScope.value, "column");
+  const nextColumn = normalizeSelectionForAxis(
+    selectedRowScope.value,
+    "column"
+  );
   selectedColumnScope.value = nextColumn;
   columnScopeQuery.value = nextColumn.label;
   columnScopeFilterQuery.value = "";
   columnScopeOpen.value = false;
   columnScopeIndex.value = 0;
-  props.mapManager?.getLayersManager().setAxisScopes(
-    selectedRowScope.value,
-    selectedColumnScope.value
-  );
+  props.mapManager
+    ?.getLayersManager()
+    .setAxisScopes(selectedRowScope.value, selectedColumnScope.value);
 }
 
 function moveScopeHighlight(axis: ScopeAxis, delta: number): void {
   const options =
-    axis === "row" ? filteredRowScopeOptions.value : filteredColumnScopeOptions.value;
+    axis === "row"
+      ? filteredRowScopeOptions.value
+      : filteredColumnScopeOptions.value;
   if (options.length === 0) {
     return;
   }
   const indexRef = axis === "row" ? rowScopeIndex : columnScopeIndex;
-  indexRef.value =
-    (indexRef.value + delta + options.length) % options.length;
+  indexRef.value = (indexRef.value + delta + options.length) % options.length;
 }
 
 function acceptHighlightedScope(axis: ScopeAxis): void {
   const options =
-    axis === "row" ? filteredRowScopeOptions.value : filteredColumnScopeOptions.value;
+    axis === "row"
+      ? filteredRowScopeOptions.value
+      : filteredColumnScopeOptions.value;
   const index = axis === "row" ? rowScopeIndex.value : columnScopeIndex.value;
   const option = options[index] ?? options[0];
   if (option) {
@@ -628,8 +683,8 @@ function cycleRulerMode(): void {
     rulerCoordinateMode.value === "global"
       ? "contig"
       : rulerCoordinateMode.value === "contig"
-        ? "scaffold"
-        : "global";
+      ? "scaffold"
+      : "global";
   props.mapManager?.getLayersManager().scheduleRulerRender();
 }
 
@@ -684,7 +739,9 @@ async function runExport(type: "svg" | "png" | "pdf") {
       await manager.exportCurrentMapPdf(onProgress, options);
     }
   } catch (e) {
-    toast.error((e as Error)?.message ?? `Failed to export ${type.toUpperCase()}`);
+    toast.error(
+      (e as Error)?.message ?? `Failed to export ${type.toUpperCase()}`
+    );
   } finally {
     exportingType.value = null;
   }
@@ -976,7 +1033,10 @@ async function onSignalDisplayModeChanged() {
 </script>
 
 <style scoped>
-.export-scope { width: 110px; flex-shrink: 0; }
+.export-scope {
+  width: 110px;
+  flex-shrink: 0;
+}
 .scope-truncated {
   padding: 4px 8px;
   font-size: 0.75rem;
@@ -1001,8 +1061,7 @@ async function onSignalDisplayModeChanged() {
 
   background: linear-gradient(180deg, #909aa4 0%, #7f8993 42%, #6d7781 100%);
   color: rgba(24, 30, 38, 0.95);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32),
     inset 0 -1px 0 rgba(0, 0, 0, 0.28);
 
   /* Inside auto layout */

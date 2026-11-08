@@ -49,16 +49,26 @@ const persistRef = <T>(key: string, value: { value: T }) => {
 };
 
 export const useUiSettingsStore = defineStore("uiSettings", () => {
-  const sequenceGapLengthBp = ref(readStored("hict.sequence.gapLengthBp", 1000));
+  const sequenceGapLengthBp = ref(
+    readStored("hict.sequence.gapLengthBp", 1000)
+  );
   persistRef("hict.sequence.gapLengthBp", sequenceGapLengthBp);
-  const sequenceForwardColor = ref(readStored("hict.sequence.forwardColor", "#dc2626"));
-  const sequenceReverseColor = ref(readStored("hict.sequence.reverseColor", "#2563eb"));
-  const modDotPlotThreads = ref(readStored("hict.sequence.modDotPlotThreads", -1));
+  const sequenceForwardColor = ref(
+    readStored("hict.sequence.forwardColor", "#dc2626")
+  );
+  const sequenceReverseColor = ref(
+    readStored("hict.sequence.reverseColor", "#2563eb")
+  );
+  const modDotPlotThreads = ref(
+    readStored("hict.sequence.modDotPlotThreads", -1)
+  );
   persistRef("hict.sequence.forwardColor", sequenceForwardColor);
   persistRef("hict.sequence.reverseColor", sequenceReverseColor);
   persistRef("hict.sequence.modDotPlotThreads", modDotPlotThreads);
   /** Draw a reverse-complement row under the forward FASTA row. */
-  const sequenceShowReverseStrand = ref(readStored("hict.sequence.showReverseStrand", false));
+  const sequenceShowReverseStrand = ref(
+    readStored("hict.sequence.showReverseStrand", false)
+  );
   persistRef("hict.sequence.showReverseStrand", sequenceShowReverseStrand);
   const customZoomSliderEnabled = ref(false);
   const binaryTileTransportEnabled = ref(false);

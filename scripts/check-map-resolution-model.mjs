@@ -39,7 +39,12 @@ const {
   getVectorResolutionTuples,
 } = sandbox.module.exports;
 
-function assertResolutionDescriptor(set, viewResolution, expectedBpResolution, message) {
+function assertResolutionDescriptor(
+  set,
+  viewResolution,
+  expectedBpResolution,
+  message
+) {
   assert.equal(
     getResolutionDescriptorForViewResolution(set, viewResolution).bpResolution,
     expectedBpResolution,
@@ -73,7 +78,10 @@ function assertContiguousVisibility(set) {
 }
 
 function assertNavigationModel(primarySet, secondarySet, expected) {
-  const navigationModel = getNavigationResolutionModel(primarySet, secondarySet);
+  const navigationModel = getNavigationResolutionModel(
+    primarySet,
+    secondarySet
+  );
   assert.deepEqual(
     {
       resolutions: [...navigationModel.resolutions],
@@ -87,10 +95,9 @@ function assertVectorTuples(primarySet, secondarySet, expected, message) {
   assert.deepEqual(
     JSON.parse(
       JSON.stringify(
-        getVectorResolutionTuples(primarySet, secondarySet).map((descriptor) => [
-          descriptor.bpResolution,
-          descriptor.pixelResolution,
-        ])
+        getVectorResolutionTuples(primarySet, secondarySet).map(
+          (descriptor) => [descriptor.bpResolution, descriptor.pixelResolution]
+        )
       )
     ),
     expected,
@@ -190,14 +197,10 @@ assertGuidanceDescriptor(
 assertResolutionDescriptor(primaryCoarse, 120, 10000);
 assertResolutionDescriptor(secondaryFine, 120, 20000);
 
-assertNavigationModel(
-  primaryCoarse,
-  secondaryFine,
-  {
-    resolutions: [250, 500, 1000, 2500, 5000, 10000, 20000],
-    pixelResolutionSet: [1, 2, 4, 10, 20, 40, 80],
-  }
-);
+assertNavigationModel(primaryCoarse, secondaryFine, {
+  resolutions: [250, 500, 1000, 2500, 5000, 10000, 20000],
+  pixelResolutionSet: [1, 2, 4, 10, 20, 40, 80],
+});
 
 assertVectorTuples(
   primaryCoarse,
@@ -235,29 +238,19 @@ const overlayAtAnyZoom = getResolutionDescriptorForViewResolution(
   50
 );
 assert.equal(
-  getSecondaryResolutionForDisplay(
-    primaryAt5000,
-    overlayAtAnyZoom,
-    true
-  )?.bpResolution,
+  getSecondaryResolutionForDisplay(primaryAt5000, overlayAtAnyZoom, true)
+    ?.bpResolution,
   5000,
   "a sequence overlay must remain visible at its generated resolution"
 );
 assert.equal(
-  getSecondaryResolutionForDisplay(
-    primaryAt10000,
-    overlayAtAnyZoom,
-    true
-  ),
+  getSecondaryResolutionForDisplay(primaryAt10000, overlayAtAnyZoom, true),
   undefined,
   "a sequence overlay must be transparent when the active primary resolution is unavailable"
 );
 assert.equal(
-  getSecondaryResolutionForDisplay(
-    primaryAt10000,
-    overlayAtAnyZoom,
-    false
-  )?.bpResolution,
+  getSecondaryResolutionForDisplay(primaryAt10000, overlayAtAnyZoom, false)
+    ?.bpResolution,
   5000,
   "ordinary dual-map overlays must retain independent-pyramid behavior"
 );

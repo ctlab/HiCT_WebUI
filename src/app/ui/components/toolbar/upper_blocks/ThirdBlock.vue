@@ -74,7 +74,9 @@ function saveCurrentLocation() {
       rotation: view.getRotation(),
     },
   ]);
-  toast.success(`Location ${existing.length + 1} bookmarked (Entities → Bookmarks)`);
+  toast.success(
+    `Location ${existing.length + 1} bookmarked (Entities → Bookmarks)`
+  );
 }
 
 function moveToDebrisClicked() {

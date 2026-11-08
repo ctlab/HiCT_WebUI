@@ -21,7 +21,10 @@
 
 <template>
   <div class="map-shell">
-    <AssemblyContextMenu v-if="props.mapManager" :map-manager="props.mapManager" />
+    <AssemblyContextMenu
+      v-if="props.mapManager"
+      :map-manager="props.mapManager"
+    />
     <div id="hic-contact-map" :style="mapContainerStyle" ref="mapTarget"></div>
     <div
       class="zoom-slider-overlay"

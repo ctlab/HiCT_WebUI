@@ -145,7 +145,12 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
         // the start of the hovered bin shifted the view by up to one bin per
         // wheel step, which at base-pair zoom moved features off screen.
         const coord_bp = [fixed_coordinates[0], -fixed_coordinates[1]].map(
-          (px) => this.fractionalBpOfPx(dimensionHolder, px, guidanceDescriptor.bpResolution)
+          (px) =>
+            this.fractionalBpOfPx(
+              dimensionHolder,
+              px,
+              guidanceDescriptor.bpResolution
+            )
         );
 
         if (this.useAnchor_) {
@@ -296,8 +301,11 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
         );
         const finish_coordinate_on_map = this.lastMouseBps.map(
           (bp) =>
-            this.fractionalPxOfBp(dimensionHolder, bp, newGuidanceDescriptor.bpResolution) *
-            newGuidanceDescriptor.pixelResolution
+            this.fractionalPxOfBp(
+              dimensionHolder,
+              bp,
+              newGuidanceDescriptor.bpResolution
+            ) * newGuidanceDescriptor.pixelResolution
         );
         finish_coordinate_on_map[1] *= -1;
         const dx_px = this.lastCenterPixel[0] - this.lastMousePixel[0];
@@ -335,7 +343,8 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
   }
 
   fractionalBpOfPx(holder, px, bpResolution) {
-    const total = holder.prefix_sum_px?.get(bpResolution)?.[holder.contig_count] ?? 0;
+    const total =
+      holder.prefix_sum_px?.get(bpResolution)?.[holder.contig_count] ?? 0;
     const clamped = Math.min(Math.max(0, px), Math.max(0, total));
     if (typeof holder.getFractionalBpOfPx === "function") {
       return holder.getFractionalBpOfPx(clamped, bpResolution);
@@ -346,7 +355,9 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
   fractionalPxOfBp(holder, bp, bpResolution) {
     const totalBp = holder.prefix_sum_bp?.[holder.contig_count] ?? bp;
     if (bp >= totalBp) {
-      return holder.prefix_sum_px?.get(bpResolution)?.[holder.contig_count] ?? 0;
+      return (
+        holder.prefix_sum_px?.get(bpResolution)?.[holder.contig_count] ?? 0
+      );
     }
     if (typeof holder.getFractionalPxOfBp === "function") {
       return holder.getFractionalPxOfBp(Math.max(0, bp), bpResolution);

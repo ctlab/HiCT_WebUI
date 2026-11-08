@@ -62,7 +62,10 @@ export const runtimeAttributions: AttributionEntry[] = [
     note: "HiCT matrix storage and native HDF5 access.",
     links: [
       { label: "HDF5", href: "https://www.hdfgroup.org/solutions/hdf5/" },
-      { label: "JHDF5", href: "https://unlimited.ethz.ch/spaces/JHDF/overview" },
+      {
+        label: "JHDF5",
+        href: "https://unlimited.ethz.ch/spaces/JHDF/overview",
+      },
     ],
   },
   {
@@ -84,18 +87,30 @@ export const runtimeAttributions: AttributionEntry[] = [
     authors: "Wei Shen, Botond Sipos, Liuyang Zhao and contributors.",
     license: "MIT; bundled dependencies retain their own notices.",
     note: "Exact and substitution sequence search. Cite SeqKit2, iMeta 2024, e191 (doi:10.1002/imt2.191).",
-    links: [{ label: "SeqKit", href: "https://github.com/shenwei356/seqkit" }, { label: "Paper", href: "https://doi.org/10.1002/imt2.191" }],
+    links: [
+      { label: "SeqKit", href: "https://github.com/shenwei356/seqkit" },
+      { label: "Paper", href: "https://doi.org/10.1002/imt2.191" },
+    ],
   },
   {
     name: "ModDotPlot and ntHash",
-    authors: "Andrew P. Sweeten, Michael C. Schatz, Adam M. Phillippy; Hamid Mohamadi and ntHash contributors.",
-    license: "MIT. Colour palettes have separate Apache-2.0 notices and attribution conditions.",
+    authors:
+      "Andrew P. Sweeten, Michael C. Schatz, Adam M. Phillippy; Hamid Mohamadi and ntHash contributors.",
+    license:
+      "MIT. Colour palettes have separate Apache-2.0 notices and attribution conditions.",
     note: "Sequence identity estimates. Cite ModDotPlot, Bioinformatics 2024, btae493. Includes colour specifications and designs developed by Cynthia Brewer (colorbrewer.org).",
-    links: [{ label: "ModDotPlot", href: "https://github.com/marbl/ModDotPlot" }, { label: "Paper", href: "https://doi.org/10.1093/bioinformatics/btae493" }],
+    links: [
+      { label: "ModDotPlot", href: "https://github.com/marbl/ModDotPlot" },
+      {
+        label: "Paper",
+        href: "https://doi.org/10.1093/bioinformatics/btae493",
+      },
+    ],
   },
   {
     name: "mm2-plus",
-    authors: "Ghanshyam Chandra, Md Vasimuddin, Sanchit Misra, Chirag Jain and contributors.",
+    authors:
+      "Ghanshyam Chandra, Md Vasimuddin, Sanchit Misra, Chirag Jain and contributors.",
     license: "See bundled upstream license file.",
     note: "Optional accelerated minimap2-compatible self-alignment engine for dotplot generation. Cite the 2024 bioRxiv preprint when this path is used.",
     links: [{ label: "mm2-plus", href: "https://github.com/at-cg/mm2-plus" }],
@@ -143,7 +158,9 @@ export const runtimeAttributions: AttributionEntry[] = [
     authors: "Eclipse Adoptium, OpenJDK and contributors.",
     license: "GPLv2 with Classpath Exception and bundled legal notices.",
     note: "Optional Java runtime used by portable HiCT packages.",
-    links: [{ label: "Eclipse Temurin", href: "https://adoptium.net/temurin/" }],
+    links: [
+      { label: "Eclipse Temurin", href: "https://adoptium.net/temurin/" },
+    ],
   },
 ];
 
@@ -190,11 +207,26 @@ export const webAttributions: AttributionEntry[] = [
     links: [
       { label: "jsPDF", href: "https://github.com/parallax/jsPDF" },
       { label: "LiteGraph", href: "https://github.com/jagenjo/litegraph.js" },
-      { label: "@thednp/color-picker", href: "https://github.com/thednp/color-picker" },
-      { label: "toolcool-color-picker", href: "https://github.com/mzusin/toolcool-color-picker" },
-      { label: "vanilla-picker", href: "https://github.com/Sphinxxxx/vanilla-picker" },
-      { label: "vue-color-kit", href: "https://github.com/anish2690/vue-color-kit" },
-      { label: "ColorTranslator", href: "https://github.com/elchininet/ColorTranslator" },
+      {
+        label: "@thednp/color-picker",
+        href: "https://github.com/thednp/color-picker",
+      },
+      {
+        label: "toolcool-color-picker",
+        href: "https://github.com/mzusin/toolcool-color-picker",
+      },
+      {
+        label: "vanilla-picker",
+        href: "https://github.com/Sphinxxxx/vanilla-picker",
+      },
+      {
+        label: "vue-color-kit",
+        href: "https://github.com/anish2690/vue-color-kit",
+      },
+      {
+        label: "ColorTranslator",
+        href: "https://github.com/elchininet/ColorTranslator",
+      },
     ],
   },
 ];

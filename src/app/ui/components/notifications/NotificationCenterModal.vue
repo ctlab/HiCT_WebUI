@@ -48,8 +48,12 @@
               >
                 <div class="notification-entry-header">
                   <div class="notification-entry-meta">
-                    <span class="notification-level">{{ formatLevel(entry.level) }}</span>
-                    <span class="notification-time">{{ formatTimestamp(entry.createdAt) }}</span>
+                    <span class="notification-level">{{
+                      formatLevel(entry.level)
+                    }}</span>
+                    <span class="notification-time">{{
+                      formatTimestamp(entry.createdAt)
+                    }}</span>
                   </div>
                   <button
                     v-if="hasExpandableBody(entry.message)"
@@ -70,7 +74,8 @@
                 <pre
                   v-if="notificationStore.isEntryExpanded(entry.id)"
                   class="notification-message-body"
-                >{{ expandedBody(entry.message) }}</pre>
+                  >{{ expandedBody(entry.message) }}</pre
+                >
               </div>
               <div
                 v-if="orderedEntries.length === 0"
@@ -118,9 +123,7 @@ const orderedEntries = computed(() =>
 );
 
 const onToggleKeepLast100 = (event: Event) => {
-  notificationStore.setKeepLast100(
-    (event.target as HTMLInputElement).checked
-  );
+  notificationStore.setKeepLast100((event.target as HTMLInputElement).checked);
 };
 
 const formatTimestamp = (createdAt: number): string =>
@@ -156,7 +159,6 @@ const expandedBody = (message: string): string => message;
 
 const hasExpandableBody = (message: string): boolean =>
   normalizeMessage(message).length > 200 || message.includes("\n");
-
 </script>
 
 <style scoped>
@@ -269,7 +271,8 @@ const hasExpandableBody = (message: string): boolean =>
   padding: 10px 12px;
   border-radius: 8px;
   background: rgba(15, 23, 38, 0.06);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
   font-size: 12px;
 }
 

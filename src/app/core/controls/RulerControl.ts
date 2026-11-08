@@ -188,8 +188,12 @@ class RulerControl extends Control {
     //this.updateCanvasSize();
     const map = mapEvent.map;
     const parent = this.canvas.parentElement;
-    const width = parent ? Math.max(1, Math.floor(parent.clientWidth)) : this.canvasSize[0];
-    const height = parent ? Math.max(1, Math.floor(parent.clientHeight)) : this.canvasSize[1];
+    const width = parent
+      ? Math.max(1, Math.floor(parent.clientWidth))
+      : this.canvasSize[0];
+    const height = parent
+      ? Math.max(1, Math.floor(parent.clientHeight))
+      : this.canvasSize[1];
     this.canvas.width = width;
     this.canvas.height = height;
     const context = this.canvas.getContext("2d");
@@ -282,10 +286,9 @@ class RulerControl extends Control {
       return;
     }
 
-    const scopePixelBounds =
-      this.viewAndLayersManager.getActiveMapPixelBounds(
-        resolutionDescriptor.bpResolution
-      );
+    const scopePixelBounds = this.viewAndLayersManager.getActiveMapPixelBounds(
+      resolutionDescriptor.bpResolution
+    );
     const scopedVisibleExtentPixel = this.getScopedVisibleRulerExtent({
       mapBoxPixelCoordinates,
       visibleMapBoxExtentPixel,
@@ -398,11 +401,10 @@ class RulerControl extends Control {
       this.direction === "horizontal"
         ? scopePixelBounds.colStartPx
         : scopePixelBounds.rowStartPx;
-    const globalCoordinateOffsetBp =
-      this.contigDimensionHolder.getStartBpOfPx(
-        scopeStartPx,
-        resolutionDescriptor.bpResolution
-      );
+    const globalCoordinateOffsetBp = this.contigDimensionHolder.getStartBpOfPx(
+      scopeStartPx,
+      resolutionDescriptor.bpResolution
+    );
     const ticks = this.buildVisibleRulerTicks({
       axisStart,
       axisEnd,
@@ -589,10 +591,9 @@ class RulerControl extends Control {
           )
       ) * fraction;
     const px = Math.max(0, Math.min(pixelMapSize - 1, Math.round(unclampedPx)));
-    const scopePixelBounds =
-      this.viewAndLayersManager.getActiveMapPixelBounds(
-        resolutionDescriptor.bpResolution
-      );
+    const scopePixelBounds = this.viewAndLayersManager.getActiveMapPixelBounds(
+      resolutionDescriptor.bpResolution
+    );
     const scopeStartPx =
       this.direction === "horizontal"
         ? scopePixelBounds.colStartPx
@@ -604,11 +605,18 @@ class RulerControl extends Control {
     if (px < scopeStartPx || px >= scopeEndPx) {
       return null;
     }
-    const bp = fraction * resolutionDescriptor.bpResolution <= 1
-      ? Math.floor(this.contigDimensionHolder.getFractionalBpOfPx(
-        Math.max(scopeStartPx, Math.min(scopeEndPx, unclampedPx)),
-        resolutionDescriptor.bpResolution))
-      : this.contigDimensionHolder.getStartBpOfPx(px, resolutionDescriptor.bpResolution);
+    const bp =
+      fraction * resolutionDescriptor.bpResolution <= 1
+        ? Math.floor(
+            this.contigDimensionHolder.getFractionalBpOfPx(
+              Math.max(scopeStartPx, Math.min(scopeEndPx, unclampedPx)),
+              resolutionDescriptor.bpResolution
+            )
+          )
+        : this.contigDimensionHolder.getStartBpOfPx(
+            px,
+            resolutionDescriptor.bpResolution
+          );
     const bin = this.contigDimensionHolder.pixelToBin(
       px,
       resolutionDescriptor.bpResolution
@@ -616,15 +624,25 @@ class RulerControl extends Control {
     const contig = this.contigDimensionHolder.getContigLocusByBp(bp);
     const scaffold = this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp);
     const scaffoldLine = scaffold
-      ? `Scaffold: ${this.escapeHtml(scaffold.scaffoldName)} +${this.formatInteger(scaffold.inScaffoldBp)} bp`
+      ? `Scaffold: ${this.escapeHtml(
+          scaffold.scaffoldName
+        )} +${this.formatInteger(scaffold.inScaffoldBp)} bp`
       : "Scaffold: n/a";
     const source = this.contigDimensionHolder.getSourceLocusByBp(bp);
     const html = [
-      `<strong>${this.direction === "horizontal" ? "Horizontal" : "Vertical"} ruler</strong>`,
-      `Assembly: ${this.formatInteger(bp)} bp, bin ${this.formatInteger(bin)}, px ${this.formatInteger(px)}`,
-      `Contig: ${this.escapeHtml(contig.contigName)} +${this.formatInteger(contig.inContigBp)} bp`,
+      `<strong>${
+        this.direction === "horizontal" ? "Horizontal" : "Vertical"
+      } ruler</strong>`,
+      `Assembly: ${this.formatInteger(bp)} bp, bin ${this.formatInteger(
+        bin
+      )}, px ${this.formatInteger(px)}`,
+      `Contig: ${this.escapeHtml(contig.contigName)} +${this.formatInteger(
+        contig.inContigBp
+      )} bp`,
       scaffoldLine,
-      `Source: ${this.escapeHtml(source.sourceContig)}:${this.formatInteger(source.sourceBp)} bp`,
+      `Source: ${this.escapeHtml(source.sourceContig)}:${this.formatInteger(
+        source.sourceBp
+      )} bp`,
     ].join("<br />");
     return { html, bp };
   }
@@ -659,7 +677,11 @@ class RulerControl extends Control {
 
     const spacing = 100;
     const screens: number[] = [axisStart];
-    for (let screen = axisStart + spacing; screen < axisEnd - 42; screen += spacing) {
+    for (
+      let screen = axisStart + spacing;
+      screen < axisEnd - 42;
+      screen += spacing
+    ) {
       screens.push(Math.round(screen));
     }
     if (axisEnd - screens[screens.length - 1] >= 34) {
@@ -668,22 +690,39 @@ class RulerControl extends Control {
       screens[screens.length - 1] = axisEnd;
     }
 
-    const nucleotideScale = options.fraction * options.resolutionDescriptor.bpResolution <= 1;
+    const nucleotideScale =
+      options.fraction * options.resolutionDescriptor.bpResolution <= 1;
     // Over-zoomed bins (one bin wider than the tick spacing): bin-start
     // coordinates would give several ticks the same label, so interpolate.
     const subBinScale = nucleotideScale || spacing * options.fraction < 1;
-    const mapPxValues = screens.map((screen) => subBinScale
-      ? Math.max(0, Math.min(options.pixelMapSize, (screen-options.mapStartScreen)*options.fraction))
-      : this.screenPositionToMapPx(
-        screen,
-        options.mapStartScreen,
-        options.fraction,
-        options.pixelMapSize
-      )
+    const mapPxValues = screens.map((screen) =>
+      subBinScale
+        ? Math.max(
+            0,
+            Math.min(
+              options.pixelMapSize,
+              (screen - options.mapStartScreen) * options.fraction
+            )
+          )
+        : this.screenPositionToMapPx(
+            screen,
+            options.mapStartScreen,
+            options.fraction,
+            options.pixelMapSize
+          )
     );
-    const bpValues = mapPxValues.map((mapPx) => subBinScale
-      ? Math.floor(this.contigDimensionHolder.getFractionalBpOfPx(mapPx, options.resolutionDescriptor.bpResolution))
-      : this.contigDimensionHolder.getStartBpOfPx(mapPx, options.resolutionDescriptor.bpResolution)
+    const bpValues = mapPxValues.map((mapPx) =>
+      subBinScale
+        ? Math.floor(
+            this.contigDimensionHolder.getFractionalBpOfPx(
+              mapPx,
+              options.resolutionDescriptor.bpResolution
+            )
+          )
+        : this.contigDimensionHolder.getStartBpOfPx(
+            mapPx,
+            options.resolutionDescriptor.bpResolution
+          )
     );
     const maxBp = Math.max(
       ...bpValues.map((bp) =>
@@ -706,7 +745,9 @@ class RulerControl extends Control {
     );
     let tickStepBp = Infinity;
     for (let index = 1; index < coordinateValues.length; ++index) {
-      const step = Math.abs(coordinateValues[index] - coordinateValues[index - 1]);
+      const step = Math.abs(
+        coordinateValues[index] - coordinateValues[index - 1]
+      );
       if (step > 0) tickStepBp = Math.min(tickStepBp, step);
     }
     return screens.map((screen, index) => {
@@ -718,7 +759,11 @@ class RulerControl extends Control {
       );
       const anchor = this.roundDownToUnit(coordinateValue, labelUnit);
       const boundary =
-        index === 0 ? "start" : index === screens.length - 1 ? "end" : undefined;
+        index === 0
+          ? "start"
+          : index === screens.length - 1
+          ? "end"
+          : undefined;
       const major = boundary !== undefined || anchor !== currentAnchor;
       if (major) {
         currentAnchor = anchor;
@@ -731,12 +776,15 @@ class RulerControl extends Control {
         bp,
         major,
         boundary,
-        label: nucleotideScale ? `${prefix}${Math.round(coordinateValue).toLocaleString()}` :
-          boundary !== undefined && Number.isFinite(tickStepBp) && tickStepBp < labelUnit
-            ? `${prefix}${this.formatBpLabelForStep(coordinateValue, tickStepBp)}`
-            : major || delta <= 0
-            ? `${prefix}${this.formatBpLabel(anchor, 0)}`
-            : `+${this.formatBpLabelForStep(delta, tickStepBp)}`,
+        label: nucleotideScale
+          ? `${prefix}${Math.round(coordinateValue).toLocaleString()}`
+          : boundary !== undefined &&
+            Number.isFinite(tickStepBp) &&
+            tickStepBp < labelUnit
+          ? `${prefix}${this.formatBpLabelForStep(coordinateValue, tickStepBp)}`
+          : major || delta <= 0
+          ? `${prefix}${this.formatBpLabel(anchor, 0)}`
+          : `+${this.formatBpLabelForStep(delta, tickStepBp)}`,
         contigLabel:
           major && this.rulerCoordinateMode.value === "global"
             ? this.secondaryGlobalCoordinateLabel(bp)
@@ -750,7 +798,10 @@ class RulerControl extends Control {
       return this.contigDimensionHolder.getContigLocusByBp(bp).inContigBp;
     }
     if (this.rulerCoordinateMode.value === "scaffold") {
-      return this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp)?.inScaffoldBp ?? bp;
+      return (
+        this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp)?.inScaffoldBp ??
+        bp
+      );
     }
     return Math.max(0, bp - globalOffsetBp);
   }
@@ -828,17 +879,22 @@ class RulerControl extends Control {
         tick.boundary === "start"
           ? tick.screen + 2
           : tick.boundary === "end"
-            ? tick.screen - 2
-            : tick.screen;
+          ? tick.screen - 2
+          : tick.screen;
       const textAlign: CanvasTextAlign =
         tick.boundary === "start"
           ? "left"
           : tick.boundary === "end"
-            ? "right"
-            : "center";
+          ? "right"
+          : "center";
       const angle = tick.boundary ? 0 : -35;
       // Keep the whole rotated box, not just its anchor, inside the canvas.
-      const bounds = this.horizontalLabelBounds(tick.label, font, angle, textAlign);
+      const bounds = this.horizontalLabelBounds(
+        tick.label,
+        font,
+        angle,
+        textAlign
+      );
       const textX = this.clamp(
         desiredX,
         EDGE_MARGIN_PX - bounds.minX,
@@ -860,14 +916,26 @@ class RulerControl extends Control {
         true,
         false
       );
-      if (this.rulerCoordinateMode.value !== "global" && tick.major && (tick.contigLabel || tick.scaffoldLabel)) {
+      if (
+        this.rulerCoordinateMode.value !== "global" &&
+        tick.major &&
+        (tick.contigLabel || tick.scaffoldLabel)
+      ) {
         const secondFont = "9px HiCT Sans";
         const secondText = this.truncateToWidth(
           [tick.contigLabel, tick.scaffoldLabel].filter(Boolean).join(" / "),
           secondFont,
-          Math.min(this.canvas.width - 2 * EDGE_MARGIN_PX, SECOND_LINE_MAX_WIDTH_PX)
+          Math.min(
+            this.canvas.width - 2 * EDGE_MARGIN_PX,
+            SECOND_LINE_MAX_WIDTH_PX
+          )
         );
-        const secondBounds = this.horizontalLabelBounds(secondText, secondFont, 0, textAlign);
+        const secondBounds = this.horizontalLabelBounds(
+          secondText,
+          secondFont,
+          0,
+          textAlign
+        );
         const secondX = this.clamp(
           desiredX,
           EDGE_MARGIN_PX - secondBounds.minX,
@@ -898,12 +966,21 @@ class RulerControl extends Control {
     let verticalFontSize = fontSize;
     let verticalFont = font;
     context.font = verticalFont;
-    while (verticalFontSize > MIN_VERTICAL_FONT_PX && context.measureText(tick.label).width > textRight - 2) {
+    while (
+      verticalFontSize > MIN_VERTICAL_FONT_PX &&
+      context.measureText(tick.label).width > textRight - 2
+    ) {
       verticalFontSize -= 1;
-      verticalFont = `${tick.major ? "bold" : "normal"} ${verticalFontSize}px HiCT Sans`;
+      verticalFont = `${
+        tick.major ? "bold" : "normal"
+      } ${verticalFontSize}px HiCT Sans`;
       context.font = verticalFont;
     }
-    const textY = this.clamp(tick.screen + verticalFontSize / 2, verticalFontSize + 1, this.canvas.height - 3);
+    const textY = this.clamp(
+      tick.screen + verticalFontSize / 2,
+      verticalFontSize + 1,
+      this.canvas.height - 3
+    );
     this.drawRotatedText(
       tick.label,
       textRight,
@@ -915,7 +992,11 @@ class RulerControl extends Control {
       true,
       false
     );
-    if (this.rulerCoordinateMode.value !== "global" && tick.major && (tick.contigLabel || tick.scaffoldLabel)) {
+    if (
+      this.rulerCoordinateMode.value !== "global" &&
+      tick.major &&
+      (tick.contigLabel || tick.scaffoldLabel)
+    ) {
       this.drawRotatedText(
         this.truncateToWidth(
           [tick.contigLabel, tick.scaffoldLabel].filter(Boolean).join(" / "),
@@ -944,7 +1025,9 @@ class RulerControl extends Control {
     angleDeg: number,
     align: CanvasTextAlign
   ): { minX: number; maxX: number; minY: number; maxY: number } {
-    const fontSize = Number.parseFloat(font.match(/(\d+(?:\.\d+)?)px/)?.[1] ?? "10");
+    const fontSize = Number.parseFloat(
+      font.match(/(\d+(?:\.\d+)?)px/)?.[1] ?? "10"
+    );
     let width = text.length * fontSize * 0.62;
     let ascent = fontSize * 0.8;
     let descent = fontSize * 0.25;
@@ -963,8 +1046,8 @@ class RulerControl extends Control {
       align === "left" || align === "start"
         ? 0
         : align === "right" || align === "end"
-          ? -width
-          : -width / 2;
+        ? -width
+        : -width / 2;
     const corners: Array<[number, number]> = [
       [left - outline, -ascent - outline],
       [left + width + outline, -ascent - outline],
@@ -985,7 +1068,11 @@ class RulerControl extends Control {
   }
 
   /** Shortens `text` with an ellipsis so it fits `maxWidthPx` when drawn in `font`. */
-  protected truncateToWidth(text: string, font: string, maxWidthPx: number): string {
+  protected truncateToWidth(
+    text: string,
+    font: string,
+    maxWidthPx: number
+  ): string {
     const context = this.canvas.getContext("2d");
     if (!context || maxWidthPx <= 0 || text.length === 0) return text;
     context.save();
@@ -996,7 +1083,10 @@ class RulerControl extends Control {
       let high = text.length;
       while (low < high) {
         const middle = Math.ceil((low + high) / 2);
-        if (context.measureText(`${text.slice(0, middle)}\u2026`).width <= maxWidthPx) {
+        if (
+          context.measureText(`${text.slice(0, middle)}\u2026`).width <=
+          maxWidthPx
+        ) {
           low = middle;
         } else {
           high = middle - 1;
@@ -1016,12 +1106,17 @@ class RulerControl extends Control {
       [1_000_000, "M"],
       [1_000, "K"],
     ];
-    const [scale, suffix] =
-      units.find(([candidate]) => value >= candidate) ?? [1, ""];
+    const [scale, suffix] = units.find(([candidate]) => value >= candidate) ?? [
+      1,
+      "",
+    ];
     if (scale === 1 || !Number.isFinite(stepBp) || stepBp <= 0) {
       return this.formatBpLabel(value, 0);
     }
-    const digits = Math.max(0, Math.min(3, Math.ceil(Math.log10(scale / stepBp))));
+    const digits = Math.max(
+      0,
+      Math.min(3, Math.ceil(Math.log10(scale / stepBp)))
+    );
     return `${(value / scale).toFixed(digits)}${suffix}`;
   }
 
@@ -1032,8 +1127,10 @@ class RulerControl extends Control {
       [1_000_000, "M"],
       [1_000, "K"],
     ];
-    const [scale, suffix] =
-      units.find(([candidate]) => value >= candidate) ?? [1, ""];
+    const [scale, suffix] = units.find(([candidate]) => value >= candidate) ?? [
+      1,
+      "",
+    ];
     const scaled = value / scale;
     const digits = precision > 0 && scaled < 100 ? precision : 0;
     return `${scaled.toFixed(digits).replace(/\.0+$/, "")}${suffix}`;

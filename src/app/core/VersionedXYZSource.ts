@@ -100,9 +100,12 @@ class VersionedXYZContactMapSource extends XYZ {
     const values: TileSignals[] = [];
     const grid = this.getTileGrid();
     if (!grid) return values;
-    this.tileCache.forEach(tile => {
-      if (!intersects(extent, grid.getTileCoordExtent(tile.getTileCoord()))) return;
-      const signals = (tile as ImageTile & { lastResponse?: { signals?: TileSignals } }).lastResponse?.signals;
+    this.tileCache.forEach((tile) => {
+      if (!intersects(extent, grid.getTileCoordExtent(tile.getTileCoord())))
+        return;
+      const signals = (
+        tile as ImageTile & { lastResponse?: { signals?: TileSignals } }
+      ).lastResponse?.signals;
       if (signals) values.push(signals);
     });
     return values;
@@ -128,22 +131,38 @@ class VersionedXYZContactMapSource extends XYZ {
       callback();
     };
     xhr.responseType = "json";
-    xhr.addEventListener("load", () => settle(() => {
-      const data = xhr.response;
-      if (data?.cancelled === true || xhr.getResponseHeader("x-hict-cancelled") === "true") {
-        tile.setState(TileState.EMPTY);
-        return;
-      }
-      if (xhr.status >= 200 && xhr.status < 300 && data && data.image) {
-        image.src = data.image;
-        // ImageTile's load/decode listener marks it ready. Receiving JSON is
-        // not image completion; rendercomplete must wait for decoded pixels.
-        // @ts-expect-error Adding field to object is ok in JS but not in TS
-        tile.lastResponse = data;
-        this.queueSignalRanges(
-          new CurrentSignalRangeResponseDTO(data.ranges).toEntity()
-        );
-      } else {
+    xhr.addEventListener("load", () =>
+      settle(() => {
+        const data = xhr.response;
+        if (
+          data?.cancelled === true ||
+          xhr.getResponseHeader("x-hict-cancelled") === "true"
+        ) {
+          tile.setState(TileState.EMPTY);
+          return;
+        }
+        if (xhr.status >= 200 && xhr.status < 300 && data && data.image) {
+          image.src = data.image;
+          // ImageTile's load/decode listener marks it ready. Receiving JSON is
+          // not image completion; rendercomplete must wait for decoded pixels.
+          // @ts-expect-error Adding field to object is ok in JS but not in TS
+          tile.lastResponse = data;
+          this.queueSignalRanges(
+            new CurrentSignalRangeResponseDTO(data.ranges).toEntity()
+          );
+        } else {
+          // @ts-expect-error If tile was loaded successfully at least once, last response is saved
+          if (tile.lastResponse) {
+            // @ts-expect-error If tile was loaded successfully at least once, last response is saved
+            image.src = tile.lastResponse.image;
+          } else {
+            tile.setState(TileState.ERROR);
+          }
+        }
+      })
+    );
+    xhr.addEventListener("error", () =>
+      settle(() => {
         // @ts-expect-error If tile was loaded successfully at least once, last response is saved
         if (tile.lastResponse) {
           // @ts-expect-error If tile was loaded successfully at least once, last response is saved
@@ -151,18 +170,11 @@ class VersionedXYZContactMapSource extends XYZ {
         } else {
           tile.setState(TileState.ERROR);
         }
-      }
-    }));
-    xhr.addEventListener("error", () => settle(() => {
-      // @ts-expect-error If tile was loaded successfully at least once, last response is saved
-      if (tile.lastResponse) {
-        // @ts-expect-error If tile was loaded successfully at least once, last response is saved
-        image.src = tile.lastResponse.image;
-      } else {
-        tile.setState(TileState.ERROR);
-      }
-    }));
-    xhr.addEventListener("abort", () => settle(() => tile.setState(TileState.EMPTY)));
+      })
+    );
+    xhr.addEventListener("abort", () =>
+      settle(() => tile.setState(TileState.EMPTY))
+    );
     xhr.open("GET", src);
     this.activeTileRequests.add(xhr);
     xhr.send();
@@ -178,10 +190,9 @@ class VersionedXYZContactMapSource extends XYZ {
       this.loadPngTile(tile, image, src);
       return;
     }
-    const host = `${unref(this.layersManager.mapManager.networkManager.host)}`.replace(
-      /\/+$/,
-      ""
-    );
+    const host = `${unref(
+      this.layersManager.mapManager.networkManager.host
+    )}`.replace(/\/+$/, "");
     const payload = {
       bpResolution: this.bpResolution,
       unit: "PIXELS",
@@ -208,46 +219,63 @@ class VersionedXYZContactMapSource extends XYZ {
       callback();
     };
     xhr.responseType = "arraybuffer";
-    xhr.addEventListener("load", () => settle(() => {
-      if (xhr.getResponseHeader("x-hict-cancelled") === "true") {
-        tile.setState(TileState.EMPTY);
-        return;
-      }
-      const rows = Number.parseInt(xhr.getResponseHeader("x-hict-rows") || "0", 10);
-      const cols = Number.parseInt(xhr.getResponseHeader("x-hict-cols") || "0", 10);
-      const response = xhr.response;
-      if (
-        xhr.status >= 200 &&
-        xhr.status < 300 &&
-        response instanceof ArrayBuffer &&
-        rows > 0 &&
-        cols > 0
-      ) {
-        const values = this.decodeFloat32Array(response, rows * cols);
-        const dataUrl = this.renderSignalTile(values, rows, cols);
-        image.src = dataUrl;
+    xhr.addEventListener("load", () =>
+      settle(() => {
+        if (xhr.getResponseHeader("x-hict-cancelled") === "true") {
+          tile.setState(TileState.EMPTY);
+          return;
+        }
+        const rows = Number.parseInt(
+          xhr.getResponseHeader("x-hict-rows") || "0",
+          10
+        );
+        const cols = Number.parseInt(
+          xhr.getResponseHeader("x-hict-cols") || "0",
+          10
+        );
+        const response = xhr.response;
+        if (
+          xhr.status >= 200 &&
+          xhr.status < 300 &&
+          response instanceof ArrayBuffer &&
+          rows > 0 &&
+          cols > 0
+        ) {
+          const values = this.decodeFloat32Array(response, rows * cols);
+          const dataUrl = this.renderSignalTile(values, rows, cols);
+          image.src = dataUrl;
+          // @ts-expect-error dynamic cache field
+          tile.lastResponse = {
+            image: dataUrl,
+            signals: this.decodeTileStatistics(
+              xhr.getResponseHeader("x-hict-tile-statistics")
+            ),
+          };
+          return;
+        }
         // @ts-expect-error dynamic cache field
-        tile.lastResponse = { image: dataUrl, signals: this.decodeTileStatistics(xhr.getResponseHeader("x-hict-tile-statistics")) };
-        return;
-      }
-      // @ts-expect-error dynamic cache field
-      if (tile.lastResponse?.image) {
+        if (tile.lastResponse?.image) {
+          // @ts-expect-error dynamic cache field
+          image.src = tile.lastResponse.image;
+        } else {
+          tile.setState(TileState.ERROR);
+        }
+      })
+    );
+    xhr.addEventListener("error", () =>
+      settle(() => {
         // @ts-expect-error dynamic cache field
-        image.src = tile.lastResponse.image;
-      } else {
-        tile.setState(TileState.ERROR);
-      }
-    }));
-    xhr.addEventListener("error", () => settle(() => {
-      // @ts-expect-error dynamic cache field
-      if (tile.lastResponse?.image) {
-        // @ts-expect-error dynamic cache field
-        image.src = tile.lastResponse.image;
-      } else {
-        tile.setState(TileState.ERROR);
-      }
-    }));
-    xhr.addEventListener("abort", () => settle(() => tile.setState(TileState.EMPTY)));
+        if (tile.lastResponse?.image) {
+          // @ts-expect-error dynamic cache field
+          image.src = tile.lastResponse.image;
+        } else {
+          tile.setState(TileState.ERROR);
+        }
+      })
+    );
+    xhr.addEventListener("abort", () =>
+      settle(() => tile.setState(TileState.EMPTY))
+    );
     xhr.open("POST", `${host}/matrix/query`);
     xhr.setRequestHeader("Content-Type", "application/json");
     this.activeTileRequests.add(xhr);
@@ -256,17 +284,19 @@ class VersionedXYZContactMapSource extends XYZ {
 
   private decodeTileStatistics(header: string | null): TileSignals | undefined {
     if (!header) return;
-    try { return JSON.parse(header) as TileSignals; } catch { return; }
+    try {
+      return JSON.parse(header) as TileSignals;
+    } catch {
+      return;
+    }
   }
 
-  private parseTileUrl(src: string):
-    | {
-        startRowPx: number;
-        endRowPx: number;
-        startColPx: number;
-        endColPx: number;
-      }
-    | null {
+  private parseTileUrl(src: string): {
+    startRowPx: number;
+    endRowPx: number;
+    startColPx: number;
+    endColPx: number;
+  } | null {
     try {
       const url = new URL(src, window.location.href);
       const row = Number.parseInt(url.searchParams.get("row") || "0", 10);
@@ -295,9 +325,15 @@ class VersionedXYZContactMapSource extends XYZ {
     }
   }
 
-  private decodeFloat32Array(buffer: ArrayBuffer, expectedLength: number): Float32Array {
+  private decodeFloat32Array(
+    buffer: ArrayBuffer,
+    expectedLength: number
+  ): Float32Array {
     const view = new DataView(buffer);
-    const valueCount = Math.min(expectedLength, Math.floor(buffer.byteLength / 4));
+    const valueCount = Math.min(
+      expectedLength,
+      Math.floor(buffer.byteLength / 4)
+    );
     const out = new Float32Array(valueCount);
     for (let idx = 0; idx < valueCount; idx += 1) {
       out[idx] = view.getFloat32(idx * 4, true);
@@ -305,7 +341,11 @@ class VersionedXYZContactMapSource extends XYZ {
     return out;
   }
 
-  private renderSignalTile(values: Float32Array, rows: number, cols: number): string {
+  private renderSignalTile(
+    values: Float32Array,
+    rows: number,
+    cols: number
+  ): string {
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, cols);
     canvas.height = Math.max(1, rows);
@@ -324,7 +364,9 @@ class VersionedXYZContactMapSource extends XYZ {
     if (colormap instanceof SimpleLinearGradient) {
       minSignal = colormap.minSignal;
       maxSignal = colormap.maxSignal;
-      start = this.parseRgba(colormap.startColorRGBA?.RGBA || "rgba(0,255,0,0.0)");
+      start = this.parseRgba(
+        colormap.startColorRGBA?.RGBA || "rgba(0,255,0,0.0)"
+      );
       end = this.parseRgba(colormap.endColorRGBA?.RGBA || "rgba(0,96,0,1.0)");
     }
     const backgroundColor =
@@ -336,10 +378,12 @@ class VersionedXYZContactMapSource extends XYZ {
     const pixelCount = Math.min(values.length, rows * cols);
     for (let idx = 0; idx < pixelCount; idx += 1) {
       const signal = Number.isFinite(values[idx]) ? values[idx] : 0;
-      const normalized = Math.max(0, Math.min(1, (signal - minSignal) / signalRange));
+      const normalized = Math.max(
+        0,
+        Math.min(1, (signal - minSignal) / signalRange)
+      );
       const mix = normalized;
-      const alpha =
-        (start[3] + (end[3] - start[3]) * mix) / 255.0;
+      const alpha = (start[3] + (end[3] - start[3]) * mix) / 255.0;
       const colorR = start[0] + (end[0] - start[0]) * mix;
       const colorG = start[1] + (end[1] - start[1]) * mix;
       const colorB = start[2] + (end[2] - start[2]) * mix;
@@ -435,10 +479,9 @@ class VersionedXYZContactMapSource extends XYZ {
     return (coord_zxy: number[]) => {
       const col = coord_zxy[1];
       const row = coord_zxy[2];
-      const host = `${unref(this.layersManager.mapManager.networkManager.host)}`.replace(
-        /\/+$/,
-        ""
-      );
+      const host = `${unref(
+        this.layersManager.mapManager.networkManager.host
+      )}`.replace(/\/+$/, "");
       return (
         `${host}` +
         `/get_tile?version=${this.sourceVersion}` +

@@ -20,7 +20,9 @@
  -->
 
 <template>
-  <p class="w-100 m-0 text-lg-center saved-visual-title"><b>Visualization presets:</b></p>
+  <p class="w-100 m-0 text-lg-center saved-visual-title">
+    <b>Visualization presets:</b>
+  </p>
   <div
     class="btn-group w-100 px-2 py-1"
     role="group"
@@ -97,7 +99,6 @@ const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
   visualizationOptionsStore
 );
-
 
 onMounted(() => {
   importJSONResults(defaultOptions);
@@ -207,7 +208,8 @@ function exportOptions() {
       name: v.name,
       backgroundColor: colorToString(v.backgroundColor),
       trackStyles: v.trackStyles,
-      signalThresholds: v.signalThresholds ?? extractSignalThresholds(v.options),
+      signalThresholds:
+        v.signalThresholds ?? extractSignalThresholds(v.options),
       action: v.action,
     })
   );
@@ -288,7 +290,8 @@ watch(
       backgroundColor: colorToString(v.backgroundColor),
       name: v.name,
       trackStyles: v.trackStyles,
-      signalThresholds: v.signalThresholds ?? extractSignalThresholds(v.options),
+      signalThresholds:
+        v.signalThresholds ?? extractSignalThresholds(v.options),
       action: v.action,
     }));
     const next = sessionStore.savedVisualizationPresets;
@@ -377,7 +380,7 @@ function importJSONResults(jsonPreResult: unknown) {
     const b = option.backgroundColor;
     if (b instanceof ColorTranslator) {
       backgroundColor = b;
-  } else if (typeof b === "string") {
+    } else if (typeof b === "string") {
       try {
         backgroundColor = new ColorTranslator(b, { legacyCSS: true });
       } catch {
@@ -406,7 +409,9 @@ function importJSONResults(jsonPreResult: unknown) {
   });
 }
 
-function serializeVisualizationOptions(options: VisualizationOptions): Record<string, unknown> {
+function serializeVisualizationOptions(
+  options: VisualizationOptions
+): Record<string, unknown> {
   const cmap = options.colormap;
   if (cmap instanceof SimpleLinearGradient) {
     return {
@@ -446,20 +451,25 @@ function serializeVisualizationOptions(options: VisualizationOptions): Record<st
   };
 }
 
-function deserializeVisualizationOptions(raw: Record<string, unknown>): VisualizationOptions {
+function deserializeVisualizationOptions(
+  raw: Record<string, unknown>
+): VisualizationOptions {
   const preLogBase = typeof raw.preLogBase === "number" ? raw.preLogBase : -1;
-  const postLogBase = typeof raw.postLogBase === "number" ? raw.postLogBase : 10;
+  const postLogBase =
+    typeof raw.postLogBase === "number" ? raw.postLogBase : 10;
   const applyCoolerWeights =
-    typeof raw.applyCoolerWeights === "boolean" ? raw.applyCoolerWeights : false;
+    typeof raw.applyCoolerWeights === "boolean"
+      ? raw.applyCoolerWeights
+      : false;
   const resolutionScaling =
     typeof raw.resolutionScaling === "boolean" ? raw.resolutionScaling : false;
   const resolutionLinearScaling =
-    typeof raw.resolutionLinearScaling === "boolean" ? raw.resolutionLinearScaling : false;
+    typeof raw.resolutionLinearScaling === "boolean"
+      ? raw.resolutionLinearScaling
+      : false;
   const cmapRaw = isRecord(raw.colormap) ? raw.colormap : {};
   const cmapType =
-    typeof cmapRaw.colormapType === "string"
-      ? cmapRaw.colormapType
-      : "Unknown";
+    typeof cmapRaw.colormapType === "string" ? cmapRaw.colormapType : "Unknown";
   let cmap: Colormap;
   if (cmapType === "SimpleLinearGradient") {
     const startColor =
@@ -504,12 +514,12 @@ function deserializeVisualizationOptions(raw: Record<string, unknown>): Visualiz
       ? raw.autoThresholdQuantile
       : 0.995,
     raw.signalDisplayMode === "EXPECTED" ||
-      raw.signalDisplayMode === "OBSERVED_OVER_EXPECTED"
+    raw.signalDisplayMode === "OBSERVED_OVER_EXPECTED"
       ? raw.signalDisplayMode
       : "OBSERVED",
     raw.coolerWeightsNaNPolicy === "DISABLE_WEIGHTS" ||
-      raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ZERO" ||
-      raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ONE"
+    raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ZERO" ||
+    raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ONE"
       ? raw.coolerWeightsNaNPolicy
       : "REPLACE_NANS_WITH_ONE"
   );
@@ -536,7 +546,10 @@ function applySignalThresholds(option: {
   if (!thresholds) return;
   const lower = thresholds.lowerSignalBound;
   const upper = thresholds.upperSignalBound;
-  if (typeof lower === "number" && colormap.value instanceof SimpleLinearGradient) {
+  if (
+    typeof lower === "number" &&
+    colormap.value instanceof SimpleLinearGradient
+  ) {
     const cmap = colormap.value as SimpleLinearGradient;
     colormap.value = new SimpleLinearGradient(
       cmap.startColorRGBA,

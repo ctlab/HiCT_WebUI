@@ -24,14 +24,22 @@ class Scene {
   private clipIds: string[] = [];
   private stack: string[][] = [];
   private raster: HTMLCanvasElement | undefined;
-  private clips = new Map<string, { path: string; transform: DOMMatrix; rule: CanvasFillRule }>();
-  finish() { this.flushRaster(); }
+  private clips = new Map<
+    string,
+    { path: string; transform: DOMMatrix; rule: CanvasFillRule }
+  >();
+  finish() {
+    this.flushRaster();
+  }
   private flushRaster() {
     if (!this.raster) return;
-    this.content.append(el("image", {
-      width: this.raster.width, height: this.raster.height,
-      href: this.raster.toDataURL("image/png"),
-    }));
+    this.content.append(
+      el("image", {
+        width: this.raster.width,
+        height: this.raster.height,
+        href: this.raster.toDataURL("image/png"),
+      })
+    );
     this.raster = undefined;
   }
   constructor(readonly context: CanvasRenderingContext2D) {
@@ -92,7 +100,11 @@ class Scene {
   call(method: string, args: unknown[]) {
     const c = this.context,
       n = args as number[];
-    if (method === "clearRect" && this.raster && this.content.childNodes.length === 0) {
+    if (
+      method === "clearRect" &&
+      this.raster &&
+      this.content.childNodes.length === 0
+    ) {
       // Tile renderers clear each destination rectangle before drawing it. Keep
       // those clears in the raster run instead of generating nested SVG masks
       // and one full-page PDF image per tile.
@@ -108,7 +120,18 @@ class Scene {
       raster.restore();
       return;
     }
-    if (["fill", "stroke", "fillRect", "strokeRect", "fillText", "strokeText", "clearRect"].includes(method)) this.flushRaster();
+    if (
+      [
+        "fill",
+        "stroke",
+        "fillRect",
+        "strokeRect",
+        "fillText",
+        "strokeText",
+        "clearRect",
+      ].includes(method)
+    )
+      this.flushRaster();
     switch (method) {
       case "save":
         this.stack.push([...this.clipIds]);
@@ -125,14 +148,14 @@ class Scene {
           n[1] <= 0 &&
           n[2] >= c.canvas.width &&
           n[3] >= c.canvas.height &&
-          equal(c.getTransform(), new DOMMatrix()) && this.clipIds.length === 0
+          equal(c.getTransform(), new DOMMatrix()) &&
+          this.clipIds.length === 0
         ) {
           // clearRect clears pixels, not the path or saved clipping state.
           this.content = el("g");
           this.root.replaceChildren(this.defs, this.content);
           this.vectorPaint = false;
-        }
-        else if (this.content.childNodes.length) {
+        } else if (this.content.childNodes.length) {
           const id = `hict-clear-${sequence++}`,
             mask = el("mask", {
               id,
@@ -152,7 +175,8 @@ class Scene {
           let erasedArea = mask;
           for (const clipId of this.clipIds) {
             const clipped = el("g", { "clip-path": `url(#${clipId})` });
-            erasedArea.append(clipped); erasedArea = clipped;
+            erasedArea.append(clipped);
+            erasedArea = clipped;
           }
           erasedArea.append(
             el("rect", {
@@ -234,7 +258,11 @@ class Scene {
           })
         );
         this.defs.append(clip);
-        this.clips.set(id, { path: this.path, transform: this.pathTransform, rule: (args[0] ?? "nonzero") as CanvasFillRule });
+        this.clips.set(id, {
+          path: this.path,
+          transform: this.pathTransform,
+          rule: (args[0] ?? "nonzero") as CanvasFillRule,
+        });
         this.clipIds.push(id);
         break;
       }
@@ -310,10 +338,14 @@ class Scene {
         // Rasterize consecutive tile draws exactly once with Canvas interpolation,
         // transforms and clips. Vector annotations remain separate. This prevents
         // SVG/PDF readers from resampling every tile differently or leaving seams.
-        if (c.globalCompositeOperation !== "source-over") throw new Error("Vector export cannot preserve this raster blend mode.");
+        if (c.globalCompositeOperation !== "source-over")
+          throw new Error(
+            "Vector export cannot preserve this raster blend mode."
+          );
         if (!this.raster) {
           this.raster = document.createElement("canvas");
-          this.raster.width = c.canvas.width; this.raster.height = c.canvas.height;
+          this.raster.width = c.canvas.width;
+          this.raster.height = c.canvas.height;
         }
         const raster = this.raster.getContext("2d")!;
         raster.save();
@@ -370,8 +402,9 @@ export async function captureCanvasScene(
   options?: { excludedRoots?: readonly HTMLElement[]; mapRoot?: HTMLElement }
 ): Promise<{ svg: SVGSVGElement; canvas: HTMLCanvasElement }> {
   // Navigation widgets remain visible in the app but are not scientific content.
-  const included = (canvas: HTMLCanvasElement) => workspace.contains(canvas) &&
-    !(options?.excludedRoots ?? []).some(root => root.contains(canvas));
+  const included = (canvas: HTMLCanvasElement) =>
+    workspace.contains(canvas) &&
+    !(options?.excludedRoots ?? []).some((root) => root.contains(canvas));
   const proto = CanvasRenderingContext2D.prototype as unknown as Record<
     string,
     (...a: unknown[]) => unknown
@@ -478,7 +511,8 @@ export async function captureCanvasScene(
       overflow: "hidden",
       opacity,
     });
-    if (options?.mapRoot?.contains(canvas)) container.setAttribute("data-hict-map-content", "true");
+    if (options?.mapRoot?.contains(canvas))
+      container.setAttribute("data-hict-map-content", "true");
     const scene = scenes.get(canvas);
     const style = getComputedStyle(canvas),
       transform =
@@ -543,15 +577,30 @@ export async function captureCanvasScene(
       source.src = node.getAttribute("href")!;
       await source.decode();
       const aligned = document.createElement("canvas");
-      aligned.width = composite.width; aligned.height = composite.height;
+      aligned.width = composite.width;
+      aligned.height = composite.height;
       const painter = aligned.getContext("2d")!;
       painter.translate(bounds.left - rect.left, bounds.top - rect.top);
-      painter.transform(placement.a, placement.b, placement.c, placement.d, placement.e, placement.f);
+      painter.transform(
+        placement.a,
+        placement.b,
+        placement.c,
+        placement.d,
+        placement.e,
+        placement.f
+      );
       painter.drawImage(source, 0, 0);
       node.setAttribute("href", aligned.toDataURL("image/png"));
       node.setAttribute("width", String(aligned.width));
       node.setAttribute("height", String(aligned.height));
-      node.setAttribute("transform", matrix(placement.inverse().translate(-(bounds.left - rect.left), -(bounds.top - rect.top))));
+      node.setAttribute(
+        "transform",
+        matrix(
+          placement
+            .inverse()
+            .translate(-(bounds.left - rect.left), -(bounds.top - rect.top))
+        )
+      );
     }
     container.append(group);
     svg.append(container);

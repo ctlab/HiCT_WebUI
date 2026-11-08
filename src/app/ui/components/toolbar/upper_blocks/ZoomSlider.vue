@@ -65,8 +65,7 @@ function recomputeScale() {
 
 function resolutionToSlider(resolution: number): number {
   const t =
-    (Math.log(resolution) - logMin.value) /
-    (logMax.value - logMin.value || 1);
+    (Math.log(resolution) - logMin.value) / (logMax.value - logMin.value || 1);
   return Math.min(1, Math.max(0, t)) * 1000;
 }
 
@@ -143,7 +142,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   const map = props.mapManager;
   if (!map || !viewKey) return;
-  map.getMap().getView().un("change:resolution", viewKey as never);
+  map
+    .getMap()
+    .getView()
+    .un("change:resolution", viewKey as never);
   viewKey = undefined;
 });
 </script>

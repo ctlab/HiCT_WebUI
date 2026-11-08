@@ -176,16 +176,18 @@ class AnnotationTrack2D extends Track2DSymmetric {
       }
 
       for (const marker of this.markers) {
-        const xProjected = this.contigDimensionHolder.projectSourceIntervalToAssembly(
-          marker.sourceXContig,
-          marker.sourceXBp,
-          marker.sourceXBp + 1
-        );
-        const yProjected = this.contigDimensionHolder.projectSourceIntervalToAssembly(
-          marker.sourceYContig,
-          marker.sourceYBp,
-          marker.sourceYBp + 1
-        );
+        const xProjected =
+          this.contigDimensionHolder.projectSourceIntervalToAssembly(
+            marker.sourceXContig,
+            marker.sourceXBp,
+            marker.sourceXBp + 1
+          );
+        const yProjected =
+          this.contigDimensionHolder.projectSourceIntervalToAssembly(
+            marker.sourceYContig,
+            marker.sourceYBp,
+            marker.sourceYBp + 1
+          );
         for (const xInt of xProjected) {
           for (const yInt of yProjected) {
             const xPx = this.contigDimensionHolder.getPxContainingBp(
@@ -235,16 +237,18 @@ class AnnotationTrack2D extends Track2DSymmetric {
       }
 
       for (const rect of this.rectangles) {
-        const xProjected = this.contigDimensionHolder.projectSourceIntervalToAssembly(
-          rect.sourceXContig,
-          rect.sourceXStartBp,
-          rect.sourceXEndBp
-        );
-        const yProjected = this.contigDimensionHolder.projectSourceIntervalToAssembly(
-          rect.sourceYContig,
-          rect.sourceYStartBp,
-          rect.sourceYEndBp
-        );
+        const xProjected =
+          this.contigDimensionHolder.projectSourceIntervalToAssembly(
+            rect.sourceXContig,
+            rect.sourceXStartBp,
+            rect.sourceXEndBp
+          );
+        const yProjected =
+          this.contigDimensionHolder.projectSourceIntervalToAssembly(
+            rect.sourceYContig,
+            rect.sourceYStartBp,
+            rect.sourceYEndBp
+          );
         for (const xInt of xProjected) {
           for (const yInt of yProjected) {
             const xFrom = this.contigDimensionHolder.getPxContainingBp(
@@ -295,9 +299,16 @@ class AnnotationTrack2D extends Track2DSymmetric {
     startBp: number,
     endBp: number
   ): Array<{ sourceContig: string; startBp: number; endBp: number }> {
-    const result: Array<{ sourceContig: string; startBp: number; endBp: number }> =
-      [];
-    for (let i = 0; i < this.contigDimensionHolder.contigDescriptors.length; i++) {
+    const result: Array<{
+      sourceContig: string;
+      startBp: number;
+      endBp: number;
+    }> = [];
+    for (
+      let i = 0;
+      i < this.contigDimensionHolder.contigDescriptors.length;
+      i++
+    ) {
       const descriptor = this.contigDimensionHolder.contigDescriptors[i];
       const assemblyStart = this.contigDimensionHolder.prefix_sum_bp[i];
       const assemblyEnd = this.contigDimensionHolder.prefix_sum_bp[i + 1];

@@ -49,7 +49,8 @@ useEscDismissableDialog({
 
 function enabledButtons(): HTMLButtonElement[] {
   return Array.from(
-    menu.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []
+    menu.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ??
+      []
   );
 }
 

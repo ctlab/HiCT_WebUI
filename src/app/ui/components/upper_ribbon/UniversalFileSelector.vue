@@ -32,10 +32,17 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">{{ props.title ?? "Select file" }}</h5>
-            <button type="button" class="btn-close" @click="onDismissClicked"></button>
+            <button
+              type="button"
+              class="btn-close"
+              @click="onDismissClicked"
+            ></button>
           </div>
           <div class="modal-body">
-            <div v-if="props.errorMessage || errorMessage" class="alert alert-danger py-2">
+            <div
+              v-if="props.errorMessage || errorMessage"
+              class="alert alert-danger py-2"
+            >
               {{ props.errorMessage ?? errorMessage }}
             </div>
 
@@ -49,13 +56,28 @@
                 placeholder="Relative folder or file path under DATA_DIR"
                 @keydown.enter.prevent="onPathGoClicked"
               />
-              <button type="button" class="btn btn-outline-secondary" :disabled="loading" @click="onPathGoClicked">
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                :disabled="loading"
+                @click="onPathGoClicked"
+              >
                 Go
               </button>
-              <button type="button" class="btn btn-outline-secondary" :disabled="loading" @click="goToParentDirectory">
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                :disabled="loading"
+                @click="goToParentDirectory"
+              >
                 Up
               </button>
-              <button type="button" class="btn btn-outline-secondary" :disabled="loading" @click="loadDirectory('')">
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                :disabled="loading"
+                @click="loadDirectory('')"
+              >
                 Root
               </button>
             </div>
@@ -75,7 +97,10 @@
                   class="form-check-input"
                   type="checkbox"
                 />
-                <label class="form-check-label small" for="toggle-show-all-files">
+                <label
+                  class="form-check-label small"
+                  for="toggle-show-all-files"
+                >
                   Show all files
                 </label>
               </div>
@@ -88,7 +113,11 @@
                 <button
                   type="button"
                   class="btn"
-                  :class="selectorMode === 'explorer' ? 'btn-primary' : 'btn-outline-primary'"
+                  :class="
+                    selectorMode === 'explorer'
+                      ? 'btn-primary'
+                      : 'btn-outline-primary'
+                  "
                   @click="selectorMode = 'explorer'"
                 >
                   Explorer
@@ -96,19 +125,30 @@
                 <button
                   type="button"
                   class="btn"
-                  :class="selectorMode === 'tree' ? 'btn-primary' : 'btn-outline-primary'"
+                  :class="
+                    selectorMode === 'tree'
+                      ? 'btn-primary'
+                      : 'btn-outline-primary'
+                  "
                   @click="selectorMode = 'tree'"
                 >
                   Tree
                 </button>
               </div>
             </div>
-            <small v-if="fileFilterHint" class="text-muted d-block mb-1">{{ fileFilterHint }}</small>
-            <small v-if="props.note" class="text-muted d-block mb-2">{{ props.note }}</small>
+            <small v-if="fileFilterHint" class="text-muted d-block mb-1">{{
+              fileFilterHint
+            }}</small>
+            <small v-if="props.note" class="text-muted d-block mb-2">{{
+              props.note
+            }}</small>
 
             <div v-if="loading" class="d-flex align-items-center gap-2 py-3">
               <strong>Loading {{ currentDirectory || "DATA_DIR" }}…</strong>
-              <div class="spinner-border spinner-border-sm ms-auto" role="status"></div>
+              <div
+                class="spinner-border spinner-border-sm ms-auto"
+                role="status"
+              ></div>
             </div>
 
             <div v-else-if="selectorMode === 'explorer'" class="table-host">
@@ -140,7 +180,9 @@
                     <i
                       :class="
                         slotProps.node.data?.iconCls ??
-                        (slotProps.node.leaf ? 'pi pi-fw pi-file' : 'pi pi-fw pi-folder-open')
+                        (slotProps.node.leaf
+                          ? 'pi pi-fw pi-file'
+                          : 'pi pi-fw pi-folder-open')
                       "
                       aria-hidden="true"
                     ></i>
@@ -154,14 +196,20 @@
                   </div>
                 </template>
               </Tree>
-              <div v-else class="text-muted">No files or folders found for current filter</div>
+              <div v-else class="text-muted">
+                No files or folders found for current filter
+              </div>
             </div>
           </div>
           <div class="modal-footer">
             <div v-if="props.multiSelect" class="me-auto small text-muted">
               {{ selectedFilenames.length }} selected
             </div>
-            <button type="button" class="btn btn-secondary" @click="onDismissClicked">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              @click="onDismissClicked"
+            >
               Dismiss
             </button>
             <button
@@ -234,7 +282,9 @@ const modalStyle = computed<CSSProperties>(() => ({
 const backdropStyle = computed<CSSProperties>(() =>
   props.zIndex ? { zIndex: Math.max(0, props.zIndex - 5) } : {}
 );
-const hasPredicate = computed(() => typeof props.fileNamePredicate === "function");
+const hasPredicate = computed(
+  () => typeof props.fileNamePredicate === "function"
+);
 const fileFilterHint = computed(() => {
   if (!hasPredicate.value) {
     return "";
@@ -242,7 +292,7 @@ const fileFilterHint = computed(() => {
   if (props.fileType && props.fileType.trim().length > 0) {
     return `Showing ${props.fileType} by default (toggle "Show all files" to browse everything).`;
   }
-  return "File type filter is active (toggle \"Show all files\" to browse everything).";
+  return 'File type filter is active (toggle "Show all files" to browse everything).';
 });
 
 useEscDismissableDialog({
@@ -276,7 +326,9 @@ watch(selectedFilename, (path) => {
 const filteredEntries = computed(() => {
   const predicate = props.fileNamePredicate;
   const query = searchTerm.value.trim().toLowerCase();
-  const entries = currentDirectory.value ? [parentDirectoryEntry(), ...allEntries.value] : allEntries.value;
+  const entries = currentDirectory.value
+    ? [parentDirectoryEntry(), ...allEntries.value]
+    : allEntries.value;
   return entries.filter((entry) => {
     if (entry.type === "directory") {
       if (!query) {
@@ -304,14 +356,18 @@ const filteredEntries = computed(() => {
 
 const selectedEntry = computed(() =>
   selectedFilename.value
-    ? filteredEntries.value.find((entry) => entry.path === selectedFilename.value) ?? null
+    ? filteredEntries.value.find(
+        (entry) => entry.path === selectedFilename.value
+      ) ?? null
     : null
 );
 
-const selectButtonDisabled = computed(() =>
-  loading.value || (props.multiSelect
-    ? selectedFilenames.value.length === 0
-    : !selectedFilename.value || selectedEntry.value?.type === "directory")
+const selectButtonDisabled = computed(
+  () =>
+    loading.value ||
+    (props.multiSelect
+      ? selectedFilenames.value.length === 0
+      : !selectedFilename.value || selectedEntry.value?.type === "directory")
 );
 
 type PrimeTreeNode = {
@@ -336,15 +392,21 @@ const treeNodes = computed<PrimeTreeNode[]>(() => {
   return filteredEntries.value.map((entry) => {
     const isDirectory = entry.type === "directory";
     return {
-      key: isDirectory ? directorySelectionKey(entry.path) : fileSelectionKey(entry.path),
+      key: isDirectory
+        ? directorySelectionKey(entry.path)
+        : fileSelectionKey(entry.path),
       label: entry.name,
       selectable: true,
       leaf: !isDirectory,
       data: {
         path: entry.path,
         meta: isDirectory
-          ? (entry.symbolicLink ? "linked folder" : "folder")
-          : `${formatBytes(entry.sizeBytes)}, ${formatTimestamp(entry.modifiedAtMs)}`,
+          ? entry.symbolicLink
+            ? "linked folder"
+            : "folder"
+          : `${formatBytes(entry.sizeBytes)}, ${formatTimestamp(
+              entry.modifiedAtMs
+            )}`,
         iconCls: getIconForEntry(entry.path, isDirectory),
       },
     };
@@ -400,7 +462,9 @@ const loadDirectory = async (directory: string): Promise<void> => {
   loading.value = true;
   errorMessage.value = "";
   try {
-    const entries = await props.networkManager.requestManager.listDirectory(normalizedDirectory);
+    const entries = await props.networkManager.requestManager.listDirectory(
+      normalizedDirectory
+    );
     currentDirectory.value = normalizedDirectory;
     pathInput.value = normalizedDirectory;
     allEntries.value = entries.slice();
@@ -422,7 +486,9 @@ const onPathGoClicked = async (): Promise<void> => {
     return;
   }
   const requestedPath = normalizeRelativePath(pathInput.value);
-  const visibleEntry = filteredEntries.value.find((entry) => entry.path === requestedPath);
+  const visibleEntry = filteredEntries.value.find(
+    (entry) => entry.path === requestedPath
+  );
   if (visibleEntry?.type === "file") {
     selectedFilename.value = visibleEntry.path;
     treeSelectionKeys.value = { [fileSelectionKey(visibleEntry.path)]: true };
@@ -434,10 +500,14 @@ const onPathGoClicked = async (): Promise<void> => {
     return;
   }
 
-  const currentFileCandidate = allEntries.value.find((entry) => entry.path === requestedPath && entry.type === "file");
+  const currentFileCandidate = allEntries.value.find(
+    (entry) => entry.path === requestedPath && entry.type === "file"
+  );
   if (currentFileCandidate) {
     selectedFilename.value = currentFileCandidate.path;
-    treeSelectionKeys.value = { [fileSelectionKey(currentFileCandidate.path)]: true };
+    treeSelectionKeys.value = {
+      [fileSelectionKey(currentFileCandidate.path)]: true,
+    };
     emit("selected", currentFileCandidate.path);
     return;
   }
@@ -446,7 +516,9 @@ const onPathGoClicked = async (): Promise<void> => {
   const candidateName = requestedPath.split("/").filter(Boolean).pop();
   if (candidateName && candidateParent !== requestedPath) {
     await loadDirectory(candidateParent);
-    const candidate = allEntries.value.find((entry) => entry.name === candidateName && entry.type === "file");
+    const candidate = allEntries.value.find(
+      (entry) => entry.name === candidateName && entry.type === "file"
+    );
     if (candidate) {
       selectedFilename.value = candidate.path;
       treeSelectionKeys.value = { [fileSelectionKey(candidate.path)]: true };
@@ -461,7 +533,11 @@ const getIconForEntry = (path: string, isDirectory: boolean): string => {
     return "pi pi-fw pi-folder-open";
   }
   const normalized = path.toLowerCase();
-  if (normalized.endsWith(".hict") || normalized.endsWith(".hict.hdf5") || normalized.endsWith(".hdf5")) {
+  if (
+    normalized.endsWith(".hict") ||
+    normalized.endsWith(".hict.hdf5") ||
+    normalized.endsWith(".hdf5")
+  ) {
     return "pi pi-fw pi-map";
   }
   if (normalized.endsWith(".cool") || normalized.endsWith(".mcool")) {
@@ -481,10 +557,18 @@ const getIconForEntry = (path: string, isDirectory: boolean): string => {
   if (normalized.endsWith(".bw") || normalized.endsWith(".bigwig")) {
     return "pi pi-fw pi-chart-line";
   }
-  if (normalized.endsWith(".bed") || normalized.endsWith(".bed.gz") || normalized.endsWith(".bam")) {
+  if (
+    normalized.endsWith(".bed") ||
+    normalized.endsWith(".bed.gz") ||
+    normalized.endsWith(".bam")
+  ) {
     return "pi pi-fw pi-list";
   }
-  if (normalized.endsWith(".gff") || normalized.endsWith(".gtf") || normalized.endsWith(".gff3")) {
+  if (
+    normalized.endsWith(".gff") ||
+    normalized.endsWith(".gtf") ||
+    normalized.endsWith(".gff3")
+  ) {
     return "pi pi-fw pi-file-edit";
   }
   return "pi pi-fw pi-file";
@@ -501,7 +585,9 @@ const formatBytes = (sizeBytes: number): string => {
     value /= 1024;
     unitIdx++;
   }
-  return `${value.toFixed(value >= 10 || unitIdx === 0 ? 0 : 1)} ${units[unitIdx]}`;
+  return `${value.toFixed(value >= 10 || unitIdx === 0 ? 0 : 1)} ${
+    units[unitIdx]
+  }`;
 };
 
 const formatTimestamp = (timestampMs: number): string => {
@@ -533,9 +619,12 @@ const onSelectClicked = (): void => {
     errorMessage.value = "Please select a file";
     return;
   }
-  const entry = filteredEntries.value.find((candidate) => candidate.path === selectedPath);
+  const entry = filteredEntries.value.find(
+    (candidate) => candidate.path === selectedPath
+  );
   if (!entry) {
-    errorMessage.value = "Selected file is no longer available in current filter";
+    errorMessage.value =
+      "Selected file is no longer available in current filter";
     return;
   }
   if (entry.type === "directory") {
@@ -548,7 +637,9 @@ const onSelectClicked = (): void => {
 };
 
 const onExplorerRowActivated = (path: string): void => {
-  const entry = filteredEntries.value.find((candidate) => candidate.path === path);
+  const entry = filteredEntries.value.find(
+    (candidate) => candidate.path === path
+  );
   if (entry?.type === "directory") {
     void loadDirectory(path);
     return;
@@ -586,7 +677,9 @@ const onTreeNodeDoubleClick = (node: { data?: { path?: string } }): void => {
   if (path === undefined) {
     return;
   }
-  const entry = filteredEntries.value.find((candidate) => candidate.path === path);
+  const entry = filteredEntries.value.find(
+    (candidate) => candidate.path === path
+  );
   if (entry?.type === "directory") {
     void loadDirectory(path);
     return;
@@ -600,7 +693,9 @@ const onTreeNodeClick = (node: { data?: { path?: string } }): void => {
   if (path === undefined) {
     return;
   }
-  const entry = filteredEntries.value.find((candidate) => candidate.path === path);
+  const entry = filteredEntries.value.find(
+    (candidate) => candidate.path === path
+  );
   if (entry?.type === "directory") {
     treeSelectionKeys.value = { [directorySelectionKey(path)]: true };
     return;
@@ -629,7 +724,10 @@ watch(filteredEntries, (entries) => {
     selectedFilename.value = selectedFromTree;
     return;
   }
-  if (selectedFilename.value && fileEntries.some((entry) => entry.path === selectedFilename.value)) {
+  if (
+    selectedFilename.value &&
+    fileEntries.some((entry) => entry.path === selectedFilename.value)
+  ) {
     const currentPath = selectedFilename.value;
     treeSelectionKeys.value = currentPath
       ? { [fileSelectionKey(currentPath)]: true }
@@ -684,5 +782,4 @@ onMounted(async () => {
   min-height: 1.4rem;
   gap: 0.35rem;
 }
-
 </style>

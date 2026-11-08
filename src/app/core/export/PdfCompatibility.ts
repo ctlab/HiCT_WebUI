@@ -15,7 +15,11 @@ export function prepareSvgForPdf(source: SVGSVGElement): SVGSVGElement {
     const y = Number(image.getAttribute("y") ?? 0);
     const width = Number(image.getAttribute("width"));
     const height = Number(image.getAttribute("height"));
-    if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+    if (
+      ![x, y, width, height].every(Number.isFinite) ||
+      width <= 0 ||
+      height <= 0
+    ) {
       throw new Error("Cannot export a raster with invalid PDF image bounds.");
     }
     const dx = Math.min(0.0001, width / 1_000_000);

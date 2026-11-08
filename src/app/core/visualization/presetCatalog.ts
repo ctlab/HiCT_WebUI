@@ -163,9 +163,7 @@ export const deserializeVisualizationOptions = (
       : "REPLACE_NANS_WITH_ONE";
   const cmapRaw = isRecord(raw.colormap) ? raw.colormap : {};
   const cmapType =
-    typeof cmapRaw.colormapType === "string"
-      ? cmapRaw.colormapType
-      : "Unknown";
+    typeof cmapRaw.colormapType === "string" ? cmapRaw.colormapType : "Unknown";
   let cmap: Colormap;
   if (cmapType === "SimpleLinearGradient") {
     const startColor =
@@ -270,8 +268,8 @@ const extractBuiltinPresetRows = (): Array<{
   const source = Array.isArray(data.savedVisualizationPresets)
     ? data.savedVisualizationPresets
     : Array.isArray(data.savedLocations)
-      ? data.savedLocations
-      : [];
+    ? data.savedLocations
+    : [];
   return source.filter(isRecord) as Array<{
     option_id?: number;
     name?: string;
@@ -286,10 +284,11 @@ const extractBuiltinPresetRows = (): Array<{
   }>;
 };
 
-export const loadBuiltinVisualizationPresets = (): VisualizationPresetRecord[] =>
-  extractBuiltinPresetRows().map((option, index) =>
-    toPresetRecord(option, index, "builtin")
-  );
+export const loadBuiltinVisualizationPresets =
+  (): VisualizationPresetRecord[] =>
+    extractBuiltinPresetRows().map((option, index) =>
+      toPresetRecord(option, index, "builtin")
+    );
 
 export const mergeVisualizationPresets = (
   sessionPresets: SessionVisualizationPreset[]

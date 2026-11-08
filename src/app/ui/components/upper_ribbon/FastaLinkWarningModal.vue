@@ -3,7 +3,11 @@
     <div class="fasta-link-modal">
       <div class="fasta-link-header">
         <h5 class="mb-0">Link FASTA with warnings</h5>
-        <button type="button" class="btn-close" @click="emit('cancel')"></button>
+        <button
+          type="button"
+          class="btn-close"
+          @click="emit('cancel')"
+        ></button>
       </div>
       <div class="fasta-link-body">
         <div class="mb-3">
@@ -24,17 +28,52 @@
           <div>Assembly contigs</div>
           <div>{{ report.compatibility.assemblyContigCount }}</div>
           <div>Required source intervals covered</div>
-          <div :class="{ 'text-danger': !report.compatibility.sourceIntervalsCovered }">{{ yesNo(report.compatibility.sourceIntervalsCovered) }}</div>
+          <div
+            :class="{
+              'text-danger': !report.compatibility.sourceIntervalsCovered,
+            }"
+          >
+            {{ yesNo(report.compatibility.sourceIntervalsCovered) }}
+          </div>
           <div>Same order and length</div>
-          <div :class="{ 'text-danger': !report.compatibility.sameOrderAndLength }">{{ yesNo(report.compatibility.sameOrderAndLength) }}</div>
+          <div
+            :class="{ 'text-danger': !report.compatibility.sameOrderAndLength }"
+          >
+            {{ yesNo(report.compatibility.sameOrderAndLength) }}
+          </div>
           <div>Same length multiset</div>
-          <div :class="{ 'text-danger': !report.compatibility.sameLengthMultiset }">{{ yesNo(report.compatibility.sameLengthMultiset) }}</div>
+          <div
+            :class="{ 'text-danger': !report.compatibility.sameLengthMultiset }"
+          >
+            {{ yesNo(report.compatibility.sameLengthMultiset) }}
+          </div>
           <div>Names match current names</div>
-          <div :class="{ 'text-danger': !report.compatibility.sameOrderLengthAndCurrentNames }">{{ yesNo(report.compatibility.sameOrderLengthAndCurrentNames) }}</div>
+          <div
+            :class="{
+              'text-danger':
+                !report.compatibility.sameOrderLengthAndCurrentNames,
+            }"
+          >
+            {{ yesNo(report.compatibility.sameOrderLengthAndCurrentNames) }}
+          </div>
           <div>Names match original names</div>
-          <div :class="{ 'text-danger': !report.compatibility.sameOrderLengthAndOriginalNames }">{{ yesNo(report.compatibility.sameOrderLengthAndOriginalNames) }}</div>
+          <div
+            :class="{
+              'text-danger':
+                !report.compatibility.sameOrderLengthAndOriginalNames,
+            }"
+          >
+            {{ yesNo(report.compatibility.sameOrderLengthAndOriginalNames) }}
+          </div>
           <div>Names match source names</div>
-          <div :class="{ 'text-danger': !report.compatibility.sameOrderLengthAndSourceNames }">{{ yesNo(report.compatibility.sameOrderLengthAndSourceNames) }}</div>
+          <div
+            :class="{
+              'text-danger':
+                !report.compatibility.sameOrderLengthAndSourceNames,
+            }"
+          >
+            {{ yesNo(report.compatibility.sameOrderLengthAndSourceNames) }}
+          </div>
         </div>
         <div v-if="report.compatibility.mismatches.length > 0">
           <div class="fw-semibold mb-2">First mismatches</div>

@@ -13,24 +13,69 @@
       <section v-for="item in items" :key="`${item.kind}-${item.id}`">
         <div class="entity-title">{{ item.title }}</div>
         <template v-if="item.kind !== 'selection'">
-          <button role="menuitem" @click="zoomTo(item)">Zoom to {{ item.kind }}</button>
+          <button role="menuitem" @click="zoomTo(item)">
+            Zoom to {{ item.kind }}
+          </button>
           <button role="menuitem" @click="copyName(item)">Copy name</button>
-          <button v-if="item.kind === 'contig'" role="menuitem" @click="copyPosition(item)">Copy position</button>
+          <button
+            v-if="item.kind === 'contig'"
+            role="menuitem"
+            @click="copyPosition(item)"
+          >
+            Copy position
+          </button>
         </template>
-        <button v-if="item.kind !== 'selection'" role="menuitem" @click="beginRename(item)">Rename…</button>
+        <button
+          v-if="item.kind !== 'selection'"
+          role="menuitem"
+          @click="beginRename(item)"
+        >
+          Rename…
+        </button>
         <template v-if="item.kind === 'selection'">
-          <button role="menuitem" @click="items = []; histogramOpen = true">Signal histogram...</button>
-          <button role="menuitem" @click="openAnalysis('dotplot')">Generate dotplot for selection…</button>
-          <button role="menuitem" @click="openAnalysis('moddotplot')">Generate ModDotPlot for selection…</button>
-          <button role="menuitem" @click="openAnalysis('search')">Find sequences in selection…</button>
-          <button role="menuitem" @click="exportFasta">Export FASTA for selection</button>
-          <button v-for="format in ['PNG', 'SVG', 'PDF'] as const" :key="format" role="menuitem" @click="exportSelection(format)">Export selection as {{ format }}</button>
+          <button
+            role="menuitem"
+            @click="
+              items = [];
+              histogramOpen = true;
+            "
+          >
+            Signal histogram...
+          </button>
+          <button role="menuitem" @click="openAnalysis('dotplot')">
+            Generate dotplot for selection…
+          </button>
+          <button role="menuitem" @click="openAnalysis('moddotplot')">
+            Generate ModDotPlot for selection…
+          </button>
+          <button role="menuitem" @click="openAnalysis('search')">
+            Find sequences in selection…
+          </button>
+          <button role="menuitem" @click="exportFasta">
+            Export FASTA for selection
+          </button>
+          <button
+            v-for="format in ['PNG', 'SVG', 'PDF'] as const"
+            :key="format"
+            role="menuitem"
+            @click="exportSelection(format)"
+          >
+            Export selection as {{ format }}
+          </button>
         </template>
         <template v-if="item.kind === 'scaffold' || !hasScaffold">
-          <button role="menuitem" :disabled="item.structural === false" @click="execute(item, 'reverse')">
+          <button
+            role="menuitem"
+            :disabled="item.structural === false"
+            @click="execute(item, 'reverse')"
+          >
             Reverse {{ item.kind }}
           </button>
-          <button role="menuitem" :disabled="item.structural === false" @click="move(item)">
+          <button
+            role="menuitem"
+            :disabled="item.structural === false"
+            @click="move(item)"
+          >
             Move {{ item.kind }}…
           </button>
           <button
@@ -40,12 +85,22 @@
           >
             Ungroup into singletons
           </button>
-          <button role="menuitem" :disabled="item.structural === false" @click="execute(item, 'debris')">
+          <button
+            role="menuitem"
+            :disabled="item.structural === false"
+            @click="execute(item, 'debris')"
+          >
             Move to debris and hide
           </button>
         </template>
       </section>
-      <p v-if="items.some(item => item.kind === 'selection')" class="scope-note">Structural edits use the interval where the rectangle crosses the diagonal and expand to whole scaffolds.</p>
+      <p
+        v-if="items.some((item) => item.kind === 'selection')"
+        class="scope-note"
+      >
+        Structural edits use the interval where the rectangle crosses the
+        diagonal and expand to whole scaffolds.
+      </p>
       <p v-if="hasScaffold" class="scope-note">
         Structural edits act on the whole scaffold.
       </p>
@@ -101,9 +156,25 @@
     :y="busyMenu.y"
     @close="busyMenu = null"
   />
-  <ModDotPlotModal v-if="analysis === 'moddotplot' || analysis === 'dotplot'" :kind="analysis" :map-manager="props.mapManager" :initial-selection="true" @dismissed="analysis = null" />
-  <SequenceSearchModal v-if="analysis === 'search'" :map-manager="props.mapManager" :initial-selection="true" @dismissed="analysis = null" />
-  <SignalHistogramModal v-if="histogramOpen" :map-manager="props.mapManager" selection @dismissed="histogramOpen = false" />
+  <ModDotPlotModal
+    v-if="analysis === 'moddotplot' || analysis === 'dotplot'"
+    :kind="analysis"
+    :map-manager="props.mapManager"
+    :initial-selection="true"
+    @dismissed="analysis = null"
+  />
+  <SequenceSearchModal
+    v-if="analysis === 'search'"
+    :map-manager="props.mapManager"
+    :initial-selection="true"
+    @dismissed="analysis = null"
+  />
+  <SignalHistogramModal
+    v-if="histogramOpen"
+    :map-manager="props.mapManager"
+    selection
+    @dismissed="histogramOpen = false"
+  />
 </template>
 <script setup lang="ts">
 import {
@@ -251,11 +322,26 @@ async function open(event: MouseEvent) {
   }
   const manager = props.mapManager;
   let found: Item[] = [];
-  const extent = manager.viewAndLayersManager.selectionInteractions.contigSelectExtent.getExtent();
+  const extent =
+    manager.viewAndLayersManager.selectionInteractions.contigSelectExtent.getExtent();
   const bounds = manager.viewAndLayersManager.currentViewState.selectionBorders;
-  if (extent && bounds.leftBP && bounds.rightBP && containsCoordinate(extent, manager.map.getEventCoordinate(event))) {
-    const startBP = Math.max(...bounds.leftBP), endBP = Math.min(...bounds.rightBP);
-    found.push({ kind: "selection", id: -1, name: "active rectangle", title: "Selection: active rectangle", startBP, endBP, structural: endBP > startBP });
+  if (
+    extent &&
+    bounds.leftBP &&
+    bounds.rightBP &&
+    containsCoordinate(extent, manager.map.getEventCoordinate(event))
+  ) {
+    const startBP = Math.max(...bounds.leftBP),
+      endBP = Math.min(...bounds.rightBP);
+    found.push({
+      kind: "selection",
+      id: -1,
+      name: "active rectangle",
+      title: "Selection: active rectangle",
+      startBP,
+      endBP,
+      structural: endBP > startBP,
+    });
   }
   if (!found.length) found = itemsAtEvent(event);
   if (!found.length) return;
@@ -276,7 +362,10 @@ function zoomTo(item: Item) {
 }
 function copyName(item: Item) {
   items.value = [];
-  void copyText(item.name, `${item.kind === "scaffold" ? "Scaffold" : "Contig"} name`);
+  void copyText(
+    item.name,
+    `${item.kind === "scaffold" ? "Scaffold" : "Contig"} name`
+  );
 }
 function copyPosition(item: Item) {
   items.value = [];
@@ -341,7 +430,10 @@ async function execute(item: Item, action: "reverse" | "ungroup" | "debris") {
 function move(item: Item) {
   items.value = [];
   const manager = props.mapManager;
-  if (item.kind === "selection") { manager.eventManager.onMoveSelectionClicked(); return; }
+  if (item.kind === "selection") {
+    manager.eventManager.onMoveSelectionClicked();
+    return;
+  }
   manager.eventManager.resetSelection();
   const resolution =
     manager.viewAndLayersManager.currentViewState.resolutionDesciptor
@@ -365,17 +457,30 @@ function move(item: Item) {
   }
   manager.eventManager.onMoveSelectionClicked();
 }
-function openAnalysis(kind: "moddotplot" | "dotplot" | "search") { items.value = []; analysis.value = kind; }
-function exportFasta() { items.value = []; props.mapManager.eventManager.onExportFASTAForSelectionClicked(); }
+function openAnalysis(kind: "moddotplot" | "dotplot" | "search") {
+  items.value = [];
+  analysis.value = kind;
+}
+function exportFasta() {
+  items.value = [];
+  props.mapManager.eventManager.onExportFASTAForSelectionClicked();
+}
 async function exportSelection(format: "PNG" | "SVG" | "PDF") {
   items.value = [];
   const notifications = useNotificationCenterStore();
   try {
     const manager = props.mapManager;
-    const method = format === "PNG" ? manager.exportCurrentMapPng : format === "SVG" ? manager.exportCurrentMapSvg : manager.exportCurrentMapPdf;
+    const method =
+      format === "PNG"
+        ? manager.exportCurrentMapPng
+        : format === "SVG"
+        ? manager.exportCurrentMapSvg
+        : manager.exportCurrentMapPdf;
     await method.call(manager, undefined, { scope: "selection" });
     notifications.add("success", `Selection exported as ${format}.`);
-  } catch (failure) { notifications.add("error", `Selection export failed: ${String(failure)}`); }
+  } catch (failure) {
+    notifications.add("error", `Selection export failed: ${String(failure)}`);
+  }
 }
 watch(
   () => props.mapManager.networkManager.requestManager.history.applied,
@@ -397,9 +502,15 @@ onMounted(() => {
   target.addEventListener("contextmenu", open);
   document.addEventListener("pointerdown", close);
   window.addEventListener("resize", close);
-  window.addEventListener("wheel", closeOnWheel, { capture: true, passive: true });
+  window.addEventListener("wheel", closeOnWheel, {
+    capture: true,
+    passive: true,
+  });
   const view = props.mapManager.getView();
-  viewKeys = [view.on("change:center", closeMenu), view.on("change:resolution", closeMenu)];
+  viewKeys = [
+    view.on("change:center", closeMenu),
+    view.on("change:resolution", closeMenu),
+  ];
 });
 onBeforeUnmount(() => {
   target?.removeEventListener("contextmenu", open);

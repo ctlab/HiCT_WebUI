@@ -44,7 +44,9 @@ export function buildSourceResolutionDescriptorSet(
   const imageSizes = imageSizesRaw
     .slice(0, resolutions.length)
     .map((value) => Number(value));
-  const pixelResolutionSet = resolutions.map((resolution) => resolution / baseBp);
+  const pixelResolutionSet = resolutions.map(
+    (resolution) => resolution / baseBp
+  );
   const resolutionToPixelResolution = new Map<number, number>();
   const layerResolutionBorders = new Map<number, LayerResolutionBorders>();
   const resolutionTuples: LayerResolutionDescriptor[] = [];
@@ -69,7 +71,9 @@ export function buildSourceResolutionDescriptorSet(
   for (let i = 0; i < resolutionTuples.length; ++i) {
     const borders: LayerResolutionBorders = {
       minResolutionInclusive:
-        i === 0 ? Number.NEGATIVE_INFINITY : resolutionTuples[i].pixelResolution,
+        i === 0
+          ? Number.NEGATIVE_INFINITY
+          : resolutionTuples[i].pixelResolution,
       maxResolutionExclusive:
         i === resolutionTuples.length - 1
           ? Number.POSITIVE_INFINITY

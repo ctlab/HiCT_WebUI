@@ -38,11 +38,11 @@ export const useVisualizationOptionsStore = defineStore(
     const postLogBase = ref(10);
     const autoThresholdEnabled = ref(false);
     const autoThresholdQuantile = ref(0.995);
-    const signalDisplayMode = ref<VisualizationOptions["signalDisplayMode"]>(
-      "OBSERVED"
+    const signalDisplayMode =
+      ref<VisualizationOptions["signalDisplayMode"]>("OBSERVED");
+    const coolerWeightsNaNPolicy = ref<CoolerWeightsNaNPolicy>(
+      "REPLACE_NANS_WITH_ONE"
     );
-    const coolerWeightsNaNPolicy =
-      ref<CoolerWeightsNaNPolicy>("REPLACE_NANS_WITH_ONE");
     const coolerWeightsHaveNaNs = ref(false);
     const coolerWeightsNaNCount = ref(0);
     const colormap: Ref<Colormap> = ref(

@@ -71,9 +71,7 @@ const props = defineProps<{
   color: var(--hict-ui-fg, #1f2937);
 
   /* Shadows/02. Regular */
-  box-shadow:
-    inset -1px 0 0 #000000,
-    0px 8px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: inset -1px 0 0 #000000, 0px 8px 16px rgba(0, 0, 0, 0.15);
 }
 
 .toolbar-outer :deep(*) {

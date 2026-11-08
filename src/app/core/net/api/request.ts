@@ -37,14 +37,21 @@ export class UnscaffoldAllRequest implements HiCTAPIRequest {
 
 export class AssemblyHistoryRequest implements HiCTAPIRequest {
   requestPath = "/assembly/history";
-  constructor(public readonly options: { offset?: number; limit?: number } = {}) {}
+  constructor(
+    public readonly options: { offset?: number; limit?: number } = {}
+  ) {}
 }
 export class RestoreAssemblyHistoryRequest implements HiCTAPIRequest {
   requestPath = "/assembly/history/restore";
-  constructor(public readonly options: {
-    session: string; revision: number; action: "undo" | "redo" | "restore"; id?: number;
-    assemblyFormat: "compact-v1";
-  }) {}
+  constructor(
+    public readonly options: {
+      session: string;
+      revision: number;
+      action: "undo" | "redo" | "restore";
+      id?: number;
+      assemblyFormat: "compact-v1";
+    }
+  ) {}
 }
 
 class OpenFileRequest implements HiCTAPIRequest {
@@ -456,7 +463,10 @@ class LoadAGPRequest implements HiCTAPIRequest {
     public readonly options: {
       readonly agpFilename: string;
       readonly source?: "PRIMARY" | "SECONDARY";
-      readonly missingComponentsPolicy?: "APPEND_UNPLACED" | "EXCLUDE" | "SCAFFOLDED_ONLY";
+      readonly missingComponentsPolicy?:
+        | "APPEND_UNPLACED"
+        | "EXCLUDE"
+        | "SCAFFOLDED_ONLY";
     }
   ) {}
 }
@@ -475,7 +485,6 @@ class ApplyJuiceboxAssemblyRequest implements HiCTAPIRequest {
 
 class OpenProgressRequest implements HiCTAPIRequest {
   requestPath = "/open_progress";
-  public constructor() {}
 }
 
 class OpenSecondarySourceRequest implements HiCTAPIRequest {
@@ -536,9 +545,7 @@ class GetRenderPipelineRequest implements HiCTAPIRequest {
 class SetRenderPipelineRequest implements HiCTAPIRequest {
   requestPath = "/render_pipeline/set";
 
-  public constructor(
-    public readonly options: Record<string, unknown>
-  ) {}
+  public constructor(public readonly options: Record<string, unknown>) {}
 }
 
 class ResetRenderPipelineRequest implements HiCTAPIRequest {

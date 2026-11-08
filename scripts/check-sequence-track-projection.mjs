@@ -137,9 +137,9 @@ vm.runInNewContext(
 );
 const manager = Object.create(managerExports.LinearTrackManager.prototype);
 const version = { session: "session-a", revision: 4 };
+const draws = [];
 let queries = 0,
-  checks = 0,
-  draws = [];
+  checks = 0;
 const api = {
   history: { applied: version },
   queryTracks1DByUnits: async () => {
