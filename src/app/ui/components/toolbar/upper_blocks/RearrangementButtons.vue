@@ -29,6 +29,7 @@
       data-bs-placement="right"
       data-bs-html="true"
       data-bs-title="Reverse Selection"
+      aria-label="Reverse Selection"
       data-bs-content="First select a range of contigs on the map using Shift + hold left mouse key. Then press this button to reverse a range covered by the selection"
       @click="props.mapManager?.eventManager.onReverseSelectionClicked"
     >
@@ -46,6 +47,7 @@
       data-bs-placement="right"
       data-bs-html="true"
       data-bs-title="Enter translocation mode"
+      aria-label="Enter translocation mode"
       data-bs-content="First select a range of contigs on the map using Shift + left mouse key. Then press this button and use your mouse cursor to insert it between neighbouring contigs. Press on the highlighted triangle inside the contig border to insert the range there."
       @click="translocationClick"
     >
@@ -58,6 +60,7 @@
       data-bs-placement="right"
       data-bs-html="true"
       title="Split contig at bin"
+      aria-label="Split contig at bin"
       @click="props.mapManager?.eventManager.onSplitContigClicked"
     >
       <i class="bi bi-scissors"></i>

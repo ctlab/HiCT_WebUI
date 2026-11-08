@@ -2123,12 +2123,16 @@ const runWizard = async (): Promise<void> => {
     if (secondaryFasta.value && requiresSecondarySource.value) {
       runState.currentStepId = "fasta";
       runState.currentMessage = `Linking ${secondaryFasta.value}`;
-      await props.networkManager.requestManager.linkFASTA(
-        new LinkFASTARequest({
-          fastaFilename: secondaryFasta.value,
-          allowMismatch: true,
-          source: "SECONDARY",
-        })
+      const secondaryLinkResponse =
+        await props.networkManager.requestManager.linkFASTA(
+          new LinkFASTARequest({
+            fastaFilename: secondaryFasta.value,
+            allowMismatch: true,
+            source: "SECONDARY",
+          })
+        );
+      secondaryLinkResponse.warnings.forEach((warning) =>
+        toast.message(warning)
       );
     }
 

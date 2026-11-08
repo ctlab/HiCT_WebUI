@@ -168,8 +168,14 @@
               type="button"
               class="btn btn-primary"
               @click="onSelectClicked"
-              :disabled="selectButtonDisabled"
+              :disabled="selectButtonDisabled || props.busy"
             >
+              <span
+                v-if="props.busy"
+                class="spinner-border spinner-border-sm me-1"
+                role="status"
+                aria-hidden="true"
+              ></span>
               {{ props.multiSelect ? "Add selected" : "Load" }}
             </button>
           </div>
@@ -204,6 +210,7 @@ const props = defineProps<{
   errorMessage?: unknown;
   zIndex?: number;
   multiSelect?: boolean;
+  busy?: boolean;
 }>();
 
 const loading = ref(true);
@@ -411,6 +418,9 @@ const goToParentDirectory = (): void => {
 };
 
 const onPathGoClicked = async (): Promise<void> => {
+  if (props.busy) {
+    return;
+  }
   const requestedPath = normalizeRelativePath(pathInput.value);
   const visibleEntry = filteredEntries.value.find((entry) => entry.path === requestedPath);
   if (visibleEntry?.type === "file") {
@@ -506,6 +516,9 @@ const onDismissClicked = (): void => {
 };
 
 const onSelectClicked = (): void => {
+  if (props.busy) {
+    return;
+  }
   if (props.multiSelect) {
     const selected = selectedFilenames.value.slice();
     if (selected.length === 0) {

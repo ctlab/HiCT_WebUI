@@ -8,9 +8,9 @@
           <button type="button" class="btn-close" aria-label="Close" :disabled="busy" @click="emit('dismissed')"></button>
         </header>
         <div class="modal-body">
-          <p>The active assembly is searched in its current order and orientation, preserving AGP gaps and using the configured default between scaffolds. Excluded regions and debris are omitted. Searches do not cross positive-length gaps.</p>
+          <details class="small mb-3"><summary>How this works</summary><p class="mt-2">The active assembly is searched in its current order and orientation, preserving AGP gaps and using the configured default between scaffolds. Excluded regions and debris are omitted. Searches do not cross positive-length gaps.</p></details>
           <p v-if="error" class="alert alert-danger" role="alert">{{ error }}</p>
-          <div v-if="unavailableReason" class="alert alert-warning" role="status">{{ unavailableReason }} <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="readiness.checking.value || busy" @click="readiness.refresh">Check again</button></div>
+          <div v-if="unavailableReason" class="alert alert-warning" role="status">{{ unavailableReason }} <button v-if="readiness.needsFasta.value" type="button" class="btn btn-sm btn-primary" :disabled="busy" @click="emit('linkFasta')">Link FASTA…</button> <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="readiness.checking.value || busy" @click="readiness.refresh">Check again</button></div>
           <fieldset :disabled="busy">
             <SequenceGapSettings :request-manager="props.mapManager.networkManager.requestManager" />
             <label class="form-label" for="search-sequences">FASTA records, or one DNA sequence per line</label>
@@ -58,6 +58,9 @@
                 <div class="col-sm-6"><label class="form-label">Maximum subject records per query<input v-model.number="maxTargets" type="number" min="1" max="1000000" step="1" required class="form-control" /></label></div>
                 <small class="form-text">Uses blastn-short if any query is shorter than 50 bases, otherwise blastn. Low-complexity masking is off. Separate gap-free scaffold segments are searched as independent subjects; the target limit can omit weaker matches.</small>
               </template>
+            </div>
+            <details class="mt-3"><summary>Advanced</summary>
+              <div class="row g-3 mt-0">
               <div class="col-sm-6">
                 <label for="search-forward-color" class="form-label">Forward strand color</label>
                 <input id="search-forward-color" v-model="forwardColor" type="color" class="form-control form-control-color" />
@@ -66,7 +69,8 @@
                 <label for="search-reverse-color" class="form-label">Reverse strand color</label>
                 <input id="search-reverse-color" v-model="reverseColor" type="color" class="form-control form-control-color" />
               </div>
-            </div>
+              </div>
+            </details>
             <div class="form-check mt-3"><input id="search-save-data" v-model="saveReusable" type="checkbox" class="form-check-input" /><label for="search-save-data" class="form-check-label">Save reusable BED under DATA_DIR</label></div>
             <div v-if="saveReusable" class="row g-3 mt-0">
               <div class="col-sm-9"><label for="search-output" class="form-label">BED output path</label><input id="search-output" v-model.trim="outputFilename" class="form-control" required placeholder="sequence-analysis/search-results.bed" /><small class="form-text">Relative to DATA_DIR; parent folders are created.</small></div>
@@ -105,7 +109,7 @@ import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
 
 const props = defineProps<{ mapManager: ContactMapManager; initialSelection?: boolean }>();
-const emit = defineEmits<{ (e: "dismissed"): void }>();
+const emit = defineEmits<{ (e: "dismissed"): void; (e: "linkFasta"): void }>();
 const manager = props.mapManager.networkManager.requestManager;
 const notifications = useNotificationCenterStore();
 const borders = props.mapManager.viewAndLayersManager.currentViewState.selectionBorders;

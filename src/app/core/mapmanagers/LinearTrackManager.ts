@@ -697,11 +697,16 @@ class LinearTrackManager {
   }
 
   public centerOnFeature(entry: FeatureSearchEntry): void {
+    this.setSelectedFeature(entry);
+    this.centerOnBpRange(entry.startBp, entry.endBp);
+  }
+
+  public centerOnBpRange(startBp: number, endBp: number): void {
     const view = this.mapManager.getView();
     const map = this.mapManager.getMap();
     const currentResolution = view.getResolution() ?? 1;
     const mapSize = map.getSize() ?? [1200, 900];
-    const spanBp = Math.max(1, entry.endBp - entry.startBp);
+    const spanBp = Math.max(1, endBp - startBp);
     const tuples = this.mapManager.getLayersManager().resolutionTuples;
     const finestBpResolution = tuples.reduce(
       (acc, tuple) => Math.min(acc, tuple.bpResolution),
@@ -726,14 +731,13 @@ class LinearTrackManager {
       minViewResolution,
       finestPixelResolution * desiredScaleFactor
     );
-    const midpointBp = (entry.startBp + entry.endBp) / 2;
+    const midpointBp = (startBp + endBp) / 2;
     const midpointPx = this.mapManager
       .getContigDimensionHolder()
       .getPxContainingBp(
         Math.max(0, Math.round(midpointBp)),
         safeFinestBpResolution
       );
-    this.setSelectedFeature(entry);
     view.animate({
       center: [midpointPx, -midpointPx],
       resolution: pixelResolution,

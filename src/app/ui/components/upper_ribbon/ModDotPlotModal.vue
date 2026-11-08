@@ -8,10 +8,12 @@
           <button type="button" class="btn-close" aria-label="Close" :disabled="busy" @click="emit('dismissed')"></button>
         </header>
         <div class="modal-body">
-          <p>{{ alignment ? "Align sequence from the linked FASTA" : "Estimate sequence identity from the linked FASTA" }} in the current assembly order, preserving AGP gaps and adding the configured separator between scaffolds. Debris and excluded sequence are omitted.</p>
-          <p class="small">Scores are anchored to contact bins and follow assembly edits. They describe the captured sequence: new joins need recomputation. Each selected resolution is computed independently.</p>
+          <details class="small mb-3"><summary>How this works</summary>
+            <p>{{ alignment ? "Align sequence from the linked FASTA" : "Estimate sequence identity from the linked FASTA" }} in the current assembly order, preserving AGP gaps and adding the configured separator between scaffolds. Debris and excluded sequence are omitted.</p>
+            <p class="small">Scores are anchored to contact bins and follow assembly edits. They describe the captured sequence: new joins need recomputation. Each selected resolution is computed independently.</p>
+          </details>
           <p v-if="error" class="alert alert-danger" role="alert">{{ error }}</p>
-          <div v-if="unavailableReason" class="alert alert-warning" role="status">{{ unavailableReason }} <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="readiness.checking.value || busy" @click="readiness.refresh">Check again</button></div>
+          <div v-if="unavailableReason" class="alert alert-warning" role="status">{{ unavailableReason }} <button v-if="readiness.needsFasta.value" type="button" class="btn btn-sm btn-primary" :disabled="busy" @click="emit('linkFasta')">Link FASTA…</button> <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="readiness.checking.value || busy" @click="readiness.refresh">Check again</button></div>
           <fieldset :disabled="busy">
             <SequenceGapSettings :request-manager="props.mapManager.networkManager.requestManager" />
             <label for="moddotplot-scope" class="form-label">Analysis scope</label>
@@ -30,14 +32,23 @@
             <p class="form-text">Fine windows over a whole genome can require many comparisons. Select a rectangle for a shorter calculation; other regions can be added later.</p>
             <div v-if="!alignment" class="row g-3">
               <div class="col-sm-6"><label for="moddotplot-identity" class="form-label">Minimum identity (%)</label><input id="moddotplot-identity" v-model.number="identity" type="number" min="0" max="100" step="0.1" class="form-control" required /></div>
+              <div class="col-sm-6"><label for="moddotplot-threads" class="form-label">Worker threads</label><input id="moddotplot-threads" v-model.number="threads" type="number" min="-1" max="256" step="1" class="form-control" required /><small class="form-text">-1 uses all allocated logical CPUs; 0 chooses automatically; 1 is single-threaded.</small></div>
+            </div>
+            <details v-if="!alignment" class="mt-3"><summary>Advanced</summary>
+              <div class="row g-3 mt-0">
               <div class="col-sm-6"><label for="moddotplot-k" class="form-label">k-mer length</label><input id="moddotplot-k" v-model.number="k" type="number" min="1" max="65535" step="1" class="form-control" required /></div>
               <div class="col-sm-6"><label for="moddotplot-sketch" class="form-label">Target sketch size</label><input id="moddotplot-sketch" v-model.number="sketchSize" type="number" min="1" max="1000000" step="1" class="form-control" required /></div>
               <div class="col-sm-6"><label for="moddotplot-delta" class="form-label">Neighbor expansion (fraction of window)</label><input id="moddotplot-delta" v-model.number="delta" type="number" min="0" max="1" step="0.1" class="form-control" required /></div>
-              <div class="col-sm-6"><label for="moddotplot-threads" class="form-label">Worker threads</label><input id="moddotplot-threads" v-model.number="threads" type="number" min="-1" max="256" step="1" class="form-control" required /><small class="form-text">-1 uses all allocated logical CPUs; 0 chooses automatically; 1 is single-threaded.</small></div>
-            </div>
+              </div>
+            </details>
             <div v-else class="row g-3">
-              <div class="col-sm-6" v-for="option in alignmentOptions" :key="option.key"><label :for="'dotplot-' + option.key" class="form-label">{{ option.label }}</label><input :id="'dotplot-' + option.key" v-model.number="alignmentSettings[option.key]" type="number" :min="option.min ?? 1" :max="option.max" step="1" class="form-control" required /><small v-if="option.key === 'threads'" class="form-text">-1 uses all allocated CPUs; 0 chooses automatically.</small></div>
+              <div class="col-sm-6" v-for="option in primaryAlignmentOptions" :key="option.key"><label :for="'dotplot-' + option.key" class="form-label">{{ option.label }}</label><input :id="'dotplot-' + option.key" v-model.number="alignmentSettings[option.key]" type="number" :min="option.min ?? 1" :max="option.max" step="1" class="form-control" required /><small v-if="option.key === 'threads'" class="form-text">-1 uses all allocated CPUs; 0 chooses automatically.</small></div>
             </div>
+            <details v-if="alignment" class="mt-3"><summary>Advanced</summary>
+              <div class="row g-3 mt-0">
+                <div class="col-sm-6" v-for="option in advancedAlignmentOptions" :key="option.key"><label :for="'dotplot-' + option.key" class="form-label">{{ option.label }}</label><input :id="'dotplot-' + option.key" v-model.number="alignmentSettings[option.key]" type="number" :min="option.min ?? 1" :max="option.max" step="1" class="form-control" required /><small v-if="option.key === 'threads'" class="form-text">-1 uses all allocated CPUs; 0 chooses automatically.</small></div>
+              </div>
+            </details>
             <div class="form-check mt-3">
               <input id="analysis-save-data" v-model="saveReusable" type="checkbox" class="form-check-input" />
               <label for="analysis-save-data" class="form-check-label">Save a reusable copy under DATA_DIR</label>
@@ -54,9 +65,11 @@
               <option value="below">Below diagonal</option>
               <option value="none">Do not link now</option>
             </select>
-            <p class="small">Attaching replaces the current secondary source and starts a new edit journal. To retain the current journal, choose “Do not link now” and attach the saved sidecar later.</p>
-            <p v-if="!alignment" class="small">Uses Observed display. The ModDotPlot identity colormap runs from blue through yellow to red at 100%; zero/uncomputed cells are transparent. Coverage and provenance are saved in the sidecar.</p>
-            <p v-if="alignment" class="small">Uses Observed display with sampled alignment counts. Counts are not identity percentages. The active minimap2/mm2-plus aligner is used; zeros are transparent.</p>
+            <details class="small"><summary>How this works</summary>
+              <p class="small">Attaching replaces the current secondary source and starts a new edit journal. To retain the current journal, choose “Do not link now” and attach the saved sidecar later.</p>
+              <p v-if="!alignment" class="small">Uses Observed display. The ModDotPlot identity colormap runs from blue through yellow to red at 100%; zero/uncomputed cells are transparent. Coverage and provenance are saved in the sidecar.</p>
+              <p v-if="alignment" class="small">Uses Observed display with sampled alignment counts. Counts are not identity percentages. The active minimap2/mm2-plus aligner is used; zeros are transparent.</p>
+            </details>
           </fieldset>
           <div v-if="job?.status === 'finished' && job.outputFile" class="alert alert-success mt-3" role="status">
             Generation completed. Saved overlay: <code class="text-break">{{ job.outputFile }}</code>
@@ -103,7 +116,10 @@ const alignmentOptions: {key: keyof typeof alignmentSettings.value; label: strin
   {key:"chainScore",label:"Minimum chain score",max:1000000}, {key:"sampleBp",label:"Sample every (bp)",max:1000000},
   {key:"minAlignmentLength",label:"Minimum alignment length (bp)",max:100000000}, {key:"threads",label:"Alignment threads",min:-1,max:256},
 ];
-const emit = defineEmits<{ (e: "dismissed"): void }>();
+const advancedAlignmentKeys: string[] = ["sampleBp", "threads"];
+const primaryAlignmentOptions = alignmentOptions.filter((option) => !advancedAlignmentKeys.includes(option.key));
+const advancedAlignmentOptions = alignmentOptions.filter((option) => advancedAlignmentKeys.includes(option.key));
+const emit = defineEmits<{ (e: "dismissed"): void; (e: "linkFasta"): void }>();
 const api = props.mapManager.networkManager.requestManager, notifications = useNotificationCenterStore();
 const readiness = useSequenceReadiness(api);
 const unavailableReason = computed(() => readiness.reason(alignment ? "dotplot" : "hict-moddotplot"));

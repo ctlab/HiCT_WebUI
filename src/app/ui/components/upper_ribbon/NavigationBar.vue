@@ -40,36 +40,35 @@
             >
             <ul class="dropdown-menu">
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenWizard"
+                <a class="dropdown-item" href="#" @click.prevent="onOpenWizard"
                   >Open Wizard...</a
                 >
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenFile"
+                <a class="dropdown-item" href="#" @click.prevent="onOpenFile"
                   >Manual Open...</a
                 >
               </li>
-              <!-- <li>
-                <a class="dropdown-item" href="#" @click="onSaveClicked">Save</a>
-                <div v-if="saving" class="spinner-border ms-auto" role="status"></div>
-              </li> -->
               <li>
-                <a class="dropdown-item" href="#" @click="onCloseClicked"
+                <a class="dropdown-item" href="#"
+                  :class="{ disabled: !props.mapManager }" @click.prevent="onCloseClicked"
                   >Close</a
                 >
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click="onAttachClicked"
+                <a class="dropdown-item" href="#" @click.prevent="onAttachClicked"
                   >Attach</a
                 >
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
-                <a class="dropdown-item" href="#" @click="onSaveSessionClicked"
+                <a class="dropdown-item" href="#"
+                  :class="{ disabled: !props.mapManager }" @click.prevent="onSaveSessionClicked"
                   >Save session</a
                 >
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenSessionClicked"
+                <a class="dropdown-item" href="#" @click.prevent="onOpenSessionClicked"
                   >Open session</a
                 >
                 <input
@@ -80,25 +79,15 @@
                   hidden
                 />
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
-                  @click="onConvertCoolersClicked"
+                <a class="dropdown-item" href="#" @click.prevent="onConvertCoolersClicked"
                   >Convert matrices</a
                 >
               </li>
               <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
-                  @click.prevent="exportingMatrix = true"
+                <a class="dropdown-item" href="#" @click.prevent="exportingMatrix = true"
                   >Export matrix</a
-                >
-              </li>
-              <li>
-                <a class="dropdown-item" href="#" @click="onDropCachesClicked"
-                  >Drop caches</a
                 >
               </li>
               <li><hr class="dropdown-divider" /></li>
@@ -109,24 +98,51 @@
               </li>
             </ul>
           </li>
-          <!-- Tools -->
+          <!-- Assembly -->
           <li class="nav-item dropdown">
-            <a class="nav-link active dropdown-toggle" data-bs-toggle="dropdown" href="#">Tools</a>
+            <a
+              class="nav-link active dropdown-toggle"
+              data-bs-toggle="dropdown"
+              href="#"
+              >Assembly</a
+            >
             <ul class="dropdown-menu">
               <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
-                  @click.prevent="onGenerateDotplotClicked"
-                  >Generate dotplot from FASTA files…</a
+                <a class="dropdown-item" href="#"
+                  :class="{ disabled: !props.mapManager }" @click.prevent="onOpenFASTAFile"
+                  >Link FASTA</a
                 >
               </li>
               <li>
-                <button class="dropdown-item" :disabled="!props.mapManager" @click="assemblyDotPlotOpen = true">Generate dotplot from active assembly…</button>
-                <button class="dropdown-item" :disabled="!props.mapManager" @click="modDotPlotOpen = true">Generate ModDotPlot…</button>
-                <button class="dropdown-item" :disabled="!props.mapManager" @click="sequenceSearchOpen = true">
-                  Find sequences in linked FASTA…
-                </button>
+                <a class="dropdown-item" href="#"
+                  :class="{ disabled: !props.mapManager }" @click.prevent="onLoadAGP"
+                  >Load AGP</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#"
+                  :class="{ disabled: !props.mapManager }" @click.prevent="onApplyJuiceboxAssembly"
+                  >Apply Juicebox assembly</a
+                >
+              </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a class="dropdown-item" href="#"
+                  :class="{ disabled: !props.mapManager }" @click.prevent="onAssemblyFASTARequest"
+                  >Export assembly</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#"
+                  :class="{ disabled: !props.mapManager }" @click.prevent="onSelectionFASTARequest"
+                  >Export FASTA for selection</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#"
+                  :class="{ disabled: !props.mapManager }" @click.prevent="onAssemblyAGPRequest"
+                  >Export to AGP</a
+                >
               </li>
             </ul>
           </li>
@@ -140,12 +156,14 @@
             >
             <ul class="dropdown-menu">
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenTrackManager"
+                <a class="dropdown-item" href="#"
+                  :class="{ disabled: !props.mapManager }" @click.prevent="onOpenTrackManager"
                   >Tracks and layers...</a
                 >
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenRenderingPipeline"
+                <a class="dropdown-item" href="#"
+                  :class="{ disabled: !props.mapManager }" @click.prevent="onOpenRenderingPipeline"
                   >Rendering pipeline...</a
                 >
               </li>
@@ -161,6 +179,7 @@
                 <a
                   class="dropdown-item"
                   href="#"
+                  :class="{ disabled: !props.mapManager }"
                   @click.prevent="openResolutionSettings"
                   >Restrict Resolutions...</a
                 >
@@ -181,63 +200,33 @@
                   >FASTA: show reverse strand</a
                 >
               </li>
-              <li>
-                <a class="dropdown-item" href="#" @click="onOpenApiDocs"
-                  >API docs...</a
-                >
-              </li>
             </ul>
           </li>
-          <!-- Bookmarks -->
-          <!-- <li class="nav-item">
-            <a aria-current="page" class="nav-link active" href="#"
-              >Bookmarks</a
-            >
-          </li> -->
-          <!-- Assembly -->
+          <!-- Tools -->
           <li class="nav-item dropdown">
-            <a
-              class="nav-link active dropdown-toggle"
-              data-bs-toggle="dropdown"
-              href="#"
-              >Assembly</a
-            >
+            <a class="nav-link active dropdown-toggle" data-bs-toggle="dropdown" href="#">Tools</a>
             <ul class="dropdown-menu">
+              <li><h6 class="dropdown-header">Sequence search</h6></li>
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenFASTAFile"
-                  >Link FASTA</a
-                >
+                <button class="dropdown-item" :disabled="!props.mapManager" @click="sequenceSearchOpen = true">
+                  Find sequences in linked FASTA…
+                </button>
               </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li><h6 class="dropdown-header">Dotplots</h6></li>
               <li>
                 <a
                   class="dropdown-item"
                   href="#"
-                  @click="onAssemblyFASTARequest"
-                  >Export assembly</a
+                  @click.prevent="onGenerateDotplotClicked"
+                  >Generate dotplot from FASTA files…</a
                 >
               </li>
               <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
-                  @click="onSelectionFASTARequest"
-                  >Export FASTA for selection</a
-                >
+                <button class="dropdown-item" :disabled="!props.mapManager" @click="assemblyDotPlotOpen = true">Generate dotplot from active assembly…</button>
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click="onLoadAGP"
-                  >Load AGP</a
-                >
-              </li>
-              <li>
-                <a class="dropdown-item" href="#" @click="onApplyJuiceboxAssembly"
-                  >Apply Juicebox assembly</a
-                >
-              </li>
-              <li>
-                <a class="dropdown-item" href="#" @click="onAssemblyAGPRequest"
-                  >Export to AGP</a
-                >
+                <button class="dropdown-item" :disabled="!props.mapManager" @click="modDotPlotOpen = true">Generate ModDotPlot…</button>
               </li>
             </ul>
           </li>
@@ -340,64 +329,94 @@
               </li>
               <li><hr class="dropdown-divider" /></li>
               <li>
-                <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenServerStatistics">
+                <a class="dropdown-item px-0 mt-2" href="#" @click.prevent="onOpenServerStatistics">
                   Runtime statistics...
                 </a>
               </li>
               <li>
-                <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenWorkerDiagnostics">
+                <a class="dropdown-item px-0 mt-2" href="#" @click.prevent="onOpenWorkerDiagnostics">
                   Worker diagnostics...
                 </a>
               </li>
-            </ul>
-          </li>
-          <!-- Connection settings -->
-          <li class="nav-item dropdown">
-            <a
-              aria-current="page"
-              class="nav-link active dropdown-toggle"
-              data-bs-toggle="dropdown"
-              href="#"
-              >Connection</a
-            >
-            <ul class="dropdown-menu" id="connection-settings-menu-dropdown">
-              <li id="connection-settings-input-group" class="input-group m-3">
-                <input
-                  id="global-search-input"
-                  class="form-control m-0"
-                  placeholder="http://localhost:5000/"
-                  type="text"
-                  v-model="gatewayAddress"
-                />
-                <button
-                  class="btn btn-sm btn-outline-dark"
-                  id="set-gateway-btn"
-                  @click="onGatewayChanged"
-                >
-                  Set API gateway
-                </button>
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a class="dropdown-item px-0 mt-2" href="#" @click.prevent="onDropCachesClicked">
+                  Drop caches
+                </a>
+              </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li @click.stop>
+                <label class="form-label mb-1" for="api-gateway-input">API gateway</label>
+                <div id="connection-settings-input-group" class="input-group">
+                  <input
+                    id="api-gateway-input"
+                    class="form-control"
+                    placeholder="http://localhost:5000/"
+                    type="text"
+                    v-model="gatewayAddress"
+                  />
+                  <button
+                    class="btn btn-sm btn-outline-dark"
+                    id="set-gateway-btn"
+                    type="button"
+                    @click="onGatewayChanged"
+                  >
+                    Set API gateway
+                  </button>
+                </div>
               </li>
             </ul>
           </li>
-          <!-- Report a bug -->
-          <li class="nav-item">
+          <!-- Help -->
+          <li class="nav-item dropdown">
             <a
-              aria-current="page"
-              class="nav-link active"
+              class="nav-link active dropdown-toggle"
+              data-bs-toggle="dropdown"
               href="#"
-              @click="openAbout"
-              >About</a
+              >Help</a
             >
-          </li>
-          <li class="nav-item">
-            <a
-              aria-current="page"
-              class="nav-link active"
-              href="https://github.com/ctlab/HiCT/issues"
-              >Report a bug</a
-            >
+            <ul class="dropdown-menu">
+              <li>
+                <a class="dropdown-item" href="#" @click.prevent="onOpenApiDocs"
+                  >API docs...</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" @click.prevent="openAbout"
+                  >About</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="https://github.com/ctlab/HiCT/issues"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >Report a bug</a
+                >
+              </li>
+            </ul>
           </li>
         </ul>
+        <div v-if="props.mapManager" class="file-chips ms-auto d-flex align-items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-sm file-chip"
+            :class="linkedFastaFilename ? 'btn-outline-secondary' : 'btn-outline-warning'"
+            :title="linkedFastaFilename || 'No FASTA linked. Click to link one.'"
+            @click="onOpenFASTAFile"
+          >
+            FASTA: {{ linkedFastaFilename ? shortFileLabel(linkedFastaFilename) : "not linked" }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm file-chip btn-outline-secondary"
+            :title="lastAgpFilename || 'No AGP loaded. Click to load one.'"
+            @click="onLoadAGP"
+          >
+            AGP: {{ lastAgpFilename ? shortFileLabel(lastAgpFilename) : "none" }}
+          </button>
+        </div>
       </div>
     </div>
   </nav>
@@ -423,6 +442,7 @@
     v-if="openingFASTAFile"
     @selected="linkFASTA"
     @dismissed="onFASTAFileDismissed"
+    :busy="fastaLinking"
     :error-message="errorMessage"
     :title="'Select FASTA file'"
     :file-name-predicate="isFastaFilename"
@@ -432,8 +452,11 @@
     v-if="openingAGPFile"
     @selected="openAGP"
     @dismissed="onAGPFileDismissed"
+    :busy="agpLoading"
     :error-message="errorMessage"
-    :file-name-predicate="(name: string) => name.endsWith('.agp')"
+    :title="'Load AGP'"
+    :note="'Loading an AGP replaces the current assembly layout. Source files stay intact, and Undo restores the previous layout.'"
+    :file-name-predicate="(name: string) => name.toLowerCase().endsWith('.agp')"
   ></UniversalFileSelector>
   <UniversalFileSelector
     :network-manager="props.networkManager"
@@ -477,12 +500,13 @@
     :initial-reference-map-filename="currentPrimaryHictFilename"
     @dismissed="onGenerateDotplotDismissed"
   />
-  <ModDotPlotModal v-if="assemblyDotPlotOpen && props.mapManager" kind="dotplot" :map-manager="props.mapManager" @dismissed="assemblyDotPlotOpen = false" />
-  <ModDotPlotModal v-if="modDotPlotOpen && props.mapManager" :map-manager="props.mapManager" @dismissed="modDotPlotOpen = false" />
+  <ModDotPlotModal v-if="assemblyDotPlotOpen && props.mapManager" kind="dotplot" :map-manager="props.mapManager" @dismissed="assemblyDotPlotOpen = false" @link-fasta="startLinkFastaForTool('dotplot')" />
+  <ModDotPlotModal v-if="modDotPlotOpen && props.mapManager" :map-manager="props.mapManager" @dismissed="modDotPlotOpen = false" @link-fasta="startLinkFastaForTool('moddotplot')" />
   <SequenceSearchModal
     v-if="sequenceSearchOpen && props.mapManager"
     :map-manager="props.mapManager"
     @dismissed="sequenceSearchOpen = false"
+    @link-fasta="startLinkFastaForTool('search')"
   />
   <TrackManager
     v-if="trackManagerOpen"
@@ -509,7 +533,39 @@
     :report="fastaLinkReport"
     @cancel="cancelFastaLinkWarning"
     @proceed="proceedFastaLinkWarning"
+    @choose-another="chooseAnotherFasta"
   />
+  <div
+    v-if="juiceboxFastaPromptOpen"
+    class="settings-backdrop"
+    @click.self="cancelJuiceboxFlow"
+  >
+    <div class="settings-modal juicebox-fasta-modal" role="dialog" aria-modal="true">
+      <div class="settings-header">
+        <h2>Apply Juicebox assembly</h2>
+        <button class="btn-close" type="button" aria-label="Close" @click="cancelJuiceboxFlow"></button>
+      </div>
+      <div class="settings-body">
+        <p>
+          Link the original contig FASTA for exact contig matching? It is
+          optional, but recommended when you have the FASTA used to build this
+          Juicebox assembly. Without it the assembly is applied in best-effort
+          mode.
+        </p>
+      </div>
+      <div class="settings-footer gap-2">
+        <button class="btn btn-outline-secondary me-auto" type="button" @click="cancelJuiceboxFlow">
+          Cancel
+        </button>
+        <button class="btn btn-outline-primary" type="button" @click="applyJuiceboxWithoutFasta">
+          Apply without FASTA
+        </button>
+        <button class="btn btn-primary" type="button" @click="chooseJuiceboxFasta">
+          Choose FASTA…
+        </button>
+      </div>
+    </div>
+  </div>
   <div
     v-if="osdSettingsOpen"
     class="settings-backdrop"
@@ -823,6 +879,7 @@ import { toast } from "vue-sonner";
 import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+import { useSessionStore } from "@/app/stores/sessionStore";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import type {
   ConversionToolchainStatusResponse,
@@ -866,6 +923,13 @@ const changelogLoading = ref(false);
 const renderedChangelog = computed(() => renderMarkdown(changelogText.value));
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
+const sessionStore = useSessionStore();
+const { linkedFastaFilename, lastAgpFilename } = storeToRefs(sessionStore);
+const fastaLinking = ref(false);
+const agpLoading = ref(false);
+const juiceboxFastaPromptOpen = ref(false);
+type FastaDependentTool = "search" | "moddotplot" | "dotplot";
+const toolAfterFastaLink = ref<null | FastaDependentTool>(null);
 const pendingJuiceboxAssemblyFilename = ref("");
 const pendingJuiceboxAssemblyFastaFilename = ref("");
 const nativeProcessingStatus = ref<NativeProcessingStatusResponse | null>(null);
@@ -919,7 +983,15 @@ useEscDismissableDialog({
   priority: 2200,
   isOpen: () => fastaLinkReport.value !== null,
   requestClose: () => {
-    fastaLinkReport.value = null;
+    cancelFastaLinkWarning();
+  },
+});
+
+useEscDismissableDialog({
+  priority: 1042,
+  isOpen: () => juiceboxFastaPromptOpen.value,
+  requestClose: () => {
+    cancelJuiceboxFlow();
   },
 });
 
@@ -1378,6 +1450,34 @@ function renderMarkdown(markdown: string): string {
   }) as string;
 }
 
+function shortFileLabel(path: string): string {
+  const base = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+  return base.length > 18 ? base.slice(0, 17) + "…" : base;
+}
+
+function startLinkFastaForTool(tool: FastaDependentTool): void {
+  sequenceSearchOpen.value = false;
+  modDotPlotOpen.value = false;
+  assemblyDotPlotOpen.value = false;
+  toolAfterFastaLink.value = tool;
+  onOpenFASTAFile();
+}
+
+function reopenToolAfterFastaLink(): void {
+  const tool = toolAfterFastaLink.value;
+  toolAfterFastaLink.value = null;
+  if (tool === "search") sequenceSearchOpen.value = true;
+  else if (tool === "moddotplot") modDotPlotOpen.value = true;
+  else if (tool === "dotplot") assemblyDotPlotOpen.value = true;
+}
+
+function chooseAnotherFasta(): void {
+  // Deliberately keeps toolAfterFastaLink: the user is still on the same flow.
+  pendingFastaFilename.value = null;
+  fastaLinkReport.value = null;
+  openingFASTAFile.value = true;
+}
+
 function onOpenFASTAFile() {
   pendingFastaFilename.value = null;
   fastaLinkReport.value = null;
@@ -1386,6 +1486,7 @@ function onOpenFASTAFile() {
 
 function onFASTAFileDismissed() {
   openingFASTAFile.value = false;
+  toolAfterFastaLink.value = null;
   pendingFastaFilename.value = null;
   fastaLinkReport.value = null;
 }
@@ -1404,11 +1505,31 @@ function onJuiceboxAssemblyFileDismissed(): void {
 }
 
 function onJuiceboxAssemblyFastaFileDismissed(): void {
+  // Cancelling the optional FASTA picker must not apply anything: go back to the prompt.
   openingJuiceboxAssemblyFastaFile.value = false;
+  pendingJuiceboxAssemblyFastaFilename.value = "";
+  juiceboxFastaPromptOpen.value = true;
+}
+
+function cancelJuiceboxFlow(): void {
+  juiceboxFastaPromptOpen.value = false;
+  openingJuiceboxAssemblyFile.value = false;
+  openingJuiceboxAssemblyFastaFile.value = false;
+  pendingJuiceboxAssemblyFilename.value = "";
+  pendingJuiceboxAssemblyFastaFilename.value = "";
+}
+
+function applyJuiceboxWithoutFasta(): void {
+  juiceboxFastaPromptOpen.value = false;
   pendingJuiceboxAssemblyFastaFilename.value = "";
   void applyPendingJuiceboxAssembly().catch((error) => {
     toast.error(String(error));
   });
+}
+
+function chooseJuiceboxFasta(): void {
+  juiceboxFastaPromptOpen.value = false;
+  openingJuiceboxAssemblyFastaFile.value = true;
 }
 
 async function onFileSelected(filename: string) {
@@ -1492,6 +1613,7 @@ function isHictkLoadFilename(name: string): boolean {
 }
 
 function openAGP(filename: string) {
+  agpLoading.value = true;
   props.networkManager.requestManager
     .loadAGP(new LoadAGPRequest({ agpFilename: filename }))
     .then(() => {
@@ -1507,6 +1629,9 @@ function openAGP(filename: string) {
         toast.message(e.message); return;
       }
       errorMessage.value = e;
+    })
+    .finally(() => {
+      agpLoading.value = false;
     });
 }
 
@@ -1547,21 +1672,13 @@ async function applyPendingJuiceboxAssembly(): Promise<void> {
   pendingJuiceboxAssemblyFastaFilename.value = "";
   openingJuiceboxAssemblyFile.value = false;
   openingJuiceboxAssemblyFastaFile.value = false;
+  toast.success("Juicebox assembly applied");
 }
 
 function onJuiceboxAssemblySelected(filename: string): void {
   pendingJuiceboxAssemblyFilename.value = filename;
   openingJuiceboxAssemblyFile.value = false;
-  const wantsFasta = window.confirm(
-    "Select an original FASTA for exact contig matching? It is optional, but recommended when you have the contig-level FASTA used to build this Juicebox assembly."
-  );
-  if (wantsFasta) {
-    openingJuiceboxAssemblyFastaFile.value = true;
-    return;
-  }
-  void applyPendingJuiceboxAssembly().catch((error) => {
-    toast.error(String(error));
-  });
+  juiceboxFastaPromptOpen.value = true;
 }
 
 function onJuiceboxAssemblyFastaSelected(filename: string): void {
@@ -1589,6 +1706,7 @@ function isFastaFilename(name: string): boolean {
 function cancelFastaLinkWarning(): void {
   pendingFastaFilename.value = null;
   fastaLinkReport.value = null;
+  toolAfterFastaLink.value = null;
 }
 
 function proceedFastaLinkWarning(): void {
@@ -1601,6 +1719,7 @@ function proceedFastaLinkWarning(): void {
 }
 
 function linkFASTA(filename: string, allowMismatch = false) {
+  fastaLinking.value = true;
   props.networkManager.requestManager
     .linkFASTA(new LinkFASTARequest({ fastaFilename: filename, allowMismatch }))
     .then((response) => {
@@ -1627,9 +1746,13 @@ function linkFASTA(filename: string, allowMismatch = false) {
         })
       );
       toast.message("Linked FASTA file " + filename);
+      reopenToolAfterFastaLink();
     })
     .catch((e) => {
       errorMessage.value = e;
+    })
+    .finally(() => {
+      fastaLinking.value = false;
     });
 }
 
@@ -1663,6 +1786,7 @@ function onAGPFileSelected() {
 }
 
 function onAssemblyFASTARequest() {
+  toast.message("Preparing export…");
   props.networkManager.requestManager
     .getFASTAForAssembly(new GetFastaForAssemblyRequest())
     .then((data) => {
@@ -1672,7 +1796,8 @@ function onAssemblyFASTARequest() {
       link.href = window.URL.createObjectURL(blob);
       link.download = `assembly.fasta`;
       link.click();
-    });
+    })
+    .catch((e) => toast.error("Export failed: " + String(e)));
 }
 
 function onSelectionFASTARequest() {
@@ -1680,6 +1805,7 @@ function onSelectionFASTARequest() {
 }
 
 function onAssemblyAGPRequest() {
+  toast.message("Preparing export…");
   props.networkManager.requestManager
     .getAGPForAssembly(new GetAGPForAssemblyRequest())
     .then((data) => {
@@ -1689,7 +1815,8 @@ function onAssemblyAGPRequest() {
       link.href = window.URL.createObjectURL(blob);
       link.download = `assembly.agp`;
       link.click();
-    });
+    })
+    .catch((e) => toast.error("Export failed: " + String(e)));
 }
 </script>
 
@@ -1758,12 +1885,17 @@ function onAssemblyAGPRequest() {
   width: 28px;
 }
 
-#connection-settings-menu-dropdown {
-  width: 400%;
+.file-chip {
+  max-width: 14rem;
+  white-space: nowrap;
 }
 
-#set-gateway-btn {
-  margin-right: 30px;
+.juicebox-fasta-modal {
+  width: min(520px, 92vw);
+}
+
+#connection-settings-input-group {
+  min-width: 22rem;
 }
 
 .about-backdrop,

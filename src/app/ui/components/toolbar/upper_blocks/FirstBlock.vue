@@ -49,6 +49,7 @@
       data-bs-toggle="tooltip"
       data-bs-placement="right"
       title="Slide to the main diagonal vertically"
+      aria-label="Slide to the main diagonal vertically"
       @click="slideVertically"
     >
       <i class="bi bi-arrow-down-up"></i>
@@ -59,6 +60,7 @@
       data-bs-toggle="tooltip"
       data-bs-placement="right"
       title="Slide to the main diagonal horizontally"
+      aria-label="Slide to the main diagonal horizontally"
       @click="slideHorizontally"
     >
       <i class="bi bi-arrow-left-right"></i>
@@ -69,6 +71,7 @@
       data-bs-toggle="tooltip"
       data-bs-placement="right"
       title="Slide to the main diagonal over counter-diagonal"
+      aria-label="Slide to the main diagonal over counter-diagonal"
       @click="slideByCounterDiagonal"
     >
       <i class="bi bi-arrows-angle-contract"></i>

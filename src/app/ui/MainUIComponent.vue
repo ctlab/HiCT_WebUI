@@ -274,6 +274,11 @@ const visualizationOptionsStore = useVisualizationOptionsStore();
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const sessionStore = useSessionStore();
+watch(
+  fastaFilename,
+  (v) => sessionStore.setLinkedFastaFilename(v ?? ""),
+  { immediate: true }
+);
 const matrixViewStore = useMatrixViewStore();
 
 const htmlElementReferencesStore = usehtmlElementReferencesStore();
@@ -489,6 +494,7 @@ function resetState() {
   networkManager.mapManager = undefined;
   filename.value = "";
   fastaFilename.value = "";
+  sessionStore.setLastAgpFilename("");
   mapManager.value = undefined;
   matrixViewStore.reset();
 }

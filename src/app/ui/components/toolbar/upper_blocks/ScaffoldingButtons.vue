@@ -27,6 +27,7 @@
       data-bs-toggle="tooltip"
       data-bs-placement="right"
       title="Group selection into scaffold"
+      aria-label="Group selection into scaffold"
       @click="addScaffoldClicked"
     >
       <i class="bi bi-box-arrow-in-down-right"></i>
@@ -37,6 +38,7 @@
       data-bs-toggle="tooltip"
       data-bs-placement="right"
       title="Ungroup selection into singleton scaffolds"
+      aria-label="Ungroup selection into singleton scaffolds"
       @click="removeScaffoldClicked"
     >
       <i class="bi bi-box-arrow-up-left"></i>
@@ -51,6 +53,7 @@
       data-bs-toggle="tooltip"
       data-bs-placement="right"
       title="Export FASTA for selection"
+      aria-label="Export FASTA for selection"
       @click="exportFASTAForSelectionClicked"
     >
       <i class="bi bi-type"></i>

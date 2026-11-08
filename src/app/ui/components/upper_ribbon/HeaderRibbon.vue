@@ -27,10 +27,16 @@
           <input
             id="global-search-input"
             class="form-control form-control-sm m-0"
-            placeholder="I'm looking for..."
+            placeholder="Find contig, scaffold or feature"
             type="text"
+            autocomplete="off"
             v-model="searchQuery"
             @input="onSearchInput"
+            @keydown.down.prevent="moveSearchHighlight(1)"
+            @keydown.up.prevent="moveSearchHighlight(-1)"
+            @keydown.enter.prevent="goToSelection"
+            @keydown.esc.prevent="searchOpen = false"
+            @blur="deferSearchClose"
           />
           <button
             id="global-search-button"
@@ -43,6 +49,7 @@
         </div>
         <div
           v-if="
+            searchOpen &&
             (searchResults.length > 0 || searchLoadingRemote) &&
             searchQuery.length >= 3
           "
@@ -62,7 +69,7 @@
             type="button"
             class="search-result"
             :class="{ active: idx === selectedIndex }"
-            @click="selectResult(idx)"
+            @mousedown.prevent="selectResult(idx)"
           >
             <span class="search-type">{{ item.type }}</span>
             <span class="search-name">{{ item.name }}</span>
@@ -85,6 +92,7 @@
           @keydown.esc.prevent="restoreScopeQuery('row')"
           @blur="deferScopePickerClose('row')"
           aria-label="Rows scope"
+          title="Rows shown on the map"
         />
         <div v-if="rowScopeOpen" class="scope-dropdown">
           <button
@@ -124,6 +132,7 @@
           @keydown.esc.prevent="restoreScopeQuery('column')"
           @blur="deferScopePickerClose('column')"
           aria-label="Columns scope"
+          title="Columns shown on the map"
         />
         <div v-if="columnScopeOpen" class="scope-dropdown">
           <button
@@ -150,15 +159,6 @@
           <option value="EXPECTED">Show Expected</option>
           <option value="OBSERVED_OVER_EXPECTED">Show O/E</option>
         </select>
-      </div>
-      <div class="mb-3">
-        <!-- <select class="form-select form-select-sm" v-model="normalizationTypeInt" @change="onNormalizationChanged">
-          <option selected value="0">Normalization None (Linear)</option>
-          <option value="1">Normalization Log2</option>
-          <option value="2">Normalization Log10</option>
-          <option value="3">Normalization Cooler</option>
-        </select> -->
-        <NormalizationSelector :map-manager="props.mapManager" />
       </div>
     </div>
     <div id="right-header-block" class="header-block">
@@ -192,63 +192,65 @@
           <span class="ruler-button-label">{{ rulerModeLabel }}</span>
         </button>
       </div>
-      <div class="export-controls" role="group" aria-label="Image export">
-        <span class="ribbon-group-label" aria-hidden="true">Export</span>
-        <span v-if="props.mapManager?.networkManager.requestManager.sequenceViewReadOnly" class="text-nowrap px-2">Sequence windows</span>
-        <select v-else v-model="exportScope" class="form-select form-select-sm export-scope" aria-label="Export area" title="Area used by SVG, PNG and PDF exports">
-          <option value="viewport">Viewport</option><option value="whole-map">Whole map</option>
-        </select>
-        <label v-if="!props.mapManager?.networkManager.requestManager.sequenceViewReadOnly" class="d-flex align-items-center gap-1 text-nowrap" title="Crop exports to the map: no empty margin outside the contact map">
-          <input type="checkbox" v-model="cropExportToMap" aria-label="Crop export to map" /> Crop
-        </label>
+      <div class="dropdown export-dropdown">
         <button
-          id="export-svg-button"
-          class="btn btn-sm btn-outline-primary"
+          id="export-dropdown-toggle"
+          class="btn btn-sm btn-outline-primary dropdown-toggle"
           type="button"
-          :disabled="exportingType !== null"
-          @click="exportSvg"
-          title="Export selected area as SVG"
+          data-bs-toggle="dropdown"
+          data-bs-auto-close="outside"
+          aria-expanded="false"
+          title="Export the map as SVG, PNG or PDF"
         >
-          <span v-if="exportingType !== 'svg'"
-            ><i class="bi bi-box-arrow-up export-button-icon" aria-hidden="true"></i><span class="export-button-label">SVG</span></span
-          >
-          <span v-else>
-            <span class="spinner-border spinner-border-sm me-2"></span>
-            {{ Math.round(svgProgress * 100) }}%
-          </span>
+          <template v-if="exportingType !== null">
+            <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+            {{ exportingType.toUpperCase() }} {{ Math.round(svgProgress * 100) }}%
+          </template>
+          <template v-else>Export</template>
         </button>
-        <button
-          id="export-png-button"
-          class="btn btn-sm btn-outline-primary"
-          type="button"
-          :disabled="exportingType !== null"
-          @click="exportPng"
-          title="Export selected area as PNG"
-        >
-          <span v-if="exportingType !== 'png'"
-            ><i class="bi bi-box-arrow-up export-button-icon" aria-hidden="true"></i><span class="export-button-label">PNG</span></span
-          >
-          <span v-else>
-            <span class="spinner-border spinner-border-sm me-2"></span>
-            {{ Math.round(svgProgress * 100) }}%
-          </span>
-        </button>
-        <button
-          id="export-pdf-button"
-          class="btn btn-sm btn-outline-primary"
-          type="button"
-          :disabled="exportingType !== null"
-          @click="exportPdf"
-          title="Export selected area as PDF"
-        >
-          <span v-if="exportingType !== 'pdf'"
-            ><i class="bi bi-box-arrow-up export-button-icon" aria-hidden="true"></i><span class="export-button-label">PDF</span></span
-          >
-          <span v-else>
-            <span class="spinner-border spinner-border-sm me-2"></span>
-            {{ Math.round(svgProgress * 100) }}%
-          </span>
-        </button>
+        <div class="dropdown-menu dropdown-menu-end p-2 export-menu" role="group" aria-label="Image export">
+          <span v-if="props.mapManager?.networkManager.requestManager.sequenceViewReadOnly" class="text-nowrap px-2">Sequence windows</span>
+          <template v-else>
+            <select v-model="exportScope" class="form-select form-select-sm export-scope mb-2" aria-label="Export area" title="Area used by SVG, PNG and PDF exports">
+              <option value="viewport">Viewport</option><option value="whole-map">Whole map</option>
+            </select>
+            <label class="d-flex align-items-center gap-1 text-nowrap mb-2" title="Crop exports to the map: no empty margin outside the contact map">
+              <input type="checkbox" v-model="cropExportToMap" aria-label="Crop export to map" /> Crop
+            </label>
+          </template>
+          <div class="d-flex gap-1">
+            <button
+              id="export-svg-button"
+              class="btn btn-sm btn-outline-primary"
+              type="button"
+              :disabled="exportingType !== null"
+              @click="runExport('svg')"
+              title="Export selected area as SVG"
+            >
+              <i class="bi bi-box-arrow-up export-button-icon" aria-hidden="true"></i><span class="export-button-label">SVG</span>
+            </button>
+            <button
+              id="export-png-button"
+              class="btn btn-sm btn-outline-primary"
+              type="button"
+              :disabled="exportingType !== null"
+              @click="runExport('png')"
+              title="Export selected area as PNG"
+            >
+              <i class="bi bi-box-arrow-up export-button-icon" aria-hidden="true"></i><span class="export-button-label">PNG</span>
+            </button>
+            <button
+              id="export-pdf-button"
+              class="btn btn-sm btn-outline-primary"
+              type="button"
+              :disabled="exportingType !== null"
+              @click="runExport('pdf')"
+              title="Export selected area as PDF"
+            >
+              <i class="bi bi-box-arrow-up export-button-icon" aria-hidden="true"></i><span class="export-button-label">PDF</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -257,7 +259,7 @@
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { AxisScopeSelection } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
-import NormalizationSelector from "./NormalizationSelector.vue";
+import { useVisualizationOptionsSync } from "./useVisualizationOptionsSync";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { toast } from "vue-sonner";
 import { useStyleStore } from "@/app/stores/styleStore";
@@ -269,6 +271,8 @@ import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinear
 const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
+
+useVisualizationOptionsSync(() => props.mapManager);
 
 const uiSettingsStore = useUiSettingsStore();
 const { osdOverlayVisible, rulerCoordinateMode } = storeToRefs(uiSettingsStore);
@@ -615,13 +619,10 @@ function cycleRulerMode(): void {
 const exportScope = ref<"viewport" | "whole-map">("viewport");
 const cropExportToMap = ref(true);
 
-async function exportSvg() {
-  if (!props.mapManager || exportingType.value) return;
-  exportingType.value = "svg";
-  svgProgress.value = 0;
+function buildExportMetadata(): Record<string, unknown> {
   const cmap = colormap.value;
-  const metadata: Record<string, unknown> = {
-    filename: props.mapManager.getOptions().filename,
+  return {
+    filename: props.mapManager?.getOptions().filename,
     visualization: {
       preLogBase: preLogBase.value,
       postLogBase: postLogBase.value,
@@ -641,108 +642,32 @@ async function exportSvg() {
           : { type: cmap?.colormapType ?? "Unknown" },
     },
   };
-  try {
-    await props.mapManager.exportCurrentMapSvg(
-      (progress) => {
-        svgProgress.value = progress;
-      },
-      {
-        backgroundColor: mapBackgroundColor.value.RGBA,
-        metadata,
-        scope: exportScope.value,
-        cropToMap: cropExportToMap.value,
-      }
-    );
-  } catch (e) {
-    toast.error((e as Error)?.message ?? "Failed to export SVG");
-  } finally {
-    exportingType.value = null;
-  }
 }
 
-async function exportPng() {
-  if (!props.mapManager || exportingType.value) return;
-  exportingType.value = "png";
+async function runExport(type: "svg" | "png" | "pdf") {
+  const manager = props.mapManager;
+  if (!manager || exportingType.value) return;
+  exportingType.value = type;
   svgProgress.value = 0;
-  const cmap = colormap.value;
-  const metadata: Record<string, unknown> = {
-    filename: props.mapManager.getOptions().filename,
-    visualization: {
-      preLogBase: preLogBase.value,
-      postLogBase: postLogBase.value,
-      applyCoolerWeights: applyCoolerWeights.value,
-      resolutionScaling: resolutionScaling.value,
-      resolutionLinearScaling: resolutionLinearScaling.value,
-      colormap:
-        cmap instanceof SimpleLinearGradient
-          ? {
-              type: cmap.colormapType,
-              startColor: cmap.startColorRGBA?.RGBA,
-              endColor: cmap.endColorRGBA?.RGBA,
-              minSignal: cmap.minSignal,
-              maxSignal: cmap.maxSignal,
-            }
-          : { type: cmap?.colormapType ?? "Unknown" },
-    },
+  const options = {
+    backgroundColor: mapBackgroundColor.value.RGBA,
+    metadata: buildExportMetadata(),
+    scope: exportScope.value,
+    cropToMap: cropExportToMap.value,
+  };
+  const onProgress = (progress: number) => {
+    svgProgress.value = progress;
   };
   try {
-    await props.mapManager.exportCurrentMapPng(
-      (progress) => {
-        svgProgress.value = progress;
-      },
-      {
-        backgroundColor: mapBackgroundColor.value.RGBA,
-        metadata,
-        scope: exportScope.value,
-        cropToMap: cropExportToMap.value,
-      }
-    );
+    if (type === "svg") {
+      await manager.exportCurrentMapSvg(onProgress, options);
+    } else if (type === "png") {
+      await manager.exportCurrentMapPng(onProgress, options);
+    } else {
+      await manager.exportCurrentMapPdf(onProgress, options);
+    }
   } catch (e) {
-    toast.error((e as Error)?.message ?? "Failed to export PNG");
-  } finally {
-    exportingType.value = null;
-  }
-}
-
-async function exportPdf() {
-  if (!props.mapManager || exportingType.value) return;
-  exportingType.value = "pdf";
-  svgProgress.value = 0;
-  const cmap = colormap.value;
-  const metadata: Record<string, unknown> = {
-    filename: props.mapManager.getOptions().filename,
-    visualization: {
-      preLogBase: preLogBase.value,
-      postLogBase: postLogBase.value,
-      applyCoolerWeights: applyCoolerWeights.value,
-      resolutionScaling: resolutionScaling.value,
-      resolutionLinearScaling: resolutionLinearScaling.value,
-      colormap:
-        cmap instanceof SimpleLinearGradient
-          ? {
-              type: cmap.colormapType,
-              startColor: cmap.startColorRGBA?.RGBA,
-              endColor: cmap.endColorRGBA?.RGBA,
-              minSignal: cmap.minSignal,
-              maxSignal: cmap.maxSignal,
-            }
-          : { type: cmap?.colormapType ?? "Unknown" },
-    },
-  };
-  try {
-    await props.mapManager.exportCurrentMapPdf(
-      (progress) => {
-        svgProgress.value = progress;
-      },
-      {
-        backgroundColor: mapBackgroundColor.value.RGBA,
-        metadata,
-        scope: exportScope.value,
-        cropToMap: cropExportToMap.value,
-      }
-    );
-  } catch (e) {
-    toast.error((e as Error)?.message ?? "Failed to export PDF");
+    toast.error((e as Error)?.message ?? `Failed to export ${type.toUpperCase()}`);
   } finally {
     exportingType.value = null;
   }
@@ -814,7 +739,23 @@ function buildSearchResults(): void {
   selectedIndex.value = 0;
 }
 
+const searchOpen = ref(false);
+
+function deferSearchClose(): void {
+  window.setTimeout(() => {
+    searchOpen.value = false;
+  }, 120);
+}
+
+function moveSearchHighlight(delta: number): void {
+  const count = searchResults.value.length;
+  if (count === 0) return;
+  searchOpen.value = true;
+  selectedIndex.value = (selectedIndex.value + delta + count) % count;
+}
+
 function onSearchInput(): void {
+  searchOpen.value = true;
   buildSearchResults();
   scheduleRemoteSearch();
 }
@@ -824,10 +765,12 @@ function selectResult(idx: number): void {
   const item = searchResults.value[idx];
   if (item) {
     searchQuery.value = item.name;
+    goToSelection();
   }
 }
 
 function goToSelection(): void {
+  searchOpen.value = false;
   if (!props.mapManager) return;
   const item =
     searchResults.value[selectedIndex.value] ?? searchResults.value[0];
@@ -838,7 +781,6 @@ function goToSelection(): void {
         .getContigDimensionHolder()
         .contigDescriptors.find((c) => c.contigId === Number(item.id)) ?? null;
     if (!contig) return;
-    const view = props.mapManager.getView();
     const prefix = props.mapManager.contigDimensionHolder.prefix_sum_bp;
     const ord =
       props.mapManager.contigDimensionHolder.contigIdToOrd[contig.contigId];
@@ -848,10 +790,7 @@ function goToSelection(): void {
     }
     const startBp = prefix[ord];
     const endBp = startBp + contig.contigLengthBp;
-    const midBp = (startBp + endBp) / 2;
-    const res = view.getResolution() ?? 1;
-    const midPx = midBp / res;
-    view.animate({ center: [midPx, -midPx] });
+    props.mapManager.linearTrackManager.centerOnBpRange(startBp, endBp);
     scheduleFeatureContextPrefetch(startBp, endBp);
   } else if (item.type === "Scaffold") {
     const scaffold = props.mapManager.scaffoldHolder.getScaffoldById(
@@ -862,11 +801,10 @@ function goToSelection(): void {
       toast.error("Scaffold has no borders in the current assembly");
       return;
     }
-    const view = props.mapManager.getView();
-    const midBp = (borders.startBP + borders.endBP) / 2;
-    const res = view.getResolution() ?? 1;
-    const midPx = midBp / res;
-    view.animate({ center: [midPx, -midPx] });
+    props.mapManager.linearTrackManager.centerOnBpRange(
+      borders.startBP,
+      borders.endBP
+    );
     scheduleFeatureContextPrefetch(borders.startBP, borders.endBP);
   } else if (
     typeof item.featureStartBp === "number" &&
@@ -1018,39 +956,6 @@ async function onSignalDisplayModeChanged() {
     console.error(error);
   }
 }
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-// const emit = defineEmits<{
-//   (e: "reloadTiles"): void;
-//   // (e: "normalizationChanged", normalizationType: NormalizationType): void;
-// }>();
-
-// const normalizationTypeInt: Ref<number> = ref(0);
-
-/*
-function onNormalizationChanged() {
-  let normalizationType: NormalizationType;
-  switch (Number(unref(normalizationTypeInt))) {
-    case 0:
-      normalizationType = NormalizationType.LINEAR;
-      break;
-    case 1:
-      normalizationType = NormalizationType.LOG2;
-      break;
-    case 2:
-      normalizationType = NormalizationType.LOG10;
-      break;
-    case 3:
-      normalizationType = NormalizationType.COOLER_BALANCE;
-      break;
-    default:
-      throw new Error(
-        `Unknown Normalization Type requested: ${normalizationTypeInt.value}`
-      );
-  }
-  emit("normalizationChanged", normalizationType);
-}
-*/
 </script>
 
 <style scoped>
@@ -1393,7 +1298,7 @@ function onNormalizationChanged() {
 }
 
 .export-group .btn,
-.export-controls .btn,
+.export-menu .btn,
 #reload-tiles-button {
   flex-direction: row;
   align-items: center;
@@ -1410,24 +1315,12 @@ function onNormalizationChanged() {
   margin-left: 0.25rem;
 }
 
-.export-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.15rem 0.35rem;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 0.5rem;
-  background: rgba(255, 255, 255, 0.08);
-  flex-wrap: nowrap;
+.export-menu {
+  min-width: 15rem;
 }
 
-.ribbon-group-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0.85;
-  white-space: nowrap;
+.export-menu .export-scope {
+  width: 100%;
 }
 
 @media (max-width: 1320px) {
@@ -1472,8 +1365,7 @@ function onNormalizationChanged() {
 
   #left-header-block,
   #right-header-block,
-  .export-group,
-  .export-controls {
+  .export-group {
     flex-wrap: wrap;
   }
 }

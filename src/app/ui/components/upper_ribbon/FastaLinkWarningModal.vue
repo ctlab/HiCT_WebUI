@@ -14,23 +14,27 @@
             {{ warning }}
           </li>
         </ul>
+        <p class="fw-semibold mb-3">
+          Names or lengths differ from the open assembly. Sequence views may be
+          wrong if you continue.
+        </p>
         <div class="compatibility-grid mb-3">
           <div>FASTA sequences</div>
           <div>{{ report.compatibility.fastaRecordCount }}</div>
           <div>Assembly contigs</div>
           <div>{{ report.compatibility.assemblyContigCount }}</div>
           <div>Required source intervals covered</div>
-          <div>{{ yesNo(report.compatibility.sourceIntervalsCovered) }}</div>
+          <div :class="{ 'text-danger': !report.compatibility.sourceIntervalsCovered }">{{ yesNo(report.compatibility.sourceIntervalsCovered) }}</div>
           <div>Same order and length</div>
-          <div>{{ yesNo(report.compatibility.sameOrderAndLength) }}</div>
+          <div :class="{ 'text-danger': !report.compatibility.sameOrderAndLength }">{{ yesNo(report.compatibility.sameOrderAndLength) }}</div>
           <div>Same length multiset</div>
-          <div>{{ yesNo(report.compatibility.sameLengthMultiset) }}</div>
+          <div :class="{ 'text-danger': !report.compatibility.sameLengthMultiset }">{{ yesNo(report.compatibility.sameLengthMultiset) }}</div>
           <div>Names match current names</div>
-          <div>{{ yesNo(report.compatibility.sameOrderLengthAndCurrentNames) }}</div>
+          <div :class="{ 'text-danger': !report.compatibility.sameOrderLengthAndCurrentNames }">{{ yesNo(report.compatibility.sameOrderLengthAndCurrentNames) }}</div>
           <div>Names match original names</div>
-          <div>{{ yesNo(report.compatibility.sameOrderLengthAndOriginalNames) }}</div>
+          <div :class="{ 'text-danger': !report.compatibility.sameOrderLengthAndOriginalNames }">{{ yesNo(report.compatibility.sameOrderLengthAndOriginalNames) }}</div>
           <div>Names match source names</div>
-          <div>{{ yesNo(report.compatibility.sameOrderLengthAndSourceNames) }}</div>
+          <div :class="{ 'text-danger': !report.compatibility.sameOrderLengthAndSourceNames }">{{ yesNo(report.compatibility.sameOrderLengthAndSourceNames) }}</div>
         </div>
         <div v-if="report.compatibility.mismatches.length > 0">
           <div class="fw-semibold mb-2">First mismatches</div>
@@ -61,6 +65,13 @@
         <button type="button" class="btn btn-secondary" @click="emit('cancel')">
           Cancel
         </button>
+        <button
+          type="button"
+          class="btn btn-outline-primary me-auto"
+          @click="emit('chooseAnother')"
+        >
+          Choose another FASTA
+        </button>
         <button type="button" class="btn btn-warning" @click="emit('proceed')">
           Proceed anyway
         </button>
@@ -80,6 +91,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "cancel"): void;
   (e: "proceed"): void;
+  (e: "chooseAnother"): void;
 }>();
 
 useEscDismissableDialog({

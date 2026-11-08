@@ -22,5 +22,6 @@ export function useSequenceReadiness(manager: { sendRequest: (request: any) => P
   function available(name: string) { return !checking.value && tools.value[name]?.available === true; }
   function reason(name: string) { return prerequisite.value || (available(name) ? "" : tools.value[name]?.reason ?? "This tool is unavailable. Install a complete HiCT portable package, or rebuild with ./gradlew natives shadowJar."); }
   onMounted(refresh);
-  return { checking, prerequisite, available, reason, refresh };
+  const needsFasta = computed(() => !checking.value && !error.value && mapOpen.value && !fastaLinked.value);
+  return { checking, prerequisite, needsFasta, available, reason, refresh };
 }

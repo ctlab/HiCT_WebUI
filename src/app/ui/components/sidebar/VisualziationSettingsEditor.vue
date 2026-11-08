@@ -206,6 +206,11 @@
         </details>
       </div>
 
+      <NormalizationSelector
+        :map-manager="props.mapManager"
+        @apply="applySettings"
+      />
+
       <button
         type="button"
         id="gradient-apply-button"
@@ -222,6 +227,7 @@
 import { computed, Ref, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import SignalRangeControl from "./SignalRangeControl.vue";
+import NormalizationSelector from "../upper_ribbon/NormalizationSelector.vue";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import { toast } from "vue-sonner";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";

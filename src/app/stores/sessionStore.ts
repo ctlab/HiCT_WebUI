@@ -34,6 +34,7 @@ export const useSessionStore = defineStore("sessionStore", () => {
   const savedLocations = ref<SessionSavedLocation[]>([]);
   const savedVisualizationPresets = ref<SessionVisualizationPreset[]>([]);
   const lastAgpFilename = ref<string>("");
+  const linkedFastaFilename = ref<string>("");
 
   function setSavedLocations(locations: SessionSavedLocation[]) {
     savedLocations.value = locations;
@@ -47,12 +48,18 @@ export const useSessionStore = defineStore("sessionStore", () => {
     lastAgpFilename.value = name;
   }
 
+  function setLinkedFastaFilename(name: string) {
+    linkedFastaFilename.value = name;
+  }
+
   return {
     savedLocations,
     savedVisualizationPresets,
     lastAgpFilename,
+    linkedFastaFilename,
     setSavedLocations,
     setSavedVisualizationPresets,
     setLastAgpFilename,
+    setLinkedFastaFilename,
   };
 });
