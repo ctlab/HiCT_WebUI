@@ -165,6 +165,28 @@
       :mapManager="mapManager"
       :filename="filename"
     ></WorkspaceComponent>
+    <section
+      v-if="!mapManager && !openProgressVisible && !wizardOpen"
+      class="empty-workspace-prompt"
+      aria-labelledby="empty-workspace-title"
+    >
+      <h2 id="empty-workspace-title">No contact map open</h2>
+      <p>
+        Open a <code>.hict.hdf5</code>, <code>.mcool</code> or <code>.hic</code> map from the
+        server data folder, or reconnect to a map that is already open on the server.
+      </p>
+      <div class="empty-workspace-actions">
+        <button type="button" class="btn btn-primary" @click="wizardOpen = true">
+          <i class="bi bi-folder2-open me-1"></i>Open map…
+        </button>
+        <button type="button" class="btn btn-outline-secondary" @click="onAttached">
+          <i class="bi bi-plug me-1"></i>Attach to open session
+        </button>
+      </div>
+      <p class="empty-workspace-hint">
+        More options (manual open, sessions, conversion) are in the <strong>File</strong> menu.
+      </p>
+    </section>
     <NotificationCenterModal></NotificationCenterModal>
     <FileWizardModal
       v-if="wizardOpen"
@@ -370,9 +392,24 @@ function safeColorTranslator(
   }
 }
 
-async function maybePromptCoolerWeightsNaNs(): Promise<void> {
+// Set once the user explicitly answers the NaN-weight question in this window.
+// A carried-over appearance then already contains their answer.
+let coolerWeightsPolicyConfirmed = false;
+
+async function maybePromptCoolerWeightsNaNs(carriedAppearance?: {
+  applyCoolerWeights?: boolean;
+}): Promise<void> {
   const manager = mapManager.value;
   if (!manager) {
+    return;
+  }
+  // Opening the next file keeps the current preset. Do not ask again (and do
+  // not let the answer re-enable weights or recompute thresholds) when that
+  // preset does not use Cooler weights or the user already chose a policy.
+  if (
+    carriedAppearance &&
+    (!carriedAppearance.applyCoolerWeights || coolerWeightsPolicyConfirmed)
+  ) {
     return;
   }
   const options = await manager.networkManager.requestManager
@@ -394,6 +431,7 @@ async function chooseCoolerWeightsNaNPolicy(
   keepWeights: boolean
 ): Promise<void> {
   coolerWeightsNaNPromptVisible.value = false;
+  coolerWeightsPolicyConfirmed = true;
   visualizationOptionsStore.coolerWeightsNaNPolicy = policy;
   visualizationOptionsStore.applyCoolerWeights = keepWeights;
   const manager = mapManager.value;
@@ -577,7 +615,7 @@ async function openFileWithOptions(
         }
       }
       await newManager.reloadTilesFromBackend();
-      await maybePromptCoolerWeightsNaNs();
+      await maybePromptCoolerWeightsNaNs(appearance);
     } else if (options?.applyDefaultPreset !== false) {
       await applyDefaultVisualizationPreset();
     } else {
@@ -1179,7 +1217,49 @@ function onFileSelected(newFilename: string) {
 </script>
 
 <style scoped>
+.empty-workspace-prompt {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -40%);
+  z-index: 10;
+  width: min(460px, calc(100vw - 32px));
+  padding: 24px 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  color: #1f2937;
+  text-align: center;
+}
+
+.empty-workspace-prompt h2 {
+  margin-bottom: 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.empty-workspace-prompt p {
+  margin-bottom: 1rem;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.empty-workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.empty-workspace-prompt .empty-workspace-hint {
+  margin-bottom: 0;
+  font-size: 0.8rem;
+}
+
 .main-ui-component {
+  position: relative;
   width: 100%;
   height: 100vh;
   overflow: hidden;

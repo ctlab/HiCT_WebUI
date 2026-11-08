@@ -98,6 +98,8 @@ import HorizontalIGVTrack from "../tracks/HorizontalIGVTrack.vue";
 import ContactMap from "../../contactmap/ContactMap.vue";
 import VerticalIGVTrack from "../tracks/VerticalIGVTrack.vue";
 import SequenceAxisTrack from "../tracks/SequenceAxisTrack.vue";
+import { sequenceStripSize } from "@/app/core/visualization/sequenceStrands";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 
 import { useStyleStore } from "@/app/stores/styleStore";
 import {
@@ -109,6 +111,7 @@ import {
   watch,
 } from "vue";
 import { storeToRefs } from "pinia";
+const uiSettingsForStrip = useUiSettingsStore();
 
 const stylesStore = useStyleStore();
 
@@ -294,8 +297,12 @@ const horizontalTrackPanelCssSize = computed(() =>
 const verticalTrackPanelCssSize = computed(() =>
   visibleTrackCount.value > 0 ? `${verticalTrackPanelSizePx.value}px` : "0px"
 );
+const sequenceStripPx = computed(() =>
+  sequenceStripSize(uiSettingsForStrip.sequenceShowReverseStrand)
+);
+const sequenceStripCss = computed(() => `${sequenceStripPx.value}px`);
 const horizontalRulerCssSize = computed(() =>
-  horizontalSequencePresent.value ? "96px" : "64px"
+  horizontalSequencePresent.value ? `${64 + sequenceStripPx.value}px` : "64px"
 );
 const verticalRulerCssSize = computed(() => {
   if (!verticalSequencePresent.value) return "64px";
@@ -304,7 +311,8 @@ const verticalRulerCssSize = computed(() => {
   // At base zoom labels use complete coordinates. Reserve space for those
   // digits, the tick/outline, and the 32px FASTA strip instead of clipping them.
   const labelCharacters = Math.ceil(maximum).toLocaleString().length;
-  return `${Math.max(112, 58 + labelCharacters * 9)}px`;
+  const extra = sequenceStripPx.value - 32;
+  return `${Math.max(112 + extra, 58 + extra + labelCharacters * 9)}px`;
 });
 </script>
 
@@ -411,10 +419,10 @@ const verticalRulerCssSize = computed(() => {
   overflow: hidden;
 }
 .ruler-surface--sequence-horizontal {
-  top: 32px;
+  top: v-bind(sequenceStripCss);
 }
 .ruler-surface--sequence-vertical {
-  left: 32px;
+  left: v-bind(sequenceStripCss);
 }
 
 .interactive-workspace_vertical_tracks {

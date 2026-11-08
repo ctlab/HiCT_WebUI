@@ -358,8 +358,21 @@ class ContactMapManager {
 
   private refreshWorkspaceLayout(options?: { renderTracks?: boolean }): void {
     if (this.disposed) return;
+    // A map shown fully zoomed out (fitted) should stay fitted when the window
+    // or side panels resize, instead of being cropped or left off-centre.
+    const view = this.map.getView();
+    const resolution = view.getResolution();
+    const maxResolution = view.getMaxResolution();
+    const wasFitted =
+      !this.exportInProgress &&
+      resolution !== undefined &&
+      Number.isFinite(maxResolution) &&
+      resolution >= maxResolution * 0.999;
     this.map.updateSize();
     this.viewAndLayersManager.updateZoomLimit();
+    if (wasFitted && view.getMaxResolution() !== maxResolution) {
+      this.viewAndLayersManager.fitViewToActiveExtent();
+    }
     this.viewAndLayersManager.updateCurrentHiCViewState();
     this.viewAndLayersManager.scheduleRulerRender();
     if (options?.renderTracks !== false) {
@@ -1251,12 +1264,14 @@ class ContactMapManager {
       hictDesktop?: {
         saveExport?: (payload: {
           filename: string;
-          bytes: number[];
+          bytes: number[] | Uint8Array;
         }) => Promise<unknown> | unknown;
       };
     }).hictDesktop;
     if (typeof desktopBridge?.saveExport === "function") {
-      const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+      // Structured clone transfers typed arrays efficiently; Array.from() would
+      // build a JS number per byte and stall large PDF/PNG exports.
+      const bytes = new Uint8Array(await blob.arrayBuffer());
       await Promise.resolve(
         desktopBridge.saveExport({ filename: sanitizedFilename, bytes })
       );

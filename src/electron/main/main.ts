@@ -178,7 +178,7 @@ function configureSecurity(baseUrl: URL): void {
     "hict:save-export",
     async (
       event,
-      payload: { filename?: string; bytes?: number[] }
+      payload: { filename?: string; bytes?: number[] | Uint8Array | ArrayBuffer }
     ): Promise<{ saved: boolean; path?: string }> => {
       const filename =
         typeof payload.filename === "string" && payload.filename.trim().length > 0
@@ -202,8 +202,15 @@ function configureSecurity(baseUrl: URL): void {
       if (result.canceled || !result.filePath) {
         return { saved: false };
       }
-      const bytes = Array.isArray(payload.bytes) ? payload.bytes : [];
-      await writeFile(result.filePath, Buffer.from(bytes));
+      // Renderers send a structured-clone Uint8Array (fast for large PDFs/PNGs);
+      // plain number arrays from older renderers remain accepted.
+      const raw = payload.bytes;
+      const data = ArrayBuffer.isView(raw)
+        ? Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength)
+        : Object.prototype.toString.call(raw) === "[object ArrayBuffer]"
+        ? Buffer.from(raw as ArrayBuffer)
+        : Buffer.from(Array.isArray(raw) ? raw : []);
+      await writeFile(result.filePath, data);
       // Only remember a successfully written export, never a cancelled/failed one.
       try {
         await mkdir(dirname(preferencePath), { recursive: true });

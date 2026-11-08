@@ -23,43 +23,53 @@
   <div class="saved-locations">
     <div class="input-group">
       <input
+        v-if="editingName"
+        ref="nameInput"
         type="text"
         class="form-control form-control-sm m-0"
         placeholder="Preset name"
         aria-label="Name of visualization preset"
         v-model="name"
-        @change="() => (showRenameButton = true)"
+        @keydown.enter.prevent="renamePreset"
+        @keydown.escape.prevent="cancelRename"
       />
       <button
-        class="btn btn-sm btn-outline-success"
+        v-else
         type="button"
-        title="Rename preset"
-        data-bs-toggle="tooltip"
-        data-bs-placement="bottom"
-        v-if="showRenameButton"
-        @click="renamePreset"
-      >
-        <i class="bi bi-check-square-fill"></i>
-      </button>
-      <button
-        class="btn btn-sm btn-outline-primary"
-        type="button"
-        title="Load visualization preset"
-        data-bs-toggle="tooltip"
-        data-bs-placement="bottom"
+        class="form-control form-control-sm m-0 preset-apply-button"
+        :title="`Apply preset “${name}”`"
         @click="setOptionsPreset"
       >
-        <i class="bi bi-brush"></i>
+        {{ name }}
+      </button>
+      <button
+        v-if="editingName"
+        class="btn btn-sm btn-outline-success"
+        type="button"
+        title="Save new name (Enter)"
+        aria-label="Save preset name"
+        @click="renamePreset"
+      >
+        <i class="bi bi-check-lg"></i>
+      </button>
+      <button
+        v-else
+        class="btn btn-sm btn-outline-secondary"
+        type="button"
+        title="Rename preset"
+        aria-label="Rename preset"
+        @click="startRename"
+      >
+        <i class="bi bi-pencil"></i>
       </button>
       <button
         class="btn btn-sm btn-outline-danger"
         type="button"
         title="Remove visualization preset"
-        data-bs-toggle="tooltip"
-        data-bs-placement="bottom"
+        aria-label="Remove visualization preset"
         @click="$emit('remove', props.option_id)"
       >
-        <i class="bi bi-x-square-fill"></i>
+        <i class="bi bi-x-lg"></i>
       </button>
     </div>
   </div>
@@ -68,7 +78,7 @@
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
 import type { TrackStylePresetBundle } from "@/app/core/tracks/TrackStylePreset";
-import { ref } from "vue";
+import { nextTick, ref } from "vue";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import { useStyleStore } from "@/app/stores/styleStore";
@@ -116,6 +126,21 @@ const emits = defineEmits<{
 }>();
 
 const showRenameButton = ref(false);
+const editingName = ref(false);
+const nameInput = ref<HTMLInputElement | null>(null);
+
+function startRename(): void {
+  editingName.value = true;
+  void nextTick(() => {
+    nameInput.value?.focus();
+    nameInput.value?.select();
+  });
+}
+
+function cancelRename(): void {
+  name.value = props.name;
+  editingName.value = false;
+}
 
 const name = ref(props.name);
 
@@ -214,6 +239,8 @@ async function setOptionsPreset() {
 
 function renamePreset() {
   showRenameButton.value = false;
+  editingName.value = false;
+  name.value = name.value.trim() || props.name;
   emits("rename", props.option_id, name.value);
 }
 </script>
@@ -229,7 +256,7 @@ function renamePreset() {
   padding: 0px;
   /* gap: 20px; */
 
-  width: 100%;
+  width: calc(100% - 16px);
   height: 32px;
   margin-left: 8px;
   margin-right: 8px;
@@ -238,5 +265,27 @@ function renamePreset() {
   flex: none;
   order: 0;
   flex-grow: 0;
+}
+
+.saved-locations > .input-group {
+  width: 100%;
+  flex-wrap: nowrap;
+}
+
+.preset-apply-button {
+  flex: 1 1 auto;
+  width: 1%;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.preset-apply-button:hover,
+.preset-apply-button:focus-visible {
+  background: #eef4ff;
+  border-color: #86b7fe;
 }
 </style>

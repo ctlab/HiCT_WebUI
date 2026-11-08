@@ -36,6 +36,10 @@ nextDialog = { canceled: false, filePath: target };
 await handler({ sender: {} }, { filename: 'map.png', bytes: [1, 2, 3] });
 assert.deepEqual([...await fs.readFile(target)], [1, 2, 3]);
 assert.equal(await fs.readFile(path.join(directory, 'last-export-directory.txt'), 'utf8'), exportsDirectory);
+// Renderers send typed arrays (structured clone) instead of per-byte number arrays.
+nextDialog = { canceled: false, filePath: path.join(exportsDirectory, 'typed.pdf') };
+await handler({ sender: {} }, { filename: 'typed.pdf', bytes: new Uint8Array([7, 8, 9, 10]).subarray(1) });
+assert.deepEqual([...await fs.readFile(path.join(exportsDirectory, 'typed.pdf'))], [8, 9, 10]);
 nextDialog = { canceled: true };
 await handler({ sender: {} }, { filename: 'next.svg' });
 assert.equal(options.defaultPath, path.join(exportsDirectory, 'next.svg'));

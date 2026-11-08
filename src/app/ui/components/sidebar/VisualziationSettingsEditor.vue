@@ -141,8 +141,13 @@
               @change="onSliderLimitChanged"
           /></label>
         </div>
-        <button type="button" class="range-text-button" @click="useLoadedRange">
-          Use loaded range
+        <button
+          type="button"
+          class="range-text-button"
+          title="Use the exact minimum and maximum of the loaded tiles, including rare extreme pixels"
+          @click="useLoadedRange"
+        >
+          Use full loaded range
         </button>
         <p class="range-help" role="status" data-testid="exact-range-status">
           {{ percentageSignalScale ? "Percentage scale: 0–100" : rangeStatus }}
@@ -225,6 +230,7 @@ import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinear
 import { ColorTranslator } from "colortranslator";
 import type { CurrentSignalRangeResponse } from "@/app/core/net/api/response";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import { robustUpperLimit } from "@/app/core/visualization/tileSignalRange";
 import {
   scanExactSignalRange,
   type ExactRange,
@@ -615,15 +621,23 @@ function fetchProcessedRange(): void {
   }
   signalMin.value = range.processed.min;
   signalMax.value = range.processed.max;
+  // Hi-C signal is heavy-tailed: a few diagonal pixels can exceed typical
+  // thresholds by orders of magnitude and would pin both handles to the left.
+  const robustMax = robustUpperLimit(range.processed) ?? range.processed.max;
   if (!sliderBoundsManual.value) {
     sliderLowerLimit.value = signalMin.value;
-    sliderUpperLimit.value = signalMax.value;
+    sliderUpperLimit.value =
+      robustMax > signalMin.value ? robustMax : signalMax.value;
   }
   rangeStatus.value = `Loaded viewport tiles (${range.tiles}): ${formatSignal(
     range.processed.min
-  )} – ${formatSignal(range.processed.max)}; raw ${formatSignal(
-    range.raw.min ?? 0
-  )} – ${formatSignal(range.raw.max ?? 0)}`;
+  )} – ${formatSignal(range.processed.max)}${
+    robustMax < range.processed.max
+      ? `; slider limited to ${formatSignal(robustMax)} (4 × 99.5th percentile)`
+      : ""
+  }; raw ${formatSignal(range.raw.min ?? 0)} – ${formatSignal(
+    range.raw.max ?? 0
+  )}`;
 }
 
 async function fetchExactRange(): Promise<void> {

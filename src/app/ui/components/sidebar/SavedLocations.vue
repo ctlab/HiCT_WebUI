@@ -316,7 +316,10 @@ watch(activeTab, () => {
 
 onMounted(() => {
   refreshAssemblyLists();
-  syncSessionStore();
+  // The store is the source of truth: bookmarks can be added (toolbar button,
+  // restored session) while this panel is not mounted. Pushing the empty local
+  // list here would erase them.
+  loadFromSessionStore();
   // Poll for assembly changes triggered by backend ops (group/ungroup/move).
   // This keeps Contigs/Scaffolds tabs in sync without tab switches.
   refreshTimer = window.setInterval(() => {

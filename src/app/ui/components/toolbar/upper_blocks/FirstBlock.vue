@@ -26,20 +26,22 @@
       type="button"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Zoom out"
+      title="Zoom out to the next coarser resolution"
+      aria-label="Zoom out"
       @click="zoomOut"
     >
-      <i class="bi bi-arrows-fullscreen"></i>
+      <i class="bi bi-zoom-out"></i>
     </button>
     <button
       class="btn btn-outline-primary"
       type="button"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Zoom In"
+      title="Zoom in to the next finer resolution"
+      aria-label="Zoom in"
       @click="zoomIn"
     >
-      <i class="bi bi-search"></i>
+      <i class="bi bi-zoom-in"></i>
     </button>
     <button
       class="btn btn-outline-primary"

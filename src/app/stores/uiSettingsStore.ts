@@ -33,6 +33,9 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
   persistRef("hict.sequence.forwardColor", sequenceForwardColor);
   persistRef("hict.sequence.reverseColor", sequenceReverseColor);
   persistRef("hict.sequence.modDotPlotThreads", modDotPlotThreads);
+  /** Draw a reverse-complement row under the forward FASTA row. */
+  const sequenceShowReverseStrand = ref(readStored("hict.sequence.showReverseStrand", false));
+  persistRef("hict.sequence.showReverseStrand", sequenceShowReverseStrand);
   const customZoomSliderEnabled = ref(false);
   const binaryTileTransportEnabled = ref(false);
   const rulerCoordinateMode = ref<"global" | "contig" | "scaffold">(
@@ -88,6 +91,7 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
   return {
     sequenceGapLengthBp,
     sequenceForwardColor,
+    sequenceShowReverseStrand,
     sequenceReverseColor,
     modDotPlotThreads,
     customZoomSliderEnabled,

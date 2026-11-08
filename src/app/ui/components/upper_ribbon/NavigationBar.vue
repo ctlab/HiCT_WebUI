@@ -166,6 +166,22 @@
                 >
               </li>
               <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  role="menuitemcheckbox"
+                  :aria-checked="uiSettingsStore.sequenceShowReverseStrand"
+                  title="Adds a reverse-complement row under the FASTA track when zoomed to bases"
+                  @click.prevent="uiSettingsStore.sequenceShowReverseStrand = !uiSettingsStore.sequenceShowReverseStrand"
+                  ><i
+                    class="bi me-1"
+                    :class="uiSettingsStore.sequenceShowReverseStrand ? 'bi-check-square' : 'bi-square'"
+                    aria-hidden="true"
+                  ></i
+                  >FASTA: show reverse strand</a
+                >
+              </li>
+              <li>
                 <a class="dropdown-item" href="#" @click="onOpenApiDocs"
                   >API docs...</a
                 >

@@ -91,10 +91,42 @@ export function cropSelectionScene(
         element.setAttribute(attribute.name, value);
       }
     }
+    pruneSceneCopy(copy, { left: sx, top: sy, width: w, height: h }, copyIndex === 1);
+    tile.setAttribute("data-hict-export-region",
+      dx === 0 && dy === 0 ? "corner" : dy === 0 ? "top-axis" : dx === 0 ? "left-axis" : "map");
     shifted.append(copy); tile.append(shifted); svg.append(tile);
     context.drawImage(scene.canvas, sx, sy, w, h, dx, dy, w, h);
   }
   return { svg, canvas };
+}
+
+/**
+ * Each crop region holds an explicit copy of the scene (see cropSelectionScene). Without
+ * pruning, every region would carry the complete scene: editors such as Inkscape then show
+ * four stacked copies of the map, and selecting/deleting one removes an arbitrary part of
+ * it. Keep only positioned canvas layers (nested <svg x y width height>) that overlap the
+ * region, shrink full-scene background rectangles to the region, and keep metadata once.
+ */
+function pruneSceneCopy(copy: SVGGElement,
+  region: { left: number; top: number; width: number; height: number }, keepMetadata: boolean): void {
+  const right = region.left + region.width, bottom = region.top + region.height;
+  const elementsOf = (node: Node): Element[] =>
+    Array.from(node.childNodes ?? []).filter((child): child is Element => child.nodeType === 1);
+  const containers = elementsOf(copy).flatMap(child =>
+    child.localName === "g" ? elementsOf(child) : [child]);
+  for (const element of containers) {
+    if (element.localName === "metadata") { if (!keepMetadata) element.remove(); continue; }
+    const read = (name: string) => Number(element.getAttribute(name));
+    const x = read("x") || 0, y = read("y") || 0, width = read("width"), height = read("height");
+    if (!(width > 0) || !(height > 0)) continue;
+    if (element.localName === "svg") {
+      if (x >= right || y >= bottom || x + width <= region.left || y + height <= region.top) element.remove();
+    } else if (element.localName === "rect" && x === 0 && y === 0) {
+      // Workspace background: draw it once per region instead of four full copies.
+      element.setAttribute("x", String(region.left)); element.setAttribute("y", String(region.top));
+      element.setAttribute("width", String(region.width)); element.setAttribute("height", String(region.height));
+    }
+  }
 }
 
 /** Include visible map captions outside the heatmap while leaving track cropping aligned. */

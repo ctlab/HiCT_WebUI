@@ -55,10 +55,16 @@ const props = defineProps<{
   flex-direction: column;
   align-items: center;
   /* justify-content: space-between;  c  */
-  padding: 16px 4px;
+  padding: 12px 4px;
   gap: 6px;
 
   width: 60px;
+  flex: 0 0 60px;
+  min-height: 0;
+  /* Short windows: scroll the tool column instead of clipping buttons. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
   /* height: 100%; TODO: сделать иначе  */
 
   background: var(--hict-ui-bg, #f8f9fa);
@@ -82,9 +88,24 @@ const props = defineProps<{
   flex-direction: column;
   align-items: flex-start;
   padding: 0px;
-  gap: 24px;
+  gap: clamp(10px, 2.2vh, 24px);
 
   width: 44px;
+}
+
+.toolbar-bottom {
+  margin-top: auto;
+}
+
+@media (max-height: 820px) {
+  .toolbar-outer {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .toolbar-outer :deep(.btn) {
+    padding: 0.2rem 0.45rem;
+    line-height: 1.2;
+  }
 }
 
 /* .toolbar-bottom {

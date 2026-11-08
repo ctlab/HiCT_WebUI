@@ -663,17 +663,14 @@ function importOptionsFromFile() {
   /* Auto layout */
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  /* Full-width preset rows: names are click targets that apply the preset. */
+  align-items: stretch;
 
   /* Inside auto layout */
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   order: 2;
-  min-height: 0;
-  overflow-y: scroll;
-  overflow-x: hidden;
   width: 100%;
-  /* padding-top: 15px; */
-  padding-right: 10px;
+  gap: 2px;
 }
 
 .saved-visual-title {

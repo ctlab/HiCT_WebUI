@@ -20,6 +20,7 @@
  */
 
 import { MapEvent } from "ol";
+import { placeFloatingPanel } from "../visualization/floatingPanel";
 import { Control } from "ol/control";
 import { Options as ControlOptions } from "ol/control/Control";
 import { ContactMapManager } from "../mapmanagers/ContactMapManager";
@@ -74,10 +75,15 @@ class RulerControl extends Control {
     const canvas = document.createElement("canvas");
     const tooltip = document.createElement("div");
     tooltip.className = "hict-ruler-tooltip";
+    // Lives on <body> with fixed positioning so it can cover the map instead
+    // of being clipped by the narrow ruler container.
     Object.assign(tooltip.style, {
-      position: "absolute",
-      zIndex: "18",
-      maxWidth: "250px",
+      position: "fixed",
+      left: "0px",
+      top: "0px",
+      zIndex: "1065",
+      width: "max-content",
+      maxWidth: "min(300px, calc(100vw - 24px))",
       padding: "6px 8px",
       borderRadius: "6px",
       border: "1px solid rgba(17, 24, 39, 0.35)",
@@ -99,7 +105,6 @@ class RulerControl extends Control {
           : (opt_options.target as HTMLElement);
       if (parent) {
         parent.appendChild(canvas);
-        parent.appendChild(tooltip);
         parent.style.position ||= "relative";
       } else {
         throw new Error(
@@ -415,26 +420,33 @@ class RulerControl extends Control {
       this.hideRulerTooltip();
       return;
     }
-    const parent = this.canvas.parentElement;
-    if (!parent) {
-      return;
-    }
-    const left = Math.min(
-      Math.max(6, event.offsetX + 12),
-      Math.max(6, parent.clientWidth - 260)
-    );
-    const top = Math.min(
-      Math.max(6, event.offsetY + 12),
-      Math.max(6, parent.clientHeight - 86)
-    );
+    // Rulers are rendered manually rather than added to the map, so the
+    // body-level tooltip is attached only while hovering (nothing leaks when
+    // a map is replaced).
+    if (!this.tooltip.isConnected) document.body.appendChild(this.tooltip);
     this.tooltip.innerHTML = details;
-    this.tooltip.style.left = `${Math.round(left)}px`;
-    this.tooltip.style.top = `${Math.round(top)}px`;
     this.tooltip.style.display = "block";
+    const rect = this.tooltip.getBoundingClientRect();
+    const position = placeFloatingPanel(
+      event.clientX,
+      event.clientY,
+      rect.width,
+      rect.height,
+      window.innerWidth,
+      window.innerHeight
+    );
+    this.tooltip.style.left = `${Math.round(position.left)}px`;
+    this.tooltip.style.top = `${Math.round(position.top)}px`;
   }
 
   private hideRulerTooltip(): void {
     this.tooltip.style.display = "none";
+    this.tooltip.remove();
+  }
+
+  protected override disposeInternal(): void {
+    this.tooltip.remove();
+    super.disposeInternal();
   }
 
   private getScopedVisibleRulerExtent(options: {
@@ -628,7 +640,10 @@ class RulerControl extends Control {
     }
 
     const nucleotideScale = options.fraction * options.resolutionDescriptor.bpResolution <= 1;
-    const mapPxValues = screens.map((screen) => nucleotideScale
+    // Over-zoomed bins (one bin wider than the tick spacing): bin-start
+    // coordinates would give several ticks the same label, so interpolate.
+    const subBinScale = nucleotideScale || spacing * options.fraction < 1;
+    const mapPxValues = screens.map((screen) => subBinScale
       ? Math.max(0, Math.min(options.pixelMapSize, (screen-options.mapStartScreen)*options.fraction))
       : this.screenPositionToMapPx(
         screen,
@@ -637,7 +652,7 @@ class RulerControl extends Control {
         options.pixelMapSize
       )
     );
-    const bpValues = mapPxValues.map((mapPx) => nucleotideScale
+    const bpValues = mapPxValues.map((mapPx) => subBinScale
       ? Math.floor(this.contigDimensionHolder.getFractionalBpOfPx(mapPx, options.resolutionDescriptor.bpResolution))
       : this.contigDimensionHolder.getStartBpOfPx(mapPx, options.resolutionDescriptor.bpResolution)
     );
@@ -655,6 +670,16 @@ class RulerControl extends Control {
       ),
       labelUnit
     );
+    // Labels must resolve the tick spacing: at sub-kilobase spacing, whole-K
+    // deltas would repeat (e.g. "+93K" on every tick).
+    const coordinateValues = bpValues.map((bp) =>
+      this.coordinateValueForMode(bp, options.globalCoordinateOffsetBp)
+    );
+    let tickStepBp = Infinity;
+    for (let index = 1; index < coordinateValues.length; ++index) {
+      const step = Math.abs(coordinateValues[index] - coordinateValues[index - 1]);
+      if (step > 0) tickStepBp = Math.min(tickStepBp, step);
+    }
     return screens.map((screen, index) => {
       const bp = bpValues[index] ?? 0;
       const mapPx = mapPxValues[index] ?? 0;
@@ -678,9 +703,11 @@ class RulerControl extends Control {
         major,
         boundary,
         label: nucleotideScale ? `${prefix}${Math.round(coordinateValue).toLocaleString()}` :
-          major || delta <= 0
+          boundary !== undefined && Number.isFinite(tickStepBp) && tickStepBp < labelUnit
+            ? `${prefix}${this.formatBpLabelForStep(coordinateValue, tickStepBp)}`
+            : major || delta <= 0
             ? `${prefix}${this.formatBpLabel(anchor, 0)}`
-            : `+${this.formatBpLabel(delta, 0)}`,
+            : `+${this.formatBpLabelForStep(delta, tickStepBp)}`,
         contigLabel:
           major && this.rulerCoordinateMode.value === "global"
             ? this.secondaryGlobalCoordinateLabel(bp)
@@ -810,14 +837,25 @@ class RulerControl extends Control {
       return;
     }
 
-    const textY = this.clamp(tick.screen + fontSize / 2, fontSize + 1, this.canvas.height - 3);
+    // The vertical ruler is narrow: shrink long labels instead of clipping
+    // their leading digits (e.g. "113.281M" shown as ".281M").
+    const textRight = Math.max(2, coord[0] - tickLength - 4);
+    let verticalFontSize = fontSize;
+    let verticalFont = font;
+    context.font = verticalFont;
+    while (verticalFontSize > 8 && context.measureText(tick.label).width > textRight - 2) {
+      verticalFontSize -= 1;
+      verticalFont = `${tick.major ? "bold" : "normal"} ${verticalFontSize}px HiCT Sans`;
+      context.font = verticalFont;
+    }
+    const textY = this.clamp(tick.screen + verticalFontSize / 2, verticalFontSize + 1, this.canvas.height - 3);
     this.drawRotatedText(
       tick.label,
-      Math.max(2, coord[0] - tickLength - 4),
+      textRight,
       textY,
       context,
       0,
-      font,
+      verticalFont,
       "right",
       true,
       false
@@ -835,6 +873,23 @@ class RulerControl extends Control {
         false
       );
     }
+  }
+
+  /** Shortest K/M/G label that still distinguishes values `stepBp` apart (at most 3 decimals). */
+  private formatBpLabelForStep(bp: number, stepBp: number): string {
+    const value = Math.max(0, Math.round(bp));
+    const units: Array<[number, string]> = [
+      [1_000_000_000, "G"],
+      [1_000_000, "M"],
+      [1_000, "K"],
+    ];
+    const [scale, suffix] =
+      units.find(([candidate]) => value >= candidate) ?? [1, ""];
+    if (scale === 1 || !Number.isFinite(stepBp) || stepBp <= 0) {
+      return this.formatBpLabel(value, 0);
+    }
+    const digits = Math.max(0, Math.min(3, Math.ceil(Math.log10(scale / stepBp))));
+    return `${(value / scale).toFixed(digits)}${suffix}`;
   }
 
   private formatBpLabel(bp: number, precision: number): string {

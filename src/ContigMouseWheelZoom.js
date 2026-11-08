@@ -141,23 +141,12 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
         const fixed_coordinates = mapBrowserEvent.coordinate.map(
           (c) => c / guidanceDescriptor.pixelResolution
         );
-        const int_coordinates_bins =
-          dimensionHolder.clampBinCoordinatesAtResolution(
-            [
-              Math.floor(fixed_coordinates[0]),
-              -Math.floor(fixed_coordinates[1]),
-            ],
-            guidanceDescriptor.bpResolution
-          );
-        const bp1 = dimensionHolder.getStartBpOfBin(
-          int_coordinates_bins[0],
-          guidanceDescriptor.bpResolution
+        // Keep the exact (fractional) base pair under the cursor. Snapping to
+        // the start of the hovered bin shifted the view by up to one bin per
+        // wheel step, which at base-pair zoom moved features off screen.
+        const coord_bp = [fixed_coordinates[0], -fixed_coordinates[1]].map(
+          (px) => this.fractionalBpOfPx(dimensionHolder, px, guidanceDescriptor.bpResolution)
         );
-        const bp2 = dimensionHolder.getStartBpOfBin(
-          int_coordinates_bins[1],
-          guidanceDescriptor.bpResolution
-        );
-        const coord_bp = [bp1, bp2];
 
         if (this.useAnchor_) {
           this.lastMouseBps = coord_bp;
@@ -305,18 +294,10 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
         const dimensionHolder = this.getDimensionHolderForDescriptor(
           newGuidanceDescriptor
         );
-        const finish_bin_1 = dimensionHolder.getBinContainingBp(
-          this.lastMouseBps[0],
-          newGuidanceDescriptor.bpResolution
-        );
-        const finish_bin_2 = dimensionHolder.getBinContainingBp(
-          this.lastMouseBps[1],
-          newGuidanceDescriptor.bpResolution
-        );
-        const finish_coordinate_bins = [finish_bin_1, finish_bin_2];
-        // const finish_coordinate_on_map = this.transformFromLayerToGlobalCoordinate[new_level_index].apply(null, [finish_coordinate_bins]);
-        const finish_coordinate_on_map = finish_coordinate_bins.map(
-          (c) => c * newGuidanceDescriptor.pixelResolution
+        const finish_coordinate_on_map = this.lastMouseBps.map(
+          (bp) =>
+            this.fractionalPxOfBp(dimensionHolder, bp, newGuidanceDescriptor.bpResolution) *
+            newGuidanceDescriptor.pixelResolution
         );
         finish_coordinate_on_map[1] *= -1;
         const dx_px = this.lastCenterPixel[0] - this.lastMousePixel[0];
@@ -351,6 +332,26 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     this.timeoutId_ = undefined;
     // this.lastMousePixel = null;
     // this.lastCenterPixel = null;
+  }
+
+  fractionalBpOfPx(holder, px, bpResolution) {
+    const total = holder.prefix_sum_px?.get(bpResolution)?.[holder.contig_count] ?? 0;
+    const clamped = Math.min(Math.max(0, px), Math.max(0, total));
+    if (typeof holder.getFractionalBpOfPx === "function") {
+      return holder.getFractionalBpOfPx(clamped, bpResolution);
+    }
+    return holder.getStartBpOfPx(Math.floor(clamped), bpResolution);
+  }
+
+  fractionalPxOfBp(holder, bp, bpResolution) {
+    const totalBp = holder.prefix_sum_bp?.[holder.contig_count] ?? bp;
+    if (bp >= totalBp) {
+      return holder.prefix_sum_px?.get(bpResolution)?.[holder.contig_count] ?? 0;
+    }
+    if (typeof holder.getFractionalPxOfBp === "function") {
+      return holder.getFractionalPxOfBp(Math.max(0, bp), bpResolution);
+    }
+    return holder.getPxContainingBp(Math.max(0, bp), bpResolution);
   }
 
   getClosestResolutionIndex(resolution) {

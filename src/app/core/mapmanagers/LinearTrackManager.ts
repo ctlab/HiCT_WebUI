@@ -407,11 +407,13 @@ class LinearTrackManager {
       canvas.width = trackPanelSizePx;
       canvas.height = spanPx;
     }
-    const response = await this.mapManager.networkManager.requestManager.queryTracks1D(
-      options.startPx,
-      options.endPx,
-      spanPx,
-      options.bpResolution
+    const response = this.refineTrackResponsePx(
+      await this.mapManager.networkManager.requestManager.queryTracks1D(
+        options.startPx,
+        options.endPx,
+        spanPx,
+        options.bpResolution
+      )
     );
     const viewport: ViewportGeometry = {
       startBp: response.startBp,
@@ -825,18 +827,19 @@ class LinearTrackManager {
           marginScreens,
         });
       const cachedAt = Date.now();
+      const query = this.refineTrackResponsePx(context.query);
       const cacheRecord: TrackQueryCache = {
-        bpResolution: context.query.bpResolution,
-        prefetchStartPx: context.query.startPx,
-        prefetchEndPx: context.query.endPx,
+        bpResolution: query.bpResolution,
+        prefetchStartPx: query.startPx,
+        prefetchEndPx: query.endPx,
         fetchedAtMs: cachedAt,
-        response: context.query,
+        response: query,
       };
-      this.queryCache.horizontal.set(context.query.bpResolution, { ...cacheRecord });
-      this.queryCache.vertical.set(context.query.bpResolution, { ...cacheRecord });
+      this.queryCache.horizontal.set(query.bpResolution, { ...cacheRecord });
+      this.queryCache.vertical.set(query.bpResolution, { ...cacheRecord });
       this.pruneCache("horizontal");
       this.pruneCache("vertical");
-      for (const track of context.query.tracks) {
+      for (const track of query.tracks) {
         this.refreshFeatureSearchCache(track, track.bins);
       }
       await this.render({ allowFetch: false });
@@ -931,11 +934,13 @@ class LinearTrackManager {
       } else if (!allowFetch) {
         return;
       } else {
-        response = await this.mapManager.networkManager.requestManager.queryTracks1D(
-          prefetch.prefetchStartPx,
-          prefetch.prefetchEndPx,
-          prefetch.prefetchWidthPx,
-          viewport.bpResolution
+        response = this.refineTrackResponsePx(
+          await this.mapManager.networkManager.requestManager.queryTracks1D(
+            prefetch.prefetchStartPx,
+            prefetch.prefetchEndPx,
+            prefetch.prefetchWidthPx,
+            viewport.bpResolution
+          )
         );
         if (cacheEpoch !== this.cacheEpoch) {
           return;
@@ -1555,7 +1560,7 @@ class LinearTrackManager {
           Math.min(bin.thickStartPx ?? 0, bin.thickEndPx ?? 0)
         );
         const thickEndPx = Math.max(
-          thickStartPx + 1,
+          thickStartPx,
           Math.max(bin.thickStartPx ?? thickStartPx, bin.thickEndPx ?? thickStartPx)
         );
         const thickX0ByPx = Math.floor(viewport.pxToScreen(thickStartPx));
@@ -1679,7 +1684,7 @@ class LinearTrackManager {
           Math.min(bin.thickStartPx ?? 0, bin.thickEndPx ?? 0)
         );
         const thickEndPx = Math.max(
-          thickStartPx + 1,
+          thickStartPx,
           Math.max(bin.thickStartPx ?? thickStartPx, bin.thickEndPx ?? thickStartPx)
         );
         const thickY0ByPx = Math.floor(viewport.pxToScreen(thickStartPx));
@@ -2003,7 +2008,7 @@ class LinearTrackManager {
           bpResolution
         );
     const endPx = hasProjectedPx
-      ? Math.max(startPx + 1, Math.max(block.startPx ?? startPx, block.endPx ?? startPx))
+      ? Math.max(startPx, Math.max(block.startPx ?? startPx, block.endPx ?? startPx))
       : contigDimensionHolder.getPxContainingBp(
           Math.max(
             Math.max(0, Math.min(block.startBp, block.endBp)),
@@ -2076,6 +2081,54 @@ class LinearTrackManager {
     };
   }
 
+  /** The server reports feature extents in whole map pixels (bins), so an 11 bp
+   * hit fills its entire 1 kb bin when zoomed to bases. Re-project every bp
+   * coordinate with the same fractional mapping as the FASTA strip and ruler,
+   * clamped to the server's bin span (which stays authoritative for hidden
+   * contigs). Idempotent; sequence-axis projections never pass through here. */
+  private refineTrackResponsePx(response: TrackQueryResponse): TrackQueryResponse {
+    const holder = this.mapManager.getContigDimensionHolder();
+    const resolution = response.bpResolution;
+    if (!(holder.contig_count > 0) || !(resolution > 0)) return response;
+    const toPx = (bp: number, lo: number, hi: number): number => {
+      const px = holder.getFractionalPxOfBp(Math.max(0, bp), resolution);
+      return Number.isFinite(px) ? Math.min(hi, Math.max(lo, px)) : lo;
+    };
+    const finite = (value: number | null | undefined): value is number =>
+      typeof value === "number" && Number.isFinite(value);
+    return {
+      ...response,
+      tracks: response.tracks.map((track) => ({
+        ...track,
+        bins: track.bins.map((bin) => {
+          if (!finite(bin.startPx) || !finite(bin.endPx)) return bin;
+          const lo = Math.min(bin.startPx, bin.endPx);
+          const hi = Math.max(bin.startPx, bin.endPx);
+          const startBp = Math.min(bin.startBp, bin.endBp);
+          const endBp = Math.max(bin.startBp, bin.endBp);
+          const hasThick = finite(bin.thickStartBp) && finite(bin.thickEndBp) &&
+            finite(bin.thickStartPx) && finite(bin.thickEndPx);
+          return {
+            ...bin,
+            startPx: toPx(startBp, lo, hi),
+            endPx: toPx(endBp, lo, hi),
+            thickStartPx: hasThick ? toPx(Math.min(bin.thickStartBp!, bin.thickEndBp!), lo, hi) : bin.thickStartPx,
+            thickEndPx: hasThick ? toPx(Math.max(bin.thickStartBp!, bin.thickEndBp!), lo, hi) : bin.thickEndPx,
+            blocks: (bin.blocks ?? []).map((block) =>
+              finite(block.startPx) && finite(block.endPx)
+                ? {
+                    ...block,
+                    startPx: toPx(Math.min(block.startBp, block.endBp), Math.min(block.startPx, block.endPx), Math.max(block.startPx, block.endPx)),
+                    endPx: toPx(Math.max(block.startBp, block.endBp), Math.min(block.startPx, block.endPx), Math.max(block.startPx, block.endPx)),
+                  }
+                : block
+            ),
+          };
+        }),
+      })),
+    };
+  }
+
   private resolveBinIntervalPx(
     bin: TrackBinResponse,
     bpResolution: number
@@ -2093,7 +2146,7 @@ class LinearTrackManager {
           bpResolution
         );
     const endPx = hasProjectedPx
-      ? Math.max(startPx + 1, Math.max(bin.startPx ?? startPx, bin.endPx ?? startPx))
+      ? Math.max(startPx, Math.max(bin.startPx ?? startPx, bin.endPx ?? startPx))
       : contigDimensionHolder.getPxContainingBp(
           Math.max(
             Math.max(0, Math.min(bin.startBp, bin.endBp)),
@@ -2504,8 +2557,14 @@ class LinearTrackManager {
           );
     const safeFraction = Math.max(fraction, 1e-9);
     const pxToScreen = (px: number): number => px / safeFraction + offset;
-    const screenToPx = (screen: number): number =>
-      Math.round((screen - offset) * safeFraction);
+    // Floor the first and ceil the last visible bin. Rounding both dropped the
+    // partially visible edge bin, so at base-pair zoom (less than one bin on
+    // screen) features of the bin under the viewport were culled.
+    const screenToPx = (screen: number, edge: "start" | "end"): number => {
+      const px = (screen - offset) * safeFraction;
+      const snapped = Math.abs(px - Math.round(px)) < 1e-6 ? Math.round(px) : px;
+      return edge === "start" ? Math.floor(snapped) : Math.ceil(snapped);
+    };
     const totalPx = Math.max(0, pixelMapSize);
     const activePixelBounds =
       this.mapManager.getLayersManager().getActiveMapPixelBounds(bpResolution);
@@ -2521,8 +2580,8 @@ class LinearTrackManager {
       return null;
     }
     const maxStartPx = Math.max(0, Math.min(totalPx - 1, scopeEndPx - 1));
-    const unclampedStartPx = screenToPx(visibleStartScreen);
-    const unclampedEndPx = screenToPx(visibleEndScreen);
+    const unclampedStartPx = screenToPx(visibleStartScreen, "start");
+    const unclampedEndPx = screenToPx(visibleEndScreen, "end");
     const startPx = Math.max(
       scopeStartPx,
       Math.min(unclampedStartPx, maxStartPx)
@@ -2672,7 +2731,7 @@ class LinearTrackManager {
             prefetchStartPx: neighborPrefetch.prefetchStartPx,
             prefetchEndPx: neighborPrefetch.prefetchEndPx,
             fetchedAtMs: Date.now(),
-            response,
+            response: this.refineTrackResponsePx(response),
           });
           this.pruneCache(orientation);
         })

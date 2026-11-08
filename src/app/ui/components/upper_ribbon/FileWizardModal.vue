@@ -2240,13 +2240,14 @@ onBeforeUnmount(() => {
 }
 
 .wizard-content {
-  min-height: 720px;
+  /* Fill tall screens; on short ones the body scrolls and Next/Back stay visible. */
+  min-height: min(720px, calc(100vh - 1rem));
 }
 
 .wizard-body {
   display: flex;
   gap: 20px;
-  min-height: 620px;
+  min-height: 0;
 }
 
 .wizard-sidebar {
@@ -2392,6 +2393,13 @@ onBeforeUnmount(() => {
   font-size: 0.82rem;
   line-height: 1.35;
   white-space: pre-wrap;
+}
+
+@media (max-height: 860px) {
+  .wizard-step-button {
+    padding-top: 0.3rem;
+    padding-bottom: 0.3rem;
+  }
 }
 
 @media (max-width: 992px) {

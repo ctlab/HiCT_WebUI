@@ -191,11 +191,14 @@
           <i class="bi bi-rulers me-1" aria-hidden="true"></i>
           <span class="ruler-button-label">{{ rulerModeLabel }}</span>
         </button>
+      </div>
+      <div class="export-controls" role="group" aria-label="Image export">
+        <span class="ribbon-group-label" aria-hidden="true">Export</span>
         <span v-if="props.mapManager?.networkManager.requestManager.sequenceViewReadOnly" class="text-nowrap px-2">Sequence windows</span>
         <select v-else v-model="exportScope" class="form-select form-select-sm export-scope" aria-label="Export area" title="Area used by SVG, PNG and PDF exports">
           <option value="viewport">Viewport</option><option value="whole-map">Whole map</option>
         </select>
-        <label v-if="!props.mapManager?.networkManager.requestManager.sequenceViewReadOnly" class="d-flex align-items-center gap-1 text-nowrap" title="Remove the area outside the map from exports">
+        <label v-if="!props.mapManager?.networkManager.requestManager.sequenceViewReadOnly" class="d-flex align-items-center gap-1 text-nowrap" title="Crop exports to the map: no empty margin outside the contact map">
           <input type="checkbox" v-model="cropExportToMap" aria-label="Crop export to map" /> Crop
         </label>
         <button
@@ -207,7 +210,7 @@
           title="Export selected area as SVG"
         >
           <span v-if="exportingType !== 'svg'"
-            ><i class="bi bi-box-arrow-up"></i><span class="export-button-label">SVG</span></span
+            ><i class="bi bi-box-arrow-up export-button-icon" aria-hidden="true"></i><span class="export-button-label">SVG</span></span
           >
           <span v-else>
             <span class="spinner-border spinner-border-sm me-2"></span>
@@ -223,7 +226,7 @@
           title="Export selected area as PNG"
         >
           <span v-if="exportingType !== 'png'"
-            ><i class="bi bi-box-arrow-up"></i><span class="export-button-label">PNG</span></span
+            ><i class="bi bi-box-arrow-up export-button-icon" aria-hidden="true"></i><span class="export-button-label">PNG</span></span
           >
           <span v-else>
             <span class="spinner-border spinner-border-sm me-2"></span>
@@ -239,7 +242,7 @@
           title="Export selected area as PDF"
         >
           <span v-if="exportingType !== 'pdf'"
-            ><i class="bi bi-box-arrow-up"></i><span class="export-button-label">PDF</span></span
+            ><i class="bi bi-box-arrow-up export-button-icon" aria-hidden="true"></i><span class="export-button-label">PDF</span></span
           >
           <span v-else>
             <span class="spinner-border spinner-border-sm me-2"></span>
@@ -1390,6 +1393,7 @@ function onNormalizationChanged() {
 }
 
 .export-group .btn,
+.export-controls .btn,
 #reload-tiles-button {
   flex-direction: row;
   align-items: center;
@@ -1406,8 +1410,29 @@ function onNormalizationChanged() {
   margin-left: 0.25rem;
 }
 
+.export-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.08);
+  flex-wrap: nowrap;
+}
+
+.ribbon-group-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
 @media (max-width: 1320px) {
-  .export-button-label {
+  /* Keep the format names: three identical icons are indistinguishable. */
+  .export-button-icon {
     display: none;
   }
 
@@ -1447,7 +1472,8 @@ function onNormalizationChanged() {
 
   #left-header-block,
   #right-header-block,
-  .export-group {
+  .export-group,
+  .export-controls {
     flex-wrap: wrap;
   }
 }

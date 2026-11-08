@@ -391,6 +391,8 @@ const collectColormapTargets = (
 export type VisualizationPipelineTarget = {
   id: string;
   source: SourceName;
+  /** Triangle the colormap feeds: `upperExpression` or `lowerExpression`. */
+  half: "upper" | "lower";
   label: string;
   mode: string;
   displayUnit: "PERCENT" | null;
@@ -748,7 +750,7 @@ class VisualizationManager {
       counts.set(target.profile.source, index);
       const half = target.id.startsWith("upper") ? "upper" : "lower";
       const mode = String(target.node.mode ?? "LINEAR");
-      return { id: target.id, source: target.profile.source,
+      return { id: target.id, source: target.profile.source, half,
         label: `${half} ${mode === "MODDOTPLOT_IDENTITY" ? "identity" : "colormap"} ${index}`,
         mode,
         displayUnit:
@@ -1352,6 +1354,40 @@ class VisualizationManager {
     const hydrated = await this.loadVisualizationOptionsForSource(source, targetId);
     await this.mapManager.reloadTilesFromBackend();
     return hydrated;
+  }
+
+  /** Swaps the top/bottom layers of every pixel blend; false when no blend exists. */
+  public async swapRenderPipelineSourcesAndReload(): Promise<boolean> {
+    const pipelineConfig = await this.getActiveRenderPipelineConfig();
+    if (!pipelineConfig) {
+      return false;
+    }
+    const upperChanged = swapPixelBlendLayers(pipelineConfig.upperExpression);
+    const lowerChanged = swapPixelBlendLayers(pipelineConfig.lowerExpression);
+    if (!upperChanged && !lowerChanged) {
+      return false;
+    }
+    await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
+      pipelineConfig
+    );
+    await this.mapManager.reloadTilesFromBackend();
+    return true;
+  }
+
+  /** Exchanges the upper- and lower-triangle expressions. */
+  public async swapRenderPipelineHalvesAndReload(): Promise<boolean> {
+    const pipelineConfig = await this.getActiveRenderPipelineConfig();
+    if (!pipelineConfig) {
+      return false;
+    }
+    const upperExpression = pipelineConfig.upperExpression;
+    pipelineConfig.upperExpression = pipelineConfig.lowerExpression;
+    pipelineConfig.lowerExpression = upperExpression;
+    await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
+      pipelineConfig
+    );
+    await this.mapManager.reloadTilesFromBackend();
+    return true;
   }
 
   public async swapRenderPipelineLayersAndReload(): Promise<boolean> {

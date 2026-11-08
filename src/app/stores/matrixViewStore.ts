@@ -3,6 +3,7 @@ import { ref } from "vue";
 
 export type MatrixPresentationMode = "single" | "overlay" | "split";
 export type MatrixSourceName = "PRIMARY" | "SECONDARY";
+export type MatrixHalfName = "upper" | "lower";
 
 export const useMatrixViewStore = defineStore("matrixViewStore", () => {
   const presentationMode = ref<MatrixPresentationMode>("single");
@@ -11,6 +12,9 @@ export const useMatrixViewStore = defineStore("matrixViewStore", () => {
   const activeVisualizationSource = ref<MatrixSourceName>("PRIMARY");
   const activeVisualizationTargetId = ref<string | null>(null);
   const layersSwapped = ref(false);
+  /** When true, colormap edits go to the active source in both triangles. */
+  const halvesLinked = ref(true);
+  const activeVisualizationHalf = ref<MatrixHalfName>("upper");
 
   function setPresentationMode(mode: MatrixPresentationMode) {
     presentationMode.value = mode;
@@ -37,6 +41,14 @@ export const useMatrixViewStore = defineStore("matrixViewStore", () => {
     layersSwapped.value = value;
   }
 
+  function setHalvesLinked(value: boolean) {
+    halvesLinked.value = value;
+  }
+
+  function setActiveVisualizationHalf(half: MatrixHalfName) {
+    activeVisualizationHalf.value = half;
+  }
+
   function toggleLayersSwapped() {
     layersSwapped.value = !layersSwapped.value;
   }
@@ -48,6 +60,8 @@ export const useMatrixViewStore = defineStore("matrixViewStore", () => {
     activeVisualizationSource.value = "PRIMARY";
     activeVisualizationTargetId.value = null;
     layersSwapped.value = false;
+    halvesLinked.value = true;
+    activeVisualizationHalf.value = "upper";
   }
 
   return {
@@ -57,11 +71,15 @@ export const useMatrixViewStore = defineStore("matrixViewStore", () => {
     activeVisualizationSource,
     activeVisualizationTargetId,
     layersSwapped,
+    halvesLinked,
+    activeVisualizationHalf,
     setPresentationMode,
     setSelectionFastaSources,
     setActiveVisualizationSource,
     setActiveVisualizationTarget,
     setLayersSwapped,
+    setHalvesLinked,
+    setActiveVisualizationHalf,
     toggleLayersSwapped,
     reset,
   };

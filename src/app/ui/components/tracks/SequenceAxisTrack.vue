@@ -4,9 +4,10 @@
     ref="canvas"
     class="sequence-axis"
     :class="[axis, { dragging }]"
+    :style="axis === 'horizontal' ? { height: `${stripSize}px` } : { width: `${stripSize}px` }"
     role="img"
     tabindex="0"
-    aria-label="FASTA track. Drag to pan; scroll or double-click to zoom. Arrow keys pan; plus and minus zoom."
+    aria-label="FASTA track (forward strand, optionally reverse complement below). Drag to pan; scroll or double-click to zoom. Arrow keys pan; plus and minus zoom."
     @pointerdown="startPan"
     @pointermove="pan"
     @pointerup="endPan"
@@ -30,7 +31,8 @@
   </FloatingTrackTooltip>
 </template>
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { complementBase, sequenceStripSize, strandRows } from "@/app/core/visualization/sequenceStrands";
 import { coordinateLowerBound } from "@/app/core/visualization/sequenceBoundaries";
 import { unByKey } from "ol/Observable";
 import type { EventsKey } from "ol/events";
@@ -42,6 +44,7 @@ import FloatingTrackTooltip from "./FloatingTrackTooltip.vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { SequenceAnalysisRequest } from "@/app/core/net/api/SequenceAnalysisRequest";
 const settings = useUiSettingsStore();
+const stripSize = computed(() => sequenceStripSize(settings.sequenceShowReverseStrand));
 const hoverText = ref("");
 const hoverPoint = ref({ x: 0, y: 0 });
 const dragging = ref(false);
@@ -180,6 +183,7 @@ async function refreshGapSetting() {
   }
 }
 watch(() => settings.sequenceGapLengthBp, refreshGapSetting);
+watch(() => settings.sequenceShowReverseStrand, () => schedule());
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -202,7 +206,8 @@ let cached:
   | { key: string; start: number; end: number; response: Region }
   | undefined;
 let renderedBoundaries: { screen: number; label: string }[] = [];
-let renderedBases: { screen: number; label: string }[] = [];
+let renderedBases: { screen: number; label: string; reverseLabel: string }[] = [];
+let renderedRows = strandRows(false);
 function clearBaseMetadata() {
   cancelTooltipHide();
   hoverText.value = "";
@@ -216,6 +221,12 @@ function showBaseMetadata(event: MouseEvent) {
     props.axis === "horizontal"
       ? event.clientX - box.left
       : event.clientY - box.top;
+  const cross =
+    props.axis === "horizontal"
+      ? event.clientY - box.top
+      : event.clientX - box.left;
+  const reverseRow = renderedRows.find((row) => row.strand === "reverse");
+  const onReverse = !!reverseRow && cross >= reverseRow.start;
   let closest: typeof renderedBases[number] | undefined;
   for (const base of renderedBases)
     if (
@@ -229,7 +240,7 @@ function showBaseMetadata(event: MouseEvent) {
   hoverPoint.value = { x: event.clientX, y: event.clientY };
   if (boundary) hoverText.value = boundary.label;
   else if (closest && Math.abs(closest.screen - position) <= 10)
-    hoverText.value = closest.label;
+    hoverText.value = onReverse ? closest.reverseLabel : closest.label;
   else clearBaseMetadata();
 }
 let request: AbortController | undefined;
@@ -256,6 +267,40 @@ function schedule() {
   window.clearTimeout(timer);
   void render(generation, false);
   timer = window.setTimeout(() => void render(generation), 80);
+}
+/** Pin a reading-direction arrow to the leading edge of each strand row. */
+function drawStrandMarkers(
+  context: CanvasRenderingContext2D,
+  rows: ReturnType<typeof strandRows>,
+  horizontal: boolean
+) {
+  context.save();
+  context.font = "bold 13px 'HiCT Sans', sans-serif";
+  for (const row of rows) {
+    const glyph = row.strand === "forward" ? (horizontal ? "→" : "↓") : horizontal ? "←" : "↑";
+    const x = horizontal ? 1 : row.start + 1;
+    const y = horizontal ? row.start + 1 : 1;
+    const w = horizontal ? 18 : row.end - row.start - 2;
+    const h = horizontal ? row.end - row.start - 2 : 18;
+    context.fillStyle = row.strand === "forward" ? "rgba(226,232,240,0.95)" : "rgba(30,41,59,0.9)";
+    context.fillRect(x, y, w, h);
+    context.fillStyle = row.strand === "forward" ? "#0f172a" : "#f8fafc";
+    context.fillText(glyph, x + w / 2, y + h / 2);
+  }
+  if (horizontal) {
+    context.strokeStyle = "#e2e8f0";
+    context.beginPath();
+    context.moveTo(0, rows[0].end);
+    context.lineTo(context.canvas.width, rows[0].end);
+    context.stroke();
+  } else {
+    context.strokeStyle = "#e2e8f0";
+    context.beginPath();
+    context.moveTo(rows[0].end, 0);
+    context.lineTo(rows[0].end, context.canvas.height);
+    context.stroke();
+  }
+  context.restore();
 }
 async function render(id: number, allowFetch = true) {
   const manager = props.mapManager,
@@ -313,8 +358,9 @@ async function render(id: number, allowFetch = true) {
         : undefined;
     const horizontal = props.axis === "horizontal";
     const length = map.getSize()?.[horizontal ? 0 : 1] ?? 1;
-    target.width = horizontal ? length : 32;
-    target.height = horizontal ? 32 : length;
+    const thickness = stripSize.value;
+    target.width = horizontal ? length : thickness;
+    target.height = horizontal ? thickness : length;
     setVisible(true);
     if (!response && !allowFetch) {
       renderedBases = [];
@@ -353,6 +399,8 @@ async function render(id: number, allowFetch = true) {
     const context = target.getContext("2d")!;
     context.fillStyle = "white";
     context.fillRect(0, 0, target.width, target.height);
+    const rows = strandRows(settings.sequenceShowReverseStrand);
+    renderedRows = rows;
     context.font = "bold 14px 'HiCT Sans', sans-serif";
     context.textAlign = "center";
     context.textBaseline = "middle";
@@ -393,13 +441,19 @@ async function render(id: number, allowFetch = true) {
           segment.scaffold ?? "unplaced"
         }`;
       }
-      renderedBases.push({ screen, label });
-      context.fillStyle = colors[base] ?? "#666666";
-      context.fillText(
-        base,
-        horizontal ? screen : 16,
-        horizontal ? 16 : screen
-      );
+      const complement = complementBase(base);
+      const reverseLabel = label
+        .replace(`${base} · Current assembly:`, `${complement} · Reverse strand (−), complement of ${base} · Current assembly:`);
+      renderedBases.push({ screen, label: `${label}\nForward strand (+)`, reverseLabel });
+      for (const row of rows) {
+        const letter = row.strand === "forward" ? base : complement;
+        context.fillStyle = colors[letter] ?? "#666666";
+        context.fillText(
+          letter,
+          horizontal ? screen : row.center,
+          horizontal ? row.center : screen
+        );
+      }
     }
     const tracks = manager.viewAndLayersManager.track2DHolder;
     const drawBoundary = (
@@ -414,7 +468,7 @@ async function render(id: number, allowFetch = true) {
       const line = () => {
         context.beginPath();
         context.moveTo(horizontal ? screen : 0, horizontal ? 0 : screen);
-        context.lineTo(horizontal ? screen : 32, horizontal ? 32 : screen);
+        context.lineTo(horizontal ? screen : thickness, horizontal ? thickness : screen);
         context.stroke();
       };
       if (track.options.borderOutline) {
@@ -472,6 +526,7 @@ async function render(id: number, allowFetch = true) {
       drawBoundary(borders.startBP, tracks.scaffoldBordersTrack);
       drawBoundary(borders.endBP, tracks.scaffoldBordersTrack);
     }
+    if (rows.length > 1) drawStrandMarkers(context, rows, horizontal);
   } catch (error) {
     if (id === generation) {
       setVisible(false);
