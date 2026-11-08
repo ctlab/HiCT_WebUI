@@ -279,6 +279,27 @@ watch(
   (v) => sessionStore.setLinkedFastaFilename(v ?? ""),
   { immediate: true }
 );
+function fileBasename(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+// The tab title and the navbar chips follow whichever map is open.
+watch(
+  () => mapManager.value,
+  (manager) => {
+    const name = manager?.getOptions().filename ?? "";
+    sessionStore.setOpenMapFilename(name);
+    document.title = name ? `${fileBasename(name)} \u2013 HiCT` : "HiCT";
+    if (!manager) {
+      sessionStore.setSecondaryMapFilename("");
+      return;
+    }
+    // A newly opened primary map may or may not keep a secondary source.
+    void manager.networkManager.requestManager
+      .getSecondarySourceStatus()
+      .catch(() => undefined);
+  },
+  { immediate: true }
+);
 const matrixViewStore = useMatrixViewStore();
 
 const htmlElementReferencesStore = usehtmlElementReferencesStore();
@@ -301,6 +322,9 @@ let lastWorkspaceSnapshot = "";
 async function persistWorkspace(): Promise<void> {
   const manager = mapManager.value;
   if (!manager || manager.isExporting || workspaceRestoring || workspaceConflict.value || openProgressVisible.value || workspaceSaveInFlight) return;
+  // Serializing the workspace costs time; the next tick after motion stops saves it.
+  const view = manager.getView();
+  if (view.getAnimating() || view.getInteracting()) return;
   const state = captureWorkspace(manager);
   const snapshot = JSON.stringify(state);
   if (snapshot === lastWorkspaceSnapshot) return;

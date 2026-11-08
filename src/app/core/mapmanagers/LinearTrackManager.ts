@@ -701,22 +701,46 @@ class LinearTrackManager {
     this.centerOnBpRange(entry.startBp, entry.endBp);
   }
 
+  /** Finest bp resolution of the open map; map units are pixels at this resolution. */
+  public getFinestBpResolution(): number {
+    const tuples = this.mapManager.getLayersManager().resolutionTuples;
+    const finestBpResolution = tuples.reduce(
+      (acc, tuple) => Math.min(acc, tuple.bpResolution),
+      Number.POSITIVE_INFINITY
+    );
+    return Number.isFinite(finestBpResolution) && finestBpResolution > 0
+      ? finestBpResolution
+      : this.mapManager.getLayersManager().currentViewState.resolutionDesciptor
+          .bpResolution;
+  }
+
+  /** The visible track whose lane contains the cross-axis offset, even when no feature is under the pointer. */
+  public getTrackLaneAt(
+    orientation: Orientation,
+    crossOffsetPx: number
+  ): { trackId: string; trackName: string } | null {
+    const snapshot = this.lastRenderedSnapshot[orientation];
+    if (!snapshot || snapshot.tracks.length === 0) {
+      return null;
+    }
+    const laneSize =
+      orientation === "horizontal"
+        ? snapshot.canvasHeight / snapshot.tracks.length
+        : snapshot.canvasWidth / snapshot.tracks.length;
+    if (!Number.isFinite(laneSize) || laneSize <= 0) {
+      return null;
+    }
+    const track = snapshot.tracks[Math.floor(crossOffsetPx / laneSize)];
+    return track ? { trackId: track.trackId, trackName: track.name } : null;
+  }
+
   public centerOnBpRange(startBp: number, endBp: number): void {
     const view = this.mapManager.getView();
     const map = this.mapManager.getMap();
     const currentResolution = view.getResolution() ?? 1;
     const mapSize = map.getSize() ?? [1200, 900];
     const spanBp = Math.max(1, endBp - startBp);
-    const tuples = this.mapManager.getLayersManager().resolutionTuples;
-    const finestBpResolution = tuples.reduce(
-      (acc, tuple) => Math.min(acc, tuple.bpResolution),
-      Number.POSITIVE_INFINITY
-    );
-    const safeFinestBpResolution =
-      Number.isFinite(finestBpResolution) && finestBpResolution > 0
-        ? finestBpResolution
-        : this.mapManager.getLayersManager().currentViewState.resolutionDesciptor
-            .bpResolution;
+    const safeFinestBpResolution = this.getFinestBpResolution();
     const finestPixelResolution =
       this.mapManager
         .getLayersManager()

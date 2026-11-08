@@ -399,6 +399,20 @@
           </li>
         </ul>
         <div v-if="props.mapManager" class="file-chips ms-auto d-flex align-items-center gap-2">
+          <span
+            v-if="openMapFilename"
+            class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
+            :title="openMapFilename"
+          >
+            Hi-C: {{ shortFileLabel(openMapFilename, MAP_CHIP_LIMIT) }}
+          </span>
+          <span
+            v-if="secondaryMapFilename"
+            class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
+            :title="secondaryMapFilename"
+          >
+            Secondary: {{ shortFileLabel(secondaryMapFilename, MAP_CHIP_LIMIT) }}
+          </span>
           <button
             type="button"
             class="btn btn-sm file-chip"
@@ -856,7 +870,7 @@
 import { AgpImportCancelledError } from "@/app/core/net/agpImportChoice";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { marked } from "marked";
-import { computed, defineAsyncComponent, onMounted, Ref, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, Ref, ref, watch } from "vue";
 import {
   GetAGPForAssemblyRequest,
   GetFastaForAssemblyRequest,
@@ -924,7 +938,9 @@ const renderedChangelog = computed(() => renderMarkdown(changelogText.value));
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
 const sessionStore = useSessionStore();
-const { linkedFastaFilename, lastAgpFilename } = storeToRefs(sessionStore);
+const { linkedFastaFilename, lastAgpFilename, openMapFilename, secondaryMapFilename } =
+  storeToRefs(sessionStore);
+const MAP_CHIP_LIMIT = 28;
 const fastaLinking = ref(false);
 const agpLoading = ref(false);
 const juiceboxFastaPromptOpen = ref(false);
@@ -1450,9 +1466,9 @@ function renderMarkdown(markdown: string): string {
   }) as string;
 }
 
-function shortFileLabel(path: string): string {
+function shortFileLabel(path: string, limit = 18): string {
   const base = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-  return base.length > 18 ? base.slice(0, 17) + "…" : base;
+  return base.length > limit ? base.slice(0, limit - 1) + "…" : base;
 }
 
 function startLinkFastaForTool(tool: FastaDependentTool): void {
@@ -1772,9 +1788,18 @@ watch(
   }
 );
 
+function openTrackManagerFromEvent(): void {
+  trackManagerOpen.value = true;
+}
+
 onMounted(() => {
+  window.addEventListener("hict:open-track-manager", openTrackManagerFromEvent);
   void refreshNativeProcessingStatus();
   void refreshConversionToolchainStatus();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("hict:open-track-manager", openTrackManagerFromEvent);
 });
 
 function onFASTAFileSelected() {
@@ -1886,8 +1911,21 @@ function onAssemblyAGPRequest() {
 }
 
 .file-chip {
-  max-width: 14rem;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.file-chip--static {
+  cursor: default;
+  pointer-events: auto;
+}
+
+.file-chip--static:hover,
+.file-chip--static:active {
+  background: transparent;
+  color: inherit;
 }
 
 .juicebox-fasta-modal {

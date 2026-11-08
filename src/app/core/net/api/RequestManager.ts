@@ -141,6 +141,7 @@ import {
 } from "./response";
 import { toast } from "vue-sonner";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
+import { useSessionStore } from "@/app/stores/sessionStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 import { extractErrorMessage } from "./errorMessage";
 
@@ -544,10 +545,23 @@ class RequestManager {
       });
   }
 
+  /** Keeps the "open files" display in step with every attach/detach, whichever dialog caused it. */
+  private publishSecondarySourceStatus(
+    status: SecondarySourceStatusResponse
+  ): SecondarySourceStatusResponse {
+    if (!status.requiresConfirmation) {
+      useSessionStore().setSecondaryMapFilename(
+        status.attached ? status.filename : ""
+      );
+    }
+    return status;
+  }
+
   public async getSecondarySourceStatus(): Promise<SecondarySourceStatusResponse> {
     return this.sendRequest(new GetSecondarySourceStatusRequest())
       .then((response) => response.data as Record<string, unknown>)
-      .then((json) => this.parseSecondarySourceStatus(json));
+      .then((json) => this.parseSecondarySourceStatus(json))
+      .then((status) => this.publishSecondarySourceStatus(status));
   }
 
   public async openSecondarySource(
@@ -558,13 +572,15 @@ class RequestManager {
       new OpenSecondarySourceRequest({ filename, allowMismatch })
     )
       .then((response) => response.data as Record<string, unknown>)
-      .then((json) => this.parseSecondarySourceStatus(json));
+      .then((json) => this.parseSecondarySourceStatus(json))
+      .then((status) => this.publishSecondarySourceStatus(status));
   }
 
   public async closeSecondarySource(): Promise<SecondarySourceStatusResponse> {
     return this.sendRequest(new CloseSecondarySourceRequest())
       .then((response) => response.data as Record<string, unknown>)
-      .then((json) => this.parseSecondarySourceStatus(json));
+      .then((json) => this.parseSecondarySourceStatus(json))
+      .then((status) => this.publishSecondarySourceStatus(status));
   }
 
   public async setAssemblyInfoSource(

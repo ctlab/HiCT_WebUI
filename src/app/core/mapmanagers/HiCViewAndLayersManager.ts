@@ -41,6 +41,7 @@ import ContigMouseWheelZoom from "@/ContigMouseWheelZoom";
 import BinMousePosition from "@/BinMousePosition";
 import { VersionedXYZContactMapSource } from "../VersionedXYZSource";
 import VectorImageLayer from "ol/layer/VectorImage";
+import { containsExtent } from "ol/extent";
 import type { OpenFileResponse } from "../net/netcommon";
 import { Track2D } from "@/app/core/tracks/Track2D";
 import {
@@ -192,8 +193,15 @@ class HiCViewAndLayersManager {
   private wheelZoomInteraction?: ContigMouseWheelZoom;
   private coordinateBaseBp: number;
   private enabledBpResolutions?: Set<number>;
-  private vectorViewportKey = "";
+  /** Extent, zoom bucket and matrix resolution the border/label features were last built for. */
+  private vectorBuilt?: {
+    extent: number[];
+    bucket: number;
+    bpResolution: number;
+  };
+  private vectorExactKey = "";
   private vectorViewportListener?: () => void;
+  private vectorMoveEndListener?: () => void;
   private rulerRenderCallback: (() => void) | null = null;
   private readonly pendingFeatureStyleRefreshHandles = new Set<number>();
   public axisScopeRevision = 0;
@@ -347,7 +355,7 @@ class HiCViewAndLayersManager {
     };
     this.track2DHolder.tracks2D.push(this.track2DHolder.annotationTrack);
 
-    this.track2DHolder.contigBordersTrack.setNamePlacement(NamePlacement.TOP);
+    this.track2DHolder.contigBordersTrack.setNamePlacement(NamePlacement.BOTTOM);
     this.track2DHolder.scaffoldBordersTrack.setNamePlacement(NamePlacement.TOP);
 
     this.deferredInitializationInteractions = {
@@ -1059,10 +1067,19 @@ class HiCViewAndLayersManager {
       } else if(!this.sequenceZoomPending) this.previousSequenceZoomResolution=requested;
     } else this.previousSequenceZoomResolution=requested;
     this.updateCurrentHiCViewState();
-    this.reapplyAxisScopes({
-      renderLinearTracks: false,
-      refreshViewOptions: false,
-    });
+    // This runs on every animation frame of a zoom. With no row/column restriction there is no
+    // scope extent to recompute, so only the rulers need refreshing.
+    if (
+      this.activeAxisScopes.row.kind === "all" &&
+      this.activeAxisScopes.column.kind === "all"
+    ) {
+      this.scheduleRulerRender();
+    } else {
+      this.reapplyAxisScopes({
+        renderLinearTracks: false,
+        refreshViewOptions: false,
+      });
+    }
     await Promise.all(this.resolutionChangedAsyncSubscribers.map((fn) => fn()));
   }
 
@@ -1725,20 +1742,64 @@ class HiCViewAndLayersManager {
     this.vectorViewportListener = () => {
       const viewport = this.getTrackViewport();
       if (!viewport) return;
-      const key = [...viewport.extent, viewport.resolution,
-        this.getActiveVectorResolutionDescriptor().bpResolution].join(",");
-      if (key === this.vectorViewportKey) return;
-      this.vectorViewportKey = key;
-      for (const layers of [this.layersHolder.contigBordersLayers,
-        this.layersHolder.scaffoldBordersLayers,
-        this.layersHolder.contigTranslocationArrowsLayers]) {
-        for (const layer of layers) {
-          layer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, true);
-        }
+      const view = this.view;
+      const size = this.mapManager.getMap().getSize();
+      if (!size) return;
+      const built = this.vectorBuilt;
+      // Panning inside the padded extent and zooming inside one bucket reuse the built features.
+      if (
+        built &&
+        built.bucket === HiCViewAndLayersManager.resolutionBucket(viewport.resolution) &&
+        built.bpResolution === this.getActiveVectorResolutionDescriptor().bpResolution &&
+        containsExtent(built.extent, view.calculateExtent(size))
+      ) {
+        return;
       }
-      this.refreshVisibleBuiltinVectorSources();
+      this.rebuildVectorViewport();
     };
     this.mapManager.getMap().on("precompose", this.vectorViewportListener);
+    // After motion stops, rebuild exactly for the final view so label selection settles.
+    this.vectorMoveEndListener = () => {
+      const viewport = this.getTrackViewport();
+      if (!viewport) return;
+      const key = [
+        ...viewport.extent,
+        viewport.resolution,
+        this.getActiveVectorResolutionDescriptor().bpResolution,
+      ].join(",");
+      if (key === this.vectorExactKey) return;
+      this.vectorExactKey = key;
+      this.rebuildVectorViewport();
+    };
+    this.mapManager.getMap().on("moveend", this.vectorMoveEndListener);
+  }
+
+  /** Quarter-octave zoom bucket: label fitting only needs to change when the zoom changes noticeably. */
+  private static resolutionBucket(resolution: number): number {
+    return Math.round(Math.log2(resolution) * 4);
+  }
+
+  private rebuildVectorViewport(): void {
+    for (const layers of [this.layersHolder.contigBordersLayers,
+      this.layersHolder.scaffoldBordersLayers,
+      this.layersHolder.contigTranslocationArrowsLayers]) {
+      for (const layer of layers) {
+        layer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, true);
+      }
+    }
+    this.refreshVisibleBuiltinVectorSources();
+    this.recordVectorBuild();
+  }
+
+  private recordVectorBuild(): void {
+    const viewport = this.getTrackViewport();
+    this.vectorBuilt = viewport
+      ? {
+          extent: viewport.extent,
+          bucket: HiCViewAndLayersManager.resolutionBucket(viewport.resolution),
+          bpResolution: this.getActiveVectorResolutionDescriptor().bpResolution,
+        }
+      : undefined;
   }
 
   private getTrackViewport(): TrackViewport | undefined {
@@ -1752,8 +1813,11 @@ class HiCViewAndLayersManager {
     const margin = Math.max(100, tracks.contigBordersTrack.options.width + 3,
       tracks.scaffoldBordersTrack.options.width + 3,
       tracks.contigTranslocationArrowsTrack.options.width + 3) * resolution;
-    return {extent: [extent[0] - margin, extent[1] - margin,
-      extent[2] + margin, extent[3] + margin], resolution};
+    // One full viewport on each side, so ordinary panning rarely needs a rebuild.
+    const marginX = Math.max(margin, extent[2] - extent[0]);
+    const marginY = Math.max(margin, extent[3] - extent[1]);
+    return {extent: [extent[0] - marginX, extent[1] - marginY,
+      extent[2] + marginX, extent[3] + marginY], resolution};
   }
 
   private addBuiltinVectorLayers(): void {
@@ -1891,6 +1955,10 @@ class HiCViewAndLayersManager {
       if (this.vectorViewportListener) {
         this.mapManager.getMap().un("precompose", this.vectorViewportListener);
         this.vectorViewportListener = undefined;
+      }
+      if (this.vectorMoveEndListener) {
+        this.mapManager.getMap().un("moveend", this.vectorMoveEndListener);
+        this.vectorMoveEndListener = undefined;
       }
       for (const handle of this.pendingFeatureStyleRefreshHandles) {
         window.clearTimeout(handle);
@@ -2317,6 +2385,7 @@ class HiCViewAndLayersManager {
 
   private recalculateDirtyVisibleBuiltinVectorTracks(): void {
     const viewport = this.getTrackViewport();
+    let rebuilt = false;
     const activeResolution =
       this.getActiveVectorResolutionDescriptor().bpResolution;
     const annotationLayer =
@@ -2339,6 +2408,7 @@ class HiCViewAndLayersManager {
       this.track2DHolder.contigBordersTrack.recalculateBorders(
         activeResolution, viewport
       );
+      rebuilt = true;
     }
     if (
       scaffoldLayer?.getVisible() &&
@@ -2347,6 +2417,7 @@ class HiCViewAndLayersManager {
       this.track2DHolder.scaffoldBordersTrack.recalculateBorders(
         activeResolution, viewport
       );
+      rebuilt = true;
     }
     if (
       translocationLayer?.getVisible() &&
@@ -2355,7 +2426,9 @@ class HiCViewAndLayersManager {
       this.track2DHolder.contigTranslocationArrowsTrack.recalculateBorders(
         activeResolution, viewport
       );
+      rebuilt = true;
     }
+    if (rebuilt) this.recordVectorBuild();
   }
 
   private refreshVisibleBuiltinVectorSources(): void {

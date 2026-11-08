@@ -33,6 +33,7 @@
     @dblclick.prevent="onDoubleClickForward"
     @mousemove="onMouseMoveFeature"
     @mouseleave="onMouseLeaveFeature"
+    @contextmenu.prevent="onContextMenu"
   >
     <canvas ref="trackCanvas"></canvas>
     <button
@@ -81,11 +82,22 @@
         {{ attribute.key }}: {{ attribute.value }}
       </div>
     </FloatingTrackTooltip>
+    <AxisContextMenu
+      v-if="contextMenu"
+      :items="contextMenu.items"
+      :title="contextMenu.title"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      @close="contextMenu = null"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import FloatingTrackTooltip from "./FloatingTrackTooltip.vue";
+import AxisContextMenu from "../common/AxisContextMenu.vue";
+import { buildTrackContextMenu } from "./trackContextMenu";
+import type { ContextMenuItem } from "@/app/core/mapmanagers/contextMenuActions";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
@@ -189,6 +201,33 @@ const hideTrack = (trackId: string) =>
     false
   );
 
+const contextMenu = ref<{
+  x: number;
+  y: number;
+  title: string;
+  items: ContextMenuItem[];
+} | null>(null);
+
+const onContextMenu = (event: MouseEvent): void => {
+  hideFeatureTooltip();
+  const host = trackHost.value;
+  if (!props.mapManager || !host) {
+    return;
+  }
+  const rect = host.getBoundingClientRect();
+  contextMenu.value = {
+    x: event.clientX,
+    y: event.clientY,
+    ...buildTrackContextMenu(
+      props.mapManager,
+      "horizontal",
+      event.clientX - rect.left,
+      event.clientY - rect.top,
+      hideTrack
+    ),
+  };
+};
+
 const hideFeatureTooltip = (): void => {
   cancelTooltipHide();
   featureTooltipVisible.value = false;
@@ -196,7 +235,7 @@ const hideFeatureTooltip = (): void => {
 
 const onMouseMoveFeature = (event: MouseEvent): void => {
   cancelTooltipHide();
-  if (!props.mapManager || draggingPointerId !== null) {
+  if (!props.mapManager || draggingPointerId !== null || contextMenu.value) {
     hideFeatureTooltip();
     return;
   }

@@ -106,6 +106,9 @@
             <span class="scope-type">{{ option.displayType }}</span>
             <span class="scope-name">{{ option.label }}</span>
           </button>
+          <div v-if="filteredRowScope.truncated" class="scope-truncated">
+            Type to narrow the list
+          </div>
         </div>
       </div>
       <div class="scope-copy-control mb-3">
@@ -146,6 +149,9 @@
             <span class="scope-type">{{ option.displayType }}</span>
             <span class="scope-name">{{ option.label }}</span>
           </button>
+          <div v-if="filteredColumnScope.truncated" class="scope-truncated">
+            Type to narrow the list
+          </div>
         </div>
       </div>
       <div class="mb-3">
@@ -440,15 +446,22 @@ function fuzzyScore(searchText: string, query: string): number | null {
   return q === normalized.length ? 2 : null;
 }
 
+/** A large assembly has tens of thousands of contigs: never create a button for each one. */
+const SCOPE_LIST_LIMIT = 200;
+const SCOPE_MATCH_LIMIT = 80;
+
 function filterScopeOptions(
   options: ScopeOption[],
   query: string
-): ScopeOption[] {
+): { items: ScopeOption[]; truncated: boolean } {
   const normalized = query.trim().toLowerCase();
   if (!normalized) {
-    return options;
+    return {
+      items: options.slice(0, SCOPE_LIST_LIMIT),
+      truncated: options.length > SCOPE_LIST_LIMIT,
+    };
   }
-  return options
+  const matches = options
     .map((option) => ({
       option,
       score: fuzzyScore(option.searchText, normalized),
@@ -456,19 +469,23 @@ function filterScopeOptions(
     .filter((entry): entry is { option: ScopeOption; score: number } =>
       entry.score !== null
     )
-    .sort((a, b) => a.score - b.score || a.option.order - b.option.order)
-    .slice(0, 80)
-    .map((entry) => entry.option);
+    .sort((a, b) => a.score - b.score || a.option.order - b.option.order);
+  return {
+    items: matches.slice(0, SCOPE_MATCH_LIMIT).map((entry) => entry.option),
+    truncated: matches.length > SCOPE_MATCH_LIMIT,
+  };
 }
 
 const rowScopeOptions = computed(() => buildScopeOptions("row"));
 const columnScopeOptions = computed(() => buildScopeOptions("column"));
-const filteredRowScopeOptions = computed(() =>
+const filteredRowScope = computed(() =>
   filterScopeOptions(rowScopeOptions.value, rowScopeFilterQuery.value)
 );
-const filteredColumnScopeOptions = computed(() =>
+const filteredColumnScope = computed(() =>
   filterScopeOptions(columnScopeOptions.value, columnScopeFilterQuery.value)
 );
+const filteredRowScopeOptions = computed(() => filteredRowScope.value.items);
+const filteredColumnScopeOptions = computed(() => filteredColumnScope.value.items);
 
 function selectScope(axis: ScopeAxis, option: ScopeOption): void {
   const selection = scopeToSelection(option);
@@ -960,6 +977,12 @@ async function onSignalDisplayModeChanged() {
 
 <style scoped>
 .export-scope { width: 110px; flex-shrink: 0; }
+.scope-truncated {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  font-style: italic;
+  opacity: 0.75;
+}
 .header-ribbon {
   /* header */
 

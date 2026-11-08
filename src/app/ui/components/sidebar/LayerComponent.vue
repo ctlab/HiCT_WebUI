@@ -21,7 +21,7 @@
 
 <template>
   <div class="layer-record">
-    <span class="layer-name">{{ layerName }}</span>
+    <span class="layer-name" :title="displayName">{{ displayName }}</span>
     <div class="button-block">
       <i
         v-if="layerName !== 'Background' && visible"
@@ -44,7 +44,7 @@
         <i v-if="bordersStyle === 2" class="bi bi-arrow-up-right"></i>
       </div>
       <select v-if="layerName.endsWith('names')" class="form-select form-select-sm caption-placement"
-        :aria-label="`${layerName} caption side`" title="Caption position" v-model.number="bordersStyle"
+        :aria-label="`${displayName} caption side`" title="Caption position" v-model.number="bordersStyle"
         @change="visible = true; emit('onBorderStyleChanged', layerName, bordersStyle)">
         <option :value="BorderStyle.TOP">Above</option><option :value="BorderStyle.BOTTOM">Below</option>
         <option :value="BorderStyle.LEFT">Left</option><option :value="BorderStyle.RIGHT">Right</option>
@@ -173,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { type Ref, ref, watch } from "vue";
+import { computed, type Ref, ref, watch } from "vue";
 import { BorderStyle } from "@/app/core/tracks/Track2DSymmetric";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import Style from "ol/style/Style";
@@ -247,8 +247,22 @@ const labelOutlineWidth: Ref<number> = ref(2);
 const includeInSvg: Ref<boolean> = ref(true);
 const borderOutline = ref(false);
 
+// Internal names drive behavior elsewhere (borders vs names, track lookup); only the text shown differs.
+const DISPLAY_NAMES: Record<string, string> = {
+  Contigs: "Contig borders",
+  Scaffolds: "Scaffold borders",
+  Cnames: "Contig names",
+  Snames: "Scaffold names",
+};
+const displayName = computed(() => DISPLAY_NAMES[props.layerName] ?? props.layerName);
+
+// Contig names default below and scaffold names above, so they do not share a line.
 const bordersStyle: Ref<number> = ref(
-  props.layerName.includes("names") ? BorderStyle.TOP : 0
+  props.layerName === "Cnames"
+    ? BorderStyle.BOTTOM
+    : props.layerName.includes("names")
+    ? BorderStyle.TOP
+    : 0
 );
 const visible: Ref<boolean> = ref(true);
 
@@ -343,7 +357,7 @@ function resetStyle() {
 </script>
 
 <style scoped>
-.caption-placement { width: 5.5rem; font-size: 0.8rem; }
+.caption-placement { width: 4.9rem; font-size: 0.8rem; padding-left: 0.4rem; padding-right: 1.4rem; }
 .layer-record {
   /* layer */
 
@@ -353,9 +367,9 @@ function resetStyle() {
   justify-content: space-between;
   align-items: flex-start;
   padding: 0px;
-  gap: 20px;
+  gap: 8px;
 
-  width: 200px;
+  width: 100%;
   min-height: 20px;
   height: auto;
   overflow: visible;
@@ -367,9 +381,13 @@ function resetStyle() {
 }
 
 .layer-name {
-  /* layer name */
+  /* layer name: takes the free space; the button column stays right-aligned */
 
-  width: 28px;
+  flex: 1 1 6.5rem;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   height: 20px;
 
   /* Body/Small */
@@ -380,17 +398,13 @@ function resetStyle() {
   line-height: 19px;
 
   /* identical to box height, or 150% */
-  display: flex;
-  align-items: center;
-  text-align: center;
+  display: block;
+  text-align: left;
 
   /* Global/08. Dark */
   color: #343a40;
 
-  /* Inside auto layout */
-  flex: none;
   order: 0;
-  flex-grow: 0;
 }
 
 .button-block {
@@ -401,9 +415,9 @@ function resetStyle() {
   flex-direction: row;
   align-items: flex-start;
   padding: 0px;
-  gap: 12px;
+  gap: 8px;
 
-  width: 116px;
+  width: auto;
   min-height: 20px;
   height: auto;
   overflow: visible;

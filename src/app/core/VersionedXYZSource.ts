@@ -42,6 +42,8 @@ class VersionedXYZContactMapSource extends XYZ {
   private tileGeneration = 0;
   private tileRequestEpoch = 0;
   private readonly activeTileRequests = new Set<XMLHttpRequest>();
+  private pendingSignalRanges?: CurrentSignalRangeResponse;
+  private signalRangeFrame?: number;
 
   constructor(
     protected readonly layersManager: HiCViewAndLayersManager,
@@ -72,6 +74,26 @@ class VersionedXYZContactMapSource extends XYZ {
       this.loadPngTile(imageTile, image, src);
     });
     this.do_reload();
+  }
+
+  /**
+   * A viewport loads dozens of tiles at once. Listeners only need the newest ranges, and each
+   * call triggers UI work, so they are notified once per animation frame.
+   */
+  private queueSignalRanges(ranges: CurrentSignalRangeResponse): void {
+    this.pendingSignalRanges = ranges;
+    if (this.signalRangeFrame !== undefined) return;
+    this.signalRangeFrame = window.requestAnimationFrame(() => {
+      this.signalRangeFrame = undefined;
+      const latest = this.pendingSignalRanges;
+      this.pendingSignalRanges = undefined;
+      if (!latest) return;
+      this.layersManager.callbackFns.contrastSliderRangesCallbacks.forEach(
+        (callbackFn: (ranges: CurrentSignalRangeResponse) => void) => {
+          callbackFn(latest);
+        }
+      );
+    });
   }
 
   public loadedViewportSignals(extent: number[]): TileSignals[] {
@@ -118,12 +140,8 @@ class VersionedXYZContactMapSource extends XYZ {
         // not image completion; rendercomplete must wait for decoded pixels.
         // @ts-expect-error Adding field to object is ok in JS but not in TS
         tile.lastResponse = data;
-        this.layersManager.callbackFns.contrastSliderRangesCallbacks.forEach(
-          (callbackFn: (ranges: CurrentSignalRangeResponse) => void) => {
-            callbackFn(
-              new CurrentSignalRangeResponseDTO(data.ranges).toEntity()
-            );
-          }
+        this.queueSignalRanges(
+          new CurrentSignalRangeResponseDTO(data.ranges).toEntity()
         );
       } else {
         // @ts-expect-error If tile was loaded successfully at least once, last response is saved

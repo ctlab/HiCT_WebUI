@@ -117,6 +117,7 @@
                   class="btn btn-sm"
                   :class="activeVisualizationSource === 'PRIMARY' ? 'btn-primary' : 'btn-outline-primary'"
                   :aria-pressed="activeVisualizationSource === 'PRIMARY'"
+                  :title="primaryMapFilename ? `Primary: ${primaryMapFilename}` : 'Primary source'"
                   @click="selectVisualizationSource('PRIMARY')"
                 >
                   Primary
@@ -126,6 +127,7 @@
                   class="btn btn-sm"
                   :class="activeVisualizationSource === 'SECONDARY' ? 'btn-primary' : 'btn-outline-primary'"
                   :aria-pressed="activeVisualizationSource === 'SECONDARY'"
+                  :title="secondaryMapFilename ? `Secondary: ${secondaryMapFilename}` : 'Secondary source'"
                   @click="selectVisualizationSource('SECONDARY')"
                 >
                   Secondary
@@ -238,6 +240,7 @@ import Style from "ol/style/Style";
 import { toast } from "vue-sonner";
 import Stroke from "ol/style/Stroke";
 import { useStyleStore } from "@/app/stores/styleStore";
+import { useSessionStore } from "@/app/stores/sessionStore";
 // import GradientEditor from "@/app/ui/components/sidebar/GradientEditor.vue";
 import VisualziationSettingsEditor from "./VisualziationSettingsEditor.vue";
 import SavedVisualOptions from "./SavedVisualOptions.vue";
@@ -277,6 +280,9 @@ function toggleLayersBlock(): void {
 }
 
 const { mapBackgroundColor } = storeToRefs(stylesStore);
+const { openMapFilename: primaryMapFilename, secondaryMapFilename } = storeToRefs(
+  useSessionStore()
+);
 const {
   presentationMode,
   activeVisualizationSource,

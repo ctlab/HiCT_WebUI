@@ -45,6 +45,11 @@ interface Options extends ControlOptions {
 }
 
 const DEFAULT_CANVAS_SIZE = 200;
+/** Labels keep at least this many pixels between their drawn extent and the canvas edge. */
+const EDGE_MARGIN_PX = 2;
+const SECOND_LINE_MAX_WIDTH_PX = 180;
+/** Vertical labels never shrink below this; the workspace reserves width for them instead. */
+const MIN_VERTICAL_FONT_PX = 10;
 
 interface RulerTick {
   screen: number;
@@ -158,7 +163,26 @@ class RulerControl extends Control {
       this.showRulerTooltip(event)
     );
     this.canvas.addEventListener("mouseleave", () => this.hideRulerTooltip());
+    this.canvas.addEventListener("contextmenu", this.onContextMenu);
   }
+
+  /** Hands the position under the pointer to the workspace, which owns the menu UI. */
+  private readonly onContextMenu = (event: MouseEvent): void => {
+    event.preventDefault();
+    this.hideRulerTooltip();
+    const hover = this.resolveRulerHover(event.offsetX, event.offsetY);
+    if (!hover) return;
+    window.dispatchEvent(
+      new CustomEvent("hict:ruler-context-menu", {
+        detail: {
+          clientX: event.clientX,
+          clientY: event.clientY,
+          bp: hover.bp,
+          direction: this.direction,
+        },
+      })
+    );
+  };
 
   render(mapEvent: MapEvent) {
     //this.updateCanvasSize();
@@ -415,7 +439,7 @@ class RulerControl extends Control {
   }
 
   private showRulerTooltip(event: MouseEvent): void {
-    const details = this.resolveRulerHoverDetails(event.offsetX, event.offsetY);
+    const details = this.resolveRulerHover(event.offsetX, event.offsetY)?.html;
     if (!details) {
       this.hideRulerTooltip();
       return;
@@ -445,6 +469,7 @@ class RulerControl extends Control {
   }
 
   protected override disposeInternal(): void {
+    this.canvas.removeEventListener("contextmenu", this.onContextMenu);
     this.tooltip.remove();
     super.disposeInternal();
   }
@@ -498,7 +523,10 @@ class RulerControl extends Control {
     return { start, end };
   }
 
-  private resolveRulerHoverDetails(offsetX: number, offsetY: number): string | null {
+  private resolveRulerHover(
+    offsetX: number,
+    offsetY: number
+  ): { html: string; bp: number } | null {
     const map = this.mapManager.getMap();
     const mapSize = map.getSize();
     if (!mapSize) {
@@ -591,13 +619,14 @@ class RulerControl extends Control {
       ? `Scaffold: ${this.escapeHtml(scaffold.scaffoldName)} +${this.formatInteger(scaffold.inScaffoldBp)} bp`
       : "Scaffold: n/a";
     const source = this.contigDimensionHolder.getSourceLocusByBp(bp);
-    return [
+    const html = [
       `<strong>${this.direction === "horizontal" ? "Horizontal" : "Vertical"} ruler</strong>`,
       `Assembly: ${this.formatInteger(bp)} bp, bin ${this.formatInteger(bin)}, px ${this.formatInteger(px)}`,
       `Contig: ${this.escapeHtml(contig.contigName)} +${this.formatInteger(contig.inContigBp)} bp`,
       scaffoldLine,
       `Source: ${this.escapeHtml(source.sourceContig)}:${this.formatInteger(source.sourceBp)} bp`,
     ].join("<br />");
+    return { html, bp };
   }
 
   private escapeHtml(value: string): string {
@@ -795,40 +824,66 @@ class RulerControl extends Control {
     const fontSize = tick.major ? 13 : 11;
     const font = `${tick.major ? "bold" : "normal"} ${fontSize}px HiCT Sans`;
     if (this.direction === "horizontal") {
-      const textX = this.clamp(
+      const desiredX =
         tick.boundary === "start"
           ? tick.screen + 2
           : tick.boundary === "end"
             ? tick.screen - 2
-            : tick.screen,
-        4,
-        this.canvas.width - 4
-      );
+            : tick.screen;
       const textAlign: CanvasTextAlign =
         tick.boundary === "start"
           ? "left"
           : tick.boundary === "end"
             ? "right"
             : "center";
+      const angle = tick.boundary ? 0 : -35;
+      // Keep the whole rotated box, not just its anchor, inside the canvas.
+      const bounds = this.horizontalLabelBounds(tick.label, font, angle, textAlign);
+      const textX = this.clamp(
+        desiredX,
+        EDGE_MARGIN_PX - bounds.minX,
+        this.canvas.width - EDGE_MARGIN_PX - bounds.maxX
+      );
+      const textY = Math.max(
+        9,
+        coord[1] - tickLength - 3,
+        EDGE_MARGIN_PX - bounds.minY
+      );
       this.drawRotatedText(
         tick.label,
         textX,
-        Math.max(9, coord[1] - tickLength - 3),
+        textY,
         context,
-        tick.boundary ? 0 : -35,
+        angle,
         font,
         textAlign,
         true,
         false
       );
       if (this.rulerCoordinateMode.value !== "global" && tick.major && (tick.contigLabel || tick.scaffoldLabel)) {
-        this.drawRotatedText(
+        const secondFont = "9px HiCT Sans";
+        const secondText = this.truncateToWidth(
           [tick.contigLabel, tick.scaffoldLabel].filter(Boolean).join(" / "),
-          textX,
+          secondFont,
+          Math.min(this.canvas.width - 2 * EDGE_MARGIN_PX, SECOND_LINE_MAX_WIDTH_PX)
+        );
+        const secondBounds = this.horizontalLabelBounds(secondText, secondFont, 0, textAlign);
+        const secondX = this.clamp(
+          desiredX,
+          EDGE_MARGIN_PX - secondBounds.minX,
+          this.canvas.width - EDGE_MARGIN_PX - secondBounds.maxX
+        );
+        const secondY = Math.min(
           Math.max(22, coord[1] - tickLength + 10),
+          this.canvas.height - EDGE_MARGIN_PX - secondBounds.maxY
+        );
+        this.drawRotatedText(
+          secondText,
+          secondX,
+          secondY,
           context,
           0,
-          "9px HiCT Sans",
+          secondFont,
           textAlign,
           true,
           false
@@ -843,7 +898,7 @@ class RulerControl extends Control {
     let verticalFontSize = fontSize;
     let verticalFont = font;
     context.font = verticalFont;
-    while (verticalFontSize > 8 && context.measureText(tick.label).width > textRight - 2) {
+    while (verticalFontSize > MIN_VERTICAL_FONT_PX && context.measureText(tick.label).width > textRight - 2) {
       verticalFontSize -= 1;
       verticalFont = `${tick.major ? "bold" : "normal"} ${verticalFontSize}px HiCT Sans`;
       context.font = verticalFont;
@@ -862,8 +917,12 @@ class RulerControl extends Control {
     );
     if (this.rulerCoordinateMode.value !== "global" && tick.major && (tick.contigLabel || tick.scaffoldLabel)) {
       this.drawRotatedText(
-        [tick.contigLabel, tick.scaffoldLabel].filter(Boolean).join(" / "),
-        Math.max(2, coord[0] - tickLength - 4),
+        this.truncateToWidth(
+          [tick.contigLabel, tick.scaffoldLabel].filter(Boolean).join(" / "),
+          "9px HiCT Sans",
+          textRight - EDGE_MARGIN_PX
+        ),
+        textRight,
         this.clamp(textY + 12, 12, this.canvas.height - 3),
         context,
         0,
@@ -872,6 +931,80 @@ class RulerControl extends Control {
         true,
         false
       );
+    }
+  }
+
+  /**
+   * Extent of a rotated label relative to its anchor point, including the text outline.
+   * The anchor is where `drawRotatedText` translates to; positive y points down.
+   */
+  protected horizontalLabelBounds(
+    text: string,
+    font: string,
+    angleDeg: number,
+    align: CanvasTextAlign
+  ): { minX: number; maxX: number; minY: number; maxY: number } {
+    const fontSize = Number.parseFloat(font.match(/(\d+(?:\.\d+)?)px/)?.[1] ?? "10");
+    let width = text.length * fontSize * 0.62;
+    let ascent = fontSize * 0.8;
+    let descent = fontSize * 0.25;
+    const context = this.canvas.getContext("2d");
+    if (context) {
+      context.save();
+      context.font = font;
+      const metrics = context.measureText(text);
+      width = metrics.width;
+      ascent = metrics.actualBoundingBoxAscent || ascent;
+      descent = metrics.actualBoundingBoxDescent || descent;
+      context.restore();
+    }
+    const outline = Math.max(2, fontSize / 5) / 2;
+    const left =
+      align === "left" || align === "start"
+        ? 0
+        : align === "right" || align === "end"
+          ? -width
+          : -width / 2;
+    const corners: Array<[number, number]> = [
+      [left - outline, -ascent - outline],
+      [left + width + outline, -ascent - outline],
+      [left - outline, descent + outline],
+      [left + width + outline, descent + outline],
+    ];
+    const radians = angleDeg * (Math.PI / 180);
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const xs = corners.map(([x, y]) => x * cos - y * sin);
+    const ys = corners.map(([x, y]) => x * sin + y * cos);
+    return {
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      minY: Math.min(...ys),
+      maxY: Math.max(...ys),
+    };
+  }
+
+  /** Shortens `text` with an ellipsis so it fits `maxWidthPx` when drawn in `font`. */
+  protected truncateToWidth(text: string, font: string, maxWidthPx: number): string {
+    const context = this.canvas.getContext("2d");
+    if (!context || maxWidthPx <= 0 || text.length === 0) return text;
+    context.save();
+    try {
+      context.font = font;
+      if (context.measureText(text).width <= maxWidthPx) return text;
+      let low = 0;
+      let high = text.length;
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (context.measureText(`${text.slice(0, middle)}\u2026`).width <= maxWidthPx) {
+          low = middle;
+        } else {
+          high = middle - 1;
+        }
+      }
+      return low > 0 ? `${text.slice(0, low)}\u2026` : "\u2026";
+    } finally {
+      context.restore();
     }
   }
 

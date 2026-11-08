@@ -113,7 +113,7 @@
       </label>
     </div>
     <div
-      v-for="contig in contigList"
+      v-for="contig in visibleContigs"
       :key="contig.contigId"
       class="name-row"
     >
@@ -157,6 +157,10 @@
       </div>
       <div class="original-name">Original: {{ contig.contigOriginalName }}</div>
     </div>
+    <div v-if="contigList.length > shownCount" class="show-more">
+      <span class="small text-muted">{{ shownCount.toLocaleString() }} of {{ contigList.length.toLocaleString() }} shown</span>
+      <button type="button" class="btn btn-outline-secondary btn-sm" @click="showMore">Show 500 more</button>
+    </div>
   </div>
 
   <div v-if="activeTab === 'scaffolds'" class="list-panel">
@@ -170,7 +174,7 @@
       </label>
     </div>
     <div
-      v-for="scaffold in scaffoldList"
+      v-for="scaffold in visibleScaffolds"
       :key="scaffold.scaffoldId"
       class="name-row"
     >
@@ -216,13 +220,17 @@
         Original: {{ scaffold.scaffoldOriginalName }}
       </div>
     </div>
+    <div v-if="scaffoldList.length > shownCount" class="show-more">
+      <span class="small text-muted">{{ shownCount.toLocaleString() }} of {{ scaffoldList.length.toLocaleString() }} shown</span>
+      <button type="button" class="btn btn-outline-secondary btn-sm" @click="showMore">Show 500 more</button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import SavedLocationElement from "./SavedLocationElement.vue";
-import { Ref, ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { computed, Ref, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import { Coordinate } from "ol/coordinate";
 import { toast } from "vue-sonner";
 import type { ContigDescriptor } from "@/app/core/domain/ContigDescriptor";
@@ -253,6 +261,14 @@ const sessionStore = useSessionStore();
 
 const contigList = ref<ContigDescriptor[]>([]);
 const scaffoldList = ref<ScaffoldDescriptor[]>([]);
+// A large assembly has tens of thousands of entries: render a window of them. Lookups use the full lists.
+const INITIAL_SHOWN = 300;
+const shownCount = ref(INITIAL_SHOWN);
+const visibleContigs = computed(() => contigList.value.slice(0, shownCount.value));
+const visibleScaffolds = computed(() => scaffoldList.value.slice(0, shownCount.value));
+function showMore(): void {
+  shownCount.value += 500;
+}
 const contigDraftNames = ref<Record<number, string>>({});
 const scaffoldDraftNames = ref<Record<number, string>>({});
 const contigDirty = ref<Set<number>>(new Set());
@@ -311,6 +327,7 @@ function setActiveTab(tab: "bookmarks" | "contigs" | "scaffolds"): void {
 }
 
 watch(activeTab, () => {
+  shownCount.value = INITIAL_SHOWN;
   refreshAssemblyLists();
 });
 
@@ -661,6 +678,14 @@ function importNames(event: Event): void {
 
 .names-actions input[type="file"] {
   display: none;
+}
+
+.show-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
 }
 
 .list-panel {

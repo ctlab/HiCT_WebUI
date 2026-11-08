@@ -86,6 +86,14 @@
       @mousedown.prevent="startTrackPanelResize('vertical', $event)"
       title="Drag to resize vertical tracks panel"
     ></div>
+    <AxisContextMenu
+      v-if="rulerMenu"
+      :items="rulerMenu.items"
+      :title="rulerMenu.title"
+      :x="rulerMenu.x"
+      :y="rulerMenu.y"
+      @close="rulerMenu = null"
+    />
   </div>
 </template>
 
@@ -98,6 +106,12 @@ import HorizontalIGVTrack from "../tracks/HorizontalIGVTrack.vue";
 import ContactMap from "../../contactmap/ContactMap.vue";
 import VerticalIGVTrack from "../tracks/VerticalIGVTrack.vue";
 import SequenceAxisTrack from "../tracks/SequenceAxisTrack.vue";
+import AxisContextMenu from "../common/AxisContextMenu.vue";
+import {
+  copyText,
+  formatLocus,
+  type ContextMenuItem,
+} from "@/app/core/mapmanagers/contextMenuActions";
 import { sequenceStripSize } from "@/app/core/visualization/sequenceStrands";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 
@@ -192,7 +206,49 @@ const refreshWorkspaceAfterLayout = async () => {
   props.mapManager?.scheduleWorkspaceLayoutRefresh();
 };
 
+type RulerMenuDetail = {
+  clientX: number;
+  clientY: number;
+  bp: number;
+  direction: "horizontal" | "vertical";
+};
+const rulerMenu = ref<{
+  x: number;
+  y: number;
+  title: string;
+  items: ContextMenuItem[];
+} | null>(null);
+
+function setRulerMode(mode: "global" | "contig" | "scaffold"): void {
+  uiSettingsForStrip.rulerCoordinateMode = mode;
+  props.mapManager?.getLayersManager().scheduleRulerRender();
+}
+
+function onRulerContextMenu(event: Event): void {
+  const detail = (event as CustomEvent<RulerMenuDetail>).detail;
+  const manager = props.mapManager;
+  if (!detail || !manager) return;
+  const locus = manager.getContigDimensionHolder().getContigLocusByBp(detail.bp);
+  const mode = uiSettingsForStrip.rulerCoordinateMode;
+  rulerMenu.value = {
+    x: detail.clientX,
+    y: detail.clientY,
+    title: `${detail.direction === "horizontal" ? "Horizontal" : "Vertical"} ruler`,
+    items: [
+      {
+        label: "Copy position",
+        run: () =>
+          void copyText(formatLocus(locus.contigName, locus.inContigBp + 1), "Position"),
+      },
+      { label: "Ruler: Global", disabled: mode === "global", run: () => setRulerMode("global") },
+      { label: "Ruler: In contig", disabled: mode === "contig", run: () => setRulerMode("contig") },
+      { label: "Ruler: In scaffold", disabled: mode === "scaffold", run: () => setRulerMode("scaffold") },
+    ],
+  };
+}
+
 onMounted(() => {
+  window.addEventListener("hict:ruler-context-menu", onRulerContextMenu);
   bindTrackVisibility();
   void refreshWorkspaceAfterLayout();
 });
@@ -223,6 +279,7 @@ watch(visibleTrackCount, async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("hict:ruler-context-menu", onRulerContextMenu);
   document.body.style.removeProperty("cursor");
   window.removeEventListener("mousemove", onTrackPanelResizeMove);
   window.removeEventListener("mouseup", stopTrackPanelResize);
@@ -305,9 +362,17 @@ const horizontalRulerCssSize = computed(() =>
   horizontalSequencePresent.value ? `${64 + sequenceStripPx.value}px` : "64px"
 );
 const verticalRulerCssSize = computed(() => {
-  if (!verticalSequencePresent.value) return "64px";
   const coordinates = props.mapManager?.getContigDimensionHolder().prefix_sum_bp;
   const maximum = coordinates?.[coordinates.length - 1] ?? 0;
+  if (!verticalSequencePresent.value) {
+    // Longest abbreviated label ("113.281M"), plus the "ctg+"/"scf+" prefix outside global mode,
+    // plus tick and padding. Reserved up front because labels are never shrunk below 10px.
+    const unit = maximum >= 1e9 ? 1e9 : maximum >= 1e6 ? 1e6 : maximum >= 1e3 ? 1e3 : 1;
+    const digits = String(Math.max(1, Math.ceil(maximum / unit))).length;
+    const labelCharacters =
+      digits + (unit > 1 ? 5 : 0) + (uiSettingsForStrip.rulerCoordinateMode === "global" ? 0 : 4);
+    return `${Math.max(88, 40 + labelCharacters * 9)}px`;
+  }
   // At base zoom labels use complete coordinates. Reserve space for those
   // digits, the tick/outline, and the 32px FASTA strip instead of clipping them.
   const labelCharacters = Math.ceil(maximum).toLocaleString().length;

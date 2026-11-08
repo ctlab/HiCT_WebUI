@@ -17,6 +17,15 @@
     @keydown="navigateByKey"
     @mousemove="showBaseMetadata"
     @mouseleave="scheduleTooltipHide"
+    @contextmenu.prevent="onContextMenu"
+  />
+  <AxisContextMenu
+    v-if="contextMenu"
+    :items="contextMenu.items"
+    :title="contextMenu.title"
+    :x="contextMenu.x"
+    :y="contextMenu.y"
+    @close="contextMenu = null"
   />
   <FloatingTrackTooltip
     :open="!!hoverText"
@@ -41,6 +50,12 @@ import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import axios from "axios";
 import FloatingTrackTooltip from "./FloatingTrackTooltip.vue";
+import AxisContextMenu from "../common/AxisContextMenu.vue";
+import {
+  copyText,
+  formatLocus,
+  type ContextMenuItem,
+} from "@/app/core/mapmanagers/contextMenuActions";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { SequenceAnalysisRequest } from "@/app/core/net/api/SequenceAnalysisRequest";
 const settings = useUiSettingsStore();
@@ -206,16 +221,21 @@ let cached:
   | { key: string; start: number; end: number; response: Region }
   | undefined;
 let renderedBoundaries: { screen: number; label: string }[] = [];
-let renderedBases: { screen: number; label: string; reverseLabel: string }[] = [];
+let renderedBases: {
+  screen: number;
+  label: string;
+  reverseLabel: string;
+  bp: number;
+  base: string;
+}[] = [];
 let renderedRows = strandRows(false);
 function clearBaseMetadata() {
   cancelTooltipHide();
   hoverText.value = "";
 }
-function showBaseMetadata(event: MouseEvent) {
+function locateBase(event: MouseEvent) {
   const target = canvas.value;
-  if (!target || dragging.value) return;
-  cancelTooltipHide();
+  if (!target) return undefined;
   const box = target.getBoundingClientRect();
   const position =
     props.axis === "horizontal"
@@ -237,13 +257,82 @@ function showBaseMetadata(event: MouseEvent) {
   const boundary = renderedBoundaries.find(
     (b) => Math.abs(b.screen - position) <= 4
   );
+  const base =
+    closest && Math.abs(closest.screen - position) <= 10 ? closest : undefined;
+  return { boundary, base, onReverse };
+}
+function showBaseMetadata(event: MouseEvent) {
+  if (!canvas.value || dragging.value || contextMenu.value) return;
+  cancelTooltipHide();
+  const located = locateBase(event);
+  if (!located) return;
+  const { boundary, base, onReverse } = located;
   hoverPoint.value = { x: event.clientX, y: event.clientY };
   if (boundary) hoverText.value = boundary.label;
-  else if (closest && Math.abs(closest.screen - position) <= 10)
-    hoverText.value = onReverse ? closest.reverseLabel : closest.label;
+  else if (base) hoverText.value = onReverse ? base.reverseLabel : base.label;
   else clearBaseMetadata();
 }
-let request: AbortController | undefined;
+const contextMenu = ref<{
+  x: number;
+  y: number;
+  title: string;
+  items: ContextMenuItem[];
+} | null>(null);
+function onContextMenu(event: MouseEvent) {
+  clearBaseMetadata();
+  const manager = props.mapManager;
+  if (!manager || !canvas.value) return;
+  const base = locateBase(event)?.base;
+  const sequence = renderedBases.map((entry) => entry.base).join("");
+  const showing = settings.sequenceShowReverseStrand;
+  contextMenu.value = {
+    x: event.clientX,
+    y: event.clientY,
+    title: `FASTA · ${props.axis === "horizontal" ? "Columns" : "Rows"}`,
+    items: [
+      {
+        label: "Copy position",
+        disabled: !base,
+        run: () => {
+          if (!base) return;
+          const locus = manager.getContigDimensionHolder().getContigLocusByBp(base.bp);
+          void copyText(formatLocus(locus.contigName, locus.inContigBp + 1), "Position");
+        },
+      },
+      {
+        label: "Copy visible sequence",
+        disabled: sequence.length === 0,
+        run: () => void copyText(sequence, "Visible sequence"),
+      },
+      {
+        label: showing ? "Hide reverse strand" : "Show reverse strand",
+        run: () => {
+          settings.sequenceShowReverseStrand = !showing;
+        },
+      },
+    ],
+  };
+}
+// The one sequence request in flight, with the range it covers. Later renders whose viewport is
+// still inside that range wait for it instead of aborting it and starting over.
+let inFlight:
+  | {
+      key: string;
+      start: number;
+      end: number;
+      controller: AbortController;
+      promise: Promise<Region>;
+    }
+  | undefined;
+function abortInFlight() {
+  inFlight?.controller.abort();
+  inFlight = undefined;
+}
+let frame: number | undefined;
+function cancelScheduledFrame() {
+  if (frame !== undefined) window.cancelAnimationFrame(frame);
+  frame = undefined;
+}
 let unregisterExportRenderer: (() => void) | undefined;
 const colors: Record<string, string> = {
   A: "#16823b",
@@ -256,17 +345,32 @@ function setVisible(value: boolean) {
   visible.value = value;
   emit("presence", value);
 }
+/** Many events (center, resolution, moveend) fire per frame: coalesce them into one render pass. */
 function schedule() {
+  if (disposed || frame !== undefined || props.mapManager?.isExporting) return;
+  frame = window.requestAnimationFrame(() => {
+    frame = undefined;
+    renderScheduled();
+  });
+}
+function renderScheduled() {
   if (disposed || props.mapManager?.isExporting) return;
   ++generation;
   renderedBases = [];
   clearBaseMetadata();
-  request?.abort();
-  request = undefined;
-
   window.clearTimeout(timer);
   void render(generation, false);
   timer = window.setTimeout(() => void render(generation), 80);
+}
+/** The map repaints constantly; only a resized strip needs a new render. */
+function onRenderComplete() {
+  const target = canvas.value;
+  const size = props.mapManager?.getMap().getSize();
+  if (!target || !size || !visible.value) return;
+  const horizontal = props.axis === "horizontal";
+  const width = horizontal ? size[0] : stripSize.value;
+  const height = horizontal ? stripSize.value : size[1];
+  if (target.width !== width || target.height !== height) schedule();
 }
 /** Pin a reading-direction arrow to the leading edge of each strand row. */
 function drawStrandMarkers(
@@ -368,26 +472,38 @@ async function render(id: number, allowFetch = true) {
       return;
     }
     if (response === undefined) {
-      const controller = new AbortController();
-      request = controller;
-      const extra = Math.min(512, Math.max(32, end - start));
-      const fetchStart = Math.max(0, start - extra);
-      const fetchEnd = Math.min(
-        holder.prefix_sum_bp[holder.prefix_sum_bp.length - 1],
-        end + extra
-      );
-      response =
-        await manager.networkManager.requestManager.querySequenceRegion(
+      let flight = inFlight;
+      if (!(flight && flight.key === key && flight.start <= start && flight.end >= end)) {
+        flight?.controller.abort();
+        const controller = new AbortController();
+        const extra = Math.min(512, Math.max(32, end - start));
+        const fetchStart = Math.max(0, start - extra);
+        const fetchEnd = Math.min(
+          holder.prefix_sum_bp[holder.prefix_sum_bp.length - 1],
+          end + extra
+        );
+        const promise = manager.networkManager.requestManager.querySequenceRegion(
           fetchStart,
           fetchEnd,
           controller.signal
         );
-      if (id !== generation) return;
+        const started = { key, start: fetchStart, end: fetchEnd, controller, promise };
+        flight = started;
+        inFlight = started;
+        const clear = () => {
+          if (inFlight === started) inFlight = undefined;
+        };
+        promise.then(clear, clear);
+      }
+      const fetched = flight;
+      response = await fetched.promise;
       if (!response.linked) {
-        setVisible(false);
+        if (id === generation) setVisible(false);
         return;
       }
-      cached = { key, start: fetchStart, end: fetchEnd, response };
+      // Cache even when a newer render superseded this one: that render reuses the same request.
+      cached = { key, start: fetched.start, end: fetched.end, response };
+      if (id !== generation) return;
     }
     if (id !== generation || manager.isDisposed) return;
     lastFailure = "";
@@ -444,7 +560,7 @@ async function render(id: number, allowFetch = true) {
       const complement = complementBase(base);
       const reverseLabel = label
         .replace(`${base} · Current assembly:`, `${complement} · Reverse strand (−), complement of ${base} · Current assembly:`);
-      renderedBases.push({ screen, label: `${label}\nForward strand (+)`, reverseLabel });
+      renderedBases.push({ screen, label: `${label}\nForward strand (+)`, reverseLabel, bp: position, base });
       for (const row of rows) {
         const letter = row.strand === "forward" ? base : complement;
         context.fillStyle = colors[letter] ?? "#666666";
@@ -538,8 +654,6 @@ async function render(id: number, allowFetch = true) {
         lastFailure = message;
       }
     }
-  } finally {
-    if (id === generation) request = undefined;
   }
 }
 watch(
@@ -553,8 +667,8 @@ watch(
     unregisterExportRenderer = undefined;
     ++generation;
     window.clearTimeout(timer);
-    request?.abort();
-    request = undefined;
+    cancelScheduledFrame();
+    abortInFlight();
     listeners.forEach(unByKey);
     listeners = [];
     cached = undefined;
@@ -564,12 +678,12 @@ watch(
       unregisterExportRenderer = manager.registerSequenceRenderer(async () => {
         ++generation;
         window.clearTimeout(timer);
-        request?.abort();
-        request = undefined;
+        cancelScheduledFrame();
+        abortInFlight();
         await render(generation);
       });
       listeners = [
-        manager.getMap().on("rendercomplete", schedule),
+        manager.getMap().on("rendercomplete", onRenderComplete),
         manager.getMap().on("moveend", schedule),
         manager.getView().on("change:resolution", schedule),
         manager.getView().on("change:center", schedule),
@@ -581,13 +695,15 @@ watch(
   { immediate: true }
 );
 onBeforeUnmount(() => {
+  contextMenu.value = null;
   disposed = true;
   drag = undefined;
   clearBaseMetadata();
   unregisterExportRenderer?.();
   ++generation;
-  request?.abort();
+  abortInFlight();
   window.clearTimeout(timer);
+  cancelScheduledFrame();
   listeners.forEach(unByKey);
 });
 </script>

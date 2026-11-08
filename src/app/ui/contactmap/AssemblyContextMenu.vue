@@ -11,10 +11,12 @@
       @keydown="navigate"
     >
       <section v-for="item in items" :key="`${item.kind}-${item.id}`">
-        <div class="entity-title">
-          {{ item.kind === "selection" ? "Selection" : item.kind === "scaffold" ? "Scaffold" : "Contig" }}:
-          {{ item.name }}
-        </div>
+        <div class="entity-title">{{ item.title }}</div>
+        <template v-if="item.kind !== 'selection'">
+          <button role="menuitem" @click="zoomTo(item)">Zoom to {{ item.kind }}</button>
+          <button role="menuitem" @click="copyName(item)">Copy name</button>
+          <button v-if="item.kind === 'contig'" role="menuitem" @click="copyPosition(item)">Copy position</button>
+        </template>
         <button v-if="item.kind !== 'selection'" role="menuitem" @click="beginRename(item)">Rename…</button>
         <template v-if="item.kind === 'selection'">
           <button role="menuitem" @click="items = []; histogramOpen = true">Signal histogram...</button>
@@ -92,6 +94,13 @@
       </form>
     </div>
   </Teleport>
+  <AxisContextMenu
+    v-if="busyMenu"
+    :items="busyMenuItems"
+    :x="busyMenu.x"
+    :y="busyMenu.y"
+    @close="busyMenu = null"
+  />
   <ModDotPlotModal v-if="analysis === 'moddotplot' || analysis === 'dotplot'" :kind="analysis" :map-manager="props.mapManager" :initial-selection="true" @dismissed="analysis = null" />
   <SequenceSearchModal v-if="analysis === 'search'" :map-manager="props.mapManager" :initial-selection="true" @dismissed="analysis = null" />
   <SignalHistogramModal v-if="histogramOpen" :map-manager="props.mapManager" selection @dismissed="histogramOpen = false" />
@@ -107,7 +116,6 @@ import {
 } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { ContigDescriptor } from "@/app/core/domain/ContigDescriptor";
-import type { ScaffoldDescriptor } from "@/app/core/domain/ScaffoldDescriptor";
 import {
   ReverseSelectionRangeRequest,
   UngroupContigsFromScaffoldRequest,
@@ -115,6 +123,14 @@ import {
 } from "@/app/core/net/api/request";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { containsCoordinate } from "ol/extent";
+import { unByKey } from "ol/Observable";
+import type { EventsKey } from "ol/events";
+import AxisContextMenu from "@/app/ui/components/common/AxisContextMenu.vue";
+import {
+  copyText,
+  formatLocus,
+  type ContextMenuItem,
+} from "@/app/core/mapmanagers/contextMenuActions";
 import ModDotPlotModal from "@/app/ui/components/upper_ribbon/ModDotPlotModal.vue";
 import SequenceSearchModal from "@/app/ui/components/upper_ribbon/SequenceSearchModal.vue";
 import SignalHistogramModal from "@/app/ui/components/upper_ribbon/SignalHistogramModal.vue";
@@ -128,7 +144,10 @@ type Item = {
   startBP: number;
   endBP: number;
   structural?: boolean;
+  title: string;
+  inContigBp?: number;
 };
+type AxisHit = Omit<Item, "title">;
 const props = defineProps<{ mapManager: ContactMapManager }>();
 const items = ref<Item[]>([]),
   renaming = ref<Item | null>(null),
@@ -137,6 +156,14 @@ const invalidName = computed(() => /[\s\p{Cc}]/u.test(newName.value.trim()));
 const menu = ref<HTMLElement>(),
   nameInput = ref<HTMLInputElement>();
 const position = ref({ x: 0, y: 0 });
+const busyMenu = ref<{ x: number; y: number } | null>(null);
+const busyMenuItems: ContextMenuItem[] = [
+  {
+    label: "Please wait for the current edit to finish",
+    disabled: true,
+    run: () => undefined,
+  },
+];
 const busy = computed(
   () => props.mapManager.networkManager.requestManager.history.busy > 0
 );
@@ -154,73 +181,85 @@ useEscDismissableDialog({
 function close(event: Event) {
   if (!menu.value?.contains(event.target as Node)) items.value = [];
 }
-async function open(event: MouseEvent) {
-  if (busy.value) return;
+function axisHits(bp: number): AxisHit[] {
   const manager = props.mapManager;
-  const found: Item[] = [];
+  const holder = manager.contigDimensionHolder;
+  const hits: AxisHit[] = [];
+  const locus = holder.getContigLocusByBp(bp);
+  const order = holder.contigIdToOrd[locus.contigId];
+  if (order !== undefined && !Number.isNaN(order)) {
+    hits.push({
+      kind: "contig",
+      id: locus.contigId,
+      name: locus.contigName,
+      startBP: holder.prefix_sum_bp[order],
+      endBP: holder.prefix_sum_bp[order + 1],
+      inContigBp: locus.inContigBp,
+    });
+  }
+  const scaffold = manager.scaffoldHolder.getScaffoldLocusByBp(bp);
+  if (scaffold) {
+    hits.push({
+      kind: "scaffold",
+      id: scaffold.scaffoldId,
+      name: scaffold.scaffoldName,
+      startBP: scaffold.startBp,
+      endBP: scaffold.endBp,
+    });
+  }
+  return hits;
+}
+/** Contig and scaffold under the pointer on each axis, found by coordinates so any point inside a contig works. */
+function itemsAtEvent(event: MouseEvent): Item[] {
+  const manager = props.mapManager;
+  const holder = manager.contigDimensionHolder;
+  const finest = manager.linearTrackManager.getFinestBpResolution();
+  const totalPx = holder.prefix_sum_px.get(finest)?.[holder.contig_count] ?? 0;
+  const [x, y] = manager.map.getEventCoordinate(event);
+  const columnPx = Math.floor(x);
+  const rowPx = Math.floor(-y);
+  const inside = (px: number) => Number.isFinite(px) && px >= 0 && px < totalPx;
+  // The matrix is square: a point beyond either axis is outside the map, so there is nothing to act on.
+  if (!inside(columnPx) || !inside(rowPx)) return [];
+  const column = axisHits(holder.getStartBpOfPx(columnPx, finest));
+  const row = axisHits(holder.getStartBpOfPx(rowPx, finest));
+  const result: Item[] = [];
+  for (const kind of ["contig", "scaffold"] as const) {
+    const label = kind === "contig" ? "Contig" : "Scaffold";
+    const byColumn = column.find((hit) => hit.kind === kind);
+    const byRow = row.find((hit) => hit.kind === kind);
+    if (byColumn && byRow && byColumn.id !== byRow.id) {
+      result.push(
+        { ...byColumn, title: `${label} (column): ${byColumn.name}` },
+        { ...byRow, title: `${label} (row): ${byRow.name}` }
+      );
+    } else {
+      const only = byColumn ?? byRow;
+      if (only) result.push({ ...only, title: `${label}: ${only.name}` });
+    }
+  }
+  return result;
+}
+async function open(event: MouseEvent) {
+  // The browser's own menu must never replace ours, wherever the pointer is.
+  event.preventDefault();
+  items.value = [];
+  busyMenu.value = null;
+  if (busy.value) {
+    busyMenu.value = { x: event.clientX, y: event.clientY };
+    return;
+  }
+  const manager = props.mapManager;
+  let found: Item[] = [];
   const extent = manager.viewAndLayersManager.selectionInteractions.contigSelectExtent.getExtent();
   const bounds = manager.viewAndLayersManager.currentViewState.selectionBorders;
   if (extent && bounds.leftBP && bounds.rightBP && containsCoordinate(extent, manager.map.getEventCoordinate(event))) {
     const startBP = Math.max(...bounds.leftBP), endBP = Math.min(...bounds.rightBP);
-    found.push({ kind: "selection", id: -1, name: "active rectangle", startBP, endBP, structural: endBP > startBP });
+    found.push({ kind: "selection", id: -1, name: "active rectangle", title: "Selection: active rectangle", startBP, endBP, structural: endBP > startBP });
   }
-  if (!found.length)
-  for (const feature of manager.map.getFeaturesAtPixel(
-    manager.map.getEventPixel(event),
-    { hitTolerance: 5 }
-  )) {
-    const contig = feature.get("contigDescriptor") as
-      | ContigDescriptor
-      | undefined;
-    const scaffold = feature.get("scaffolDescriptor") as
-      | ScaffoldDescriptor
-      | undefined;
-    if (contig) {
-      const order =
-        manager.contigDimensionHolder.contigIdToOrd[contig.contigId];
-      const prefix = manager.contigDimensionHolder.prefix_sum_bp;
-      found.push({
-        kind: "contig",
-        id: contig.contigId,
-        name: contig.contigName,
-        startBP: prefix[order],
-        endBP: prefix[order + 1],
-      });
-    }
-    if (scaffold?.scaffoldBordersBP)
-      found.push({
-        kind: "scaffold",
-        id: scaffold.scaffoldId,
-        name: scaffold.scaffoldName,
-        ...scaffold.scaffoldBordersBP,
-      });
-  }
-  // A contig label need not overlap its scaffold's drawn outline.
-  const contig = found.find((item) => item.kind === "contig");
-  if (contig && !found.some((item) => item.kind === "scaffold")) {
-    const scaffold = manager.scaffoldHolder.getScaffoldLocusByBp(
-      contig.startBP
-    );
-    if (scaffold)
-      found.push({
-        kind: "scaffold",
-        id: scaffold.scaffoldId,
-        name: scaffold.scaffoldName,
-        startBP: scaffold.startBp,
-        endBP: scaffold.endBp,
-      });
-  }
-  if (!found.length) {
-    items.value = [];
-    return;
-  }
-  event.preventDefault();
-  items.value = found.filter(
-    (item, index) =>
-      found.findIndex(
-        (other) => other.kind === item.kind && other.id === item.id
-      ) === index
-  );
+  if (!found.length) found = itemsAtEvent(event);
+  if (!found.length) return;
+  items.value = found;
   position.value = { x: event.clientX, y: event.clientY };
   await nextTick();
   const rect = menu.value?.getBoundingClientRect();
@@ -230,6 +269,18 @@ async function open(event: MouseEvent) {
       y: Math.max(8, Math.min(event.clientY, innerHeight - rect.height - 8)),
     };
   menu.value?.querySelector("button")?.focus();
+}
+function zoomTo(item: Item) {
+  items.value = [];
+  props.mapManager.linearTrackManager.centerOnBpRange(item.startBP, item.endBP);
+}
+function copyName(item: Item) {
+  items.value = [];
+  void copyText(item.name, `${item.kind === "scaffold" ? "Scaffold" : "Contig"} name`);
+}
+function copyPosition(item: Item) {
+  items.value = [];
+  void copyText(formatLocus(item.name, (item.inContigBp ?? 0) + 1), "Position");
 }
 function navigate(event: KeyboardEvent) {
   if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -334,16 +385,29 @@ watch(
   }
 );
 let target: HTMLElement | undefined;
+let viewKeys: EventsKey[] = [];
+function closeMenu() {
+  items.value = [];
+}
+function closeOnWheel(event: Event) {
+  if (!menu.value?.contains(event.target as Node)) items.value = [];
+}
 onMounted(() => {
   target = props.mapManager.map.getViewport();
   target.addEventListener("contextmenu", open);
   document.addEventListener("pointerdown", close);
   window.addEventListener("resize", close);
+  window.addEventListener("wheel", closeOnWheel, { capture: true, passive: true });
+  const view = props.mapManager.getView();
+  viewKeys = [view.on("change:center", closeMenu), view.on("change:resolution", closeMenu)];
 });
 onBeforeUnmount(() => {
   target?.removeEventListener("contextmenu", open);
   document.removeEventListener("pointerdown", close);
   window.removeEventListener("resize", close);
+  window.removeEventListener("wheel", closeOnWheel, { capture: true });
+  viewKeys.forEach((key) => unByKey(key));
+  viewKeys = [];
 });
 </script>
 <style scoped>

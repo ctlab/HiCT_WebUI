@@ -10,15 +10,39 @@ const readStored = <T>(key: string, fallback: T): T => {
   }
 };
 
+// localStorage writes are synchronous: a slider or a pan that updates a setting every frame must
+// not hit the disk each time. Writes are collected and flushed 200 ms after the last change, and
+// immediately when the page is hidden or closed.
+const pendingWrites = new Map<string, () => unknown>();
+let flushTimer: number | undefined;
+
+const flushPersistedSettings = (): void => {
+  window.clearTimeout(flushTimer);
+  flushTimer = undefined;
+  for (const [key, read] of pendingWrites) {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(read()));
+    } catch {
+      // Ignore storage failures; UI settings are non-critical.
+    }
+  }
+  pendingWrites.clear();
+};
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushPersistedSettings);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushPersistedSettings();
+  });
+}
+
 const persistRef = <T>(key: string, value: { value: T }) => {
   watch(
     value,
-    (next) => {
-      try {
-        window.localStorage.setItem(key, JSON.stringify(next));
-      } catch {
-        // Ignore storage failures; UI settings are non-critical.
-      }
+    () => {
+      pendingWrites.set(key, () => value.value);
+      window.clearTimeout(flushTimer);
+      flushTimer = window.setTimeout(flushPersistedSettings, 200);
     },
     { deep: true }
   );
