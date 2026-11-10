@@ -32,6 +32,7 @@
       @agpLoaded="onAgpLoaded"
       @fastaLinked="onFastaLinked"
       @wizardRequested="onWizardRequested"
+      @fastaOnlyRequested="emit('fastaOnlyRequested')"
     ></NavigationBar>
     <HeaderRibbon :mapManager="props.mapManager"></HeaderRibbon>
   </div>
@@ -51,6 +52,7 @@ const emit = defineEmits<{
   (e: "agpLoaded", filename: string): void;
   (e: "fastaLinked", filename: string): void;
   (e: "wizardRequested"): void;
+  (e: "fastaOnlyRequested"): void;
 }>();
 
 const props = defineProps<{

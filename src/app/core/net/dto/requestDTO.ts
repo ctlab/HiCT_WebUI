@@ -27,6 +27,9 @@ import {
   ListDirectoryRequest,
   OpenFileRequest,
   CloseFileRequest,
+  StartFastaOnlyRequest,
+  FastaOnlyStatusRequest,
+  CancelFastaOnlyRequest,
   PrepareCoverageNormalizationRequest,
   CoverageNormalizationStatusRequest,
   CancelCoverageNormalizationRequest,
@@ -324,10 +327,14 @@ abstract class HiCTAPIRequestDTO<
         return new ResetRenderPipelineRequestDTO(entity);
       case entity instanceof CloseFileRequest:
         return new CloseFileRequestDTO(entity as CloseFileRequest);
+      case entity instanceof FastaOnlyStatusRequest:
+      case entity instanceof CancelFastaOnlyRequest:
       case entity instanceof PrepareCoverageNormalizationRequest:
       case entity instanceof CoverageNormalizationStatusRequest:
       case entity instanceof CancelCoverageNormalizationRequest:
         return new EmptyBodyRequestDTO(entity);
+      case entity instanceof StartFastaOnlyRequest:
+        return new StartFastaOnlyRequestDTO(entity as StartFastaOnlyRequest);
       case entity instanceof SelectNormalizationWeightsRequest:
         return new SelectNormalizationWeightsRequestDTO(
           entity as SelectNormalizationWeightsRequest
@@ -1080,6 +1087,16 @@ class ListAGPFilesRequestDTO extends HiCTAPIRequestDTO<ListAGPFilesRequest> {
 class EmptyBodyRequestDTO extends HiCTAPIRequestDTO<HiCTAPIRequest> {
   toDTO(): Record<string, unknown> {
     return {};
+  }
+}
+
+class StartFastaOnlyRequestDTO extends HiCTAPIRequestDTO<StartFastaOnlyRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      fastaFilename: this.entity.options.fastaFilename,
+      splitAtN: this.entity.options.splitAtN,
+      minNRun: this.entity.options.minNRun,
+    };
   }
 }
 

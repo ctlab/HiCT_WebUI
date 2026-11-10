@@ -171,6 +171,27 @@ class SelectNormalizationWeightsRequest implements HiCTAPIRequest {
   ) {}
 }
 
+/** Builds an assembly from a FASTA file alone. The server reads it in the background. */
+class StartFastaOnlyRequest implements HiCTAPIRequest {
+  requestPath = "/fasta_only/start";
+
+  public constructor(
+    public readonly options: {
+      readonly fastaFilename: string;
+      readonly splitAtN: boolean;
+      readonly minNRun: number;
+    }
+  ) {}
+}
+
+class FastaOnlyStatusRequest implements HiCTAPIRequest {
+  requestPath = "/fasta_only/status";
+}
+
+class CancelFastaOnlyRequest implements HiCTAPIRequest {
+  requestPath = "/fasta_only/cancel";
+}
+
 class AttachSessionRequest implements HiCTAPIRequest {
   requestPath = "/attach";
 }
@@ -790,6 +811,9 @@ export {
   type HiCTAPIRequest,
   AttachSessionRequest,
   CloseFileRequest,
+  StartFastaOnlyRequest,
+  FastaOnlyStatusRequest,
+  CancelFastaOnlyRequest,
   PrepareCoverageNormalizationRequest,
   CoverageNormalizationStatusRequest,
   CancelCoverageNormalizationRequest,

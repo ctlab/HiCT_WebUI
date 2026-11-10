@@ -163,7 +163,14 @@
       @agpLoaded="onAgpLoaded"
       @fastaLinked="onFastaLinked"
       @wizardRequested="wizardOpen = true"
+      @fastaOnlyRequested="fastaOnlyOpen = true"
     ></UpperFrame>
+    <FastaOnlyDialog
+      v-if="fastaOnlyOpen"
+      :requests="networkManager.requestManager"
+      @dismissed="fastaOnlyOpen = false"
+      @ready="openFastaOnly"
+    />
     <div
       v-if="workspaceConflict"
       class="alert alert-warning workspace-conflict"
@@ -238,7 +245,10 @@ import {
   createSessionEnvelope,
   parseSessionDocument,
 } from "@/app/core/mapmanagers/SessionDocument";
-import type { AttachedSession } from "@/app/core/net/api/RequestManager";
+import type {
+  AttachedSession,
+  FastaOnlyStatus,
+} from "@/app/core/net/api/RequestManager";
 import { pipelineTransferIssues } from "@/app/core/visualization/transferVisualization";
 import { prepareCoverage } from "@/app/core/visualization/coverageNormalization";
 import BenchmarkFeature from "ol/Feature";
@@ -252,6 +262,7 @@ import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
 import { ActiveTool } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
 import { showTranslocationStatus } from "@/app/core/mapmanagers/TranslocationStatusToast";
 import UnsavedEditsDialog from "@/app/ui/components/common/UnsavedEditsDialog.vue";
+import FastaOnlyDialog from "@/app/ui/components/common/FastaOnlyDialog.vue";
 import {
   ContactMapManager,
   // type ContactMapManagerOptions,
@@ -354,6 +365,7 @@ const openProgressStage = ref("starting");
 const openProgressPct = ref(0);
 let openProgressInFlight = false;
 const wizardOpen = ref(false);
+const fastaOnlyOpen = ref(false);
 const coolerWeightsNaNPromptVisible = ref(false);
 let lastCoolerWeightsNaNPromptKey = "";
 let workspaceTimer: number | undefined;
@@ -785,6 +797,47 @@ async function openFileWithOptions(
     }
   } finally {
     stopOpenProgress();
+  }
+}
+
+/** Opens the assembly the server built from a FASTA alone, then applies its split layout. */
+async function openFastaOnly(result: FastaOnlyStatus): Promise<void> {
+  fastaOnlyOpen.value = false;
+  if (!result.outputFilename) return;
+  if (!(await confirmDiscardUnsavedEdits("open this FASTA"))) return;
+  try {
+    await openFileWithOptions(
+      result.outputFilename,
+      result.fastaFilename ?? undefined,
+      { applyDefaultPreset: false }
+    );
+    if (result.agpFilename) {
+      await networkManager.requestManager.loadAGP(
+        new LoadAGPRequest({
+          agpFilename: result.agpFilename,
+          missingComponentsPolicy: "EXCLUDE",
+        })
+      );
+    }
+    // The assembly as built from the FASTA is the starting point, not an edit.
+    networkManager.requestManager.markAssemblySaved();
+    const pieces = mapManager.value?.contigDimensionHolder.contig_count;
+    toast.success(
+      `Opened ${pieces ?? result.contigCount} contigs from ${
+        result.fastaFilename ?? "the FASTA"
+      }. There is no contact data.`,
+      { duration: 8000 }
+    );
+    if (result.warnings.length > 0)
+      toast.message(result.warnings[0], {
+        description: result.warnings.slice(1, 6).join("\n"),
+        duration: 20000,
+      });
+  } catch (failure) {
+    console.debug("Opening the FASTA-only assembly failed", failure);
+    toast.error(
+      (failure as Error)?.message ?? "The FASTA assembly could not be opened."
+    );
   }
 }
 

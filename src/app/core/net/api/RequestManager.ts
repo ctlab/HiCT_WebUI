@@ -112,6 +112,9 @@ import {
   ListTrackFilesRequest,
   OpenTrackRequest,
   OpenCoolerWeightsTrackRequest,
+  StartFastaOnlyRequest,
+  FastaOnlyStatusRequest,
+  CancelFastaOnlyRequest,
   PrepareCoverageNormalizationRequest,
   CoverageNormalizationStatusRequest,
   CancelCoverageNormalizationRequest,
@@ -304,6 +307,22 @@ export type CoverageNormalizationStatus = {
   /** Every open source uses the same weights. */
   consistent: boolean;
   estimatedBytes: number;
+};
+
+/** State of the job that builds an assembly from a FASTA file alone. */
+export type FastaOnlyStatus = {
+  state: "IDLE" | "RUNNING" | "READY" | "FAILED" | "CANCELLED";
+  progress: number;
+  message: string;
+  error: string | null;
+  /** Paths relative to the server data folder. */
+  outputFilename: string | null;
+  agpFilename: string | null;
+  fastaFilename: string | null;
+  contigCount: number;
+  totalBases: number;
+  warnings: string[];
+  reused: boolean;
 };
 
 const journalResetPaths = new Set([
@@ -1057,6 +1076,28 @@ class RequestManager {
     if (status.mode === "FILE" || status.mode === "SQRT_COVERAGE")
       this.normalizationState.mode = status.mode;
     return status;
+  }
+
+  public async startFastaOnly(options: {
+    fastaFilename: string;
+    splitAtN: boolean;
+    minNRun: number;
+  }): Promise<FastaOnlyStatus> {
+    return this.sendRequest(new StartFastaOnlyRequest(options), undefined, {
+      suppressErrorToast: true,
+    }).then((response) => response.data as FastaOnlyStatus);
+  }
+
+  public async fastaOnlyStatus(): Promise<FastaOnlyStatus> {
+    return this.sendRequest(new FastaOnlyStatusRequest(), undefined, {
+      suppressErrorToast: true,
+    }).then((response) => response.data as FastaOnlyStatus);
+  }
+
+  public async cancelFastaOnly(): Promise<FastaOnlyStatus> {
+    return this.sendRequest(new CancelFastaOnlyRequest()).then(
+      (response) => response.data as FastaOnlyStatus
+    );
   }
 
   public async prepareCoverageNormalization(): Promise<CoverageNormalizationStatus> {

@@ -58,6 +58,15 @@
                 <a
                   class="dropdown-item"
                   href="#"
+                  title="Make an assembly from a FASTA file with no contact data"
+                  @click.prevent="emit('fastaOnlyRequested')"
+                  >Open FASTA only...</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onCloseClicked"
                   >Close</a
@@ -523,7 +532,8 @@
             class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
             :title="openMapFilename"
           >
-            Hi-C: {{ shortFileLabel(openMapFilename, MAP_CHIP_LIMIT) }}
+            {{ noContactData ? "Assembly" : "Hi-C" }}:
+            {{ shortFileLabel(openMapFilename, MAP_CHIP_LIMIT) }}
           </span>
           <span
             v-if="secondaryMapFilename"
@@ -1192,6 +1202,13 @@ const webuiCommit = ref("unknown");
 const RenderingPipelineModal = defineAsyncComponent(
   () => import("@/app/ui/components/upper_ribbon/RenderingPipelineModal.vue")
 );
+/** A map made from a FASTA alone has no contacts, so it is an assembly and not a Hi-C map. */
+const noContactData = computed(
+  () =>
+    props.mapManager?.networkManager.requestManager.sourceCapabilities.PRIMARY
+      ?.contactDataState === "ABSENT"
+);
+
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
   (e: "closed"): void;
@@ -1201,6 +1218,7 @@ const emit = defineEmits<{
   (e: "agpLoaded", filename: string): void;
   (e: "fastaLinked", filename: string): void;
   (e: "wizardRequested"): void;
+  (e: "fastaOnlyRequested"): void;
 }>();
 
 useEscDismissableDialog({
