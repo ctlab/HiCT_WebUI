@@ -39,6 +39,19 @@
         ref="cornerMiniMapFallbackTarget"
         class="interactive-workspace_corner_minimap interactive-workspace_corner_minimap--compact"
       ></div>
+      <button
+        v-if="props.mapManager"
+        id="map-anchor-lock"
+        type="button"
+        class="map-anchor-lock"
+        :class="{ 'map-anchor-lock--on': mapAnchored }"
+        :aria-pressed="mapAnchored"
+        :aria-label="anchorLabel"
+        :title="anchorLabel"
+        @click="toggleMapAnchor"
+      >
+        <i :class="mapAnchored ? 'bi bi-lock-fill' : 'bi bi-unlock'"></i>
+      </button>
     </div>
     <div class="interactive-workspace_horizontal_ruler">
       <div
@@ -126,6 +139,22 @@ import {
 } from "vue";
 import { storeToRefs } from "pinia";
 const uiSettingsForStrip = useUiSettingsStore();
+
+const mapAnchored = computed(() => uiSettingsForStrip.mapAnchorTopLeft);
+const anchorLabel = computed(() =>
+  mapAnchored.value
+    ? "Map is locked to the rulers: its top-left corner stays against them. Click to move the map freely."
+    : "Map moves freely. Click to lock its top-left corner against the rulers."
+);
+
+function toggleMapAnchor(): void {
+  uiSettingsForStrip.mapAnchorTopLeft = !uiSettingsForStrip.mapAnchorTopLeft;
+  const view = props.mapManager?.getView();
+  const center = view?.getCenter();
+  // Apply the new rule to the current position right away.
+  if (view && center) view.setCenter(view.getConstrainedCenter(center));
+  props.mapManager?.viewAndLayersManager.updateCurrentHiCViewState();
+}
 
 const stylesStore = useStyleStore();
 
@@ -477,6 +506,7 @@ const verticalRulerCssSize = computed(() => {
 
 .interactive-workspace_corner_ruler {
   grid-area: corner-ruler;
+  position: relative;
   display: flex;
   align-items: stretch;
   justify-content: stretch;
@@ -487,6 +517,37 @@ const verticalRulerCssSize = computed(() => {
 
 .interactive-workspace_corner_minimap--compact {
   padding: 1px;
+}
+
+.map-anchor-lock {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  z-index: 5;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  border: 1px solid var(--hict-surface-border, #94a3b8);
+  border-radius: 5px;
+  background: var(--hict-surface-bg, #ffffff);
+  color: var(--hict-surface-fg, #1f2937);
+  opacity: 0.92;
+}
+
+.map-anchor-lock--on {
+  background: #0d6efd;
+  border-color: #0d6efd;
+  color: #ffffff;
+}
+
+.map-anchor-lock:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
 }
 
 .interactive-workspace_horizontal_tracks {

@@ -37,6 +37,9 @@ import TileGrid from "ol/tilegrid/TileGrid";
 import { asString, type Color } from "ol/color";
 import type { ColorLike } from "ol/colorlike";
 import { type Ref, ref, markRaw, shallowRef } from "vue";
+import { installTopLeftAnchor } from "./mapAnchor";
+import { selectionAreaStyle, selectionPointerStyle } from "./selectionStyles";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import ContigMouseWheelZoom from "@/ContigMouseWheelZoom";
 import BinMousePosition from "@/BinMousePosition";
 import { VersionedXYZContactMapSource } from "../VersionedXYZSource";
@@ -336,6 +339,11 @@ class HiCViewAndLayersManager {
             : 1,
       })
     );
+    installTopLeftAnchor(
+      this.view,
+      maximum_global_extent,
+      () => useUiSettingsStore().mapAnchorTopLeft && !this.mapManager.isExporting
+    );
 
     this.currentViewState = {
       resolutionDesciptor: {
@@ -392,15 +400,7 @@ class HiCViewAndLayersManager {
       contigSelectionInteraction: new Select({
         multi: false,
         layers: this.layersHolder.contigBordersLayers,
-        style: new Style({
-          fill: new Fill({
-            color: "rgba(255, 36, 36, 0.7)",
-          }),
-          stroke: new Stroke({
-            color: "rgba(64, 0, 255, 0.9)",
-            width: 7,
-          }),
-        }),
+        style: selectionAreaStyle(),
         hitTolerance: 0,
         features: this.selectionCollections.selectedContigFeatures,
         condition: singleClick,
@@ -443,6 +443,8 @@ class HiCViewAndLayersManager {
       contigSelectExtent: new Extent({
         condition: shiftKeyOnly,
         pixelTolerance: 0,
+        boxStyle: selectionAreaStyle(),
+        pointerStyle: selectionPointerStyle(),
       }),
     });
 

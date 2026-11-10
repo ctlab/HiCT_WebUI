@@ -70,6 +70,9 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
     readStored("hict.sequence.showReverseStrand", false)
   );
   persistRef("hict.sequence.showReverseStrand", sequenceShowReverseStrand);
+  /** Keep the map's top-left corner against the rulers. On by default. */
+  const mapAnchorTopLeft = ref(readStored("hict.ui.mapAnchorTopLeft", true));
+  persistRef("hict.ui.mapAnchorTopLeft", mapAnchorTopLeft);
   const customZoomSliderEnabled = ref(false);
   const binaryTileTransportEnabled = ref(false);
   const rulerCoordinateMode = ref<"global" | "contig" | "scaffold">(
@@ -128,6 +131,7 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
     sequenceShowReverseStrand,
     sequenceReverseColor,
     modDotPlotThreads,
+    mapAnchorTopLeft,
     customZoomSliderEnabled,
     binaryTileTransportEnabled,
     rulerCoordinateMode,
