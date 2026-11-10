@@ -33,6 +33,7 @@ interface HiCTAPIRequest {
 
 export class GetSessionSnapshotRequest implements HiCTAPIRequest {
   requestPath = "/session/snapshot";
+  constructor(public readonly verifyAssemblyRoundTrip = false) {}
 }
 
 export class UnscaffoldAllRequest implements HiCTAPIRequest {

@@ -288,7 +288,9 @@ abstract class HiCTAPIRequestDTO<
           entity as CloseSecondarySourceRequest
         );
       case entity instanceof GetSessionSnapshotRequest:
-        return new GetSessionSnapshotRequestDTO(entity);
+        return new GetSessionSnapshotRequestDTO(
+          entity as GetSessionSnapshotRequest
+        );
       case entity instanceof GetSecondarySourceStatusRequest:
         return new GetSecondarySourceStatusRequestDTO(
           entity as GetSecondarySourceStatusRequest
@@ -1158,6 +1160,6 @@ export {
 
 class GetSessionSnapshotRequestDTO extends HiCTAPIRequestDTO<GetSessionSnapshotRequest> {
   toDTO(): Record<string, unknown> {
-    return {};
+    return { verifyAssemblyRoundTrip: this.entity.verifyAssemblyRoundTrip };
   }
 }
