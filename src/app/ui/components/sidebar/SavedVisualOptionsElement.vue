@@ -241,6 +241,8 @@ async function setOptionsPreset() {
   }
 }
 
+defineExpose({ apply: setOptionsPreset });
+
 function renamePreset() {
   showRenameButton.value = false;
   editingName.value = false;

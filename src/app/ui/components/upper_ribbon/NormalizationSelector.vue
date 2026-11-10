@@ -108,7 +108,7 @@
       class="small text-muted mb-0"
     >
       Each bin is divided by the square root of its total contacts in the whole
-      map (as Juicebox VC_SQRT). Bins without contacts stay empty.
+      map. Bins without contacts stay empty.
     </p>
     <div
       v-if="preparing"

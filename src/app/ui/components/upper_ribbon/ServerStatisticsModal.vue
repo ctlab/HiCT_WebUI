@@ -4,7 +4,9 @@
     class="modal fade show"
     style="display: block"
     tabindex="-1"
+    ref="modalFocusElement"
     role="dialog"
+    aria-modal="true"
   >
     <div class="modal-dialog modal-xl modal-dialog-scrollable" role="document">
       <div class="modal-content">
@@ -155,6 +157,7 @@
 </template>
 
 <script setup lang="ts">
+import { useModalFocus } from "@/app/ui/modalFocus";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
 import type { ServerStatisticsResponse } from "@/app/core/net/api/RequestManager";
@@ -248,6 +251,9 @@ onBeforeUnmount(() => {
     pollTimer = undefined;
   }
 });
+
+const modalFocusElement = ref<HTMLElement | null>(null);
+useModalFocus(modalFocusElement);
 </script>
 
 <style scoped>

@@ -1598,7 +1598,20 @@ watch(
   { immediate: true }
 );
 
-const visibleSteps = computed(() => steps);
+const visibleSteps = computed(() =>
+  steps.filter(({ id }) => {
+    if (id === "conversion") {
+      const activeSources =
+        viewMode.value === "single"
+          ? [primarySource]
+          : [primarySource, secondarySource];
+      return activeSources.some(
+        (source) => source.resolution?.action !== "OPEN_DIRECT"
+      );
+    }
+    return id !== "track-precompute" || selectedTracks.value.length > 0;
+  })
+);
 
 const currentStep = computed(() => visibleSteps.value[currentStepIndex.value]);
 const requiresSecondarySource = computed(() => viewMode.value !== "single");

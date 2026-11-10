@@ -187,6 +187,7 @@
       </div>
     </div>
     <UpperFrame
+      ref="upperFrame"
       :networkManager="networkManager"
       :mapManager="mapManager"
       @selected="onFileSelected"
@@ -248,9 +249,30 @@
         <button
           type="button"
           class="btn btn-primary"
+          @click="upperFrame?.openFile()"
+        >
+          <i class="bi bi-folder2-open me-1" aria-hidden="true"></i>Open map…
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
           @click="wizardOpen = true"
         >
-          <i class="bi bi-folder2-open me-1"></i>Open map…
+          Open with options…
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          @click="examplesOpen = true"
+        >
+          Open example…
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          @click="fastaOnlyOpen = true"
+        >
+          Open FASTA only…
         </button>
         <button
           type="button"
@@ -260,10 +282,6 @@
           <i class="bi bi-plug me-1"></i>Attach to open session
         </button>
       </div>
-      <p class="empty-workspace-hint">
-        More options (manual open, sessions, conversion) are in the
-        <strong>File</strong> menu.
-      </p>
     </section>
     <NotificationCenterModal></NotificationCenterModal>
     <FileWizardModal
@@ -414,6 +432,7 @@ const openProgressVisible = ref(false);
 const openProgressStage = ref("starting");
 const openProgressPct = ref(0);
 let openProgressInFlight = false;
+const upperFrame = ref<InstanceType<typeof UpperFrame> | null>(null);
 const wizardOpen = ref(false);
 const fastaOnlyOpen = ref(false);
 const examplesOpen = ref(false);
@@ -1708,11 +1727,6 @@ function onFileSelected(newFilename: string) {
   justify-content: center;
   gap: 8px;
   margin-bottom: 0.75rem;
-}
-
-.empty-workspace-prompt .empty-workspace-hint {
-  margin-bottom: 0;
-  font-size: 0.8rem;
 }
 
 .main-ui-component {

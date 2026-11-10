@@ -65,7 +65,12 @@
         <template #body="{ data }">
           <span class="file-name-cell">
             <i :class="data.iconClass" aria-hidden="true"></i>
-            <span :title="data.name">{{ data.name }}</span>
+            <span
+              :title="data.name"
+              :tabindex="props.multiSelect ? undefined : 0"
+              @keydown.enter.stop.prevent="onRowDoubleClick({ data })"
+              >{{ data.name }}</span
+            >
             <span
               v-if="data.symbolicLink"
               class="file-link-badge"

@@ -170,12 +170,18 @@
         >
       </details>
       <div class="threshold-toolbar">
-        <details
-          v-if="applyCoolerWeights || coolerWeightsHaveNaNs"
-          :class="coolerWeightsHintClass"
-        >
-          <summary title="Cooler weights warning">
-            <i class="bi bi-exclamation-triangle-fill"></i>
+        <details v-if="coolerWeightsHaveNaNs" :class="coolerWeightsHintClass">
+          <summary
+            :title="
+              applyCoolerWeights
+                ? 'Cooler weights warning'
+                : 'Excluded-bin settings'
+            "
+          >
+            <i
+              v-if="applyCoolerWeights"
+              class="bi bi-exclamation-triangle-fill"
+            ></i>
             Cooler weights
           </summary>
           <div v-if="coolerWeightsHaveNaNs">
@@ -202,11 +208,6 @@
                 Replace NaNs with weight 0
               </option>
             </select>
-          </div>
-          <div v-else>
-            Bins with missing or near-zero weights can appear as white stripes;
-            compare with an unweighted/raw preset before treating those regions
-            as absent signal.
           </div>
         </details>
       </div>
@@ -323,7 +324,8 @@ const coolerWeightsNaNPolicyLabel = computed(() => {
 
 const coolerWeightsHintClass = computed(() => ({
   "cooler-weights-hint": true,
-  "cooler-weights-hint_error": coolerWeightsHaveNaNs.value,
+  "cooler-weights-hint_error":
+    applyCoolerWeights.value && coolerWeightsHaveNaNs.value,
 }));
 
 const sliderMin = computed(() =>

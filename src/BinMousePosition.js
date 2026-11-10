@@ -75,6 +75,35 @@ export default class BinMousePosition extends MousePosition {
     }
   }
 
+  setMap(map) {
+    super.setMap(map);
+    this.refreshOnRender = false;
+    if (!map) {
+      this.pointerPixel = null;
+      return;
+    }
+    this.listenerKeys.push(
+      map.getView().on("change:resolution", () => {
+        this.refreshOnRender = true;
+      }),
+      map.on("moveend", () => {
+        this.refreshOnRender = true;
+        map.render();
+      }),
+      map.on("rendercomplete", () => {
+        if (this.pointerPixel) this.updateHTML_(this.pointerPixel);
+      })
+    );
+  }
+
+  render(event) {
+    super.render(event);
+    if (event.frameState && this.refreshOnRender) {
+      this.refreshOnRender = false;
+      if (this.pointerPixel) this.updateHTML_(this.pointerPixel);
+    }
+  }
+
   getGuidanceResolutionDescriptor(fallbackDescriptor) {
     if (this.layersManager?.getFinestVisibleSourceResolutionDescriptor) {
       const descriptor =
@@ -105,6 +134,7 @@ export default class BinMousePosition extends MousePosition {
   }
 
   updateHTML_(pixel) {
+    this.pointerPixel = pixel;
     let html = this.placeholder_;
     if (pixel && this.mapProjection_) {
       if (!this.transform_) {

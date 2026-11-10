@@ -24,9 +24,14 @@
     <button
       class="btn btn-outline-primary"
       type="button"
+      :disabled="!props.mapManager"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Group selection into scaffold"
+      :title="
+        props.mapManager
+          ? 'Group selection into scaffold'
+          : 'Open a map to use this control'
+      "
       aria-label="Group selection into scaffold"
       @click="addScaffoldClicked"
     >
@@ -35,9 +40,14 @@
     <button
       class="btn btn-outline-primary"
       type="button"
+      :disabled="!props.mapManager"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Ungroup selection into singleton scaffolds"
+      :title="
+        props.mapManager
+          ? 'Ungroup selection into singleton scaffolds'
+          : 'Open a map to use this control'
+      "
       aria-label="Ungroup selection into singleton scaffolds"
       @click="removeScaffoldClicked"
     >
@@ -47,7 +57,9 @@
     <button
       class="btn btn-outline-primary"
       type="button"
-      title="Unscaffold all"
+      :title="
+        props.mapManager ? 'Unscaffold all' : 'Open a map to use this control'
+      "
       aria-label="Unscaffold all"
       :disabled="
         !props.mapManager ||
@@ -60,9 +72,14 @@
     <button
       class="btn btn-outline-primary"
       type="button"
+      :disabled="!props.mapManager"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Export FASTA for selection"
+      :title="
+        props.mapManager
+          ? 'Export FASTA for selection'
+          : 'Open a map to use this control'
+      "
       aria-label="Export FASTA for selection"
       @click="exportFASTAForSelectionClicked"
     >

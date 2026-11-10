@@ -14,16 +14,20 @@ function visibleFocusable(root: HTMLElement): HTMLElement[] {
  * Shift+Tab stay inside it, and focus goes back to whatever opened it when it closes. Escape is handled
  * by the escape-dialog registry, not here.
  */
+const activeDialogs: symbol[] = [];
+
 export function useModalFocus(
   root: Ref<HTMLElement | null>,
   isOpen?: () => boolean
 ): void {
+  const dialog = Symbol();
   let opener: HTMLElement | null = null;
   let active = false;
 
   function onKeydown(event: KeyboardEvent): void {
     const container = root.value;
-    if (event.key !== "Tab" || !container) return;
+    if (event.key !== "Tab" || !container || activeDialogs.at(-1) !== dialog)
+      return;
     const items = visibleFocusable(container);
     if (items.length === 0) {
       event.preventDefault();
@@ -45,11 +49,16 @@ export function useModalFocus(
   async function activate(): Promise<void> {
     if (active) return;
     active = true;
+    activeDialogs.push(dialog);
     opener = document.activeElement as HTMLElement | null;
     document.addEventListener("keydown", onKeydown, true);
     await nextTick();
     const container = root.value;
-    if (container && !container.contains(document.activeElement)) {
+    if (
+      activeDialogs.at(-1) === dialog &&
+      container &&
+      !container.contains(document.activeElement)
+    ) {
       const target =
         container.querySelector<HTMLElement>("[autofocus]") ??
         visibleFocusable(container).find(
@@ -63,8 +72,16 @@ export function useModalFocus(
   function deactivate(): void {
     if (!active) return;
     active = false;
+    const topmost = activeDialogs.at(-1) === dialog;
+    const index = activeDialogs.indexOf(dialog);
+    if (index >= 0) activeDialogs.splice(index, 1);
     document.removeEventListener("keydown", onKeydown, true);
-    if (opener && document.contains(opener) && opener !== document.body) {
+    if (
+      topmost &&
+      opener &&
+      document.contains(opener) &&
+      opener !== document.body
+    ) {
       opener.focus();
     }
   }
@@ -74,8 +91,9 @@ export function useModalFocus(
     watch(isOpen, (open) => (open ? void activate() : deactivate()), {
       flush: "post",
     });
-  } else {
-    onMounted(() => void activate());
   }
+  onMounted(() => {
+    if (!isOpen || isOpen()) void activate();
+  });
   onBeforeUnmount(deactivate);
 }

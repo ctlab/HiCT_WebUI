@@ -3,6 +3,7 @@
     <div class="analysis-backdrop"></div>
     <section
       class="analysis-modal"
+      ref="modalFocusElement"
       role="dialog"
       aria-modal="true"
       aria-labelledby="moddotplot-title"
@@ -430,6 +431,7 @@
   </Teleport>
 </template>
 <script setup lang="ts">
+import { useModalFocus } from "@/app/ui/modalFocus";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { ref, computed, onBeforeUnmount } from "vue";
 import { useSequenceReadiness } from "./useSequenceReadiness";
@@ -703,6 +705,9 @@ async function cancel() {
     error.value = extractErrorMessage(failure);
   }
 }
+
+const modalFocusElement = ref<HTMLElement | null>(null);
+useModalFocus(modalFocusElement);
 </script>
 <style scoped>
 .analysis-backdrop {

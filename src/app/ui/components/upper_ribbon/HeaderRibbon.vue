@@ -26,6 +26,8 @@
         <div id="search-input-group" class="input-group input-group-sm mb-3">
           <input
             id="global-search-input"
+            :disabled="!props.mapManager"
+            :title="props.mapManager ? undefined : 'Open a map to search'"
             class="form-control form-control-sm m-0"
             placeholder="Find contig, scaffold or feature"
             type="text"
@@ -40,6 +42,8 @@
           />
           <button
             id="global-search-button"
+            :disabled="!props.mapManager"
+            :title="props.mapManager ? undefined : 'Open a map to search'"
             class="btn btn-sm btn-outline-light"
             type="button"
             @click="goToSelection"
@@ -92,7 +96,12 @@
           @keydown.esc.prevent="restoreScopeQuery('row')"
           @blur="deferScopePickerClose('row')"
           aria-label="Rows scope"
-          title="Rows shown on the map"
+          :disabled="!props.mapManager"
+          :title="
+            props.mapManager
+              ? 'Rows shown on the map'
+              : 'Open a map to change scopes'
+          "
         />
         <div v-if="rowScopeOpen" class="scope-dropdown">
           <button
@@ -115,7 +124,12 @@
         <button
           type="button"
           class="btn btn-outline-secondary btn-sm scope-copy-button"
-          title="Copy row scope to columns"
+          :disabled="!props.mapManager"
+          :title="
+            props.mapManager
+              ? 'Copy row scope to columns'
+              : 'Open a map to change scopes'
+          "
           aria-label="Copy row scope to columns"
           @click="copyRowScopeToColumn"
         >
@@ -135,7 +149,12 @@
           @keydown.esc.prevent="restoreScopeQuery('column')"
           @blur="deferScopePickerClose('column')"
           aria-label="Columns scope"
-          title="Columns shown on the map"
+          :disabled="!props.mapManager"
+          :title="
+            props.mapManager
+              ? 'Columns shown on the map'
+              : 'Open a map to change scopes'
+          "
         />
         <div v-if="columnScopeOpen" class="scope-dropdown">
           <button
@@ -213,7 +232,12 @@
           data-bs-toggle="dropdown"
           data-bs-auto-close="outside"
           aria-expanded="false"
-          title="Export the map as SVG, PNG or PDF"
+          :disabled="!props.mapManager"
+          :title="
+            props.mapManager
+              ? 'Export the map as SVG, PNG or PDF'
+              : 'Open a map to export it'
+          "
         >
           <template v-if="exportingType !== null">
             <span
@@ -670,9 +694,9 @@ watch(
 const rulerModeLabel = computed(() => {
   switch (rulerCoordinateMode.value) {
     case "contig":
-      return "Ruler: in-ctg";
+      return "Ruler: In contig";
     case "scaffold":
-      return "Ruler: in-scf";
+      return "Ruler: In scaffold";
     default:
       return "Ruler: Global";
   }

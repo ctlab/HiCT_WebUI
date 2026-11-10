@@ -22,6 +22,7 @@
 <template>
   <div class="upper-frame">
     <NavigationBar
+      ref="navigationBar"
       :networkManager="props.networkManager"
       :mapManager="props.mapManager"
       @selected="onFileSelected"
@@ -40,6 +41,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import NavigationBar from "@/app/ui/components/upper_ribbon/NavigationBar.vue";
 import HeaderRibbon from "@/app/ui/components/upper_ribbon/HeaderRibbon.vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
@@ -61,6 +63,9 @@ const props = defineProps<{
   networkManager: NetworkManager;
   mapManager?: ContactMapManager;
 }>();
+
+const navigationBar = ref<InstanceType<typeof NavigationBar> | null>(null);
+defineExpose({ openFile: () => navigationBar.value?.openFile() });
 
 function onFileSelected(filename: string): void {
   emit("selected", filename);

@@ -27,7 +27,9 @@
       :class="{ 'pipeline-preview': previewMode }"
       tabindex="-1"
       style="display: block"
+      ref="modalFocusElement"
       role="dialog"
+      :aria-modal="!previewMode"
     >
       <div class="modal-dialog pipeline-dialog">
         <div class="modal-content">
@@ -192,6 +194,7 @@
 </template>
 
 <script setup lang="ts">
+import { useModalFocus } from "@/app/ui/modalFocus";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { VisualizationManager } from "@/app/core/mapmanagers/VisualizationManager";
 import type { TrackSummaryResponse } from "@/app/core/net/api/response";
@@ -2059,6 +2062,7 @@ const initializeGraph = (): void => {
   graphCanvas = new LGraphCanvas(graphCanvasRef.value, graph);
   (graphCanvas as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
   graphCanvas.allow_interaction = true;
+  (graphCanvas as unknown as { show_info: boolean }).show_info = false;
   graphCanvas.background_image = "";
   graph.onNodeAdded = (node: LGraphNode) => stylePipelineNode(node);
   applyGraphTheme();
@@ -3314,6 +3318,14 @@ const onVisualizationOptionsUpdated = (event: Event): void => {
   void loadConfig();
 };
 
+const onPipelineChanged = () => {
+  if (previewMode.value || loading.value || saving.value) {
+    pendingVisualizationSync.value = true;
+  } else {
+    void loadConfig();
+  }
+};
+
 const refreshTrackOptions = async (): Promise<void> => {
   try {
     const manager = ensureMapManager();
@@ -3439,6 +3451,7 @@ onMounted(() => {
   window.addEventListener("hict:pipeline-histogram", onHistogramRequested);
   initializeGraph();
   window.addEventListener("resize", fitGraphCanvas);
+  window.addEventListener("hict:render-pipeline-changed", onPipelineChanged);
   window.addEventListener(
     VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
     onVisualizationOptionsUpdated
@@ -3451,6 +3464,7 @@ onBeforeUnmount(() => {
   previewMode.value = false;
   cleanupColorPicker();
   window.removeEventListener("resize", fitGraphCanvas);
+  window.removeEventListener("hict:render-pipeline-changed", onPipelineChanged);
   window.removeEventListener(
     VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
     onVisualizationOptionsUpdated
@@ -3458,6 +3472,9 @@ onBeforeUnmount(() => {
   restoreNodeTypeFilterOverrides();
   destroyGraphRuntime();
 });
+
+const modalFocusElement = ref<HTMLElement | null>(null);
+useModalFocus(modalFocusElement, () => !previewMode.value);
 </script>
 
 <style scoped>

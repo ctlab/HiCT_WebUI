@@ -8,7 +8,9 @@
       class="modal fade show notification-center-modal"
       style="display: block"
       tabindex="-1"
+      ref="modalFocusElement"
       role="dialog"
+      aria-modal="true"
     >
       <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content">
@@ -101,7 +103,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { useModalFocus } from "@/app/ui/modalFocus";
+import { ref, computed } from "vue";
 import {
   useNotificationCenterStore,
   type NotificationLevel,
@@ -159,6 +162,9 @@ const expandedBody = (message: string): string => message;
 
 const hasExpandableBody = (message: string): boolean =>
   normalizeMessage(message).length > 200 || message.includes("\n");
+
+const modalFocusElement = ref<HTMLElement | null>(null);
+useModalFocus(modalFocusElement, () => notificationStore.isOpen);
 </script>
 
 <style scoped>

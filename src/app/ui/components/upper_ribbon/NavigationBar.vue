@@ -46,12 +46,12 @@
             <ul class="dropdown-menu">
               <li>
                 <a class="dropdown-item" href="#" @click.prevent="onOpenWizard"
-                  >Open Wizard...</a
+                  >Open with options…</a
                 >
               </li>
               <li>
                 <a class="dropdown-item" href="#" @click.prevent="onOpenFile"
-                  >Manual Open...</a
+                  >Open…</a
                 >
               </li>
               <li>
@@ -173,7 +173,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onAssemblyFASTARequest"
-                  >Export assembly</a
+                  >Export FASTA…</a
                 >
               </li>
               <li>
@@ -593,6 +593,7 @@
   <UniversalFileSelector
     :network-manager="props.networkManager"
     v-if="openingFile"
+    require-selection
     @selected="onFileSelected"
     @dismissed="onFileDismissed"
     :error-message="errorMessage"
@@ -1479,6 +1480,8 @@ type TauriBridge = {
 function onOpenFile() {
   openingFile.value = true;
 }
+
+defineExpose({ openFile: onOpenFile });
 
 function onOpenWizard(): void {
   emit("wizardRequested");

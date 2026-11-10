@@ -20,10 +20,28 @@
  -->
 
 <template>
-  <p class="w-100 m-0 text-lg-center saved-visual-title">
-    <b>Visualization presets:</b>
-  </p>
+  <div class="input-group input-group-sm px-2 py-1">
+    <select
+      class="form-select"
+      aria-label="Visualization preset"
+      @change="applySelectedPreset"
+    >
+      <option value="">Choose a preset…</option>
+      <option v-for="[id, preset] of savedOptions" :key="id" :value="id">
+        {{ preset.name }}
+      </option>
+    </select>
+    <button
+      type="button"
+      class="btn btn-outline-primary"
+      :aria-expanded="managePresets"
+      @click="managePresets = !managePresets"
+    >
+      Manage…
+    </button>
+  </div>
   <div
+    v-show="managePresets"
     class="btn-group w-100 px-2 py-1"
     role="group"
     aria-label="Visualization presets"
@@ -59,10 +77,11 @@
       />
     </button>
   </div>
-  <div class="saved-visualization-options-div">
+  <div v-show="managePresets" class="saved-visualization-options-div">
     <div v-for="[id, opt] of savedOptions" :key="id">
       <SavedVisualOptionsElement
         v-if="opt"
+        :ref="(element) => bindPresetElement(id, element)"
         :map-manager="props.mapManager"
         :option_id="opt.option_id"
         :visualization-options="opt.options"
@@ -130,6 +149,26 @@ const savedOptions = shallowRef(
   >()
 );
 const syncingFromSession = ref(false);
+const managePresets = ref(false);
+const presetElements = new Map<
+  number,
+  InstanceType<typeof SavedVisualOptionsElement>
+>();
+
+function bindPresetElement(id: number, element: unknown): void {
+  if (element)
+    presetElements.set(
+      id,
+      element as InstanceType<typeof SavedVisualOptionsElement>
+    );
+  else presetElements.delete(id);
+}
+
+function applySelectedPreset(event: Event): void {
+  const select = event.target as HTMLSelectElement;
+  if (select.value) void presetElements.get(Number(select.value))?.apply();
+  select.value = "";
+}
 
 function triggerSavedOptions() {
   triggerRef(savedOptions);
@@ -684,9 +723,5 @@ function importOptionsFromFile() {
   order: 2;
   width: 100%;
   gap: 2px;
-}
-
-.saved-visual-title {
-  font-size: 0.92rem;
 }
 </style>

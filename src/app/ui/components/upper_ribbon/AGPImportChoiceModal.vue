@@ -4,6 +4,7 @@
     <div
       class="modal show"
       style="display: block; z-index: 1091"
+      ref="modalFocusElement"
       role="dialog"
       aria-modal="true"
       aria-labelledby="agp-choice-title"
@@ -66,6 +67,8 @@
   </div>
 </template>
 <script setup lang="ts">
+import { useModalFocus } from "@/app/ui/modalFocus";
+import { ref } from "vue";
 import {
   agpImportChoice,
   completeAgpImportChoice,
@@ -76,4 +79,7 @@ useEscDismissableDialog({
   isOpen: () => !!agpImportChoice.value,
   requestClose: () => completeAgpImportChoice(null),
 });
+
+const modalFocusElement = ref<HTMLElement | null>(null);
+useModalFocus(modalFocusElement, () => !!agpImportChoice.value);
 </script>

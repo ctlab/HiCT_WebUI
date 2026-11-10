@@ -21,7 +21,13 @@
 
 <template>
   <div class="modal-backdrop fade show"></div>
-  <div class="modal fade show export-matrix-shell" tabindex="-1" role="dialog">
+  <div
+    class="modal fade show export-matrix-shell"
+    tabindex="-1"
+    ref="modalFocusElement"
+    role="dialog"
+    aria-modal="true"
+  >
     <div
       class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"
     >
@@ -300,6 +306,7 @@
 </template>
 
 <script setup lang="ts">
+import { useModalFocus } from "@/app/ui/modalFocus";
 import { onMounted, ref, watch } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
 import { StartConversionJobRequest } from "@/app/core/net/api/request";
@@ -473,6 +480,9 @@ async function startExport(): Promise<void> {
 onMounted(() => {
   loadConversionJobs();
 });
+
+const modalFocusElement = ref<HTMLElement | null>(null);
+useModalFocus(modalFocusElement);
 </script>
 
 <style scoped>

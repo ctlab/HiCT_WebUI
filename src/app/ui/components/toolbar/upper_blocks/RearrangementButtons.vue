@@ -24,11 +24,13 @@
     <button
       class="btn btn-outline-primary"
       type="button"
+      :disabled="!props.mapManager"
       ref="reverseSelectionButton"
       data-bs-toggle="popover"
       data-bs-placement="right"
       data-bs-html="true"
       data-bs-title="Reverse Selection"
+      :title="props.mapManager ? undefined : 'Open a map to edit the assembly'"
       aria-label="Reverse Selection"
       data-bs-content="First select a range of contigs on the map using Shift + hold left mouse key. Then press this button to reverse a range covered by the selection"
       @click="props.mapManager?.eventManager.onReverseSelectionClicked"
@@ -42,11 +44,13 @@
         'btn-outline-primary': !translocationMode,
       }"
       type="button"
+      :disabled="!props.mapManager"
       ref="translocationButton"
       data-bs-toggle="popover"
       data-bs-placement="right"
       data-bs-html="true"
       data-bs-title="Enter translocation mode"
+      :title="props.mapManager ? undefined : 'Open a map to edit the assembly'"
       :aria-label="
         translocationMode
           ? 'Cancel translocation mode (Esc)'
@@ -65,9 +69,10 @@
         'btn-outline-primary': !scissorsMode,
       }"
       type="button"
+      :disabled="!props.mapManager"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      :title="scissorsTitle"
+      :title="props.mapManager ? scissorsTitle : 'Open a map to split a contig'"
       :aria-label="scissorsTitle"
       :aria-pressed="scissorsMode"
       @click="props.mapManager?.eventManager.onSplitContigClicked"

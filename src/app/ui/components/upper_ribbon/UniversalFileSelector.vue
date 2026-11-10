@@ -26,7 +26,9 @@
       class="modal fade show"
       tabindex="-1"
       :style="modalStyle"
+      ref="modalFocusElement"
       role="dialog"
+      aria-modal="true"
     >
       <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content">
@@ -234,6 +236,7 @@
 </template>
 
 <script setup lang="ts">
+import { useModalFocus } from "@/app/ui/modalFocus";
 import type { FileEntryResponse } from "@/app/core/net/api/response";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
@@ -258,6 +261,7 @@ const props = defineProps<{
   errorMessage?: unknown;
   zIndex?: number;
   multiSelect?: boolean;
+  requireSelection?: boolean;
   busy?: boolean;
 }>();
 
@@ -734,7 +738,9 @@ watch(filteredEntries, (entries) => {
       : {};
     return;
   }
-  selectedFilename.value = fileEntries[0]?.path ?? null;
+  selectedFilename.value = props.requireSelection
+    ? null
+    : fileEntries[0]?.path ?? null;
   const firstPath = selectedFilename.value;
   treeSelectionKeys.value = firstPath
     ? { [fileSelectionKey(firstPath)]: true }
@@ -748,6 +754,9 @@ onMounted(async () => {
   }
   void loadDirectory("");
 });
+
+const modalFocusElement = ref<HTMLElement | null>(null);
+useModalFocus(modalFocusElement);
 </script>
 
 <style scoped>

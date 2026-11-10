@@ -108,6 +108,7 @@
     <div v-if="renaming" class="rename-backdrop" @click.self="renaming = null">
       <form
         class="rename-dialog"
+        ref="modalFocusElement"
         role="dialog"
         aria-modal="true"
         aria-labelledby="rename-entity-title"
@@ -177,6 +178,7 @@
   />
 </template>
 <script setup lang="ts">
+import { useModalFocus } from "@/app/ui/modalFocus";
 import {
   computed,
   nextTick,
@@ -351,10 +353,22 @@ async function open(event: MouseEvent) {
   const rect = menu.value?.getBoundingClientRect();
   if (rect)
     position.value = {
-      x: Math.max(8, Math.min(event.clientX, innerWidth - rect.width - 8)),
-      y: Math.max(8, Math.min(event.clientY, innerHeight - rect.height - 8)),
+      x: Math.max(
+        8,
+        Math.min(
+          event.clientX,
+          document.documentElement.clientWidth - rect.width - 8
+        )
+      ),
+      y: Math.max(
+        8,
+        Math.min(
+          event.clientY,
+          document.documentElement.clientHeight - rect.height - 8
+        )
+      ),
     };
-  menu.value?.querySelector("button")?.focus();
+  menu.value?.querySelector("button")?.focus({ preventScroll: true });
 }
 function zoomTo(item: Item) {
   items.value = [];
@@ -520,6 +534,9 @@ onBeforeUnmount(() => {
   viewKeys.forEach((key) => unByKey(key));
   viewKeys = [];
 });
+
+const modalFocusElement = ref<HTMLElement | null>(null);
+useModalFocus(modalFocusElement, () => !!renaming.value);
 </script>
 <style scoped>
 .assembly-context-menu {
@@ -529,6 +546,7 @@ onBeforeUnmount(() => {
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 0.4rem;
   border: 1px solid var(--hict-ui-border, #cbd5e1);
   background: var(--hict-surface-bg, #fff);

@@ -2,6 +2,7 @@
   <div class="histogram-backdrop" @click.self="$emit('dismissed')">
     <section
       class="histogram-dialog"
+      ref="modalFocusElement"
       role="dialog"
       aria-modal="true"
       aria-labelledby="histogram-title"
@@ -64,6 +65,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import { useModalFocus } from "@/app/ui/modalFocus";
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import InteractiveHistogram from "./InteractiveHistogram.vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
@@ -148,6 +150,9 @@ watch(
   () => void compute(),
   { immediate: true }
 );
+
+const modalFocusElement = ref<HTMLElement | null>(null);
+useModalFocus(modalFocusElement);
 </script>
 <style scoped>
 .histogram-backdrop {

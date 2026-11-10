@@ -24,9 +24,14 @@
     <button
       class="btn btn-outline-primary"
       type="button"
+      :disabled="!props.mapManager"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Zoom out to the next coarser resolution"
+      :title="
+        props.mapManager
+          ? 'Zoom out to the next coarser resolution'
+          : 'Open a map to use this control'
+      "
       aria-label="Zoom out"
       @click="zoomOut"
     >
@@ -35,9 +40,14 @@
     <button
       class="btn btn-outline-primary"
       type="button"
+      :disabled="!props.mapManager"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Zoom in to the next finer resolution"
+      :title="
+        props.mapManager
+          ? 'Zoom in to the next finer resolution'
+          : 'Open a map to use this control'
+      "
       aria-label="Zoom in"
       @click="zoomIn"
     >
@@ -46,9 +56,14 @@
     <button
       class="btn btn-outline-primary"
       type="button"
+      :disabled="!props.mapManager"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Slide to the main diagonal vertically"
+      :title="
+        props.mapManager
+          ? 'Slide to the main diagonal vertically'
+          : 'Open a map to use this control'
+      "
       aria-label="Slide to the main diagonal vertically"
       @click="slideVertically"
     >
@@ -57,9 +72,14 @@
     <button
       class="btn btn-outline-primary"
       type="button"
+      :disabled="!props.mapManager"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Slide to the main diagonal horizontally"
+      :title="
+        props.mapManager
+          ? 'Slide to the main diagonal horizontally'
+          : 'Open a map to use this control'
+      "
       aria-label="Slide to the main diagonal horizontally"
       @click="slideHorizontally"
     >
@@ -68,9 +88,14 @@
     <button
       class="btn btn-outline-primary"
       type="button"
+      :disabled="!props.mapManager"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Slide to the main diagonal over counter-diagonal"
+      :title="
+        props.mapManager
+          ? 'Slide to the main diagonal over counter-diagonal'
+          : 'Open a map to use this control'
+      "
       aria-label="Slide to the main diagonal over counter-diagonal"
       @click="slideByCounterDiagonal"
     >
