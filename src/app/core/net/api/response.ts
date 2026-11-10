@@ -122,7 +122,9 @@ class TrackSummaryResponse {
     public readonly logScale: boolean,
     public readonly rangeAuto: boolean,
     public readonly rangeMin: number,
-    public readonly rangeMax: number
+    public readonly rangeMax: number,
+    /** Records skipped or corrected while reading the file. Empty when nothing was changed. */
+    public readonly importWarnings: readonly string[] = []
   ) {}
 }
 

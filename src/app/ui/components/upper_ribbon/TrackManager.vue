@@ -465,14 +465,8 @@
                       type="number"
                       class="form-control form-control-sm track-log-base-input"
                       :value="getTrackLogBase(track.trackId)"
-                      min="1.000001"
-                      step="0.1"
-                      @change="
-                        onChangeLogBase(
-                          track.trackId,
-                          Number(($event.target as HTMLInputElement).value)
-                        )
-                      "
+                      step="any"
+                      @change="onChangeLogBase(track.trackId, $event)"
                       title="Log base for log(1+x)"
                     />
                     <div class="form-check form-switch m-0 ms-2">
@@ -991,15 +985,21 @@ const openTrackInternal = async () => {
     return;
   }
   try {
-    await props.mapManager.linearTrackManager.openTrack(
+    const warnings = await props.mapManager.linearTrackManager.openTrack(
       selectedFile.value,
       trackDisplayName.value.trim() || undefined
     );
+    if (warnings.length > 0)
+      toast.message(warnings[0], {
+        description: warnings.slice(1).join("\n"),
+        duration: 20000,
+      });
     trackDisplayName.value = "";
     await refreshTracks();
     await refreshPrecomputeStatus();
   } catch (err) {
-    toast.error(String(err));
+    // The request layer already showed the server's explanation.
+    console.debug("Track could not be added", err);
   }
 };
 
@@ -1404,6 +1404,23 @@ const onChangeRangeBound = async (
   if (!props.mapManager || !Number.isFinite(value)) {
     return;
   }
+  const current = tracks.value.find((t) => t.trackId === trackId);
+  if (
+    current &&
+    (field === "rangeMin"
+      ? value >= current.rangeMax
+      : value <= current.rangeMin)
+  ) {
+    toast.message(
+      field === "rangeMin"
+        ? `The minimum must be below the maximum (${current.rangeMax}). Raise the maximum first.`
+        : `The maximum must be above the minimum (${current.rangeMin}). Lower the minimum first.`
+    );
+    // Show the range that is still in use rather than the rejected number.
+    tracks.value = tracks.value.slice();
+    await refreshTracks();
+    return;
+  }
   try {
     const options =
       field === "rangeMin"
@@ -1412,7 +1429,9 @@ const onChangeRangeBound = async (
     await props.mapManager.linearTrackManager.updateTrack(trackId, options);
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    // The request layer already showed the server's explanation. Show the range in use again.
+    console.debug("Track range was not changed", err);
+    await refreshTracks();
   }
 };
 
@@ -1420,11 +1439,18 @@ const getTrackLogBase = (trackId: string): number => {
   return props.mapManager?.linearTrackManager.getTrackLogBase(trackId) ?? 10;
 };
 
-const onChangeLogBase = (trackId: string, value: number): void => {
+const onChangeLogBase = (trackId: string, event: Event): void => {
+  const input = event.target as HTMLInputElement;
   if (!props.mapManager) {
     return;
   }
-  props.mapManager.linearTrackManager.setTrackLogBase(trackId, value);
+  const manager = props.mapManager.linearTrackManager;
+  const result = manager.setTrackLogBase(trackId, Number(input.value));
+  if (!result.ok) {
+    toast.message(result.message);
+    // Show the base that is actually in use, not the rejected text.
+    input.value = String(manager.getTrackLogBase(trackId));
+  }
 };
 
 const onStartPrecomputeAll = async () => {

@@ -2838,10 +2838,15 @@ const runWizard = async (): Promise<void> => {
     for (const track of selectedTracks.value) {
       runState.currentStepId = "tracks";
       runState.currentMessage = `Opening ${track.filename}`;
-      await props.networkManager.requestManager.openTrack(
+      const opened = await props.networkManager.requestManager.openTrack(
         track.filename,
         track.displayName || undefined
       );
+      if (opened.importWarnings.length > 0)
+        toast.message(`${track.filename}: ${opened.importWarnings[0]}`, {
+          description: opened.importWarnings.slice(1).join("\n"),
+          duration: 20000,
+        });
     }
     await mapManager.linearTrackManager.refreshTrackList();
 

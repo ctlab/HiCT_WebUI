@@ -185,7 +185,10 @@ class TrackSummaryResponseDTO extends InboundDTO<TrackSummaryResponse> {
       (this.json["logScale"] as boolean) ?? false,
       (this.json["rangeAuto"] as boolean) ?? true,
       Number(this.json["rangeMin"] ?? 0),
-      Number(this.json["rangeMax"] ?? 1)
+      Number(this.json["rangeMax"] ?? 1),
+      Array.isArray(this.json["importWarnings"])
+        ? (this.json["importWarnings"] as unknown[]).map(String)
+        : []
     );
   }
 }

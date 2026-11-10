@@ -1,3 +1,4 @@
+import { isValidLogBase } from "@/app/core/visualization/signalProfile";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
@@ -306,10 +307,24 @@ class LinearTrackManager {
     return this.trackLogBases.get(trackId) ?? 10;
   }
 
-  public setTrackLogBase(trackId: string, value: number): void {
-    const normalized = Number.isFinite(value) ? Math.max(1.0000001, value) : 10;
-    this.trackLogBases.set(trackId, normalized);
+  /**
+   * Sets the base of a track's log(1 + x) scale. A base that is not a positive finite number
+   * other than 1 is refused, the last valid base stays, and the reason is returned.
+   */
+  public setTrackLogBase(
+    trackId: string,
+    value: number
+  ): { ok: true } | { ok: false; message: string } {
+    if (!isValidLogBase(value)) {
+      return {
+        ok: false,
+        message:
+          "The log base must be a positive number other than 1. The previous base was kept.",
+      };
+    }
+    this.trackLogBases.set(trackId, value);
     void this.render({ allowFetch: false });
+    return { ok: true };
   }
 
   public async listTrackFiles(): Promise<string[]> {
@@ -332,12 +347,14 @@ class LinearTrackManager {
     filename: string,
     name?: string,
     waitForRender = true
-  ): Promise<void> {
-    await this.mapManager.networkManager.requestManager.openTrack(
-      filename,
-      name
-    );
+  ): Promise<readonly string[]> {
+    const summary =
+      await this.mapManager.networkManager.requestManager.openTrack(
+        filename,
+        name
+      );
     await this.refreshTrackList(waitForRender);
+    return summary.importWarnings;
   }
 
   public async openCoolerWeightsTrack(
