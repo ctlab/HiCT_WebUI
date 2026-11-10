@@ -768,9 +768,11 @@
     @click.self="osdSettingsOpen = false"
   >
     <div
+      ref="osdSettingsElement"
       class="settings-modal osd-settings-modal"
       role="dialog"
       aria-modal="true"
+      aria-label="On-screen display settings"
     >
       <div class="settings-header">
         <h2>OSD settings</h2>
@@ -842,7 +844,13 @@
     </div>
   </div>
   <div v-if="aboutOpen" class="about-backdrop" @click.self="aboutOpen = false">
-    <div class="about-modal">
+    <div
+      ref="aboutElement"
+      class="about-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="About HiCT"
+    >
       <div class="about-header">
         <h2>HiCT</h2>
         <button class="btn-close" @click="aboutOpen = false"></button>
@@ -1152,6 +1160,7 @@ import {
   webAttributions,
 } from "@/app/core/attribution";
 import pkg from "../../../../../package.json";
+import { useModalFocus } from "@/app/ui/modalFocus";
 import hictLogo from "@/assets/hict-logo.png";
 const openingFile = ref(false);
 const openingFASTAFile = ref(false);
@@ -1216,6 +1225,11 @@ const noContactData = computed(
     props.mapManager?.networkManager.requestManager.sourceCapabilities.PRIMARY
       ?.contactDataState === "ABSENT"
 );
+
+const aboutElement = ref<HTMLElement | null>(null);
+const osdSettingsElement = ref<HTMLElement | null>(null);
+useModalFocus(aboutElement, () => aboutOpen.value);
+useModalFocus(osdSettingsElement, () => osdSettingsOpen.value);
 
 const emit = defineEmits<{
   (e: "selected", filename: string): void;
@@ -2129,6 +2143,26 @@ function onAssemblyAGPRequest() {
 </script>
 
 <style scoped>
+/* Narrow windows: keep the menus in one wrapping row instead of a tall column, so the map keeps its room. */
+@media (max-width: 767.98px) {
+  .navbar-bar .navbar-collapse {
+    flex-basis: auto;
+    flex-grow: 1;
+  }
+  .navbar-bar .navbar-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 0 !important;
+  }
+  .navbar-bar .nav-link {
+    padding: 0.25rem 0.5rem;
+  }
+  .navbar-bar .file-chips {
+    flex-wrap: wrap;
+    margin-left: 0 !important;
+  }
+}
+
 .navbar-bar {
   /* Navbar */
 

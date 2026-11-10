@@ -1033,6 +1033,15 @@ async function onSignalDisplayModeChanged() {
 </script>
 
 <style scoped>
+/* Narrow windows: tighter spacing so the toolbar takes fewer rows. */
+@media (max-width: 767.98px) {
+  .header-ribbon {
+    padding: 4px 8px;
+    gap: 4px 8px;
+    min-height: 0;
+  }
+}
+
 .export-scope {
   width: 110px;
   flex-shrink: 0;

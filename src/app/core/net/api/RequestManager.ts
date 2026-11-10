@@ -403,6 +403,10 @@ export type FastaOnlyStatus = {
   reused: boolean;
 };
 
+const quietStatusPrefixes = ["/normalization/", "/fasta_only/", "/examples/"];
+const quietStatusPath = (path: string): boolean =>
+  quietStatusPrefixes.some((prefix) => path.startsWith(prefix));
+
 const journalResetPaths = new Set([
   "/secondary/open",
   "/secondary/close",
@@ -819,7 +823,10 @@ class RequestManager {
             this.history.applied = next;
         }
         if (keepCleanState) this.markAssemblySaved();
-        this.notifyInboundPayload(req.data);
+        // Job status answers carry a progress message of their own. The dialogs that poll them show it
+        // where it belongs, so it must not also appear as a toast on every poll.
+        if (!quietStatusPath(request.requestPath))
+          this.notifyInboundPayload(req.data);
         return req;
       })
       .catch((err) => {

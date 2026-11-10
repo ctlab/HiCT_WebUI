@@ -20,18 +20,22 @@
  -->
 
 <template>
-  <div class="track-manager-root">
+  <div ref="rootElement" class="track-manager-root">
     <div class="modal-backdrop fade show"></div>
     <div
       class="modal fade show"
       style="display: block"
       tabindex="-1"
       role="dialog"
+      aria-modal="true"
+      aria-labelledby="track-manager-title"
     >
       <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title">Tracks and layers</h5>
+            <h5 id="track-manager-title" class="modal-title">
+              Tracks and layers
+            </h5>
             <button class="btn-close" @click="$emit('dismissed')"></button>
           </div>
           <div class="modal-body">
@@ -743,6 +747,7 @@
 </template>
 
 <script setup lang="ts">
+import { useModalFocus } from "@/app/ui/modalFocus";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { AssemblyInfo } from "@/app/core/domain/AssemblyInfo";
 import type { SecondarySourceStatusResponse } from "@/app/core/net/api/RequestManager";
@@ -758,6 +763,9 @@ import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { storeToRefs } from "pinia";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
+
+const rootElement = ref<HTMLElement | null>(null);
+useModalFocus(rootElement);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;

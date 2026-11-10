@@ -20,19 +20,21 @@
  -->
 
 <template>
-  <div class="wizard-root">
+  <div ref="rootElement" class="wizard-root">
     <div class="modal-backdrop fade show"></div>
     <div
       class="modal fade show wizard-shell"
       style="display: block"
       tabindex="-1"
       role="dialog"
+      aria-modal="true"
+      aria-labelledby="wizard-title"
     >
       <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content wizard-content">
           <div class="modal-header">
             <div>
-              <h5 class="modal-title">Open File Wizard</h5>
+              <h5 id="wizard-title" class="modal-title">Open File Wizard</h5>
               <small class="text-muted">
                 Guided dataset opening, conversion reuse, layered rendering,
                 FASTA/AGP linkage, and track precompute.
@@ -1257,6 +1259,7 @@
 </template>
 
 <script setup lang="ts">
+import { useModalFocus } from "@/app/ui/modalFocus";
 import SequenceGapSettings from "./SequenceGapSettings.vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { SequenceAnalysisRequest } from "@/app/core/net/api/SequenceAnalysisRequest";
@@ -1378,6 +1381,9 @@ const CONVERSION_LOG_RENDER_DEBOUNCE_MS = 150;
 const emit = defineEmits<{
   (e: "dismissed"): void;
 }>();
+
+const rootElement = ref<HTMLElement | null>(null);
+useModalFocus(rootElement);
 
 const props = defineProps<{
   networkManager: NetworkManager;

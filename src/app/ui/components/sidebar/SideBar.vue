@@ -374,9 +374,14 @@ function writeLayoutFlag(key: string, value: boolean): void {
     /* Layout still works without persistence. */
   }
 }
-const sidebarCollapsed = ref(readLayoutFlag("hict.sidebar.collapsed", false));
+// New users on a narrow window start with the panel hidden so the map has the room. A choice made
+// once is remembered and wins.
+const sidebarCollapsed = ref(
+  readLayoutFlag("hict.sidebar.collapsed", window.innerWidth < 900)
+);
+// The borders and labels block starts collapsed for new users; an existing preference is kept.
 const layersBlockExpanded = ref(
-  readLayoutFlag("hict.sidebar.layersExpanded", true)
+  readLayoutFlag("hict.sidebar.layersExpanded", false)
 );
 function toggleSidebarCollapsed(): void {
   sidebarCollapsed.value = !sidebarCollapsed.value;
