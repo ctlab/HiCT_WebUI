@@ -36,7 +36,8 @@ export class GetSessionSnapshotRequest implements HiCTAPIRequest {
   constructor(
     public readonly verifyAssemblyRoundTrip = false,
     public readonly fingerprintFiles = false,
-    public readonly verifyTrackDefinitions = false
+    public readonly verifyTrackDefinitions = false,
+    public readonly fullFingerprints = false
   ) {}
 }
 

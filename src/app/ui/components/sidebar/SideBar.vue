@@ -79,7 +79,7 @@
         <!-- Instantiate layer components here using v-for -->
         <LayerComponent
           v-for="layer in layers"
-          v-bind:key="layer.name"
+          v-bind:key="`${layer.name}:${styleLoadKey}`"
           v-bind:layer-name="layer.name"
           :getDefaultColor="layer.getStyle"
           :getLabelSize="layer.getLabelSize"
@@ -744,6 +744,12 @@ function onColorChanged(layerName: string, newColor: ColorTranslator) {
   // getEventManager()?.onContigBorderColorChanged(layerName, newColor);
   // getEventManager()[invoke](layerName, newColor);
 }
+
+// Layer rows read their colors once when created, so they are re-created when a map or a whole
+// style preset is loaded (not on every edit, which would close an open color picker).
+const styleLoadKey = computed(
+  () => props.mapManager?.getLayersManager().trackStyleState.loaded.value ?? 0
+);
 
 function currentBorderStyle(name: string): BorderStyle | undefined {
   const manager = props.mapManager?.getLayersManager();

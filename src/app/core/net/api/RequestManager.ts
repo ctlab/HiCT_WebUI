@@ -701,7 +701,8 @@ class RequestManager {
   public async getSessionSnapshot(
     verifyAssemblyRoundTrip = false,
     fingerprintFiles = false,
-    verifyTrackDefinitions = false
+    verifyTrackDefinitions = false,
+    fullFingerprints = false
   ): Promise<Record<string, unknown>> {
     if (!this.history.applied)
       throw new Error(
@@ -711,7 +712,8 @@ class RequestManager {
       new GetSessionSnapshotRequest(
         verifyAssemblyRoundTrip,
         fingerprintFiles,
-        verifyTrackDefinitions
+        verifyTrackDefinitions,
+        fullFingerprints
       )
     );
     const snapshot = response.data as Record<string, unknown>;
@@ -794,7 +796,10 @@ class RequestManager {
   public async restoreSession(
     snapshot: Record<string, unknown>
   ): Promise<AttachedSession> {
-    return this.sendRequest(new RestoreSessionRequest(snapshot))
+    // The caller reports one actionable message, so the generic request toast is off.
+    return this.sendRequest(new RestoreSessionRequest(snapshot), undefined, {
+      suppressErrorToast: true,
+    })
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => this.adoptSessionPayload(json));
   }
@@ -821,7 +826,10 @@ class RequestManager {
       secondarySource: json.secondarySource as
         | Record<string, unknown>
         | undefined,
-      assemblySource: json.assemblySource as "PRIMARY" | "SECONDARY" | undefined,
+      assemblySource: json.assemblySource as
+        | "PRIMARY"
+        | "SECONDARY"
+        | undefined,
       renderPipeline: json.renderPipeline as
         | Record<string, unknown>
         | undefined,

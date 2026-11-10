@@ -22,7 +22,8 @@ vm.runInNewContext(
   }).outputText,
   sandbox
 );
-const { parseSessionDocument, MAX_SESSION_BYTES } = sandbox.exports;
+const { parseSessionDocument, createSessionEnvelope, MAX_SESSION_BYTES } =
+  sandbox.exports;
 const valid = {
   version: 2,
   filename: "tiny.hict.hdf5",
@@ -38,7 +39,7 @@ const reject = (document, field) =>
     () => parseSessionDocument(JSON.stringify(document)),
     new RegExp(field)
   );
-for (const version of [undefined, 0, 3, 999, "2", null])
+for (const version of [undefined, 0, 4, 999, "2", null])
   reject({ ...valid, version }, "version");
 for (const document of [null, [], "session"]) reject(document, "document");
 for (const center of [[], [1], [1, 2, 3], ["1", 2], [null, 2], {}])
@@ -122,6 +123,69 @@ reject(
   },
   "duplicate ID"
 );
+// Version 3: envelope around a server snapshot plus client-only state.
+const snapshot = {
+  snapshotVersion: 1,
+  filesFingerprinted: true,
+  assemblySource: "PRIMARY",
+  primary: { filename: "tiny.hict.hdf5" },
+  secondary: null,
+  tracks: [],
+  renderPipeline: { enabled: false },
+};
+const client = {
+  workspace: {
+    version: 1,
+    background: "rgba(255,255,255,1)",
+    view: { center: [1, -1], resolution: 2, rotation: 0 },
+  },
+  savedLocations: [],
+  savedVisualizationPresets: [],
+};
+const v3 = createSessionEnvelope(snapshot, client, "2026-11-10T00:00:00.000Z");
+assert.equal(v3.version, 3);
+assert.equal(v3.format, "hict-session");
+const parsed = parseSessionDocument(JSON.stringify(v3));
+assert.equal(parsed.snapshot.primary.filename, "tiny.hict.hdf5");
+// A document with no recorded file identities cannot be restored safely.
+reject({ ...v3, snapshot: { ...snapshot, filesFingerprinted: false } }, "filesFingerprinted");
+reject({ ...v3, format: "other" }, "format");
+reject({ ...v3, snapshot: [] }, "snapshot");
+reject({ ...v3, snapshot: { ...snapshot, snapshotVersion: 2 } }, "snapshotVersion");
+reject({ ...v3, snapshot: { ...snapshot, primary: {} } }, "primary.filename");
+reject({ ...v3, snapshot: { ...snapshot, assemblySource: "BOTH" } }, "assemblySource");
+reject({ ...v3, snapshot: { ...snapshot, assemblySource: "SECONDARY" } }, "SECONDARY needs");
+reject({ ...v3, snapshot: { ...snapshot, tracks: {} } }, "snapshot.tracks");
+reject({ ...v3, snapshot: { ...snapshot, renderPipeline: null } }, "renderPipeline");
+reject({ ...v3, client: null }, "client");
+reject(
+  { ...v3, client: { ...client, workspace: { ...client.workspace, version: 2 } } },
+  "workspace.version"
+);
+reject(
+  {
+    ...v3,
+    client: {
+      ...client,
+      workspace: { ...client.workspace, view: { center: [1], resolution: 1, rotation: 0 } },
+    },
+  },
+  "client.workspace.view.center"
+);
+reject(
+  {
+    ...v3,
+    client: {
+      ...client,
+      savedLocations: [
+        { location_id: 1, center_point: [1, 2], resolution: 0, rotation: 0 },
+      ],
+    },
+  },
+  "client.savedLocations\\[0\\].resolution"
+);
+reject({ ...v3, version: 7 }, "newer HiCT");
+console.log("Version 3 envelope, identity requirement and client state validation passed.");
 for (const filename of process.argv.slice(2))
   parseSessionDocument(fs.readFileSync(filename, "utf8"));
 console.log(

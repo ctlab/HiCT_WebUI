@@ -167,6 +167,15 @@
       :mapManager="mapManager"
       :filename="filename"
     ></WorkspaceComponent>
+    <div
+      v-if="sessionBusy"
+      class="session-busy"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+      {{ sessionBusy }}
+    </div>
     <section
       v-if="!mapManager && !openProgressVisible && !wizardOpen"
       class="empty-workspace-prompt"
@@ -217,13 +226,16 @@
 <script setup lang="ts">
 import {
   MAX_SESSION_BYTES,
+  createSessionEnvelope,
   parseSessionDocument,
 } from "@/app/core/mapmanagers/SessionDocument";
+import type { AttachedSession } from "@/app/core/net/api/RequestManager";
 import { pipelineTransferIssues } from "@/app/core/visualization/transferVisualization";
 import BenchmarkFeature from "ol/Feature";
 import {
   captureWorkspace,
   restoreWorkspace,
+  type WorkspaceState,
 } from "@/app/core/mapmanagers/WorkspaceState";
 import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
 import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
@@ -569,64 +581,81 @@ function onClosed() {
   );
 }
 
+/**
+ * Replaces the displayed map with the server's current session. Used by Attach and by
+ * session restore. `fresh` is for a session that is new to this window (restore): it
+ * clears per-file state and loads the restored rendering options into the sidebar.
+ */
+async function adoptSession(
+  attached: AttachedSession,
+  options: { fresh: boolean; workspaceState?: WorkspaceState }
+): Promise<ContactMapManager> {
+  const workspaceState = options.workspaceState ?? attached.workspaceState;
+  mapManager.value?.dispose();
+  filename.value = attached.filename;
+  fastaFilename.value = attached.fastaFilename ?? "";
+  if (options.fresh) {
+    lastWorkspaceSnapshot = "";
+    lastCoolerWeightsNaNPromptKey = "";
+    sessionStore.setLastAgpFilename("");
+  }
+  await ensureMapFonts();
+  const newManager = new ContactMapManager({
+    response: attached.response,
+    filename: attached.filename,
+    fastaFilename: attached.fastaFilename ?? "",
+    tileSize: tileSize.value,
+    contigBorderColor: contigBorderColor.value,
+    mapTargetSelector: "hic-contact-map",
+    networkManager: networkManager,
+    minimapTarget: miniMapTarget,
+  });
+  mapManager.value = newManager;
+  networkManager.mapManager = mapManager.value;
+  newManager.initializeMap();
+  const secondary =
+    await networkManager.requestManager.getSecondarySourceStatus();
+  newManager.viewAndLayersManager.setSecondaryResolutionModel(
+    secondary.attached ? secondary.compatibility : undefined,
+    { exactResolutionOnly: Boolean(secondary.sequenceAnalysis) }
+  );
+  if (options.fresh)
+    await newManager.visualizationManager.fetchVisualizationOptions();
+  await newManager.stabilizeInitialViewport({ fit: !workspaceState });
+  await newManager.linearTrackManager.refreshTrackList();
+  restoreWorkspace(newManager, workspaceState);
+  lastWorkspaceSnapshot = options.fresh
+    ? ""
+    : JSON.stringify(captureWorkspace(newManager));
+  workspaceConflict.value = false;
+  return newManager;
+}
+
 async function onAttached() {
   await persistWorkspace();
   workspaceRestoring = true;
-  networkManager.requestManager
-    .attachSession()
-    .then(
-      async ({
-        filename: attachedName,
-        fastaFilename: attachedFastaName,
-        response,
-        workspaceState,
-      }) => {
-        if (!attachedName) {
-          toast.error("No active session to attach");
-          return;
-        }
-        mapManager.value?.dispose();
-        filename.value = attachedName;
-        fastaFilename.value = attachedFastaName ?? "";
-        await ensureMapFonts();
-        const newManager = new ContactMapManager({
-          response,
-          filename: attachedName,
-          fastaFilename: attachedFastaName ?? "",
-          tileSize: tileSize.value,
-          contigBorderColor: contigBorderColor.value,
-          mapTargetSelector: "hic-contact-map",
-          networkManager: networkManager,
-          minimapTarget: miniMapTarget,
-        });
-        mapManager.value = newManager;
-        networkManager.mapManager = mapManager.value;
-        newManager.initializeMap();
-        const secondary =
-          await networkManager.requestManager.getSecondarySourceStatus();
-        newManager.viewAndLayersManager.setSecondaryResolutionModel(
-          secondary.attached ? secondary.compatibility : undefined,
-          { exactResolutionOnly: Boolean(secondary.sequenceAnalysis) }
-        );
-        await newManager.stabilizeInitialViewport({ fit: !workspaceState });
-        await newManager.linearTrackManager.refreshTrackList();
-        restoreWorkspace(newManager, workspaceState);
-        lastWorkspaceSnapshot = JSON.stringify(captureWorkspace(newManager));
-        workspaceConflict.value = false;
-        maybePromptCoolerWeightsNaNs();
-        toast.success("Attached to session " + attachedName);
-      }
-    )
-    .catch((err) => {
-      const message =
-        err?.response?.data?.error ??
-        err?.message ??
-        "Failed to attach session";
-      toast.error(message);
-    })
-    .finally(() => {
-      workspaceRestoring = false;
-    });
+  try {
+    const attached = await networkManager.requestManager.attachSession();
+    if (!attached.filename) {
+      toast.error("No active session to attach");
+      return;
+    }
+    await adoptSession(attached, { fresh: false });
+    maybePromptCoolerWeightsNaNs();
+    toast.success("Attached to session " + attached.filename);
+  } catch (err) {
+    const failure = err as {
+      response?: { data?: { error?: string } };
+      message?: string;
+    };
+    toast.error(
+      failure?.response?.data?.error ??
+        failure?.message ??
+        "Failed to attach session"
+    );
+  } finally {
+    workspaceRestoring = false;
+  }
 }
 
 async function openFileWithOptions(
@@ -876,96 +905,72 @@ function onFastaLinked(filename: string): void {
   fastaFilename.value = filename;
 }
 
-function serializeCurrentVisualizationOptions(): Record<string, unknown> {
-  const options = visualizationOptionsStore.asVisualizationOptions();
-  const cmap = options.colormap;
-  if (cmap instanceof SimpleLinearGradient) {
-    return {
-      preLogBase: options.preLogBase,
-      postLogBase: options.postLogBase,
-      applyCoolerWeights: options.applyCoolerWeights ?? false,
-      resolutionScaling: options.resolutionScaling ?? false,
-      resolutionLinearScaling: options.resolutionLinearScaling ?? false,
-      autoThresholdEnabled: options.autoThresholdEnabled ?? false,
-      autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
-      signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
-      coolerWeightsNaNPolicy:
-        options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
-      coolerWeightsHaveNaNs: options.coolerWeightsHaveNaNs ?? false,
-      coolerWeightsNaNCount: options.coolerWeightsNaNCount ?? 0,
-      colormap: {
-        colormapType: cmap.colormapType,
-        startColorRGBAString: cmap.startColorRGBA.RGBA,
-        endColorRGBAString: cmap.endColorRGBA.RGBA,
-        minSignal: cmap.minSignal,
-        maxSignal: cmap.maxSignal,
-      },
-    };
-  }
-  return {
-    preLogBase: options.preLogBase,
-    postLogBase: options.postLogBase,
-    applyCoolerWeights: options.applyCoolerWeights ?? false,
-    resolutionScaling: options.resolutionScaling ?? false,
-    resolutionLinearScaling: options.resolutionLinearScaling ?? false,
-    autoThresholdEnabled: options.autoThresholdEnabled ?? false,
-    autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
-    signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
-    coolerWeightsNaNPolicy:
-      options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
-    coolerWeightsHaveNaNs: options.coolerWeightsHaveNaNs ?? false,
-    coolerWeightsNaNCount: options.coolerWeightsNaNCount ?? 0,
-    colormap: {
-      colormapType: options.colormap?.colormapType ?? "Unknown",
-    },
-  };
-}
+let sessionSaveInFlight = false;
+/** Text of the long-running session operation currently shown in the status pill. */
+const sessionBusy = ref("");
 
-function onSaveSession(): void {
+/** Saves a v3 session: the edited assembly, tracks, scopes, processing graph and file identities. */
+async function onSaveSession(): Promise<void> {
   const manager = mapManager.value;
   if (!manager) {
     toast.error("No open map to save session");
     return;
   }
-  const view = manager.getView();
-  const currentFilename =
-    filename.value && filename.value.trim() !== ""
-      ? filename.value
-      : manager.getOptions().filename;
-  const currentFastaFilename =
-    fastaFilename.value && fastaFilename.value.trim() !== ""
-      ? fastaFilename.value
-      : manager.getOptions().fastaFilename;
-  const session = {
-    version: 2,
-    filename: currentFilename ?? "",
-    fastaFilename: currentFastaFilename ?? "",
-    agpFilename: lastAgpFilename.value ?? "",
-    visualizationOptions: serializeCurrentVisualizationOptions(),
-    backgroundColor: mapBackgroundColor.value?.RGBA ?? "rgba(255,255,255,1)",
-    trackStyles: manager.getLayersManager().getTrackStylePreset(),
-    axisTrackVisibility:
-      manager.linearTrackManager.getAxisTrackVisibilityState(),
-    savedLocations: sessionStore.savedLocations,
-    savedVisualizationPresets: sessionStore.savedVisualizationPresets,
-    view: {
-      center: view.getCenter(),
-      resolution: view.getResolution(),
-      rotation: view.getRotation(),
-      bpResolution:
-        manager.viewAndLayersManager.currentViewState.resolutionDesciptor
-          .bpResolution,
-    },
-  };
-  const blob = new Blob([JSON.stringify(session, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "hict_session.json";
-  a.click();
-  URL.revokeObjectURL(url);
+  if (sessionSaveInFlight) return;
+  sessionSaveInFlight = true;
+  sessionBusy.value =
+    "Saving session: checking the assembly and identifying files\u2026";
+  try {
+    await manager.visualizationManager.waitForPendingOptionRequests();
+    const snapshot = await networkManager.requestManager.getSessionSnapshot(
+      true,
+      true,
+      true
+    );
+    if (manager !== mapManager.value)
+      throw new Error("The open map changed while saving. Save again.");
+    const envelope = createSessionEnvelope(snapshot, {
+      workspace: captureWorkspace(manager) as unknown as Record<
+        string,
+        unknown
+      >,
+      savedLocations: JSON.parse(JSON.stringify(sessionStore.savedLocations)),
+      savedVisualizationPresets: JSON.parse(
+        JSON.stringify(sessionStore.savedVisualizationPresets)
+      ),
+    });
+    const text = JSON.stringify(envelope, null, 2);
+    if (new TextEncoder().encode(text).byteLength > MAX_SESSION_BYTES) {
+      throw new Error(
+        "This assembly is too large to store in a session file (limit 8 MiB). Export the assembly as AGP instead."
+      );
+    }
+    const url = URL.createObjectURL(
+      new Blob([text], { type: "application/json" })
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "hict_session.json";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(
+      "Session saved with the edited assembly, tracks, scopes and processing graph. Undo history is not saved.",
+      { duration: 6000 }
+    );
+  } catch (e) {
+    console.debug("Session save failed", e);
+    const failure = e as {
+      response?: { data?: { error?: string } };
+      message?: string;
+    };
+    toast.error(
+      failure?.response?.data?.error ?? failure?.message ?? "Session not saved",
+      { duration: 8000 }
+    );
+  } finally {
+    sessionSaveInFlight = false;
+    sessionBusy.value = "";
+  }
 }
 
 async function resolveFilename(
@@ -1084,12 +1089,64 @@ async function resolveRequiredHiCTSessionFilename(
   return replacement;
 }
 
+/** Opens a v3 session. The server prepares everything first, so a rejected file leaves the open map untouched. */
+async function restoreCompleteSession(
+  session: Record<string, unknown>
+): Promise<void> {
+  const snapshot = session["snapshot"] as Record<string, unknown>;
+  const client = session["client"] as {
+    workspace?: WorkspaceState | null;
+    savedLocations?: SessionSavedLocation[];
+    savedVisualizationPresets?: SessionVisualizationPreset[];
+  };
+  sessionBusy.value =
+    "Restoring session: checking files and rebuilding the assembly\u2026";
+  workspaceRestoring = true;
+  try {
+    await mapManager.value?.visualizationManager.waitForPendingOptionRequests();
+    const restored = await networkManager.requestManager.restoreSession(
+      snapshot
+    );
+    await adoptSession(restored, {
+      fresh: true,
+      workspaceState: client.workspace ?? undefined,
+    });
+    sessionStore.setSavedLocations(client.savedLocations ?? []);
+    sessionStore.setSavedVisualizationPresets(
+      client.savedVisualizationPresets ?? []
+    );
+    toast.success(
+      "Session restored. Undo history starts from the restored assembly.",
+      { duration: 6000 }
+    );
+  } catch (e) {
+    console.debug("Session restore failed", e);
+    const failure = e as {
+      response?: { data?: { error?: string } };
+      message?: string;
+    };
+    toast.error(
+      failure?.response?.data?.error ??
+        failure?.message ??
+        "Session could not be restored",
+      { duration: 10000 }
+    );
+  } finally {
+    workspaceRestoring = false;
+    sessionBusy.value = "";
+  }
+}
+
 async function onOpenSession(file: File): Promise<void> {
   try {
     if (file.size > MAX_SESSION_BYTES) {
       throw new Error("Invalid session file: exceeds the 8 MiB limit");
     }
     const session = parseSessionDocument(await file.text());
+    if (session.version === 3) {
+      await restoreCompleteSession(session);
+      return;
+    }
     toast.message(
       `Legacy session v${session.version} restores settings and referenced files. It does not contain the edited assembly, complete processing graph or undo history.`
     );
@@ -1314,6 +1371,25 @@ function onFileSelected(newFilename: string) {
 </script>
 
 <style scoped>
+.session-busy {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--hict-surface-border, #cbd5e1);
+  border-radius: 999px;
+  background: var(--hict-surface-bg, #ffffff);
+  color: var(--hict-surface-fg, #1f2937);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  font-size: 0.875rem;
+}
+
 .empty-workspace-prompt {
   position: absolute;
   top: 50%;

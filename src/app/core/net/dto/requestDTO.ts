@@ -1173,6 +1173,7 @@ class GetSessionSnapshotRequestDTO extends HiCTAPIRequestDTO<GetSessionSnapshotR
       verifyAssemblyRoundTrip: this.entity.verifyAssemblyRoundTrip,
       fingerprintFiles: this.entity.fingerprintFiles,
       verifyTrackDefinitions: this.entity.verifyTrackDefinitions,
+      fullFingerprints: this.entity.fullFingerprints,
     };
   }
 }

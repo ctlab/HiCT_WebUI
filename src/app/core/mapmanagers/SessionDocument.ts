@@ -206,8 +206,111 @@ function view(value: unknown, path: string, bookmark = false): void {
   }
 }
 
-/** Reject malformed legacy containers before any network request or state change.
- * Version 3 will add assembly, graph and source identity validation here.
+function libraries(session: RecordValue, prefix: string): void {
+  for (const key of ["savedLocations", "savedVisualizationPresets"]) {
+    if (!(key in session)) continue;
+    const items = session[key];
+    if (!Array.isArray(items)) invalid(`${prefix}${key}`, "expected an array");
+    const ids = new Set<number>();
+    items.forEach((value, index) => {
+      const path = `${prefix}${key}[${index}]`;
+      const item = record(value, path);
+      const id = key === "savedLocations" ? "location_id" : "option_id";
+      finite(item[id], `${path}.${id}`);
+      if (!Number.isSafeInteger(item[id]))
+        invalid(`${path}.${id}`, "expected an integer");
+      if (ids.has(item[id] as number)) invalid(`${path}.${id}`, "duplicate ID");
+      ids.add(item[id] as number);
+      if (key === "savedLocations") view(item, path, true);
+      else {
+        if (typeof item.name !== "string")
+          invalid(`${path}.name`, "expected a string");
+        if ("options" in item)
+          visualization(item.options, `${path}.options`, "action" in item);
+        if ("backgroundColor" in item)
+          color(item.backgroundColor, `${path}.backgroundColor`);
+        styles(item, `${path}.`);
+        if ("signalThresholds" in item)
+          ordered(
+            record(item.signalThresholds, `${path}.signalThresholds`),
+            `${path}.signalThresholds`,
+            "lowerSignalBound",
+            "upperSignalBound"
+          );
+        if ("action" in item) action(item.action, `${path}.action`);
+      }
+    });
+  }
+}
+
+export const SESSION_FORMAT = "hict-session";
+
+export interface SessionClientState {
+  /** Fresh capture of view, scopes, styles and track visibility. */
+  workspace?: Record<string, unknown>;
+  savedLocations: unknown[];
+  savedVisualizationPresets: unknown[];
+}
+
+/** Builds the portable v3 document from a server snapshot and the client-only state. */
+export function createSessionEnvelope(
+  snapshot: RecordValue,
+  client: SessionClientState,
+  savedAt = new Date().toISOString()
+): RecordValue {
+  return {
+    format: SESSION_FORMAT,
+    version: 3,
+    savedAt,
+    snapshot,
+    client: { ...client },
+  };
+}
+
+function envelope(session: RecordValue): void {
+  if (session.format !== SESSION_FORMAT)
+    invalid("format", `expected ${SESSION_FORMAT}`);
+  if ("savedAt" in session && typeof session.savedAt !== "string")
+    invalid("savedAt", "expected a string");
+  const snapshot = record(session.snapshot, "snapshot");
+  if (snapshot.snapshotVersion !== 1)
+    invalid("snapshot.snapshotVersion", "unsupported snapshot version");
+  if (snapshot.filesFingerprinted !== true)
+    invalid(
+      "snapshot.filesFingerprinted",
+      "the session does not identify its files, so it cannot be restored safely"
+    );
+  const primary = record(snapshot.primary, "snapshot.primary");
+  if (typeof primary.filename !== "string" || !primary.filename.trim())
+    invalid("snapshot.primary.filename", "expected a file name");
+  choice(snapshot.assemblySource, "snapshot.assemblySource", [
+    "PRIMARY",
+    "SECONDARY",
+  ]);
+  if (snapshot.secondary !== undefined && snapshot.secondary !== null)
+    record(snapshot.secondary, "snapshot.secondary");
+  if (snapshot.assemblySource === "SECONDARY" && !snapshot.secondary)
+    invalid("snapshot.assemblySource", "SECONDARY needs a secondary source");
+  if (!Array.isArray(snapshot.tracks))
+    invalid("snapshot.tracks", "expected an array");
+  record(snapshot.renderPipeline, "snapshot.renderPipeline");
+  const client = record(session.client, "client");
+  if ("workspace" in client && client.workspace !== null) {
+    const workspace = record(client.workspace, "client.workspace");
+    if (workspace.version !== 1)
+      invalid("client.workspace.version", "unsupported workspace version");
+    if ("background" in workspace)
+      color(workspace.background, "client.workspace.background");
+    if ("view" in workspace) view(workspace.view, "client.workspace.view");
+    styles(workspace, "client.workspace.");
+  }
+  libraries(client, "client.");
+}
+
+/**
+ * Reject malformed documents before any network request or state change. Version 3
+ * checks its envelope here. The server validates the snapshot's resources in depth,
+ * and does so before replacing anything.
  */
 export function parseSessionDocument(text: string): RecordValue {
   if (new TextEncoder().encode(text).byteLength > MAX_SESSION_BYTES) {
@@ -235,8 +338,17 @@ export function parseSessionDocument(text: string): RecordValue {
   }
   bounded(parsed, "document", 0);
   const session = record(parsed, "document");
+  if (session.version === 3) {
+    envelope(session);
+    return session;
+  }
   if (session.version !== 1 && session.version !== 2) {
-    invalid("version", "supported legacy versions are 1 and 2");
+    invalid(
+      "version",
+      typeof session.version === "number" && session.version > 3
+        ? "this session was saved by a newer HiCT. Update HiCT to open it"
+        : "supported versions are 1, 2 and 3"
+    );
   }
   for (const key of [
     "filename",
@@ -270,39 +382,6 @@ export function parseSessionDocument(text: string): RecordValue {
       }
     }
   }
-  for (const key of ["savedLocations", "savedVisualizationPresets"]) {
-    if (!(key in session)) continue;
-    const items = session[key];
-    if (!Array.isArray(items)) invalid(key, "expected an array");
-    const ids = new Set<number>();
-    items.forEach((value, index) => {
-      const path = `${key}[${index}]`;
-      const item = record(value, path);
-      const id = key === "savedLocations" ? "location_id" : "option_id";
-      finite(item[id], `${path}.${id}`);
-      if (!Number.isSafeInteger(item[id]))
-        invalid(`${path}.${id}`, "expected an integer");
-      if (ids.has(item[id] as number)) invalid(`${path}.${id}`, "duplicate ID");
-      ids.add(item[id] as number);
-      if (key === "savedLocations") view(item, path, true);
-      else {
-        if (typeof item.name !== "string")
-          invalid(`${path}.name`, "expected a string");
-        if ("options" in item)
-          visualization(item.options, `${path}.options`, "action" in item);
-        if ("backgroundColor" in item)
-          color(item.backgroundColor, `${path}.backgroundColor`);
-        styles(item, `${path}.`);
-        if ("signalThresholds" in item)
-          ordered(
-            record(item.signalThresholds, `${path}.signalThresholds`),
-            `${path}.signalThresholds`,
-            "lowerSignalBound",
-            "upperSignalBound"
-          );
-        if ("action" in item) action(item.action, `${path}.action`);
-      }
-    });
-  }
+  libraries(session, "");
   return session;
 }

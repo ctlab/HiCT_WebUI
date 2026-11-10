@@ -151,7 +151,16 @@ interface Track2DHolder {
 }
 
 class HiCViewAndLayersManager {
-  public readonly trackStyleState = markRaw({ revision: ref(0) });
+  private static styleLoadSerial = 0;
+  /**
+   * `revision` changes on every style edit. `loaded` changes only when a manager is created or a whole
+   * preset is applied, which is when controls that read colors once at mount must read them again.
+   */
+  public readonly trackStyleState = markRaw({
+    revision: ref(0),
+    loaded: ref(++HiCViewAndLayersManager.styleLoadSerial),
+  });
+
   private static readonly VECTOR_SOURCE_DIRTY_FLAG = "hictVectorSourceDirty";
 
   protected readonly contigBorderColor: Ref<string> = ref("ffccee");
@@ -1396,6 +1405,8 @@ class HiCViewAndLayersManager {
       preset.scaffolds
     );
     this.trackStyleState.revision.value++;
+    this.trackStyleState.loaded.value =
+      ++HiCViewAndLayersManager.styleLoadSerial;
     this.reloadTracks();
   }
 
