@@ -100,6 +100,7 @@ import {
   ExportNameMappingRequest,
   ImportNameMappingRequest,
   ReloadTilesRequest,
+  GetSessionSnapshotRequest,
   AttachSessionRequest,
   CloseFileRequest,
   OpenProgressRequest,
@@ -556,7 +557,10 @@ class RequestManager {
       request.requestPath.startsWith("/sequence/") &&
       request.requestPath.endsWith("/jobs");
     const historyHeaders =
-      (mutation || sequenceSnapshot) && summary
+      (mutation ||
+        sequenceSnapshot ||
+        request.requestPath === "/session/snapshot") &&
+      summary
         ? {
             "X-HiCT-History-Session": summary.session,
             "X-HiCT-History-Revision": String(summary.revision),
@@ -675,6 +679,19 @@ class RequestManager {
       );
     }
     return status;
+  }
+
+  /** Capture server state for a future v3 session without advancing displayed coordinates. */
+  public async getSessionSnapshot(): Promise<Record<string, unknown>> {
+    if (!this.history.applied)
+      throw new Error(
+        "Attach to the current assembly before saving a session."
+      );
+    const response = await this.sendRequest(new GetSessionSnapshotRequest());
+    const snapshot = response.data as Record<string, unknown>;
+    if (snapshot.snapshotVersion !== 1)
+      throw new Error("Unsupported server session snapshot version");
+    return snapshot;
   }
 
   public async getSecondarySourceStatus(): Promise<SecondarySourceStatusResponse> {

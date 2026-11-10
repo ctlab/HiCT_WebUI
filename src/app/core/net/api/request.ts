@@ -31,6 +31,10 @@ interface HiCTAPIRequest {
   requestPath: string;
 }
 
+export class GetSessionSnapshotRequest implements HiCTAPIRequest {
+  requestPath = "/session/snapshot";
+}
+
 export class UnscaffoldAllRequest implements HiCTAPIRequest {
   requestPath = "/unscaffold_all";
 }
