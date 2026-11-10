@@ -21,7 +21,10 @@
 
 import type { AssemblyInfo } from "../domain/AssemblyInfo";
 
+import type { SourceCapabilities } from "./SourceCapabilities";
+
 interface OpenFileResponse {
+  capabilities?: SourceCapabilities;
   status: string;
   dtype: string;
   resolutions: number[];

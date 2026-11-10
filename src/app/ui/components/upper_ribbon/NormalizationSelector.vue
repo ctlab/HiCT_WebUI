@@ -23,6 +23,20 @@
   <details class="signal-processing" id="normalization-settings-dropdown">
     <summary>Signal processing</summary>
     <div class="signal-processing-body">
+      <p
+        v-if="contactUnavailable"
+        id="contact-normalization-unavailable"
+        class="small text-muted"
+      >
+        {{ capabilities?.contactNormalization.reason }}
+      </p>
+      <p
+        v-if="weightsUnavailable && !contactUnavailable"
+        id="imported-weights-unavailable"
+        class="small text-muted"
+      >
+        {{ weightsAvailability?.reason }}
+      </p>
       <div class="form-check">
         <input
           class="form-check-input"
@@ -55,6 +69,10 @@
           role="switch"
           value=""
           id="checkbox-normalization-resolution-scaling"
+          :disabled="contactUnavailable"
+          :aria-describedby="
+            contactUnavailable ? 'contact-normalization-unavailable' : undefined
+          "
           v-model="resolutionScaling"
         />
         <label
@@ -71,6 +89,10 @@
           role="switch"
           value=""
           id="checkbox-normalization-resolution-linear-scaling"
+          :disabled="contactUnavailable"
+          :aria-describedby="
+            contactUnavailable ? 'contact-normalization-unavailable' : undefined
+          "
           v-model="resolutionLinearScaling"
         />
         <label
@@ -87,6 +109,14 @@
           role="switch"
           value=""
           id="checkbox-normalization-cooler-weights"
+          :disabled="weightsUnavailable"
+          :aria-describedby="
+            weightsUnavailable
+              ? contactUnavailable
+                ? 'contact-normalization-unavailable'
+                : 'imported-weights-unavailable'
+              : undefined
+          "
           v-model="applyCoolerWeights"
         />
         <label
@@ -179,7 +209,16 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { defineAsyncComponent, onMounted, Ref, ref, watch } from "vue";
+import {
+  computed,
+  defineAsyncComponent,
+  onMounted,
+  Ref,
+  ref,
+  watch,
+} from "vue";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import { importedWeightsAvailability } from "@/app/core/net/SourceCapabilities";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 const RenderingPipelineModal = defineAsyncComponent(
@@ -199,6 +238,27 @@ const {
 const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
+
+const matrixViewStore = useMatrixViewStore();
+const capabilities = computed(
+  () =>
+    props.mapManager?.networkManager.requestManager.sourceCapabilities[
+      matrixViewStore.activeVisualizationSource
+    ]
+);
+const contactUnavailable = computed(
+  () => capabilities.value?.contactNormalization.state === "UNAVAILABLE"
+);
+const weightsAvailability = computed(() =>
+  importedWeightsAvailability(
+    capabilities.value,
+    props.mapManager?.viewAndLayersManager.currentViewState.resolutionDesciptor
+      .bpResolution
+  )
+);
+const weightsUnavailable = computed(
+  () => weightsAvailability.value?.state === "UNAVAILABLE"
+);
 
 const emit = defineEmits<{ (e: "apply"): void }>();
 

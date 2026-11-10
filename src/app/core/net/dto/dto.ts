@@ -37,6 +37,7 @@ import VisualizationOptions, {
   type CoolerWeightsNaNPolicy,
 } from "../../visualization/VisualizationOptions";
 import type { OpenFileResponse } from "../netcommon";
+import { parseSourceCapabilities } from "../SourceCapabilities";
 
 abstract class InboundDTO<T> {
   public readonly error?: string;
@@ -252,6 +253,7 @@ class OpenFileResponseDTO extends InboundDTO<OpenFileResponse> {
   public toEntity(): OpenFileResponse {
     return {
       status: this.json.status as string,
+      capabilities: parseSourceCapabilities(this.json.capabilities),
       dtype: this.json.dtype as string,
       resolutions: this.json.resolutions as number[],
       pixelResolutions: this.json.pixelResolutions as number[],

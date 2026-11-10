@@ -50,6 +50,10 @@ import {
   WorkerSchedulerDiagnosticsResponseDTO,
 } from "../dto/responseDTO";
 import type { OpenFileResponse } from "../netcommon";
+import {
+  parseSourceCapabilities,
+  type SourceCapabilities,
+} from "../SourceCapabilities";
 import type { NetworkManager } from "../NetworkManager";
 import {
   GetAGPForAssemblyRequest,
@@ -164,6 +168,7 @@ export type SecondarySourceCompatibility = {
 };
 
 export type SecondarySourceStatusResponse = {
+  capabilities?: SourceCapabilities;
   attached: boolean;
   filename: string;
   assemblySource: "PRIMARY" | "SECONDARY";
@@ -268,6 +273,9 @@ class RequestManager {
   public renderPipelineRevision = 0;
   public sequenceRevision = 0;
   public hasLinkedFasta = false;
+  public sourceCapabilities: Partial<
+    Record<"PRIMARY" | "SECONDARY", SourceCapabilities>
+  > = {};
   private readonly sequenceViewState = shallowReactive({ readOnly: false });
   public get sequenceViewReadOnly(): boolean {
     return this.sequenceViewState.readOnly;
@@ -436,6 +444,7 @@ class RequestManager {
         ? (json.warnings as unknown[]).map((value) => String(value))
         : [],
       compatibility,
+      capabilities: parseSourceCapabilities(json.capabilities),
       sequenceAnalysis: json.sequenceAnalysis
         ? {
             kind: String(
@@ -629,7 +638,9 @@ class RequestManager {
         this.workspaceVersion = json.workspaceVersion;
         this.hasLinkedFasta = false;
         this.sequenceRevision++;
-        return new OpenFileResponseDTO(json).toEntity();
+        const response = new OpenFileResponseDTO(json).toEntity();
+        this.sourceCapabilities = { PRIMARY: response.capabilities };
+        return response;
       });
   }
 
@@ -649,6 +660,10 @@ class RequestManager {
     status: SecondarySourceStatusResponse
   ): SecondarySourceStatusResponse {
     if (!status.requiresConfirmation) {
+      this.sourceCapabilities = {
+        ...this.sourceCapabilities,
+        SECONDARY: status.attached ? status.capabilities : undefined,
+      };
       useSessionStore().setSecondaryMapFilename(
         status.attached ? status.filename : ""
       );
@@ -705,6 +720,7 @@ class RequestManager {
 
   public async closeFile(): Promise<void> {
     await this.sendRequest(new CloseFileRequest());
+    this.sourceCapabilities = {};
     this.workspaceVersion = undefined;
     this.hasLinkedFasta = false;
     this.sequenceRevision++;
@@ -731,6 +747,7 @@ class RequestManager {
         const response = new OpenFileResponseDTO(
           json["openFileResponse"] as Record<string, unknown>
         ).toEntity();
+        this.sourceCapabilities = { PRIMARY: response.capabilities };
         return {
           filename,
           fastaFilename,
