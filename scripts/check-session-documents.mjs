@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import { createRequire } from "node:module";
 import ts from "typescript";
 
 const source = fs.readFileSync(
   new URL("../src/app/core/mapmanagers/SessionDocument.ts", import.meta.url),
   "utf8"
 );
-const sandbox = { exports: {}, TextEncoder };
+const sandbox = {
+  exports: {},
+  TextEncoder,
+  require: createRequire(import.meta.url),
+};
 vm.runInNewContext(
   ts.transpileModule(source, {
     compilerOptions: {
@@ -76,4 +81,49 @@ reject({ ...valid, extra: nested }, "nesting limit");
 reject({ ...valid, extra: Array(100001).fill(null) }, "too many values");
 console.log(
   "Session versions, finite coordinates, field shapes and resource bounds passed."
+);
+
+for (const options of [
+  { applyCoolerWeights: "false" },
+  { postLogBase: 1 },
+  { autoThresholdQuantile: 2 },
+  { signalDisplayMode: "unknown" },
+  { colormap: { minSignal: 4, maxSignal: 1 } },
+  { colormap: { startColorRGBAString: "invalid color" } },
+  { coolerWeightsNaNCount: 1.5 },
+])
+  reject({ ...valid, visualizationOptions: options }, "visualizationOptions");
+reject({ ...valid, trackStyles: { contigs: {} } }, "trackStyles.contigs");
+assert.equal(
+  parseSessionDocument(JSON.stringify({ ...valid, trackStyles: {} }))
+    .trackStyles,
+  undefined
+);
+reject(
+  {
+    ...valid,
+    savedVisualizationPresets: [
+      {
+        option_id: 1,
+        name: "bad",
+        action: { type: "sequence-overlay", kind: "unknown", mode: "overlay" },
+      },
+    ],
+  },
+  "action.kind"
+);
+reject(
+  {
+    ...valid,
+    savedVisualizationPresets: [
+      { option_id: 1, name: "a" },
+      { option_id: 1, name: "b" },
+    ],
+  },
+  "duplicate ID"
+);
+for (const filename of process.argv.slice(2))
+  parseSessionDocument(fs.readFileSync(filename, "utf8"));
+console.log(
+  "Nested visualization, style, palette/action and duplicate-ID validation passed."
 );
