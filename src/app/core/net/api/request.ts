@@ -35,7 +35,8 @@ export class GetSessionSnapshotRequest implements HiCTAPIRequest {
   requestPath = "/session/snapshot";
   constructor(
     public readonly verifyAssemblyRoundTrip = false,
-    public readonly fingerprintFiles = false
+    public readonly fingerprintFiles = false,
+    public readonly verifyTrackDefinitions = false
   ) {}
 }
 
