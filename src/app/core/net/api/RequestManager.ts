@@ -168,6 +168,7 @@ export type SecondarySourceCompatibility = {
 };
 
 export type SecondarySourceStatusResponse = {
+  assemblyInfo?: AssemblyInfo;
   capabilities?: SourceCapabilities;
   attached: boolean;
   filename: string;
@@ -444,6 +445,11 @@ class RequestManager {
         ? (json.warnings as unknown[]).map((value) => String(value))
         : [],
       compatibility,
+      assemblyInfo: json.assemblyInfo
+        ? new AssemblyInfoDTO(
+            json.assemblyInfo as Record<string, unknown>
+          ).toEntity()
+        : undefined,
       capabilities: parseSourceCapabilities(json.capabilities),
       sequenceAnalysis: json.sequenceAnalysis
         ? {

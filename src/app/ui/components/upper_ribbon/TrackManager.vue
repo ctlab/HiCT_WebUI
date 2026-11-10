@@ -201,9 +201,10 @@
                   </div>
                 </div>
                 <p class="small mb-1 mt-2">
-                  Attaching, replacing or removing a secondary map starts a new
-                  edit journal. The current assembly layout stays; earlier
-                  undo/redo states will no longer be available.
+                  Source changes start a new edit journal; earlier undo/redo
+                  states will no longer be available. When Secondary is the
+                  assembly source, replacing it also adopts the new source’s
+                  layout.
                 </p>
                 <p class="small mb-1">
                   Generated dotplot scores move with their original sequence
@@ -1165,6 +1166,7 @@ const onAttachSecondarySource = async () => {
       response.compatibility,
       { exactResolutionOnly: Boolean(response.sequenceAnalysis) }
     );
+    if (response.assemblyInfo) applyAssemblyInfo(response.assemblyInfo);
     await props.mapManager.reloadTilesFromBackend();
     await refreshSecondaryStatus();
     toast.success("Secondary source attached");
@@ -1195,6 +1197,9 @@ const onProceedSecondaryWithMismatch = async () => {
       secondaryStatus.value.compatibility,
       { exactResolutionOnly: Boolean(secondaryStatus.value.sequenceAnalysis) }
     );
+    if (secondaryStatus.value.assemblyInfo) {
+      applyAssemblyInfo(secondaryStatus.value.assemblyInfo);
+    }
     selectedSecondaryFile.value = filenameToOpen;
     await props.mapManager.reloadTilesFromBackend();
     await refreshSecondaryStatus();
