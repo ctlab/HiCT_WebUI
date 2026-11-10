@@ -27,6 +27,10 @@ import {
   ListDirectoryRequest,
   OpenFileRequest,
   CloseFileRequest,
+  PrepareCoverageNormalizationRequest,
+  CoverageNormalizationStatusRequest,
+  CancelCoverageNormalizationRequest,
+  SelectNormalizationWeightsRequest,
   AttachSessionRequest,
   GetFastaForAssemblyRequest,
   type HiCTAPIRequest,
@@ -320,6 +324,14 @@ abstract class HiCTAPIRequestDTO<
         return new ResetRenderPipelineRequestDTO(entity);
       case entity instanceof CloseFileRequest:
         return new CloseFileRequestDTO(entity as CloseFileRequest);
+      case entity instanceof PrepareCoverageNormalizationRequest:
+      case entity instanceof CoverageNormalizationStatusRequest:
+      case entity instanceof CancelCoverageNormalizationRequest:
+        return new EmptyBodyRequestDTO(entity);
+      case entity instanceof SelectNormalizationWeightsRequest:
+        return new SelectNormalizationWeightsRequestDTO(
+          entity as SelectNormalizationWeightsRequest
+        );
       case entity instanceof AttachSessionRequest:
         return new AttachSessionRequestDTO(entity as AttachSessionRequest);
       case entity instanceof GetFastaForAssemblyRequest:
@@ -1062,6 +1074,18 @@ class ListFASTAFilesRequestDTO extends HiCTAPIRequestDTO<ListFASTAFilesRequest> 
 class ListAGPFilesRequestDTO extends HiCTAPIRequestDTO<ListAGPFilesRequest> {
   toDTO(): Record<string, unknown> {
     return {};
+  }
+}
+
+class EmptyBodyRequestDTO extends HiCTAPIRequestDTO<HiCTAPIRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class SelectNormalizationWeightsRequestDTO extends HiCTAPIRequestDTO<SelectNormalizationWeightsRequest> {
+  toDTO(): Record<string, unknown> {
+    return { mode: this.entity.options.mode };
   }
 }
 

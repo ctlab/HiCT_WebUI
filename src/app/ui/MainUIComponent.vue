@@ -240,6 +240,7 @@ import {
 } from "@/app/core/mapmanagers/SessionDocument";
 import type { AttachedSession } from "@/app/core/net/api/RequestManager";
 import { pipelineTransferIssues } from "@/app/core/visualization/transferVisualization";
+import { prepareCoverage } from "@/app/core/visualization/coverageNormalization";
 import BenchmarkFeature from "ol/Feature";
 import {
   captureWorkspace,
@@ -505,6 +506,13 @@ async function maybePromptCoolerWeightsNaNs(carriedAppearance?: {
     carriedAppearance &&
     (!carriedAppearance.applyCoolerWeights || coolerWeightsPolicyConfirmed)
   ) {
+    return;
+  }
+  // The question is about weights from the file. Coverage weights are not those.
+  const normalization = await manager.networkManager.requestManager
+    .coverageNormalizationStatus()
+    .catch(() => null);
+  if (normalization?.mode === "SQRT_COVERAGE") {
     return;
   }
   const options = await manager.networkManager.requestManager
@@ -1019,7 +1027,11 @@ async function onSaveSession(): Promise<boolean> {
     const savedState = history
       ? { session: history.session, currentId: history.currentId }
       : null;
+    const normalization = await networkManager.requestManager
+      .coverageNormalizationStatus()
+      .catch(() => undefined);
     const envelope = createSessionEnvelope(snapshot, {
+      normalizationWeights: normalization?.mode,
       workspace: captureWorkspace(manager) as unknown as Record<
         string,
         unknown
@@ -1183,6 +1195,28 @@ async function resolveRequiredHiCTSessionFilename(
 }
 
 /** Opens a v3 session. The server prepares everything first, so a rejected file leaves the open map untouched. */
+/** The saved map used square-root coverage, which is computed from the matrix and not stored. */
+async function restoreCoverageNormalization(): Promise<void> {
+  const requests = networkManager.requestManager;
+  sessionBusy.value = "Restoring square-root coverage normalization\u2026";
+  const outcome = await prepareCoverage(requests, (status) => {
+    sessionBusy.value = `Restoring square-root coverage normalization: ${Math.round(
+      status.progress * 100
+    )}%`;
+  });
+  try {
+    if (!outcome.ok) throw new Error(outcome.message);
+    await requests.selectNormalizationWeights("SQRT_COVERAGE");
+    await mapManager.value?.reloadTilesFromBackend();
+  } catch (error) {
+    console.debug("Square-root coverage was not restored", error);
+    toast.message(
+      "The saved square-root coverage normalization could not be prepared, so the weights from the file are shown instead.",
+      { duration: 10000 }
+    );
+  }
+}
+
 async function restoreCompleteSession(
   session: Record<string, unknown>
 ): Promise<void> {
@@ -1191,6 +1225,7 @@ async function restoreCompleteSession(
     workspace?: WorkspaceState | null;
     savedLocations?: SessionSavedLocation[];
     savedVisualizationPresets?: SessionVisualizationPreset[];
+    normalizationWeights?: "FILE" | "SQRT_COVERAGE";
   };
   sessionBusy.value =
     "Restoring session: checking files and rebuilding the assembly\u2026";
@@ -1208,6 +1243,8 @@ async function restoreCompleteSession(
     sessionStore.setSavedVisualizationPresets(
       client.savedVisualizationPresets ?? []
     );
+    if (client.normalizationWeights === "SQRT_COVERAGE")
+      await restoreCoverageNormalization();
     toast.success(
       "Session restored. Undo history starts from the restored assembly.",
       { duration: 6000 }

@@ -185,6 +185,9 @@ reject(
   "client.savedLocations\\[0\\].resolution"
 );
 reject({ ...v3, version: 7 }, "newer HiCT");
+for (const mode of ["FILE", "SQRT_COVERAGE"])
+  parseSessionDocument(JSON.stringify({ ...v3, client: { ...client, normalizationWeights: mode } }));
+reject({ ...v3, client: { ...client, normalizationWeights: "AVERAGE" } }, "client.normalizationWeights");
 console.log("Version 3 envelope, identity requirement and client state validation passed.");
 for (const filename of process.argv.slice(2))
   parseSessionDocument(fs.readFileSync(filename, "utf8"));

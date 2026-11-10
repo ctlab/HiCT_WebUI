@@ -112,6 +112,10 @@ import {
   ListTrackFilesRequest,
   OpenTrackRequest,
   OpenCoolerWeightsTrackRequest,
+  PrepareCoverageNormalizationRequest,
+  CoverageNormalizationStatusRequest,
+  CancelCoverageNormalizationRequest,
+  SelectNormalizationWeightsRequest,
   ProbeTrackCompatibilityRequest,
   ListTracksRequest,
   UpdateTrackRequest,
@@ -285,6 +289,22 @@ export interface AttachedSession {
   visualizationOptions?: Record<string, unknown>;
   tracks?: Record<string, unknown>[];
 }
+
+/** State of the square-root coverage preparation job and of the weights tiles use. */
+export type CoverageNormalizationStatus = {
+  state: "IDLE" | "RUNNING" | "READY" | "FAILED" | "CANCELLED";
+  progress: number;
+  message: string;
+  algorithm: string;
+  error: string | null;
+  /** Vectors exist for every open source. */
+  prepared: boolean;
+  /** Weights the primary source uses when weights are applied. */
+  mode: "FILE" | "SQRT_COVERAGE";
+  /** Every open source uses the same weights. */
+  consistent: boolean;
+  estimatedBytes: number;
+};
 
 const journalResetPaths = new Set([
   "/secondary/open",
@@ -1021,6 +1041,56 @@ class RequestManager {
     return this.sendRequest(new OpenTrackRequest({ filename, name, color }))
       .then((response) => response.data)
       .then((json) => new TrackSummaryResponseDTO(json).toEntity());
+  }
+
+  private readonly normalizationState = shallowReactive({
+    mode: "FILE" as "FILE" | "SQRT_COVERAGE",
+  });
+  /** The weights the server applies when weights are on. Reactive, shared by every view of it. */
+  public get normalizationWeightsMode(): "FILE" | "SQRT_COVERAGE" {
+    return this.normalizationState.mode;
+  }
+
+  private noteNormalization(
+    status: CoverageNormalizationStatus
+  ): CoverageNormalizationStatus {
+    if (status.mode === "FILE" || status.mode === "SQRT_COVERAGE")
+      this.normalizationState.mode = status.mode;
+    return status;
+  }
+
+  public async prepareCoverageNormalization(): Promise<CoverageNormalizationStatus> {
+    return this.sendRequest(new PrepareCoverageNormalizationRequest()).then(
+      (response) => this.noteNormalization(response.data)
+    );
+  }
+
+  public async coverageNormalizationStatus(): Promise<CoverageNormalizationStatus> {
+    return this.sendRequest(
+      new CoverageNormalizationStatusRequest(),
+      undefined,
+      { suppressErrorToast: true }
+    ).then((response) => this.noteNormalization(response.data));
+  }
+
+  public async cancelCoverageNormalization(): Promise<CoverageNormalizationStatus> {
+    return this.sendRequest(new CancelCoverageNormalizationRequest()).then(
+      (response) => this.noteNormalization(response.data)
+    );
+  }
+
+  /** Switches the weights of every open source together. Coverage must have been prepared. */
+  public async selectNormalizationWeights(
+    mode: "FILE" | "SQRT_COVERAGE"
+  ): Promise<{ mode: string; version: number }> {
+    return this.sendRequest(
+      new SelectNormalizationWeightsRequest({ mode })
+    ).then((response) => {
+      const result = response.data as { mode: string; version: number };
+      if (result.mode === "FILE" || result.mode === "SQRT_COVERAGE")
+        this.normalizationState.mode = result.mode;
+      return result;
+    });
   }
 
   public async openCoolerWeightsTrack(

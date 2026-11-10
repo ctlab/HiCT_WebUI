@@ -250,6 +250,8 @@ export interface SessionClientState {
   workspace?: Record<string, unknown>;
   savedLocations: unknown[];
   savedVisualizationPresets: unknown[];
+  /** Weights the map used when the session was saved. Absent in older sessions (file weights). */
+  normalizationWeights?: "FILE" | "SQRT_COVERAGE";
 }
 
 /** Builds the portable v3 document from a server snapshot and the client-only state. */
@@ -295,6 +297,11 @@ function envelope(session: RecordValue): void {
     invalid("snapshot.tracks", "expected an array");
   record(snapshot.renderPipeline, "snapshot.renderPipeline");
   const client = record(session.client, "client");
+  if ("normalizationWeights" in client)
+    choice(client.normalizationWeights, "client.normalizationWeights", [
+      "FILE",
+      "SQRT_COVERAGE",
+    ]);
   if ("workspace" in client && client.workspace !== null) {
     const workspace = record(client.workspace, "client.workspace");
     if (workspace.version !== 1)

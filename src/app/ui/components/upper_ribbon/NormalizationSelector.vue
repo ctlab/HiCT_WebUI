@@ -79,6 +79,81 @@
       </div>
     </div>
 
+    <div class="signal-row">
+      <label
+        id="normalization-mode-label"
+        for="normalization-mode"
+        class="signal-label"
+      >
+        Normalization
+      </label>
+      <select
+        id="normalization-mode"
+        class="form-select form-select-sm normalization-select"
+        :value="choice"
+        :disabled="preparing || contactUnavailable || !signalEditable"
+        :aria-describedby="normalizationHelpId"
+        @change="onChoose(($event.target as HTMLSelectElement).value)"
+      >
+        <option value="none">None</option>
+        <option value="sqrt">Square-root coverage</option>
+        <option value="file" :disabled="weightsUnavailable">
+          Weights from file
+        </option>
+      </select>
+    </div>
+    <p
+      v-if="choice === 'sqrt' && !preparing"
+      id="normalization-help"
+      class="small text-muted mb-0"
+    >
+      Each bin is divided by the square root of its total contacts in the whole
+      map (as Juicebox VC_SQRT). Bins without contacts stay empty.
+    </p>
+    <div
+      v-if="preparing"
+      id="normalization-progress"
+      class="normalization-progress"
+      role="status"
+      aria-live="polite"
+    >
+      <progress
+        :value="prepareProgress"
+        max="1"
+        aria-labelledby="normalization-mode-label"
+      ></progress>
+      <span class="small"
+        >{{ prepareMessage }} {{ Math.round(prepareProgress * 100) }}%</span
+      >
+      <button
+        id="normalization-cancel"
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        @click="cancelPreparation"
+      >
+        Cancel
+      </button>
+    </div>
+    <p
+      v-if="prepareError"
+      id="normalization-error"
+      class="small text-danger mb-0"
+      role="alert"
+    >
+      {{ prepareError }}
+    </p>
+    <p
+      v-if="choice === 'sqrt' && status && !status.consistent"
+      id="normalization-inconsistent"
+      class="small text-warning-emphasis mb-0"
+      role="status"
+    >
+      A source was attached after this was chosen and still uses file weights.
+      <button type="button" class="link-button" @click="reapplyCoverage">
+        Apply to both sources
+      </button>
+    </p>
+
     <p
       v-if="legacyPreLog || autoThresholdEnabled"
       id="legacy-signal-summary"
@@ -152,30 +227,6 @@
           by the resolution ratio, quadratic by its square.
         </p>
 
-        <div class="form-check form-switch">
-          <input
-            id="checkbox-normalization-cooler-weights"
-            v-model="applyCoolerWeights"
-            class="form-check-input"
-            type="checkbox"
-            role="switch"
-            :disabled="weightsUnavailable || !signalEditable"
-            :aria-describedby="
-              weightsUnavailable
-                ? contactUnavailable
-                  ? 'contact-normalization-unavailable'
-                  : 'imported-weights-unavailable'
-                : undefined
-            "
-          />
-          <label
-            class="form-check-label"
-            for="checkbox-normalization-cooler-weights"
-          >
-            Apply weights from Cooler
-          </label>
-        </div>
-
         <div class="d-flex gap-2 mt-1">
           <button
             type="button"
@@ -205,7 +256,17 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { computed, defineAsyncComponent, ref, watch } from "vue";
+import {
+  computed,
+  defineAsyncComponent,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
+import { toast } from "vue-sonner";
+import { prepareCoverage } from "@/app/core/visualization/coverageNormalization";
+import type { CoverageNormalizationStatus } from "@/app/core/net/api/RequestManager";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 import { importedWeightsAvailability } from "@/app/core/net/SourceCapabilities";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
@@ -224,6 +285,7 @@ const {
   autoThresholdEnabled,
   autoThresholdQuantile,
   signalEditable,
+  coolerWeightsNaNPolicy,
 } = storeToRefs(visualizationOptionsStore);
 
 const props = defineProps<{
@@ -356,6 +418,145 @@ function resetAttributes(): void {
   emit("apply");
 }
 
+// ---- Normalization --------------------------------------------------------------------------
+const status = ref<CoverageNormalizationStatus | null>(null);
+const preparing = ref(false);
+const prepareProgress = ref(0);
+const prepareMessage = ref("");
+const prepareError = ref("");
+let disposed = false;
+
+type NormalizationChoice = "none" | "sqrt" | "file";
+/** What is shown is what tiles use: weights off, the file's weights, or computed coverage. */
+const choice = computed<NormalizationChoice>(() =>
+  !applyCoolerWeights.value ||
+  coolerWeightsNaNPolicy.value === "DISABLE_WEIGHTS"
+    ? "none"
+    : requests()?.normalizationWeightsMode === "SQRT_COVERAGE"
+    ? "sqrt"
+    : "file"
+);
+const normalizationHelpId = computed(() =>
+  contactUnavailable.value
+    ? "contact-normalization-unavailable"
+    : choice.value === "sqrt"
+    ? "normalization-help"
+    : undefined
+);
+
+const requests = () => props.mapManager?.networkManager.requestManager;
+
+async function refreshStatus(): Promise<void> {
+  const rm = requests();
+  if (!rm) {
+    status.value = null;
+    return;
+  }
+  try {
+    status.value = await rm.coverageNormalizationStatus();
+    if (status.value.state === "RUNNING" && !preparing.value)
+      void waitForPreparation(false);
+  } catch (error) {
+    console.debug("Normalization status unavailable", error);
+    status.value = null;
+  }
+}
+
+/** Follows the background job until it ends. Returns true when the vectors are ready. */
+async function waitForPreparation(start: boolean): Promise<boolean> {
+  const rm = requests();
+  if (!rm) return false;
+  preparing.value = true;
+  prepareError.value = "";
+  try {
+    const outcome = await prepareCoverage(
+      rm,
+      (current) => {
+        status.value = current;
+        prepareProgress.value = current.progress;
+        prepareMessage.value = current.message || "Preparing";
+      },
+      { start, shouldStop: () => disposed }
+    );
+    if (!outcome.ok && !outcome.cancelled) prepareError.value = outcome.message;
+    return outcome.ok;
+  } finally {
+    preparing.value = false;
+  }
+}
+
+async function cancelPreparation(): Promise<void> {
+  try {
+    await requests()?.cancelCoverageNormalization();
+  } catch (error) {
+    console.debug("Cancel failed", error);
+  }
+}
+
+async function switchWeights(mode: "FILE" | "SQRT_COVERAGE"): Promise<boolean> {
+  const rm = requests();
+  if (!rm) return false;
+  try {
+    await rm.selectNormalizationWeights(mode);
+    await refreshStatus();
+    return true;
+  } catch (error) {
+    console.debug("Switching weights failed", error);
+    prepareError.value =
+      "The weights could not be switched. Nothing was changed.";
+    return false;
+  }
+}
+
+/** Weights are applied only when the policy for missing weights is not "do not use". */
+function turnWeightsOn(): void {
+  if (coolerWeightsNaNPolicy.value === "DISABLE_WEIGHTS")
+    coolerWeightsNaNPolicy.value = "REPLACE_NANS_WITH_ONE";
+  applyCoolerWeights.value = true;
+}
+
+async function useCoverage(): Promise<void> {
+  if (!(await waitForPreparation(true))) return;
+  if (!(await switchWeights("SQRT_COVERAGE"))) return;
+  turnWeightsOn();
+  emit("apply");
+}
+
+async function onChoose(value: string): Promise<void> {
+  prepareError.value = "";
+  const next = value as NormalizationChoice;
+  if (next === choice.value) return;
+  if (next === "none") {
+    applyCoolerWeights.value = false;
+    emit("apply");
+  } else if (next === "file") {
+    if (!(await switchWeights("FILE"))) return;
+    turnWeightsOn();
+    emit("apply");
+  } else {
+    await useCoverage();
+  }
+  // A refused or cancelled change leaves the control showing what is really in use.
+  const element = document.getElementById(
+    "normalization-mode"
+  ) as HTMLSelectElement | null;
+  if (element) element.value = choice.value;
+}
+
+async function reapplyCoverage(): Promise<void> {
+  toast.message("Preparing square-root coverage for the attached source…");
+  await useCoverage();
+}
+
+onMounted(() => void refreshStatus());
+watch(
+  () => props.mapManager,
+  () => void refreshStatus()
+);
+onBeforeUnmount(() => {
+  disposed = true;
+});
+
 function openRenderingPipeline(): void {
   pipelineModalOpen.value = true;
 }
@@ -436,6 +637,22 @@ function openRenderingPipeline(): void {
 .scaling-select {
   width: 11rem;
   max-width: 100%;
+}
+
+.normalization-select {
+  width: 13rem;
+  max-width: 100%;
+}
+
+.normalization-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.normalization-progress progress {
+  flex: 1;
+  min-width: 0;
 }
 
 .legacy-summary {
