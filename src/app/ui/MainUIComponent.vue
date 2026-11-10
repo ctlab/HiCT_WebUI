@@ -70,6 +70,15 @@
         </div>
       </div>
     </div>
+    <UnsavedEditsDialog
+      v-if="unsavedPrompt"
+      :action="unsavedPrompt.action"
+      :busy="unsavedPrompt.busy"
+      :error="unsavedPrompt.error"
+      @save="onUnsavedPromptSave"
+      @discard="finishUnsavedPrompt(true)"
+      @cancel="finishUnsavedPrompt(false)"
+    />
     <div v-if="coolerWeightsNaNPromptVisible">
       <div class="modal-backdrop fade show cooler-weights-nan-backdrop"></div>
       <div
@@ -239,6 +248,7 @@ import {
 } from "@/app/core/mapmanagers/WorkspaceState";
 import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
 import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
+import UnsavedEditsDialog from "@/app/ui/components/common/UnsavedEditsDialog.vue";
 import {
   ContactMapManager,
   // type ContactMapManagerOptions,
@@ -570,7 +580,8 @@ function resetState() {
   matrixViewStore.reset();
 }
 
-function onClosed() {
+async function onClosed() {
+  if (!(await confirmDiscardUnsavedEdits("close this map"))) return;
   const manager = mapManager.value;
   resetState();
   void (
@@ -764,6 +775,10 @@ async function openPrimaryDatasetFromWizard(
   ffname?: string,
   options?: { applyDefaultPreset?: boolean }
 ): Promise<void> {
+  if (!(await confirmDiscardUnsavedEdits("open another map")))
+    throw new Error(
+      "Opening was cancelled to keep your unsaved assembly edits. Save the session or discard the edits, then open again."
+    );
   await openFileWithOptions(fname, ffname, options);
 }
 
@@ -777,10 +792,14 @@ function displayNewMap(fname: string, ffname?: string) {
     toast.error(message);
     throw new Error(message);
   }
-  openFileWithOptions(fname, ffname)
-    .then(() => {
-      toast.success("Opened file " + fname);
-    })
+  confirmDiscardUnsavedEdits("open another map")
+    .then((proceed) =>
+      proceed
+        ? openFileWithOptions(fname, ffname).then(() => {
+            toast.success("Opened file " + fname);
+          })
+        : undefined
+    )
     .catch((a) => {
       console.log(a);
       toast.error(a);
@@ -905,18 +924,74 @@ function onFastaLinked(filename: string): void {
   fastaFilename.value = filename;
 }
 
+/** Asks, at most once at a time, before an action that would discard unsaved assembly edits. */
+const unsavedPrompt = ref<{
+  action: string;
+  busy: boolean;
+  error: string;
+  resolve: (proceed: boolean) => void;
+} | null>(null);
+
+useEscDismissableDialog({
+  priority: 1080,
+  isOpen: () => unsavedPrompt.value !== null && !unsavedPrompt.value.busy,
+  requestClose: () => finishUnsavedPrompt(false),
+});
+
+/** Resolves true when the action may go ahead: nothing to lose, edits saved, or discarding chosen. */
+function confirmDiscardUnsavedEdits(action: string): Promise<boolean> {
+  if (!networkManager.requestManager.hasUnsavedAssemblyEdits())
+    return Promise.resolve(true);
+  if (unsavedPrompt.value) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    unsavedPrompt.value = { action, busy: false, error: "", resolve };
+  });
+}
+
+function finishUnsavedPrompt(proceed: boolean): void {
+  const prompt = unsavedPrompt.value;
+  if (!prompt || prompt.busy) return;
+  unsavedPrompt.value = null;
+  prompt.resolve(proceed);
+}
+
+async function onUnsavedPromptSave(): Promise<void> {
+  const prompt = unsavedPrompt.value;
+  if (!prompt || prompt.busy) return;
+  prompt.busy = true;
+  prompt.error = "";
+  const saved = await onSaveSession();
+  const current = unsavedPrompt.value;
+  if (!current) return;
+  current.busy = false;
+  if (saved) {
+    unsavedPrompt.value = null;
+    current.resolve(true);
+  } else {
+    // A failed save never continues: the edits are still in the map.
+    current.error =
+      "The session was not saved, so nothing was discarded. See the error message, then try again or cancel.";
+  }
+}
+
+function warnBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!networkManager.requestManager.hasUnsavedAssemblyEdits()) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
 let sessionSaveInFlight = false;
 /** Text of the long-running session operation currently shown in the status pill. */
 const sessionBusy = ref("");
 
 /** Saves a v3 session: the edited assembly, tracks, scopes, processing graph and file identities. */
-async function onSaveSession(): Promise<void> {
+async function onSaveSession(): Promise<boolean> {
   const manager = mapManager.value;
   if (!manager) {
     toast.error("No open map to save session");
-    return;
+    return false;
   }
-  if (sessionSaveInFlight) return;
+  if (sessionSaveInFlight) return false;
   sessionSaveInFlight = true;
   sessionBusy.value =
     "Saving session: checking the assembly and identifying files\u2026";
@@ -929,6 +1004,11 @@ async function onSaveSession(): Promise<void> {
     );
     if (manager !== mapManager.value)
       throw new Error("The open map changed while saving. Save again.");
+    // The journal state this file contains. Capture it before any later await.
+    const history = networkManager.requestManager.history.summary;
+    const savedState = history
+      ? { session: history.session, currentId: history.currentId }
+      : null;
     const envelope = createSessionEnvelope(snapshot, {
       workspace: captureWorkspace(manager) as unknown as Record<
         string,
@@ -953,10 +1033,12 @@ async function onSaveSession(): Promise<void> {
     a.download = "hict_session.json";
     a.click();
     URL.revokeObjectURL(url);
+    networkManager.requestManager.markAssemblySaved(savedState);
     toast.success(
       "Session saved with the edited assembly, tracks, scopes and processing graph. Undo history is not saved.",
       { duration: 6000 }
     );
+    return true;
   } catch (e) {
     console.debug("Session save failed", e);
     const failure = e as {
@@ -967,6 +1049,7 @@ async function onSaveSession(): Promise<void> {
       failure?.response?.data?.error ?? failure?.message ?? "Session not saved",
       { duration: 8000 }
     );
+    return false;
   } finally {
     sessionSaveInFlight = false;
     sessionBusy.value = "";
@@ -1143,6 +1226,8 @@ async function onOpenSession(file: File): Promise<void> {
       throw new Error("Invalid session file: exceeds the 8 MiB limit");
     }
     const session = parseSessionDocument(await file.text());
+    // The file is valid. Only now ask about edits that opening it would replace.
+    if (!(await confirmDiscardUnsavedEdits("open this session"))) return;
     if (session.version === 3) {
       await restoreCompleteSession(session);
       return;
@@ -1301,6 +1386,7 @@ async function onOpenSession(file: File): Promise<void> {
 
     await mapManager.value?.visualizationManager.sendVisualizationOptionsToServer();
     mapManager.value?.reloadTiles();
+    networkManager.requestManager.markAssemblySaved();
     toast.success("Session restored");
   } catch (e) {
     console.error(e);
@@ -1341,6 +1427,7 @@ watch(
 );
 
 onMounted(() => {
+  window.addEventListener("beforeunload", warnBeforeUnload);
   window.addEventListener("keydown", handleGlobalEscape, true);
   syncUiChromePalette();
   workspaceTimer = window.setInterval(() => {
@@ -1350,6 +1437,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (workspaceTimer !== undefined) window.clearInterval(workspaceTimer);
+  window.removeEventListener("beforeunload", warnBeforeUnload);
   window.removeEventListener("keydown", handleGlobalEscape, true);
   stopOpenProgress();
 });

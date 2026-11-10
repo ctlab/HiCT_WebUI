@@ -23,6 +23,7 @@
   <div class="map-shell">
     <AssemblyContextMenu
       v-if="props.mapManager"
+      :key="managerKey"
       :map-manager="props.mapManager"
     />
     <div id="hic-contact-map" :style="mapContainerStyle" ref="mapTarget"></div>
@@ -39,7 +40,7 @@
 import "ol/ol.css";
 import AssemblyContextMenu from "./AssemblyContextMenu.vue";
 import { useStyleStore } from "@/app/stores/styleStore";
-import { ref, computed, Ref, watch } from "vue";
+import { ref, computed, Ref, toRaw, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { usehtmlElementReferencesStore } from "@/app/stores/htmlElementReferencesStore";
 import ZoomSlider from "@/app/ui/components/toolbar/upper_blocks/ZoomSlider.vue";
@@ -70,6 +71,21 @@ const props = defineProps<{
 
 const uiSettingsStore = useUiSettingsStore();
 const { customZoomSliderEnabled } = storeToRefs(uiSettingsStore);
+
+// The context menu binds to its map's viewport once, when it is created. Replacing the manager
+// directly (open another map, restore a session) must therefore re-create it.
+const managerIds = new WeakMap<object, number>();
+let nextManagerId = 1;
+const managerKey = computed(() => {
+  const manager = props.mapManager ? toRaw(props.mapManager) : undefined;
+  if (!manager) return 0;
+  let id = managerIds.get(manager);
+  if (id === undefined) {
+    id = nextManagerId++;
+    managerIds.set(manager, id);
+  }
+  return id;
+});
 </script>
 
 <style scoped>

@@ -286,6 +286,12 @@ export interface AttachedSession {
   tracks?: Record<string, unknown>[];
 }
 
+const journalResetPaths = new Set([
+  "/secondary/open",
+  "/secondary/close",
+  "/secondary/set_assembly_source",
+]);
+
 class RequestManager {
   private workspaceVersion?: { session: string; revision: number };
   public renderPipelineRevision = 0;
@@ -306,6 +312,34 @@ class RequestManager {
     applied: null as HistorySummary | null,
     busy: 0,
   });
+
+  /** Journal state of the last open, restore or completed save. Null while unknown, for example after Attach. */
+  private assemblySavedMark: { session: string; currentId: number } | null =
+    null;
+
+  /**
+   * Records a journal state as the saved baseline. Defaults to the latest known state, so call it with the
+   * state captured at the moment of a save rather than after later awaits.
+   */
+  public markAssemblySaved(
+    state: Pick<HistorySummary, "session" | "currentId"> | null = this.history
+      .summary
+  ): void {
+    this.assemblySavedMark = state
+      ? { session: state.session, currentId: state.currentId }
+      : null;
+  }
+
+  /** True when the assembly differs from the last opened or saved state. Undoing back to it counts as clean. */
+  public hasUnsavedAssemblyEdits(): boolean {
+    const summary = this.history.summary;
+    if (!summary) return false;
+    const mark = this.assemblySavedMark;
+    if (!mark) return summary.position > 0;
+    return (
+      mark.session !== summary.session || mark.currentId !== summary.currentId
+    );
+  }
 
   public async getAssemblyHistory(offset?: number): Promise<HistoryPage> {
     const response = await this.sendRequest(
@@ -568,6 +602,11 @@ class RequestManager {
       mutation ||
       assemblySessionPaths.has(request.requestPath) ||
       request.requestPath === "/assembly/history/restore";
+    // Attaching or detaching a source starts a new journal. That is not an edit, so a clean
+    // assembly must stay clean, while an edited one stays marked as unsaved.
+    const keepCleanState =
+      journalResetPaths.has(request.requestPath) &&
+      !this.hasUnsavedAssemblyEdits();
     const summary = this.history.applied;
     const sequenceSnapshot =
       request.requestPath.startsWith("/sequence/") &&
@@ -631,6 +670,7 @@ class RequestManager {
           )
             this.history.applied = next;
         }
+        if (keepCleanState) this.markAssemblySaved();
         this.notifyInboundPayload(req.data);
         return req;
       })
@@ -664,6 +704,7 @@ class RequestManager {
         this.workspaceVersion = json.workspaceVersion;
         this.hasLinkedFasta = false;
         this.sequenceRevision++;
+        this.markAssemblySaved();
         const response = new OpenFileResponseDTO(json).toEntity();
         this.sourceCapabilities = { PRIMARY: response.capabilities };
         return response;
@@ -777,6 +818,7 @@ class RequestManager {
 
   public async closeFile(): Promise<void> {
     await this.sendRequest(new CloseFileRequest());
+    this.assemblySavedMark = null;
     this.sourceCapabilities = {};
     this.workspaceVersion = undefined;
     this.hasLinkedFasta = false;
@@ -801,7 +843,11 @@ class RequestManager {
       suppressErrorToast: true,
     })
       .then((response) => response.data as Record<string, unknown>)
-      .then((json) => this.adoptSessionPayload(json));
+      .then((json) => {
+        // The restored assembly is the saved one, so it starts clean.
+        this.markAssemblySaved();
+        return this.adoptSessionPayload(json);
+      });
   }
 
   private adoptSessionPayload(json: Record<string, unknown>): AttachedSession {
