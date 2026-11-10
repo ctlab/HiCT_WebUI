@@ -79,6 +79,40 @@
       @discard="finishUnsavedPrompt(true)"
       @cancel="finishUnsavedPrompt(false)"
     />
+    <div v-if="sessionSaveError">
+      <div class="modal-backdrop fade show"></div>
+      <div
+        ref="sessionSaveErrorDialog"
+        class="modal fade show"
+        style="display: block"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="session-save-error-title"
+        aria-describedby="session-save-error-message"
+      >
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 id="session-save-error-title" class="modal-title">
+                Session could not be saved
+              </h5>
+            </div>
+            <div id="session-save-error-message" class="modal-body">
+              {{ sessionSaveError }}
+            </div>
+            <div class="modal-footer">
+              <button
+                type="button"
+                class="btn btn-primary"
+                @click="sessionSaveError = ''"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <div v-if="coolerWeightsNaNPromptVisible">
       <div class="modal-backdrop fade show cooler-weights-nan-backdrop"></div>
       <div
@@ -274,6 +308,7 @@ import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
 import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
 import { ActiveTool } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
 import { showTranslocationStatus } from "@/app/core/mapmanagers/TranslocationStatusToast";
+import { useModalFocus } from "@/app/ui/modalFocus";
 import UnsavedEditsDialog from "@/app/ui/components/common/UnsavedEditsDialog.vue";
 import FastaOnlyDialog from "@/app/ui/components/common/FastaOnlyDialog.vue";
 import ExamplesDialog from "@/app/ui/components/common/ExamplesDialog.vue";
@@ -1094,8 +1129,7 @@ async function onUnsavedPromptSave(): Promise<void> {
     current.resolve(true);
   } else {
     // A failed save never continues: the edits are still in the map.
-    current.error =
-      "The session was not saved, so nothing was discarded. See the error message, then try again or cancel.";
+    current.error = sessionSaveError.value;
   }
 }
 
@@ -1108,6 +1142,16 @@ function warnBeforeUnload(event: BeforeUnloadEvent): void {
 let sessionSaveInFlight = false;
 /** Text of the long-running session operation currently shown in the status pill. */
 const sessionBusy = ref("");
+const sessionSaveError = ref("");
+const sessionSaveErrorDialog = ref<HTMLElement | null>(null);
+useModalFocus(sessionSaveErrorDialog, () => !!sessionSaveError.value);
+useEscDismissableDialog({
+  priority: 1090,
+  isOpen: () => !!sessionSaveError.value,
+  requestClose: () => {
+    sessionSaveError.value = "";
+  },
+});
 
 /** Saves a v3 session: the edited assembly, tracks, scopes, processing graph and file identities. */
 async function onSaveSession(): Promise<boolean> {
@@ -1174,10 +1218,8 @@ async function onSaveSession(): Promise<boolean> {
       response?: { data?: { error?: string } };
       message?: string;
     };
-    toast.error(
-      failure?.response?.data?.error ?? failure?.message ?? "Session not saved",
-      { duration: 8000 }
-    );
+    sessionSaveError.value =
+      failure?.response?.data?.error ?? failure?.message ?? "Session not saved";
     return false;
   } finally {
     sessionSaveInFlight = false;

@@ -910,7 +910,9 @@ class RequestManager {
         fingerprintFiles,
         verifyTrackDefinitions,
         fullFingerprints
-      )
+      ),
+      undefined,
+      { suppressErrorToast: true }
     );
     const snapshot = response.data as Record<string, unknown>;
     if (snapshot.snapshotVersion !== 1)
