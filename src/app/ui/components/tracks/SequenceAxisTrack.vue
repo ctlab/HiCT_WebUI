@@ -223,6 +223,7 @@ const visible = ref(false);
 const notifications = useNotificationCenterStore();
 let lastFailure = "";
 let listeners: EventsKey[] = [],
+  unsubscribers: (() => void)[] = [],
   timer: number | undefined,
   generation = 0;
 type Region = Awaited<
@@ -346,6 +347,19 @@ function abortInFlight() {
   inFlight?.controller.abort();
   inFlight = undefined;
 }
+/**
+ * The assembly or the linked FASTA changed. Whatever was fetched or drawn describes the old
+ * state, so drop it, cancel the stale read and repaint at the same viewport.
+ */
+function onSequenceInvalidated() {
+  if (disposed) return;
+  cached = undefined;
+  abortInFlight();
+  renderedBases = [];
+  renderedBoundaries = [];
+  lastFailure = "";
+  schedule();
+}
 let frame: number | undefined;
 function cancelScheduledFrame() {
   if (frame !== undefined) window.cancelAnimationFrame(frame);
@@ -362,6 +376,31 @@ function setVisible(value: boolean) {
   if (visible.value === value) return;
   visible.value = value;
   emit("presence", value);
+}
+// Letters appear once a base is wide enough for its widest glyph and stay until it is clearly
+// too narrow, so a zoom that hovers at the limit does not make the strip flicker.
+const LETTER_FONT = "bold 14px 'HiCT Sans', sans-serif";
+let lettersShown = false;
+let measuredGlyphWidth: number | undefined;
+function glyphWidth(): number {
+  if (measuredGlyphWidth !== undefined) return measuredGlyphWidth;
+  const probe = document.createElement("canvas").getContext("2d");
+  if (!probe) return 10;
+  probe.font = LETTER_FONT;
+  const widest = Math.max(
+    ...["A", "C", "G", "T", "N", "W"].map((ch) => probe.measureText(ch).width)
+  );
+  // Fonts still loading report fallback metrics: do not cache until a real width is seen.
+  if (!(widest > 0)) return 10;
+  measuredGlyphWidth = widest;
+  return widest;
+}
+/** `bpPerCssPixel` is the span of one CSS pixel on the sequence axis. */
+function lettersFit(bpPerCssPixel: number): boolean {
+  if (!(bpPerCssPixel > 0)) return false;
+  const pixelsPerBase = 1 / bpPerCssPixel;
+  const needed = glyphWidth() + 3;
+  return lettersShown ? pixelsPerBase >= needed * 0.9 : pixelsPerBase >= needed;
 }
 /** Many events (center, resolution, moveend) fire per frame: coalesce them into one render pass. */
 function schedule() {
@@ -448,11 +487,13 @@ async function render(id: number, allowFetch = true) {
   if (
     !manager.networkManager.requestManager.hasLinkedFasta ||
     !screenResolution ||
-    (screenResolution * resolution) / scale > 0.1
+    !lettersFit((screenResolution * resolution) / scale)
   ) {
+    lettersShown = false;
     setVisible(false);
     return;
   }
+  lettersShown = true;
   const horizontal = props.axis === "horizontal",
     extent = view.calculateExtent(map.getSize());
   const bounds =
@@ -559,7 +600,7 @@ async function render(id: number, allowFetch = true) {
     context.fillRect(0, 0, target.width, target.height);
     const rows = strandRows(settings.sequenceShowReverseStrand);
     renderedRows = rows;
-    context.font = "bold 14px 'HiCT Sans', sans-serif";
+    context.font = LETTER_FONT;
     context.textAlign = "center";
     context.textBaseline = "middle";
     const responseStart = response.startBp ?? cached?.start ?? start;
@@ -696,6 +737,11 @@ async function render(id: number, allowFetch = true) {
       drawBoundary(borders.endBP, tracks.scaffoldBordersTrack);
     }
     if (rows.length > 1) drawStrandMarkers(context, rows, horizontal);
+    // Exposes what is drawn, for assistive tools and the acceptance checks.
+    target.dataset.bases = renderedBases.map((entry) => entry.base).join("");
+    target.dataset.firstBp = renderedBases.length
+      ? String(renderedBases[0].bp)
+      : "";
   } catch (error) {
     if (id === generation) {
       setVisible(false);
@@ -724,6 +770,8 @@ watch(
     abortInFlight();
     listeners.forEach(unByKey);
     listeners = [];
+    unsubscribers.forEach((off) => off());
+    unsubscribers = [];
     cached = undefined;
     lastFailure = "";
     setVisible(false);
@@ -740,6 +788,12 @@ watch(
         manager.getMap().on("moveend", schedule),
         manager.getView().on("change:resolution", schedule),
         manager.getView().on("change:center", schedule),
+      ];
+      unsubscribers = [
+        manager.networkManager.requestManager.onSequenceChange(
+          onSequenceInvalidated
+        ),
+        manager.getContigDimensionHolder().onChange(onSequenceInvalidated),
       ];
       schedule();
       void refreshGapSetting();
@@ -758,6 +812,8 @@ onBeforeUnmount(() => {
   window.clearTimeout(timer);
   cancelScheduledFrame();
   listeners.forEach(unByKey);
+  unsubscribers.forEach((off) => off());
+  unsubscribers = [];
 });
 </script>
 <style scoped>

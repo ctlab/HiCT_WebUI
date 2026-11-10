@@ -36,6 +36,13 @@ export default class ContigDimensionHolder {
 
   public contigDescriptors: ContigDescriptor[] = [];
   private readonly ensuredResolutions = new Set<number>();
+  private readonly changeListeners = new Set<() => void>();
+
+  /** Called after every wholesale replacement of the contig snapshot (edits, undo, restore). */
+  public onChange(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
 
   constructor(contigDescriptors: ContigDescriptor[] | undefined) {
     if (contigDescriptors) {
@@ -65,6 +72,13 @@ export default class ContigDimensionHolder {
     this.updatePrefixSumBp();
     this.updatePrefixSumBins();
     this.updatePrefixSumPixels();
+    for (const listener of [...this.changeListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        console.debug("Contig change listener failed", error);
+      }
+    }
   }
 
   public ensureResolution(resolution: number): void {

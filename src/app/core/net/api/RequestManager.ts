@@ -295,8 +295,39 @@ const journalResetPaths = new Set([
 class RequestManager {
   private workspaceVersion?: { session: string; revision: number };
   public renderPipelineRevision = 0;
-  public sequenceRevision = 0;
-  public hasLinkedFasta = false;
+  private readonly sequenceState = shallowReactive({
+    revision: 0,
+    linked: false,
+  });
+  private readonly sequenceListeners = new Set<() => void>();
+  /** Advances whenever sequence content or its linkage may have changed. */
+  public get sequenceRevision(): number {
+    return this.sequenceState.revision;
+  }
+  /** Whether a FASTA file is linked. Changing it notifies sequence views. */
+  public get hasLinkedFasta(): boolean {
+    return this.sequenceState.linked;
+  }
+  public set hasLinkedFasta(value: boolean) {
+    if (this.sequenceState.linked === value) return;
+    this.sequenceState.linked = value;
+    this.bumpSequenceRevision();
+  }
+  /** The one place that invalidates sequence caches and asks sequence views to repaint. */
+  public bumpSequenceRevision(): void {
+    this.sequenceState.revision++;
+    for (const listener of [...this.sequenceListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        console.debug("Sequence listener failed", error);
+      }
+    }
+  }
+  public onSequenceChange(listener: () => void): () => void {
+    this.sequenceListeners.add(listener);
+    return () => this.sequenceListeners.delete(listener);
+  }
   public sourceCapabilities: Partial<
     Record<"PRIMARY" | "SECONDARY", SourceCapabilities>
   > = {};
@@ -703,7 +734,7 @@ class RequestManager {
       .then((json) => {
         this.workspaceVersion = json.workspaceVersion;
         this.hasLinkedFasta = false;
-        this.sequenceRevision++;
+        this.bumpSequenceRevision();
         this.markAssemblySaved();
         const response = new OpenFileResponseDTO(json).toEntity();
         this.sourceCapabilities = { PRIMARY: response.capabilities };
@@ -822,7 +853,7 @@ class RequestManager {
     this.sourceCapabilities = {};
     this.workspaceVersion = undefined;
     this.hasLinkedFasta = false;
-    this.sequenceRevision++;
+    this.bumpSequenceRevision();
   }
 
   public async attachSession(): Promise<AttachedSession> {
@@ -859,7 +890,7 @@ class RequestManager {
       json.workspaceVersion as typeof this.workspaceVersion;
     const fastaFilename = (json["fastaFilename"] as string) ?? "";
     this.hasLinkedFasta = Boolean(fastaFilename);
-    this.sequenceRevision++;
+    this.bumpSequenceRevision();
     const response = new OpenFileResponseDTO(
       json["openFileResponse"] as Record<string, unknown>
     ).toEntity();
@@ -1291,7 +1322,7 @@ class RequestManager {
       .then((response) => response.data)
       .then((json) => {
         const result = new FastaLinkResponseDTO(json).toEntity();
-        this.sequenceRevision++;
+        this.bumpSequenceRevision();
         this.hasLinkedFasta = result.linked;
         this.networkManager.mapManager?.getMap().render();
         return result;
