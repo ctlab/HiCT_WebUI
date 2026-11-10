@@ -192,6 +192,25 @@ class CancelFastaOnlyRequest implements HiCTAPIRequest {
   requestPath = "/fasta_only/cancel";
 }
 
+class ListExamplesRequest implements HiCTAPIRequest {
+  requestPath = "/examples/catalog";
+}
+
+/** The client names an example only. The server decides addresses, names and hashes. */
+class StartExampleDownloadRequest implements HiCTAPIRequest {
+  requestPath = "/examples/download/start";
+
+  public constructor(public readonly options: { readonly exampleId: string }) {}
+}
+
+class ExampleDownloadStatusRequest implements HiCTAPIRequest {
+  requestPath = "/examples/download/status";
+}
+
+class CancelExampleDownloadRequest implements HiCTAPIRequest {
+  requestPath = "/examples/download/cancel";
+}
+
 class AttachSessionRequest implements HiCTAPIRequest {
   requestPath = "/attach";
 }
@@ -811,6 +830,10 @@ export {
   type HiCTAPIRequest,
   AttachSessionRequest,
   CloseFileRequest,
+  ListExamplesRequest,
+  StartExampleDownloadRequest,
+  ExampleDownloadStatusRequest,
+  CancelExampleDownloadRequest,
   StartFastaOnlyRequest,
   FastaOnlyStatusRequest,
   CancelFastaOnlyRequest,

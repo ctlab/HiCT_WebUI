@@ -164,7 +164,14 @@
       @fastaLinked="onFastaLinked"
       @wizardRequested="wizardOpen = true"
       @fastaOnlyRequested="fastaOnlyOpen = true"
+      @examplesRequested="examplesOpen = true"
     ></UpperFrame>
+    <ExamplesDialog
+      v-if="examplesOpen"
+      :requests="networkManager.requestManager"
+      @dismissed="examplesOpen = false"
+      @open="openExampleInWizard"
+    />
     <FastaOnlyDialog
       v-if="fastaOnlyOpen"
       :requests="networkManager.requestManager"
@@ -230,7 +237,11 @@
       :network-manager="networkManager"
       :map-manager="mapManager"
       :open-primary-dataset="openPrimaryDatasetFromWizard"
-      @dismissed="wizardOpen = false"
+      :prefill="wizardPrefill"
+      @dismissed="
+        wizardOpen = false;
+        wizardPrefill = undefined;
+      "
     />
     <div
       class="toast-container position-absolute top-0 end-0 p-3"
@@ -248,6 +259,7 @@ import {
 import type {
   AttachedSession,
   FastaOnlyStatus,
+  ExampleEntry,
 } from "@/app/core/net/api/RequestManager";
 import { pipelineTransferIssues } from "@/app/core/visualization/transferVisualization";
 import { prepareCoverage } from "@/app/core/visualization/coverageNormalization";
@@ -263,6 +275,7 @@ import { ActiveTool } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
 import { showTranslocationStatus } from "@/app/core/mapmanagers/TranslocationStatusToast";
 import UnsavedEditsDialog from "@/app/ui/components/common/UnsavedEditsDialog.vue";
 import FastaOnlyDialog from "@/app/ui/components/common/FastaOnlyDialog.vue";
+import ExamplesDialog from "@/app/ui/components/common/ExamplesDialog.vue";
 import {
   ContactMapManager,
   // type ContactMapManagerOptions,
@@ -282,6 +295,7 @@ import { LinkFASTARequest } from "@/app/core/net/api/request";
 import AGPImportChoiceModal from "@/app/ui/components/upper_ribbon/AGPImportChoiceModal.vue";
 import NotificationCenterModal from "@/app/ui/components/notifications/NotificationCenterModal.vue";
 import FileWizardModal from "@/app/ui/components/upper_ribbon/FileWizardModal.vue";
+import type { WizardPrefill } from "@/app/ui/components/upper_ribbon/wizardPrefill";
 
 import WorkspaceComponent from "@/app/ui/components/workspace/WorkspaceComponent.vue";
 import { Toaster, toast } from "vue-sonner";
@@ -366,6 +380,8 @@ const openProgressPct = ref(0);
 let openProgressInFlight = false;
 const wizardOpen = ref(false);
 const fastaOnlyOpen = ref(false);
+const examplesOpen = ref(false);
+const wizardPrefill = ref<WizardPrefill | undefined>(undefined);
 const coolerWeightsNaNPromptVisible = ref(false);
 let lastCoolerWeightsNaNPromptKey = "";
 let workspaceTimer: number | undefined;
@@ -798,6 +814,28 @@ async function openFileWithOptions(
   } finally {
     stopOpenProgress();
   }
+}
+
+/** Hands a downloaded example to the wizard with its files already chosen, by their recipe roles. */
+async function openExampleInWizard(payload: {
+  example: ExampleEntry;
+  folder: string;
+}): Promise<void> {
+  examplesOpen.value = false;
+  if (!(await confirmDiscardUnsavedEdits("open this example"))) return;
+  const { example, folder } = payload;
+  const nameOf = (fileId?: string) =>
+    fileId ? example.files.find((f) => f.id === fileId)?.filename : undefined;
+  const path = (fileId?: string) => {
+    const name = nameOf(fileId);
+    return name ? `${folder}/${name}` : undefined;
+  };
+  wizardPrefill.value = {
+    matrix: path(example.openingRecipe.matrix),
+    fasta: path(example.openingRecipe.fasta),
+    agp: path(example.openingRecipe.agp ?? example.openingRecipe.assembly),
+  };
+  wizardOpen.value = true;
 }
 
 /** Opens the assembly the server built from a FASTA alone, then applies its split layout. */

@@ -507,6 +507,14 @@
                 >
               </li>
               <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="emit('examplesRequested')"
+                  >Examples...</a
+                >
+              </li>
+              <li>
                 <a class="dropdown-item" href="#" @click.prevent="openAbout"
                   >About</a
                 >
@@ -1219,6 +1227,7 @@ const emit = defineEmits<{
   (e: "fastaLinked", filename: string): void;
   (e: "wizardRequested"): void;
   (e: "fastaOnlyRequested"): void;
+  (e: "examplesRequested"): void;
 }>();
 
 useEscDismissableDialog({

@@ -27,6 +27,10 @@ import {
   ListDirectoryRequest,
   OpenFileRequest,
   CloseFileRequest,
+  ListExamplesRequest,
+  StartExampleDownloadRequest,
+  ExampleDownloadStatusRequest,
+  CancelExampleDownloadRequest,
   StartFastaOnlyRequest,
   FastaOnlyStatusRequest,
   CancelFastaOnlyRequest,
@@ -327,12 +331,19 @@ abstract class HiCTAPIRequestDTO<
         return new ResetRenderPipelineRequestDTO(entity);
       case entity instanceof CloseFileRequest:
         return new CloseFileRequestDTO(entity as CloseFileRequest);
+      case entity instanceof ListExamplesRequest:
+      case entity instanceof ExampleDownloadStatusRequest:
+      case entity instanceof CancelExampleDownloadRequest:
       case entity instanceof FastaOnlyStatusRequest:
       case entity instanceof CancelFastaOnlyRequest:
       case entity instanceof PrepareCoverageNormalizationRequest:
       case entity instanceof CoverageNormalizationStatusRequest:
       case entity instanceof CancelCoverageNormalizationRequest:
         return new EmptyBodyRequestDTO(entity);
+      case entity instanceof StartExampleDownloadRequest:
+        return new StartExampleDownloadRequestDTO(
+          entity as StartExampleDownloadRequest
+        );
       case entity instanceof StartFastaOnlyRequest:
         return new StartFastaOnlyRequestDTO(entity as StartFastaOnlyRequest);
       case entity instanceof SelectNormalizationWeightsRequest:
@@ -1087,6 +1098,12 @@ class ListAGPFilesRequestDTO extends HiCTAPIRequestDTO<ListAGPFilesRequest> {
 class EmptyBodyRequestDTO extends HiCTAPIRequestDTO<HiCTAPIRequest> {
   toDTO(): Record<string, unknown> {
     return {};
+  }
+}
+
+class StartExampleDownloadRequestDTO extends HiCTAPIRequestDTO<StartExampleDownloadRequest> {
+  toDTO(): Record<string, unknown> {
+    return { exampleId: this.entity.options.exampleId };
   }
 }
 

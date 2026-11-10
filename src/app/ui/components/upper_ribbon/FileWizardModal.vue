@@ -1300,6 +1300,7 @@ import {
   watch,
 } from "vue";
 import { toast } from "vue-sonner";
+import type { WizardPrefill } from "./wizardPrefill";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import UniversalFileSelector from "./UniversalFileSelector.vue";
@@ -1386,6 +1387,8 @@ const props = defineProps<{
     fastaFilename?: string,
     options?: { applyDefaultPreset?: boolean }
   ) => Promise<void>;
+  /** Files chosen before the wizard opens, for example from a downloaded example. */
+  prefill?: WizardPrefill;
 }>();
 
 useEscDismissableDialog({
@@ -2885,6 +2888,14 @@ const runWizard = async (): Promise<void> => {
 };
 
 onMounted(() => {
+  const prefill = props.prefill;
+  if (prefill?.fasta) primaryFasta.value = prefill.fasta;
+  if (prefill?.agp) primaryAgp.value = prefill.agp;
+  if (prefill?.matrix) {
+    void resolveMatrixSource(prefill.matrix, "primary").catch((error) =>
+      toast.error(String(error ?? "Failed to process the example's map"))
+    );
+  }
   primarySource.presetId = findPresetIdByName("Mosquitoes Demo");
   secondarySource.presetId = findSecondaryOverlayPresetId();
   props.networkManager.requestManager

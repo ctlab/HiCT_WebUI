@@ -112,6 +112,10 @@ import {
   ListTrackFilesRequest,
   OpenTrackRequest,
   OpenCoolerWeightsTrackRequest,
+  ListExamplesRequest,
+  StartExampleDownloadRequest,
+  ExampleDownloadStatusRequest,
+  CancelExampleDownloadRequest,
   StartFastaOnlyRequest,
   FastaOnlyStatusRequest,
   CancelFastaOnlyRequest,
@@ -307,6 +311,80 @@ export type CoverageNormalizationStatus = {
   /** Every open source uses the same weights. */
   consistent: boolean;
   estimatedBytes: number;
+};
+
+/** One example dataset of the catalog, as the server sends it. Text is shown as text, never as markup. */
+export type ExampleFile = {
+  id: string;
+  role: string;
+  format: string;
+  url: string;
+  filename: string;
+  required: boolean;
+  bytes?: number;
+  sha256?: string;
+  description?: string;
+};
+export type ExampleEntry = {
+  id: string;
+  sectionId: string;
+  title: string;
+  description: string;
+  organism?: string;
+  tags?: string[];
+  publications: {
+    title: string;
+    citation: string;
+    url: string;
+    doi?: string;
+    kind?: string;
+  }[];
+  files: ExampleFile[];
+  attribution: {
+    provider: string;
+    url: string;
+    termsUrl: string;
+    acknowledgement: string;
+    licenseName?: string;
+    licenseUrl?: string;
+    restrictions?: string;
+  };
+  openingRecipe: {
+    matrix?: string;
+    fasta?: string;
+    agp?: string;
+    assembly?: string;
+    tracks?: string[];
+    referenceId?: string;
+  };
+  provenance?: { reviewStatus?: string; retrieved?: string; origin?: string };
+  source: string;
+  bundled: boolean;
+  /** The manifest and every required file are on the server. */
+  downloaded?: boolean;
+};
+export type ExamplesCatalogResponse = {
+  sections: {
+    id: string;
+    title: string;
+    description?: string;
+    order?: number;
+  }[];
+  examples: ExampleEntry[];
+  problems: { source: string; pointer: string; message: string }[];
+};
+export type ExampleDownloadStatus = {
+  state: "IDLE" | "RUNNING" | "READY" | "FAILED" | "CANCELLED";
+  exampleId: string | null;
+  progress: number;
+  message: string;
+  error: string | null;
+  downloadedBytes: number;
+  totalBytes: number;
+  currentFile: string | null;
+  files: string[];
+  skippedOptional: string[];
+  allRequiredPresent: boolean;
 };
 
 /** State of the job that builds an assembly from a FASTA file alone. */
@@ -1076,6 +1154,34 @@ class RequestManager {
     if (status.mode === "FILE" || status.mode === "SQRT_COVERAGE")
       this.normalizationState.mode = status.mode;
     return status;
+  }
+
+  public async listExamples(): Promise<ExamplesCatalogResponse> {
+    return this.sendRequest(new ListExamplesRequest(), undefined, {
+      suppressErrorToast: true,
+    }).then((response) => response.data as ExamplesCatalogResponse);
+  }
+
+  public async startExampleDownload(
+    exampleId: string
+  ): Promise<ExampleDownloadStatus> {
+    return this.sendRequest(
+      new StartExampleDownloadRequest({ exampleId }),
+      undefined,
+      { suppressErrorToast: true }
+    ).then((response) => response.data as ExampleDownloadStatus);
+  }
+
+  public async exampleDownloadStatus(): Promise<ExampleDownloadStatus> {
+    return this.sendRequest(new ExampleDownloadStatusRequest(), undefined, {
+      suppressErrorToast: true,
+    }).then((response) => response.data as ExampleDownloadStatus);
+  }
+
+  public async cancelExampleDownload(): Promise<ExampleDownloadStatus> {
+    return this.sendRequest(new CancelExampleDownloadRequest()).then(
+      (response) => response.data as ExampleDownloadStatus
+    );
   }
 
   public async startFastaOnly(options: {

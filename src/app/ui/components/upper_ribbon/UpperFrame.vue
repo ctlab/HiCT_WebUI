@@ -33,6 +33,7 @@
       @fastaLinked="onFastaLinked"
       @wizardRequested="onWizardRequested"
       @fastaOnlyRequested="emit('fastaOnlyRequested')"
+      @examplesRequested="emit('examplesRequested')"
     ></NavigationBar>
     <HeaderRibbon :mapManager="props.mapManager"></HeaderRibbon>
   </div>
@@ -53,6 +54,7 @@ const emit = defineEmits<{
   (e: "fastaLinked", filename: string): void;
   (e: "wizardRequested"): void;
   (e: "fastaOnlyRequested"): void;
+  (e: "examplesRequested"): void;
 }>();
 
 const props = defineProps<{
