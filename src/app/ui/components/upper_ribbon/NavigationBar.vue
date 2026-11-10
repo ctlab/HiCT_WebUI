@@ -1112,6 +1112,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportFailure } from "@/app/ui/reportFailure";
 import { AgpImportCancelledError } from "@/app/core/net/agpImportChoice";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { marked } from "marked";
@@ -1559,7 +1560,7 @@ async function onNativeProcessingChanged(): Promise<void> {
     }
     props.mapManager?.reloadTiles();
   } catch (error) {
-    toast.error("Failed to update native processing setting: " + String(error));
+    reportFailure("Update native processing settings", error);
     await refreshNativeProcessingStatus();
   } finally {
     nativeProcessingBusy.value = false;
@@ -1601,7 +1602,7 @@ async function onDotplotAlignerPreferenceChanged(): Promise<void> {
       });
     }
   } catch (error) {
-    toast.error("Failed to update dotplot aligner: " + String(error));
+    reportFailure("Update the dotplot aligner", error);
     await refreshConversionToolchainStatus();
   } finally {
     dotplotAlignerBusy.value = false;
@@ -1620,7 +1621,7 @@ function onQuitClicked(): void {
   if (typeof desktopBridge?.quit === "function") {
     void Promise.resolve(desktopBridge.quit()).catch((error) => {
       console.error("Failed to close Electron HiCT WebUI", error);
-      toast.error("Failed to close bundled WebUI: " + String(error));
+      reportFailure("Close bundled WebUI", error);
     });
     return;
   }
@@ -1633,7 +1634,7 @@ function onQuitClicked(): void {
       .catch(() => invoke("quit-app"))
       .catch((error) => {
         console.error("Failed to close Tauri HiCT WebUI", error);
-        toast.error("Failed to close bundled WebUI: " + String(error));
+        reportFailure("Close bundled WebUI", error);
       });
     return;
   }
@@ -1708,7 +1709,7 @@ async function onDropCachesClicked(): Promise<void> {
       `Dropped caches: ${result.matrixMetadataDeleted} matrix metadata entries, ${result.trackCacheEntriesDeleted} track cache files`
     );
   } catch (error) {
-    errorMessage.value = error;
+    reportFailure("Clear caches", error);
   }
 }
 
@@ -1833,7 +1834,7 @@ function applyJuiceboxWithoutFasta(): void {
   juiceboxFastaPromptOpen.value = false;
   pendingJuiceboxAssemblyFastaFilename.value = "";
   void applyPendingJuiceboxAssembly().catch((error) => {
-    toast.error(String(error));
+    reportFailure("Apply assembly", error);
   });
 }
 
@@ -1885,7 +1886,8 @@ async function onFileSelected(filename: string) {
       linkFASTA(filename);
     } else {
       errorMessage.value = "Unknown type of file to be opened: " + filename;
-      toast.error(String(errorMessage.value));
+      reportFailure("Choose map", errorMessage.value);
+      errorMessage.value = null;
     }
   }
 }
@@ -1998,7 +2000,7 @@ function onJuiceboxAssemblyFastaSelected(filename: string): void {
   pendingJuiceboxAssemblyFastaFilename.value = filename;
   openingJuiceboxAssemblyFastaFile.value = false;
   void applyPendingJuiceboxAssembly().catch((error) => {
-    toast.error(String(error));
+    reportFailure("Apply assembly", error);
   });
 }
 
@@ -2062,21 +2064,12 @@ function linkFASTA(filename: string, allowMismatch = false) {
       reopenToolAfterFastaLink();
     })
     .catch((e) => {
-      errorMessage.value = e;
+      reportFailure("Link FASTA", e);
     })
     .finally(() => {
       fastaLinking.value = false;
     });
 }
-
-watch(
-  () => errorMessage.value,
-  (message) => {
-    if (message) {
-      toast.error(message);
-    }
-  }
-);
 
 watch(
   () => binaryTileTransportEnabled.value,
@@ -2122,7 +2115,7 @@ function onAssemblyFASTARequest() {
       link.download = `assembly.fasta`;
       link.click();
     })
-    .catch((e) => toast.error("Export failed: " + String(e)));
+    .catch((error) => reportFailure("Export assembly", error));
 }
 
 function onSelectionFASTARequest() {
@@ -2141,7 +2134,7 @@ function onAssemblyAGPRequest() {
       link.download = `assembly.agp`;
       link.click();
     })
-    .catch((e) => toast.error("Export failed: " + String(e)));
+    .catch((error) => reportFailure("Export assembly", error));
 }
 </script>
 

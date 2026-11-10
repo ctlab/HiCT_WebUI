@@ -138,8 +138,16 @@ const pushNotification = (
 };
 
 toast.error = ((message: unknown, data?: unknown) => {
-  const normalized = stringifyNotificationMessage(message);
-  pushNotification("error", normalized);
+  const normalized =
+    message instanceof Error
+      ? message.message
+      : stringifyNotificationMessage(message);
+  if (
+    !(data as { diagnosticsRecorded?: boolean } | undefined)
+      ?.diagnosticsRecorded
+  ) {
+    pushNotification("error", normalized, { skipConsole: true });
+  }
   return originalToastError(normalized, data as never);
 }) as typeof toast.error;
 
@@ -177,13 +185,10 @@ console.error = (...args: unknown[]) => {
   try {
     const message = args.map(stringifyNotificationMessage).join(" ");
     pushNotification("error", message, { skipConsole: true });
-    if (errorToastStore.webuiErrorToastsEnabled) originalToastError(message);
   } catch (_e) {
     pushNotification("error", "WebUI error (see console for details)", {
       skipConsole: true,
     });
-    if (errorToastStore.webuiErrorToastsEnabled)
-      originalToastError("WebUI error (see console for details)");
   }
 };
 
@@ -203,6 +208,7 @@ window.addEventListener("error", (event) => {
 });
 
 window.addEventListener("unhandledrejection", (event) => {
+  event.preventDefault();
   const reason = event.reason;
   const msg =
     reason instanceof Error
@@ -211,5 +217,4 @@ window.addEventListener("unhandledrejection", (event) => {
       ? reason
       : "Unhandled promise rejection";
   pushNotification("error", msg, { skipConsole: true });
-  if (errorToastStore.webuiErrorToastsEnabled) originalToastError(msg);
 });

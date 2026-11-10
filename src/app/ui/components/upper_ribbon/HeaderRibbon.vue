@@ -335,6 +335,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportFailure } from "@/app/ui/reportFailure";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { AxisScopeSelection } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
 import { useVisualizationOptionsSync } from "./useVisualizationOptionsSync";
@@ -763,9 +764,7 @@ async function runExport(type: "svg" | "png" | "pdf") {
       await manager.exportCurrentMapPdf(onProgress, options);
     }
   } catch (e) {
-    toast.error(
-      (e as Error)?.message ?? `Failed to export ${type.toUpperCase()}`
-    );
+    reportFailure(`Export ${type.toUpperCase()}`, e);
   } finally {
     exportingType.value = null;
   }

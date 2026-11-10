@@ -194,6 +194,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportFailure } from "@/app/ui/reportFailure";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { VisualizationManager } from "@/app/core/mapmanagers/VisualizationManager";
@@ -3055,7 +3056,7 @@ const exportGraphToFile = (): void => {
     anchor.click();
     URL.revokeObjectURL(url);
   } catch (error) {
-    toast.error(String(error));
+    reportFailure("Export pipeline", error);
   }
 };
 
@@ -3084,7 +3085,7 @@ const onImportFileSelected = async (event: Event): Promise<void> => {
       typeof importedSwap === "boolean" ? importedSwap : swapUpperLower.value;
     toast.success("Pipeline graph imported");
   } catch (error) {
-    toast.error(`Import failed: ${String(error)}`);
+    reportFailure("Import pipeline", error);
   } finally {
     if (input) {
       input.value = "";
@@ -3301,7 +3302,7 @@ const previewConfig = async (): Promise<void> => {
     previewMode.value = true;
     graphCanvas?.stopRendering();
   } catch (error) {
-    toast.error(String(error));
+    reportFailure("Preview pipeline", error);
   } finally {
     previewing.value = false;
   }
@@ -3379,7 +3380,7 @@ const loadConfig = async (): Promise<void> => {
     }
     if (!restored) buildGraphFromExpressions(upperExpression, lowerExpression);
   } catch (error) {
-    toast.error(String(error));
+    reportFailure("Load pipeline", error);
   } finally {
     loading.value = false;
     if (pendingVisualizationSync.value && !previewMode.value && !saving.value) {
@@ -3394,7 +3395,7 @@ const saveConfig = async (): Promise<void> => {
   try {
     await persistConfig(true, "Rendering pipeline updated");
   } catch (error) {
-    toast.error(String(error));
+    reportFailure("Save pipeline", error);
   } finally {
     saving.value = false;
   }
@@ -3421,7 +3422,7 @@ const resetConfig = async (): Promise<void> => {
     await manager.reloadTilesFromBackend();
     toast.success("Rendering pipeline reset");
   } catch (error) {
-    toast.error(String(error));
+    reportFailure("Reset pipeline", error);
   } finally {
     saving.value = false;
   }

@@ -160,7 +160,6 @@ import {
   WorkerSchedulerDiagnosticsResponse,
 } from "./response";
 import { toast } from "vue-sonner";
-import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useSessionStore } from "@/app/stores/sessionStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 import { extractErrorMessage } from "./errorMessage";
@@ -537,9 +536,6 @@ class RequestManager {
       return;
     }
     const json = payload as Record<string, unknown>;
-    if (typeof json.error === "string" && json.error.trim().length > 0) {
-      toast.error(json.error);
-    }
     if (typeof json.info === "string" && json.info.trim().length > 0) {
       toast.success(json.info);
     }
@@ -736,8 +732,7 @@ class RequestManager {
 
   public async sendRequest(
     request: HiCTAPIRequest,
-    axiosConfig?: AxiosRequestConfig | undefined,
-    options?: { suppressErrorToast?: boolean }
+    axiosConfig?: AxiosRequestConfig | undefined
   ): Promise<AxiosResponse> {
     const host = this.networkManager.host.replace(/\/+$/, "");
     const path = request.requestPath.replace(/^\/+/, "");
@@ -746,9 +741,7 @@ class RequestManager {
       this.sequenceViewReadOnly &&
       (mutation || request.requestPath === "/assembly/history/restore")
     ) {
-      const message = "Return to the contact map before editing the assembly.";
-      if (!options?.suppressErrorToast) toast(message);
-      throw new Error(message);
+      throw new Error("Return to the contact map before editing the assembly.");
     }
     const tracked =
       mutation ||
@@ -830,14 +823,6 @@ class RequestManager {
         return req;
       })
       .catch((err) => {
-        const errorToastStore = useErrorToastStore();
-        if (
-          !options?.suppressErrorToast &&
-          errorToastStore.requestErrorToastsEnabled
-        ) {
-          const message = extractErrorMessage(err, "Request failed");
-          toast.error(message);
-        }
         // A failed/conflicting command can leave another client's newer journal.
         if (tracked) void this.getAssemblyHistory().catch(() => undefined);
         throw err;
@@ -910,9 +895,7 @@ class RequestManager {
         fingerprintFiles,
         verifyTrackDefinitions,
         fullFingerprints
-      ),
-      undefined,
-      { suppressErrorToast: true }
+      )
     );
     const snapshot = response.data as Record<string, unknown>;
     if (snapshot.snapshotVersion !== 1)
@@ -996,9 +979,7 @@ class RequestManager {
     snapshot: Record<string, unknown>
   ): Promise<AttachedSession> {
     // The caller reports one actionable message, so the generic request toast is off.
-    return this.sendRequest(new RestoreSessionRequest(snapshot), undefined, {
-      suppressErrorToast: true,
-    })
+    return this.sendRequest(new RestoreSessionRequest(snapshot))
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => {
         // The restored assembly is the saved one, so it starts clean.
@@ -1166,25 +1147,23 @@ class RequestManager {
   }
 
   public async listExamples(): Promise<ExamplesCatalogResponse> {
-    return this.sendRequest(new ListExamplesRequest(), undefined, {
-      suppressErrorToast: true,
-    }).then((response) => response.data as ExamplesCatalogResponse);
+    return this.sendRequest(new ListExamplesRequest()).then(
+      (response) => response.data as ExamplesCatalogResponse
+    );
   }
 
   public async startExampleDownload(
     exampleId: string
   ): Promise<ExampleDownloadStatus> {
     return this.sendRequest(
-      new StartExampleDownloadRequest({ exampleId }),
-      undefined,
-      { suppressErrorToast: true }
+      new StartExampleDownloadRequest({ exampleId })
     ).then((response) => response.data as ExampleDownloadStatus);
   }
 
   public async exampleDownloadStatus(): Promise<ExampleDownloadStatus> {
-    return this.sendRequest(new ExampleDownloadStatusRequest(), undefined, {
-      suppressErrorToast: true,
-    }).then((response) => response.data as ExampleDownloadStatus);
+    return this.sendRequest(new ExampleDownloadStatusRequest()).then(
+      (response) => response.data as ExampleDownloadStatus
+    );
   }
 
   public async cancelExampleDownload(): Promise<ExampleDownloadStatus> {
@@ -1198,15 +1177,15 @@ class RequestManager {
     splitAtN: boolean;
     minNRun: number;
   }): Promise<FastaOnlyStatus> {
-    return this.sendRequest(new StartFastaOnlyRequest(options), undefined, {
-      suppressErrorToast: true,
-    }).then((response) => response.data as FastaOnlyStatus);
+    return this.sendRequest(new StartFastaOnlyRequest(options)).then(
+      (response) => response.data as FastaOnlyStatus
+    );
   }
 
   public async fastaOnlyStatus(): Promise<FastaOnlyStatus> {
-    return this.sendRequest(new FastaOnlyStatusRequest(), undefined, {
-      suppressErrorToast: true,
-    }).then((response) => response.data as FastaOnlyStatus);
+    return this.sendRequest(new FastaOnlyStatusRequest()).then(
+      (response) => response.data as FastaOnlyStatus
+    );
   }
 
   public async cancelFastaOnly(): Promise<FastaOnlyStatus> {
@@ -1216,17 +1195,19 @@ class RequestManager {
   }
 
   public async prepareCoverageNormalization(): Promise<CoverageNormalizationStatus> {
-    return this.sendRequest(new PrepareCoverageNormalizationRequest()).then(
-      (response) => this.noteNormalization(response.data)
-    );
+    return this.sendRequest(new PrepareCoverageNormalizationRequest())
+      .then((response) => this.noteNormalization(response.data))
+      .catch((error) => {
+        throw new Error(
+          extractErrorMessage(error, "Coverage preparation request failed")
+        );
+      });
   }
 
   public async coverageNormalizationStatus(): Promise<CoverageNormalizationStatus> {
-    return this.sendRequest(
-      new CoverageNormalizationStatusRequest(),
-      undefined,
-      { suppressErrorToast: true }
-    ).then((response) => this.noteNormalization(response.data));
+    return this.sendRequest(new CoverageNormalizationStatusRequest()).then(
+      (response) => this.noteNormalization(response.data)
+    );
   }
 
   public async cancelCoverageNormalization(): Promise<CoverageNormalizationStatus> {
@@ -1262,14 +1243,9 @@ class RequestManager {
   }
 
   public async probeTrackCompatibility(
-    filename: string,
-    options?: { suppressErrorToast?: boolean }
+    filename: string
   ): Promise<TrackCompatibilityReportResponse> {
-    return this.sendRequest(
-      new ProbeTrackCompatibilityRequest({ filename }),
-      undefined,
-      options
-    )
+    return this.sendRequest(new ProbeTrackCompatibilityRequest({ filename }))
       .then((response) => response.data)
       .then((json) => new TrackCompatibilityReportResponseDTO(json).toEntity());
   }
@@ -1383,11 +1359,7 @@ class RequestManager {
       payload.startBP = options.start;
       payload.endBP = options.end;
     }
-    return this.sendRequest(
-      new QueryTracks1DRequest(payload),
-      { signal },
-      { suppressErrorToast: true }
-    )
+    return this.sendRequest(new QueryTracks1DRequest(payload), { signal })
       .then((response) => response.data)
       .then((json) => new TrackQueryResponseDTO(json).toEntity());
   }
@@ -1468,14 +1440,9 @@ class RequestManager {
   }
 
   public async probeTrackPrecomputeCache(
-    filename: string,
-    options?: { suppressErrorToast?: boolean }
+    filename: string
   ): Promise<TrackPrecomputeCacheProbeResponse> {
-    return this.sendRequest(
-      new ProbeTrackPrecomputeCacheRequest({ filename }),
-      undefined,
-      options
-    )
+    return this.sendRequest(new ProbeTrackPrecomputeCacheRequest({ filename }))
       .then((response) => response.data)
       .then((json) =>
         new TrackPrecomputeCacheProbeResponseDTO(json).toEntity()
@@ -1554,7 +1521,10 @@ class RequestManager {
         return result;
       })
       .catch((err) => {
-        throw new Error(extractErrorMessage(err, "Cannot link FASTA file"));
+        throw Object.assign(
+          new Error(extractErrorMessage(err, "Cannot link FASTA file")),
+          { cause: err }
+        );
       });
   }
 

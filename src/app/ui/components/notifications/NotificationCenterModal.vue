@@ -58,7 +58,7 @@
                     }}</span>
                   </div>
                   <button
-                    v-if="hasExpandableBody(entry.message)"
+                    v-if="entry.diagnostics || hasExpandableBody(entry.message)"
                     type="button"
                     class="btn btn-sm btn-outline-secondary notification-expand-toggle"
                     @click="notificationStore.toggleEntryExpansion(entry.id)"
@@ -66,6 +66,8 @@
                     {{
                       notificationStore.isEntryExpanded(entry.id)
                         ? "Collapse"
+                        : entry.diagnostics
+                        ? "Details"
                         : "Expand"
                     }}
                   </button>
@@ -76,8 +78,22 @@
                 <pre
                   v-if="notificationStore.isEntryExpanded(entry.id)"
                   class="notification-message-body"
-                  >{{ expandedBody(entry.message) }}</pre
+                  >{{ entry.diagnostics ?? expandedBody(entry.message) }}</pre
                 >
+                <button
+                  v-if="
+                    entry.diagnostics &&
+                    notificationStore.isEntryExpanded(entry.id)
+                  "
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  @click="
+                    entry.diagnostics &&
+                      copyText(entry.diagnostics, 'Diagnostics')
+                  "
+                >
+                  Copy diagnostics
+                </button>
               </div>
               <div
                 v-if="orderedEntries.length === 0"
@@ -103,6 +119,7 @@
 </template>
 
 <script setup lang="ts">
+import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import { ref, computed } from "vue";
 import {

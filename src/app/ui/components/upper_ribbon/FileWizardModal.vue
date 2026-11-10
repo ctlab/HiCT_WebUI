@@ -2362,10 +2362,10 @@ const addTrack = async (filename: string): Promise<void> => {
   }
   const [compatibility, precomputeProbe] = await Promise.all([
     props.networkManager.requestManager
-      .probeTrackCompatibility(filename, { suppressErrorToast: true })
+      .probeTrackCompatibility(filename)
       .catch(() => null),
     props.networkManager.requestManager
-      .probeTrackPrecomputeCache(filename, { suppressErrorToast: true })
+      .probeTrackPrecomputeCache(filename)
       .catch(() => null),
   ]);
   selectedTracks.value = [

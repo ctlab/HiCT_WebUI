@@ -747,6 +747,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportFailure } from "@/app/ui/reportFailure";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { AssemblyInfo } from "@/app/core/domain/AssemblyInfo";
@@ -943,7 +944,7 @@ const refreshTracks = async () => {
   try {
     tracks.value = await props.mapManager.linearTrackManager.refreshTrackList();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("List tracks", err);
   }
 };
 
@@ -1006,8 +1007,7 @@ const openTrackInternal = async () => {
     await refreshTracks();
     await refreshPrecomputeStatus();
   } catch (err) {
-    // The request layer already showed the server's explanation.
-    console.debug("Track could not be added", err);
+    reportFailure("Add track", err);
   }
 };
 
@@ -1026,7 +1026,7 @@ const onAddTrack = async () => {
     }
     await openTrackInternal();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Add track", err);
   }
 };
 
@@ -1050,7 +1050,7 @@ const onTogglePrimaryCoolerWeights = async (visible: boolean) => {
     await refreshTracks();
     await refreshPrecomputeStatus();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Show primary weights", err);
   }
 };
 
@@ -1080,7 +1080,7 @@ const onToggleSecondaryCoolerWeights = async (visible: boolean) => {
     await refreshTracks();
     await refreshPrecomputeStatus();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Show secondary weights", err);
   }
 };
 
@@ -1124,7 +1124,7 @@ const onSecondaryFileSelected = async (filename: string) => {
         })
       );
     } catch (error) {
-      toast.error(String(error));
+      reportFailure("Choose secondary map", error);
       secondaryFileSelectorOpen.value = false;
     }
     return;
@@ -1179,7 +1179,7 @@ const onAttachSecondarySource = async () => {
     await refreshSecondaryStatus();
     toast.success("Secondary source attached");
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Attach secondary map", err);
   }
 };
 
@@ -1213,7 +1213,7 @@ const onProceedSecondaryWithMismatch = async () => {
     await refreshSecondaryStatus();
     toast.success("Secondary source attached with compatibility warning");
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Attach secondary map", err);
   }
 };
 
@@ -1238,7 +1238,7 @@ const onDetachSecondarySource = async () => {
     await refreshSecondaryStatus();
     toast.success("Secondary source detached");
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Detach secondary map", err);
   }
 };
 
@@ -1256,7 +1256,7 @@ const onAssemblySourceChanged = async (
     secondaryStatus.value.assemblySource = result.assemblySource;
     applyAssemblyInfo(result.assemblyInfo);
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Change assembly source", err);
     await refreshSecondaryStatus();
   }
 };
@@ -1269,7 +1269,7 @@ const onToggleVisible = async (trackId: string, visible: boolean) => {
     await props.mapManager.linearTrackManager.updateTrack(trackId, { visible });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Change track visibility", err);
   }
 };
 
@@ -1302,7 +1302,7 @@ const onChangeColor = async (trackId: string, color: string) => {
     await props.mapManager.linearTrackManager.updateTrack(trackId, { color });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Change track color", err);
   }
 };
 
@@ -1314,7 +1314,7 @@ const onRename = async (trackId: string, name: string) => {
     await props.mapManager.linearTrackManager.updateTrack(trackId, { name });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Rename track", err);
   }
 };
 
@@ -1326,7 +1326,7 @@ const onRemove = async (trackId: string) => {
     await props.mapManager.linearTrackManager.removeTrack(trackId);
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Remove track", err);
   }
 };
 
@@ -1341,7 +1341,7 @@ const onMoveTrack = async (trackId: string, targetIndex: number) => {
     );
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Move track", err);
   }
 };
 
@@ -1355,7 +1355,7 @@ const onChangeBamMode = async (trackId: string, renderMode: string) => {
     });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Change track rendering", err);
   }
 };
 
@@ -1372,7 +1372,7 @@ const onChangeBigWigAggregation = async (
     });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Change track aggregation", err);
   }
 };
 
@@ -1386,7 +1386,7 @@ const onChangeLogScale = async (trackId: string, logScale: boolean) => {
     });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Change track scale", err);
   }
 };
 
@@ -1400,7 +1400,7 @@ const onChangeRangeAuto = async (trackId: string, rangeAuto: boolean) => {
     });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Set track range", err);
   }
 };
 
@@ -1437,7 +1437,8 @@ const onChangeRangeBound = async (
     await props.mapManager.linearTrackManager.updateTrack(trackId, options);
     await refreshTracks();
   } catch (err) {
-    // The request layer already showed the server's explanation. Show the range in use again.
+    reportFailure("Set track range", err);
+    // Restore the displayed range after a failed update.
     console.debug("Track range was not changed", err);
     await refreshTracks();
   }
@@ -1472,7 +1473,7 @@ const onStartPrecomputeAll = async () => {
         true
       );
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Precompute tracks", err);
   }
 };
 

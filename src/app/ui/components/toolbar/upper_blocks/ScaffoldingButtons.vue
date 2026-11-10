@@ -89,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { toast } from "vue-sonner";
+import { reportFailure } from "@/app/ui/reportFailure";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 
 const props = defineProps<{
@@ -100,7 +100,7 @@ async function unscaffoldAllClicked() {
   try {
     await props.mapManager?.eventManager.onUnscaffoldAllClicked();
   } catch (error) {
-    toast.error(String(error));
+    reportFailure("Ungroup all scaffolds", error);
   }
 }
 

@@ -1,3 +1,4 @@
+import { reportFailure } from "@/app/ui/reportFailure";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -339,7 +340,10 @@ class CommonEventManager {
         void this.mapManager.linearTrackManager.clearCachesAndRender();
         this.resetSelection();
         this.reloadTracks();
-      });
+      })
+      .catch((error) =>
+        reportFailure("Group selection into a scaffold", error)
+      );
   }
 
   public onRemoveScaffoldClicked(): void {
@@ -360,7 +364,8 @@ class CommonEventManager {
         void this.mapManager.linearTrackManager.clearCachesAndRender();
         this.resetSelection();
         this.reloadTracks();
-      });
+      })
+      .catch((error) => reportFailure("Ungroup selection", error));
   }
 
   public async onUnscaffoldAllClicked(): Promise<void> {
@@ -390,7 +395,8 @@ class CommonEventManager {
         void this.mapManager.linearTrackManager.clearCachesAndRender();
         this.resetSelection();
         this.reloadTracks();
-      });
+      })
+      .catch((error) => reportFailure("Move selection to debris", error));
   }
 
   public onReverseSelectionClicked(): void {
@@ -411,7 +417,8 @@ class CommonEventManager {
         this.applyAssemblyInfo(asmInfo);
         this.resetSelection();
         this.mapManager.reloadVisuals();
-      });
+      })
+      .catch((error) => reportFailure("Reverse selection", error));
   }
 
   public onMoveSelectionClicked(): void {
@@ -567,6 +574,7 @@ class CommonEventManager {
       .then((asmInfo) => {
         this.applyAssemblyInfo(asmInfo);
       })
+      .catch((error) => reportFailure("Move selection", error))
       .finally(() => {
         this.onMoveSelectionClicked();
         this.resetSelection();
@@ -596,6 +604,7 @@ class CommonEventManager {
       .then((asmInfo) => {
         this.applyAssemblyInfo(asmInfo);
       })
+      .catch((error) => reportFailure("Split contig", error))
       .finally(() => {
         this.mapManager.deactivateScissors();
         this.mapManager.eventManager.resetSelection();
@@ -667,7 +676,8 @@ class CommonEventManager {
         link.href = window.URL.createObjectURL(blob);
         link.download = `selection_(${fromBpX}bp-${toBpX}bp).(${fromBpY}bp-${toBpY}bp).fasta`;
         link.click();
-      });
+      })
+      .catch((error) => reportFailure("Export FASTA for selection", error));
     return;
   }
 

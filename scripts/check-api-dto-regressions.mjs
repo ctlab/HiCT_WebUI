@@ -435,9 +435,7 @@ for (const requestPath of [
   "/assembly/history/restore",
 ])
   await assert.rejects(
-    adapter.sendRequest({ requestPath }, undefined, {
-      suppressErrorToast: true,
-    }),
+    adapter.sendRequest({ requestPath }),
     /Return to the contact map/
   );
 assert.equal(
@@ -464,11 +462,11 @@ assert.equal(
 );
 assert.equal(
   notificationErrors.length,
-  1,
-  "Serialization failure must be visible"
+  0,
+  "The transport must leave user-facing reporting to the action"
 );
 console.log(
-  "Synchronous serialization failures release edit guard and notify the user."
+  "Synchronous serialization failures release the edit guard and reject to the caller."
 );
 
 const originalVersion = { session: "workspace-a", revision: 0 };

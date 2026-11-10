@@ -103,6 +103,13 @@
             <div class="modal-footer">
               <button
                 type="button"
+                class="btn btn-outline-secondary"
+                @click="copyText(sessionSaveDiagnostics, 'Diagnostics')"
+              >
+                Copy diagnostics
+              </button>
+              <button
+                type="button"
                 class="btn btn-primary"
                 @click="sessionSaveError = ''"
               >
@@ -303,6 +310,8 @@
 </template>
 
 <script setup lang="ts">
+import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
+import { failureDetails, reportFailure } from "@/app/ui/reportFailure";
 import { rememberedExcludedBinsPolicy } from "@/app/core/visualization/excludedBinsMemory";
 import {
   MAX_SESSION_BYTES,
@@ -980,8 +989,7 @@ function displayNewMap(fname: string, ffname?: string) {
         : undefined
     )
     .catch((a) => {
-      console.log(a);
-      toast.error(a);
+      reportFailure("Open map", a);
       stopOpenProgress();
     });
 }
@@ -1162,6 +1170,7 @@ let sessionSaveInFlight = false;
 /** Text of the long-running session operation currently shown in the status pill. */
 const sessionBusy = ref("");
 const sessionSaveError = ref("");
+const sessionSaveDiagnostics = ref("");
 const sessionSaveErrorDialog = ref<HTMLElement | null>(null);
 useModalFocus(sessionSaveErrorDialog, () => !!sessionSaveError.value);
 useEscDismissableDialog({
@@ -1232,13 +1241,9 @@ async function onSaveSession(): Promise<boolean> {
     );
     return true;
   } catch (e) {
-    console.debug("Session save failed", e);
-    const failure = e as {
-      response?: { data?: { error?: string } };
-      message?: string;
-    };
-    sessionSaveError.value =
-      failure?.response?.data?.error ?? failure?.message ?? "Session not saved";
+    const failure = failureDetails("Save session", e);
+    sessionSaveError.value = failure.message;
+    sessionSaveDiagnostics.value = failure.diagnostics;
     return false;
   } finally {
     sessionSaveInFlight = false;

@@ -32,7 +32,7 @@ export type CoveragePreparation =
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Starts (or joins) the background job that computes square-root coverage and follows it until it ends.
+ * Starts the background job that computes square-root coverage and follows it until it ends.
  * `start` false only follows a job that is already running. `shouldStop` lets a caller that went away
  * (a closed sidebar) stop following without cancelling the job.
  */
@@ -74,7 +74,9 @@ export async function prepareCoverage(
       ok: false,
       cancelled: false,
       message:
-        "Square-root coverage could not be prepared. Nothing was changed.",
+        error instanceof Error && error.message
+          ? `Square-root coverage could not be prepared: ${error.message}. Nothing was changed.`
+          : "Square-root coverage could not be prepared. Nothing was changed.",
     };
   }
 }

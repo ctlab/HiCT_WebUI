@@ -9,7 +9,7 @@ const source = fs.readFileSync(
   new URL("../src/app/core/visualization/coverageNormalization.ts", import.meta.url),
   "utf8"
 );
-const sandbox = { exports: {}, console, setTimeout };
+const sandbox = { exports: {}, console, setTimeout, Error };
 vm.runInNewContext(
   ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
@@ -57,7 +57,7 @@ assert.equal(r.ok, true);
 
 r = await prepareCoverage(stub(status("RUNNING"), [new Error("network")]), () => {}, { pollMs: 1 });
 assert.equal(r.ok, false);
-assert.match(r.message, /could not be prepared.*Nothing was changed/);
+assert.match(r.message, /could not be prepared.*network.*Nothing was changed/);
 
 r = await prepareCoverage(stub(status("READY", 1), []), () => {}, { pollMs: 1 });
 assert.equal(r.ok, true, "an already prepared map is ready at once");
