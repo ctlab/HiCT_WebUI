@@ -630,7 +630,6 @@ async function openFileWithOptions(
   ffname: string | undefined,
   options?: { applyDefaultPreset?: boolean }
 ): Promise<void> {
-  lastWorkspaceSnapshot = "";
   startOpenProgress();
   try {
     // Keep appearance, never assembly coordinates/history, when switching files.
@@ -649,7 +648,10 @@ async function openFileWithOptions(
       fname,
       ffname
     );
+    lastWorkspaceSnapshot = "";
     workspaceConflict.value = false;
+    sessionStore.setLastAgpFilename("");
+    matrixViewStore.reset();
     filename.value = fname;
     // New maps may have different missing weights: ask again for this dataset.
     lastCoolerWeightsNaNPromptKey = "";
@@ -732,9 +734,7 @@ async function openPrimaryDatasetFromWizard(
   await openFileWithOptions(fname, ffname, options);
 }
 
-function displayNewMap() {
-  const fname = filename.value;
-  const ffname = fastaFilename.value;
+function displayNewMap(fname: string, ffname?: string) {
   if (!fname) {
     const message =
       "Cannot open non-specified files: filename=" +
@@ -1296,10 +1296,9 @@ function onFileSelected(newFilename: string) {
     return;
   }
   if (newFilename !== filename.value) {
-    resetState();
-    filename.value = newFilename;
-    if (filename.value && filename.value !== "") {
-      displayNewMap();
+    if (newFilename.trim() !== "") {
+      // Keep the current manager and source names until the server accepts the replacement.
+      displayNewMap(newFilename);
     }
   }
 }
