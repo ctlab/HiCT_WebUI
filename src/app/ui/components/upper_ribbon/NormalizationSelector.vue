@@ -265,6 +265,7 @@ import {
   watch,
 } from "vue";
 import { toast } from "vue-sonner";
+import type { CoolerWeightsNaNPolicy } from "@/app/core/visualization/VisualizationOptions";
 import { prepareCoverage } from "@/app/core/visualization/coverageNormalization";
 import type { CoverageNormalizationStatus } from "@/app/core/net/api/RequestManager";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
@@ -508,18 +509,34 @@ async function switchWeights(mode: "FILE" | "SQRT_COVERAGE"): Promise<boolean> {
   }
 }
 
-/** Weights are applied only when the policy for missing weights is not "do not use". */
-function turnWeightsOn(): void {
-  if (coolerWeightsNaNPolicy.value === "DISABLE_WEIGHTS")
-    coolerWeightsNaNPolicy.value = "REPLACE_NANS_WITH_ONE";
-  applyCoolerWeights.value = true;
+/**
+ * Applies the choice through the one routine that rewrites the pipeline, the options and the color
+ * range together. A change of normalization changes the scale of the values, so the range is refitted;
+ * keeping the old one would leave the map blank or saturated.
+ */
+async function applyChoice(useWeights: boolean): Promise<void> {
+  const manager = props.mapManager;
+  if (!manager) return;
+  const policy: CoolerWeightsNaNPolicy = !useWeights
+    ? "DISABLE_WEIGHTS"
+    : coolerWeightsNaNPolicy.value === "DISABLE_WEIGHTS"
+    ? "REPLACE_NANS_WITH_ZERO"
+    : coolerWeightsNaNPolicy.value;
+  try {
+    await manager.visualizationManager.applyCoolerWeightsPolicy(
+      policy,
+      useWeights
+    );
+  } catch (error) {
+    console.debug("Applying the normalization failed", error);
+    prepareError.value = "The normalization could not be applied.";
+  }
 }
 
 async function useCoverage(): Promise<void> {
   if (!(await waitForPreparation(true))) return;
   if (!(await switchWeights("SQRT_COVERAGE"))) return;
-  turnWeightsOn();
-  emit("apply");
+  await applyChoice(true);
 }
 
 async function onChoose(value: string): Promise<void> {
@@ -527,12 +544,10 @@ async function onChoose(value: string): Promise<void> {
   const next = value as NormalizationChoice;
   if (next === choice.value) return;
   if (next === "none") {
-    applyCoolerWeights.value = false;
-    emit("apply");
+    await applyChoice(false);
   } else if (next === "file") {
     if (!(await switchWeights("FILE"))) return;
-    turnWeightsOn();
-    emit("apply");
+    await applyChoice(true);
   } else {
     await useCoverage();
   }

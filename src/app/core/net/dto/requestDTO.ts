@@ -549,6 +549,7 @@ class SetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<SetVisualizati
       coolerWeightsNaNPolicy: options.coolerWeightsNaNPolicy,
       preserveRenderPipeline:
         this.entity.options.preserveRenderPipeline ?? false,
+      renderPipeline: this.entity.options.renderPipeline,
       colormap: ColormapDTO.fromEntity(options.colormap).json,
     };
   }

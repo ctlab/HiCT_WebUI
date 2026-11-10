@@ -93,20 +93,20 @@
           <div class="modal-content">
             <div class="modal-header">
               <h5 id="cooler-weights-nan-title" class="modal-title">
-                Cooler weights contain NaNs
+                Excluded bins in the weights from the file
               </h5>
               <button
                 type="button"
                 class="btn-close"
                 aria-label="Close"
-                @click="chooseCoolerWeightsNaNPolicy('DISABLE_WEIGHTS', false)"
+                @click="coolerWeightsNaNPromptVisible = false"
               ></button>
             </div>
             <div class="modal-body">
               <p>
-                HiCT detected
+                The file's balancing excludes
                 {{ visualizationOptionsStore.coolerWeightsNaNCount }}
-                non-finite Cooler balancing weight{{
+                bin{{
                   visualizationOptionsStore.coolerWeightsNaNCount === 1
                     ? ""
                     : "s"
@@ -251,6 +251,7 @@
 </template>
 
 <script setup lang="ts">
+import { rememberedExcludedBinsPolicy } from "@/app/core/visualization/excludedBinsMemory";
 import {
   MAX_SESSION_BYTES,
   createSessionEnvelope,
@@ -383,7 +384,6 @@ const fastaOnlyOpen = ref(false);
 const examplesOpen = ref(false);
 const wizardPrefill = ref<WizardPrefill | undefined>(undefined);
 const coolerWeightsNaNPromptVisible = ref(false);
-let lastCoolerWeightsNaNPromptKey = "";
 let workspaceTimer: number | undefined;
 let workspaceSaveInFlight = false;
 let workspaceRestoring = false;
@@ -435,8 +435,9 @@ useEscDismissableDialog({
 useEscDismissableDialog({
   priority: 1060,
   isOpen: () => coolerWeightsNaNPromptVisible.value,
-  requestClose: () =>
-    void chooseCoolerWeightsNaNPolicy("DISABLE_WEIGHTS", false),
+  requestClose: () => {
+    coolerWeightsNaNPromptVisible.value = false;
+  },
 });
 
 function startOpenProgress() {
@@ -516,27 +517,23 @@ function safeColorTranslator(
   }
 }
 
-// Set once the user explicitly answers the NaN-weight question in this window.
-// A carried-over appearance then already contains their answer.
-let coolerWeightsPolicyConfirmed = false;
-
-async function maybePromptCoolerWeightsNaNs(carriedAppearance?: {
+/**
+ * Bins that the file's balancing excluded have NaN weights. Weights from the file are masked there
+ * without asking. A one-line note says how many bins are masked and offers Change. The choice is
+ * remembered per file, and Attach never asks.
+ */
+async function settleExcludedBins(carriedAppearance?: {
   applyCoolerWeights?: boolean;
 }): Promise<void> {
   const manager = mapManager.value;
   if (!manager) {
     return;
   }
-  // Opening the next file keeps the current preset. Do not ask again (and do
-  // not let the answer re-enable weights or recompute thresholds) when that
-  // preset does not use Cooler weights or the user already chose a policy.
-  if (
-    carriedAppearance &&
-    (!carriedAppearance.applyCoolerWeights || coolerWeightsPolicyConfirmed)
-  ) {
+  // Opening the next file keeps the current appearance, including its weight choice.
+  if (carriedAppearance) {
     return;
   }
-  // The question is about weights from the file. Coverage weights are not those.
+  // Coverage normalization is not the file's weights.
   const normalization = await manager.networkManager.requestManager
     .coverageNormalizationStatus()
     .catch(() => null);
@@ -546,15 +543,65 @@ async function maybePromptCoolerWeightsNaNs(carriedAppearance?: {
   const options = await manager.networkManager.requestManager
     .getVisualizationOptions(new GetVisualizationOptionsRequest({}))
     .catch(() => null);
-  if (!options?.coolerWeightsHaveNaNs) {
+  if (!options?.coolerWeightsHaveNaNs || manager !== mapManager.value) {
     return;
   }
-  const key = `${filename.value ?? ""}:${options.coolerWeightsNaNCount}`;
-  if (lastCoolerWeightsNaNPromptKey === key) {
+  const file = filename.value ?? "";
+  const remembered = rememberedExcludedBinsPolicy(file);
+  if (remembered) {
+    if (
+      remembered !== options.coolerWeightsNaNPolicy ||
+      options.applyCoolerWeights !== (remembered !== "DISABLE_WEIGHTS")
+    ) {
+      await applyExcludedBinsPolicy(
+        remembered,
+        remembered !== "DISABLE_WEIGHTS"
+      );
+    }
     return;
   }
-  lastCoolerWeightsNaNPromptKey = key;
-  coolerWeightsNaNPromptVisible.value = true;
+  // Weights are not applied, so there is nothing to mask.
+  if (!options.applyCoolerWeights) {
+    return;
+  }
+  await applyExcludedBinsPolicy("REPLACE_NANS_WITH_ZERO", true);
+  const count = options.coolerWeightsNaNCount;
+  toast.message(
+    `${count.toLocaleString()} excluded bin${count === 1 ? "" : "s"} masked.`,
+    {
+      duration: 15000,
+      action: {
+        label: "Change",
+        onClick: () => {
+          coolerWeightsNaNPromptVisible.value = true;
+        },
+      },
+    }
+  );
+}
+
+async function applyExcludedBinsPolicy(
+  policy: CoolerWeightsNaNPolicy,
+  keepWeights: boolean
+): Promise<void> {
+  const manager = mapManager.value;
+  if (!manager) {
+    return;
+  }
+  try {
+    await manager.visualizationManager.applyCoolerWeightsPolicy(
+      policy,
+      keepWeights
+    );
+    await manager.stabilizeInitialViewport({ fit: false });
+  } catch (error) {
+    const message =
+      (error as { response?: { data?: { error?: string } }; message?: string })
+        ?.response?.data?.error ??
+      (error as { message?: string })?.message ??
+      "Failed to apply the excluded-bins choice";
+    toast.error(message);
+  }
 }
 
 async function chooseCoolerWeightsNaNPolicy(
@@ -562,34 +609,7 @@ async function chooseCoolerWeightsNaNPolicy(
   keepWeights: boolean
 ): Promise<void> {
   coolerWeightsNaNPromptVisible.value = false;
-  coolerWeightsPolicyConfirmed = true;
-  visualizationOptionsStore.coolerWeightsNaNPolicy = policy;
-  visualizationOptionsStore.applyCoolerWeights = keepWeights;
-  const manager = mapManager.value;
-  if (!manager) {
-    return;
-  }
-  const pipelineRevision =
-    manager.networkManager.requestManager.renderPipelineRevision;
-  try {
-    await manager.visualizationManager.sendVisualizationOptionsToServer({
-      skipAutoThresholdRefresh: true,
-      preserveCustomPipeline: true,
-    });
-    await manager.visualizationManager.applyOpeningFullMapQuantileThreshold(
-      undefined,
-      pipelineRevision
-    );
-    await manager.reloadTilesFromBackend();
-    await manager.stabilizeInitialViewport({ fit: false });
-  } catch (error) {
-    const message =
-      (error as { response?: { data?: { error?: string } }; message?: string })
-        ?.response?.data?.error ??
-      (error as { message?: string })?.message ??
-      "Failed to apply Cooler weight policy";
-    toast.error(message);
-  }
+  await applyExcludedBinsPolicy(policy, keepWeights);
 }
 
 function syncUiChromePalette(): void {
@@ -653,7 +673,6 @@ async function adoptSession(
   fastaFilename.value = attached.fastaFilename ?? "";
   if (options.fresh) {
     lastWorkspaceSnapshot = "";
-    lastCoolerWeightsNaNPromptKey = "";
     sessionStore.setLastAgpFilename("");
   }
   await ensureMapFonts();
@@ -698,7 +717,6 @@ async function onAttached() {
       return;
     }
     await adoptSession(attached, { fresh: false });
-    maybePromptCoolerWeightsNaNs();
     toast.success("Attached to session " + attached.filename);
   } catch (err) {
     const failure = err as {
@@ -743,8 +761,6 @@ async function openFileWithOptions(
     sessionStore.setLastAgpFilename("");
     matrixViewStore.reset();
     filename.value = fname;
-    // New maps may have different missing weights: ask again for this dataset.
-    lastCoolerWeightsNaNPromptKey = "";
     fastaFilename.value = ffname ?? "";
     mapManager.value?.dispose();
     await ensureMapFonts();
@@ -787,11 +803,11 @@ async function openFileWithOptions(
         }
       }
       await newManager.reloadTilesFromBackend();
-      await maybePromptCoolerWeightsNaNs(appearance);
+      await settleExcludedBins(appearance);
     } else if (options?.applyDefaultPreset !== false) {
       await applyDefaultVisualizationPreset();
     } else {
-      await maybePromptCoolerWeightsNaNs();
+      await settleExcludedBins();
     }
     if (ffname && ffname.trim() !== "") {
       try {
@@ -935,10 +951,10 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
   if (!presets || presets.length === 0) {
     const manager = mapManager.value;
     if (manager) {
-      await manager.visualizationManager.applyOpeningFullMapQuantileThreshold();
+      await manager.visualizationManager.applyOpeningViewportQuantileThreshold();
       await manager.reloadTilesFromBackend();
       await manager.stabilizeInitialViewport({ fit: false });
-      await maybePromptCoolerWeightsNaNs();
+      await settleExcludedBins();
     }
     return;
   }
@@ -1018,10 +1034,10 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
   await manager.visualizationManager.sendVisualizationOptionsToServer({
     skipAutoThresholdRefresh: true,
   });
-  await manager.visualizationManager.applyOpeningFullMapQuantileThreshold();
+  await manager.visualizationManager.applyOpeningViewportQuantileThreshold();
   await manager.reloadTilesFromBackend();
   await manager.stabilizeInitialViewport({ fit: false });
-  await maybePromptCoolerWeightsNaNs();
+  await settleExcludedBins();
 }
 
 function onAgpLoaded(filename: string): void {

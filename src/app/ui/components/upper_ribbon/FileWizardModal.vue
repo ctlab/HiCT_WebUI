@@ -2841,7 +2841,7 @@ const runWizard = async (): Promise<void> => {
     runState.currentMessage = "Preparing initial view";
     applyWizardPresentationState();
     await nextTick();
-    await mapManager.visualizationManager.applyOpeningFullMapQuantileThreshold();
+    await mapManager.visualizationManager.applyOpeningViewportQuantileThreshold();
     await mapManager.reloadTilesFromBackend();
 
     for (const track of selectedTracks.value) {

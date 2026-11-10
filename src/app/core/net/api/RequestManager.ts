@@ -2024,9 +2024,12 @@ class RequestManager {
   public async setVisualizationOptions(
     request: SetVisualizationOptionsRequest
   ): Promise<VisualizationOptions> {
-    return this.sendRequest(request)
-      .then((response) => response.data)
-      .then((json) => new VisualizationOptionsDTO(json).toEntity());
+    const publishesPipeline = request.options.renderPipeline !== undefined;
+    if (publishesPipeline) ++this.renderPipelineRevision;
+    const response = await this.sendRequest(request);
+    if (publishesPipeline && typeof window !== "undefined")
+      window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
+    return new VisualizationOptionsDTO(response.data).toEntity();
   }
 
   public async setViewportExpectedProfile(options: {

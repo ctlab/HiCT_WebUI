@@ -31,7 +31,10 @@ import {
   type SignalProfile,
 } from "@/app/core/visualization/signalProfile";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
-import VisualizationOptions from "../visualization/VisualizationOptions";
+import { rememberExcludedBinsPolicy } from "../visualization/excludedBinsMemory";
+import VisualizationOptions, {
+  type CoolerWeightsNaNPolicy,
+} from "../visualization/VisualizationOptions";
 import SimpleLinearGradient from "../visualization/colormap/SimpleLinearGradient";
 import type { EventsKey } from "ol/events";
 import { unByKey } from "ol/Observable";
@@ -40,6 +43,8 @@ import {
   type SourceName,
 } from "../visualization/renderPipelineWizard";
 import { ColorTranslator } from "colortranslator";
+
+import { histogramQuantile } from "../visualization/tileSignalRange";
 
 type ViewportPixelBounds = {
   bpResolution: number;
@@ -65,7 +70,7 @@ type ColormapTarget = {
   maxSignal: number;
 };
 
-const OPENING_THRESHOLD_QUANTILE = 0.9;
+const OPENING_THRESHOLD_QUANTILE = 0.995;
 const OPENING_THRESHOLD_MAX_MAP_SIZE_PX = 2000;
 
 const clampQuantile = (value: number): number => {
@@ -1074,8 +1079,26 @@ class VisualizationManager {
     return nextUpperBound;
   }
 
+  private openingHistogramUpperBound(
+    source: SourceName,
+    expression: unknown,
+    quantile: number,
+    minSignal: number
+  ): number | null {
+    const range =
+      this.mapManager.viewAndLayersManager.loadedViewportSignalRange(
+        source,
+        expression
+      )?.processed;
+    const candidate =
+      histogramQuantile(range?.histogram, quantile, { includeZeros: true }) ??
+      histogramQuantile(range?.histogram, quantile);
+    const upper = Math.min(candidate ?? Infinity, range?.max ?? -Infinity);
+    return candidate != null && upper > minSignal ? upper : null;
+  }
+
   private async syncPipelineAutoThresholdForBounds(
-    bounds: ViewportPixelBounds,
+    bounds: ViewportPixelBounds | null,
     config?: Record<string, unknown>,
     sourceFilter?: SourceName,
     targetId?: string | null,
@@ -1083,6 +1106,7 @@ class VisualizationManager {
       requireAutoThresholdEnabled?: boolean;
       quantile?: number;
       reloadTiles?: boolean;
+      useViewportHistogram?: boolean;
     }
   ): Promise<boolean> {
     const api = this.mapManager.networkManager.requestManager;
@@ -1120,8 +1144,17 @@ class VisualizationManager {
 
     for (const target of filteredTargets) {
       const cacheKey = JSON.stringify(target.profile);
-      let nextUpperBound = thresholdCache.get(cacheKey);
+      const quantile = behavior?.quantile ?? options.autoThresholdQuantile;
+      let nextUpperBound = behavior?.useViewportHistogram
+        ? this.openingHistogramUpperBound(
+            target.profile.source,
+            target.node.input,
+            quantile,
+            target.minSignal
+          ) ?? thresholdCache.get(cacheKey)
+        : thresholdCache.get(cacheKey);
       if (nextUpperBound === undefined) {
+        if (!bounds || !target.profile.editableInput) continue;
         const response =
           await this.mapManager.networkManager.requestManager.queryMatrixFloat32(
             {
@@ -1138,7 +1171,7 @@ class VisualizationManager {
             target.profile,
             scalingCoefficients
           ),
-          behavior?.quantile ?? options.autoThresholdQuantile,
+          quantile,
           target.minSignal,
           target.maxSignal
         );
@@ -1152,6 +1185,9 @@ class VisualizationManager {
         Math.abs(nextUpperBound - target.maxSignal) >= 1e-9
       ) {
         target.node.maxSignal = nextUpperBound;
+        // The range is also carried by a constant node, and that one is what a reader prefers.
+        if (isRecord(target.node.max) && target.node.max.type === "constant")
+          target.node.max.value = nextUpperBound;
         changed = true;
       }
     }
@@ -1163,12 +1199,37 @@ class VisualizationManager {
       JSON.stringify(latestConfig) !== originalConfig
     )
       return false;
-    if (!changed) {
+    if (behavior?.useViewportHistogram) {
+      const target = collectConfigColormapTargets(activeConfig).find(
+        (item) => item.profile.source === "PRIMARY"
+      );
+      const current = target
+        ? visualizationOptionsFromTarget(target, options)
+        : options;
+      this.visualizationOptionsStore.setVisualizationOptions(
+        new VisualizationOptions(
+          current.preLogBase,
+          current.postLogBase,
+          current.applyCoolerWeights,
+          current.resolutionScaling,
+          current.resolutionLinearScaling,
+          current.colormap,
+          false,
+          behavior.quantile,
+          current.signalDisplayMode,
+          current.coolerWeightsNaNPolicy,
+          current.coolerWeightsHaveNaNs,
+          current.coolerWeightsNaNCount
+        )
+      );
+      await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        renderPipeline: activeConfig,
+      });
       return true;
     }
-    await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
-      activeConfig
-    );
+    if (!changed) return true;
+    await api.setRenderPipelineConfig(activeConfig);
     if (behavior?.reloadTiles !== false) {
       await this.mapManager.reloadTilesFromBackend();
     }
@@ -1183,6 +1244,7 @@ class VisualizationManager {
       requireAutoThresholdEnabled?: boolean;
       quantile?: number;
       reloadTiles?: boolean;
+      useViewportHistogram?: boolean;
     }
   ): Promise<boolean> {
     const bounds = this.resolveViewportPixelBounds();
@@ -1198,7 +1260,7 @@ class VisualizationManager {
     );
   }
 
-  public async applyOpeningFullMapQuantileThreshold(
+  public async applyOpeningViewportQuantileThreshold(
     quantile = OPENING_THRESHOLD_QUANTILE,
     expectedPipelineRevision = this.mapManager.networkManager.requestManager
       .renderPipelineRevision
@@ -1209,10 +1271,22 @@ class VisualizationManager {
       this.mapManager.isDisposed
     )
       return null;
+    const optionsBeforeFit =
+      this.visualizationOptionsStore.asVisualizationOptions();
+    if (optionsBeforeFit.signalDisplayMode !== "OBSERVED") return null;
+    await this.mapManager.reloadTilesFromBackend();
+    const map = this.mapManager.getMap();
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        window.clearTimeout(timeout);
+        map.un("rendercomplete", done);
+        resolve();
+      };
+      const timeout = window.setTimeout(done, 3000);
+      map.once("rendercomplete", done);
+      map.renderSync();
+    });
     const bounds = this.resolveOpeningFullMapPixelBounds();
-    if (!bounds) {
-      return null;
-    }
     const pipelineConfig = await this.getActiveRenderPipelineConfig();
     if (
       api.renderPipelineRevision !== expectedPipelineRevision ||
@@ -1220,7 +1294,7 @@ class VisualizationManager {
     )
       return null;
     if (pipelineConfig) {
-      const applied = await this.syncPipelineAutoThresholdForBounds(
+      await this.syncPipelineAutoThresholdForBounds(
         bounds,
         pipelineConfig,
         undefined,
@@ -1229,41 +1303,9 @@ class VisualizationManager {
           requireAutoThresholdEnabled: false,
           quantile,
           reloadTiles: false,
+          useViewportHistogram: true,
         }
-      ).catch(() => false);
-      if (!applied || this.mapManager.isDisposed) return null;
-      // The graph now holds the opening threshold. Read it back, so the sidebar, the stored options
-      // and the pipeline agree. Otherwise the preset's old threshold would be shown, and sent back
-      // to the server, until the next Apply overwrote the graph with it.
-      await this.loadVisualizationOptionsForSource("PRIMARY").catch(
-        () => undefined
       );
-      if (
-        api.renderPipelineRevision !== expectedPipelineRevision ||
-        this.mapManager.isDisposed
-      )
-        return null;
-      const current = this.visualizationOptionsStore.asVisualizationOptions();
-      this.visualizationOptionsStore.setVisualizationOptions(
-        new VisualizationOptions(
-          current.preLogBase,
-          current.postLogBase,
-          current.applyCoolerWeights,
-          current.resolutionScaling,
-          current.resolutionLinearScaling,
-          current.colormap,
-          false,
-          quantile,
-          current.signalDisplayMode,
-          current.coolerWeightsNaNPolicy,
-          current.coolerWeightsHaveNaNs,
-          current.coolerWeightsNaNCount
-        )
-      );
-      await this.sendVisualizationOptionsToServer({
-        skipAutoThresholdRefresh: true,
-        preserveCustomPipeline: true,
-      });
       return null;
     }
 
@@ -1271,17 +1313,24 @@ class VisualizationManager {
     if (!(options.colormap instanceof SimpleLinearGradient)) {
       return null;
     }
-    const response =
-      await this.mapManager.networkManager.requestManager.queryMatrixFloat32({
+    let nextUpperBound = this.openingHistogramUpperBound(
+      "PRIMARY",
+      undefined,
+      quantile,
+      options.colormap.minSignal
+    );
+    if (nextUpperBound == null && bounds) {
+      const response = await api.queryMatrixFloat32({
         ...bounds,
         signalMode: "TRADITIONAL_NORMALIZED",
       });
-    const nextUpperBound = resolveSafeAutoUpperBound(
-      response.values,
-      quantile,
-      options.colormap.minSignal,
-      options.colormap.maxSignal
-    );
+      nextUpperBound = resolveSafeAutoUpperBound(
+        response.values,
+        quantile,
+        options.colormap.minSignal,
+        options.colormap.maxSignal
+      );
+    }
     if (
       api.renderPipelineRevision !== expectedPipelineRevision ||
       this.mapManager.isDisposed
@@ -1320,15 +1369,10 @@ class VisualizationManager {
     return updatedMaxSignal;
   }
 
-  public async applyOpeningViewportQuantileThreshold(
-    quantile = OPENING_THRESHOLD_QUANTILE
-  ): Promise<number | null> {
-    return this.applyOpeningFullMapQuantileThreshold(quantile);
-  }
-
   public async sendVisualizationOptionsToServer(options?: {
     skipAutoThresholdRefresh?: boolean;
     preserveCustomPipeline?: boolean;
+    renderPipeline?: Record<string, unknown>;
   }): Promise<VisualizationOptions> {
     if (!options?.skipAutoThresholdRefresh) {
       await this.syncAutoThresholdToViewport().catch(() => null);
@@ -1338,6 +1382,7 @@ class VisualizationManager {
         new SetVisualizationOptionsRequest({
           options: this.visualizationOptionsStore.asVisualizationOptions(),
           preserveRenderPipeline: options?.preserveCustomPipeline ?? false,
+          renderPipeline: options?.renderPipeline,
         })
       )
       .then((options) => {
@@ -1363,6 +1408,7 @@ class VisualizationManager {
   public async sendVisualizationOptionsAndReload(options?: {
     skipAutoThresholdRefresh?: boolean;
     preserveCustomPipeline?: boolean;
+    renderPipeline?: Record<string, unknown>;
   }): Promise<VisualizationOptions> {
     const result = await this.sendVisualizationOptionsToServer(options);
     this.mapManager.reloadTiles();
@@ -1411,12 +1457,57 @@ class VisualizationManager {
     await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
       pipelineConfig
     );
+    // The server keeps the primary options next to the pipeline. Keep them in step with what the
+    // graph now does, so a saved session and the sidebar describe the same signal.
+    if (source === "PRIMARY") {
+      await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        preserveCustomPipeline: true,
+      });
+    }
     const hydrated = await this.loadVisualizationOptionsForSource(
       source,
       targetId
     );
     await this.mapManager.reloadTilesFromBackend();
     return hydrated;
+  }
+
+  /**
+   * Sets how weights from the file are used, rewrites the signal chain of an enabled pipeline from
+   * that choice, and fits the color range to the result. Options, pipeline and sidebar then agree,
+   * whichever choice was made.
+   */
+  public async applyCoolerWeightsPolicy(
+    policy: CoolerWeightsNaNPolicy,
+    keepWeights: boolean
+  ): Promise<void> {
+    this.visualizationOptionsStore.coolerWeightsNaNPolicy = policy;
+    this.visualizationOptionsStore.applyCoolerWeights = keepWeights;
+    rememberExcludedBinsPolicy(
+      this.mapManager.getOptions().filename,
+      keepWeights ? policy : "DISABLE_WEIGHTS"
+    );
+    const pipeline = await this.getActiveRenderPipelineConfig();
+    if (pipeline) {
+      this.updateRenderPipelineSource(
+        pipeline,
+        "PRIMARY",
+        this.visualizationOptionsStore.asVisualizationOptions()
+      );
+    }
+    await this.sendVisualizationOptionsToServer({
+      skipAutoThresholdRefresh: true,
+      renderPipeline: pipeline ?? undefined,
+    });
+    // Replacing NaNs with 1 mixes unweighted counts with balanced values. Fit below
+    // that high tail so the balanced part remains visible.
+    const quantile =
+      keepWeights && policy === "REPLACE_NANS_WITH_ONE"
+        ? 0.9
+        : OPENING_THRESHOLD_QUANTILE;
+    await this.applyOpeningViewportQuantileThreshold(quantile);
+    await this.mapManager.reloadTilesFromBackend();
   }
 
   /** Swaps the top/bottom layers of every pixel blend; false when no blend exists. */

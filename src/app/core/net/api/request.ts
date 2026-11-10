@@ -642,6 +642,7 @@ class SetVisualizationOptionsRequest implements HiCTAPIRequest {
     public readonly options: {
       options: VisualizationOptions;
       preserveRenderPipeline?: boolean;
+      renderPipeline?: Record<string, unknown>;
     }
   ) {}
 }

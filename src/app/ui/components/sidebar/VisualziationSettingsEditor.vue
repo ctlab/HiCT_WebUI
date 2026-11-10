@@ -801,26 +801,15 @@ function applySettings() {
 }
 
 function onCoolerWeightsNaNPolicyChanged(): void {
-  applyCoolerWeights.value = coolerWeightsNaNPolicy.value !== "DISABLE_WEIGHTS";
+  const keepWeights = coolerWeightsNaNPolicy.value !== "DISABLE_WEIGHTS";
   const manager = props.mapManager;
   if (!manager) {
+    applyCoolerWeights.value = keepWeights;
     applySettings();
     return;
   }
-  const pipelineRevision =
-    manager.networkManager.requestManager.renderPipelineRevision;
   manager.visualizationManager
-    .sendVisualizationOptionsToServer({
-      skipAutoThresholdRefresh: true,
-      preserveCustomPipeline: true,
-    })
-    .then(() =>
-      manager.visualizationManager.applyOpeningFullMapQuantileThreshold(
-        undefined,
-        pipelineRevision
-      )
-    )
-    .then(() => manager.reloadTilesFromBackend())
+    .applyCoolerWeightsPolicy(coolerWeightsNaNPolicy.value, keepWeights)
     .catch((error) => {
       toast.error(String(error ?? "Failed to apply Cooler weight policy"));
     });

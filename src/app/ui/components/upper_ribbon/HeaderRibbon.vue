@@ -1022,12 +1022,50 @@ async function reloadTiles() {
   }
 }
 
+// Observed counts and observed-over-expected ratios live on different scales. The Observed color range
+// is kept aside while O/E is shown, and O/E gets a range around 1 (the neutral ratio).
+let observedGradient: SimpleLinearGradient | null = null;
+let previousDisplayMode = signalDisplayMode.value;
+
 async function onSignalDisplayModeChanged() {
+  const mode = signalDisplayMode.value;
+  const current = colormap.value;
+  if (current instanceof SimpleLinearGradient) {
+    if (
+      mode === "OBSERVED_OVER_EXPECTED" &&
+      previousDisplayMode !== "OBSERVED_OVER_EXPECTED"
+    ) {
+      observedGradient = current;
+      colormap.value = new SimpleLinearGradient(
+        current.startColorRGBA,
+        current.endColorRGBA,
+        0.5,
+        2
+      );
+    } else if (
+      mode !== "OBSERVED_OVER_EXPECTED" &&
+      previousDisplayMode === "OBSERVED_OVER_EXPECTED" &&
+      observedGradient
+    ) {
+      colormap.value = new SimpleLinearGradient(
+        current.startColorRGBA,
+        current.endColorRGBA,
+        observedGradient.minSignal,
+        observedGradient.maxSignal
+      );
+      observedGradient = null;
+    }
+  }
+  previousDisplayMode = mode;
   try {
-    await props.mapManager?.visualizationManager.sendVisualizationOptionsAndReload();
+    await props.mapManager?.visualizationManager.sendVisualizationOptionsAndReload(
+      {
+        skipAutoThresholdRefresh: true,
+      }
+    );
   } catch (error) {
     toast.error("Failed to update signal display mode");
-    console.error(error);
+    console.debug(error);
   }
 }
 </script>
