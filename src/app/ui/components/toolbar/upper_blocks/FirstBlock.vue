@@ -83,7 +83,6 @@
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { toast } from "vue-sonner";
 import { onMounted, ref, watch } from "vue";
-import { Coordinate } from "ol/coordinate";
 
 const props = defineProps<{
   readonly mapManager?: ContactMapManager | undefined;
@@ -126,165 +125,34 @@ const lastCounterDiagonalSlideCenterPosition = ref({
   zoom: 0,
   bpResolution: 1000,
 });
-const lastZoomInCenterPosition = ref({
-  x_bp: 0,
-  y_bp: 0,
-  zoom: 0,
-  bpResolution: 1000,
-  lastCenterCoordinate: [0, 0] as Coordinate,
-});
-const lastZoomOutCenterPosition = ref({
-  x_bp: 0,
-  y_bp: 0,
-  zoom: 0,
-  bpResolution: 1000,
-  lastCenterCoordinate: [0, 0] as Coordinate,
-});
 
-function zoomIn() {
-  if (props.mapManager) {
-    const map = props.mapManager?.map;
-    const view = map?.getView();
-    const center = view?.getCenter();
-    if (map && view && center) {
-      const currentResolutionDescriptor =
-        props.mapManager?.viewAndLayersManager.currentViewState
-          .resolutionDesciptor;
-      const minBpResolution = props.mapManager?.viewAndLayersManager
-        ?.getNavigationResolutionModel()
-        .resolutions.reduce((a, b) => Math.min(a, b));
-      const [x_px, y_px] = [center[0], -center[1]].map((p) =>
-        Math.floor(p / currentResolutionDescriptor.pixelResolution)
-      );
-      const [x_bp, y_bp] = [x_px, y_px].map((px) =>
-        props.mapManager
-          ?.getContigDimensionHolder()
-          .getStartBpOfPx(px, currentResolutionDescriptor.bpResolution)
-      );
-
-      const [x_target_px, y_target_px] = [x_bp, y_bp].map(
-        (bp) =>
-          props.mapManager?.contigDimensionHolder.getPxContainingBp(
-            bp ?? 0,
-            minBpResolution
-          ) ?? 0
-      );
-
-      if (currentResolutionDescriptor.bpResolution !== minBpResolution) {
-        lastZoomInCenterPosition.value = {
-          x_bp: x_bp ?? 0,
-          y_bp: y_bp ?? 0,
-          zoom: view.getZoom() ?? 10e10,
-          bpResolution: currentResolutionDescriptor.bpResolution,
-          lastCenterCoordinate: center,
-        };
-        toast.message("Zooming all the way in");
-        view.animate({
-          center: [x_target_px, -y_target_px],
-          zoom: 10e10,
-        });
-      } else {
-        const [last_x_px, last_y_px] = [
-          lastVerticalSlideCenterPosition.value.x_bp,
-          lastVerticalSlideCenterPosition.value.y_bp,
-        ].map(
-          (bp) =>
-            props.mapManager
-              ?.getContigDimensionHolder()
-              .getPxContainingBp(
-                bp,
-                currentResolutionDescriptor.bpResolution
-              ) ?? 0
-        );
-
-        if (
-          Math.abs(last_x_px - x_px) < PRECISION_THRESHOLD_PX.value &&
-          Math.abs(last_y_px - y_px) < PRECISION_THRESHOLD_PX.value
-        ) {
-          toast.message("Zooming back out");
-          view.animate({
-            center: lastZoomInCenterPosition.value.lastCenterCoordinate,
-            zoom: lastZoomInCenterPosition.value.zoom,
-          });
-        } else {
-          toast.message("Already at the highest resolution");
-        }
-      }
-    }
+/**
+ * One bounded zoom step about the view center, the same size as a wheel notch. The view's own limits
+ * clamp it, so the result is always a valid resolution and the center stays where it was.
+ */
+function stepZoom(direction: 1 | -1): void {
+  const view = props.mapManager?.map?.getView();
+  const current = view?.getZoom();
+  if (!view || current === undefined) return;
+  // The view's own constraint, not the nominal zoom range: the finest usable level is lower.
+  const target = view.getConstrainedZoom(current + direction);
+  if (target === undefined || Math.abs(target - current) < 1e-9) {
+    toast.message(
+      direction > 0
+        ? "Already at the finest zoom"
+        : "The whole map is already in view"
+    );
+    return;
   }
+  view.animate({ zoom: target, duration: 250 });
 }
 
-function zoomOut() {
-  if (props.mapManager) {
-    const map = props.mapManager?.map;
-    const view = map?.getView();
-    const center = view?.getCenter();
-    if (map && view && center) {
-      const currentResolutionDescriptor =
-        props.mapManager?.viewAndLayersManager.currentViewState
-          .resolutionDesciptor;
-      const maxBpResolution = props.mapManager?.viewAndLayersManager
-        ?.getNavigationResolutionModel()
-        .resolutions.reduce((a, b) => Math.max(a, b));
-      const [x_px, y_px] = [center[0], -center[1]].map((p) =>
-        Math.floor(p / currentResolutionDescriptor.pixelResolution)
-      );
-      const [x_bp, y_bp] = [x_px, y_px].map((px) =>
-        props.mapManager
-          ?.getContigDimensionHolder()
-          .getStartBpOfPx(px, currentResolutionDescriptor.bpResolution)
-      );
+function zoomIn(): void {
+  stepZoom(1);
+}
 
-      const [x_target_px, y_target_px] = [x_bp, y_bp].map(
-        (bp) =>
-          props.mapManager?.contigDimensionHolder.getPxContainingBp(
-            bp ?? 0,
-            maxBpResolution
-          ) ?? 0
-      );
-
-      if (currentResolutionDescriptor.bpResolution !== maxBpResolution) {
-        lastZoomInCenterPosition.value = {
-          x_bp: x_bp ?? 0,
-          y_bp: y_bp ?? 0,
-          zoom: view.getZoom() ?? 0,
-          bpResolution: currentResolutionDescriptor.bpResolution,
-          lastCenterCoordinate: center,
-        };
-        toast.message("Zooming out");
-        view.animate({
-          center: [x_target_px, -y_target_px],
-          zoom: 0,
-        });
-      } else {
-        const [last_x_px, last_y_px] = [
-          lastVerticalSlideCenterPosition.value.x_bp,
-          lastVerticalSlideCenterPosition.value.y_bp,
-        ].map(
-          (bp) =>
-            props.mapManager
-              ?.getContigDimensionHolder()
-              .getPxContainingBp(
-                bp,
-                currentResolutionDescriptor.bpResolution
-              ) ?? 0
-        );
-
-        if (
-          Math.abs(last_x_px - x_px) < PRECISION_THRESHOLD_PX.value &&
-          Math.abs(last_y_px - y_px) < PRECISION_THRESHOLD_PX.value
-        ) {
-          toast.message("Zooming back in");
-          view.animate({
-            center: lastZoomInCenterPosition.value.lastCenterCoordinate,
-            zoom: lastZoomInCenterPosition.value.zoom,
-          });
-        } else {
-          toast.message("Already at the lowest resolution");
-        }
-      }
-    }
-  }
+function zoomOut(): void {
+  stepZoom(-1);
 }
 
 function slideVertically() {

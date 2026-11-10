@@ -248,6 +248,8 @@ import {
 } from "@/app/core/mapmanagers/WorkspaceState";
 import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
 import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
+import { ActiveTool } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
+import { showTranslocationStatus } from "@/app/core/mapmanagers/TranslocationStatusToast";
 import UnsavedEditsDialog from "@/app/ui/components/common/UnsavedEditsDialog.vue";
 import {
   ContactMapManager,
@@ -457,7 +459,15 @@ function handleGlobalEscape(event: KeyboardEvent): void {
     return;
   }
   if (!hasAnyOpenEscDialog()) {
-    mapManager.value?.eventManager.resetSelection();
+    const manager = mapManager.value;
+    // An armed tool is cancelled first, so a later double-click cannot split or move anything.
+    const tool = manager?.viewAndLayersManager.currentViewState.activeTool;
+    if (tool === ActiveTool.SCISSORS) manager?.deactivateScissors();
+    else if (tool === ActiveTool.TRANSLOCATION) {
+      manager?.deactivateTranslocation();
+      showTranslocationStatus(false);
+    }
+    manager?.eventManager.resetSelection();
     event.preventDefault();
     event.stopPropagation();
   }

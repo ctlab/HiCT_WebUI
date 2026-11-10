@@ -36,7 +36,7 @@ import Style from "ol/style/Style";
 import TileGrid from "ol/tilegrid/TileGrid";
 import { asString, type Color } from "ol/color";
 import type { ColorLike } from "ol/colorlike";
-import { type Ref, ref, markRaw } from "vue";
+import { type Ref, ref, markRaw, shallowRef } from "vue";
 import ContigMouseWheelZoom from "@/ContigMouseWheelZoom";
 import BinMousePosition from "@/BinMousePosition";
 import { VersionedXYZContactMapSource } from "../VersionedXYZSource";
@@ -355,6 +355,18 @@ class HiCViewAndLayersManager {
         rightContigOrderInclusive: undefined,
       },
     };
+
+    // The armed tool is read by toolbar buttons and written from async completions that hold the raw
+    // manager, which Vue cannot observe. Backing it with a ref keeps the buttons truthful either way.
+    const armedTool = shallowRef<ActiveTool | undefined>(undefined);
+    Object.defineProperty(this.currentViewState, "activeTool", {
+      get: () => armedTool.value,
+      set: (tool: ActiveTool | undefined) => {
+        armedTool.value = tool;
+      },
+      enumerable: true,
+      configurable: true,
+    });
 
     this.track2DHolder = {
       tracks2D: [],
