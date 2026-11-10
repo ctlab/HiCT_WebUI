@@ -276,6 +276,22 @@ class ContactMapManager {
       return;
     }
     this.minimap.setTarget(undefined);
+    try {
+      for (const layer of this.minimap.getLayers().getArray().slice()) {
+        (
+          layer as unknown as {
+            getSource?: () => { clear?: () => void; dispose?: () => void };
+          }
+        )
+          .getSource?.()
+          ?.clear?.();
+      }
+      this.minimap.getLayers().clear();
+      this.minimap.getInteractions().clear();
+      this.minimap.dispose();
+    } catch (error) {
+      console.debug("Overview map resources were not fully released", error);
+    }
     this.minimap = null;
   }
 
@@ -1730,7 +1746,29 @@ class ContactMapManager {
     this.linearTrackManager.dispose();
     this.clearOverviewMapTarget();
     this.viewAndLayersManager?.dispose?.();
+    this.sizeObserver?.disconnect();
+    this.sizeObserver = undefined;
     this.map.setTarget(undefined);
+    // Release what the map still holds: layer sources keep decoded tile images, and the map keeps its
+    // listeners and interactions. Without this a closed map stays reachable and so does its memory.
+    try {
+      const layers = this.map.getLayers().getArray().slice();
+      for (const layer of layers) {
+        const source = (
+          layer as unknown as {
+            getSource?: () => { clear?: () => void; dispose?: () => void };
+          }
+        ).getSource?.();
+        source?.clear?.();
+        source?.dispose?.();
+        (layer as unknown as { dispose?: () => void }).dispose?.();
+      }
+      this.map.getLayers().clear();
+      this.map.getInteractions().clear();
+      this.map.dispose();
+    } catch (error) {
+      console.debug("Map resources were not fully released", error);
+    }
   }
 
   public addOSM() {

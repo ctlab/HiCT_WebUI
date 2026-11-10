@@ -34,7 +34,7 @@ function loadManager(name, imports = {}) {
     {
       exports,
       require: (name) => imports[name] ?? {},
-      console: { log: () => undefined },
+      console: { log: () => undefined, debug: () => undefined },
     },
     { filename: filename.pathname }
   );
