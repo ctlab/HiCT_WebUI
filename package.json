@@ -14,7 +14,7 @@
     "test:map-resolution": "node scripts/check-map-resolution-model.mjs && node scripts/check-sequence-zoom.mjs",
     "test:map-viewport": "node scripts/check-map-viewport.mjs && node scripts/check-export-crop.mjs && node scripts/check-pdf-compatibility.mjs && node scripts/check-export-destination.mjs",
     "test:feature-packing": "node scripts/check-feature-packing.mjs && node scripts/check-sequence-track-projection.mjs && node scripts/check-floating-panel.mjs && node scripts/check-context-menu-actions.mjs && node scripts/check-track-labels.mjs",
-    "test:visualization-presets": "node scripts/check-visualization-presets.mjs",
+    "test:visualization-presets": "node scripts/check-visualization-presets.mjs && node scripts/check-visualization-signal-profile.mjs",
     "preview": "vite preview --port 4173",
     "build-only": "vite build",
     "type-check": "vue-tsc --noEmit",

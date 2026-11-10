@@ -43,6 +43,8 @@ export const useVisualizationOptionsStore = defineStore(
     const coolerWeightsNaNPolicy = ref<CoolerWeightsNaNPolicy>(
       "REPLACE_NANS_WITH_ONE"
     );
+    // False while the layer uses a custom processing graph that the sidebar must not rewrite.
+    const signalEditable = ref(true);
     const coolerWeightsHaveNaNs = ref(false);
     const coolerWeightsNaNCount = ref(0);
     const colormap: Ref<Colormap> = ref(
@@ -99,6 +101,7 @@ export const useVisualizationOptionsStore = defineStore(
       coolerWeightsNaNPolicy,
       coolerWeightsHaveNaNs,
       coolerWeightsNaNCount,
+      signalEditable,
       colormap,
       asVisualizationOptions,
       setVisualizationOptions,

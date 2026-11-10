@@ -24,6 +24,12 @@ import {
   SetVisualizationOptionsRequest,
 } from "../net/api/request";
 import { ContactMapManager } from "./ContactMapManager";
+import {
+  buildSignalInput,
+  flagsFromOptions,
+  parseCanonicalSignal,
+  type SignalProfile,
+} from "@/app/core/visualization/signalProfile";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import VisualizationOptions from "../visualization/VisualizationOptions";
 import SimpleLinearGradient from "../visualization/colormap/SimpleLinearGradient";
@@ -43,15 +49,12 @@ type ViewportPixelBounds = {
   endColPx: number;
 };
 
-type PipelineSignalProfile = {
-  source: SourceName;
-  signalDivisor: number;
-  hasExplicitSignalDivisor: boolean;
-  preLogBase: number | null;
-  postLogBase: number | null;
-  applyCoolerWeights: boolean;
-  resolutionScaling: boolean;
-  resolutionLinearScaling: boolean;
+type PipelineSignalProfile = SignalProfile & {
+  /**
+   * True when the signal subtree has exactly the canonical shape, so sidebar edits may rebuild it.
+   * False for a custom graph, which edits must leave untouched.
+   */
+  editableInput: boolean;
 };
 
 type ColormapTarget = {
@@ -62,7 +65,6 @@ type ColormapTarget = {
   maxSignal: number;
 };
 
-const BUILTIN_COOLER_WEIGHTS_TRACK_ID = "__builtin_cooler_weights__";
 const OPENING_THRESHOLD_QUANTILE = 0.9;
 const OPENING_THRESHOLD_MAX_MAP_SIZE_PX = 2000;
 
@@ -214,178 +216,11 @@ const withAlphaZero = (value: unknown, fallback: string): string => {
   }
 };
 
-const normalizePositiveLogBase = (value: unknown): number | null => {
-  const numeric = Number(value);
-  if (
-    !Number.isFinite(numeric) ||
-    numeric <= 0 ||
-    Math.abs(numeric - 1) < 1e-9
-  ) {
-    return null;
-  }
-  return numeric;
-};
-
-const isDynamicFieldNode = (value: unknown, field: string): boolean =>
-  isRecord(value) &&
-  String(value.type ?? "")
-    .trim()
-    .toLowerCase() === "dynamic" &&
-  String(value.field ?? "")
-    .trim()
-    .toUpperCase() === field;
-
-const isCoolerWeightsTrackNode = (
-  value: unknown,
-  axis: "ROW" | "COL"
-): boolean =>
-  isRecord(value) &&
-  String(value.type ?? "")
-    .trim()
-    .toLowerCase() === "track1d" &&
-  String(value.trackId ?? "").trim() === BUILTIN_COOLER_WEIGHTS_TRACK_ID &&
-  String(value.axis ?? "")
-    .trim()
-    .toUpperCase() === axis;
-
-const isCoolerWeightsExpression = (value: unknown): boolean => {
-  if (
-    !isRecord(value) ||
-    String(value.type ?? "")
-      .trim()
-      .toLowerCase() !== "binary"
-  ) {
-    return false;
-  }
-  if (
-    String(value.op ?? "")
-      .trim()
-      .toUpperCase() !== "MUL"
-  ) {
-    return false;
-  }
-  const left = value.left;
-  const right = value.right;
-  return (
-    (isCoolerWeightsTrackNode(left, "ROW") &&
-      isCoolerWeightsTrackNode(right, "COL")) ||
-    (isCoolerWeightsTrackNode(left, "COL") &&
-      isCoolerWeightsTrackNode(right, "ROW"))
-  );
-};
-
 const extractPipelineSignalProfile = (
   expression: unknown
 ): PipelineSignalProfile | null => {
-  if (!isRecord(expression)) {
-    return null;
-  }
-  const type = String(expression.type ?? "")
-    .trim()
-    .toLowerCase();
-  if (type === "source") {
-    return {
-      source:
-        String(expression.source ?? "PRIMARY")
-          .trim()
-          .toUpperCase() === "SECONDARY"
-          ? "SECONDARY"
-          : "PRIMARY",
-      signalDivisor: 1,
-      hasExplicitSignalDivisor: false,
-      preLogBase: null,
-      postLogBase: null,
-      applyCoolerWeights: false,
-      resolutionScaling: false,
-      resolutionLinearScaling: false,
-    };
-  }
-  if (type === "log") {
-    const inputProfile = extractPipelineSignalProfile(expression.input);
-    const base = normalizePositiveLogBase(expression.base);
-    if (!inputProfile || base == null) {
-      return null;
-    }
-    if (inputProfile.preLogBase == null) {
-      return {
-        ...inputProfile,
-        preLogBase: base,
-      };
-    }
-    if (inputProfile.postLogBase == null) {
-      return {
-        ...inputProfile,
-        postLogBase: base,
-      };
-    }
-    return null;
-  }
-  if (
-    type === "binary" &&
-    String(expression.op ?? "")
-      .trim()
-      .toUpperCase() === "DIV"
-  ) {
-    const inputProfile = extractPipelineSignalProfile(expression.left);
-    const divisorNode = expression.right;
-    if (
-      !inputProfile ||
-      !isRecord(divisorNode) ||
-      String(divisorNode.type ?? "")
-        .trim()
-        .toLowerCase() !== "constant"
-    ) {
-      return null;
-    }
-    const divisor = Number(divisorNode.value);
-    if (!Number.isFinite(divisor) || divisor <= 0) {
-      return null;
-    }
-    return {
-      ...inputProfile,
-      signalDivisor: inputProfile.signalDivisor * divisor,
-      hasExplicitSignalDivisor: true,
-    };
-  }
-  if (
-    type === "binary" &&
-    String(expression.op ?? "")
-      .trim()
-      .toUpperCase() === "MUL"
-  ) {
-    const left = expression.left;
-    const right = expression.right;
-    const childProfile =
-      extractPipelineSignalProfile(left) ?? extractPipelineSignalProfile(right);
-    if (!childProfile) {
-      return null;
-    }
-    if (
-      isDynamicFieldNode(left, "RESOLUTION_SCALING_COEFF") ||
-      isDynamicFieldNode(right, "RESOLUTION_SCALING_COEFF")
-    ) {
-      return {
-        ...childProfile,
-        resolutionScaling: true,
-      };
-    }
-    if (
-      isDynamicFieldNode(left, "RESOLUTION_LINEAR_SCALING_COEFF") ||
-      isDynamicFieldNode(right, "RESOLUTION_LINEAR_SCALING_COEFF")
-    ) {
-      return {
-        ...childProfile,
-        resolutionLinearScaling: true,
-      };
-    }
-    if (isCoolerWeightsExpression(left) || isCoolerWeightsExpression(right)) {
-      return {
-        ...childProfile,
-        applyCoolerWeights: true,
-      };
-    }
-  }
-  return null;
+  const profile = parseCanonicalSignal(expression);
+  return profile ? { ...profile, editableInput: true } : null;
 };
 
 const collectColormapTargets = (
@@ -410,11 +245,14 @@ const collectColormapTargets = (
         Object.values(node).forEach(visit);
       };
       visit(expression.input);
-      if (sources.size === 1)
-        profile = extractPipelineSignalProfile({
+      if (sources.size === 1) {
+        const bare = extractPipelineSignalProfile({
           type: "source",
           source: [...sources][0],
         });
+        // The graph is custom: the target can be selected for colors and range, never for signal edits.
+        profile = bare ? { ...bare, editableInput: false } : null;
+      }
     }
     if (profile) {
       output.push({
@@ -528,8 +366,12 @@ const preserveMinimumAlpha = (
 
 const replaceColormapNode = (
   target: ColormapTarget,
-  replacement: Record<string, unknown>
+  replacement: Record<string, unknown>,
+  signalInput?: Record<string, unknown>
 ): void => {
+  // Signal edits (transform, scaling, weights) arrive as a rebuilt canonical input. A custom graph
+  // gets none, so its processing is never reconstructed by colour or contrast edits.
+  if (signalInput) target.node.input = signalInput;
   const previousStartColor = target.node.startColor;
   const previousMode = String(target.node.mode ?? "LINEAR").toUpperCase();
   target.node.type = "colormap";
@@ -537,8 +379,6 @@ const replaceColormapNode = (
     previousMode === "MODDOTPLOT_IDENTITY"
       ? "MODDOTPLOT_IDENTITY"
       : replacement.mode ?? "LINEAR";
-  // Contrast and palette edits must not reconstruct (and lose) the user's
-  // processing graph. Normalization is edited explicitly in the pipeline.
   target.node.startColor = preserveMinimumAlpha(
     replacement.startColor,
     previousStartColor
@@ -786,6 +626,7 @@ class VisualizationManager {
         loadGeneration === this.visualizationOptionsLoadGeneration
       ) {
         this.visualizationOptionsStore.setVisualizationOptions(options);
+        this.visualizationOptionsStore.signalEditable = true;
         window.dispatchEvent(
           new CustomEvent(
             VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
@@ -816,6 +657,7 @@ class VisualizationManager {
         loadGeneration === this.visualizationOptionsLoadGeneration
       ) {
         this.visualizationOptionsStore.setVisualizationOptions(options);
+        this.visualizationOptionsStore.signalEditable = true;
         window.dispatchEvent(
           new CustomEvent(
             VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
@@ -849,6 +691,8 @@ class VisualizationManager {
     );
     if (loadGeneration === this.visualizationOptionsLoadGeneration) {
       this.visualizationOptionsStore.setVisualizationOptions(options);
+      this.visualizationOptionsStore.signalEditable =
+        target.profile.editableInput;
       window.dispatchEvent(
         new CustomEvent(
           VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
@@ -939,7 +783,19 @@ class VisualizationManager {
         target.profile.source === source &&
         (!targetId || target.id === targetId)
       ) {
-        replaceColormapNode(target, replacement);
+        replaceColormapNode(
+          target,
+          replacement,
+          target.profile.editableInput
+            ? buildSignalInput(
+                target.profile.source,
+                flagsFromOptions(options),
+                target.profile.hasExplicitSignalDivisor
+                  ? { value: target.profile.signalDivisor }
+                  : null
+              )
+            : undefined
+        );
         changed = true;
       }
     }
@@ -1376,6 +1232,17 @@ class VisualizationManager {
         }
       ).catch(() => false);
       if (!applied || this.mapManager.isDisposed) return null;
+      // The graph now holds the opening threshold. Read it back, so the sidebar, the stored options
+      // and the pipeline agree. Otherwise the preset's old threshold would be shown, and sent back
+      // to the server, until the next Apply overwrote the graph with it.
+      await this.loadVisualizationOptionsForSource("PRIMARY").catch(
+        () => undefined
+      );
+      if (
+        api.renderPipelineRevision !== expectedPipelineRevision ||
+        this.mapManager.isDisposed
+      )
+        return null;
       const current = this.visualizationOptionsStore.asVisualizationOptions();
       this.visualizationOptionsStore.setVisualizationOptions(
         new VisualizationOptions(

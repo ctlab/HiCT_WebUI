@@ -82,26 +82,31 @@
         @upper="onUpperRangeInput"
       />
       <div class="range-actions">
-        <div
-          class="scale-choice"
-          role="group"
-          aria-label="Slider scale"
-          title="Changes slider sensitivity, not matrix values"
-        >
-          <button
-            type="button"
-            :aria-pressed="!sliderLogScale"
-            @click="sliderLogScale = false"
+        <div class="scale-group">
+          <span id="slider-scale-label" class="scale-caption"
+            >Slider scale</span
           >
-            Linear
-          </button>
-          <button
-            type="button"
-            :aria-pressed="sliderLogScale"
-            @click="sliderLogScale = true"
+          <div
+            class="scale-choice"
+            role="group"
+            aria-labelledby="slider-scale-label"
+            title="Changes slider sensitivity, not matrix values"
           >
-            Log
-          </button>
+            <button
+              type="button"
+              :aria-pressed="!sliderLogScale"
+              @click="sliderLogScale = false"
+            >
+              Linear
+            </button>
+            <button
+              type="button"
+              :aria-pressed="sliderLogScale"
+              @click="sliderLogScale = true"
+            >
+              Log
+            </button>
+          </div>
         </div>
         <button
           type="button"
@@ -980,6 +985,16 @@ function formatSignal(value: number): string {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+.scale-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.scale-caption {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
 }
 .scale-choice {
   display: inline-flex;
