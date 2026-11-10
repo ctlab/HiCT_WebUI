@@ -215,6 +215,10 @@
 </template>
 
 <script setup lang="ts">
+import {
+  MAX_SESSION_BYTES,
+  parseSessionDocument,
+} from "@/app/core/mapmanagers/SessionDocument";
 import { pipelineTransferIssues } from "@/app/core/visualization/transferVisualization";
 import BenchmarkFeature from "ol/Feature";
 import {
@@ -1082,8 +1086,13 @@ async function resolveRequiredHiCTSessionFilename(
 
 async function onOpenSession(file: File): Promise<void> {
   try {
-    const text = await file.text();
-    const session = JSON.parse(text) as Record<string, unknown>;
+    if (file.size > MAX_SESSION_BYTES) {
+      throw new Error("Invalid session file: exceeds the 8 MiB limit");
+    }
+    const session = parseSessionDocument(await file.text());
+    toast.message(
+      `Legacy session v${session.version} restores settings and referenced files. It does not contain the edited assembly, complete processing graph or undo history.`
+    );
     const sessionFilename = (session["filename"] as string) ?? "";
     const sessionFasta = (session["fastaFilename"] as string) ?? "";
     const sessionAgp = (session["agpFilename"] as string) ?? "";
