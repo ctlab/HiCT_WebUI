@@ -683,20 +683,23 @@ class RequestManager {
 
   /** Capture server state for a future v3 session without advancing displayed coordinates. */
   public async getSessionSnapshot(
-    verifyAssemblyRoundTrip = false
+    verifyAssemblyRoundTrip = false,
+    fingerprintFiles = false
   ): Promise<Record<string, unknown>> {
     if (!this.history.applied)
       throw new Error(
         "Attach to the current assembly before saving a session."
       );
     const response = await this.sendRequest(
-      new GetSessionSnapshotRequest(verifyAssemblyRoundTrip)
+      new GetSessionSnapshotRequest(verifyAssemblyRoundTrip, fingerprintFiles)
     );
     const snapshot = response.data as Record<string, unknown>;
     if (snapshot.snapshotVersion !== 1)
       throw new Error("Unsupported server session snapshot version");
     if (verifyAssemblyRoundTrip && snapshot.assemblyVerified !== true)
       throw new Error("Server did not verify assembly reconstruction");
+    if (fingerprintFiles && snapshot.filesFingerprinted !== true)
+      throw new Error("Server did not fingerprint session resources");
     return snapshot;
   }
 

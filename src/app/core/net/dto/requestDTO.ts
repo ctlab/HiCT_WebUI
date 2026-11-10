@@ -1160,6 +1160,9 @@ export {
 
 class GetSessionSnapshotRequestDTO extends HiCTAPIRequestDTO<GetSessionSnapshotRequest> {
   toDTO(): Record<string, unknown> {
-    return { verifyAssemblyRoundTrip: this.entity.verifyAssemblyRoundTrip };
+    return {
+      verifyAssemblyRoundTrip: this.entity.verifyAssemblyRoundTrip,
+      fingerprintFiles: this.entity.fingerprintFiles,
+    };
   }
 }
