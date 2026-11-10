@@ -40,6 +40,11 @@ export class GetSessionSnapshotRequest implements HiCTAPIRequest {
   ) {}
 }
 
+export class RestoreSessionRequest implements HiCTAPIRequest {
+  requestPath = "/session/restore";
+  constructor(public readonly snapshot: Record<string, unknown>) {}
+}
+
 export class UnscaffoldAllRequest implements HiCTAPIRequest {
   requestPath = "/unscaffold_all";
 }

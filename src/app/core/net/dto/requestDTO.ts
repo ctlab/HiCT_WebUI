@@ -21,6 +21,7 @@
 
 import {
   GetSessionSnapshotRequest,
+  RestoreSessionRequest,
   ListFilesRequest,
   ListFilesDetailedRequest,
   ListDirectoryRequest,
@@ -287,6 +288,8 @@ abstract class HiCTAPIRequestDTO<
         return new CloseSecondarySourceRequestDTO(
           entity as CloseSecondarySourceRequest
         );
+      case entity instanceof RestoreSessionRequest:
+        return new RestoreSessionRequestDTO(entity as RestoreSessionRequest);
       case entity instanceof GetSessionSnapshotRequest:
         return new GetSessionSnapshotRequestDTO(
           entity as GetSessionSnapshotRequest
@@ -1157,6 +1160,12 @@ export {
   GetNativeProcessingStatusRequestDTO,
   SetNativeProcessingEnabledRequestDTO,
 };
+
+class RestoreSessionRequestDTO extends HiCTAPIRequestDTO<RestoreSessionRequest> {
+  toDTO(): Record<string, unknown> {
+    return this.entity.snapshot;
+  }
+}
 
 class GetSessionSnapshotRequestDTO extends HiCTAPIRequestDTO<GetSessionSnapshotRequest> {
   toDTO(): Record<string, unknown> {

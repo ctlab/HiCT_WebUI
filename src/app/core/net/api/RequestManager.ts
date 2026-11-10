@@ -101,6 +101,7 @@ import {
   ImportNameMappingRequest,
   ReloadTilesRequest,
   GetSessionSnapshotRequest,
+  RestoreSessionRequest,
   AttachSessionRequest,
   CloseFileRequest,
   OpenProgressRequest,
@@ -268,7 +269,22 @@ const assemblySessionPaths = new Set([
   "/secondary/open",
   "/secondary/close",
   "/secondary/set_assembly_source",
+  "/session/restore",
 ]);
+
+export interface AttachedSession {
+  filename: string;
+  fastaFilename: string;
+  response: OpenFileResponse;
+  workspaceState?: WorkspaceState;
+  /** Present on restore and attach: status of the attached overlay source. */
+  secondarySource?: Record<string, unknown>;
+  assemblySource?: "PRIMARY" | "SECONDARY";
+  /** Present only on restore: the saved processing graph, visualization options and track definitions. */
+  renderPipeline?: Record<string, unknown>;
+  visualizationOptions?: Record<string, unknown>;
+  tracks?: Record<string, unknown>[];
+}
 
 class RequestManager {
   private workspaceVersion?: { session: string; revision: number };
@@ -765,35 +781,55 @@ class RequestManager {
     this.sequenceRevision++;
   }
 
-  public async attachSession(): Promise<{
-    filename: string;
-    fastaFilename: string;
-    response: OpenFileResponse;
-    workspaceState?: WorkspaceState;
-  }> {
+  public async attachSession(): Promise<AttachedSession> {
     return this.sendRequest(new AttachSessionRequest())
       .then((response) => response.data as Record<string, unknown>)
-      .then((json) => {
-        if (json && typeof json === "object" && "error" in json) {
-          throw new Error(String((json as Record<string, unknown>).error));
-        }
-        const filename = (json["filename"] as string) ?? "";
-        this.workspaceVersion =
-          json.workspaceVersion as typeof this.workspaceVersion;
-        const fastaFilename = (json["fastaFilename"] as string) ?? "";
-        this.hasLinkedFasta = Boolean(fastaFilename);
-        this.sequenceRevision++;
-        const response = new OpenFileResponseDTO(
-          json["openFileResponse"] as Record<string, unknown>
-        ).toEntity();
-        this.sourceCapabilities = { PRIMARY: response.capabilities };
-        return {
-          filename,
-          fastaFilename,
-          response,
-          workspaceState: json.workspaceState as WorkspaceState | undefined,
-        };
-      });
+      .then((json) => this.adoptSessionPayload(json));
+  }
+
+  /**
+   * Replaces the live server session with a saved v3 snapshot. The server prepares
+   * every resource first, so a rejected snapshot leaves the current session usable.
+   */
+  public async restoreSession(
+    snapshot: Record<string, unknown>
+  ): Promise<AttachedSession> {
+    return this.sendRequest(new RestoreSessionRequest(snapshot))
+      .then((response) => response.data as Record<string, unknown>)
+      .then((json) => this.adoptSessionPayload(json));
+  }
+
+  private adoptSessionPayload(json: Record<string, unknown>): AttachedSession {
+    if (json && typeof json === "object" && "error" in json) {
+      throw new Error(String((json as Record<string, unknown>).error));
+    }
+    const filename = (json["filename"] as string) ?? "";
+    this.workspaceVersion =
+      json.workspaceVersion as typeof this.workspaceVersion;
+    const fastaFilename = (json["fastaFilename"] as string) ?? "";
+    this.hasLinkedFasta = Boolean(fastaFilename);
+    this.sequenceRevision++;
+    const response = new OpenFileResponseDTO(
+      json["openFileResponse"] as Record<string, unknown>
+    ).toEntity();
+    this.sourceCapabilities = { PRIMARY: response.capabilities };
+    return {
+      filename,
+      fastaFilename,
+      response,
+      workspaceState: json.workspaceState as WorkspaceState | undefined,
+      secondarySource: json.secondarySource as
+        | Record<string, unknown>
+        | undefined,
+      assemblySource: json.assemblySource as "PRIMARY" | "SECONDARY" | undefined,
+      renderPipeline: json.renderPipeline as
+        | Record<string, unknown>
+        | undefined,
+      visualizationOptions: json.visualizationOptions as
+        | Record<string, unknown>
+        | undefined,
+      tracks: json.tracks as Record<string, unknown>[] | undefined,
+    };
   }
 
   public async getSignalRanges(
