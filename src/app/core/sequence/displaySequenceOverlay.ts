@@ -27,10 +27,7 @@ export async function displaySequenceOverlay(
       "This preset requires a ModDotPlot identity overlay. Alignment dotplots contain counts, not identity percentages."
     );
   manager.viewAndLayersManager.setSecondaryResolutionModel(
-    status.compatibility,
-    {
-      exactResolutionOnly: Boolean(status.sequenceAnalysis),
-    }
+    status.compatibility
   );
   const options = useVisualizationOptionsStore();
   const primaryOptions = await api.getVisualizationOptions(

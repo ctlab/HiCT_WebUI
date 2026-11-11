@@ -2650,8 +2650,7 @@ const refreshSecondaryResolutionModelFromBackend = async (
     return;
   }
   mapManager.viewAndLayersManager.setSecondaryResolutionModel(
-    secondaryStatus.compatibility,
-    { exactResolutionOnly: Boolean(secondaryStatus.sequenceAnalysis) }
+    secondaryStatus.compatibility
   );
 };
 
@@ -2746,8 +2745,7 @@ const runWizard = async (): Promise<void> => {
           );
       }
       mapManager.viewAndLayersManager.setSecondaryResolutionModel(
-        secondaryStatus.compatibility,
-        { exactResolutionOnly: Boolean(secondaryStatus.sequenceAnalysis) }
+        secondaryStatus.compatibility
       );
       secondaryStatus.warnings.forEach((warning) =>
         toast.message(warning, {

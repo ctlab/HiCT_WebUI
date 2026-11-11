@@ -167,6 +167,7 @@ import { extractErrorMessage } from "./errorMessage";
 export type SecondarySourceCompatibility = {
   sameResolutions: boolean;
   sameMatrixSizes: boolean;
+  sharedReference?: boolean;
   exactMatch: boolean;
   primaryMaxBins: number;
   secondaryMaxBins: number;
@@ -574,6 +575,7 @@ class RequestManager {
         ? {
             sameResolutions: Boolean(compatibilityRaw.sameResolutions ?? false),
             sameMatrixSizes: Boolean(compatibilityRaw.sameMatrixSizes ?? false),
+            sharedReference: Boolean(compatibilityRaw.sharedReference ?? false),
             exactMatch: Boolean(compatibilityRaw.exactMatch ?? false),
             primaryMaxBins: Number(compatibilityRaw.primaryMaxBins ?? 0),
             secondaryMaxBins: Number(compatibilityRaw.secondaryMaxBins ?? 0),

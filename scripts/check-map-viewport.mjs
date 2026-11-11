@@ -71,6 +71,7 @@ const { CommonEventManager } = loadManager("CommonEventManager", {
 
 function fixture() {
   const manager = Object.create(HiCViewAndLayersManager.prototype);
+  manager.currentLevels = {};
   manager.fullGlobalExtent = [0, -10000, 10000, 0];
   manager.activeAxisScopes = {
     row: { kind: "all", label: "All Rows" },
@@ -205,7 +206,6 @@ async function checkViewport() {
         [2000],
         1000
       );
-    manager.secondaryExactResolutionOnly = true;
     manager.layersZIndices = { HIC_MAP_LAYER_Z_INDEX: 0 };
     manager.mapManager.getOptions = () => ({ tileSize: 256 });
     manager.mapManager.getMap = () => ({ addLayer() {} });
@@ -219,15 +219,15 @@ async function checkViewport() {
     manager.refreshVisibleBuiltinVectorSources = () => {};
     manager.addSourceHiCDataLayers(manager.primaryResolutionSet);
     manager.addSourceHiCDataLayers(manager.secondaryResolutionSet);
-    for (const [enabled, viewResolution, expected, secondary] of [
-      [[5000, 10000], 5 / 16, 5000, true],
-      [[5000, 10000], 9, 5000, true],
-      [[5000, 10000], 10, 10000, false],
-      [[5000, 10000], 100, 10000, false],
-      [[5000], 100, 5000, true],
-      [null, 0.5, 1000, false],
-      [null, 5, 5000, true],
-      [null, 25, 25000, false],
+    for (const [enabled, viewResolution, expected] of [
+      [[5000, 10000], 5 / 16, 5000],
+      [[5000, 10000], 9, 10000],
+      [[5000, 10000], 10, 10000],
+      [[5000, 10000], 100, 10000],
+      [[5000], 100, 5000],
+      [null, 0.5, 1000],
+      [null, 5, 5000],
+      [null, 25, 25000],
     ]) {
       manager.enabledBpResolutions = enabled && new Set(enabled);
       manager.view.getResolution = () => viewResolution;
@@ -248,8 +248,8 @@ async function checkViewport() {
       );
       assert.deepEqual(
         renderable(manager.layersHolder.secondaryHiCDataLayers),
-        secondary ? [5000] : [],
-        "generated overlays render only at an exact available primary resolution"
+        [5000],
+        "the attached overlay remains visible at its nearest stored level"
       );
     }
   }

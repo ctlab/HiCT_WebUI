@@ -35,8 +35,8 @@ const {
   getFinestVisibleResolutionDescriptor,
   getNavigationResolutionModel,
   getResolutionDescriptorForViewResolution,
-  getSecondaryResolutionForDisplay,
   getVectorResolutionTuples,
+  selectNearestResolution,
 } = sandbox.module.exports;
 
 function assertResolutionDescriptor(
@@ -169,8 +169,11 @@ for (const [bpPerPixel, primaryBp, secondaryBp] of [
 assertContiguousVisibility(primaryCoarse);
 assertContiguousVisibility(secondaryFine);
 
-assert.deepEqual(primaryCoarse.pixelResolutionSet, [4, 20, 40]);
-assert.deepEqual(secondaryFine.pixelResolutionSet, [1, 2, 4, 10, 20, 40, 80]);
+assert.deepEqual([...primaryCoarse.pixelResolutionSet], [4, 20, 40]);
+assert.deepEqual(
+  [...secondaryFine.pixelResolutionSet],
+  [1, 2, 4, 10, 20, 40, 80]
+);
 
 assertResolutionDescriptor(
   primaryCoarse,
@@ -245,42 +248,6 @@ assert.equal(
   calculateMaximumScaledImageSize(primaryCoarse, secondaryFine),
   1200000,
   "projection extent must cover the largest scaled source pyramid"
-);
-
-const oneResolutionOverlay = buildSourceResolutionDescriptorSet(
-  "SECONDARY",
-  [5000],
-  [60000],
-  250
-);
-const primaryAt5000 = getResolutionDescriptorForViewResolution(
-  primaryCoarse,
-  30
-);
-const primaryAt10000 = getResolutionDescriptorForViewResolution(
-  primaryCoarse,
-  50
-);
-const overlayAtAnyZoom = getResolutionDescriptorForViewResolution(
-  oneResolutionOverlay,
-  50
-);
-assert.equal(
-  getSecondaryResolutionForDisplay(primaryAt5000, overlayAtAnyZoom, true)
-    ?.bpResolution,
-  5000,
-  "a sequence overlay must remain visible at its generated resolution"
-);
-assert.equal(
-  getSecondaryResolutionForDisplay(primaryAt10000, overlayAtAnyZoom, true),
-  undefined,
-  "a sequence overlay must be transparent when the active primary resolution is unavailable"
-);
-assert.equal(
-  getSecondaryResolutionForDisplay(primaryAt10000, overlayAtAnyZoom, false)
-    ?.bpResolution,
-  5000,
-  "ordinary dual-map overlays must retain independent-pyramid behavior"
 );
 
 const primaryFine = buildSourceResolutionDescriptorSet(
@@ -394,3 +361,37 @@ assert.equal(
 );
 
 console.log("Map resolution model regression check passed.");
+
+const nearest = (target, previous) =>
+  selectNearestResolution(primaryCoarse.resolutionTuples, target, previous)
+    .bpResolution;
+const crossover = Math.sqrt(4 * 20);
+assert.equal(
+  nearest(crossover),
+  1000,
+  "Log-distance ties prefer the finer level"
+);
+assert.equal(nearest(crossover * 1.01), 5000);
+assert.equal(nearest(crossover * 1.01, 1000), 1000, "Zoom out has hysteresis");
+assert.equal(nearest(crossover * 1.05, 1000), 5000);
+assert.equal(nearest(crossover * 0.99, 5000), 5000, "Zoom in has hysteresis");
+assert.equal(nearest(crossover * 0.95, 5000), 1000);
+assert.equal(
+  nearest(100, 1000),
+  10000,
+  "Large jumps can cross multiple levels"
+);
+
+const malformed = buildSourceResolutionDescriptorSet(
+  "SECONDARY",
+  [7, 0, 3, 7, 9],
+  [3, 99, 6, 100],
+  1
+);
+assert.deepEqual([...malformed.resolutions], [7, 3]);
+assert.deepEqual([...malformed.imageSizes], [3, 6]);
+assert.equal(
+  selectNearestResolution(malformed.resolutionTuples, 5).bpResolution,
+  7
+);
+assert.throws(() => selectNearestResolution([], 5), /No resolutions/);

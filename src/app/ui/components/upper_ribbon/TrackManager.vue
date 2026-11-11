@@ -978,8 +978,7 @@ const refreshSecondaryStatus = async () => {
     props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
       secondaryStatus.value.attached
         ? secondaryStatus.value.compatibility
-        : undefined,
-      { exactResolutionOnly: Boolean(secondaryStatus.value.sequenceAnalysis) }
+        : undefined
     );
     if (!secondaryStatus.value.attached) {
       selectedSecondaryFile.value = "";
@@ -1171,8 +1170,7 @@ const onAttachSecondarySource = async () => {
     pendingSecondaryProbe.value = null;
     secondaryStatus.value = response;
     props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
-      response.compatibility,
-      { exactResolutionOnly: Boolean(response.sequenceAnalysis) }
+      response.compatibility
     );
     if (response.assemblyInfo) applyAssemblyInfo(response.assemblyInfo);
     await props.mapManager.reloadTilesFromBackend();
@@ -1202,8 +1200,7 @@ const onProceedSecondaryWithMismatch = async () => {
         true
       );
     props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
-      secondaryStatus.value.compatibility,
-      { exactResolutionOnly: Boolean(secondaryStatus.value.sequenceAnalysis) }
+      secondaryStatus.value.compatibility
     );
     if (secondaryStatus.value.assemblyInfo) {
       applyAssemblyInfo(secondaryStatus.value.assemblyInfo);

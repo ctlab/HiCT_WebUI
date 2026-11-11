@@ -765,8 +765,7 @@ async function adoptSession(
   const secondary =
     await networkManager.requestManager.getSecondarySourceStatus();
   newManager.viewAndLayersManager.setSecondaryResolutionModel(
-    secondary.attached ? secondary.compatibility : undefined,
-    { exactResolutionOnly: Boolean(secondary.sequenceAnalysis) }
+    secondary.attached ? secondary.compatibility : undefined
   );
   if (options.fresh)
     await newManager.visualizationManager.fetchVisualizationOptions();

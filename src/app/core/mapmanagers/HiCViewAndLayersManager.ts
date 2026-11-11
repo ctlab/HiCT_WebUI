@@ -74,8 +74,7 @@ import {
   buildSourceResolutionDescriptorSet,
   calculateMaximumScaledImageSize as calculateMaximumScaledImageSizeForSets,
   getNavigationResolutionModel as getNavigationResolutionModelForSets,
-  getFinestVisibleResolutionDescriptor,
-  getSecondaryResolutionForDisplay,
+  selectNearestResolution,
   getResolutionDescriptorForViewResolution,
   getVectorResolutionTuples as getVectorResolutionTuplesForSets,
   type LayerResolutionBorders,
@@ -201,7 +200,12 @@ class HiCViewAndLayersManager {
   public tileSize: number;
   private primaryResolutionSet: SourceResolutionDescriptorSet;
   private secondaryResolutionSet?: SourceResolutionDescriptorSet;
-  private secondaryExactResolutionOnly = false;
+  private secondaryUsesPrimaryGrid = false;
+  private currentLevels: Partial<Record<MatrixSourceName, number>> = {};
+  private activeOverlay?: Layer;
+  private outgoingOverlay?: Layer;
+  private cancelOverlayTransition?: () => void;
+  public readonly overlayStatus = markRaw({ loading: ref(false) });
   private wheelZoomInteraction?: ContigMouseWheelZoom;
   private coordinateBaseBp: number;
   private enabledBpResolutions?: Set<number>;
@@ -1198,7 +1202,7 @@ class HiCViewAndLayersManager {
       this.mapManager.getMap().getSize()
     );
     const signals = layers.flatMap((layer) => {
-      if (!layer.getVisible()) return [];
+      if (!layer.getVisible() || layer === this.outgoingOverlay) return [];
       const tiles = layer.getSource();
       return tiles instanceof VersionedXYZContactMapSource
         ? tiles.loadedViewportSignals(extent)
@@ -1649,25 +1653,19 @@ class HiCViewAndLayersManager {
       throw new Error(`No resolutions available for ${sourceName}`);
     }
     const tuples = this.getEnabledResolutionTuples(set);
-    if (tuples.length === set.resolutionTuples.length) {
-      return getResolutionDescriptorForViewResolution(set, viewResolution);
+    if (!this.secondaryResolutionSet) {
+      return getResolutionDescriptorForViewResolution(
+        tuples === set.resolutionTuples
+          ? set
+          : { ...set, resolutionTuples: tuples },
+        viewResolution
+      );
     }
-    let descriptor = tuples[0];
-    const sorted = [...tuples].sort(
-      (a, b) =>
-        a.layerResolutionBorders.minResolutionInclusive -
-        b.layerResolutionBorders.minResolutionInclusive
+    return selectNearestResolution(
+      tuples,
+      viewResolution,
+      this.currentLevels[sourceName]
     );
-    for (const tuple of sorted) {
-      if (
-        tuple.layerResolutionBorders.minResolutionInclusive <= viewResolution
-      ) {
-        descriptor = tuple;
-      } else {
-        break;
-      }
-    }
-    return descriptor;
   }
 
   public getVisibleSourceResolutionDescriptors(): {
@@ -1675,47 +1673,36 @@ class HiCViewAndLayersManager {
     secondary?: LayerResolutionDescriptor;
   } {
     const viewResolution = this.view.getResolution() ?? 0;
-    const primary = this.viewResolutionToSourceResolutionDescriptor(
-      "PRIMARY",
-      viewResolution
-    );
-    const secondary = this.secondaryResolutionSet
-      ? this.viewResolutionToSourceResolutionDescriptor(
-          "SECONDARY",
-          viewResolution
-        )
-      : undefined;
     return {
-      primary,
-      secondary: getSecondaryResolutionForDisplay(
-        primary,
-        secondary,
-        this.secondaryExactResolutionOnly
+      primary: this.viewResolutionToSourceResolutionDescriptor(
+        "PRIMARY",
+        viewResolution
       ),
+      secondary: this.secondaryResolutionSet
+        ? this.viewResolutionToSourceResolutionDescriptor(
+            "SECONDARY",
+            viewResolution
+          )
+        : undefined,
     };
   }
 
   public getFinestVisibleSourceResolutionDescriptor(
     viewResolution: number = this.view.getResolution() ?? 0
   ): LayerResolutionDescriptor {
-    const descriptor = getFinestVisibleResolutionDescriptor(
-      this.primaryResolutionSet,
-      this.secondaryResolutionSet,
+    const primary = this.viewResolutionToSourceResolutionDescriptor(
+      "PRIMARY",
       viewResolution
     );
-    if (
-      this.secondaryExactResolutionOnly &&
-      descriptor.sourceName === "SECONDARY"
-    ) {
-      const primary = this.viewResolutionToSourceResolutionDescriptor(
-        "PRIMARY",
-        viewResolution
-      );
-      return descriptor.bpResolution === primary.bpResolution
-        ? descriptor
-        : primary;
-    }
-    return descriptor;
+    if (!this.secondaryResolutionSet || this.secondaryUsesPrimaryGrid)
+      return primary;
+    const secondary = this.viewResolutionToSourceResolutionDescriptor(
+      "SECONDARY",
+      viewResolution
+    );
+    return secondary.pixelResolution < primary.pixelResolution
+      ? secondary
+      : primary;
   }
 
   public getDimensionHolderForSource(
@@ -1756,8 +1743,7 @@ class HiCViewAndLayersManager {
   }
 
   public setSecondaryResolutionModel(
-    compatibility?: SecondarySourceCompatibility,
-    options?: { exactResolutionOnly?: boolean }
+    compatibility?: SecondarySourceCompatibility
   ): void {
     const previousBaseBp = this.coordinateBaseBp;
     const nextBaseBp =
@@ -1778,9 +1764,8 @@ class HiCViewAndLayersManager {
 
     this.removeSourceHiCDataLayers("SECONDARY");
     this.secondaryResolutionSet = undefined;
-    this.secondaryExactResolutionOnly = Boolean(
-      compatibility && options?.exactResolutionOnly
-    );
+    this.secondaryUsesPrimaryGrid = compatibility?.sharedReference === true;
+    this.currentLevels = {};
     if (baseChanged) {
       this.removeSourceHiCDataLayers("PRIMARY");
       this.coordinateBaseBp = nextBaseBp;
@@ -1802,7 +1787,11 @@ class HiCViewAndLayersManager {
         compatibility.secondaryResolutions,
         compatibility.secondaryBinsByResolution
       );
-      this.addSourceHiCDataLayers(this.secondaryResolutionSet);
+      if (this.secondaryResolutionSet.resolutionTuples.length === 0) {
+        this.secondaryResolutionSet = undefined;
+      } else if (!this.secondaryUsesPrimaryGrid) {
+        this.addSourceHiCDataLayers(this.secondaryResolutionSet);
+      }
     }
     this.updateProjectionAndViewExtent(previousBaseBp / this.coordinateBaseBp);
     this.updateWheelZoomResolutionModel();
@@ -1818,12 +1807,20 @@ class HiCViewAndLayersManager {
   }
 
   private removeSourceHiCDataLayers(sourceName: MatrixSourceName): void {
+    if (sourceName === "SECONDARY") {
+      this.cancelOverlayTransition?.();
+      this.activeOverlay = undefined;
+      this.outgoingOverlay = undefined;
+      this.overlayStatus.loading.value = false;
+    }
     const layers =
       sourceName === "PRIMARY"
         ? this.layersHolder.primaryHiCDataLayers
         : this.layersHolder.secondaryHiCDataLayers;
     for (const layer of layers) {
       this.mapManager.getMap().removeLayer(layer);
+      layer.getSource()?.dispose();
+      layer.dispose();
       const idx = this.layersHolder.hicDataLayers.indexOf(layer);
       if (idx >= 0) {
         this.layersHolder.hicDataLayers.splice(idx, 1);
@@ -2083,6 +2080,8 @@ class HiCViewAndLayersManager {
         window.clearTimeout(handle);
       }
       this.pendingFeatureStyleRefreshHandles.clear();
+      this.cancelOverlayTransition?.();
+      this.overlayStatus.loading.value = false;
       this.rulerRenderCallback = null;
       this.disposeRulers?.();
       this.disposeRulers = undefined;
@@ -2667,12 +2666,20 @@ class HiCViewAndLayersManager {
       const layerResolution = Number(layer.get("bpResolution"));
       layer.setVisible(layerResolution === activeResolution);
     }
-    for (const layer of this.layersHolder.secondaryHiCDataLayers) {
-      const layerResolution = Number(layer.get("bpResolution"));
-      layer.setVisible(
-        visibleDescriptors.secondary !== undefined &&
-          layerResolution === visibleDescriptors.secondary.bpResolution
+    this.currentLevels.PRIMARY = visibleDescriptors.primary.bpResolution;
+    this.currentLevels.SECONDARY = visibleDescriptors.secondary?.bpResolution;
+    if (visibleDescriptors.secondary && this.secondaryUsesPrimaryGrid) {
+      this.showProjectedOverlay(
+        visibleDescriptors.primary,
+        visibleDescriptors.secondary
       );
+    } else {
+      for (const layer of this.layersHolder.secondaryHiCDataLayers) {
+        layer.setVisible(
+          layer.get("bpResolution") ===
+            visibleDescriptors.secondary?.bpResolution
+        );
+      }
     }
 
     for (const layer of this.layersHolder.contigBordersLayers) {
@@ -2699,6 +2706,104 @@ class HiCViewAndLayersManager {
     }
     this.applyLayerScopeExtent(this.activeAxisScopeExtent);
     this.refreshVisibleBuiltinVectorSources();
+  }
+
+  private showProjectedOverlay(
+    primary: LayerResolutionDescriptor,
+    secondary: LayerResolutionDescriptor
+  ): void {
+    const target = this.view.getResolution() ?? primary.pixelResolution;
+    const oversampling = Math.min(
+      64,
+      primary.bpResolution / secondary.bpResolution,
+      primary.pixelResolution / target
+    );
+    const sampleFactor =
+      oversampling > 1 ? 2 ** Math.floor(Math.log2(oversampling)) : 1;
+    const key = `${primary.bpResolution}/${secondary.bpResolution}/${sampleFactor}`;
+    if (this.activeOverlay?.get("projectionKey") === key) return;
+
+    const map = this.mapManager.getMap();
+    this.cancelOverlayTransition?.();
+    if (this.outgoingOverlay && this.activeOverlay) {
+      this.removeProjectedOverlay(this.activeOverlay);
+    } else if (this.activeOverlay) {
+      this.outgoingOverlay = this.activeOverlay;
+      const previousSource = this.outgoingOverlay.getSource();
+      if (previousSource instanceof VersionedXYZContactMapSource)
+        previousSource.pauseLoading();
+    }
+
+    const extentSize =
+      this.primaryResolutionSet.imageSizes[primary.imageSizeIndex] *
+      primary.pixelResolution;
+    const pixelResolution = primary.pixelResolution / sampleFactor;
+    const grid = new TileGrid({
+      extent: [0, -extentSize, extentSize, 0],
+      resolutions: [pixelResolution],
+      tileSize: this.tileSize,
+    });
+    const source = new VersionedXYZContactMapSource(
+      this,
+      secondary.imageSizeIndex,
+      secondary.bpResolution,
+      "SECONDARY",
+      {
+        projection: this.pixelProjection,
+        tileGrid: grid,
+        interpolate: false,
+      },
+      { bpResolution: primary.bpResolution, sampleFactor }
+    );
+    const layer = markRaw(
+      new TileLayer({
+        source,
+        zIndex: this.layersZIndices.HIC_MAP_LAYER_Z_INDEX + 1,
+        opacity: this.outgoingOverlay ? 0 : 1,
+      })
+    );
+    layer.set("sourceName", "SECONDARY");
+    layer.set("bpResolution", secondary.bpResolution);
+    layer.set("pixelResolution", pixelResolution);
+    layer.set("projectionKey", key);
+    layer.setExtent(this.activeAxisScopeExtent);
+    this.activeOverlay = layer;
+    this.layersHolder.secondaryHiCDataLayers.push(layer);
+    this.layersHolder.hicDataLayers.push(layer);
+    this.overlayStatus.loading.value = true;
+    map.addLayer(layer);
+
+    const finish = () => {
+      this.cancelOverlayTransition?.();
+      layer.setOpacity(1);
+      if (this.outgoingOverlay)
+        this.removeProjectedOverlay(this.outgoingOverlay);
+      this.outgoingOverlay = undefined;
+      this.overlayStatus.loading.value = false;
+    };
+    const rendered = map.once("rendercomplete", finish);
+    // OpenLayers can drop the last queued tiles from an outgoing source after
+    // computing frame readiness. Ask for another frame while the transition
+    // is pending so that a dropped queue cannot leave the old imagery visible.
+    const renderCheck = window.setInterval(() => map.render(), 100);
+    this.cancelOverlayTransition = () => {
+      unByKey(rendered);
+      window.clearInterval(renderCheck);
+      this.cancelOverlayTransition = undefined;
+    };
+  }
+
+  private removeProjectedOverlay(layer: Layer): void {
+    this.mapManager.getMap().removeLayer(layer);
+    layer.getSource()?.dispose();
+    layer.dispose();
+    for (const layers of [
+      this.layersHolder.hicDataLayers,
+      this.layersHolder.secondaryHiCDataLayers,
+    ]) {
+      const index = layers.indexOf(layer);
+      if (index >= 0) layers.splice(index, 1);
+    }
   }
 
   public addAnnotationMarkerAtCenter(name?: string): void {

@@ -26,6 +26,7 @@ import TileState from "ol/TileState";
 import XYZ, { type Options as XYZOptions } from "ol/source/XYZ";
 import { unref } from "vue";
 import { getUid } from "ol/util";
+import type Projection from "ol/proj/Projection";
 import type {
   HiCViewAndLayersManager,
   MatrixSourceName,
@@ -37,6 +38,8 @@ import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsS
 import { useStyleStore } from "@/app/stores/styleStore";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 
+const PROJECTED_TILE_CACHE_BYTES = 48 * 1024 * 1024;
+
 class VersionedXYZContactMapSource extends XYZ {
   protected sourceVersion: number;
   private tileGeneration = 0;
@@ -44,22 +47,34 @@ class VersionedXYZContactMapSource extends XYZ {
   private readonly activeTileRequests = new Set<XMLHttpRequest>();
   private pendingSignalRanges?: CurrentSignalRangeResponse;
   private signalRangeFrame?: number;
+  private loadsPaused = false;
+  private readonly maximumTileImageLength: number;
 
   constructor(
     protected readonly layersManager: HiCViewAndLayersManager,
     protected readonly zoomLevel: number,
     protected readonly bpResolution: number,
     protected readonly sourceName: MatrixSourceName = "PRIMARY",
-    readonly xyzOptions?: XYZOptions
+    readonly xyzOptions?: XYZOptions,
+    private readonly grid?: { bpResolution: number; sampleFactor: number }
   ) {
     // Matrix tiles represent discrete coordinate versions. Cross-fading old
     // and edited matrices blends unrelated contacts and adds a 250 ms delay.
     // Callers can still explicitly request a transition for other use cases.
     super({ transition: 0, ...xyzOptions });
     this.sourceVersion = 0;
+    const tileSize = this.getTileGrid()?.getTileSize(0) ?? 256;
+    const pixels =
+      typeof tileSize === "number" ? tileSize ** 2 : tileSize[0] * tileSize[1];
+    this.maximumTileImageLength = 1024 + Math.ceil((pixels * 4 * 1.02 * 4) / 3);
+    if (this.grid) this.tileCache.setSize(this.projectedCacheLimit(pixels));
     this.setTileLoadFunction((tile, src) => {
       console.assert(tile instanceof ImageTile);
       const imageTile: ImageTile = tile as ImageTile;
+      if (this.loadsPaused) {
+        imageTile.setState(TileState.EMPTY);
+        return;
+      }
       const image: HTMLImageElement | HTMLVideoElement =
         imageTile.getImage() as HTMLImageElement | HTMLVideoElement;
       const uiSettingsStore = useUiSettingsStore();
@@ -74,6 +89,44 @@ class VersionedXYZContactMapSource extends XYZ {
       this.loadPngTile(imageTile, image, src);
     });
     this.do_reload();
+  }
+
+  public override getTile(
+    z: number,
+    x: number,
+    y: number,
+    pixelRatio: number,
+    projection: Projection
+  ) {
+    const tile = super.getTile(z, x, y, pixelRatio, projection);
+    if (this.loadsPaused && tile.getState() === TileState.IDLE) {
+      // The outgoing layer is a snapshot of already decoded imagery. Mark new
+      // cells empty before OpenLayers queues them, even after cache eviction.
+      tile.setState(TileState.EMPTY);
+    }
+    return tile;
+  }
+
+  private projectedCacheLimit(pixels: number): number {
+    // Include both decoded RGBA and the retained data URL and its JSON string.
+    const estimatedBytes = pixels * 4 + 2 * this.maximumTileImageLength;
+    return Math.max(1, Math.floor(PROJECTED_TILE_CACHE_BYTES / estimatedBytes));
+  }
+
+  public override updateCacheSize(
+    tileCount: number,
+    projection: Projection
+  ): void {
+    if (!this.grid) {
+      super.updateCacheSize(tileCount, projection);
+      return;
+    }
+    const tileSize = this.getTileGrid()?.getTileSize(0) ?? 256;
+    const pixels =
+      typeof tileSize === "number" ? tileSize ** 2 : tileSize[0] * tileSize[1];
+    this.getTileCacheForProjection(projection).setSize(
+      Math.max(tileCount, this.projectedCacheLimit(pixels))
+    );
   }
 
   /**
@@ -141,7 +194,12 @@ class VersionedXYZContactMapSource extends XYZ {
           tile.setState(TileState.EMPTY);
           return;
         }
-        if (xhr.status >= 200 && xhr.status < 300 && data && data.image) {
+        if (
+          xhr.status >= 200 &&
+          xhr.status < 300 &&
+          typeof data?.image === "string" &&
+          (!this.grid || data.image.length <= this.maximumTileImageLength)
+        ) {
           image.src = data.image;
           // ImageTile's load/decode listener marks it ready. Receiving JSON is
           // not image completion; rendercomplete must wait for decoded pixels.
@@ -455,6 +513,11 @@ class VersionedXYZContactMapSource extends XYZ {
     this.changed();
   }
 
+  public pauseLoading(): void {
+    this.loadsPaused = true;
+    this.invalidatePendingTileRequests();
+  }
+
   protected override disposeInternal(): void {
     this.invalidatePendingTileRequests();
     if (this.signalRangeFrame !== undefined) {
@@ -499,6 +562,9 @@ class VersionedXYZContactMapSource extends XYZ {
         `&level=${1 + this.zoomLevel}` +
         `&bpResolution=${this.bpResolution}` +
         `&source=${this.sourceName}` +
+        (this.grid
+          ? `&gridBpResolution=${this.grid.bpResolution}&gridSampleFactor=${this.grid.sampleFactor}`
+          : "") +
         `&row=${row}` +
         `&col=${col}` +
         `&tile_size=${unref(this.layersManager.tileSize)}`

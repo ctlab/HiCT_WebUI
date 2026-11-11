@@ -26,6 +26,13 @@
       :key="managerKey"
       :map-manager="props.mapManager"
     />
+    <div
+      v-if="props.mapManager?.viewAndLayersManager.overlayStatus.loading.value"
+      class="overlay-loading"
+      role="status"
+    >
+      Loading overlay…
+    </div>
     <div id="hic-contact-map" :style="mapContainerStyle" ref="mapTarget"></div>
     <div
       class="zoom-slider-overlay"
@@ -89,6 +96,18 @@ const managerKey = computed(() => {
 </script>
 
 <style scoped>
+.overlay-loading {
+  position: absolute;
+  z-index: 2;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.25rem;
+  color: var(--bs-body-color);
+  background: var(--bs-body-bg);
+  pointer-events: none;
+}
+
 .map-shell {
   position: relative;
   width: 100%;

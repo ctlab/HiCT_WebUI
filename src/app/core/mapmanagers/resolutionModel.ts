@@ -38,12 +38,22 @@ export function buildSourceResolutionDescriptorSet(
     Number.isFinite(coordinateBaseBp) && coordinateBaseBp > 0
       ? coordinateBaseBp
       : 1;
-  const resolutions = resolutionsRaw
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value) && value > 0);
-  const imageSizes = imageSizesRaw
-    .slice(0, resolutions.length)
-    .map((value) => Number(value));
+  const levels = new Map<number, number>();
+  for (let i = 0; i < resolutionsRaw.length; i += 1) {
+    const bp = resolutionsRaw[i];
+    const size = imageSizesRaw[i];
+    if (
+      Number.isSafeInteger(bp) &&
+      bp > 0 &&
+      Number.isSafeInteger(size) &&
+      size >= 0 &&
+      !levels.has(bp)
+    ) {
+      levels.set(bp, size);
+    }
+  }
+  const resolutions = [...levels.keys()];
+  const imageSizes = [...levels.values()];
   const pixelResolutionSet = resolutions.map(
     (resolution) => resolution / baseBp
   );
@@ -181,20 +191,6 @@ export function getFinestVisibleResolutionDescriptor(
     : primaryDescriptor;
 }
 
-export function getSecondaryResolutionForDisplay(
-  primaryDescriptor: LayerResolutionDescriptor,
-  secondaryDescriptor: LayerResolutionDescriptor | undefined,
-  exactResolutionOnly: boolean
-): LayerResolutionDescriptor | undefined {
-  if (
-    exactResolutionOnly &&
-    secondaryDescriptor?.bpResolution !== primaryDescriptor.bpResolution
-  ) {
-    return undefined;
-  }
-  return secondaryDescriptor;
-}
-
 export function getResolutionDescriptorForViewResolution(
   set: SourceResolutionDescriptorSet,
   viewResolution: number
@@ -212,4 +208,37 @@ export function getResolutionDescriptorForViewResolution(
     }
   }
   return descriptor;
+}
+
+// A 4% band around the crossover prevents repeated switching during wheel
+// animation. At a fresh geometric-midpoint tie, select the finer level.
+const RESOLUTION_HYSTERESIS = 1.04;
+
+export function selectNearestResolution(
+  sorted: readonly LayerResolutionDescriptor[],
+  target: number,
+  currentBp?: number
+): LayerResolutionDescriptor {
+  if (sorted.length === 0) throw new Error("No resolutions available");
+  const currentIndex = sorted.findIndex(
+    (level) => level.bpResolution === currentBp
+  );
+  if (currentIndex >= 0) {
+    const current = sorted[currentIndex].pixelResolution;
+    const lower = sorted[currentIndex - 1]?.pixelResolution ?? 0;
+    const upper = sorted[currentIndex + 1]?.pixelResolution ?? Infinity;
+    if (
+      target >= Math.sqrt(lower * current) / RESOLUTION_HYSTERESIS &&
+      target <= Math.sqrt(upper * current) * RESOLUTION_HYSTERESIS
+    ) {
+      return sorted[currentIndex];
+    }
+  }
+  for (let i = 0; i < sorted.length - 1; i += 1) {
+    const crossover = Math.sqrt(
+      sorted[i].pixelResolution * sorted[i + 1].pixelResolution
+    );
+    if (target <= crossover || Number.isNaN(target)) return sorted[i];
+  }
+  return sorted[sorted.length - 1];
 }
