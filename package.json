@@ -40,13 +40,13 @@
   "dependencies": {
     "@popperjs/core": "^2.11.6",
     "@types/bootstrap": "^5.2.5",
-    "axios": "^1.1.3",
+    "axios": "1.21.1",
     "binary-search": "^1.3.6",
     "binary-search-bounds": "2.0.5",
     "bootstrap": "^5.2.2",
     "bootstrap-icons": "^1.9.1",
     "colortranslator": "^4.1.0",
-    "jspdf": "^2.5.1",
+    "jspdf": "4.2.1",
     "litegraph.js": "^0.7.18",
     "normalize.css": "^8.0.1",
     "ol": "^9.1.0",
@@ -59,7 +59,7 @@
     "svg2pdf.js": "2.8.1",
     "toolcool-color-picker": "^1.0.15",
     "vanilla-picker": "^2.12.2",
-    "vue": "^3.2.41",
+    "vue": "3.5.45",
     "vue-sonner": "^0.4.2"
   },
   "devDependencies": {

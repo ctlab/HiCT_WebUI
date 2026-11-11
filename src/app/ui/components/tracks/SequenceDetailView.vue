@@ -94,7 +94,7 @@
         >
           <canvas
             v-if="axis.trackCount"
-            :ref="(element) => setTrackCanvas(index, element)"
+            :ref="(element: unknown) => setTrackCanvas(index, element)"
             class="sequence-annotations"
             :aria-busy="axis.trackBusy"
             :width="(axis.data.sequence?.length ?? count) * 18"
