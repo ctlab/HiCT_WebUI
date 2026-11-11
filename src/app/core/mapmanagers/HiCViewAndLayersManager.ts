@@ -37,7 +37,7 @@ import Style from "ol/style/Style";
 import TileGrid from "ol/tilegrid/TileGrid";
 import { asString, type Color } from "ol/color";
 import type { ColorLike } from "ol/colorlike";
-import { type Ref, ref, markRaw, shallowRef } from "vue";
+import { type Ref, ref, markRaw, shallowRef, shallowReactive } from "vue";
 import { installTopLeftAnchor } from "./mapAnchor";
 import { selectionAreaStyle, selectionPointerStyle } from "./selectionStyles";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
@@ -352,7 +352,7 @@ class HiCViewAndLayersManager {
         useUiSettingsStore().mapAnchorTopLeft && !this.mapManager.isExporting
     );
 
-    this.currentViewState = {
+    this.currentViewState = shallowReactive({
       resolutionDesciptor: {
         sourceName: "PRIMARY",
         bpResolution: Number.NaN,
@@ -369,7 +369,7 @@ class HiCViewAndLayersManager {
         rightContigDescriptorInclusive: undefined,
         rightContigOrderInclusive: undefined,
       },
-    };
+    });
 
     // The armed tool is read by toolbar buttons and written from async completions that hold the raw
     // manager, which Vue cannot observe. Backing it with a ref keeps the buttons truthful either way.
