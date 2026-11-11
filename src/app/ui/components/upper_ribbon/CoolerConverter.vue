@@ -314,7 +314,10 @@
             </div>
             <div v-if="batchStep === 'progress'">
               <h6>Batch progress</h6>
-              <div class="overall-status">
+              <p v-if="batchJobIds.length === 0" class="text-muted">
+                No active conversion jobs.
+              </p>
+              <div v-else class="overall-status">
                 <span class="status-pill" :class="overallBatchStatusClass">
                   {{ overallBatchStatusLabel }}
                 </span>
