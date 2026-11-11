@@ -88,23 +88,26 @@
                   >Show Cooler weights track</strong
                 >
                 <div class="d-flex flex-wrap gap-3">
+                  <span
+                    v-if="coolerWeightsUpdating"
+                    class="small text-muted"
+                    role="status"
+                  >
+                    Updating weight tracks…
+                  </span>
                   <div class="form-check form-switch m-0">
                     <input
                       id="cooler-weights-primary"
                       class="form-check-input"
                       type="checkbox"
                       :checked="primaryCoolerWeightsVisible"
-                      :disabled="!props.mapManager"
+                      :disabled="!props.mapManager || coolerWeightsUpdating"
                       :title="
                         props.mapManager
                           ? 'Show or hide Cooler balancing weights for the primary source.'
                           : 'Open a map first.'
                       "
-                      @change="
-                        onTogglePrimaryCoolerWeights(
-                          ($event.target as HTMLInputElement).checked
-                        )
-                      "
+                      @change="onTogglePrimaryCoolerWeights"
                     />
                     <label
                       class="form-check-label"
@@ -119,17 +122,15 @@
                       class="form-check-input"
                       type="checkbox"
                       :checked="secondaryCoolerWeightsVisible"
-                      :disabled="!secondaryStatus.attached"
+                      :disabled="
+                        !secondaryStatus.attached || coolerWeightsUpdating
+                      "
                       :title="
                         secondaryStatus.attached
                           ? 'Show or hide Cooler balancing weights for the secondary source.'
                           : 'Attach a secondary source first.'
                       "
-                      @change="
-                        onToggleSecondaryCoolerWeights(
-                          ($event.target as HTMLInputElement).checked
-                        )
-                      "
+                      @change="onToggleSecondaryCoolerWeights"
                     />
                     <label
                       class="form-check-label"
@@ -786,6 +787,7 @@ const selectedSecondaryFile = ref("");
 const pendingTrackProbe = ref<TrackCompatibilityReportResponse | null>(null);
 const pendingSecondaryProbe = ref<SecondarySourceStatusResponse | null>(null);
 const tracks = ref<TrackSummaryResponse[]>([]);
+const coolerWeightsUpdating = ref(false);
 const precomputeStatus = ref<TracksPrecomputeStatusResponse | null>(null);
 const secondaryStatus = ref<SecondarySourceStatusResponse>({
   attached: false,
@@ -1029,10 +1031,13 @@ const onAddTrack = async () => {
   }
 };
 
-const onTogglePrimaryCoolerWeights = async (visible: boolean) => {
-  if (!props.mapManager) {
+const onTogglePrimaryCoolerWeights = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const visible = input.checked;
+  if (!props.mapManager || coolerWeightsUpdating.value) {
     return;
   }
+  coolerWeightsUpdating.value = true;
   try {
     if (visible) {
       if (primaryCoolerWeightsTrackIds.value.length === 0) {
@@ -1050,13 +1055,19 @@ const onTogglePrimaryCoolerWeights = async (visible: boolean) => {
     await refreshPrecomputeStatus();
   } catch (err) {
     reportFailure("Show primary weights", err);
+  } finally {
+    input.checked = primaryCoolerWeightsVisible.value;
+    coolerWeightsUpdating.value = false;
   }
 };
 
-const onToggleSecondaryCoolerWeights = async (visible: boolean) => {
-  if (!props.mapManager) {
+const onToggleSecondaryCoolerWeights = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const visible = input.checked;
+  if (!props.mapManager || coolerWeightsUpdating.value) {
     return;
   }
+  coolerWeightsUpdating.value = true;
   try {
     if (visible) {
       if (!secondaryStatus.value.attached) {
@@ -1080,6 +1091,9 @@ const onToggleSecondaryCoolerWeights = async (visible: boolean) => {
     await refreshPrecomputeStatus();
   } catch (err) {
     reportFailure("Show secondary weights", err);
+  } finally {
+    input.checked = secondaryCoolerWeightsVisible.value;
+    coolerWeightsUpdating.value = false;
   }
 };
 
