@@ -360,6 +360,7 @@ import { NetworkManager } from "@/app/core/net/NetworkManager";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { useStyleStore } from "@/app/stores/styleStore";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import VisualizationOptions, {
   type CoolerWeightsNaNPolicy,
@@ -423,6 +424,7 @@ if ((window as any).__HICT_BENCHMARK_ENABLED__) {
 }
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const stylesStore = useStyleStore();
+const uiSettingsStore = useUiSettingsStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const sessionStore = useSessionStore();
 watch(fastaFilename, (v) => sessionStore.setLinkedFastaFilename(v ?? ""), {
@@ -1788,6 +1790,16 @@ watch(
   () => mapBackgroundColor.value.RGB,
   () => {
     syncUiChromePalette();
+  }
+);
+
+watch(
+  () =>
+    uiSettingsStore.inheritTrackBackgroundFromMap
+      ? mapBackgroundColor.value.RGB
+      : uiSettingsStore.trackBackgroundColor,
+  () => {
+    void mapManager.value?.linearTrackManager.render({ allowFetch: false });
   }
 );
 
