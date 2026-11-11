@@ -96,11 +96,13 @@
           v-if="loc"
           :map-manager="props.mapManager"
           :location_id="loc.location_id"
+          :name="loc.name"
           :center_point="loc.center_point"
           :resolution="loc.resolution"
           :rotation="loc.rotation"
           @goto="gotoSavedLocation"
           @remove="removeSavedLocation"
+          @rename="renameLocation"
         ></SavedLocationElement>
       </div>
     </div>
@@ -257,7 +259,11 @@ import { Coordinate } from "ol/coordinate";
 import { toast } from "vue-sonner";
 import type { ContigDescriptor } from "@/app/core/domain/ContigDescriptor";
 import type { ScaffoldDescriptor } from "@/app/core/domain/ScaffoldDescriptor";
-import { useSessionStore } from "@/app/stores/sessionStore";
+import {
+  useSessionStore,
+  type SessionSavedLocation,
+} from "@/app/stores/sessionStore";
+import { validateSessionLibraries } from "@/app/core/mapmanagers/SessionDocument";
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -271,6 +277,7 @@ const savedLocations: Ref<
     number,
     {
       location_id: number;
+      name?: string;
       center_point: Coordinate | undefined;
       resolution: number | undefined;
       rotation: number | undefined;
@@ -385,6 +392,7 @@ function saveLocation() {
   if (props.mapManager && map && view) {
     savedLocations.value.set(locationCount.value, {
       location_id: locationCount.value,
+      name: `${locationCount.value} unnamed location`,
       center_point: view.getCenter(),
       resolution: view.getResolution(),
       rotation: view.getRotation(),
@@ -392,6 +400,13 @@ function saveLocation() {
     locationCount.value += 1;
     syncSessionStore();
   }
+}
+
+function renameLocation(location_id: number, name: string): void {
+  const location = savedLocations.value.get(location_id);
+  if (!location) return;
+  savedLocations.value.set(location_id, { ...location, name });
+  syncSessionStore();
 }
 
 function gotoSavedLocation(location_id: number) {
@@ -433,16 +448,13 @@ function importBookmarks(event: Event): void {
   }
   file.text().then((text) => {
     try {
-      const entries = JSON.parse(text) as {
-        location_id: number;
-        center_point: Coordinate;
-        resolution: number;
-        rotation: number;
-      }[];
+      const entries = JSON.parse(text) as SessionSavedLocation[];
+      validateSessionLibraries({ savedLocations: entries });
       savedLocations.value.clear();
       entries.forEach((entry, idx) => {
         savedLocations.value.set(idx, {
           location_id: idx,
+          name: entry.name,
           center_point: entry.center_point,
           resolution: entry.resolution,
           rotation: entry.rotation,
@@ -459,6 +471,7 @@ function importBookmarks(event: Event): void {
 function syncSessionStore() {
   const entries = Array.from(savedLocations.value.values()).map((loc, idx) => ({
     location_id: idx,
+    name: loc.name,
     center_point: (loc.center_point ?? [0, 0]) as [number, number],
     resolution: loc.resolution ?? 1,
     rotation: loc.rotation ?? 0,
@@ -472,6 +485,7 @@ function loadFromSessionStore() {
   entries.forEach((entry, idx) => {
     savedLocations.value.set(idx, {
       location_id: idx,
+      name: entry.name,
       center_point: entry.center_point,
       resolution: entry.resolution,
       rotation: entry.rotation,
@@ -485,6 +499,7 @@ watch(
   () => {
     const current = Array.from(savedLocations.value.values()).map((loc) => ({
       location_id: loc.location_id,
+      name: loc.name,
       center_point: loc.center_point,
       resolution: loc.resolution,
       rotation: loc.rotation,

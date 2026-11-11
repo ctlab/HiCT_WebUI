@@ -55,11 +55,12 @@
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { Coordinate } from "ol/coordinate";
-import { ref } from "vue";
+import { computed } from "vue";
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
   location_id: number;
+  name?: string;
   center_point: Coordinate | undefined;
   resolution: number | undefined;
   rotation: number | undefined;
@@ -68,9 +69,13 @@ const props = defineProps<{
 const emits = defineEmits<{
   (e: "goto", location_id: number): void;
   (e: "remove", location_id: number): void;
+  (e: "rename", location_id: number, name: string): void;
 }>();
 
-const name = ref(props.location_id + " unnamed location");
+const name = computed({
+  get: () => props.name ?? props.location_id + " unnamed location",
+  set: (value: string) => emits("rename", props.location_id, value),
+});
 </script>
 <style scoped>
 .saved-locations {

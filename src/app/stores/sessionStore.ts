@@ -3,6 +3,7 @@ import { ref } from "vue";
 
 export interface SessionSavedLocation {
   location_id: number;
+  name?: string;
   center_point: [number, number];
   resolution: number;
   rotation: number;

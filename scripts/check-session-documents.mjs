@@ -62,6 +62,27 @@ reject(
   },
   "resolution"
 );
+const bookmark = {
+  location_id: 1,
+  center_point: [1, -2],
+  resolution: 1,
+  rotation: 0,
+};
+assert.equal(
+  parseSessionDocument(JSON.stringify({ ...valid, savedLocations: [bookmark] }))
+    .savedLocations[0].name,
+  undefined
+);
+assert.equal(
+  parseSessionDocument(
+    JSON.stringify({
+      ...valid,
+      savedLocations: [{ ...bookmark, name: "Landmark α🧬" }],
+    })
+  ).savedLocations[0].name,
+  "Landmark α🧬"
+);
+reject({ ...valid, savedLocations: [{ ...bookmark, name: {} }] }, "name");
 reject({ ...valid, savedVisualizationPresets: [{}] }, "option_id");
 assert.throws(
   () => parseSessionDocument('{"version":2,"view":{"resolution":1e999}}'),
@@ -147,6 +168,23 @@ assert.equal(v3.version, 3);
 assert.equal(v3.format, "hict-session");
 const parsed = parseSessionDocument(JSON.stringify(v3));
 assert.equal(parsed.snapshot.primary.filename, "tiny.hict.hdf5");
+const namedClient = {
+  ...client,
+  savedLocations: [{ ...bookmark, name: "Landmark α🧬" }],
+};
+assert.equal(
+  parseSessionDocument(
+    JSON.stringify(createSessionEnvelope(snapshot, namedClient))
+  ).client.savedLocations[0].name,
+  "Landmark α🧬"
+);
+reject(
+  createSessionEnvelope(snapshot, {
+    ...client,
+    savedLocations: [{ ...bookmark, name: 42 }],
+  }),
+  "name"
+);
 // A document with no recorded file identities cannot be restored safely.
 reject({ ...v3, snapshot: { ...snapshot, filesFingerprinted: false } }, "filesFingerprinted");
 reject({ ...v3, format: "other" }, "format");

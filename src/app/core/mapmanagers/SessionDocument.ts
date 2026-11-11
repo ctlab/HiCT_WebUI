@@ -206,7 +206,10 @@ function view(value: unknown, path: string, bookmark = false): void {
   }
 }
 
-function libraries(session: RecordValue, prefix: string): void {
+export function validateSessionLibraries(
+  session: RecordValue,
+  prefix = ""
+): void {
   for (const key of ["savedLocations", "savedVisualizationPresets"]) {
     if (!(key in session)) continue;
     const items = session[key];
@@ -221,8 +224,11 @@ function libraries(session: RecordValue, prefix: string): void {
         invalid(`${path}.${id}`, "expected an integer");
       if (ids.has(item[id] as number)) invalid(`${path}.${id}`, "duplicate ID");
       ids.add(item[id] as number);
-      if (key === "savedLocations") view(item, path, true);
-      else {
+      if (key === "savedLocations") {
+        view(item, path, true);
+        if ("name" in item && typeof item.name !== "string")
+          invalid(`${path}.name`, "expected a string");
+      } else {
         if (typeof item.name !== "string")
           invalid(`${path}.name`, "expected a string");
         if ("options" in item)
@@ -311,7 +317,7 @@ function envelope(session: RecordValue): void {
     if ("view" in workspace) view(workspace.view, "client.workspace.view");
     styles(workspace, "client.workspace.");
   }
-  libraries(client, "client.");
+  validateSessionLibraries(client, "client.");
 }
 
 /**
@@ -389,6 +395,6 @@ export function parseSessionDocument(text: string): RecordValue {
       }
     }
   }
-  libraries(session, "");
+  validateSessionLibraries(session, "");
   return session;
 }
