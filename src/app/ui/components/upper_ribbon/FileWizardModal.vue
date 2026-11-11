@@ -1259,6 +1259,7 @@
 </template>
 
 <script setup lang="ts">
+import { waitForConversionJob } from "@/app/core/net/api/waitForConversionJob";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import SequenceGapSettings from "./SequenceGapSettings.vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
@@ -2510,38 +2511,6 @@ const describeConversionPlan = (source: SourceDraft): string => {
   return `open ${source.resolution.resolvedFilename}`;
 };
 
-const waitForConversionJob = async (
-  jobId: string
-): Promise<ConversionJobResponse> => {
-  for (;;) {
-    const job = await props.networkManager.requestManager.getConversionJob(
-      jobId
-    );
-    runState.currentConversion = job;
-    runState.currentMessage = job.currentStageLabel || job.status;
-    const normalizedStatus = (job.status ?? "").toLowerCase();
-    if (
-      normalizedStatus === "completed" ||
-      normalizedStatus === "complete" ||
-      normalizedStatus === "finished" ||
-      normalizedStatus === "success" ||
-      normalizedStatus === "succeeded"
-    ) {
-      return job;
-    }
-    if (
-      normalizedStatus === "failed" ||
-      normalizedStatus === "cancelled" ||
-      normalizedStatus === "canceled"
-    ) {
-      throw new Error(
-        job.error || `Conversion job ${jobId} ended with status ${job.status}`
-      );
-    }
-    await sleep(750);
-  }
-};
-
 const ensureOpenedFilename = async (source: SourceDraft): Promise<string> => {
   if (!source.filename) {
     throw new Error("Matrix file is not selected");
@@ -2586,7 +2555,14 @@ const ensureOpenedFilename = async (source: SourceDraft): Promise<string> => {
       balanceInputCoolers: balanceInputCoolers.value,
     })
   );
-  const finishedJob = await waitForConversionJob(started.jobId);
+  const finishedJob = await waitForConversionJob(
+    props.networkManager.requestManager,
+    started.jobId,
+    (job) => {
+      runState.currentConversion = job;
+      runState.currentMessage = job.currentStageLabel || job.status;
+    }
+  );
   return finishedJob.outputFilename;
 };
 

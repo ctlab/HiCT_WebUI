@@ -363,6 +363,8 @@ import VisualizationOptions, {
   type CoolerWeightsNaNPolicy,
 } from "@/app/core/visualization/VisualizationOptions";
 import { ColorTranslator } from "colortranslator";
+import { waitForConversionJob } from "@/app/core/net/api/waitForConversionJob";
+import { StartConversionJobRequest } from "@/app/core/net/api/request";
 import { LoadAGPRequest } from "@/app/core/net/api/request";
 import { LinkFASTARequest } from "@/app/core/net/api/request";
 import AGPImportChoiceModal from "@/app/ui/components/upper_ribbon/AGPImportChoiceModal.vue";
@@ -989,7 +991,6 @@ async function openExampleInWizard(payload: {
   folder: string;
 }): Promise<void> {
   examplesOpen.value = false;
-  if (!(await confirmDiscardUnsavedEdits("open this example"))) return;
   const { example, folder } = payload;
   const nameOf = (fileId?: string) =>
     fileId ? example.files.find((f) => f.id === fileId)?.filename : undefined;
@@ -997,6 +998,49 @@ async function openExampleInWizard(payload: {
     const name = nameOf(fileId);
     return name ? `${folder}/${name}` : undefined;
   };
+  const recipe = example.openingRecipe;
+  const matrix = path(recipe.matrix);
+  if (
+    recipe.quickStart &&
+    matrix &&
+    !recipe.agp &&
+    !recipe.assembly &&
+    !recipe.tracks?.length
+  ) {
+    const previousManager = mapManager.value;
+    toast.message(`Preparing ${example.title}`, {
+      description: "Follow progress in Jobs.",
+    });
+    try {
+      const requests = networkManager.requestManager;
+      const source = await requests.resolveMatrixSource(matrix);
+      let openedFilename = source.resolvedFilename;
+      if (
+        source.action !== "OPEN_DIRECT" &&
+        source.action !== "REUSE_CONVERTED"
+      ) {
+        const started = await requests.startConversionJob(
+          new StartConversionJobRequest({
+            filename: matrix,
+            direction: source.conversionDirection ?? undefined,
+            overwrite: true,
+          })
+        );
+        const finished = await waitForConversionJob(requests, started.jobId);
+        openedFilename = finished.outputFilename;
+      }
+      if (mapManager.value !== previousManager) {
+        toast.success("The example is ready. Open its result from Jobs.");
+        return;
+      }
+      if (await confirmDiscardUnsavedEdits("open this example"))
+        await openFileWithOptions(openedFilename, path(recipe.fasta));
+    } catch (failure) {
+      reportFailure("Open example", failure);
+    }
+    return;
+  }
+  if (!(await confirmDiscardUnsavedEdits("open this example"))) return;
   wizardPrefill.value = {
     matrix: path(example.openingRecipe.matrix),
     fasta: path(example.openingRecipe.fasta),

@@ -248,9 +248,15 @@
                             class="btn btn-primary btn-sm example-open"
                             @click="openExample(example)"
                           >
-                            Open in HiCT
+                            {{
+                              example.openingRecipe.quickStart
+                                ? "Open example"
+                                : "Open in HiCT"
+                            }}
                           </button>
-                          <span class="small text-muted ms-2"
+                          <span
+                            v-if="!example.openingRecipe.quickStart"
+                            class="small text-muted ms-2"
                             >Opens the wizard with these files; a .hic map is
                             converted first.</span
                           >
@@ -279,19 +285,28 @@
                           <button
                             type="button"
                             class="btn btn-outline-primary btn-sm example-download"
-                            :disabled="busyElsewhere(example.id)"
+                            :disabled="
+                              startingDownload || busyElsewhere(example.id)
+                            "
                             :title="
                               busyElsewhere(example.id)
                                 ? 'Another example is downloading'
                                 : undefined
                             "
-                            @click="download(example)"
+                            @click="
+                              download(
+                                example,
+                                example.openingRecipe.quickStart === true
+                              )
+                            "
                           >
                             {{
                               active?.exampleId === example.id &&
                               (active.state === "FAILED" ||
                                 active.state === "CANCELLED")
                                 ? "Resume download"
+                                : example.openingRecipe.quickStart
+                                ? "Open example"
                                 : "Download"
                             }}
                           </button>
@@ -330,6 +345,7 @@ const catalog = ref<ExamplesCatalogResponse | null>(null);
 const loading = ref(true);
 const loadError = ref("");
 const active = ref<ExampleDownloadStatus | null>(null);
+const startingDownload = ref(false);
 let opener: HTMLElement | null = null;
 let disposed = false;
 
@@ -404,7 +420,12 @@ function markDownloaded(id: string | null): void {
   if (entry) entry.downloaded = true;
 }
 
-async function download(example: ExampleEntry): Promise<void> {
+async function download(
+  example: ExampleEntry,
+  openWhenReady = false
+): Promise<void> {
+  if (startingDownload.value) return;
+  startingDownload.value = true;
   try {
     active.value = await props.requests.startExampleDownload(example.id);
   } catch (error) {
@@ -424,8 +445,17 @@ async function download(example: ExampleEntry): Promise<void> {
       allRequiredPresent: false,
     };
     return;
+  } finally {
+    startingDownload.value = false;
   }
   await follow();
+  if (
+    openWhenReady &&
+    !disposed &&
+    active.value?.exampleId === example.id &&
+    active.value.state === "READY"
+  )
+    openExample(example);
 }
 
 async function cancel(): Promise<void> {

@@ -403,6 +403,7 @@ export type ExampleEntry = {
     restrictions?: string;
   };
   openingRecipe: {
+    quickStart?: boolean;
     matrix?: string;
     fasta?: string;
     agp?: string;
