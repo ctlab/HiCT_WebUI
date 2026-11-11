@@ -404,6 +404,11 @@ export type ExampleEntry = {
   };
   openingRecipe: {
     quickStart?: boolean;
+    fastaPreparation?: {
+      filename: string;
+      sha256: string;
+      records: Array<{ source: string; target: string; length: number }>;
+    };
     matrix?: string;
     fasta?: string;
     agp?: string;

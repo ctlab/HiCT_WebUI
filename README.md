@@ -13,8 +13,10 @@ The default interface is `http://localhost:8080` with its API on port 5000.
 [Installation and system requirements](https://github.com/ctlab/HiCT_JVM#readme).
 
 For a first map, open **Help → Examples…** and choose **Open example** on the
-small tardigrade card. HiCT downloads about 45 MB, converts its matrix and links
-the matching FASTA. The larger catalog examples retain their conversion wizard.
+Borrelia Hi-C card for a 2.31 MB download or the yeast Micro-C card for 50 bp
+detail and a 170.76 MB download. HiCT converts the matrix and links its matching
+FASTA. The 45 MB tardigrade quick start also remains available. The larger catalog
+examples retain their conversion wizard.
 
 Use **Open map…** for native `.hict.hdf5` files and **Open with options…** for
 conversion. Select with a click or Shift-drag. The toolbar edits the assembly.

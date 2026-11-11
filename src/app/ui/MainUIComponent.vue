@@ -1015,6 +1015,9 @@ async function openExampleInWizard(payload: {
   };
   const recipe = example.openingRecipe;
   const matrix = path(recipe.matrix);
+  const fasta = recipe.fastaPreparation
+    ? `${folder}/${recipe.fastaPreparation.filename}`
+    : path(recipe.fasta);
   if (
     recipe.quickStart &&
     matrix &&
@@ -1049,7 +1052,7 @@ async function openExampleInWizard(payload: {
         return;
       }
       if (await confirmDiscardUnsavedEdits("open this example"))
-        await openFileWithOptions(openedFilename, path(recipe.fasta));
+        await openFileWithOptions(openedFilename, fasta);
     } catch (failure) {
       reportFailure("Open example", failure);
     }
@@ -1058,7 +1061,7 @@ async function openExampleInWizard(payload: {
   if (!(await confirmDiscardUnsavedEdits("open this example"))) return;
   wizardPrefill.value = {
     matrix: path(example.openingRecipe.matrix),
-    fasta: path(example.openingRecipe.fasta),
+    fasta,
     agp: path(example.openingRecipe.agp ?? example.openingRecipe.assembly),
   };
   wizardOpen.value = true;
