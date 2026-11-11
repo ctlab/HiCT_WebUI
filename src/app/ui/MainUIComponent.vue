@@ -567,6 +567,15 @@ function handleGlobalEscape(event: KeyboardEvent): void {
     return;
   }
   if (!hasAnyOpenEscDialog()) {
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target.closest(
+        'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]'
+      )
+    ) {
+      return;
+    }
     const manager = mapManager.value;
     // An armed tool is cancelled first, so a later double-click cannot split or move anything.
     const tool = manager?.viewAndLayersManager.currentViewState.activeTool;
