@@ -1717,7 +1717,7 @@ class RequestManager {
   }
 
   public async exportNameMapping(): Promise<NameMappingResponse> {
-    return this.sendRequest(new ExportNameMappingRequest())
+    return this.sendRequest(new ExportNameMappingRequest(), { method: "GET" })
       .then((response) => response.data)
       .then((json) => new NameMappingResponseDTO(json).toEntity());
   }
