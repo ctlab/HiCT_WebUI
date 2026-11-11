@@ -1373,6 +1373,7 @@ class VisualizationManager {
     skipAutoThresholdRefresh?: boolean;
     preserveCustomPipeline?: boolean;
     renderPipeline?: Record<string, unknown>;
+    visualizationOptions?: VisualizationOptions;
   }): Promise<VisualizationOptions> {
     if (!options?.skipAutoThresholdRefresh) {
       await this.syncAutoThresholdToViewport().catch(() => null);
@@ -1380,7 +1381,9 @@ class VisualizationManager {
     return this.mapManager.networkManager.requestManager
       .setVisualizationOptions(
         new SetVisualizationOptionsRequest({
-          options: this.visualizationOptionsStore.asVisualizationOptions(),
+          options:
+            options?.visualizationOptions ??
+            this.visualizationOptionsStore.asVisualizationOptions(),
           preserveRenderPipeline: options?.preserveCustomPipeline ?? false,
           renderPipeline: options?.renderPipeline,
         })

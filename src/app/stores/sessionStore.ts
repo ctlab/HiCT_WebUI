@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
+import type { RenderPipelinePreset } from "@/app/core/visualization/renderPipelinePreset";
 
 export interface SessionSavedLocation {
   location_id: number;
@@ -29,6 +30,7 @@ export interface SessionVisualizationPreset {
   trackStyles?: Record<string, unknown>;
   signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
   action?: VisualizationPresetAction;
+  renderPipeline?: RenderPipelinePreset;
 }
 
 export const useSessionStore = defineStore("sessionStore", () => {

@@ -194,6 +194,7 @@
 </template>
 
 <script setup lang="ts">
+import { pipelineEditorStorageKey } from "@/app/core/visualization/renderPipelinePreset";
 import { reportFailure } from "@/app/ui/reportFailure";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
@@ -2937,9 +2938,7 @@ const expressionFromSink = (branch: "UPPER" | "LOWER"): PipelineExpression => {
 };
 
 const editorStateKey = () =>
-  `hict.renderPipeline.editor.v1:${
-    props.mapManager?.networkManager.host ?? ""
-  }`;
+  pipelineEditorStorageKey(props.mapManager?.networkManager.host ?? "");
 let lastServerSignature = "";
 const expressionPairSignature = (
   upper: PipelineExpression,
@@ -3028,7 +3027,10 @@ const rememberEditorState = (): void => {
       ) !== lastServerSignature
     )
       return;
-    const encoded = JSON.stringify(captureEditorState());
+    const encoded = JSON.stringify({
+      ...captureEditorState(),
+      expressionSignature: lastServerSignature,
+    });
     if (encoded.length <= 2_000_000)
       sessionStorage.setItem(editorStateKey(), encoded);
   } catch {

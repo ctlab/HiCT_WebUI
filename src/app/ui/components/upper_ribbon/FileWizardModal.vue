@@ -1622,8 +1622,11 @@ const availablePresets = computed(() =>
     .filter((preset) => preset.action === undefined)
     .map((preset) => ({
       id: `${preset.origin}:${preset.option_id}`,
-      label:
-        preset.origin === "session" ? `${preset.name} (session)` : preset.name,
+      label: preset.renderPipeline
+        ? `${preset.name} (source style)`
+        : preset.origin === "session"
+        ? `${preset.name} (session)`
+        : preset.name,
       preset,
     }))
 );

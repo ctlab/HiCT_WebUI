@@ -79,6 +79,11 @@ import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
 import type { TrackStylePresetBundle } from "@/app/core/tracks/TrackStylePreset";
 import { nextTick, ref } from "vue";
+import {
+  parseRenderPipelinePreset,
+  restorePresetEditorState,
+  type RenderPipelinePreset,
+} from "@/app/core/visualization/renderPipelinePreset";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import { useStyleStore } from "@/app/stores/styleStore";
@@ -113,6 +118,7 @@ const props = defineProps<{
   trackStyles?: TrackStylePresetBundle;
   signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
   action?: VisualizationPresetAction;
+  renderPipeline?: RenderPipelinePreset;
 }>();
 
 const emits = defineEmits<{
@@ -190,6 +196,31 @@ async function setOptionsPreset() {
           activeVisualizationSource.value,
           activeVisualizationTargetId.value
         );
+      } catch (error) {
+        useNotificationCenterStore().add("warning", extractErrorMessage(error));
+      }
+      return;
+    }
+    if (props.renderPipeline) {
+      try {
+        const pipeline = parseRenderPipelinePreset(props.renderPipeline);
+        const config = {
+          enabled: pipeline.enabled,
+          swapUpperLower: pipeline.swapUpperLower,
+          upperExpression: pipeline.upperExpression,
+          lowerExpression: pipeline.lowerExpression,
+        };
+        const manager = props.mapManager;
+        await manager.visualizationManager.sendVisualizationOptionsToServer({
+          skipAutoThresholdRefresh: true,
+          visualizationOptions: props.visualizationOptions,
+          renderPipeline: config,
+        });
+        stylesStore.setMapBackground(props.backgroundColor);
+        if (props.trackStyles)
+          manager.getLayersManager().applyTrackStylePreset(props.trackStyles);
+        restorePresetEditorState(pipeline, manager.networkManager.host);
+        manager.reloadTiles();
       } catch (error) {
         useNotificationCenterStore().add("warning", extractErrorMessage(error));
       }

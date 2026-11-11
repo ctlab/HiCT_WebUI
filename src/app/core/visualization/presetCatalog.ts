@@ -26,6 +26,10 @@ import type {
   VisualizationPresetAction,
 } from "@/app/stores/sessionStore";
 import VisualizationOptions from "./VisualizationOptions";
+import {
+  parseRenderPipelinePreset,
+  type RenderPipelinePreset,
+} from "./renderPipelinePreset";
 import Colormap from "./colormap/Colormap";
 import SimpleLinearGradient from "./colormap/SimpleLinearGradient";
 import { ColorTranslator } from "colortranslator";
@@ -41,6 +45,7 @@ export type VisualizationPresetRecord = {
     upperSignalBound?: number;
   };
   action?: VisualizationPresetAction;
+  renderPipeline?: RenderPipelinePreset;
   origin: "builtin" | "session";
 };
 
@@ -229,6 +234,7 @@ const toPresetRecord = (
       upperSignalBound?: number;
     };
     action?: unknown;
+    renderPipeline?: unknown;
   },
   optionId: number,
   origin: "builtin" | "session"
@@ -239,6 +245,7 @@ const toPresetRecord = (
   backgroundColor: option.backgroundColor ?? "rgba(255,255,255,1.0)",
   trackStyles: option.trackStyles,
   action: parseVisualizationPresetAction(option.action),
+  renderPipeline: parseRenderPipelinePreset(option.renderPipeline),
   signalThresholds:
     option.signalThresholds ??
     getVisualizationSignalThresholds(
@@ -281,6 +288,7 @@ const extractBuiltinPresetRows = (): Array<{
       upperSignalBound?: number;
     };
     action?: unknown;
+    renderPipeline?: unknown;
   }>;
 };
 
@@ -304,6 +312,7 @@ export const mergeVisualizationPresets = (
         trackStyles: preset.trackStyles as TrackStylePresetBundle | undefined,
         signalThresholds: preset.signalThresholds,
         action: preset.action,
+        renderPipeline: preset.renderPipeline,
       },
       index,
       "session"

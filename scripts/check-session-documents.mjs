@@ -4,24 +4,36 @@ import vm from "node:vm";
 import { createRequire } from "node:module";
 import ts from "typescript";
 
-const source = fs.readFileSync(
-  new URL("../src/app/core/mapmanagers/SessionDocument.ts", import.meta.url),
-  "utf8"
-);
+const nodeRequire = createRequire(import.meta.url);
+function loadTypeScript(url) {
+  const exports = {};
+  vm.runInNewContext(
+    ts.transpileModule(fs.readFileSync(url, "utf8"), {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2020,
+      },
+    }).outputText,
+    {
+      exports,
+      TextEncoder,
+      require: (id) => {
+        if (id.startsWith("@/"))
+          return loadTypeScript(
+            new URL(`../src/${id.slice(2)}.ts`, import.meta.url)
+          );
+        if (id.startsWith(".")) return loadTypeScript(new URL(`${id}.ts`, url));
+        return nodeRequire(id);
+      },
+    }
+  );
+  return exports;
+}
 const sandbox = {
-  exports: {},
-  TextEncoder,
-  require: createRequire(import.meta.url),
+  exports: loadTypeScript(
+    new URL("../src/app/core/mapmanagers/SessionDocument.ts", import.meta.url)
+  ),
 };
-vm.runInNewContext(
-  ts.transpileModule(source, {
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2020,
-    },
-  }).outputText,
-  sandbox
-);
 const { parseSessionDocument, createSessionEnvelope, MAX_SESSION_BYTES } =
   sandbox.exports;
 const valid = {
@@ -98,7 +110,7 @@ assert.throws(
   /8 MiB/
 );
 let nested = {};
-for (let i = 0; i < 40; i++) nested = { child: nested };
+for (let i = 0; i < 170; i++) nested = { child: nested };
 reject({ ...valid, extra: nested }, "nesting limit");
 reject({ ...valid, extra: Array(100001).fill(null) }, "too many values");
 console.log(
@@ -231,4 +243,56 @@ for (const filename of process.argv.slice(2))
   parseSessionDocument(fs.readFileSync(filename, "utf8"));
 console.log(
   "Nested visualization, style, palette/action and duplicate-ID validation passed."
+);
+
+const fullGraph = {
+  enabled: true,
+  swapUpperLower: true,
+  upperExpression: {
+    type: "colormap",
+    input: { type: "source", source: "PRIMARY" },
+    startColor: "#ffffff",
+    endColor: "#ff0000",
+    minSignal: 0,
+    maxSignal: 9,
+  },
+  lowerExpression: { type: "rgb", c1: 1, c2: 2, c3: 3, alpha: 255 },
+  editorState: {
+    liteGraph: { nodes: [], links: [] },
+    viewport: { scale: 0.5, offset: [2, 3] },
+  },
+};
+const fullLibrary = {
+  ...v3,
+  client: {
+    ...client,
+    savedVisualizationPresets: [
+      { option_id: 91, name: "Complete graph", renderPipeline: fullGraph },
+    ],
+  },
+};
+assert.deepEqual(
+  JSON.parse(
+    JSON.stringify(
+      parseSessionDocument(JSON.stringify(fullLibrary)).client
+        .savedVisualizationPresets[0].renderPipeline
+    )
+  ),
+  fullGraph
+);
+const invalidLibrary = JSON.parse(JSON.stringify(fullLibrary));
+invalidLibrary.client.savedVisualizationPresets[0].renderPipeline.upperExpression =
+  { type: "unknown" };
+assert.throws(
+  () => parseSessionDocument(JSON.stringify(invalidLibrary)),
+  /Unsupported expression/
+);
+let chain = { type: "source", source: "PRIMARY" };
+for (let index = 0; index < 100; index++)
+  chain = { type: "unary", op: "ABS", input: chain };
+fullLibrary.client.savedVisualizationPresets[0].renderPipeline.upperExpression =
+  chain;
+assert.doesNotThrow(() => parseSessionDocument(JSON.stringify(fullLibrary)));
+console.log(
+  "Complete preset graphs and editor layouts survive native session parsing with bounded deep expressions."
 );

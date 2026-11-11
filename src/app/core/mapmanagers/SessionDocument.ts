@@ -1,8 +1,9 @@
 import { ColorTranslator } from "colortranslator";
+import { parseRenderPipelinePreset } from "@/app/core/visualization/renderPipelinePreset";
 
 /** Validation shared by session import and its regression tests. */
 export const MAX_SESSION_BYTES = 8 * 1024 * 1024;
-const MAX_DEPTH = 32;
+const MAX_DEPTH = 160;
 const MAX_VALUES = 100000;
 
 type RecordValue = Record<string, unknown>;
@@ -244,6 +245,8 @@ export function validateSessionLibraries(
             "upperSignalBound"
           );
         if ("action" in item) action(item.action, `${path}.action`);
+        if ("renderPipeline" in item)
+          parseRenderPipelinePreset(item.renderPipeline);
       }
     });
   }
