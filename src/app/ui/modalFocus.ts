@@ -1,4 +1,11 @@
-import { nextTick, onBeforeUnmount, onMounted, watch, type Ref } from "vue";
+import {
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  shallowReactive,
+  watch,
+  type Ref,
+} from "vue";
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -14,12 +21,33 @@ function visibleFocusable(root: HTMLElement): HTMLElement[] {
  * Shift+Tab stay inside it, and focus goes back to whatever opened it when it closes. Escape is handled
  * by the escape-dialog registry, not here.
  */
-const activeDialogs: symbol[] = [];
+const activeDialogs = shallowReactive<symbol[]>([]);
+
+export function hasActiveModal(): boolean {
+  return activeDialogs.length > 0;
+}
+
+// A dropdown can hide its focused action before a new component mounts.
+// Keep the activation weak so closing a workspace can release all its nodes.
+let lastActivation: WeakRef<HTMLElement> | undefined;
+function rememberActivation(event: Event): void {
+  const target = event.target;
+  const control = target instanceof Element ? target.closest(FOCUSABLE) : null;
+  if (control instanceof HTMLElement) lastActivation = new WeakRef(control);
+}
+function rememberActivationKey(event: KeyboardEvent): void {
+  if (event.key === "Enter" || event.key === " ") rememberActivation(event);
+}
+let activationTrackingUsers = 0;
 
 export function useModalFocus(
   root: Ref<HTMLElement | null>,
   isOpen?: () => boolean
 ): void {
+  if (activationTrackingUsers++ === 0) {
+    document.addEventListener("pointerdown", rememberActivation, true);
+    document.addEventListener("keydown", rememberActivationKey, true);
+  }
   const dialog = Symbol();
   let opener: HTMLElement | null = null;
   let active = false;
@@ -50,7 +78,14 @@ export function useModalFocus(
     if (active) return;
     active = true;
     activeDialogs.push(dialog);
-    opener = document.activeElement as HTMLElement | null;
+    const focused = document.activeElement;
+    opener =
+      focused instanceof HTMLElement &&
+      focused !== document.body &&
+      !root.value?.contains(focused)
+        ? focused
+        : lastActivation?.deref() ?? null;
+    if (!opener?.isConnected) opener = null;
     document.addEventListener("keydown", onKeydown, true);
     await nextTick();
     const container = root.value;
@@ -83,7 +118,14 @@ export function useModalFocus(
       opener !== document.body
     ) {
       opener.focus();
+      if (document.activeElement !== opener) {
+        opener
+          .closest(".dropdown")
+          ?.querySelector<HTMLElement>(".dropdown-toggle")
+          ?.focus();
+      }
     }
+    opener = null;
   }
 
   if (isOpen) {
@@ -95,5 +137,12 @@ export function useModalFocus(
   onMounted(() => {
     if (!isOpen || isOpen()) void activate();
   });
-  onBeforeUnmount(deactivate);
+  onBeforeUnmount(() => {
+    deactivate();
+    if (--activationTrackingUsers === 0) {
+      document.removeEventListener("pointerdown", rememberActivation, true);
+      document.removeEventListener("keydown", rememberActivationKey, true);
+      lastActivation = undefined;
+    }
+  });
 }

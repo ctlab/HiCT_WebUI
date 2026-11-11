@@ -730,12 +730,14 @@
     @click.self="cancelJuiceboxFlow"
   >
     <div
+      ref="juiceboxFastaPromptElement"
+      aria-labelledby="juicebox-fasta-title"
       class="settings-modal juicebox-fasta-modal"
       role="dialog"
       aria-modal="true"
     >
       <div class="settings-header">
-        <h2>Apply Juicebox assembly</h2>
+        <h2 id="juicebox-fasta-title">Apply Juicebox assembly</h2>
         <button
           class="btn-close"
           type="button"
@@ -1047,12 +1049,14 @@
     @click.self="resolutionSettingsOpen = false"
   >
     <div
+      ref="resolutionSettingsElement"
+      aria-labelledby="resolution-settings-title"
       class="settings-modal resolution-settings-modal"
       role="dialog"
       aria-modal="true"
     >
       <div class="settings-header">
-        <h2>Restrict Resolutions</h2>
+        <h2 id="resolution-settings-title">Restrict Resolutions</h2>
         <button
           class="btn-close"
           @click="resolutionSettingsOpen = false"
@@ -1273,8 +1277,12 @@ const noContactData = computed(
 
 const aboutElement = ref<HTMLElement | null>(null);
 const osdSettingsElement = ref<HTMLElement | null>(null);
+const resolutionSettingsElement = ref<HTMLElement | null>(null);
+const juiceboxFastaPromptElement = ref<HTMLElement | null>(null);
 useModalFocus(aboutElement, () => aboutOpen.value);
 useModalFocus(osdSettingsElement, () => osdSettingsOpen.value);
+useModalFocus(resolutionSettingsElement, () => resolutionSettingsOpen.value);
+useModalFocus(juiceboxFastaPromptElement, () => juiceboxFastaPromptOpen.value);
 
 const emit = defineEmits<{
   (e: "jobResult", output: BackgroundJobOutput): void;

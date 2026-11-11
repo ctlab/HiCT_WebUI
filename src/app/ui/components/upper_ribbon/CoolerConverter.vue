@@ -24,6 +24,7 @@
     class="modal fade in"
     id="loadAGPModal"
     ref="convertCoolerModal"
+    aria-labelledby="matrix-converter-title"
     tabindex="-1"
     data-keyboard="false"
     data-backdrop="static"
@@ -33,7 +34,9 @@
     >
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">Convert matrix files for HiCT</h5>
+          <h5 id="matrix-converter-title" class="modal-title">
+            Convert matrix files for HiCT
+          </h5>
           <button
             type="button"
             class="btn-close"
@@ -408,6 +411,7 @@
 <script setup lang="ts">
 import { type Ref, ref, onMounted, computed } from "vue";
 import { Modal } from "bootstrap";
+import { useModalFocus } from "@/app/ui/modalFocus";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { StartBatchConversionJobsRequest } from "@/app/core/net/api/request";
 import { ConversionToolchainStatusResponse } from "@/app/core/net/api/response";
@@ -429,6 +433,7 @@ const props = defineProps<{
 const errorMessage: Ref<unknown | null> = ref(null);
 const modal: Ref<Modal | null> = ref(null);
 const convertCoolerModal = ref<HTMLElement | null>(null);
+useModalFocus(convertCoolerModal);
 const batchStep: Ref<"select" | "settings" | "progress"> = ref("select");
 const batchFiles: Ref<string[]> = ref([]);
 const batchSelection: Ref<Set<string>> = ref(new Set<string>());

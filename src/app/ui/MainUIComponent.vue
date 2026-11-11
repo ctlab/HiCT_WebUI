@@ -21,7 +21,9 @@
 
 <template>
   <AGPImportChoiceModal />
-  <Toaster position="bottom-right" richColors closeButton />
+  <div :class="{ 'modal-notifications': hasActiveModal() }">
+    <Toaster position="bottom-right" richColors closeButton />
+  </div>
   <!-- <button @click="() => toast.message('My first toast')">Render a toast</button> -->
   <div class="main-ui-component">
     <div v-if="openProgressVisible">
@@ -373,6 +375,7 @@ import type { WizardPrefill } from "@/app/ui/components/upper_ribbon/wizardPrefi
 
 import WorkspaceComponent from "@/app/ui/components/workspace/WorkspaceComponent.vue";
 import { Toaster, toast } from "vue-sonner";
+import { hasActiveModal } from "@/app/ui/modalFocus";
 import { storeToRefs } from "pinia";
 import { usehtmlElementReferencesStore } from "../stores/htmlElementReferencesStore";
 import {
@@ -657,6 +660,7 @@ async function settleExcludedBins(carriedAppearance?: {
     `${count.toLocaleString()} excluded bin${count === 1 ? "" : "s"} masked.`,
     {
       duration: 15000,
+      style: { visibility: "var(--hict-guidance-visibility, visible)" },
       action: {
         label: "Change",
         onClick: () => {
@@ -1820,6 +1824,10 @@ function onFileSelected(newFilename: string) {
 </script>
 
 <style scoped>
+.modal-notifications {
+  --hict-guidance-visibility: hidden;
+}
+
 .session-busy {
   position: absolute;
   bottom: 18px;
