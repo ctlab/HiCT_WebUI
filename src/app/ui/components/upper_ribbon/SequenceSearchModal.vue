@@ -433,6 +433,32 @@ const busy = computed(
       ["submitted", "preparing", "running"].includes(job.value.status))
 );
 let timer: number | undefined;
+let delivered = false;
+function deferResult(): void {
+  if (!job.value || delivered) return;
+  const id = job.value.jobId;
+  manager.backgroundResultDelivery.defer(
+    "sequence/" + id,
+    () => !props.mapManager.isDisposed && !delivered,
+    async () => {
+      const jobs: SequenceAnalysisJob[] = (
+        await manager.sendRequest(
+          new SequenceAnalysisRequest("/sequence/jobs/list")
+        )
+      ).data;
+      const current = jobs.find((item) => item.jobId === id);
+      if (!current) return;
+      job.value = current;
+      sourceSession = manager.history.applied?.session;
+      if (current.hits > 0) await displayResult();
+      else
+        notifications.add(
+          "info",
+          "Sequence search completed: no matching sequence found."
+        );
+    }
+  );
+}
 let disposed = false;
 let openingResult = false;
 let sourceSession: string | undefined;
@@ -445,6 +471,7 @@ useEscDismissableDialog({
 onBeforeUnmount(() => {
   disposed = true;
   window.clearTimeout(timer);
+  deferResult();
 });
 
 async function start() {
@@ -452,6 +479,7 @@ async function start() {
   error.value = "";
   submitting.value = true;
   openingResult = false;
+  delivered = false;
   tracksBeforeDelivery = undefined;
   job.value = null;
   sourceSession = manager.history.applied?.session;
@@ -487,6 +515,7 @@ async function start() {
         new SequenceAnalysisRequest("/sequence/search/jobs", settings)
       )
     ).data;
+    if (disposed) deferResult();
     notifications.add(
       "info",
       `Sequence search submitted (${scope.value}, ${
@@ -496,6 +525,7 @@ async function start() {
     timer = window.setTimeout(poll, 300);
   } catch (failure) {
     error.value = extractErrorMessage(failure);
+    if (disposed) notifications.add("error", error.value);
   } finally {
     submitting.value = false;
   }
@@ -588,19 +618,17 @@ async function displayResult() {
     tracks.setTrackVisibleOnAxis(track.trackId, "horizontal", true);
     tracks.setTrackVisibleOnAxis(track.trackId, "vertical", true);
     props.mapManager.scheduleWorkspaceLayoutRefresh();
-    if (disposed) return;
+    delivered = true;
     notifications.add(
       "success",
       `Sequence search completed: ${current.hits} matches. Result track added on both axes.`
     );
     emit("dismissed");
   } catch (failure) {
-    if (!disposed) {
-      error.value = `Search finished, but the track could not be opened: ${extractErrorMessage(
-        failure
-      )}. Use Open result track to retry without repeating the search.`;
-      notifications.add("error", error.value);
-    }
+    error.value = `Search finished, but the track could not be opened: ${extractErrorMessage(
+      failure
+    )}. Use Open result track to retry without repeating the search.`;
+    notifications.add("error", error.value);
   } finally {
     displaying.value = false;
   }

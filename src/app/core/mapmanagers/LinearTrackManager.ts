@@ -38,6 +38,7 @@ import type {
   TrackSummaryResponse,
   TracksPrecomputeStatusResponse,
 } from "@/app/core/net/api/response";
+import { sequenceLetterMinimumPixels } from "../visualization/sequenceLetterMetrics";
 import { packIntervalsIntoLanes } from "./featurePacking";
 import {
   projectSequenceTrackBins,
@@ -46,6 +47,14 @@ import {
 
 export type TrackOrientation = "horizontal" | "vertical";
 type Orientation = TrackOrientation;
+type RenderedFeatureHit = {
+  trackId: string;
+  bin: TrackBinResponse;
+  axisStart: number;
+  axisEnd: number;
+  crossStart: number;
+  crossEnd: number;
+};
 export interface AxisTrackVisibilityState {
   horizontalHidden: string[];
   verticalHidden: string[];
@@ -122,6 +131,7 @@ class LinearTrackManager {
     Orientation,
     {
       tracks: TrackRenderResponse[];
+      featureHits: RenderedFeatureHit[];
       viewport: ViewportGeometry;
       canvasWidth: number;
       canvasHeight: number;
@@ -595,7 +605,7 @@ class LinearTrackManager {
         ((px - options.start) * width) /
         Math.max(1, options.end - options.start),
     };
-    this.drawTrackCanvas(
+    const featureHits = this.drawTrackCanvas(
       canvas,
       drawOrientation,
       { ...response, tracks },
@@ -606,6 +616,7 @@ class LinearTrackManager {
     );
     const snapshot = {
       tracks,
+      featureHits,
       viewport,
       canvasWidth: canvas.width,
       canvasHeight: canvas.height,
@@ -725,7 +736,21 @@ class LinearTrackManager {
       return null;
     }
     const renderStyle = (track.renderStyle ?? "SIGNAL").toUpperCase();
-    for (const bin of track.bins) {
+    const bins =
+      renderStyle === "FEATURE"
+        ? snapshot.featureHits
+            .filter(
+              (hit) =>
+                hit.trackId === track.trackId &&
+                axisOffsetPx >= hit.axisStart &&
+                axisOffsetPx < hit.axisEnd &&
+                crossOffsetPx >= hit.crossStart &&
+                crossOffsetPx < hit.crossEnd
+            )
+            .reverse()
+            .map((hit) => hit.bin)
+        : track.bins;
+    for (const bin of bins) {
       const interval = this.resolveBinIntervalPx(
         bin,
         snapshot.viewport.bpResolution
@@ -744,7 +769,7 @@ class LinearTrackManager {
         start + 1,
         Math.ceil(snapshot.viewport.pxToScreen(interval.endPx))
       );
-      if (axisOffsetPx < start || axisOffsetPx > end) {
+      if (axisOffsetPx < start || axisOffsetPx >= end) {
         continue;
       }
       if (renderStyle !== "FEATURE") {
@@ -834,6 +859,29 @@ class LinearTrackManager {
   public centerOnFeature(entry: FeatureSearchEntry): void {
     this.setSelectedFeature(entry);
     this.centerOnBpRange(entry.startBp, entry.endBp);
+  }
+
+  /** Center the feature at measured, readable FASTA letter scale on both axes. */
+  public zoomToFeature(entry: FeatureSearchEntry): void {
+    if (!this.mapManager.networkManager.requestManager.hasLinkedFasta) return;
+    const finest = this.getFinestBpResolution();
+    const layers = this.mapManager.getLayersManager();
+    const finestPixel = layers.getPixelResolutionForBpResolution(finest);
+    if (finestPixel === undefined) return;
+    const worldPerBase = finestPixel / finest;
+    const resolution = worldPerBase / (sequenceLetterMinimumPixels() * 1.1);
+    const midpoint = (entry.startBp + entry.endBp) / 2;
+    const coordinate =
+      this.mapManager
+        .getContigDimensionHolder()
+        .getFractionalPxOfBp(midpoint, finest) * finestPixel;
+    if (![resolution, coordinate].every(Number.isFinite) || resolution <= 0)
+      return;
+    this.setSelectedFeature(entry);
+    const view = this.mapManager.getView();
+    view.cancelAnimations();
+    view.setResolution(resolution);
+    view.setCenter([coordinate, -coordinate]);
   }
 
   /** Finest bp resolution of the open map; map units are pixels at this resolution. */
@@ -1208,10 +1256,10 @@ class LinearTrackManager {
     statusMessage?: string,
     publishState = true,
     visibilityOrientation: Orientation = orientation
-  ): void {
+  ): RenderedFeatureHit[] {
     const ctx = canvas.getContext("2d");
     if (!ctx) {
-      return;
+      return [];
     }
     ctx.textBaseline = "top";
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1239,9 +1287,11 @@ class LinearTrackManager {
       this.isTrackVisibleOnAxis(track.trackId, visibilityOrientation)
     );
     const tracks = responseTracks.length > 0 ? responseTracks : fallbackTracks;
+    const featureHits: RenderedFeatureHit[] = [];
     if (publishState)
       this.lastRenderedSnapshot[orientation] = {
         tracks,
+        featureHits,
         viewport,
         canvasWidth: canvas.width,
         canvasHeight: canvas.height,
@@ -1263,7 +1313,7 @@ class LinearTrackManager {
           statusMessage: statusMessage ?? "No tracks loaded",
           trackCount: 0,
         });
-      return;
+      return featureHits;
     }
     const descriptor =
       this.mapManager.getLayersManager().currentViewState.resolutionDesciptor;
@@ -1399,6 +1449,15 @@ class LinearTrackManager {
             const y = laneInnerEnd - barHeight;
             ctx.fillRect(x0, y, x1 - x0, Math.max(1, barHeight));
           } else {
+            if (!this.isFeatureDensityBin(bin))
+              featureHits.push({
+                trackId: track.trackId,
+                bin,
+                axisStart: x0,
+                axisEnd: x1,
+                crossStart: packedStart,
+                crossEnd: packedEnd,
+              });
             this.drawHorizontalFeatureBin(
               ctx,
               bin,
@@ -1438,6 +1497,15 @@ class LinearTrackManager {
             const x = laneInnerEnd - Math.max(1, barWidth);
             ctx.fillRect(x, y0, Math.max(1, barWidth), y1 - y0);
           } else {
+            if (!this.isFeatureDensityBin(bin))
+              featureHits.push({
+                trackId: track.trackId,
+                bin,
+                axisStart: y0,
+                axisEnd: y1,
+                crossStart: packedStart,
+                crossEnd: packedEnd,
+              });
             this.drawVerticalFeatureBin(
               ctx,
               bin,
@@ -1619,6 +1687,7 @@ class LinearTrackManager {
           : pendingMessage ?? statusMessage ?? "No signal in current view",
         trackCount: tracks.length,
       });
+    return featureHits;
   }
 
   private refreshFeatureSearchCache(

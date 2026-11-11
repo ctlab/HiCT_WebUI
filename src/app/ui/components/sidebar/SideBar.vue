@@ -203,6 +203,20 @@
                 <i class="bi bi-shuffle"></i>
               </button>
             </div>
+            <label v-if="secondaryAttached" class="small d-block mt-2">
+              Map layout
+              <select
+                class="form-select form-select-sm"
+                aria-label="Sequence overlay view"
+                :value="sequencePresentation"
+                :disabled="sequencePresentationPending"
+                @change="changeSequencePresentation"
+              >
+                <option value="overlay">Overlay</option>
+                <option value="below">Secondary below diagonal</option>
+                <option value="above">Secondary above diagonal</option>
+              </select>
+            </label>
             <div
               class="visualization-half-row"
               :class="{ 'mt-2': hasTwoSources }"
@@ -342,6 +356,8 @@ import { useSessionStore } from "@/app/stores/sessionStore";
 import VisualziationSettingsEditor from "./VisualziationSettingsEditor.vue";
 import SavedVisualOptions from "./SavedVisualOptions.vue";
 import { storeToRefs } from "pinia";
+import { reportFailure } from "@/app/ui/reportFailure";
+import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
 import { ColorTranslator } from "colortranslator";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 
@@ -416,6 +432,44 @@ const sourceSpansBothHalves = computed(
 const showLayerSelector = computed(
   () => hasTwoSources.value || sourceSpansBothHalves.value
 );
+const sequencePresentationPending = ref(false);
+const sequencePresentation = computed(() =>
+  presentationMode.value === "overlay"
+    ? "overlay"
+    : pipelineTargets.value.some(
+        (target) => target.source === "SECONDARY" && target.half === "upper"
+      ) &&
+      !pipelineTargets.value.some(
+        (target) => target.source === "SECONDARY" && target.half === "lower"
+      )
+    ? "above"
+    : "below"
+);
+async function changeSequencePresentation(event: Event): Promise<void> {
+  const select = event.target as HTMLSelectElement;
+  const mode = select.value as "overlay" | "below" | "above";
+  const manager = props.mapManager;
+  if (!manager || sequencePresentationPending.value) return;
+  sequencePresentationPending.value = true;
+  try {
+    const status =
+      await manager.networkManager.requestManager.getSecondarySourceStatus();
+    await displaySequenceOverlay(
+      manager,
+      mode,
+      status.sequenceAnalysis?.kind === "moddotplot" ? "moddotplot" : "dotplot",
+      status,
+      80,
+      true
+    );
+    await refreshVisualizationSources();
+  } catch (error) {
+    reportFailure("Change map layout", error);
+  } finally {
+    sequencePresentationPending.value = false;
+    select.value = sequencePresentation.value;
+  }
+}
 const sourceLabel = computed(() =>
   activeVisualizationSource.value === "SECONDARY" ? "Secondary" : "Primary"
 );

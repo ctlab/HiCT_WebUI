@@ -113,10 +113,11 @@
               </div>
               <div class="row g-3">
                 <div class="col-md-4">
-                  <label class="form-label"
+                  <label class="form-label" for="dotplot-base-resolution"
                     >Base dotplot resolution, bp/bin</label
                   >
                   <input
+                    id="dotplot-base-resolution"
                     v-model.number="binSize"
                     type="number"
                     min="1"
@@ -128,8 +129,11 @@
                   >
                 </div>
                 <div class="col-md-8">
-                  <label class="form-label">Zoom resolutions</label>
+                  <label class="form-label" for="dotplot-zoom-resolutions"
+                    >Zoom resolutions</label
+                  >
                   <input
+                    id="dotplot-zoom-resolutions"
                     v-model.trim="resolutions"
                     type="text"
                     class="form-control"
@@ -458,6 +462,7 @@
 </template>
 
 <script setup lang="ts">
+import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import {
   computed,
@@ -486,6 +491,7 @@ const props = defineProps<{
   networkManager: NetworkManager;
   initialFastaFilename?: string;
   initialReferenceMapFilename?: string;
+  initialResolutions?: number[];
 }>();
 
 const step: Ref<"select" | "settings" | "progress"> = ref("select");
@@ -501,8 +507,12 @@ const refreshingJobs = ref(false);
 const cancellingJobs: Ref<Set<string>> = ref(new Set<string>());
 let refreshTimer: number | null = null;
 
-const binSize = ref(1000);
-const resolutions = ref("");
+const initialResolutions = defaultSequenceResolutions(
+  props.initialResolutions ?? [],
+  Infinity
+);
+const binSize = ref(initialResolutions[0] ?? 1000);
+const resolutions = ref(initialResolutions.join(", "));
 const referenceMapFilename = ref("");
 const referenceMapSelectorOpen = ref(false);
 const assemblyAgpFilename = ref("");

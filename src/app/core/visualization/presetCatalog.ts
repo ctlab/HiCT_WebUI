@@ -73,7 +73,7 @@ export const parseVisualizationPresetAction = (
   }
   if (
     raw.type === "sequence-overlay" &&
-    (raw.mode === "overlay" || raw.mode === "below") &&
+    (raw.mode === "overlay" || raw.mode === "below" || raw.mode === "above") &&
     (raw.kind === "moddotplot" || raw.kind === "dotplot")
   ) {
     return { type: raw.type, mode: raw.mode, kind: raw.kind };

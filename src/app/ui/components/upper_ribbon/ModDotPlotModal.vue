@@ -301,6 +301,7 @@
               class="form-select mb-2"
             >
               <option value="overlay">Overlay on the Hi-C map</option>
+              <option value="above">Above the diagonal</option>
               <option value="below">Below diagonal</option>
               <option value="none">Do not link now</option>
             </select>
@@ -431,7 +432,7 @@
 <script setup lang="ts">
 import { useModalFocus } from "@/app/ui/modalFocus";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
-import { ref, computed, onBeforeUnmount } from "vue";
+import { watch, ref, computed, onBeforeUnmount } from "vue";
 import { useSequenceReadiness } from "./useSequenceReadiness";
 import SequenceGapSettings from "./SequenceGapSettings.vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
@@ -441,6 +442,7 @@ import {
   type SequenceAnalysisJob,
 } from "@/app/core/net/api/SequenceAnalysisRequest";
 import type { SecondarySourceStatusResponse } from "@/app/core/net/api/RequestManager";
+import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
 import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
@@ -508,9 +510,12 @@ const selection =
       }
     : null;
 const availableResolutions = [...view.resolutions].sort((a, b) => a - b);
-const resolutions = ref([
-  view.currentViewState.resolutionDesciptor.bpResolution,
-]);
+const resolutions = ref(
+  defaultSequenceResolutions(
+    availableResolutions,
+    view.currentViewState.resolutionDesciptor.bpResolution
+  )
+);
 const scope = ref(
   props.initialSelection && selection ? "selection" : "assembly"
 );
@@ -525,10 +530,36 @@ const saveReusable = ref(false),
   outputFilename = ref("");
 const defaultOutputFilename = `sequence-analysis/${kind}.hict.hdf5`;
 const mergeCompatible = ref(true),
-  displayMode = ref<"overlay" | "below" | "none">("below"),
+  displayMode = ref<"overlay" | "below" | "above" | "none">(
+    scope.value === "selection" ? "overlay" : "below"
+  ),
   submitting = ref(false),
   error = ref("");
+watch(scope, (value) => {
+  displayMode.value = value === "selection" ? "overlay" : "below";
+});
 const job = ref<SequenceAnalysisJob | null>(null);
+let delivered = false;
+function deferResult(): void {
+  if (!job.value || delivered || displayMode.value === "none") return;
+  const id = job.value.jobId;
+  api.backgroundResultDelivery.defer(
+    "sequence/" + id,
+    () => !props.mapManager.isDisposed && !delivered,
+    async () => {
+      const jobs: SequenceAnalysisJob[] = (
+        await api.sendRequest(
+          new SequenceAnalysisRequest("/sequence/jobs/list")
+        )
+      ).data;
+      const current = jobs.find((item) => item.jobId === id);
+      if (!current) return;
+      job.value = current;
+      session = api.history.applied?.session;
+      await displaySavedResult();
+    }
+  );
+}
 const displaying = ref(false);
 const pendingCompatibility = ref<SecondarySourceStatusResponse | null>(null);
 const busy = computed(
@@ -550,6 +581,7 @@ useEscDismissableDialog({
 onBeforeUnmount(() => {
   disposed = true;
   window.clearTimeout(timer);
+  deferResult();
 });
 async function start() {
   if (busy.value || unavailableReason.value) return;
@@ -557,6 +589,7 @@ async function start() {
   error.value = "";
   pendingCompatibility.value = null;
   openingResult = false;
+  delivered = false;
   session = api.history.applied?.session;
   try {
     job.value = (
@@ -564,6 +597,7 @@ async function start() {
         new SequenceAnalysisRequest(`/sequence/${kind}/jobs`, {
           gapLengthBp: uiSettings.sequenceGapLengthBp,
           scope: scope.value,
+          displayMode: displayMode.value,
           region: scope.value === "selection" ? selection : undefined,
           resolutions: resolutions.value,
           mergeCompatible: mergeCompatible.value,
@@ -585,6 +619,7 @@ async function start() {
         })
       )
     ).data;
+    if (disposed) deferResult();
     if (!alignment) uiSettings.modDotPlotThreads = threads.value;
     notifications.add(
       "info",
@@ -593,6 +628,7 @@ async function start() {
     timer = window.setTimeout(poll, 300);
   } catch (failure) {
     error.value = extractErrorMessage(failure);
+    if (disposed) notifications.add("error", error.value);
   } finally {
     submitting.value = false;
   }
@@ -658,6 +694,11 @@ async function displaySavedResult(allowMismatch = false) {
       );
       if (response.requiresConfirmation) {
         pendingCompatibility.value = response;
+        if (disposed)
+          notifications.add(
+            "warning",
+            "The overlay is saved but needs compatibility review. Open its result from Jobs on the original map."
+          );
         return;
       }
       pendingCompatibility.value = null;
@@ -681,6 +722,7 @@ async function displaySavedResult(allowMismatch = false) {
         )}`
       );
     }
+    delivered = true;
     notifications.add("success", `${title} completed: ${current.outputFile}.`);
     emit("dismissed");
   } catch (failure) {

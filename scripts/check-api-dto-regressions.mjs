@@ -350,6 +350,13 @@ vm.runInNewContext(adapterSource, {
   exports: adapterExports,
   console,
   require: (name) => {
+    if (name.includes("backgroundResultDelivery"))
+      return loadTypeScript(
+        resolve(
+          projectRoot,
+          "src/app/core/sequence/backgroundResultDelivery.ts"
+        )
+      );
     if (name === "vue") return { shallowReactive: (value) => value };
     if (name === "axios")
       return {

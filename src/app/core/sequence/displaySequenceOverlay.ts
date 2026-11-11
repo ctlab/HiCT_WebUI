@@ -11,10 +11,11 @@ import { modDotPlotLowerExpression } from "./modDotPlot";
 
 export async function displaySequenceOverlay(
   manager: ContactMapManager,
-  mode: "overlay" | "below",
+  mode: "overlay" | "below" | "above",
   kind: "dotplot" | "moddotplot",
   status?: SecondarySourceStatusResponse,
-  minimumIdentity = 80
+  minimumIdentity = 80,
+  preserveSecondaryStyle = false
 ): Promise<void> {
   const api = manager.networkManager.requestManager;
   status ??= await api.getSecondarySourceStatus();
@@ -45,7 +46,10 @@ export async function displaySequenceOverlay(
   const existing = await api.getRenderPipelineConfig();
   // The shared sidebar store may currently display SECONDARY. Read PRIMARY
   // from its existing graph before replacing or regenerating the overlay.
-  const findPrimary = (node: unknown): Record<string, unknown> | undefined => {
+  const findSource = (
+    node: unknown,
+    source: "PRIMARY" | "SECONDARY"
+  ): Record<string, unknown> | undefined => {
     if (!node || typeof node !== "object") return undefined;
     const expression = node as Record<string, unknown>;
     const sources = new Set<string>();
@@ -58,25 +62,31 @@ export async function displaySequenceOverlay(
     visit(expression);
     if (
       sources.size === 1 &&
-      sources.has("PRIMARY") &&
+      sources.has(source) &&
       ["colormap", "pixel_blend", "rgb", "hsl", "hsv"].includes(
         String(expression.type)
       )
     )
       return expression;
     for (const child of Object.values(expression)) {
-      const found = findPrimary(child);
+      const found = findSource(child, source);
       if (found) return found;
     }
     return undefined;
   };
   const primary = existing.enabled
-    ? findPrimary(existing.upperExpression) ??
-      findPrimary(existing.lowerExpression) ??
+    ? findSource(existing.upperExpression, "PRIMARY") ??
+      findSource(existing.lowerExpression, "PRIMARY") ??
       buildColorExpression("PRIMARY", primaryOptions)
     : buildColorExpression("PRIMARY", primaryOptions);
+  const savedSecondary =
+    preserveSecondaryStyle && existing.enabled
+      ? findSource(existing.upperExpression, "SECONDARY") ??
+        findSource(existing.lowerExpression, "SECONDARY")
+      : undefined;
   const secondary =
-    kind === "dotplot"
+    savedSecondary ??
+    (kind === "dotplot"
       ? {
           type: "colormap",
           mode: "LINEAR",
@@ -89,7 +99,7 @@ export async function displaySequenceOverlay(
       : modDotPlotLowerExpression(
           status.sequenceAnalysis?.minimumIdentity ?? minimumIdentity,
           status.sequenceAnalysis?.scoreScale ?? 10000
-        );
+        ));
   const overlay = {
     type: "pixel_blend",
     mode: "OVER",
@@ -101,12 +111,14 @@ export async function displaySequenceOverlay(
   await api.setRenderPipelineConfig({
     enabled: true,
     swapUpperLower: false,
-    upperExpression: mode === "overlay" ? overlay : primary,
-    lowerExpression: mode === "overlay" ? overlay : secondary,
+    upperExpression:
+      mode === "overlay" ? overlay : mode === "above" ? secondary : primary,
+    lowerExpression:
+      mode === "overlay" ? overlay : mode === "above" ? primary : secondary,
   });
   const matrixView = useMatrixViewStore();
   matrixView.setPresentationMode(mode === "overlay" ? "overlay" : "split");
   matrixView.setActiveVisualizationSource("SECONDARY");
-  matrixView.setLayersSwapped(false);
+  matrixView.setLayersSwapped(mode === "above");
   await manager.reloadTilesFromBackend();
 }

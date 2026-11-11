@@ -676,6 +676,7 @@
     :network-manager="networkManager"
     :initial-fasta-filename="lastLinkedFastaFilename"
     :initial-reference-map-filename="currentPrimaryHictFilename"
+    :initial-resolutions="defaultDotplotResolutions()"
     @dismissed="onGenerateDotplotDismissed"
   />
   <ModDotPlotModal
@@ -1147,6 +1148,7 @@
 </template>
 
 <script setup lang="ts">
+import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
 /* global __HICT_WEBUI_BUILD_VERSION__, __HICT_WEBUI_BUILD_COMMIT__ */
 import BackgroundJobsPanel from "./BackgroundJobsPanel.vue";
 import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
@@ -1538,6 +1540,16 @@ defineExpose({ openFile: onOpenFile });
 
 function onOpenWizard(): void {
   emit("wizardRequested");
+}
+
+function defaultDotplotResolutions(): number[] {
+  const view = props.mapManager?.viewAndLayersManager;
+  return view
+    ? defaultSequenceResolutions(
+        view.resolutions,
+        view.currentViewState.resolutionDesciptor.bpResolution
+      )
+    : [];
 }
 
 function onGenerateDotplotClicked(): void {

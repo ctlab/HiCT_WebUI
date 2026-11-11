@@ -180,7 +180,7 @@ function action(value: unknown, path: string): void {
     "active-source-palette",
   ]);
   if (item.type === "sequence-overlay") {
-    choice(item.mode, `${path}.mode`, ["overlay", "below"]);
+    choice(item.mode, `${path}.mode`, ["overlay", "below", "above"]);
     choice(item.kind, `${path}.kind`, ["moddotplot", "dotplot"]);
   } else {
     color(item.startColor, `${path}.startColor`);

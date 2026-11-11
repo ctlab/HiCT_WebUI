@@ -1,3 +1,4 @@
+import { BackgroundResultDelivery } from "../../sequence/backgroundResultDelivery";
 import { BackgroundJobsRequest, CancelBackgroundJobRequest } from "./request";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
@@ -168,6 +169,7 @@ import VisualizationOptions from "../../visualization/VisualizationOptions";
 import { extractErrorMessage } from "./errorMessage";
 
 export interface BackgroundJobOutput {
+  displayMode?: "overlay" | "below" | "above" | "none" | null;
   mapFilename?: string | null;
   filename: string;
   action:
@@ -1210,10 +1212,16 @@ class RequestManager {
     return status;
   }
 
+  public readonly backgroundResultDelivery = new BackgroundResultDelivery();
+
   public async backgroundJobs(): Promise<BackgroundJob[]> {
     return this.sendRequest(new BackgroundJobsRequest(), {
       method: "GET",
-    }).then((response) => response.data as BackgroundJob[]);
+    }).then((response) => {
+      const jobs = response.data as BackgroundJob[];
+      void this.backgroundResultDelivery.process(jobs);
+      return jobs;
+    });
   }
 
   public async cancelBackgroundJob(id: string): Promise<void> {

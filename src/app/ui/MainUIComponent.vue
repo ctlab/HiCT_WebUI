@@ -989,7 +989,9 @@ async function openJobResult(output: BackgroundJobOutput): Promise<void> {
         const status = await requests.openSecondarySource(output.filename);
         await displaySequenceOverlay(
           manager,
-          "below",
+          output.displayMode === "overlay" || output.displayMode === "above"
+            ? output.displayMode
+            : "below",
           output.action === "attach_identity" ? "moddotplot" : "dotplot",
           status
         );

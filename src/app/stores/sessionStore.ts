@@ -13,7 +13,7 @@ export interface SessionSavedLocation {
 export type VisualizationPresetAction =
   | {
       type: "sequence-overlay";
-      mode: "overlay" | "below";
+      mode: "overlay" | "below" | "above";
       kind: "moddotplot" | "dotplot";
     }
   | {

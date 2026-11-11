@@ -65,6 +65,22 @@ export function buildTrackContextMenu(
           }),
       },
       {
+        label: "Zoom to feature",
+        disabled: !mapManager.networkManager.requestManager.hasLinkedFasta,
+        run: () =>
+          tracks.zoomToFeature({
+            key: `${hit.trackId}:${hit.startBp}-${hit.endBp}:${name}`,
+            trackId: hit.trackId,
+            trackName: hit.trackName,
+            label: name,
+            featureType: hit.featureType,
+            strand: hit.strand,
+            startBp: hit.startBp,
+            endBp: hit.endBp,
+            updatedAtMs: Date.now(),
+          }),
+      },
+      {
         label: "Copy feature name",
         run: () => void copyText(name, "Feature name"),
       },
