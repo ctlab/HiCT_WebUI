@@ -1,35 +1,60 @@
-# Hi-CT_WebUI -- Web-based UI for HiCT interactive manual scaffolding tool
+# HiCT WebUI
 
-For more info about HiCT, please visit [HiCT repo page](https://github.com/ctlab/HiCT).
+The Vue interface for HiCT, a Hi-C scaffolding and visualization workstation.
+It provides matrix navigation, assembly editing, sequence and annotation tracks,
+comparison layers, background analyses and PNG, SVG and PDF export.
 
-## Overview
-This repo contains sources for HiCT web-based user interface made with Vue3 and Bootstrap, packaged with Electron.
-Visit [releases page](https://github.com/ctlab/HiCT_WebUI/releases) to obtain binaries for your operating system.
+## Run a packaged application
 
-### Supported features:
-* Opening of HiCT contact map files;
-* Drag/pan/zoom of contact map overview;
-* Contig range selection using Shift+Drag or single click;
-* Reverse and translocation of contig selection range;
-* Grouping contig selection range into scaffold and ungrouping scaffolds;
-* Linking FASTA for assembly;
-* Export of FASTA for assembly;
-* Export FASTA context of assembly for the selected region;
-* Import of AGP assembly description files (only without split contigs).
-* PRIMARY/SECONDARY and rendering-branch contrast controls with reusable visualization presets;
-* ModDotPlot and alignment-dotplot generation with allocation-aware worker controls and optional reusable outputs under the server data directory;
-* Exact, substitution and BLAST sequence search as strand-colored BED tracks;
-* Packed overlapping BED/GFF/GTF features with bounded density fallback;
-* Independent horizontal and vertical track hiding, restored from Tracks and Layers and retained in sessions.
+Download the package for your platform from the JVM repository's releases.
+It includes the server, this WebUI, Java and native analysis tools. Choose a
+writable data folder in the Launcher, press Start and open the browser interface.
+The default interface is `http://localhost:8080` with its API on port 5000.
+[Installation and system requirements](https://github.com/ctlab/HiCT_JVM#readme).
 
-## Operation instructions:
-Make [HiCT server](https://github.com/ctlab/HiCT_Server) available at `http://localhost:5000` either by starting it locally or by using port forwarding from remote server. Put HiCT files into server's data directory (you can convert Coolers using [HiCT_Utils](https://github.com/ctlab/HiCT_Utils)). Start Electron-based Web UI by unzipping binary distribution and launching `.exe` file (Windows) or by launching `.AppImage` file (linux, make sure you've made `chmod +x` for it). 
-Click File -> Open and select HiCT file you want to interact with. Tiles should start loading on a contact map. Use single clicks or Shift+dragging at any time to perform range selection. Click tool buttons on the left side to perform actions with selection range.
-After you've done, you can either save state using File -> Save in HiCT format, or export assembly info using Assembly menu in navigation bar at the top of the window.
+For a first map, open **Help → Examples…** and choose **Open example** on the
+small tardigrade card. HiCT downloads about 45 MB, converts its matrix and links
+the matching FASTA. The larger catalog examples retain their conversion wizard.
 
-## API documentation integration
+Use **Open map…** for native `.hict.hdf5` files and **Open with options…** for
+conversion. Select with a click or Shift-drag. The toolbar edits the assembly.
+The Journal provides Undo and Redo. File saves and restores sessions. Assembly
+exports AGP and FASTA. Export above the map produces PNG, SVG and PDF.
+[User guide and shortcuts](https://github.com/ctlab/HiCT_JVM/blob/jvm-sfx-native/docs/user-guide.md).
 
-WebUI now links directly to backend API docs via **View → API v1 docs...**.
+## Develop
 
-- Interactive Swagger UI: `http://localhost:5000/api/v1/`
-- OpenAPI source: `http://localhost:5000/api/v1/openapi.yaml`
+Use Node.js and npm. Keep `HiCT_JVM` beside this checkout for the integrated
+packaged build. A WebUI-only build also works independently in this Git checkout.
+
+```sh
+npm ci
+npm run build:web
+npm run dev
+```
+
+The build runs TypeScript and map, API, ruler, track, pipeline and export
+regressions. It embeds this repository's package version and Git revision for
+About. Run ESLint without automatic edits when reviewing changes.
+
+```sh
+npx eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --ignore-path .gitignore
+```
+
+The development UI connects to `http://localhost:5000`. Start the JVM server
+with disposable data for integration testing. The backend serves its offline
+API reference at `http://localhost:5000/api/v1/`. Remote use requires forwarding
+both service ports or configuring the API address. Restrict the server's bind
+host and network access as described in the JVM README.
+
+Electron and Tauri payload build scripts are listed in `package.json`. The JVM
+portable pipeline incorporates the selected browser payload. Desktop save-dialog
+and installation behavior require platform validation in addition to web tests.
+
+## Citation and licenses
+
+Cite the software version and source revision using `CITATION.cff`, together
+with the datasets and analysis tools used. HiCT uses the MIT License. Bundled
+third-party components retain their upstream licenses. The JVM distribution
+aggregates notices in `THIRD_PARTY_LICENSES.md` and preserves runtime and
+native-tool license directories.

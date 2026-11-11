@@ -83,6 +83,19 @@ export const runtimeAttributions: AttributionEntry[] = [
     links: [{ label: "minimap2", href: "https://github.com/lh3/minimap2" }],
   },
   {
+    name: "NCBI BLAST+",
+    authors: "National Center for Biotechnology Information and contributors.",
+    license: "Public domain. Bundled dependencies retain their own terms.",
+    note: "Sequence search. Cite Camacho et al., BMC Bioinformatics 2009, 10:421.",
+    links: [
+      { label: "BLAST+", href: "https://blast.ncbi.nlm.nih.gov/" },
+      {
+        label: "Publication",
+        href: "https://doi.org/10.1186/1471-2105-10-421",
+      },
+    ],
+  },
+  {
     name: "SeqKit",
     authors: "Wei Shen, Botond Sipos, Liuyang Zhao and contributors.",
     license: "MIT; bundled dependencies retain their own notices.",

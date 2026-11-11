@@ -41,3 +41,7 @@ declare module "marked" {
     parse(markdown: string, options?: MarkedOptions): string;
   };
 }
+
+/** Source metadata injected by Vite when this WebUI is built. */
+declare const __HICT_WEBUI_BUILD_VERSION__: string;
+declare const __HICT_WEBUI_BUILD_COMMIT__: string;

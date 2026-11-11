@@ -20,6 +20,8 @@
  */
 
 import { fileURLToPath, URL } from "url";
+import { readFileSync } from "fs";
+import { execFileSync } from "child_process";
 
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
@@ -34,6 +36,19 @@ function manualChunk(id: string): string | undefined {
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  define: {
+    __HICT_WEBUI_BUILD_VERSION__: JSON.stringify(
+      JSON.parse(
+        readFileSync(new URL("./package.json", import.meta.url), "utf8")
+      ).version
+    ),
+    __HICT_WEBUI_BUILD_COMMIT__: JSON.stringify(
+      execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: fileURLToPath(new URL(".", import.meta.url)),
+        encoding: "utf8",
+      }).trim()
+    ),
+  },
   plugins: [
     {
       name: "sanitize-litegraph-eval",

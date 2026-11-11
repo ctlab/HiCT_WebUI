@@ -506,6 +506,15 @@
             >
             <ul class="dropdown-menu">
               <li>
+                <a
+                  class="dropdown-item"
+                  href="https://github.com/ctlab/HiCT_JVM/blob/jvm-sfx-native/docs/user-guide.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >User guide and shortcuts</a
+                >
+              </li>
+              <li>
                 <a class="dropdown-item" href="#" @click.prevent="onOpenApiDocs"
                   >API docs...</a
                 >
@@ -894,6 +903,19 @@
           <div><strong>WebUI:</strong> {{ webuiVersion }}</div>
           <div><strong>Commit:</strong> {{ webuiCommit }}</div>
         </div>
+        <section class="how-to-cite">
+          <h3>How to cite</h3>
+          <p>
+            {{ projectAttribution.authors }} HiCT {{ webuiVersion }}.
+            https://github.com/ctlab/HiCT_JVM. WebUI revision {{ webuiCommit }}.
+          </p>
+          <a
+            href="https://github.com/ctlab/HiCT_JVM/blob/jvm-sfx-native/CITATION.cff"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Machine-readable software citation</a
+          >
+        </section>
         <section class="ask-authors">
           <h3>Ask Authors</h3>
           <div class="ask-authors-grid">
@@ -1116,6 +1138,7 @@
 </template>
 
 <script setup lang="ts">
+/* global __HICT_WEBUI_BUILD_VERSION__, __HICT_WEBUI_BUILD_COMMIT__ */
 import BackgroundJobsPanel from "./BackgroundJobsPanel.vue";
 import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
 import { reportFailure } from "@/app/ui/reportFailure";
@@ -1160,7 +1183,6 @@ import {
   runtimeAttributions,
   webAttributions,
 } from "@/app/core/attribution";
-import pkg from "../../../../../package.json";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import hictLogo from "@/assets/hict-logo.png";
 const openingFile = ref(false);
@@ -1213,10 +1235,8 @@ const toolchainStatus = ref<ConversionToolchainStatusResponse | null>(null);
 const dotplotAlignerPreference = ref("auto");
 const dotplotAlignerBusy = ref(false);
 const backendVersion = ref("loading...");
-const webuiVersion = ref(
-  String((pkg as { version?: string })?.version ?? "unknown")
-);
-const webuiCommit = ref("unknown");
+const webuiVersion = __HICT_WEBUI_BUILD_VERSION__;
+const webuiCommit = __HICT_WEBUI_BUILD_COMMIT__;
 const CoolerConverter = defineAsyncComponent(
   () => import("./CoolerConverter.vue")
 );
@@ -1749,7 +1769,6 @@ function openAbout(): void {
         backendVersion.value = v;
       } else {
         backendVersion.value = v.version ?? "unknown";
-        webuiVersion.value = v.webuiVersion ?? webuiVersion.value;
       }
     })
     .catch(() => (backendVersion.value = "unknown"));

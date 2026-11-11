@@ -1,8 +1,8 @@
 {
   "name": "hict",
-  "version": "0.1.1",
+  "version": "2.0.0",
   "private": true,
-  "author": "Aleksandr Serdiukov, Anton Zamyatin and CT Lab ITMO University team",
+  "author": "Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov, Pavel Avdeyev, Nikolay Cherkasov and Computer Technologies Laboratory ITMO University team",
   "main": "dist/electron/main/main.js",
   "license": "MIT",
   "scripts": {
