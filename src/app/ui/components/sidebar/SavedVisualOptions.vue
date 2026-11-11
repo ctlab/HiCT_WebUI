@@ -344,7 +344,7 @@ watch(
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(v: unknown): v is UnknownRecord {
-  return typeof v === "object" && v !== null;
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 function getDataField(v: unknown): UnknownRecord | undefined {
@@ -360,10 +360,8 @@ function isArray(v: unknown): v is unknown[] {
 function importJSONResults(jsonPreResult: unknown) {
   const data = getDataField(jsonPreResult);
 
-  // If no valid "data" block, nothing to import
   if (!data) {
-    toast.error("Cannot import visualization options: invalid JSON format");
-    return;
+    throw new Error("Invalid visualization options JSON format");
   }
 
   // Now parse into your expected (new) format safely
@@ -403,13 +401,25 @@ function importJSONResults(jsonPreResult: unknown) {
     jsonResult.data.savedLocations ??
     [];
 
+  if (!Array.isArray(arr)) {
+    throw new Error("Visualization presets must be a list.");
+  }
+
   const existingKeys = new Set<string>();
   savedOptions.value.forEach((opt) => {
     existingKeys.add(buildPresetKey(opt));
   });
 
+  const firstImportedId = nextOptionId();
+  let nextImportedId = firstImportedId;
+  const nextSavedOptions = new Map(savedOptions.value);
+  const pendingThresholds: Parameters<typeof applySignalThresholds>[0][] = [];
+
   arr.forEach((option) => {
-    const newId = nextOptionId();
+    if (!isRecord(option)) {
+      throw new Error("Every imported visualization preset must be an object.");
+    }
+    const newId = nextImportedId;
 
     let backgroundColor: ColorTranslator = new ColorTranslator(
       "rgba(255,255,255,255)",
@@ -440,12 +450,18 @@ function importJSONResults(jsonPreResult: unknown) {
     };
     const key = buildPresetKey(newOption);
     if (!existingKeys.has(key)) {
-      savedOptions.value.set(newOption.option_id, newOption);
+      nextSavedOptions.set(newOption.option_id, newOption);
       existingKeys.add(key);
-      bumpSavedOptions();
-      applySignalThresholds(option);
+      nextImportedId++;
+      pendingThresholds.push(option);
     }
   });
+
+  if (nextImportedId !== firstImportedId) {
+    savedOptions.value = nextSavedOptions;
+    bumpSavedOptions();
+    pendingThresholds.forEach(applySignalThresholds);
+  }
 }
 
 function serializeVisualizationOptions(
