@@ -185,9 +185,12 @@
               <label class="form-label">Compression</label>
               <select v-model="compressionAlgorithm" class="form-select">
                 <option value="deflate">deflate</option>
-                <option value="zstd">zstd</option>
-                <option value="lzf">lzf</option>
+                <option value="zstd" disabled>zstd (unavailable)</option>
+                <option value="lzf" disabled>lzf (unavailable)</option>
               </select>
+              <small class="text-muted">
+                Cooler export supports Deflate. Level 0 disables compression.
+              </small>
             </div>
             <div class="col-md-2">
               <label class="form-label">Level</label>
@@ -232,6 +235,7 @@
             <input
               id="export-balance-coolers"
               v-model="balanceExportedCoolers"
+              :disabled="exportMode === 'internal'"
               class="form-check-input"
               type="checkbox"
               role="switch"
@@ -240,7 +244,10 @@
               Balance exported Cooler with hictk
             </label>
           </div>
-          <small class="text-muted d-block mb-3">
+          <small v-if="exportMode === 'internal'" class="text-muted d-block mb-3">
+            Balancing requires auto or hictk-assisted export.
+          </small>
+          <small v-else class="text-muted d-block mb-3">
             Enabled by default. Auto and hictk-assisted modes run ICE balancing
             so downstream Cooler tools can use generated weights.
           </small>
@@ -465,7 +472,8 @@ async function startExport(): Promise<void> {
           parallelism: parallelism.value,
           exportMode: exportMode.value,
           exportAllResolutions: exportAllResolutions.value,
-          balanceExportedCoolers: balanceExportedCoolers.value,
+          balanceExportedCoolers:
+            exportMode.value !== "internal" && balanceExportedCoolers.value,
         })
       );
     jobId.value = response.jobId;
