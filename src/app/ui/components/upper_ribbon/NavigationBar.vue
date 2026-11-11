@@ -1102,6 +1102,11 @@
             <input
               :id="`resolution-modal-${resolution}`"
               :checked="enabledResolutionSet.has(resolution)"
+              :disabled="
+                enabledResolutionSet.size === 1 &&
+                enabledResolutionSet.has(resolution)
+              "
+              title="At least one map resolution must stay enabled."
               class="form-check-input"
               type="checkbox"
               role="switch"

@@ -571,7 +571,7 @@ function handleGlobalEscape(event: KeyboardEvent): void {
     if (
       target instanceof Element &&
       target.closest(
-        'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]'
+        'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], .dropdown-menu.show, .dropdown-toggle[aria-expanded="true"]'
       )
     ) {
       return;
