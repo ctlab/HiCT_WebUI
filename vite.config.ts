@@ -26,77 +26,10 @@ import vue from "@vitejs/plugin-vue";
 import vueJsx from "@vitejs/plugin-vue-jsx";
 
 function manualChunk(id: string): string | undefined {
-  // Keep runtime helpers independent of application chunks. Otherwise Rollup
-  // may put Vite's preload helper into app-mapmanagers; export dependencies
-  // then import that chunk while OpenLayers is still being initialized.
+  // Runtime helpers stay separate from map and export modules.
   if (id.includes("vite/preload-helper") || id.includes("commonjsHelpers")) {
     return "runtime-helpers";
   }
-  const normalizedId = id.replace(/\\/g, "/");
-
-  if (normalizedId.includes("/node_modules/")) {
-    if (
-      normalizedId.includes("/node_modules/vue/") ||
-      normalizedId.includes("/node_modules/@vue/") ||
-      normalizedId.includes("/node_modules/pinia/")
-    ) {
-      return "vendor-vue";
-    }
-    if (normalizedId.includes("/node_modules/ol/")) {
-      return "vendor-ol";
-    }
-    if (
-      normalizedId.includes("/node_modules/jspdf/") ||
-      normalizedId.includes("/node_modules/html2canvas/")
-    ) {
-      return "vendor-export";
-    }
-    if (
-      normalizedId.includes("/node_modules/prime") ||
-      normalizedId.includes("/node_modules/bootstrap") ||
-      normalizedId.includes("/node_modules/@popperjs/")
-    ) {
-      return "vendor-ui";
-    }
-    if (
-      normalizedId.includes("/node_modules/litegraph.js/") ||
-      normalizedId.includes("/node_modules/toolcool-color-picker/") ||
-      normalizedId.includes("/node_modules/vanilla-picker/") ||
-      normalizedId.includes("/node_modules/vue-color-kit/")
-    ) {
-      return "vendor-visual-editors";
-    }
-    if (normalizedId.includes("/node_modules/igv/")) {
-      return "vendor-genome";
-    }
-    return "vendor-shared";
-  }
-
-  if (normalizedId.includes("/src/app/core/visualization/")) {
-    return "app-visualization";
-  }
-  if (
-    normalizedId.includes("/src/app/core/tracks/") ||
-    normalizedId.includes("/src/app/ui/components/tracks/")
-  ) {
-    return "app-tracks";
-  }
-  if (normalizedId.includes("/src/app/core/net/")) {
-    return "app-api";
-  }
-  if (normalizedId.includes("/src/app/core/mapmanagers/")) {
-    return "app-mapmanagers";
-  }
-  if (normalizedId.includes("/src/app/ui/components/upper_ribbon/")) {
-    return "ui-upper-ribbon";
-  }
-  if (normalizedId.includes("/src/app/ui/components/sidebar/")) {
-    return "ui-sidebar";
-  }
-  if (normalizedId.includes("/src/app/ui/components/workspace/")) {
-    return "ui-workspace";
-  }
-  return undefined;
 }
 
 // https://vitejs.dev/config/

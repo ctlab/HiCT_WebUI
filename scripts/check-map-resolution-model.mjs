@@ -138,6 +138,34 @@ const secondaryFine = buildSourceResolutionDescriptorSet(
   250
 );
 
+// These descriptors use 250 bp per map unit.
+for (const [bpPerPixel, primaryBp, secondaryBp] of [
+  [125, 1000, 250],
+  [499, 1000, 250],
+  [500, 1000, 500],
+  [1000, 1000, 1000],
+  [2499, 1000, 1000],
+  [2500, 1000, 2500],
+  [4999, 1000, 2500],
+  [5000, 5000, 5000],
+  [9999, 5000, 5000],
+  [10000, 10000, 10000],
+  [20000, 10000, 20000],
+  [40000, 10000, 20000],
+]) {
+  for (const [set, expected] of [
+    [primaryCoarse, primaryBp],
+    [secondaryFine, secondaryBp],
+  ]) {
+    assertResolutionDescriptor(
+      set,
+      bpPerPixel / 250,
+      expected,
+      `${set.sourceName} at ${bpPerPixel} bp/px`
+    );
+  }
+}
+
 assertContiguousVisibility(primaryCoarse);
 assertContiguousVisibility(secondaryFine);
 

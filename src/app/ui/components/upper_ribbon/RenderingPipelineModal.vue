@@ -2976,7 +2976,8 @@ const restoreEditorState = (
   if (!graphCanvas) return;
   const candidate = restorePipelineEditorGraph(
     state.liteGraph,
-    new Set(Object.values(NODE_MENU_NODE_TYPES_BY_CATEGORY).flat())
+    new Set(Object.values(NODE_MENU_NODE_TYPES_BY_CATEGORY).flat()),
+    { LGraph, LiteGraph }
   );
   const sinks = candidate.findNodesByType(SINK_NODE_TYPE);
   const upperSinks = sinks.filter((node) => node.properties.branch === "UPPER");

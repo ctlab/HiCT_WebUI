@@ -190,14 +190,11 @@ export const webAttributions: AttributionEntry[] = [
     ],
   },
   {
-    name: "OpenLayers and igv.js",
-    authors: "OpenLayers, IGV.js and contributors.",
+    name: "OpenLayers",
+    authors: "OpenLayers contributors.",
     license: "See package metadata.",
     note: "Interactive map canvas and genomic track visualization.",
-    links: [
-      { label: "OpenLayers", href: "https://openlayers.org/" },
-      { label: "igv.js", href: "https://github.com/igvteam/igv.js" },
-    ],
+    links: [{ label: "OpenLayers", href: "https://openlayers.org/" }],
   },
   {
     name: "jsPDF, LiteGraph and color-picker libraries",
@@ -208,20 +205,12 @@ export const webAttributions: AttributionEntry[] = [
       { label: "jsPDF", href: "https://github.com/parallax/jsPDF" },
       { label: "LiteGraph", href: "https://github.com/jagenjo/litegraph.js" },
       {
-        label: "@thednp/color-picker",
-        href: "https://github.com/thednp/color-picker",
-      },
-      {
         label: "toolcool-color-picker",
         href: "https://github.com/mzusin/toolcool-color-picker",
       },
       {
         label: "vanilla-picker",
         href: "https://github.com/Sphinxxxx/vanilla-picker",
-      },
-      {
-        label: "vue-color-kit",
-        href: "https://github.com/anish2690/vue-color-kit",
       },
       {
         label: "ColorTranslator",

@@ -141,7 +141,6 @@ class ContactMapManager {
     this.initializeMapInteractions();
     this.initializeMapControls();
     void this.linearTrackManager.refreshTrackList();
-    console.log("Map initialized. Contact map manager: ", this);
   }
 
   public initializeMapInteractions(): void {

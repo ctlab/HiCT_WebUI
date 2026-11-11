@@ -20,6 +20,7 @@ import { sequenceZoomResolution } from "../visualization/sequenceZoom";
  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+import { unByKey } from "ol/Observable";
 import { aggregateTileSignals } from "../visualization/tileSignalRange";
 import { Extent, Select } from "ol/interaction";
 import { Projection } from "ol/proj";
@@ -214,6 +215,7 @@ class HiCViewAndLayersManager {
   private vectorViewportListener?: () => void;
   private vectorMoveEndListener?: () => void;
   private rulerRenderCallback: (() => void) | null = null;
+  private disposeRulers?: () => void;
   private readonly pendingFeatureStyleRefreshHandles = new Set<number>();
   public axisScopeRevision = 0;
   private fullGlobalExtent: [number, number, number, number] = [0, 0, 0, 0];
@@ -342,7 +344,8 @@ class HiCViewAndLayersManager {
     installTopLeftAnchor(
       this.view,
       maximum_global_extent,
-      () => useUiSettingsStore().mapAnchorTopLeft && !this.mapManager.isExporting
+      () =>
+        useUiSettingsStore().mapAnchorTopLeft && !this.mapManager.isExporting
     );
 
     this.currentViewState = {
@@ -2033,31 +2036,30 @@ class HiCViewAndLayersManager {
       mapManager: this.mapManager,
       target: "vertical-ruler-div",
     });
-    try {
-      const map = this.mapManager.getMap();
-      const view = map.getView();
-      let framePending = false;
-      const scheduleRulerRender = () => {
-        if (framePending) {
-          return;
-        }
-        framePending = true;
-        window.requestAnimationFrame(() => {
-          framePending = false;
-          rulerH.render({ map } as never);
-          rulerV.render({ map } as never);
-        });
-      };
-      this.rulerRenderCallback = scheduleRulerRender;
-      map.on("moveend", scheduleRulerRender);
-      view.on("change:center", scheduleRulerRender);
-      view.on("change:resolution", scheduleRulerRender);
-      map.once("postrender", () => {
-        scheduleRulerRender();
+    const map = this.mapManager.getMap();
+    const view = map.getView();
+    let frame: number | undefined;
+    const scheduleRulerRender = () => {
+      if (frame !== undefined) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = undefined;
+        rulerH.render({ map } as never);
+        rulerV.render({ map } as never);
       });
-    } catch (e: unknown) {
-      console.log("Error while adding rulers", e);
-    }
+    };
+    const keys = [
+      map.on("moveend", scheduleRulerRender),
+      view.on("change:center", scheduleRulerRender),
+      view.on("change:resolution", scheduleRulerRender),
+      map.once("postrender", scheduleRulerRender),
+    ];
+    this.rulerRenderCallback = scheduleRulerRender;
+    this.disposeRulers = () => {
+      unByKey(keys);
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      rulerH.dispose();
+      rulerV.dispose();
+    };
   }
 
   public scheduleRulerRender(): void {
@@ -2082,6 +2084,8 @@ class HiCViewAndLayersManager {
       }
       this.pendingFeatureStyleRefreshHandles.clear();
       this.rulerRenderCallback = null;
+      this.disposeRulers?.();
+      this.disposeRulers = undefined;
       this.mapManager.getMap().getControls().clear();
       const hRuler = document.getElementById("horizontal-ruler-div");
       if (hRuler) {

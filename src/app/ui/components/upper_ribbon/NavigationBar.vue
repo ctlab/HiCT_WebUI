@@ -1133,13 +1133,6 @@ import {
   ApplyJuiceboxAssemblyRequest,
 } from "@/app/core/net/api/request";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import CoolerConverter from "./CoolerConverter.vue";
-import MatrixExportModal from "./MatrixExportModal.vue";
-import ModDotPlotModal from "./ModDotPlotModal.vue";
-import DotplotGenerator from "./DotplotGenerator.vue";
-import SequenceSearchModal from "./SequenceSearchModal.vue";
-import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
-import TrackManager from "@/app/ui/components/upper_ribbon/TrackManager.vue";
 import FastaLinkWarningModal from "@/app/ui/components/upper_ribbon/FastaLinkWarningModal.vue";
 import WorkerDiagnosticsModal from "@/app/ui/components/upper_ribbon/WorkerDiagnosticsModal.vue";
 import ServerStatisticsModal from "@/app/ui/components/upper_ribbon/ServerStatisticsModal.vue";
@@ -1218,6 +1211,25 @@ const webuiVersion = ref(
   String((pkg as { version?: string })?.version ?? "unknown")
 );
 const webuiCommit = ref("unknown");
+const CoolerConverter = defineAsyncComponent(
+  () => import("./CoolerConverter.vue")
+);
+const MatrixExportModal = defineAsyncComponent(
+  () => import("./MatrixExportModal.vue")
+);
+const ModDotPlotModal = defineAsyncComponent(
+  () => import("./ModDotPlotModal.vue")
+);
+const DotplotGenerator = defineAsyncComponent(
+  () => import("./DotplotGenerator.vue")
+);
+const SequenceSearchModal = defineAsyncComponent(
+  () => import("./SequenceSearchModal.vue")
+);
+const UniversalFileSelector = defineAsyncComponent(
+  () => import("./UniversalFileSelector.vue")
+);
+const TrackManager = defineAsyncComponent(() => import("./TrackManager.vue"));
 const RenderingPipelineModal = defineAsyncComponent(
   () => import("@/app/ui/components/upper_ribbon/RenderingPipelineModal.vue")
 );

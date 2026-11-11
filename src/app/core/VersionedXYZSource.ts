@@ -455,6 +455,17 @@ class VersionedXYZContactMapSource extends XYZ {
     this.changed();
   }
 
+  protected override disposeInternal(): void {
+    this.invalidatePendingTileRequests();
+    if (this.signalRangeFrame !== undefined) {
+      window.cancelAnimationFrame(this.signalRangeFrame);
+      this.signalRangeFrame = undefined;
+    }
+    this.pendingSignalRanges = undefined;
+    this.clear();
+    super.disposeInternal();
+  }
+
   private invalidatePendingTileRequests(): void {
     ++this.tileRequestEpoch;
     const requests = [...this.activeTileRequests];

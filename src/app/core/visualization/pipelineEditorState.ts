@@ -1,4 +1,4 @@
-import { LGraph, LiteGraph, type LGraphNode } from "litegraph.js";
+import type { LGraph, LiteGraph, LGraphNode } from "litegraph.js";
 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -22,7 +22,8 @@ const pair = (value: unknown): [number, number] | null => {
 /** Restore only supported node data, never arbitrary serialized runtime fields. */
 export function restorePipelineEditorGraph(
   data: unknown,
-  allowedTypes: ReadonlySet<string>
+  allowedTypes: ReadonlySet<string>,
+  runtime: { LGraph: typeof LGraph; LiteGraph: typeof LiteGraph }
 ): LGraph {
   if (
     !record(data) ||
@@ -32,7 +33,7 @@ export function restorePipelineEditorGraph(
     data.links.length > 4096
   )
     throw new Error("Invalid or oversized pipeline editor graph.");
-  const graph = new LGraph();
+  const graph = new runtime.LGraph();
   const nodes = new Map<number, LGraphNode>();
   for (const raw of data.nodes) {
     const position = record(raw) ? pair(raw.pos) : null;
@@ -48,7 +49,7 @@ export function restorePipelineEditorGraph(
       !position
     )
       throw new Error("Invalid pipeline node identity, type or position.");
-    const node = LiteGraph.createNode(raw.type) as LGraphNode | null;
+    const node = runtime.LiteGraph.createNode(raw.type) as LGraphNode | null;
     if (!node) throw new Error("Unsupported pipeline node.");
     node.id = raw.id;
     node.pos = position;

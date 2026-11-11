@@ -49,13 +49,6 @@
       here once a map is open.
     </div>
     <div id="upper-block" v-show="!sidebarCollapsed">
-      <!-- <div id="minimap">
-        <MiniMap
-          :map-manager="props.mapManager"
-          v-if="props.mapManager"
-        ></MiniMap>
-      </div> -->
-
       <button
         v-if="props.mapManager"
         type="button"

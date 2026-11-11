@@ -343,7 +343,14 @@ import {
   ContactMapManager,
   // type ContactMapManagerOptions,
 } from "@/app/core/mapmanagers/ContactMapManager";
-import { onMounted, onUnmounted, ref, watch, type Ref } from "vue";
+import {
+  defineAsyncComponent,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+  type Ref,
+} from "vue";
 import { NetworkManager } from "@/app/core/net/NetworkManager";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
@@ -357,7 +364,6 @@ import { LoadAGPRequest } from "@/app/core/net/api/request";
 import { LinkFASTARequest } from "@/app/core/net/api/request";
 import AGPImportChoiceModal from "@/app/ui/components/upper_ribbon/AGPImportChoiceModal.vue";
 import NotificationCenterModal from "@/app/ui/components/notifications/NotificationCenterModal.vue";
-import FileWizardModal from "@/app/ui/components/upper_ribbon/FileWizardModal.vue";
 import type { WizardPrefill } from "@/app/ui/components/upper_ribbon/wizardPrefill";
 
 import WorkspaceComponent from "@/app/ui/components/workspace/WorkspaceComponent.vue";
@@ -376,6 +382,10 @@ import {
   hasAnyOpenEscDialog,
   useEscDismissableDialog,
 } from "@/app/ui/escapeDialogRegistry";
+
+const FileWizardModal = defineAsyncComponent(
+  () => import("@/app/ui/components/upper_ribbon/FileWizardModal.vue")
+);
 
 // Reactively use these refs only inside component
 // Pass them to Map Manager on creation as values, not Refs as objects

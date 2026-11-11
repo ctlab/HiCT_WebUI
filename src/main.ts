@@ -43,8 +43,6 @@ import "./app/ui/zoomslider.css";
 
 const pinia = createPinia();
 
-//import igv from "igv";
-
 const app = createApp(App);
 app.use(pinia);
 app.mount("#app");

@@ -24,8 +24,12 @@ vm.runInNewContext(
   ).outputText,
   { module, exports: module.exports, require }
 );
-const { restorePipelineEditorGraph, pipelineExpressionSignature } =
-  module.exports;
+const { pipelineExpressionSignature } = module.exports;
+const restorePipelineEditorGraph = (data, allowed) =>
+  module.exports.restorePipelineEditorGraph(data, allowed, {
+    LGraph,
+    LiteGraph,
+  });
 class NumberNode extends LGraphNode {
   constructor() {
     super();
