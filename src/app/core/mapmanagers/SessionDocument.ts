@@ -4,7 +4,8 @@ import { parseRenderPipelinePreset } from "@/app/core/visualization/renderPipeli
 /** Validation shared by session import and its regression tests. */
 export const MAX_SESSION_BYTES = 8 * 1024 * 1024;
 const MAX_DEPTH = 160;
-const MAX_VALUES = 100000;
+// Matches the server budget for multi-source, multi-resolution assembly descriptors.
+export const MAX_SESSION_VALUES = 1_000_000;
 
 type RecordValue = Record<string, unknown>;
 
@@ -340,7 +341,8 @@ export function parseSessionDocument(text: string): RecordValue {
   }
   let values = 0;
   function bounded(value: unknown, path: string, depth: number): void {
-    if (++values > MAX_VALUES) invalid(path, "contains too many values");
+    if (++values > MAX_SESSION_VALUES)
+      invalid(path, "contains too many values");
     if (depth > MAX_DEPTH) invalid(path, "exceeds the nesting limit");
     if (typeof value === "number") finite(value, path);
     if (value && typeof value === "object") {

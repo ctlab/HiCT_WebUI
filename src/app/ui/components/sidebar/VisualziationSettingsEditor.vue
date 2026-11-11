@@ -842,7 +842,8 @@ function onLowerRangeInput(value: number): void {
   const actual = fromSliderPosition(value);
   const minGap = Math.max(
     Math.abs(upperBound.value) * Number.EPSILON,
-    Number.MIN_VALUE
+    Math.abs(sliderMin.value) * Number.EPSILON,
+    Math.abs(sliderMax.value) * Number.EPSILON
   );
   lowerBound.value = Math.min(actual, upperBound.value - minGap);
 }
@@ -854,7 +855,8 @@ function onUpperRangeInput(value: number): void {
   const actual = fromSliderPosition(value);
   const minGap = Math.max(
     Math.abs(lowerBound.value) * Number.EPSILON,
-    Number.MIN_VALUE
+    Math.abs(sliderMin.value) * Number.EPSILON,
+    Math.abs(sliderMax.value) * Number.EPSILON
   );
   upperBound.value = Math.max(actual, lowerBound.value + minGap);
 }

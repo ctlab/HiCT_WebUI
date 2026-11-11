@@ -177,7 +177,8 @@
         <select
           v-model="signalDisplayMode"
           class="form-select form-select-sm"
-          title="Expected and O/E use the standard renderer and are computed within scaffolds; if no scaffolds are present, each contig is treated as its own scaffold."
+          title="Expected and O/E use the standard renderer for the primary map, within scaffolds (or contigs when unscaffolded). The secondary overlay and observed rendering graph are preserved."
+          :disabled="signalDisplayModePending"
           @change="onSignalDisplayModeChanged"
         >
           <option value="OBSERVED">Show Observed</option>
@@ -1045,50 +1046,19 @@ async function reloadTiles() {
   }
 }
 
-// Observed counts and observed-over-expected ratios live on different scales. The Observed color range
-// is kept aside while O/E is shown, and O/E gets a range around 1 (the neutral ratio).
-let observedGradient: SimpleLinearGradient | null = null;
-let previousDisplayMode = signalDisplayMode.value;
-
+const signalDisplayModePending = ref(false);
 async function onSignalDisplayModeChanged() {
-  const mode = signalDisplayMode.value;
-  const current = colormap.value;
-  if (current instanceof SimpleLinearGradient) {
-    if (
-      mode === "OBSERVED_OVER_EXPECTED" &&
-      previousDisplayMode !== "OBSERVED_OVER_EXPECTED"
-    ) {
-      observedGradient = current;
-      colormap.value = new SimpleLinearGradient(
-        current.startColorRGBA,
-        current.endColorRGBA,
-        0.5,
-        2
-      );
-    } else if (
-      mode !== "OBSERVED_OVER_EXPECTED" &&
-      previousDisplayMode === "OBSERVED_OVER_EXPECTED" &&
-      observedGradient
-    ) {
-      colormap.value = new SimpleLinearGradient(
-        current.startColorRGBA,
-        current.endColorRGBA,
-        observedGradient.minSignal,
-        observedGradient.maxSignal
-      );
-      observedGradient = null;
-    }
-  }
-  previousDisplayMode = mode;
+  if (!props.mapManager || signalDisplayModePending.value) return;
+  signalDisplayModePending.value = true;
   try {
-    await props.mapManager?.visualizationManager.sendVisualizationOptionsAndReload(
-      {
-        skipAutoThresholdRefresh: true,
-      }
+    await props.mapManager.visualizationManager.setSignalDisplayMode(
+      signalDisplayMode.value
     );
   } catch (error) {
     toast.error("Failed to update signal display mode");
     console.debug(error);
+  } finally {
+    signalDisplayModePending.value = false;
   }
 }
 </script>

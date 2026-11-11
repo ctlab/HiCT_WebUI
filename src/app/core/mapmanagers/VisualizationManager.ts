@@ -34,6 +34,7 @@ import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsS
 import { rememberExcludedBinsPolicy } from "../visualization/excludedBinsMemory";
 import VisualizationOptions, {
   type CoolerWeightsNaNPolicy,
+  type SignalDisplayMode,
 } from "../visualization/VisualizationOptions";
 import SimpleLinearGradient from "../visualization/colormap/SimpleLinearGradient";
 import type { EventsKey } from "ol/events";
@@ -435,6 +436,7 @@ class VisualizationManager {
   private pendingExpectedProfileRefresh = false;
   private readonly pendingOptionRequests = new Set<Promise<unknown>>();
   private visualizationOptionsLoadGeneration = 0;
+  private observedDisplayOptions: VisualizationOptions | null = null;
 
   public constructor(public readonly mapManager: ContactMapManager) {
     this.moveEndListener = this.mapManager.getMap().on("moveend", () => {
@@ -500,7 +502,11 @@ class VisualizationManager {
     if (this.mapManager.isDisposed) {
       return this.visualizationOptionsStore.asVisualizationOptions();
     }
-    if (!source) {
+    if (
+      !source ||
+      (source === "PRIMARY" &&
+        this.visualizationOptionsStore.signalDisplayMode !== "OBSERVED")
+    ) {
       const options =
         await this.mapManager.networkManager.requestManager.getVisualizationOptions(
           new GetVisualizationOptionsRequest({})
@@ -1242,6 +1248,70 @@ class VisualizationManager {
     return updatedMaxSignal;
   }
 
+  /** Display modes are primary-only views. Never rebuild the user's rendering graph. */
+  public async setSignalDisplayMode(mode: SignalDisplayMode): Promise<void> {
+    const api = this.mapManager.networkManager.requestManager;
+    const previous = await api.getVisualizationOptions(
+      new GetVisualizationOptionsRequest({})
+    );
+    const config = await api.getRenderPipelineConfig();
+    const primary = config.enabled
+      ? collectConfigColormapTargets(config).find(
+          (target) => target.profile.source === "PRIMARY"
+        )
+      : undefined;
+    const observed = primary
+      ? visualizationOptionsFromTarget(primary, previous)
+      : previous.signalDisplayMode === "OBSERVED"
+      ? previous
+      : this.observedDisplayOptions ?? previous;
+    if (previous.signalDisplayMode === "OBSERVED")
+      this.observedDisplayOptions = observed;
+    const colormap = observed.colormap;
+    const next = new VisualizationOptions(
+      observed.preLogBase,
+      observed.postLogBase,
+      observed.applyCoolerWeights,
+      observed.resolutionScaling,
+      observed.resolutionLinearScaling,
+      mode === "OBSERVED_OVER_EXPECTED" &&
+      colormap instanceof SimpleLinearGradient
+        ? new SimpleLinearGradient(
+            colormap.startColorRGBA,
+            colormap.endColorRGBA,
+            0.5,
+            2
+          )
+        : colormap,
+      previous.autoThresholdEnabled,
+      previous.autoThresholdQuantile,
+      mode,
+      previous.coolerWeightsNaNPolicy,
+      previous.coolerWeightsHaveNaNs,
+      previous.coolerWeightsNaNCount
+    );
+    try {
+      await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        preserveCustomPipeline: true,
+        visualizationOptions: next,
+      });
+    } catch (error) {
+      // Expected-profile refresh can fail after options were committed. Read back
+      // the committed mode rather than claiming the old view is still active.
+      await this.fetchVisualizationOptions().catch(() => {
+        this.visualizationOptionsStore.signalDisplayMode =
+          previous.signalDisplayMode;
+      });
+      window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
+      throw error;
+    }
+    // The shared sidebar may show SECONDARY. Hydrate that source again instead
+    // of leaving the temporary primary palette in its controls.
+    window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
+    await this.mapManager.reloadTilesFromBackend();
+  }
+
   public async sendVisualizationOptionsToServer(options?: {
     skipAutoThresholdRefresh?: boolean;
     preserveCustomPipeline?: boolean;
@@ -1309,6 +1379,17 @@ class VisualizationManager {
     source: SourceName,
     targetId?: string | null
   ): Promise<VisualizationOptions> {
+    if (
+      source === "PRIMARY" &&
+      this.visualizationOptionsStore.signalDisplayMode !== "OBSERVED"
+    ) {
+      const result = await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        preserveCustomPipeline: true,
+      });
+      await this.mapManager.reloadTilesFromBackend();
+      return result;
+    }
     const pipelineConfig = await this.getActiveRenderPipelineConfig();
     if (!pipelineConfig) {
       return this.applyVisualizationSettingsAndReload();

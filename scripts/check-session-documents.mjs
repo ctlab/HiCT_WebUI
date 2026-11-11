@@ -34,8 +34,12 @@ const sandbox = {
     new URL("../src/app/core/mapmanagers/SessionDocument.ts", import.meta.url)
   ),
 };
-const { parseSessionDocument, createSessionEnvelope, MAX_SESSION_BYTES } =
-  sandbox.exports;
+const {
+  parseSessionDocument,
+  createSessionEnvelope,
+  MAX_SESSION_BYTES,
+  MAX_SESSION_VALUES,
+} = sandbox.exports;
 const valid = {
   version: 2,
   filename: "tiny.hict.hdf5",
@@ -112,7 +116,10 @@ assert.throws(
 let nested = {};
 for (let i = 0; i < 170; i++) nested = { child: nested };
 reject({ ...valid, extra: nested }, "nesting limit");
-reject({ ...valid, extra: Array(100001).fill(null) }, "too many values");
+reject(
+  { ...valid, extra: Array(MAX_SESSION_VALUES + 1).fill(null) },
+  "too many values"
+);
 console.log(
   "Session versions, finite coordinates, field shapes and resource bounds passed."
 );
@@ -198,18 +205,36 @@ reject(
   "name"
 );
 // A document with no recorded file identities cannot be restored safely.
-reject({ ...v3, snapshot: { ...snapshot, filesFingerprinted: false } }, "filesFingerprinted");
+reject(
+  { ...v3, snapshot: { ...snapshot, filesFingerprinted: false } },
+  "filesFingerprinted"
+);
 reject({ ...v3, format: "other" }, "format");
 reject({ ...v3, snapshot: [] }, "snapshot");
-reject({ ...v3, snapshot: { ...snapshot, snapshotVersion: 2 } }, "snapshotVersion");
+reject(
+  { ...v3, snapshot: { ...snapshot, snapshotVersion: 2 } },
+  "snapshotVersion"
+);
 reject({ ...v3, snapshot: { ...snapshot, primary: {} } }, "primary.filename");
-reject({ ...v3, snapshot: { ...snapshot, assemblySource: "BOTH" } }, "assemblySource");
-reject({ ...v3, snapshot: { ...snapshot, assemblySource: "SECONDARY" } }, "SECONDARY needs");
+reject(
+  { ...v3, snapshot: { ...snapshot, assemblySource: "BOTH" } },
+  "assemblySource"
+);
+reject(
+  { ...v3, snapshot: { ...snapshot, assemblySource: "SECONDARY" } },
+  "SECONDARY needs"
+);
 reject({ ...v3, snapshot: { ...snapshot, tracks: {} } }, "snapshot.tracks");
-reject({ ...v3, snapshot: { ...snapshot, renderPipeline: null } }, "renderPipeline");
+reject(
+  { ...v3, snapshot: { ...snapshot, renderPipeline: null } },
+  "renderPipeline"
+);
 reject({ ...v3, client: null }, "client");
 reject(
-  { ...v3, client: { ...client, workspace: { ...client.workspace, version: 2 } } },
+  {
+    ...v3,
+    client: { ...client, workspace: { ...client.workspace, version: 2 } },
+  },
   "workspace.version"
 );
 reject(
@@ -217,7 +242,10 @@ reject(
     ...v3,
     client: {
       ...client,
-      workspace: { ...client.workspace, view: { center: [1], resolution: 1, rotation: 0 } },
+      workspace: {
+        ...client.workspace,
+        view: { center: [1], resolution: 1, rotation: 0 },
+      },
     },
   },
   "client.workspace.view.center"
@@ -236,9 +264,16 @@ reject(
 );
 reject({ ...v3, version: 7 }, "newer HiCT");
 for (const mode of ["FILE", "SQRT_COVERAGE"])
-  parseSessionDocument(JSON.stringify({ ...v3, client: { ...client, normalizationWeights: mode } }));
-reject({ ...v3, client: { ...client, normalizationWeights: "AVERAGE" } }, "client.normalizationWeights");
-console.log("Version 3 envelope, identity requirement and client state validation passed.");
+  parseSessionDocument(
+    JSON.stringify({ ...v3, client: { ...client, normalizationWeights: mode } })
+  );
+reject(
+  { ...v3, client: { ...client, normalizationWeights: "AVERAGE" } },
+  "client.normalizationWeights"
+);
+console.log(
+  "Version 3 envelope, identity requirement and client state validation passed."
+);
 for (const filename of process.argv.slice(2))
   parseSessionDocument(fs.readFileSync(filename, "utf8"));
 console.log(
@@ -295,4 +330,53 @@ fullLibrary.client.savedVisualizationPresets[0].renderPipeline.upperExpression =
 assert.doesNotThrow(() => parseSessionDocument(JSON.stringify(fullLibrary)));
 console.log(
   "Complete preset graphs and editor layouts survive native session parsing with bounded deep expressions."
+);
+
+// Both assemblies share one value budget. The old 100,000-value limit rejected
+// real 1,765-contig overlays even though their documents were only about 2 MiB.
+const multiAssembly = {
+  contigDescriptors: Array.from({ length: 1765 }, (_, i) => ({
+    contigId: i,
+    contigName: `c${i}`,
+    contigOriginalName: `c${i}`,
+    contigSourceName: `c${i}`,
+    contigOffsetInSource: 0,
+    contigDirection: 1,
+    contigLengthBp: 17000,
+    contigLengthBins: Object.fromEntries(
+      Array.from({ length: 13 }, (_, j) => [j + 1, 17])
+    ),
+    contigPresenceAtResolution: Object.fromEntries(
+      Array.from({ length: 13 }, (_, j) => [j + 1, 1])
+    ),
+  })),
+  scaffoldDescriptors: Array.from({ length: 1765 }, (_, i) => ({
+    scaffoldId: i,
+    scaffoldName: `s${i}`,
+    scaffoldOriginalName: `s${i}`,
+    spacerLength: 1000,
+    scaffoldBordersBP: {
+      startBP: i * 17000,
+      endBP: (i + 1) * 17000,
+      lengthBp: 17000,
+    },
+  })),
+};
+const multi = createSessionEnvelope(
+  {
+    ...snapshot,
+    primary: { filename: "primary.hict.hdf5", assemblyInfo: multiAssembly },
+    secondary: { filename: "identity.hict.hdf5", assemblyInfo: multiAssembly },
+  },
+  client
+);
+const multiText = JSON.stringify(multi);
+assert.ok(new TextEncoder().encode(multiText).byteLength < MAX_SESSION_BYTES);
+assert.equal(
+  parseSessionDocument(multiText).snapshot.secondary.assemblyInfo
+    .contigDescriptors.length,
+  1765
+);
+console.log(
+  "Multi-resolution primary/secondary session descriptor budget passed."
 );
