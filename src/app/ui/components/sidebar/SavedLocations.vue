@@ -579,7 +579,6 @@ function goToContig(contigId: number): void {
   if (!map) return;
   const contig = contigList.value.find((c) => c.contigId === contigId);
   if (!contig) return;
-  const view = map.getView();
   const prefix = map.contigDimensionHolder.prefix_sum_bp;
   const ord = map.contigDimensionHolder.contigIdToOrd[contigId];
   if (ord === undefined || Number.isNaN(ord)) {
@@ -588,10 +587,7 @@ function goToContig(contigId: number): void {
   }
   const startBp = prefix[ord];
   const endBp = startBp + contig.contigLengthBp;
-  const midBp = (startBp + endBp) / 2;
-  const res = view.getResolution() ?? 1;
-  const midPx = midBp / res;
-  view.animate({ center: [midPx, -midPx] });
+  map.linearTrackManager.centerOnBpRange(startBp, endBp);
 }
 
 function goToScaffold(scaffoldId: number): void {
@@ -603,11 +599,7 @@ function goToScaffold(scaffoldId: number): void {
     toast.error("Scaffold has no borders in the current assembly");
     return;
   }
-  const view = map.getView();
-  const midBp = (borders.startBP + borders.endBP) / 2;
-  const res = view.getResolution() ?? 1;
-  const midPx = midBp / res;
-  view.animate({ center: [midPx, -midPx] });
+  map.linearTrackManager.centerOnBpRange(borders.startBP, borders.endBP);
 }
 
 function exportNames(): void {
