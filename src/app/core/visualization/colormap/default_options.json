@@ -163,7 +163,7 @@
             "maxSignal": 1
           }
         },
-        "name": "JBAT-like",
+        "name": "Red on white",
         "backgroundColor": "rgba(255,255,255,1)",
         "signalThresholds": {
           "lowerSignalBound": 0,
@@ -212,7 +212,7 @@
             "maxSignal": 1
           }
         },
-        "name": "Night JBAT-like",
+        "name": "Red on black",
         "backgroundColor": "rgba(0,0,0,1)",
         "signalThresholds": {
           "lowerSignalBound": 0,
