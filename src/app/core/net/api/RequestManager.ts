@@ -1,3 +1,4 @@
+import { BackgroundJobsRequest, CancelBackgroundJobRequest } from "./request";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -165,6 +166,34 @@ import { toast } from "vue-sonner";
 import { useSessionStore } from "@/app/stores/sessionStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 import { extractErrorMessage } from "./errorMessage";
+
+export interface BackgroundJobOutput {
+  mapFilename?: string | null;
+  filename: string;
+  action:
+    | "open_map"
+    | "download"
+    | "open_tracks"
+    | "attach_identity"
+    | "attach_dotplot"
+    | "fasta_only"
+    | "example";
+  fastaFilename?: string | null;
+  agpFilename?: string | null;
+}
+export interface BackgroundJob {
+  id: string;
+  kind: string;
+  state: string;
+  canCancel: boolean;
+  progress: number | null;
+  createdAtMs: number | null;
+  startedAtMs: number | null;
+  finishedAtMs: number | null;
+  message: string | null;
+  error: string | null;
+  outputs: BackgroundJobOutput[];
+}
 
 export type AlignmentDetailSegment = {
   rowStart: number;
@@ -804,11 +833,13 @@ class RequestManager {
     };
     return Promise.resolve()
       .then(() =>
-        axios.post(
-          `${host}/${path}`,
-          HiCTAPIRequestDTO.toDTOClass(request).toDTO(),
-          mergedConfig
-        )
+        mergedConfig.method === "GET"
+          ? axios.get(`${host}/${path}`, mergedConfig)
+          : axios.post(
+              `${host}/${path}`,
+              HiCTAPIRequestDTO.toDTOClass(request).toDTO(),
+              mergedConfig
+            )
       )
       .then((req) => {
         if (typeof req.data === "string") {
@@ -1171,6 +1202,26 @@ class RequestManager {
     if (status.mode === "FILE" || status.mode === "SQRT_COVERAGE")
       this.normalizationState.mode = status.mode;
     return status;
+  }
+
+  public async backgroundJobs(): Promise<BackgroundJob[]> {
+    return this.sendRequest(new BackgroundJobsRequest(), {
+      method: "GET",
+    }).then((response) => response.data as BackgroundJob[]);
+  }
+
+  public async cancelBackgroundJob(id: string): Promise<void> {
+    await this.sendRequest(new CancelBackgroundJobRequest(id));
+  }
+
+  public backgroundDownloadUrl(path: string): string {
+    if (
+      !/^\/(?:convert\/download\/[a-zA-Z0-9-]+|dotplot\/jobs\/[a-zA-Z0-9-]+\/download)$/.test(
+        path
+      )
+    )
+      throw new Error("Invalid job download path");
+    return `${this.networkManager.host.replace(/\/+$/, "")}${path}`;
   }
 
   public async listExamples(): Promise<ExamplesCatalogResponse> {

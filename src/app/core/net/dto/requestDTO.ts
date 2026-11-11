@@ -1,3 +1,7 @@
+import {
+  BackgroundJobsRequest,
+  CancelBackgroundJobRequest,
+} from "../api/request";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -127,6 +131,12 @@ abstract class HiCTAPIRequestDTO<
 
   static toDTOClass(entity: HiCTAPIRequest) {
     switch (true) {
+      case entity instanceof BackgroundJobsRequest:
+        return { toDTO: () => ({}) };
+      case entity instanceof CancelBackgroundJobRequest:
+        return {
+          toDTO: () => ({ id: (entity as CancelBackgroundJobRequest).id }),
+        };
       case entity instanceof AlignmentDetailRequest:
         return { toDTO: () => (entity as AlignmentDetailRequest).options };
       case entity instanceof SequenceAnalysisRequest:

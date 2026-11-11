@@ -17,7 +17,6 @@
             type="button"
             class="btn-close"
             aria-label="Close"
-            :disabled="busy"
             @click="emit('dismissed')"
           ></button>
         </header>
@@ -335,7 +334,6 @@
             Cancel search
           </button>
           <button
-            v-if="!busy"
             type="button"
             class="btn btn-outline-secondary"
             @click="emit('dismissed')"
@@ -442,7 +440,6 @@ let tracksBeforeDelivery: Set<string> | undefined;
 useEscDismissableDialog({
   priority: 1070,
   isOpen: () => true,
-  canClose: () => !busy.value,
   requestClose: () => emit("dismissed"),
 });
 onBeforeUnmount(() => {

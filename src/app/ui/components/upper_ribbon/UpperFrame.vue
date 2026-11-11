@@ -25,6 +25,7 @@
       ref="navigationBar"
       :networkManager="props.networkManager"
       :mapManager="props.mapManager"
+      @jobResult="emit('jobResult', $event)"
       @selected="onFileSelected"
       @closed="onClosed"
       @attached="onAttached"
@@ -41,12 +42,14 @@
 </template>
 
 <script setup lang="ts">
+import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
 import { ref } from "vue";
 import NavigationBar from "@/app/ui/components/upper_ribbon/NavigationBar.vue";
 import HeaderRibbon from "@/app/ui/components/upper_ribbon/HeaderRibbon.vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 const emit = defineEmits<{
+  (e: "jobResult", output: BackgroundJobOutput): void;
   (e: "selected", filename: string): void;
   (e: "closed"): void;
   (e: "attached"): void;

@@ -41,7 +41,6 @@
               type="button"
               class="btn-close"
               aria-label="Close"
-              :disabled="busy"
               @click="requestClose"
             ></button>
           </div>
@@ -165,7 +164,7 @@
               class="btn btn-secondary"
               @click="requestClose"
             >
-              {{ busy ? "Cancel" : "Close" }}
+              Close
             </button>
           </div>
         </div>
@@ -234,6 +233,7 @@ async function start(): Promise<void> {
       minNRun: parsedRun.value ?? 100,
     });
     for (;;) {
+      if (disposed) return;
       progress.value = status.progress;
       message.value = status.message;
       if (status.state === "READY") {
@@ -262,15 +262,6 @@ async function start(): Promise<void> {
 }
 
 async function requestClose(): Promise<void> {
-  if (busy.value) {
-    // Cancelling stops the job; the loop in start() then ends on its own.
-    try {
-      await props.requests.cancelFastaOnly();
-    } catch (failure) {
-      console.debug("Cancel failed", failure);
-    }
-    return;
-  }
   emit("dismissed");
 }
 

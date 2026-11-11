@@ -31,6 +31,15 @@ interface HiCTAPIRequest {
   requestPath: string;
 }
 
+export class BackgroundJobsRequest implements HiCTAPIRequest {
+  requestPath = "/jobs";
+}
+
+export class CancelBackgroundJobRequest implements HiCTAPIRequest {
+  requestPath = "/jobs/cancel";
+  constructor(public readonly id: string) {}
+}
+
 export type AlignmentDetailOptions =
   | { jobId: string }
   | {

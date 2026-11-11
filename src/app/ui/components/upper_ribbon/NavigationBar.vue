@@ -22,6 +22,10 @@
 <template>
   <nav class="navbar-bar navbar navbar-expand">
     <div class="container-fluid">
+      <BackgroundJobsPanel
+        :requests="props.networkManager.requestManager"
+        @open="emit('jobResult', $event)"
+      />
       <!-- Logo -->
       <a class="navbar-brand hict-navbar-brand" href="#">
         <img
@@ -1112,6 +1116,8 @@
 </template>
 
 <script setup lang="ts">
+import BackgroundJobsPanel from "./BackgroundJobsPanel.vue";
+import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
 import { reportFailure } from "@/app/ui/reportFailure";
 import { AgpImportCancelledError } from "@/app/core/net/agpImportChoice";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
@@ -1246,6 +1252,7 @@ useModalFocus(aboutElement, () => aboutOpen.value);
 useModalFocus(osdSettingsElement, () => osdSettingsOpen.value);
 
 const emit = defineEmits<{
+  (e: "jobResult", output: BackgroundJobOutput): void;
   (e: "selected", filename: string): void;
   (e: "closed"): void;
   (e: "attached"): void;

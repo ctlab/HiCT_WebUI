@@ -197,6 +197,7 @@
       ref="upperFrame"
       :networkManager="networkManager"
       :mapManager="mapManager"
+      @jobResult="openJobResult"
       @selected="onFileSelected"
       @closed="onClosed"
       @attached="onAttached"
@@ -310,6 +311,8 @@
 </template>
 
 <script setup lang="ts">
+import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
+import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
 import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
 import { failureDetails, reportFailure } from "@/app/ui/reportFailure";
 import { rememberedExcludedBinsPolicy } from "@/app/core/visualization/excludedBinsMemory";
@@ -901,6 +904,82 @@ async function openFileWithOptions(
     }
   } finally {
     stopOpenProgress();
+  }
+}
+
+async function openJobResult(output: BackgroundJobOutput): Promise<void> {
+  try {
+    const requests = networkManager.requestManager;
+    if (output.action === "example") {
+      const catalog = await requests.listExamples();
+      const example = catalog.examples.find(
+        (item) => item.id === output.filename
+      );
+      if (!example) throw new Error("The example is no longer in the catalog");
+      await openExampleInWizard({ example, folder: `examples/${example.id}` });
+    } else if (output.action === "fasta_only") {
+      await openFastaOnly({
+        state: "READY",
+        outputFilename: output.filename,
+        fastaFilename: output.fastaFilename ?? null,
+        agpFilename: output.agpFilename ?? null,
+        warnings: [],
+        contigCount: 0,
+        totalBases: 0,
+        progress: 1,
+        message: "Finished",
+        error: null,
+        reused: true,
+      });
+    } else if (output.action === "open_map") {
+      if (await confirmDiscardUnsavedEdits("open this job result"))
+        await openFileWithOptions(
+          output.filename,
+          output.fastaFilename ?? undefined
+        );
+    } else {
+      const manager = mapManager.value;
+      if (!manager) throw new Error("Open the result's original map first");
+      if (
+        output.mapFilename &&
+        manager.getOptions().filename !== output.mapFilename
+      )
+        throw new Error(
+          `Open ${output.mapFilename} before displaying this result`
+        );
+      if (output.action === "open_tracks") {
+        const tracks = manager.linearTrackManager;
+        await tracks.refreshTrackList(false);
+        if (
+          !tracks
+            .getTracksSnapshot()
+            .some((track) => track.sourceFile === output.filename)
+        )
+          await tracks.openTrack(output.filename, "Sequence search", false);
+        const track = tracks
+          .getTracksSnapshot()
+          .find((item) => item.sourceFile === output.filename);
+        if (!track) throw new Error("The result track could not be opened");
+        if (!track.visible)
+          await tracks.updateTrack(track.trackId, { visible: true });
+        tracks.setTrackVisibleOnAxis(track.trackId, "horizontal", true);
+        tracks.setTrackVisibleOnAxis(track.trackId, "vertical", true);
+        manager.scheduleWorkspaceLayoutRefresh();
+      } else if (
+        output.action === "attach_identity" ||
+        output.action === "attach_dotplot"
+      ) {
+        const status = await requests.openSecondarySource(output.filename);
+        await displaySequenceOverlay(
+          manager,
+          "below",
+          output.action === "attach_identity" ? "moddotplot" : "dotplot",
+          status
+        );
+      }
+    }
+  } catch (failure) {
+    reportFailure("Open job result", failure);
   }
 }
 
