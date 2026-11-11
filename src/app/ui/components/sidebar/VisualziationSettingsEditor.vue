@@ -236,6 +236,7 @@ import SignalRangeControl from "./SignalRangeControl.vue";
 import NormalizationSelector from "../upper_ribbon/NormalizationSelector.vue";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import { toast } from "vue-sonner";
+import { reportFailure } from "@/app/ui/reportFailure";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
@@ -784,6 +785,10 @@ function updateFromStore() {
 }
 
 function applySettings() {
+  if (liveApplyTimer !== undefined) {
+    window.clearTimeout(liveApplyTimer);
+    liveApplyTimer = undefined;
+  }
   if (!(upperBound.value > lowerBound.value)) {
     toast.error(
       "Signal range must be positive: lower threshold must be below upper threshold."
@@ -798,7 +803,7 @@ function applySettings() {
       )
     : props.mapManager?.visualizationManager.applyVisualizationSettingsAndReload();
   action?.catch((error) => {
-    toast.error(String(error ?? "Failed to apply visualization settings"));
+    reportFailure("Apply visualization settings", error);
   });
 }
 
@@ -813,7 +818,7 @@ function onCoolerWeightsNaNPolicyChanged(): void {
   manager.visualizationManager
     .applyCoolerWeightsPolicy(coolerWeightsNaNPolicy.value, keepWeights)
     .catch((error) => {
-      toast.error(String(error ?? "Failed to apply Cooler weight policy"));
+      reportFailure("Apply Cooler weight policy", error);
     });
 }
 

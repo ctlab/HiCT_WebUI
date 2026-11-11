@@ -201,26 +201,6 @@ const safeColorTranslator = (
   }
 };
 
-const withAlphaZero = (value: unknown, fallback: string): string => {
-  if (typeof value === "string") {
-    const normalized = value.trim();
-    if (/^#[0-9a-f]{8}$/i.test(normalized)) {
-      return `${normalized.slice(0, 7)}00`;
-    }
-    if (/^#[0-9a-f]{6}$/i.test(normalized)) {
-      return `${normalized}00`;
-    }
-  }
-  try {
-    const translated = new ColorTranslator(String(value ?? fallback), {
-      legacyCSS: true,
-    });
-    return `${translated.HEXA.slice(0, 7)}00`;
-  } catch {
-    return fallback;
-  }
-};
-
 const extractPipelineSignalProfile = (
   expression: unknown
 ): PipelineSignalProfile | null => {
@@ -315,59 +295,7 @@ const collectConfigColormapTargets = (
   return targets;
 };
 
-const collectTopLayerSources = (
-  expression: unknown,
-  output: Set<SourceName>
-): void => {
-  if (!isRecord(expression)) {
-    return;
-  }
-  if (
-    String(expression.type ?? "")
-      .trim()
-      .toLowerCase() === "pixel_blend"
-  ) {
-    const topTargets: ColormapTarget[] = [];
-    collectColormapTargets(expression.top, topTargets);
-    topTargets.forEach((target) => output.add(target.profile.source));
-  }
-  [
-    "input",
-    "left",
-    "right",
-    "top",
-    "bottom",
-    "c1",
-    "c2",
-    "c3",
-    "alpha",
-  ].forEach((key) => {
-    if (key in expression) {
-      collectTopLayerSources(expression[key], output);
-    }
-  });
-};
-
 const cloneRecord = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-
-const isTransparentMinimumColor = (color: unknown): boolean =>
-  typeof color === "string" &&
-  /^#[0-9a-f]{8}$/i.test(color.trim()) &&
-  color.trim().slice(7).toLowerCase() === "00";
-
-const preserveMinimumAlpha = (
-  nextColor: unknown,
-  previousColor: unknown
-): unknown => {
-  if (
-    typeof nextColor !== "string" ||
-    !/^#[0-9a-f]{8}$/i.test(nextColor.trim()) ||
-    !isTransparentMinimumColor(previousColor)
-  ) {
-    return nextColor;
-  }
-  return `${nextColor.trim().slice(0, 7)}00`;
-};
 
 const replaceColormapNode = (
   target: ColormapTarget,
@@ -377,17 +305,13 @@ const replaceColormapNode = (
   // Signal edits (transform, scaling, weights) arrive as a rebuilt canonical input. A custom graph
   // gets none, so its processing is never reconstructed by colour or contrast edits.
   if (signalInput) target.node.input = signalInput;
-  const previousStartColor = target.node.startColor;
   const previousMode = String(target.node.mode ?? "LINEAR").toUpperCase();
   target.node.type = "colormap";
   target.node.mode =
     previousMode === "MODDOTPLOT_IDENTITY"
       ? "MODDOTPLOT_IDENTITY"
       : replacement.mode ?? "LINEAR";
-  target.node.startColor = preserveMinimumAlpha(
-    replacement.startColor,
-    previousStartColor
-  );
+  target.node.startColor = replacement.startColor;
   target.node.endColor = replacement.endColor;
   target.node.minSignal = replacement.minSignal;
   target.node.maxSignal = replacement.maxSignal;
@@ -408,8 +332,7 @@ const replaceColormapNode = (
 
 const visualizationOptionsFromTarget = (
   target: ColormapTarget,
-  currentOptions: VisualizationOptions,
-  forceTransparentMinimum = false
+  currentOptions: VisualizationOptions
 ): VisualizationOptions =>
   new VisualizationOptions(
     target.profile.preLogBase ?? -1,
@@ -418,12 +341,7 @@ const visualizationOptionsFromTarget = (
     target.profile.resolutionScaling,
     target.profile.resolutionLinearScaling,
     new SimpleLinearGradient(
-      safeColorTranslator(
-        forceTransparentMinimum
-          ? withAlphaZero(target.node.startColor, "#ffffff00")
-          : target.node.startColor,
-        "#ffffff00"
-      ),
+      safeColorTranslator(target.node.startColor, "#ffffff00"),
       safeColorTranslator(target.node.endColor, "#006000ff"),
       target.minSignal,
       target.maxSignal
@@ -435,45 +353,6 @@ const visualizationOptionsFromTarget = (
     currentOptions.coolerWeightsHaveNaNs,
     currentOptions.coolerWeightsNaNCount
   );
-
-const forceMinimumAlphaZero = (target: ColormapTarget): void => {
-  const color = target.node.startColor;
-  if (typeof color === "string" && /^#[0-9a-f]{8}$/i.test(color.trim())) {
-    target.node.startColor = `${color.trim().slice(0, 7)}00`;
-  }
-};
-
-const applyTopLayerTransparency = (
-  expression: unknown,
-  source: SourceName
-): void => {
-  if (!isRecord(expression)) {
-    return;
-  }
-  if (expression.type === "pixel_blend") {
-    const topTargets: ColormapTarget[] = [];
-    collectColormapTargets(expression.top, topTargets);
-    topTargets
-      .filter((target) => target.profile.source === source)
-      .forEach(forceMinimumAlphaZero);
-  }
-  [
-    "input",
-    "left",
-    "right",
-    "upper",
-    "lower",
-    "bottom",
-    "c1",
-    "c2",
-    "c3",
-    "alpha",
-  ].forEach((key) => {
-    if (key in expression) {
-      applyTopLayerTransparency(expression[key], source);
-    }
-  });
-};
 
 const swapPixelBlendLayers = (expression: unknown): boolean => {
   if (!isRecord(expression)) {
@@ -677,9 +556,6 @@ class VisualizationManager {
         : this.visualizationOptionsStore.asVisualizationOptions();
     }
     const targets = collectConfigColormapTargets(pipelineConfig);
-    const topLayerSources = new Set<SourceName>();
-    collectTopLayerSources(pipelineConfig.upperExpression, topLayerSources);
-    collectTopLayerSources(pipelineConfig.lowerExpression, topLayerSources);
     const sourceTargets = targets.filter(
       (candidate) => candidate.profile.source === source
     );
@@ -691,8 +567,7 @@ class VisualizationManager {
     }
     const options = visualizationOptionsFromTarget(
       target,
-      this.visualizationOptionsStore.asVisualizationOptions(),
-      topLayerSources.has(source)
+      this.visualizationOptionsStore.asVisualizationOptions()
     );
     if (loadGeneration === this.visualizationOptionsLoadGeneration) {
       this.visualizationOptionsStore.setVisualizationOptions(options);
@@ -804,8 +679,6 @@ class VisualizationManager {
         changed = true;
       }
     }
-    applyTopLayerTransparency(config.upperExpression, source);
-    applyTopLayerTransparency(config.lowerExpression, source);
     return changed;
   }
 
@@ -1457,16 +1330,16 @@ class VisualizationManager {
       return hydrated;
     }
 
-    await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
-      pipelineConfig
-    );
-    // The server keeps the primary options next to the pipeline. Keep them in step with what the
-    // graph now does, so a saved session and the sidebar describe the same signal.
+    // Publish primary options and their graph in the existing atomic transaction.
     if (source === "PRIMARY") {
       await this.sendVisualizationOptionsToServer({
         skipAutoThresholdRefresh: true,
-        preserveCustomPipeline: true,
+        renderPipeline: pipelineConfig,
       });
+    } else {
+      await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
+        pipelineConfig
+      );
     }
     const hydrated = await this.loadVisualizationOptionsForSource(
       source,
