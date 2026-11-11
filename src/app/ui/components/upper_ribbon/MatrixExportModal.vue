@@ -189,7 +189,8 @@
                 <option value="lzf" disabled>lzf (unavailable)</option>
               </select>
               <small class="text-muted">
-                Cooler export supports Deflate. Level 0 disables compression.
+                Cooler export supports Deflate. Level 0 leaves interaction data
+                uncompressed.
               </small>
             </div>
             <div class="col-md-2">
