@@ -1811,6 +1811,7 @@ class ContactMapManager {
     this.viewAndLayersManager.selectionInteractions.translocationArrowSelectionInteraction.unset(
       "endContigId"
     );
+    this.viewAndLayersManager.refreshTranslocationArrows();
   }
 
   public deactivateScissors(): void {
