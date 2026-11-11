@@ -244,7 +244,10 @@
               Balance exported Cooler with hictk
             </label>
           </div>
-          <small v-if="exportMode === 'internal'" class="text-muted d-block mb-3">
+          <small
+            v-if="exportMode === 'internal'"
+            class="text-muted d-block mb-3"
+          >
             Balancing requires auto or hictk-assisted export.
           </small>
           <small v-else class="text-muted d-block mb-3">
