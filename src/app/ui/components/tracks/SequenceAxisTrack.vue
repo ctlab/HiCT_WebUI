@@ -44,6 +44,11 @@
   </FloatingTrackTooltip>
 </template>
 <script setup lang="ts">
+import {
+  SEQUENCE_LETTER_FONT,
+  sequenceLetterMinimumPixels,
+} from "@/app/core/visualization/sequenceLetterMetrics";
+
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import {
   complementBase,
@@ -379,28 +384,13 @@ function setVisible(value: boolean) {
 }
 // Letters appear once a base is wide enough for its widest glyph and stay until it is clearly
 // too narrow, so a zoom that hovers at the limit does not make the strip flicker.
-const LETTER_FONT = "bold 14px 'HiCT Sans', sans-serif";
+const LETTER_FONT = SEQUENCE_LETTER_FONT;
 let lettersShown = false;
-let measuredGlyphWidth: number | undefined;
-function glyphWidth(): number {
-  if (measuredGlyphWidth !== undefined) return measuredGlyphWidth;
-  const probe = document.createElement("canvas").getContext("2d");
-  if (!probe) return 10;
-  probe.font = LETTER_FONT;
-  const widest = Math.max(
-    ...["A", "C", "G", "T", "N", "W"].map((ch) => probe.measureText(ch).width)
-  );
-  // Fonts still loading report fallback metrics: do not cache until a real width is seen.
-  if (!(widest > 0)) return 10;
-  measuredGlyphWidth = widest;
-  return widest;
-}
 /** `bpPerCssPixel` is the span of one CSS pixel on the sequence axis. */
 function lettersFit(bpPerCssPixel: number): boolean {
   if (!(bpPerCssPixel > 0)) return false;
-  const pixelsPerBase = 1 / bpPerCssPixel;
-  const needed = glyphWidth() + 3;
-  return lettersShown ? pixelsPerBase >= needed * 0.9 : pixelsPerBase >= needed;
+  const needed = sequenceLetterMinimumPixels();
+  return 1 / bpPerCssPixel >= needed * (lettersShown ? 0.9 : 1);
 }
 /** Many events (center, resolution, moveend) fire per frame: coalesce them into one render pass. */
 function schedule() {

@@ -21,7 +21,7 @@ export interface SequenceSearchSettings {
 
 export interface SequenceAnalysisJob {
   jobId: string;
-  kind: "search" | "dotplot" | "moddotplot";
+  kind: "search" | "dotplot" | "moddotplot" | "alignment_detail";
   status:
     | "submitted"
     | "preparing"

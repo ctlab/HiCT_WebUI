@@ -33,6 +33,13 @@
     >
       Loading overlay…
     </div>
+    <div
+      v-if="props.mapManager?.alignmentDetail?.state.message.value"
+      class="overlay-loading"
+      role="status"
+    >
+      {{ props.mapManager.alignmentDetail.state.message.value }}
+    </div>
     <div id="hic-contact-map" :style="mapContainerStyle" ref="mapTarget"></div>
     <div
       class="zoom-slider-overlay"

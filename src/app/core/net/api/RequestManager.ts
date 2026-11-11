@@ -56,6 +56,8 @@ import {
 } from "../SourceCapabilities";
 import type { NetworkManager } from "../NetworkManager";
 import {
+  AlignmentDetailRequest,
+  type AlignmentDetailOptions,
   GetAGPForAssemblyRequest,
   GetCurrentSignalRangeRequest,
   GetFastaForAssemblyRequest,
@@ -163,6 +165,28 @@ import { toast } from "vue-sonner";
 import { useSessionStore } from "@/app/stores/sessionStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 import { extractErrorMessage } from "./errorMessage";
+
+export type AlignmentDetailSegment = {
+  rowStart: number;
+  rowEnd: number;
+  columnStart: number;
+  columnEnd: number;
+  operation: "MATCH" | "SUBSTITUTION" | "INSERTION" | "DELETION" | "AMBIGUOUS";
+  reverse: boolean;
+  alignment: number;
+};
+
+export type AlignmentDetailResponse = {
+  jobId: string;
+  status: "submitted" | "running" | "finished" | "failed" | "cancelled";
+  error?: string;
+  result?: {
+    coordinateSystem: "ASSEMBLY_BP" | "PADDED_SEQUENCE";
+    segments: AlignmentDetailSegment[];
+    alignmentCount: number;
+    message?: string;
+  };
+};
 
 export type SecondarySourceCompatibility = {
   sameResolutions: boolean;
@@ -757,7 +781,8 @@ class RequestManager {
     const summary = this.history.applied;
     const sequenceSnapshot =
       request.requestPath.startsWith("/sequence/") &&
-      request.requestPath.endsWith("/jobs");
+      (request.requestPath.endsWith("/jobs") ||
+        request.requestPath === "/sequence/alignment_detail");
     const historyHeaders =
       (mutation ||
         sequenceSnapshot ||
@@ -1688,6 +1713,15 @@ class RequestManager {
         );
       })
       .catch(() => "Changelog for this build was not detected");
+  }
+
+  public async queryAlignmentDetail(
+    options: AlignmentDetailOptions,
+    signal?: AbortSignal
+  ): Promise<AlignmentDetailResponse> {
+    return (
+      await this.sendRequest(new AlignmentDetailRequest(options), { signal })
+    ).data;
   }
 
   public async querySequenceRegion(

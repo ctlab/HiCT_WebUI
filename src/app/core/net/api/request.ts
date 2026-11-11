@@ -31,6 +31,21 @@ interface HiCTAPIRequest {
   requestPath: string;
 }
 
+export type AlignmentDetailOptions =
+  | { jobId: string }
+  | {
+      rowStart: number;
+      rowEnd: number;
+      columnStart: number;
+      columnEnd: number;
+      includeGaps?: boolean;
+    };
+
+export class AlignmentDetailRequest implements HiCTAPIRequest {
+  requestPath = "/sequence/alignment_detail";
+  constructor(public readonly options: AlignmentDetailOptions) {}
+}
+
 export class GetSessionSnapshotRequest implements HiCTAPIRequest {
   requestPath = "/session/snapshot";
   constructor(

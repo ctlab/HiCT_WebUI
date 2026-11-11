@@ -20,6 +20,7 @@
  */
 
 import {
+  AlignmentDetailRequest,
   GetSessionSnapshotRequest,
   RestoreSessionRequest,
   ListFilesRequest,
@@ -126,6 +127,8 @@ abstract class HiCTAPIRequestDTO<
 
   static toDTOClass(entity: HiCTAPIRequest) {
     switch (true) {
+      case entity instanceof AlignmentDetailRequest:
+        return { toDTO: () => (entity as AlignmentDetailRequest).options };
       case entity instanceof SequenceAnalysisRequest:
         return { toDTO: () => (entity as SequenceAnalysisRequest).options };
       case entity instanceof AssemblyHistoryRequest:

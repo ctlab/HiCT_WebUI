@@ -45,6 +45,7 @@ import { CurrentSignalRangeResponse } from "../net/api/response";
 import { VisualizationManager } from "./VisualizationManager";
 import { Ref, markRaw } from "vue";
 import { VersionedXYZContactMapSource } from "../VersionedXYZSource";
+import { AlignmentDetailLayer } from "./AlignmentDetailLayer";
 import { LinearTrackManager } from "./LinearTrackManager";
 import { useStyleStore } from "@/app/stores/styleStore";
 
@@ -127,6 +128,8 @@ class ContactMapManager {
     this.workspaceLayoutRefreshShouldRenderTracks = false;
   }
 
+  public alignmentDetail?: AlignmentDetailLayer;
+
   public initializeMap(): void {
     this.map.setTarget(this.options.mapTargetSelector);
     this.sizeObserver = new ResizeObserver(() => {
@@ -140,6 +143,7 @@ class ContactMapManager {
     this.viewAndLayersManager.initializeTracks();
     this.initializeMapInteractions();
     this.initializeMapControls();
+    this.alignmentDetail = markRaw(new AlignmentDetailLayer(this));
     void this.linearTrackManager.refreshTrackList();
   }
 
@@ -1739,6 +1743,8 @@ class ContactMapManager {
   public dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.alignmentDetail?.dispose();
+    this.alignmentDetail = undefined;
     this.sequenceRenderers.clear();
     this.sequenceViewExporter = undefined;
     this.visualizationManager.dispose();
