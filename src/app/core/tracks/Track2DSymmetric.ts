@@ -280,7 +280,26 @@ abstract class Track2DSymmetric extends Track2D {
     return 0;
   }
 
-  /** Text offsets stay in CSS pixels at every zoom and matrix resolution. */
+  /** Let ruler bands carry names at whole-map scales. Contigs collapsed at this
+   * pyramid level count toward density. This linear median test avoids sorting.
+   * Export calls without a viewport retain their explicit label layout. */
+  protected shouldPaintEntityNames(
+    prefixSum: readonly number[],
+    scale: number,
+    viewport?: TrackViewport
+  ): boolean {
+    if (!viewport) return true;
+    const minimumSpan = (3 * viewport.resolution) / scale;
+    let visible = 0,
+      readable = 0;
+    for (let i = 1; i < prefixSum.length; i++) {
+      const span = prefixSum[i] - prefixSum[i - 1];
+      visible++;
+      if (span > 0 && span >= minimumSpan) readable++;
+    }
+    return visible > 0 && readable * 2 >= visible;
+  }
+
   protected labelLayout(
     label: string,
     from: number,
@@ -729,6 +748,11 @@ class ContigBordersTrack2D extends WithRing {
       const [firstOrder, endOrder] = viewport
         ? this.visibleContigOrderRange(prefixSum, pixelResolution, viewport)
         : [0, holder.contigDescriptors.length];
+      const paintNames = this.shouldPaintEntityNames(
+        prefixSum,
+        pixelResolution,
+        viewport
+      );
       const labelCandidates: LabelCandidate[] = [];
       for (
         let contigOrder = firstOrder;
@@ -780,13 +804,15 @@ class ContigBordersTrack2D extends WithRing {
               this.features.get(resolution)?.push(polygonFeature);
             }
 
-            const layout = this.labelLayout(
-              cd.contigName,
-              fromPx,
-              toPx,
-              pixelResolution,
-              viewport
-            );
+            const layout = paintNames
+              ? this.labelLayout(
+                  cd.contigName,
+                  fromPx,
+                  toPx,
+                  pixelResolution,
+                  viewport
+                )
+              : undefined;
             if (layout) {
               const labelFeature = new Feature({
                 name: `ContigName-${cd.contigName}-bp${resolution}`,
@@ -876,6 +902,17 @@ class ScaffoldBordersTrack2D extends WithRing {
       targetBpResolution === undefined
         ? Array.from(holder.prefix_sum_px.keys())
         : [targetBpResolution];
+    const paintNames = new Map(
+      resolutions.map((resolution) => [
+        resolution,
+        this.shouldPaintEntityNames(
+          holder.prefix_sum_px.get(resolution) ?? [],
+          viewAndLayersManager.getPixelResolutionForBpResolution(resolution) ??
+            1,
+          viewport
+        ),
+      ])
+    );
     const labelCandidates = new Map<number, LabelCandidate[]>();
     this.mapManager.scaffoldHolder.scaffoldTable.forEach(
       (scaffoldDescriptor) => {
@@ -948,13 +985,15 @@ class ScaffoldBordersTrack2D extends WithRing {
             this.features.get(bpResolution)?.push(polygonFeature);
           }
 
-          const layout = this.labelLayout(
-            scaffoldDescriptor.scaffoldName,
-            fromPx,
-            toPx,
-            pixelResolution,
-            viewport
-          );
+          const layout = paintNames.get(bpResolution)
+            ? this.labelLayout(
+                scaffoldDescriptor.scaffoldName,
+                fromPx,
+                toPx,
+                pixelResolution,
+                viewport
+              )
+            : undefined;
           if (layout) {
             const labelFeature = new Feature({
               name: `ScaffoldName-${scaffoldDescriptor.scaffoldName}-bp${bpResolution}`,
