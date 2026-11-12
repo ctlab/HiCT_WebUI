@@ -155,7 +155,7 @@
     </p>
 
     <p
-      v-if="legacyPreLog || autoThresholdEnabled"
+      v-if="signalEditable && (legacyPreLog || autoThresholdEnabled)"
       id="legacy-signal-summary"
       class="small text-muted legacy-summary"
       role="status"

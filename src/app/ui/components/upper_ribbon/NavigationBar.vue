@@ -64,7 +64,7 @@
                   href="#"
                   title="Make an assembly from a FASTA file with no contact data"
                   @click.prevent="emit('fastaOnlyRequested')"
-                  >Open FASTA only...</a
+                  >Open FASTA only…</a
                 >
               </li>
               <li>
@@ -167,7 +167,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onApplyJuiceboxAssembly"
-                  >Apply Juicebox assembly</a
+                  >Apply .assembly file…</a
                 >
               </li>
               <li><hr class="dropdown-divider" /></li>
@@ -215,7 +215,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onOpenTrackManager"
-                  >Tracks and layers...</a
+                  >Tracks and layers…</a
                 >
               </li>
               <li>
@@ -224,7 +224,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onOpenRenderingPipeline"
-                  >Rendering pipeline...</a
+                  >Rendering pipeline…</a
                 >
               </li>
               <li>
@@ -241,7 +241,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="openResolutionSettings"
-                  >Restrict Resolutions...</a
+                  >Restrict Resolutions…</a
                 >
               </li>
               <li>
@@ -449,7 +449,7 @@
                   href="#"
                   @click.prevent="onOpenServerStatistics"
                 >
-                  Runtime statistics...
+                  Runtime statistics…
                 </a>
               </li>
               <li>
@@ -458,7 +458,7 @@
                   href="#"
                   @click.prevent="onOpenWorkerDiagnostics"
                 >
-                  Worker diagnostics...
+                  Worker diagnostics…
                 </a>
               </li>
               <li><hr class="dropdown-divider" /></li>
@@ -502,7 +502,7 @@
               </li>
               <li>
                 <a class="dropdown-item" href="#" @click.prevent="onOpenApiDocs"
-                  >API docs...</a
+                  >API docs…</a
                 >
               </li>
               <li>
@@ -510,7 +510,7 @@
                   class="dropdown-item"
                   href="#"
                   @click.prevent="emit('examplesRequested')"
-                  >Examples...</a
+                  >Examples…</a
                 >
               </li>
               <li>
@@ -569,8 +569,10 @@
             :title="
               linkedFastaFilename || 'No FASTA linked. Click to link one.'
             "
+            :aria-label="linkedFastaFilename ? 'Relink FASTA' : 'Link FASTA'"
             @click="onOpenFASTAFile"
           >
+            <i class="bi bi-link-45deg" aria-hidden="true"></i>
             FASTA:
             {{
               linkedFastaFilename
@@ -636,9 +638,9 @@
     @selected="onJuiceboxAssemblySelected"
     @dismissed="onJuiceboxAssemblyFileDismissed"
     :error-message="errorMessage"
-    :title="'Apply Juicebox assembly'"
+    :title="'Apply .assembly file'"
     :file-type="'.agp, .assembly'"
-    :note="'Select a Juicebox .assembly to convert it to AGP and apply it to the current map state. If you also have the original contig FASTA, selecting it will improve contig-border matching; otherwise the apply step will run in best-effort mode.'"
+    :note="'Select an .assembly file to convert it to AGP and apply it to the current map state. If you also have the original contig FASTA, selecting it will improve contig-border matching; otherwise the apply step will run in best-effort mode.'"
     :file-name-predicate="isAssemblyFilename"
   ></UniversalFileSelector>
   <UniversalFileSelector
@@ -732,7 +734,7 @@
       aria-modal="true"
     >
       <div class="settings-header">
-        <h2 id="juicebox-fasta-title">Apply Juicebox assembly</h2>
+        <h2 id="juicebox-fasta-title">Apply .assembly file…</h2>
         <button
           class="btn-close"
           type="button"
@@ -744,7 +746,7 @@
         <p>
           Link the original contig FASTA for exact contig matching? It is
           optional, but recommended when you have the FASTA used to build this
-          Juicebox assembly. Without it the assembly is applied in best-effort
+          .assembly layout. Without it the assembly is applied in best-effort
           mode.
         </p>
       </div>
@@ -1079,7 +1081,7 @@
             class="spinner-border spinner-border-sm"
             aria-hidden="true"
           ></span>
-          <span>Loading changelog...</span>
+          <span>Loading changelog…</span>
         </div>
         <div
           v-else
@@ -2101,7 +2103,7 @@ async function applyPendingJuiceboxAssembly(): Promise<void> {
   const fastaFilename = pendingJuiceboxAssemblyFastaFilename.value;
   if (!fastaFilename) {
     toast.message(
-      "No original FASTA selected. Applying the Juicebox assembly in best-effort mode; contig-border issues may remain.",
+      "No original FASTA selected. Applying the .assembly layout in best-effort mode; contig-border issues may remain.",
       {
         style: {
           "background-color": "lightyellow",
@@ -2125,7 +2127,7 @@ async function applyPendingJuiceboxAssembly(): Promise<void> {
   pendingJuiceboxAssemblyFastaFilename.value = "";
   openingJuiceboxAssemblyFile.value = false;
   openingJuiceboxAssemblyFastaFile.value = false;
-  toast.success("Juicebox assembly applied");
+  toast.success("Assembly layout applied");
 }
 
 function onJuiceboxAssemblySelected(filename: string): void {

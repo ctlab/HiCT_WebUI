@@ -364,7 +364,7 @@ const ROLE_LABELS: Record<string, string> = {
   matrix: "Hi-C map",
   fasta: "sequence",
   agp: "AGP layout",
-  assembly: "Juicebox assembly",
+  assembly: "Assembly layout (.assembly)",
   track: "track",
 };
 const roleLabel = (role: string) => ROLE_LABELS[role] ?? role;
