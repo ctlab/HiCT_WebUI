@@ -188,23 +188,14 @@
       </div>
     </div>
     <div id="right-header-block" class="header-block">
-      <button
-        id="reload-tiles-button"
-        class="btn btn-sm btn-outline-primary"
-        type="button"
-        @click="reloadTiles"
-      >
-        <span
-          ><i class="bi bi-arrow-clockwise me-1"></i
-          ><span class="optional-button-label">Reload tiles</span></span
-        >
-      </button>
       <div class="export-group">
         <button
           id="toggle-osd-button"
           class="btn btn-sm btn-outline-primary"
           type="button"
           @click="osdOverlayVisible = !osdOverlayVisible"
+          :aria-pressed="osdOverlayVisible"
+          aria-label="Map Info"
           :title="
             osdOverlayVisible
               ? 'Hide map information overlay'
@@ -212,7 +203,7 @@
           "
         >
           <i class="bi bi-card-text" aria-hidden="true"></i>
-          <span class="optional-button-label">OSD</span>
+          <span class="optional-button-label">Info</span>
         </button>
         <button
           id="ruler-mode-button"
@@ -1036,15 +1027,6 @@ onBeforeUnmount(() => {
     searchDebounceTimer = null;
   }
 });
-
-async function reloadTiles() {
-  try {
-    await props.mapManager?.reloadTilesFromBackend();
-  } catch (e) {
-    toast.error("Failed to reload tiles");
-    console.error(e);
-  }
-}
 
 const signalDisplayModePending = ref(false);
 async function onSignalDisplayModeChanged() {

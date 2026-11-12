@@ -232,7 +232,7 @@
                   class="dropdown-item"
                   href="#"
                   @click.prevent="osdSettingsOpen = true"
-                  >OSD settings...</a
+                  >Info settings…</a
                 >
               </li>
               <li>
@@ -319,7 +319,7 @@
             </ul>
           </li>
           <!-- Dev -->
-          <li class="nav-item dropdown">
+          <li v-if="developerToolsVisible" class="nav-item dropdown">
             <a
               aria-current="page"
               class="nav-link active dropdown-toggle"
@@ -471,28 +471,14 @@
                   Drop caches
                 </a>
               </li>
-              <li><hr class="dropdown-divider" /></li>
-              <li @click.stop>
-                <label class="form-label mb-1" for="api-gateway-input"
-                  >API gateway</label
+              <li>
+                <a
+                  id="reload-tiles-button"
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="onReloadTiles"
+                  >Reload tiles</a
                 >
-                <div id="connection-settings-input-group" class="input-group">
-                  <input
-                    id="api-gateway-input"
-                    class="form-control"
-                    placeholder="http://localhost:5000/"
-                    type="text"
-                    v-model="gatewayAddress"
-                  />
-                  <button
-                    class="btn btn-sm btn-outline-dark"
-                    id="set-gateway-btn"
-                    type="button"
-                    @click="onGatewayChanged"
-                  >
-                    Set API gateway
-                  </button>
-                </div>
               </li>
             </ul>
           </li>
@@ -525,6 +511,14 @@
                   href="#"
                   @click.prevent="emit('examplesRequested')"
                   >Examples...</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="openConnection"
+                  >Connection…</a
                 >
               </li>
               <li>
@@ -792,7 +786,7 @@
       aria-label="On-screen display settings"
     >
       <div class="settings-header">
-        <h2>OSD settings</h2>
+        <h2>Info settings</h2>
         <button class="btn-close" @click="osdSettingsOpen = false"></button>
       </div>
       <div class="settings-body">
@@ -860,6 +854,49 @@
       </div>
     </div>
   </div>
+  <div
+    v-if="connectionOpen"
+    class="settings-backdrop"
+    @click.self="connectionOpen = false"
+  >
+    <form
+      ref="connectionElement"
+      class="settings-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Connection settings"
+      @submit.prevent="onGatewayChanged"
+    >
+      <div class="settings-header">
+        <h2>Connection</h2>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Close connection settings"
+          @click="connectionOpen = false"
+        ></button>
+      </div>
+      <div class="settings-body">
+        <label class="form-label" for="api-gateway-input">Server address</label>
+        <div id="connection-settings-input-group" class="input-group">
+          <input
+            id="api-gateway-input"
+            class="form-control"
+            type="url"
+            required
+            v-model="gatewayAddress"
+          />
+          <button
+            id="set-gateway-btn"
+            type="submit"
+            class="btn btn-outline-primary"
+          >
+            Connect
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
   <div v-if="aboutOpen" class="about-backdrop" @click.self="aboutOpen = false">
     <div
       ref="aboutElement"
@@ -906,6 +943,14 @@
           <div><strong>WebUI:</strong> {{ webuiVersion }}</div>
           <div><strong>Commit:</strong> {{ webuiCommit }}</div>
         </div>
+        <label class="form-check-label d-block mb-3">
+          <input
+            type="checkbox"
+            v-model="developerToolsEnabled"
+            class="form-check-input me-2"
+          />
+          Show developer tools
+        </label>
         <section class="how-to-cite">
           <h3>How to cite</h3>
           <p>
@@ -1217,6 +1262,7 @@ const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
 const osdSettingsOpen = ref(false);
+const connectionOpen = ref(false);
 const resolutionSettingsOpen = ref(false);
 const aboutActiveTab = ref<"about" | "attribution" | "changelog">("about");
 const changelogText = ref("Changelog for this build was not detected");
@@ -1278,6 +1324,15 @@ const noContactData = computed(
 );
 
 const aboutElement = ref<HTMLElement | null>(null);
+const connectionElement = ref<HTMLElement | null>(null);
+useModalFocus(connectionElement, () => connectionOpen.value);
+useEscDismissableDialog({
+  priority: 1041,
+  isOpen: () => connectionOpen.value,
+  requestClose: () => {
+    connectionOpen.value = false;
+  },
+});
 const osdSettingsElement = ref<HTMLElement | null>(null);
 const resolutionSettingsElement = ref<HTMLElement | null>(null);
 const juiceboxFastaPromptElement = ref<HTMLElement | null>(null);
@@ -1350,7 +1405,13 @@ const errorToastStore = useErrorToastStore();
 const uiSettingsStore = useUiSettingsStore();
 const { requestErrorToastsEnabled, webuiErrorToastsEnabled } =
   storeToRefs(errorToastStore);
+const developerToolsVisible = computed(
+  () =>
+    uiSettingsStore.developerToolsEnabled ||
+    new URLSearchParams(window.location.search).get("dev") === "1"
+);
 const {
+  developerToolsEnabled,
   customZoomSliderEnabled,
   binaryTileTransportEnabled,
   osdOverlayVisible,
@@ -1865,8 +1926,22 @@ function onFASTAFileDismissed() {
   fastaLinkReport.value = null;
 }
 
-function onGatewayChanged() {
-  props.networkManager.onHostChanged(gatewayAddress.value);
+function openConnection(): void {
+  gatewayAddress.value = props.networkManager.host;
+  connectionOpen.value = true;
+}
+function onGatewayChanged(): void {
+  props.networkManager.onHostChanged(gatewayAddress.value.trim());
+  connectionOpen.value = false;
+  toast.success("Server connection updated");
+}
+async function onReloadTiles(): Promise<void> {
+  try {
+    await props.mapManager?.reloadTilesFromBackend();
+  } catch (error) {
+    toast.error("Tiles could not be reloaded");
+    console.debug("Reload tiles failed", error);
+  }
 }
 
 function onAGPFileDismissed() {
