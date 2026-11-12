@@ -135,6 +135,7 @@
 
       <AssemblyHistory
         v-if="props.mapManager"
+        v-show="activeSidebarPanel === 'history'"
         :network-manager="props.mapManager.networkManager"
         :expanded="activeSidebarPanel === 'history'"
       />

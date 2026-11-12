@@ -169,53 +169,67 @@
           · Reads all tiles; may take time.</span
         >
       </details>
-      <div class="threshold-toolbar">
-        <details v-if="coolerWeightsHaveNaNs" :class="coolerWeightsHintClass">
-          <summary
-            :title="
-              applyCoolerWeights
-                ? 'Cooler weights warning'
-                : 'Excluded-bin settings'
-            "
-          >
-            <i
-              v-if="applyCoolerWeights"
-              class="bi bi-exclamation-triangle-fill"
-            ></i>
-            Cooler weights
-          </summary>
-          <div v-if="coolerWeightsHaveNaNs">
-            Detected {{ coolerWeightsNaNCount }} non-finite Cooler balancing
-            weight{{ coolerWeightsNaNCount === 1 ? "" : "s" }}. Selected tactic:
-            {{ coolerWeightsNaNPolicyLabel }}.
-            <label
-              class="form-label small mt-2 mb-1"
-              for="cooler-weights-nan-policy"
-            >
-              NaN weight tactic
-            </label>
-            <select
-              id="cooler-weights-nan-policy"
-              v-model="coolerWeightsNaNPolicy"
-              class="form-select form-select-sm"
-              @change="onCoolerWeightsNaNPolicyChanged"
-            >
-              <option value="DISABLE_WEIGHTS">Do not use Cooler weights</option>
-              <option value="REPLACE_NANS_WITH_ONE">
-                Replace NaNs with weight 1.0
-              </option>
-              <option value="REPLACE_NANS_WITH_ZERO">
-                Replace NaNs with weight 0
-              </option>
-            </select>
-          </div>
-        </details>
-      </div>
-
+      <p
+        v-if="applyCoolerWeights && coolerWeightsHaveNaNs"
+        class="small mb-1"
+        :class="weightsNeedAttention ? 'text-danger' : 'text-muted'"
+        role="status"
+      >
+        {{
+          weightsNeedAttention
+            ? "Excluded bins use replacement weights."
+            : `${coolerWeightsNaNCount} excluded bins masked.`
+        }}
+      </p>
       <NormalizationSelector
         :map-manager="props.mapManager"
         @apply="applySettings"
-      />
+      >
+        <template #excluded-bins>
+          <details v-if="coolerWeightsHaveNaNs" :class="coolerWeightsHintClass">
+            <summary
+              :title="
+                weightsNeedAttention
+                  ? 'Excluded-bin policy needs attention'
+                  : 'Excluded-bin settings'
+              "
+            >
+              <i
+                v-if="weightsNeedAttention"
+                class="bi bi-exclamation-triangle-fill"
+              ></i>
+              Cooler weights
+            </summary>
+            <div v-if="coolerWeightsHaveNaNs">
+              Detected {{ coolerWeightsNaNCount }} non-finite Cooler balancing
+              weight{{ coolerWeightsNaNCount === 1 ? "" : "s" }}. Selected
+              tactic: {{ coolerWeightsNaNPolicyLabel }}.
+              <label
+                class="form-label small mt-2 mb-1"
+                for="cooler-weights-nan-policy"
+              >
+                NaN weight tactic
+              </label>
+              <select
+                id="cooler-weights-nan-policy"
+                v-model="coolerWeightsNaNPolicy"
+                class="form-select form-select-sm"
+                @change="onCoolerWeightsNaNPolicyChanged"
+              >
+                <option value="DISABLE_WEIGHTS">
+                  Do not use Cooler weights
+                </option>
+                <option value="REPLACE_NANS_WITH_ONE">
+                  Replace NaNs with weight 1.0
+                </option>
+                <option value="REPLACE_NANS_WITH_ZERO">
+                  Replace NaNs with weight 0
+                </option>
+              </select>
+            </div>
+          </details>
+        </template>
+      </NormalizationSelector>
 
       <button
         type="button"
@@ -323,10 +337,15 @@ const coolerWeightsNaNPolicyLabel = computed(() => {
   }
 });
 
+const weightsNeedAttention = computed(
+  () =>
+    applyCoolerWeights.value &&
+    coolerWeightsHaveNaNs.value &&
+    coolerWeightsNaNPolicy.value !== "REPLACE_NANS_WITH_ZERO"
+);
 const coolerWeightsHintClass = computed(() => ({
   "cooler-weights-hint": true,
-  "cooler-weights-hint_error":
-    applyCoolerWeights.value && coolerWeightsHaveNaNs.value,
+  "cooler-weights-hint_error": weightsNeedAttention.value,
 }));
 
 const sliderMin = computed(() =>
