@@ -2,9 +2,9 @@ name: WebUI CI
 
 on:
   push:
-    branches: ["master", "dev*", "jvm-api-v1"]
+    branches: ["master", "dev*", "jvm-api-v1", "jvm-sfx-native"]
   pull_request:
-    branches: ["master", "dev*", "jvm-api-v1"]
+    branches: ["master", "dev*", "jvm-api-v1", "jvm-sfx-native"]
   workflow_dispatch:
 
 jobs:
