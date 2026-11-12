@@ -437,10 +437,66 @@ class VisualizationManager {
   private readonly pendingOptionRequests = new Set<Promise<unknown>>();
   private visualizationOptionsLoadGeneration = 0;
   private observedDisplayOptions: VisualizationOptions | null = null;
+  // Only the range fitted by a new open follows pyramid levels. Explicit edits
+  // relinquish ownership, while Expected/O/E temporarily suspend it.
+  private openingRange: {
+    fingerprint: string;
+    bpResolution: number;
+    quantile: number;
+  } | null = null;
+  private openingRangeRefreshInFlight = false;
+
+  private async openingRangeFingerprint(): Promise<string> {
+    return JSON.stringify([
+      this.visualizationOptionsStore.asVisualizationOptions(),
+      await this.getActiveRenderPipelineConfig(),
+    ]);
+  }
+
+  private async rememberOpeningRange(quantile: number): Promise<void> {
+    this.openingRange = {
+      fingerprint: await this.openingRangeFingerprint(),
+      bpResolution:
+        this.mapManager.viewAndLayersManager.currentViewState
+          .resolutionDesciptor.bpResolution,
+      quantile,
+    };
+  }
+
+  public async refreshOpeningRangeOnMoveEnd(): Promise<void> {
+    const owned = this.openingRange;
+    if (
+      !owned ||
+      this.openingRangeRefreshInFlight ||
+      this.mapManager.isDisposed ||
+      this.visualizationOptionsStore.signalDisplayMode !== "OBSERVED"
+    )
+      return;
+    const bpResolution =
+      this.mapManager.viewAndLayersManager.currentViewState.resolutionDesciptor
+        .bpResolution;
+    if (bpResolution === owned.bpResolution) return;
+    this.openingRangeRefreshInFlight = true;
+    try {
+      if ((await this.openingRangeFingerprint()) !== owned.fingerprint) {
+        this.openingRange = null;
+        return;
+      }
+      await this.applyOpeningViewportQuantileThreshold(
+        owned.quantile,
+        this.mapManager.networkManager.requestManager.renderPipelineRevision,
+        true
+      );
+      await this.mapManager.reloadTilesFromBackend();
+    } finally {
+      this.openingRangeRefreshInFlight = false;
+    }
+  }
 
   public constructor(public readonly mapManager: ContactMapManager) {
     this.moveEndListener = this.mapManager.getMap().on("moveend", () => {
       void this.refreshExpectedProfileOnMoveEnd();
+      void this.refreshOpeningRangeOnMoveEnd().catch(() => undefined);
     });
   }
 
@@ -897,6 +953,7 @@ class VisualizationManager {
       if (this.pendingExpectedProfileRefresh) {
         this.pendingExpectedProfileRefresh = false;
         void this.refreshExpectedProfileOnMoveEnd();
+        void this.refreshOpeningRangeOnMoveEnd().catch(() => undefined);
       }
     }
   }
@@ -1075,7 +1132,10 @@ class VisualizationManager {
     const latestConfig = await this.getActiveRenderPipelineConfig();
     if (
       api.renderPipelineRevision !== revision ||
-      JSON.stringify(latestConfig) !== originalConfig
+      JSON.stringify(latestConfig) !== originalConfig ||
+      JSON.stringify(
+        this.visualizationOptionsStore.asVisualizationOptions()
+      ) !== JSON.stringify(options)
     )
       return false;
     if (behavior?.useViewportHistogram) {
@@ -1142,7 +1202,8 @@ class VisualizationManager {
   public async applyOpeningViewportQuantileThreshold(
     quantile = OPENING_THRESHOLD_QUANTILE,
     expectedPipelineRevision = this.mapManager.networkManager.requestManager
-      .renderPipelineRevision
+      .renderPipelineRevision,
+    viewportOnly = false
   ): Promise<number | null> {
     const api = this.mapManager.networkManager.requestManager;
     if (
@@ -1165,7 +1226,9 @@ class VisualizationManager {
       map.once("rendercomplete", done);
       map.renderSync();
     });
-    const bounds = this.resolveOpeningFullMapPixelBounds();
+    const bounds = viewportOnly
+      ? this.resolveViewportPixelBounds()
+      : this.resolveOpeningFullMapPixelBounds();
     const pipelineConfig = await this.getActiveRenderPipelineConfig();
     if (
       api.renderPipelineRevision !== expectedPipelineRevision ||
@@ -1173,7 +1236,7 @@ class VisualizationManager {
     )
       return null;
     if (pipelineConfig) {
-      await this.syncPipelineAutoThresholdForBounds(
+      const fitted = await this.syncPipelineAutoThresholdForBounds(
         bounds,
         pipelineConfig,
         undefined,
@@ -1185,6 +1248,7 @@ class VisualizationManager {
           useViewportHistogram: true,
         }
       );
+      if (fitted) await this.rememberOpeningRange(quantile);
       return null;
     }
 
@@ -1213,6 +1277,12 @@ class VisualizationManager {
     if (
       api.renderPipelineRevision !== expectedPipelineRevision ||
       this.mapManager.isDisposed
+    )
+      return null;
+    if (
+      JSON.stringify(
+        this.visualizationOptionsStore.asVisualizationOptions()
+      ) !== JSON.stringify(options)
     )
       return null;
     const updatedMaxSignal =
@@ -1245,6 +1315,7 @@ class VisualizationManager {
     await this.sendVisualizationOptionsToServer({
       skipAutoThresholdRefresh: true,
     });
+    await this.rememberOpeningRange(quantile);
     return updatedMaxSignal;
   }
 
