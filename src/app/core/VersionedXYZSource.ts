@@ -19,10 +19,14 @@
  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+import { intersects } from "ol/extent";
+import type { TileSignals } from "./visualization/tileSignalRange";
 import { ImageTile } from "ol";
 import TileState from "ol/TileState";
 import XYZ, { type Options as XYZOptions } from "ol/source/XYZ";
 import { unref } from "vue";
+import { getUid } from "ol/util";
+import type Projection from "ol/proj/Projection";
 import type {
   HiCViewAndLayersManager,
   MatrixSourceName,
@@ -34,26 +38,49 @@ import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsS
 import { useStyleStore } from "@/app/stores/styleStore";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 
+const PROJECTED_TILE_CACHE_BYTES = 48 * 1024 * 1024;
+
 class VersionedXYZContactMapSource extends XYZ {
   protected sourceVersion: number;
+  private tileGeneration = 0;
+  private tileRequestEpoch = 0;
+  private readonly activeTileRequests = new Set<XMLHttpRequest>();
+  private pendingSignalRanges?: CurrentSignalRangeResponse;
+  private signalRangeFrame?: number;
+  private loadsPaused = false;
+  private readonly maximumTileImageLength: number;
 
   constructor(
     protected readonly layersManager: HiCViewAndLayersManager,
     protected readonly zoomLevel: number,
     protected readonly bpResolution: number,
     protected readonly sourceName: MatrixSourceName = "PRIMARY",
-    readonly xyzOptions?: XYZOptions
+    readonly xyzOptions?: XYZOptions,
+    private readonly grid?: { bpResolution: number; sampleFactor: number }
   ) {
-    super(xyzOptions);
+    // Matrix tiles represent discrete coordinate versions. Cross-fading old
+    // and edited matrices blends unrelated contacts and adds a 250 ms delay.
+    // Callers can still explicitly request a transition for other use cases.
+    super({ transition: 0, ...xyzOptions });
     this.sourceVersion = 0;
+    const tileSize = this.getTileGrid()?.getTileSize(0) ?? 256;
+    const pixels =
+      typeof tileSize === "number" ? tileSize ** 2 : tileSize[0] * tileSize[1];
+    this.maximumTileImageLength = 1024 + Math.ceil((pixels * 4 * 1.02 * 4) / 3);
+    if (this.grid) this.tileCache.setSize(this.projectedCacheLimit(pixels));
     this.setTileLoadFunction((tile, src) => {
       console.assert(tile instanceof ImageTile);
       const imageTile: ImageTile = tile as ImageTile;
+      if (this.loadsPaused) {
+        imageTile.setState(TileState.EMPTY);
+        return;
+      }
       const image: HTMLImageElement | HTMLVideoElement =
         imageTile.getImage() as HTMLImageElement | HTMLVideoElement;
       const uiSettingsStore = useUiSettingsStore();
       if (
         uiSettingsStore.binaryTileTransportEnabled &&
+        useVisualizationOptionsStore().signalDisplayMode === "OBSERVED" &&
         this.sourceName === "PRIMARY" &&
         !this.layersManager.hasSecondarySource()
       ) {
@@ -65,28 +92,136 @@ class VersionedXYZContactMapSource extends XYZ {
     this.do_reload();
   }
 
+  public override getTile(
+    z: number,
+    x: number,
+    y: number,
+    pixelRatio: number,
+    projection: Projection
+  ) {
+    const tile = super.getTile(z, x, y, pixelRatio, projection);
+    if (this.loadsPaused && tile.getState() === TileState.IDLE) {
+      // The outgoing layer is a snapshot of already decoded imagery. Mark new
+      // cells empty before OpenLayers queues them, even after cache eviction.
+      tile.setState(TileState.EMPTY);
+    }
+    return tile;
+  }
+
+  private projectedCacheLimit(pixels: number): number {
+    // Include both decoded RGBA and the retained data URL and its JSON string.
+    const estimatedBytes = pixels * 4 + 2 * this.maximumTileImageLength;
+    return Math.max(1, Math.floor(PROJECTED_TILE_CACHE_BYTES / estimatedBytes));
+  }
+
+  public override updateCacheSize(
+    tileCount: number,
+    projection: Projection
+  ): void {
+    if (!this.grid) {
+      super.updateCacheSize(tileCount, projection);
+      return;
+    }
+    const tileSize = this.getTileGrid()?.getTileSize(0) ?? 256;
+    const pixels =
+      typeof tileSize === "number" ? tileSize ** 2 : tileSize[0] * tileSize[1];
+    this.getTileCacheForProjection(projection).setSize(
+      Math.max(tileCount, this.projectedCacheLimit(pixels))
+    );
+  }
+
+  /**
+   * A viewport loads dozens of tiles at once. Listeners only need the newest ranges, and each
+   * call triggers UI work, so they are notified once per animation frame.
+   */
+  private queueSignalRanges(ranges: CurrentSignalRangeResponse): void {
+    this.pendingSignalRanges = ranges;
+    if (this.signalRangeFrame !== undefined) return;
+    this.signalRangeFrame = window.requestAnimationFrame(() => {
+      this.signalRangeFrame = undefined;
+      const latest = this.pendingSignalRanges;
+      this.pendingSignalRanges = undefined;
+      if (!latest) return;
+      this.layersManager.callbackFns.contrastSliderRangesCallbacks.forEach(
+        (callbackFn: (ranges: CurrentSignalRangeResponse) => void) => {
+          callbackFn(latest);
+        }
+      );
+    });
+  }
+
+  public loadedViewportSignals(extent: number[]): TileSignals[] {
+    const values: TileSignals[] = [];
+    const grid = this.getTileGrid();
+    if (!grid) return values;
+    this.tileCache.forEach((tile) => {
+      if (!intersects(extent, grid.getTileCoordExtent(tile.getTileCoord())))
+        return;
+      const signals = (
+        tile as ImageTile & { lastResponse?: { signals?: TileSignals } }
+      ).lastResponse?.signals;
+      if (signals) values.push(signals);
+    });
+    return values;
+  }
+
   private loadPngTile(
     tile: ImageTile,
     image: HTMLImageElement | HTMLVideoElement,
     src: string
   ): void {
     const xhr = new XMLHttpRequest();
+    const requestEpoch = this.tileRequestEpoch;
+    let settled = false;
+    const settle = (callback: () => void): void => {
+      if (settled) return;
+      settled = true;
+      this.activeTileRequests.delete(xhr);
+      if (requestEpoch !== this.tileRequestEpoch) {
+        // Release the map's loading slot even when this source generation is obsolete.
+        tile.setState(TileState.EMPTY);
+        return;
+      }
+      callback();
+    };
     xhr.responseType = "json";
-    xhr.addEventListener("loadend", () => {
-      const data = xhr.response;
-      if (data && data.image) {
-        image.src = data.image;
-        tile.setState(TileState.LOADED);
-        // @ts-expect-error Adding field to object is ok in JS but not in TS
-        tile.lastResponse = data;
-        this.layersManager.callbackFns.contrastSliderRangesCallbacks.forEach(
-          (callbackFn: (ranges: CurrentSignalRangeResponse) => void) => {
-            callbackFn(
-              new CurrentSignalRangeResponseDTO(data.ranges).toEntity()
-            );
+    xhr.addEventListener("load", () =>
+      settle(() => {
+        const data = xhr.response;
+        if (
+          data?.cancelled === true ||
+          xhr.getResponseHeader("x-hict-cancelled") === "true"
+        ) {
+          tile.setState(TileState.EMPTY);
+          return;
+        }
+        if (
+          xhr.status >= 200 &&
+          xhr.status < 300 &&
+          typeof data?.image === "string" &&
+          (!this.grid || data.image.length <= this.maximumTileImageLength)
+        ) {
+          image.src = data.image;
+          // ImageTile's load/decode listener marks it ready. Receiving JSON is
+          // not image completion; rendercomplete must wait for decoded pixels.
+          // @ts-expect-error Adding field to object is ok in JS but not in TS
+          tile.lastResponse = data;
+          this.queueSignalRanges(
+            new CurrentSignalRangeResponseDTO(data.ranges).toEntity()
+          );
+        } else {
+          // @ts-expect-error If tile was loaded successfully at least once, last response is saved
+          if (tile.lastResponse) {
+            // @ts-expect-error If tile was loaded successfully at least once, last response is saved
+            image.src = tile.lastResponse.image;
+          } else {
+            tile.setState(TileState.ERROR);
           }
-        );
-      } else {
+        }
+      })
+    );
+    xhr.addEventListener("error", () =>
+      settle(() => {
         // @ts-expect-error If tile was loaded successfully at least once, last response is saved
         if (tile.lastResponse) {
           // @ts-expect-error If tile was loaded successfully at least once, last response is saved
@@ -94,18 +229,13 @@ class VersionedXYZContactMapSource extends XYZ {
         } else {
           tile.setState(TileState.ERROR);
         }
-      }
-    });
-    xhr.addEventListener("error", () => {
-      // @ts-expect-error If tile was loaded successfully at least once, last response is saved
-      if (tile.lastResponse) {
-        // @ts-expect-error If tile was loaded successfully at least once, last response is saved
-        image.src = tile.lastResponse.image;
-      } else {
-        tile.setState(TileState.ERROR);
-      }
-    });
+      })
+    );
+    xhr.addEventListener("abort", () =>
+      settle(() => tile.setState(TileState.EMPTY))
+    );
     xhr.open("GET", src);
+    this.activeTileRequests.add(xhr);
     xhr.send();
   }
 
@@ -119,10 +249,9 @@ class VersionedXYZContactMapSource extends XYZ {
       this.loadPngTile(tile, image, src);
       return;
     }
-    const host = `${unref(this.layersManager.mapManager.networkManager.host)}`.replace(
-      /\/+$/,
-      ""
-    );
+    const host = `${unref(
+      this.layersManager.mapManager.networkManager.host
+    )}`.replace(/\/+$/, "");
     const payload = {
       bpResolution: this.bpResolution,
       unit: "PIXELS",
@@ -133,58 +262,100 @@ class VersionedXYZContactMapSource extends XYZ {
       source: this.sourceName,
       signalMode: "PIPELINE_SIGNAL",
       format: "BINARY_FLOAT32",
+      includeTileStatistics: true,
     };
     const xhr = new XMLHttpRequest();
-    xhr.responseType = "arraybuffer";
-    xhr.addEventListener("loadend", () => {
-      const rows = Number.parseInt(xhr.getResponseHeader("x-hict-rows") || "0", 10);
-      const cols = Number.parseInt(xhr.getResponseHeader("x-hict-cols") || "0", 10);
-      const response = xhr.response;
-      if (
-        xhr.status >= 200 &&
-        xhr.status < 300 &&
-        response instanceof ArrayBuffer &&
-        rows > 0 &&
-        cols > 0
-      ) {
-        const values = this.decodeFloat32Array(response, rows * cols);
-        const dataUrl = this.renderSignalTile(values, rows, cols);
-        image.src = dataUrl;
-        tile.setState(TileState.LOADED);
-        // @ts-expect-error dynamic cache field
-        tile.lastResponse = { image: dataUrl };
+    const requestEpoch = this.tileRequestEpoch;
+    let settled = false;
+    const settle = (callback: () => void): void => {
+      if (settled) return;
+      settled = true;
+      this.activeTileRequests.delete(xhr);
+      if (requestEpoch !== this.tileRequestEpoch) {
+        tile.setState(TileState.EMPTY);
         return;
       }
-      // @ts-expect-error dynamic cache field
-      if (tile.lastResponse?.image) {
+      callback();
+    };
+    xhr.responseType = "arraybuffer";
+    xhr.addEventListener("load", () =>
+      settle(() => {
+        if (xhr.getResponseHeader("x-hict-cancelled") === "true") {
+          tile.setState(TileState.EMPTY);
+          return;
+        }
+        const rows = Number.parseInt(
+          xhr.getResponseHeader("x-hict-rows") || "0",
+          10
+        );
+        const cols = Number.parseInt(
+          xhr.getResponseHeader("x-hict-cols") || "0",
+          10
+        );
+        const response = xhr.response;
+        if (
+          xhr.status >= 200 &&
+          xhr.status < 300 &&
+          response instanceof ArrayBuffer &&
+          rows > 0 &&
+          cols > 0
+        ) {
+          const values = this.decodeFloat32Array(response, rows * cols);
+          const dataUrl = this.renderSignalTile(values, rows, cols);
+          image.src = dataUrl;
+          // @ts-expect-error dynamic cache field
+          tile.lastResponse = {
+            image: dataUrl,
+            signals: this.decodeTileStatistics(
+              xhr.getResponseHeader("x-hict-tile-statistics")
+            ),
+          };
+          return;
+        }
         // @ts-expect-error dynamic cache field
-        image.src = tile.lastResponse.image;
-      } else {
-        tile.setState(TileState.ERROR);
-      }
-    });
-    xhr.addEventListener("error", () => {
-      // @ts-expect-error dynamic cache field
-      if (tile.lastResponse?.image) {
+        if (tile.lastResponse?.image) {
+          // @ts-expect-error dynamic cache field
+          image.src = tile.lastResponse.image;
+        } else {
+          tile.setState(TileState.ERROR);
+        }
+      })
+    );
+    xhr.addEventListener("error", () =>
+      settle(() => {
         // @ts-expect-error dynamic cache field
-        image.src = tile.lastResponse.image;
-      } else {
-        tile.setState(TileState.ERROR);
-      }
-    });
+        if (tile.lastResponse?.image) {
+          // @ts-expect-error dynamic cache field
+          image.src = tile.lastResponse.image;
+        } else {
+          tile.setState(TileState.ERROR);
+        }
+      })
+    );
+    xhr.addEventListener("abort", () =>
+      settle(() => tile.setState(TileState.EMPTY))
+    );
     xhr.open("POST", `${host}/matrix/query`);
     xhr.setRequestHeader("Content-Type", "application/json");
+    this.activeTileRequests.add(xhr);
     xhr.send(JSON.stringify(payload));
   }
 
-  private parseTileUrl(src: string):
-    | {
-        startRowPx: number;
-        endRowPx: number;
-        startColPx: number;
-        endColPx: number;
-      }
-    | null {
+  private decodeTileStatistics(header: string | null): TileSignals | undefined {
+    if (!header) return;
+    try {
+      return JSON.parse(header) as TileSignals;
+    } catch {
+      return;
+    }
+  }
+
+  private parseTileUrl(src: string): {
+    startRowPx: number;
+    endRowPx: number;
+    startColPx: number;
+    endColPx: number;
+  } | null {
     try {
       const url = new URL(src, window.location.href);
       const row = Number.parseInt(url.searchParams.get("row") || "0", 10);
@@ -213,9 +384,15 @@ class VersionedXYZContactMapSource extends XYZ {
     }
   }
 
-  private decodeFloat32Array(buffer: ArrayBuffer, expectedLength: number): Float32Array {
+  private decodeFloat32Array(
+    buffer: ArrayBuffer,
+    expectedLength: number
+  ): Float32Array {
     const view = new DataView(buffer);
-    const valueCount = Math.min(expectedLength, Math.floor(buffer.byteLength / 4));
+    const valueCount = Math.min(
+      expectedLength,
+      Math.floor(buffer.byteLength / 4)
+    );
     const out = new Float32Array(valueCount);
     for (let idx = 0; idx < valueCount; idx += 1) {
       out[idx] = view.getFloat32(idx * 4, true);
@@ -223,7 +400,11 @@ class VersionedXYZContactMapSource extends XYZ {
     return out;
   }
 
-  private renderSignalTile(values: Float32Array, rows: number, cols: number): string {
+  private renderSignalTile(
+    values: Float32Array,
+    rows: number,
+    cols: number
+  ): string {
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, cols);
     canvas.height = Math.max(1, rows);
@@ -242,7 +423,9 @@ class VersionedXYZContactMapSource extends XYZ {
     if (colormap instanceof SimpleLinearGradient) {
       minSignal = colormap.minSignal;
       maxSignal = colormap.maxSignal;
-      start = this.parseRgba(colormap.startColorRGBA?.RGBA || "rgba(0,255,0,0.0)");
+      start = this.parseRgba(
+        colormap.startColorRGBA?.RGBA || "rgba(0,255,0,0.0)"
+      );
       end = this.parseRgba(colormap.endColorRGBA?.RGBA || "rgba(0,96,0,1.0)");
     }
     const backgroundColor =
@@ -254,10 +437,12 @@ class VersionedXYZContactMapSource extends XYZ {
     const pixelCount = Math.min(values.length, rows * cols);
     for (let idx = 0; idx < pixelCount; idx += 1) {
       const signal = Number.isFinite(values[idx]) ? values[idx] : 0;
-      const normalized = Math.max(0, Math.min(1, (signal - minSignal) / signalRange));
+      const normalized = Math.max(
+        0,
+        Math.min(1, (signal - minSignal) / signalRange)
+      );
       const mix = normalized;
-      const alpha =
-        (start[3] + (end[3] - start[3]) * mix) / 255.0;
+      const alpha = (start[3] + (end[3] - start[3]) * mix) / 255.0;
       const colorR = start[0] + (end[0] - start[0]) * mix;
       const colorG = start[1] + (end[1] - start[1]) * mix;
       const colorB = start[2] + (end[2] - start[2]) * mix;
@@ -312,35 +497,75 @@ class VersionedXYZContactMapSource extends XYZ {
    * do_reload
    */
   public do_reload() {
+    this.invalidatePendingTileRequests();
     this.tileCache.expireCache({});
     this.tileCache.clear();
     ++this.sourceVersion;
-    this.setTileUrlFunction(this.create_tile_url_function());
+    this.installTileUrlFunction();
     this.changed();
   }
 
   public reloadWithVersion(version: number) {
+    this.invalidatePendingTileRequests();
     this.tileCache.expireCache({});
     this.tileCache.clear();
     this.sourceVersion = Math.max(0, Math.floor(version));
-    this.setTileUrlFunction(this.create_tile_url_function());
+    this.installTileUrlFunction();
     this.changed();
+  }
+
+  public pauseLoading(): void {
+    this.loadsPaused = true;
+    this.invalidatePendingTileRequests();
+  }
+
+  protected override disposeInternal(): void {
+    this.invalidatePendingTileRequests();
+    if (this.signalRangeFrame !== undefined) {
+      window.cancelAnimationFrame(this.signalRangeFrame);
+      this.signalRangeFrame = undefined;
+    }
+    this.pendingSignalRanges = undefined;
+    this.clear();
+    super.disposeInternal();
+  }
+
+  private invalidatePendingTileRequests(): void {
+    ++this.tileRequestEpoch;
+    const requests = [...this.activeTileRequests];
+    this.activeTileRequests.clear();
+    requests.forEach((request) => request.abort());
+  }
+
+  private installTileUrlFunction(): void {
+    const urlFunction = this.create_tile_url_function();
+    // TileQueue indexes by tile.getKey(), not source identity. An omitted key
+    // gives different resolutions and edited versions the same coordinate key.
+    // A late response can then finish another generation's queue entry, leaving
+    // rendering permanently incomplete. A new generation also covers explicit
+    // reloads with an unchanged server version (e.g. visualization changes).
+    this.setTileUrlFunction(
+      urlFunction,
+      `${getUid(this)}:${++this.tileGeneration}:${urlFunction([0, 0, 0])}`
+    );
   }
 
   protected create_tile_url_function() {
     return (coord_zxy: number[]) => {
       const col = coord_zxy[1];
       const row = coord_zxy[2];
-      const host = `${unref(this.layersManager.mapManager.networkManager.host)}`.replace(
-        /\/+$/,
-        ""
-      );
+      const host = `${unref(
+        this.layersManager.mapManager.networkManager.host
+      )}`.replace(/\/+$/, "");
       return (
         `${host}` +
         `/get_tile?version=${this.sourceVersion}` +
         `&level=${1 + this.zoomLevel}` +
         `&bpResolution=${this.bpResolution}` +
         `&source=${this.sourceName}` +
+        (this.grid
+          ? `&gridBpResolution=${this.grid.bpResolution}&gridSampleFactor=${this.grid.sampleFactor}`
+          : "") +
         `&row=${row}` +
         `&col=${col}` +
         `&tile_size=${unref(this.layersManager.tileSize)}`

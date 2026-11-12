@@ -10,21 +10,69 @@ const readStored = <T>(key: string, fallback: T): T => {
   }
 };
 
+// localStorage writes are synchronous: a slider or a pan that updates a setting every frame must
+// not hit the disk each time. Writes are collected and flushed 200 ms after the last change, and
+// immediately when the page is hidden or closed.
+const pendingWrites = new Map<string, () => unknown>();
+let flushTimer: number | undefined;
+
+const flushPersistedSettings = (): void => {
+  window.clearTimeout(flushTimer);
+  flushTimer = undefined;
+  for (const [key, read] of pendingWrites) {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(read()));
+    } catch {
+      // Ignore storage failures; UI settings are non-critical.
+    }
+  }
+  pendingWrites.clear();
+};
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushPersistedSettings);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushPersistedSettings();
+  });
+}
+
 const persistRef = <T>(key: string, value: { value: T }) => {
   watch(
     value,
-    (next) => {
-      try {
-        window.localStorage.setItem(key, JSON.stringify(next));
-      } catch {
-        // Ignore storage failures; UI settings are non-critical.
-      }
+    () => {
+      pendingWrites.set(key, () => value.value);
+      window.clearTimeout(flushTimer);
+      flushTimer = window.setTimeout(flushPersistedSettings, 200);
     },
     { deep: true }
   );
 };
 
 export const useUiSettingsStore = defineStore("uiSettings", () => {
+  const sequenceGapLengthBp = ref(
+    readStored("hict.sequence.gapLengthBp", 1000)
+  );
+  persistRef("hict.sequence.gapLengthBp", sequenceGapLengthBp);
+  const sequenceForwardColor = ref(
+    readStored("hict.sequence.forwardColor", "#dc2626")
+  );
+  const sequenceReverseColor = ref(
+    readStored("hict.sequence.reverseColor", "#2563eb")
+  );
+  const modDotPlotThreads = ref(
+    readStored("hict.sequence.modDotPlotThreads", -1)
+  );
+  persistRef("hict.sequence.forwardColor", sequenceForwardColor);
+  persistRef("hict.sequence.reverseColor", sequenceReverseColor);
+  persistRef("hict.sequence.modDotPlotThreads", modDotPlotThreads);
+  /** Draw a reverse-complement row under the forward FASTA row. */
+  const sequenceShowReverseStrand = ref(
+    readStored("hict.sequence.showReverseStrand", false)
+  );
+  persistRef("hict.sequence.showReverseStrand", sequenceShowReverseStrand);
+  /** Keep the map's top-left corner against the rulers. On by default. */
+  const mapAnchorTopLeft = ref(readStored("hict.ui.mapAnchorTopLeft", true));
+  persistRef("hict.ui.mapAnchorTopLeft", mapAnchorTopLeft);
   const customZoomSliderEnabled = ref(false);
   const binaryTileTransportEnabled = ref(false);
   const rulerCoordinateMode = ref<"global" | "contig" | "scaffold">(
@@ -78,6 +126,12 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
   persistRef("hict.ui.osd.fieldOrder", osdOverlayFieldOrder);
 
   return {
+    sequenceGapLengthBp,
+    sequenceForwardColor,
+    sequenceShowReverseStrand,
+    sequenceReverseColor,
+    modDotPlotThreads,
+    mapAnchorTopLeft,
     customZoomSliderEnabled,
     binaryTileTransportEnabled,
     rulerCoordinateMode,

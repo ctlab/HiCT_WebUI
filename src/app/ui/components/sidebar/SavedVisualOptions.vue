@@ -20,8 +20,28 @@
  -->
 
 <template>
-  <p class="w-100 m-0 text-lg-center saved-visual-title"><b>Visualization presets:</b></p>
+  <div class="input-group input-group-sm px-2 py-1">
+    <select
+      class="form-select"
+      aria-label="Visualization preset"
+      @change="applySelectedPreset"
+    >
+      <option value="">Choose a preset…</option>
+      <option v-for="[id, preset] of savedOptions" :key="id" :value="id">
+        {{ preset.name }}
+      </option>
+    </select>
+    <button
+      type="button"
+      class="btn btn-outline-primary"
+      :aria-expanded="managePresets"
+      @click="managePresets = !managePresets"
+    >
+      Manage…
+    </button>
+  </div>
   <div
+    v-show="managePresets"
     class="btn-group w-100 px-2 py-1"
     role="group"
     aria-label="Visualization presets"
@@ -31,10 +51,12 @@
       class="btn btn-sm btn-outline-primary"
       data-bs-toggle="tooltip"
       data-bs-placement="bottom"
-      title="Save current visualization options"
+      title="Save applied visualization and complete rendering graph"
+      :disabled="savingPreset"
       @click="saveOptions"
     >
-      <i class="bi bi-bookmark-plus"></i> Save
+      <i class="bi bi-bookmark-plus"></i>
+      {{ savingPreset ? "Saving…" : "Save" }}
     </button>
     <button
       type="button"
@@ -57,16 +79,19 @@
       />
     </button>
   </div>
-  <div class="saved-visualization-options-div">
+  <div v-show="managePresets" class="saved-visualization-options-div">
     <div v-for="[id, opt] of savedOptions" :key="id">
       <SavedVisualOptionsElement
         v-if="opt"
+        :ref="(element) => bindPresetElement(id, element)"
         :map-manager="props.mapManager"
         :option_id="opt.option_id"
         :visualization-options="opt.options"
         :background-color="opt.backgroundColor"
         :track-styles="opt.trackStyles"
         :signal-thresholds="opt.signalThresholds"
+        :action="opt.action"
+        :render-pipeline="opt.renderPipeline"
         :name="opt.name"
         @remove="removeOption"
         @rename="renameOption"
@@ -90,11 +115,19 @@ import { useStyleStore } from "@/app/stores/styleStore";
 import { ColorTranslator } from "colortranslator";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
 import { useSessionStore } from "@/app/stores/sessionStore";
+import { validateSessionLibraries } from "@/app/core/mapmanagers/SessionDocument";
+import type { VisualizationPresetAction } from "@/app/stores/sessionStore";
+import { parseVisualizationPresetAction } from "@/app/core/visualization/presetCatalog";
+import {
+  captureRenderPipelinePreset,
+  snapshotColorToRGBA,
+  parseRenderPipelinePreset,
+  type RenderPipelinePreset,
+} from "@/app/core/visualization/renderPipelinePreset";
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
   visualizationOptionsStore
 );
-
 
 onMounted(() => {
   importJSONResults(defaultOptions);
@@ -121,10 +154,33 @@ const savedOptions = shallowRef(
         lowerSignalBound?: number;
         upperSignalBound?: number;
       };
+      action?: VisualizationPresetAction;
+      renderPipeline?: RenderPipelinePreset;
     }
   >()
 );
 const syncingFromSession = ref(false);
+const managePresets = ref(false);
+const savingPreset = ref(false);
+const presetElements = new Map<
+  number,
+  InstanceType<typeof SavedVisualOptionsElement>
+>();
+
+function bindPresetElement(id: number, element: unknown): void {
+  if (element)
+    presetElements.set(
+      id,
+      element as InstanceType<typeof SavedVisualOptionsElement>
+    );
+  else presetElements.delete(id);
+}
+
+function applySelectedPreset(event: Event): void {
+  const select = event.target as HTMLSelectElement;
+  if (select.value) void presetElements.get(Number(select.value))?.apply();
+  select.value = "";
+}
 
 function triggerSavedOptions() {
   triggerRef(savedOptions);
@@ -155,21 +211,42 @@ const importFileBtn: Ref<HTMLInputElement | null> = ref(null);
 
 const optionsCount = ref(0);
 
-function saveOptions() {
-  if (!props.mapManager) return;
-
-  const id = nextOptionId();
-  savedOptions.value.set(id, {
-    option_id: id,
-    name: `Preset ${id}`,
-    options: visualizationOptionsStore.asVisualizationOptions(),
-    backgroundColor: mapBackgroundColor.value as ColorTranslator,
-    trackStyles: props.mapManager.getLayersManager().getTrackStylePreset(),
-    signalThresholds: extractSignalThresholds(
-      visualizationOptionsStore.asVisualizationOptions()
-    ),
-  });
-  bumpSavedOptions();
+async function saveOptions() {
+  const manager = props.mapManager;
+  if (!manager || savingPreset.value) return;
+  savingPreset.value = true;
+  try {
+    const snapshot =
+      await manager.networkManager.requestManager.getSessionSnapshot();
+    if (manager !== props.mapManager)
+      throw new Error("The active map changed while saving the preset.");
+    if (!isRecord(snapshot.visualizationOptions))
+      throw new Error("Applied visualization options are unavailable.");
+    const options = deserializeVisualizationOptions(
+      snapshot.visualizationOptions
+    );
+    const renderPipeline = captureRenderPipelinePreset(
+      snapshot.renderPipeline,
+      manager.networkManager.host
+    );
+    const id = nextOptionId();
+    savedOptions.value.set(id, {
+      option_id: id,
+      name: `Preset ${id}`,
+      options,
+      backgroundColor: new ColorTranslator(mapBackgroundColor.value.RGBA, {
+        legacyCSS: true,
+      }),
+      trackStyles: manager.getLayersManager().getTrackStylePreset(),
+      signalThresholds: extractSignalThresholds(options),
+      renderPipeline,
+    });
+    bumpSavedOptions();
+  } catch (error) {
+    toast.error("Cannot save visualization preset. " + error);
+  } finally {
+    savingPreset.value = false;
+  }
 }
 
 function removeOption(option_id: number) {
@@ -193,6 +270,8 @@ function exportOptions() {
     name: string;
     trackStyles?: TrackStylePresetBundle;
     signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
+    action?: VisualizationPresetAction;
+    renderPipeline?: RenderPipelinePreset;
   }[] = [];
 
   savedOptions.value.forEach((v) =>
@@ -202,7 +281,10 @@ function exportOptions() {
       name: v.name,
       backgroundColor: colorToString(v.backgroundColor),
       trackStyles: v.trackStyles,
-      signalThresholds: v.signalThresholds ?? extractSignalThresholds(v.options),
+      signalThresholds:
+        v.signalThresholds ?? extractSignalThresholds(v.options),
+      action: v.action,
+      renderPipeline: v.renderPipeline,
     })
   );
 
@@ -234,6 +316,8 @@ function syncSessionStore() {
     name: string;
     trackStyles?: TrackStylePresetBundle;
     signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
+    action?: VisualizationPresetAction;
+    renderPipeline?: RenderPipelinePreset;
   }[] = [];
   savedOptions.value.forEach((v) =>
     values.push({
@@ -243,6 +327,8 @@ function syncSessionStore() {
       backgroundColor: colorToString(v.backgroundColor),
       trackStyles: v.trackStyles,
       signalThresholds: extractSignalThresholds(v.options),
+      action: v.action,
+      renderPipeline: v.renderPipeline,
     })
   );
   sessionStore.setSavedVisualizationPresets(values);
@@ -253,17 +339,20 @@ function loadFromSessionStore() {
   const presets = sessionStore.savedVisualizationPresets;
   savedOptions.value.clear();
   presets.forEach((opt, idx) => {
+    const id = opt.option_id ?? idx;
     const backgroundColor = new ColorTranslator(
       opt.backgroundColor ?? "rgba(255,255,255,1.0)",
       { legacyCSS: true }
     );
-    savedOptions.value.set(idx, {
-      option_id: idx,
-      name: opt.name ?? `Preset ${idx}`,
+    savedOptions.value.set(id, {
+      option_id: id,
+      name: opt.name ?? `Preset ${id}`,
       options: deserializeVisualizationOptions(opt.options ?? {}),
       backgroundColor,
       trackStyles: opt.trackStyles as TrackStylePresetBundle | undefined,
       signalThresholds: opt.signalThresholds,
+      action: opt.action,
+      renderPipeline: parseRenderPipelinePreset(opt.renderPipeline),
     });
   });
   triggerSavedOptions();
@@ -279,7 +368,10 @@ watch(
       backgroundColor: colorToString(v.backgroundColor),
       name: v.name,
       trackStyles: v.trackStyles,
-      signalThresholds: v.signalThresholds ?? extractSignalThresholds(v.options),
+      signalThresholds:
+        v.signalThresholds ?? extractSignalThresholds(v.options),
+      action: v.action,
+      renderPipeline: v.renderPipeline,
     }));
     const next = sessionStore.savedVisualizationPresets;
     if (JSON.stringify(current) !== JSON.stringify(next)) {
@@ -292,7 +384,7 @@ watch(
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(v: unknown): v is UnknownRecord {
-  return typeof v === "object" && v !== null;
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 function getDataField(v: unknown): UnknownRecord | undefined {
@@ -308,10 +400,8 @@ function isArray(v: unknown): v is unknown[] {
 function importJSONResults(jsonPreResult: unknown) {
   const data = getDataField(jsonPreResult);
 
-  // If no valid "data" block, nothing to import
   if (!data) {
-    toast.error("Cannot import visualization options: invalid JSON format");
-    return;
+    throw new Error("Invalid visualization options JSON format");
   }
 
   // Now parse into your expected (new) format safely
@@ -321,7 +411,7 @@ function importJSONResults(jsonPreResult: unknown) {
       filename: string;
       savedLocations?: {
         option_id: number;
-        options: Record<string, unknown>;
+        options?: Record<string, unknown>;
         backgroundColor?: string | ColorTranslator;
         name?: string;
         trackStyles?: TrackStylePresetBundle;
@@ -329,10 +419,12 @@ function importJSONResults(jsonPreResult: unknown) {
           lowerSignalBound?: number;
           upperSignalBound?: number;
         };
+        action?: unknown;
+        renderPipeline?: unknown;
       }[];
       savedVisualizationPresets?: {
         option_id: number;
-        options: Record<string, unknown>;
+        options?: Record<string, unknown>;
         backgroundColor?: string | ColorTranslator;
         name?: string;
         trackStyles?: TrackStylePresetBundle;
@@ -340,6 +432,8 @@ function importJSONResults(jsonPreResult: unknown) {
           lowerSignalBound?: number;
           upperSignalBound?: number;
         };
+        action?: unknown;
+        renderPipeline?: unknown;
       }[];
     };
   };
@@ -349,13 +443,25 @@ function importJSONResults(jsonPreResult: unknown) {
     jsonResult.data.savedLocations ??
     [];
 
+  if (!Array.isArray(arr)) {
+    throw new Error("Visualization presets must be a list.");
+  }
+
   const existingKeys = new Set<string>();
   savedOptions.value.forEach((opt) => {
     existingKeys.add(buildPresetKey(opt));
   });
 
+  const firstImportedId = nextOptionId();
+  let nextImportedId = firstImportedId;
+  const nextSavedOptions = new Map(savedOptions.value);
+  const pendingThresholds: Parameters<typeof applySignalThresholds>[0][] = [];
+
   arr.forEach((option) => {
-    const newId = nextOptionId();
+    if (!isRecord(option)) {
+      throw new Error("Every imported visualization preset must be an object.");
+    }
+    const newId = nextImportedId;
 
     let backgroundColor: ColorTranslator = new ColorTranslator(
       "rgba(255,255,255,255)",
@@ -365,7 +471,7 @@ function importJSONResults(jsonPreResult: unknown) {
     const b = option.backgroundColor;
     if (b instanceof ColorTranslator) {
       backgroundColor = b;
-  } else if (typeof b === "string") {
+    } else if (typeof b === "string") {
       try {
         backgroundColor = new ColorTranslator(b, { legacyCSS: true });
       } catch {
@@ -377,23 +483,44 @@ function importJSONResults(jsonPreResult: unknown) {
 
     const newOption = {
       option_id: newId,
-      options: deserializeVisualizationOptions(option.options),
+      options: deserializeVisualizationOptions(option.options ?? {}),
       backgroundColor,
       trackStyles: option.trackStyles,
       name: option.name ?? `Imported preset ${newId}`,
       signalThresholds: option.signalThresholds,
+      action: parseVisualizationPresetAction(option.action),
+      renderPipeline: parseRenderPipelinePreset(option.renderPipeline),
     };
+    const checked: Record<string, unknown> = JSON.parse(
+      JSON.stringify({
+        ...newOption,
+        options: serializeVisualizationOptions(newOption.options),
+        backgroundColor: colorToString(newOption.backgroundColor),
+      })
+    );
+    validateSessionLibraries({ savedVisualizationPresets: [checked] });
+    newOption.trackStyles = checked.trackStyles as
+      | TrackStylePresetBundle
+      | undefined;
     const key = buildPresetKey(newOption);
     if (!existingKeys.has(key)) {
-      savedOptions.value.set(newOption.option_id, newOption);
+      nextSavedOptions.set(newOption.option_id, newOption);
       existingKeys.add(key);
-      bumpSavedOptions();
-      applySignalThresholds(option);
+      nextImportedId++;
+      if (!newOption.renderPipeline) pendingThresholds.push(option);
     }
   });
+
+  if (nextImportedId !== firstImportedId) {
+    savedOptions.value = nextSavedOptions;
+    bumpSavedOptions();
+    pendingThresholds.forEach(applySignalThresholds);
+  }
 }
 
-function serializeVisualizationOptions(options: VisualizationOptions): Record<string, unknown> {
+function serializeVisualizationOptions(
+  options: VisualizationOptions
+): Record<string, unknown> {
   const cmap = options.colormap;
   if (cmap instanceof SimpleLinearGradient) {
     return {
@@ -405,6 +532,8 @@ function serializeVisualizationOptions(options: VisualizationOptions): Record<st
       autoThresholdEnabled: options.autoThresholdEnabled ?? false,
       autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
       signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
+      coolerWeightsNaNPolicy:
+        options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
       colormap: {
         colormapType: cmap.colormapType,
         startColorRGBAString: cmap.startColorRGBA.RGBA,
@@ -423,26 +552,41 @@ function serializeVisualizationOptions(options: VisualizationOptions): Record<st
     autoThresholdEnabled: options.autoThresholdEnabled ?? false,
     autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
     signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
+    coolerWeightsNaNPolicy:
+      options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
     colormap: {
       colormapType: options.colormap?.colormapType ?? "Unknown",
     },
   };
 }
 
-function deserializeVisualizationOptions(raw: Record<string, unknown>): VisualizationOptions {
+function deserializeVisualizationOptions(
+  raw: Record<string, unknown>
+): VisualizationOptions {
   const preLogBase = typeof raw.preLogBase === "number" ? raw.preLogBase : -1;
-  const postLogBase = typeof raw.postLogBase === "number" ? raw.postLogBase : 10;
+  const postLogBase =
+    typeof raw.postLogBase === "number" ? raw.postLogBase : 10;
   const applyCoolerWeights =
-    typeof raw.applyCoolerWeights === "boolean" ? raw.applyCoolerWeights : false;
+    typeof raw.applyCoolerWeights === "boolean"
+      ? raw.applyCoolerWeights
+      : false;
   const resolutionScaling =
     typeof raw.resolutionScaling === "boolean" ? raw.resolutionScaling : false;
   const resolutionLinearScaling =
-    typeof raw.resolutionLinearScaling === "boolean" ? raw.resolutionLinearScaling : false;
-  const cmapRaw = isRecord(raw.colormap) ? raw.colormap : {};
+    typeof raw.resolutionLinearScaling === "boolean"
+      ? raw.resolutionLinearScaling
+      : false;
+  let cmapRaw = isRecord(raw.colormap) ? raw.colormap : {};
+  if (cmapRaw.type === "SimpleLinearGradient") {
+    cmapRaw = {
+      ...cmapRaw,
+      colormapType: "SimpleLinearGradient",
+      startColorRGBAString: snapshotColorToRGBA(cmapRaw.startColor),
+      endColorRGBAString: snapshotColorToRGBA(cmapRaw.endColor),
+    };
+  }
   const cmapType =
-    typeof cmapRaw.colormapType === "string"
-      ? cmapRaw.colormapType
-      : "Unknown";
+    typeof cmapRaw.colormapType === "string" ? cmapRaw.colormapType : "Unknown";
   let cmap: Colormap;
   if (cmapType === "SimpleLinearGradient") {
     const startColor =
@@ -487,9 +631,14 @@ function deserializeVisualizationOptions(raw: Record<string, unknown>): Visualiz
       ? raw.autoThresholdQuantile
       : 0.995,
     raw.signalDisplayMode === "EXPECTED" ||
-      raw.signalDisplayMode === "OBSERVED_OVER_EXPECTED"
+    raw.signalDisplayMode === "OBSERVED_OVER_EXPECTED"
       ? raw.signalDisplayMode
-      : "OBSERVED"
+      : "OBSERVED",
+    raw.coolerWeightsNaNPolicy === "DISABLE_WEIGHTS" ||
+    raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ZERO" ||
+    raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ONE"
+      ? raw.coolerWeightsNaNPolicy
+      : "REPLACE_NANS_WITH_ONE"
   );
 }
 
@@ -514,7 +663,10 @@ function applySignalThresholds(option: {
   if (!thresholds) return;
   const lower = thresholds.lowerSignalBound;
   const upper = thresholds.upperSignalBound;
-  if (typeof lower === "number" && colormap.value instanceof SimpleLinearGradient) {
+  if (
+    typeof lower === "number" &&
+    colormap.value instanceof SimpleLinearGradient
+  ) {
     const cmap = colormap.value as SimpleLinearGradient;
     colormap.value = new SimpleLinearGradient(
       cmap.startColorRGBA,
@@ -531,6 +683,8 @@ function buildPresetKey(opt: {
   backgroundColor: ColorTranslator;
   trackStyles?: TrackStylePresetBundle;
   signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
+  action?: VisualizationPresetAction;
+  renderPipeline?: RenderPipelinePreset;
 }): string {
   const payload = {
     name: opt.name,
@@ -538,6 +692,8 @@ function buildPresetKey(opt: {
     backgroundColor: colorToString(opt.backgroundColor),
     trackStyles: opt.trackStyles ?? null,
     signalThresholds: opt.signalThresholds ?? null,
+    action: opt.action ?? null,
+    renderPipeline: opt.renderPipeline ?? null,
   };
   return stableStringify(payload);
 }
@@ -563,6 +719,14 @@ function importOptionsFromFile() {
       const fileList = importFileBtn.value.files as FileList;
       if (fileList && fileList.length > 0) {
         const reader = new FileReader();
+        reader.onerror = () =>
+          toast.error(
+            "Cannot import visualization options. " +
+              (reader.error?.message ?? "File read failed.")
+          );
+        reader.onloadend = () => {
+          if (importFileBtn.value) importFileBtn.value.value = "";
+        };
         reader.readAsText(fileList[0], "utf-8");
         // console.log(fileList);
         // console.log(reader);
@@ -575,7 +739,7 @@ function importOptionsFromFile() {
 
             importJSONResults(jsonPreResult);
 
-            toast.success("Visualziation presets loaded");
+            toast.success("Visualization presets loaded");
           } catch (e) {
             toast.error("Cannot import visualization options: " + e);
           }
@@ -639,20 +803,13 @@ function importOptionsFromFile() {
   /* Auto layout */
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  /* Full-width preset rows: names are click targets that apply the preset. */
+  align-items: stretch;
 
   /* Inside auto layout */
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   order: 2;
-  min-height: 0;
-  overflow-y: scroll;
-  overflow-x: hidden;
   width: 100%;
-  /* padding-top: 15px; */
-  padding-right: 10px;
-}
-
-.saved-visual-title {
-  font-size: 0.92rem;
+  gap: 2px;
 }
 </style>

@@ -36,9 +36,16 @@ const {
   getNavigationResolutionModel,
   getResolutionDescriptorForViewResolution,
   getVectorResolutionTuples,
+  selectNearestResolution,
+  selectOverviewResolution,
 } = sandbox.module.exports;
 
-function assertResolutionDescriptor(set, viewResolution, expectedBpResolution, message) {
+function assertResolutionDescriptor(
+  set,
+  viewResolution,
+  expectedBpResolution,
+  message
+) {
   assert.equal(
     getResolutionDescriptorForViewResolution(set, viewResolution).bpResolution,
     expectedBpResolution,
@@ -72,7 +79,10 @@ function assertContiguousVisibility(set) {
 }
 
 function assertNavigationModel(primarySet, secondarySet, expected) {
-  const navigationModel = getNavigationResolutionModel(primarySet, secondarySet);
+  const navigationModel = getNavigationResolutionModel(
+    primarySet,
+    secondarySet
+  );
   assert.deepEqual(
     {
       resolutions: [...navigationModel.resolutions],
@@ -86,10 +96,9 @@ function assertVectorTuples(primarySet, secondarySet, expected, message) {
   assert.deepEqual(
     JSON.parse(
       JSON.stringify(
-        getVectorResolutionTuples(primarySet, secondarySet).map((descriptor) => [
-          descriptor.bpResolution,
-          descriptor.pixelResolution,
-        ])
+        getVectorResolutionTuples(primarySet, secondarySet).map(
+          (descriptor) => [descriptor.bpResolution, descriptor.pixelResolution]
+        )
       )
     ),
     expected,
@@ -130,11 +139,42 @@ const secondaryFine = buildSourceResolutionDescriptorSet(
   250
 );
 
+// These descriptors use 250 bp per map unit.
+for (const [bpPerPixel, primaryBp, secondaryBp] of [
+  [125, 1000, 250],
+  [499, 1000, 250],
+  [500, 1000, 500],
+  [1000, 1000, 1000],
+  [2499, 1000, 1000],
+  [2500, 1000, 2500],
+  [4999, 1000, 2500],
+  [5000, 5000, 5000],
+  [9999, 5000, 5000],
+  [10000, 10000, 10000],
+  [20000, 10000, 20000],
+  [40000, 10000, 20000],
+]) {
+  for (const [set, expected] of [
+    [primaryCoarse, primaryBp],
+    [secondaryFine, secondaryBp],
+  ]) {
+    assertResolutionDescriptor(
+      set,
+      bpPerPixel / 250,
+      expected,
+      `${set.sourceName} at ${bpPerPixel} bp/px`
+    );
+  }
+}
+
 assertContiguousVisibility(primaryCoarse);
 assertContiguousVisibility(secondaryFine);
 
-assert.deepEqual(primaryCoarse.pixelResolutionSet, [4, 20, 40]);
-assert.deepEqual(secondaryFine.pixelResolutionSet, [1, 2, 4, 10, 20, 40, 80]);
+assert.deepEqual([...primaryCoarse.pixelResolutionSet], [4, 20, 40]);
+assert.deepEqual(
+  [...secondaryFine.pixelResolutionSet],
+  [1, 2, 4, 10, 20, 40, 80]
+);
 
 assertResolutionDescriptor(
   primaryCoarse,
@@ -189,14 +229,10 @@ assertGuidanceDescriptor(
 assertResolutionDescriptor(primaryCoarse, 120, 10000);
 assertResolutionDescriptor(secondaryFine, 120, 20000);
 
-assertNavigationModel(
-  primaryCoarse,
-  secondaryFine,
-  {
-    resolutions: [250, 500, 1000, 2500, 5000, 10000, 20000],
-    pixelResolutionSet: [1, 2, 4, 10, 20, 40, 80],
-  }
-);
+assertNavigationModel(primaryCoarse, secondaryFine, {
+  resolutions: [250, 500, 1000, 2500, 5000, 10000, 20000],
+  pixelResolutionSet: [1, 2, 4, 10, 20, 40, 80],
+});
 
 assertVectorTuples(
   primaryCoarse,
@@ -326,3 +362,60 @@ assert.equal(
 );
 
 console.log("Map resolution model regression check passed.");
+
+const nearest = (target, previous) =>
+  selectNearestResolution(primaryCoarse.resolutionTuples, target, previous)
+    .bpResolution;
+const crossover = Math.sqrt(4 * 20);
+assert.equal(
+  nearest(crossover),
+  1000,
+  "Log-distance ties prefer the finer level"
+);
+assert.equal(nearest(crossover * 1.01), 5000);
+assert.equal(nearest(crossover * 1.01, 1000), 1000, "Zoom out has hysteresis");
+assert.equal(nearest(crossover * 1.05, 1000), 5000);
+assert.equal(nearest(crossover * 0.99, 5000), 5000, "Zoom in has hysteresis");
+assert.equal(nearest(crossover * 0.95, 5000), 1000);
+assert.equal(
+  nearest(100, 1000),
+  10000,
+  "Large jumps can cross multiple levels"
+);
+
+const malformed = buildSourceResolutionDescriptorSet(
+  "SECONDARY",
+  [7, 0, 3, 7, 9],
+  [3, 99, 6, 100],
+  1
+);
+assert.deepEqual([...malformed.resolutions], [7, 3]);
+assert.deepEqual([...malformed.imageSizes], [3, 6]);
+assert.equal(
+  selectNearestResolution(malformed.resolutionTuples, 5).bpResolution,
+  7
+);
+assert.throws(() => selectNearestResolution([], 5), /No resolutions/);
+
+// Borrelia has empty coarse pyramid levels; keep enough bins to show useful detail.
+assert.equal(
+  selectOverviewResolution([
+    { bpResolution: 1000, visibleBins: 1461 },
+    { bpResolution: 10000, visibleBins: 162 },
+    { bpResolution: 100000, visibleBins: 10 },
+    { bpResolution: 1000000, visibleBins: 0 },
+  ]),
+  10000
+);
+assert.equal(
+  selectOverviewResolution([
+    { bpResolution: 1000, visibleBins: 12 },
+    { bpResolution: 2000, visibleBins: 0 },
+  ]),
+  1000
+);
+assert.equal(
+  selectOverviewResolution([{ bpResolution: 1000, visibleBins: 0 }]),
+  undefined
+);
+assert.equal(selectOverviewResolution([]), undefined);

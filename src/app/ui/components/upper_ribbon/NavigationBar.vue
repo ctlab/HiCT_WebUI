@@ -22,9 +22,18 @@
 <template>
   <nav class="navbar-bar navbar navbar-expand">
     <div class="container-fluid">
+      <BackgroundJobsPanel
+        :requests="props.networkManager.requestManager"
+        @open="emit('jobResult', $event)"
+      />
       <!-- Logo -->
       <a class="navbar-brand hict-navbar-brand" href="#">
-        <img :src="hictLogo" alt="" class="hict-navbar-logo" aria-hidden="true" />
+        <img
+          :src="hictLogo"
+          alt=""
+          class="hict-navbar-logo"
+          aria-hidden="true"
+        />
         <span>HiCT</span>
       </a>
 
@@ -40,36 +49,56 @@
             >
             <ul class="dropdown-menu">
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenWizard"
-                  >Open Wizard...</a
+                <a class="dropdown-item" href="#" @click.prevent="onOpenWizard"
+                  >Open with options…</a
                 >
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenFile"
-                  >Manual Open...</a
+                <a class="dropdown-item" href="#" @click.prevent="onOpenFile"
+                  >Open…</a
                 >
               </li>
-              <!-- <li>
-                <a class="dropdown-item" href="#" @click="onSaveClicked">Save</a>
-                <div v-if="saving" class="spinner-border ms-auto" role="status"></div>
-              </li> -->
               <li>
-                <a class="dropdown-item" href="#" @click="onCloseClicked"
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  title="Make an assembly from a FASTA file with no contact data"
+                  @click.prevent="emit('fastaOnlyRequested')"
+                  >Open FASTA only...</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="onCloseClicked"
                   >Close</a
                 >
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click="onAttachClicked"
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="onAttachClicked"
                   >Attach</a
                 >
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
-                <a class="dropdown-item" href="#" @click="onSaveSessionClicked"
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="onSaveSessionClicked"
                   >Save session</a
                 >
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenSessionClicked"
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="onOpenSessionClicked"
                   >Open session</a
                 >
                 <input
@@ -80,11 +109,12 @@
                   hidden
                 />
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
                 <a
                   class="dropdown-item"
                   href="#"
-                  @click="onConvertCoolersClicked"
+                  @click.prevent="onConvertCoolersClicked"
                   >Convert matrices</a
                 >
               </li>
@@ -96,23 +126,76 @@
                   >Export matrix</a
                 >
               </li>
-              <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
-                  @click.prevent="onGenerateDotplotClicked"
-                  >Generate dotplot</a
-                >
-              </li>
-              <li>
-                <a class="dropdown-item" href="#" @click="onDropCachesClicked"
-                  >Drop caches</a
-                >
-              </li>
               <li><hr class="dropdown-divider" /></li>
               <li>
                 <a class="dropdown-item" href="#" @click.prevent="onQuitClicked"
                   >Quit</a
+                >
+              </li>
+            </ul>
+          </li>
+          <!-- Assembly -->
+          <li class="nav-item dropdown">
+            <a
+              class="nav-link active dropdown-toggle"
+              data-bs-toggle="dropdown"
+              href="#"
+              >Assembly</a
+            >
+            <ul class="dropdown-menu">
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="onOpenFASTAFile"
+                  >Link FASTA</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="onLoadAGP"
+                  >Load AGP</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="onApplyJuiceboxAssembly"
+                  >Apply Juicebox assembly</a
+                >
+              </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="onAssemblyFASTARequest"
+                  >Export FASTA…</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="onSelectionFASTARequest"
+                  >Export FASTA for selection</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="onAssemblyAGPRequest"
+                  >Export to AGP</a
                 >
               </li>
             </ul>
@@ -127,12 +210,20 @@
             >
             <ul class="dropdown-menu">
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenTrackManager"
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="onOpenTrackManager"
                   >Tracks and layers...</a
                 >
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenRenderingPipeline"
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="onOpenRenderingPipeline"
                   >Rendering pipeline...</a
                 >
               </li>
@@ -148,67 +239,82 @@
                 <a
                   class="dropdown-item"
                   href="#"
+                  :class="{ disabled: !props.mapManager }"
                   @click.prevent="openResolutionSettings"
                   >Restrict Resolutions...</a
                 >
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenApiDocs"
-                  >API docs...</a
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  role="menuitemcheckbox"
+                  :aria-checked="uiSettingsStore.sequenceShowReverseStrand"
+                  title="Adds a reverse-complement row under the FASTA track when zoomed to bases"
+                  @click.prevent="
+                    uiSettingsStore.sequenceShowReverseStrand =
+                      !uiSettingsStore.sequenceShowReverseStrand
+                  "
+                  ><i
+                    class="bi me-1"
+                    :class="
+                      uiSettingsStore.sequenceShowReverseStrand
+                        ? 'bi-check-square'
+                        : 'bi-square'
+                    "
+                    aria-hidden="true"
+                  ></i
+                  >FASTA: show reverse strand</a
                 >
               </li>
             </ul>
           </li>
-          <!-- Bookmarks -->
-          <!-- <li class="nav-item">
-            <a aria-current="page" class="nav-link active" href="#"
-              >Bookmarks</a
-            >
-          </li> -->
-          <!-- Assembly -->
+          <!-- Tools -->
           <li class="nav-item dropdown">
             <a
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
               href="#"
-              >Assembly</a
+              >Tools</a
             >
             <ul class="dropdown-menu">
+              <li><h6 class="dropdown-header">Sequence search</h6></li>
               <li>
-                <a class="dropdown-item" href="#" @click="onOpenFASTAFile"
-                  >Link FASTA</a
+                <button
+                  class="dropdown-item"
+                  :disabled="!props.mapManager"
+                  @click="sequenceSearchOpen = true"
                 >
+                  Find sequences in linked FASTA…
+                </button>
               </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li><h6 class="dropdown-header">Dotplots</h6></li>
               <li>
                 <a
                   class="dropdown-item"
                   href="#"
-                  @click="onAssemblyFASTARequest"
-                  >Export assembly</a
+                  @click.prevent="onGenerateDotplotClicked"
+                  >Generate dotplot from FASTA files…</a
                 >
               </li>
               <li>
-                <a
+                <button
                   class="dropdown-item"
-                  href="#"
-                  @click="onSelectionFASTARequest"
-                  >Export FASTA for selection</a
+                  :disabled="!props.mapManager"
+                  @click="assemblyDotPlotOpen = true"
                 >
+                  Generate dotplot from active assembly…
+                </button>
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click="onLoadAGP"
-                  >Load AGP</a
+                <button
+                  class="dropdown-item"
+                  :disabled="!props.mapManager"
+                  @click="modDotPlotOpen = true"
                 >
-              </li>
-              <li>
-                <a class="dropdown-item" href="#" @click="onApplyJuiceboxAssembly"
-                  >Apply Juicebox assembly</a
-                >
-              </li>
-              <li>
-                <a class="dropdown-item" href="#" @click="onAssemblyAGPRequest"
-                  >Export to AGP</a
-                >
+                  Generate ModDotPlot…
+                </button>
               </li>
             </ul>
           </li>
@@ -278,7 +384,10 @@
                 <label class="form-check-label" for="toggle-native-processing">
                   Use native code processing
                 </label>
-                <div class="native-processing-status" :class="nativeProcessingStatusClass">
+                <div
+                  class="native-processing-status"
+                  :class="nativeProcessingStatusClass"
+                >
                   {{ nativeProcessingStatusText }}
                 </div>
               </li>
@@ -293,82 +402,198 @@
                   :disabled="dotplotAlignerBusy"
                   @change="onDotplotAlignerPreferenceChanged"
                 >
-                  <option value="auto">Auto (mm2-plus AVX-512 -> AVX2 -> minimap2)</option>
+                  <option value="auto">
+                    Auto (mm2-plus AVX-512 -> AVX2 -> minimap2)
+                  </option>
                   <option value="mm2plus">mm2-plus best available</option>
-                  <option value="mm2plus-avx512" :disabled="!toolchainStatus?.mm2PlusAvx512Available">
-                    mm2-plus AVX-512{{ toolchainStatus?.mm2PlusAvx512Available ? "" : " (not bundled)" }}
+                  <option
+                    value="mm2plus-avx512"
+                    :disabled="!toolchainStatus?.mm2PlusAvx512Available"
+                  >
+                    mm2-plus AVX-512{{
+                      toolchainStatus?.mm2PlusAvx512Available
+                        ? ""
+                        : " (not bundled)"
+                    }}
                   </option>
-                  <option value="mm2plus-avx2" :disabled="!toolchainStatus?.mm2PlusAvx2Available">
-                    mm2-plus AVX2{{ toolchainStatus?.mm2PlusAvx2Available ? "" : " (not bundled)" }}
+                  <option
+                    value="mm2plus-avx2"
+                    :disabled="!toolchainStatus?.mm2PlusAvx2Available"
+                  >
+                    mm2-plus AVX2{{
+                      toolchainStatus?.mm2PlusAvx2Available
+                        ? ""
+                        : " (not bundled)"
+                    }}
                   </option>
-                  <option value="minimap2" :disabled="!toolchainStatus?.minimap2Available">
-                    minimap2{{ toolchainStatus?.minimap2Available ? "" : " (not bundled)" }}
+                  <option
+                    value="minimap2"
+                    :disabled="!toolchainStatus?.minimap2Available"
+                  >
+                    minimap2{{
+                      toolchainStatus?.minimap2Available ? "" : " (not bundled)"
+                    }}
                   </option>
                 </select>
-                <div class="native-processing-status" :class="dotplotAlignerStatusClass">
+                <div
+                  class="native-processing-status"
+                  :class="dotplotAlignerStatusClass"
+                >
                   {{ dotplotAlignerStatusText }}
                 </div>
               </li>
               <li><hr class="dropdown-divider" /></li>
               <li>
-                <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenServerStatistics">
+                <a
+                  class="dropdown-item px-0 mt-2"
+                  href="#"
+                  @click.prevent="onOpenServerStatistics"
+                >
                   Runtime statistics...
                 </a>
               </li>
               <li>
-                <a class="dropdown-item px-0 mt-2" href="#" @click="onOpenWorkerDiagnostics">
+                <a
+                  class="dropdown-item px-0 mt-2"
+                  href="#"
+                  @click.prevent="onOpenWorkerDiagnostics"
+                >
                   Worker diagnostics...
                 </a>
               </li>
-            </ul>
-          </li>
-          <!-- Connection settings -->
-          <li class="nav-item dropdown">
-            <a
-              aria-current="page"
-              class="nav-link active dropdown-toggle"
-              data-bs-toggle="dropdown"
-              href="#"
-              >Connection</a
-            >
-            <ul class="dropdown-menu" id="connection-settings-menu-dropdown">
-              <li id="connection-settings-input-group" class="input-group m-3">
-                <input
-                  id="global-search-input"
-                  class="form-control m-0"
-                  placeholder="http://localhost:5000/"
-                  type="text"
-                  v-model="gatewayAddress"
-                />
-                <button
-                  class="btn btn-sm btn-outline-dark"
-                  id="set-gateway-btn"
-                  @click="onGatewayChanged"
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a
+                  class="dropdown-item px-0 mt-2"
+                  href="#"
+                  @click.prevent="onDropCachesClicked"
                 >
-                  Set API gateway
-                </button>
+                  Drop caches
+                </a>
+              </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li @click.stop>
+                <label class="form-label mb-1" for="api-gateway-input"
+                  >API gateway</label
+                >
+                <div id="connection-settings-input-group" class="input-group">
+                  <input
+                    id="api-gateway-input"
+                    class="form-control"
+                    placeholder="http://localhost:5000/"
+                    type="text"
+                    v-model="gatewayAddress"
+                  />
+                  <button
+                    class="btn btn-sm btn-outline-dark"
+                    id="set-gateway-btn"
+                    type="button"
+                    @click="onGatewayChanged"
+                  >
+                    Set API gateway
+                  </button>
+                </div>
               </li>
             </ul>
           </li>
-          <!-- Report a bug -->
-          <li class="nav-item">
+          <!-- Help -->
+          <li class="nav-item dropdown">
             <a
-              aria-current="page"
-              class="nav-link active"
+              class="nav-link active dropdown-toggle"
+              data-bs-toggle="dropdown"
               href="#"
-              @click="openAbout"
-              >About</a
+              >Help</a
             >
-          </li>
-          <li class="nav-item">
-            <a
-              aria-current="page"
-              class="nav-link active"
-              href="https://github.com/ctlab/HiCT/issues"
-              >Report a bug</a
-            >
+            <ul class="dropdown-menu">
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="https://github.com/ctlab/HiCT_JVM/blob/jvm-sfx-native/docs/user-guide.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >User guide and shortcuts</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" @click.prevent="onOpenApiDocs"
+                  >API docs...</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="emit('examplesRequested')"
+                  >Examples...</a
+                >
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" @click.prevent="openAbout"
+                  >About</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="https://github.com/ctlab/HiCT/issues"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >Report a bug</a
+                >
+              </li>
+            </ul>
           </li>
         </ul>
+        <div
+          v-if="props.mapManager"
+          class="file-chips ms-auto d-flex align-items-center gap-2"
+        >
+          <span
+            v-if="openMapFilename"
+            class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
+            :title="openMapFilename"
+          >
+            {{ noContactData ? "Assembly" : "Hi-C" }}:
+            {{ shortFileLabel(openMapFilename, MAP_CHIP_LIMIT) }}
+          </span>
+          <span
+            v-if="secondaryMapFilename"
+            class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
+            :title="secondaryMapFilename"
+          >
+            Secondary:
+            {{ shortFileLabel(secondaryMapFilename, MAP_CHIP_LIMIT) }}
+          </span>
+          <button
+            type="button"
+            class="btn btn-sm file-chip"
+            :class="
+              linkedFastaFilename
+                ? 'btn-outline-secondary'
+                : 'btn-outline-warning'
+            "
+            :title="
+              linkedFastaFilename || 'No FASTA linked. Click to link one.'
+            "
+            @click="onOpenFASTAFile"
+          >
+            FASTA:
+            {{
+              linkedFastaFilename
+                ? shortFileLabel(linkedFastaFilename)
+                : "not linked"
+            }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm file-chip btn-outline-secondary"
+            :title="lastAgpFilename || 'No AGP loaded. Click to load one.'"
+            @click="onLoadAGP"
+          >
+            AGP:
+            {{ lastAgpFilename ? shortFileLabel(lastAgpFilename) : "none" }}
+          </button>
+        </div>
       </div>
     </div>
   </nav>
@@ -381,6 +606,7 @@
   <UniversalFileSelector
     :network-manager="props.networkManager"
     v-if="openingFile"
+    require-selection
     @selected="onFileSelected"
     @dismissed="onFileDismissed"
     :error-message="errorMessage"
@@ -394,6 +620,7 @@
     v-if="openingFASTAFile"
     @selected="linkFASTA"
     @dismissed="onFASTAFileDismissed"
+    :busy="fastaLinking"
     :error-message="errorMessage"
     :title="'Select FASTA file'"
     :file-name-predicate="isFastaFilename"
@@ -403,8 +630,11 @@
     v-if="openingAGPFile"
     @selected="openAGP"
     @dismissed="onAGPFileDismissed"
+    :busy="agpLoading"
     :error-message="errorMessage"
-    :file-name-predicate="(name: string) => name.endsWith('.agp')"
+    :title="'Load AGP'"
+    :note="'Loading an AGP replaces the current assembly layout. Source files stay intact, and Undo restores the previous layout.'"
+    :file-name-predicate="(name: string) => name.toLowerCase().endsWith('.agp')"
   ></UniversalFileSelector>
   <UniversalFileSelector
     :network-manager="props.networkManager"
@@ -446,7 +676,27 @@
     :network-manager="networkManager"
     :initial-fasta-filename="lastLinkedFastaFilename"
     :initial-reference-map-filename="currentPrimaryHictFilename"
+    :initial-resolutions="defaultDotplotResolutions()"
     @dismissed="onGenerateDotplotDismissed"
+  />
+  <ModDotPlotModal
+    v-if="assemblyDotPlotOpen && props.mapManager"
+    kind="dotplot"
+    :map-manager="props.mapManager"
+    @dismissed="assemblyDotPlotOpen = false"
+    @link-fasta="startLinkFastaForTool('dotplot')"
+  />
+  <ModDotPlotModal
+    v-if="modDotPlotOpen && props.mapManager"
+    :map-manager="props.mapManager"
+    @dismissed="modDotPlotOpen = false"
+    @link-fasta="startLinkFastaForTool('moddotplot')"
+  />
+  <SequenceSearchModal
+    v-if="sequenceSearchOpen && props.mapManager"
+    :map-manager="props.mapManager"
+    @dismissed="sequenceSearchOpen = false"
+    @link-fasta="startLinkFastaForTool('search')"
   />
   <TrackManager
     v-if="trackManagerOpen"
@@ -473,13 +723,74 @@
     :report="fastaLinkReport"
     @cancel="cancelFastaLinkWarning"
     @proceed="proceedFastaLinkWarning"
+    @choose-another="chooseAnotherFasta"
   />
+  <div
+    v-if="juiceboxFastaPromptOpen"
+    class="settings-backdrop"
+    @click.self="cancelJuiceboxFlow"
+  >
+    <div
+      ref="juiceboxFastaPromptElement"
+      aria-labelledby="juicebox-fasta-title"
+      class="settings-modal juicebox-fasta-modal"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="settings-header">
+        <h2 id="juicebox-fasta-title">Apply Juicebox assembly</h2>
+        <button
+          class="btn-close"
+          type="button"
+          aria-label="Close"
+          @click="cancelJuiceboxFlow"
+        ></button>
+      </div>
+      <div class="settings-body">
+        <p>
+          Link the original contig FASTA for exact contig matching? It is
+          optional, but recommended when you have the FASTA used to build this
+          Juicebox assembly. Without it the assembly is applied in best-effort
+          mode.
+        </p>
+      </div>
+      <div class="settings-footer gap-2">
+        <button
+          class="btn btn-outline-secondary me-auto"
+          type="button"
+          @click="cancelJuiceboxFlow"
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn-outline-primary"
+          type="button"
+          @click="applyJuiceboxWithoutFasta"
+        >
+          Apply without FASTA
+        </button>
+        <button
+          class="btn btn-primary"
+          type="button"
+          @click="chooseJuiceboxFasta"
+        >
+          Choose FASTA…
+        </button>
+      </div>
+    </div>
+  </div>
   <div
     v-if="osdSettingsOpen"
     class="settings-backdrop"
     @click.self="osdSettingsOpen = false"
   >
-    <div class="settings-modal osd-settings-modal" role="dialog" aria-modal="true">
+    <div
+      ref="osdSettingsElement"
+      class="settings-modal osd-settings-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="On-screen display settings"
+    >
       <div class="settings-header">
         <h2>OSD settings</h2>
         <button class="btn-close" @click="osdSettingsOpen = false"></button>
@@ -507,11 +818,7 @@
           <option value="bottom-left">Bottom left</option>
         </select>
         <div class="fw-semibold mb-2">Fields</div>
-        <div
-          v-for="field in osdFieldOrder"
-          :key="field"
-          class="osd-field-row"
-        >
+        <div v-for="field in osdFieldOrder" :key="field" class="osd-field-row">
           <div class="form-check form-switch">
             <input
               :id="`osd-field-${field}`"
@@ -525,24 +832,42 @@
             </label>
           </div>
           <div class="btn-group btn-group-sm">
-            <button class="btn btn-outline-secondary" type="button" @click="moveOsdField(field, -1)">Up</button>
-            <button class="btn btn-outline-secondary" type="button" @click="moveOsdField(field, 1)">Down</button>
+            <button
+              class="btn btn-outline-secondary"
+              type="button"
+              @click="moveOsdField(field, -1)"
+            >
+              Up
+            </button>
+            <button
+              class="btn btn-outline-secondary"
+              type="button"
+              @click="moveOsdField(field, 1)"
+            >
+              Down
+            </button>
           </div>
         </div>
       </div>
       <div class="settings-footer">
-        <button class="btn btn-primary" type="button" @click="osdSettingsOpen = false">
+        <button
+          class="btn btn-primary"
+          type="button"
+          @click="osdSettingsOpen = false"
+        >
           Done
         </button>
       </div>
     </div>
   </div>
-  <div
-    v-if="aboutOpen"
-    class="about-backdrop"
-    @click.self="aboutOpen = false"
-  >
-    <div class="about-modal">
+  <div v-if="aboutOpen" class="about-backdrop" @click.self="aboutOpen = false">
+    <div
+      ref="aboutElement"
+      class="about-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="About HiCT"
+    >
       <div class="about-header">
         <h2>HiCT</h2>
         <button class="btn-close" @click="aboutOpen = false"></button>
@@ -581,32 +906,61 @@
           <div><strong>WebUI:</strong> {{ webuiVersion }}</div>
           <div><strong>Commit:</strong> {{ webuiCommit }}</div>
         </div>
+        <section class="how-to-cite">
+          <h3>How to cite</h3>
+          <p>
+            {{ projectAttribution.authors }} HiCT {{ webuiVersion }}.
+            https://github.com/ctlab/HiCT_JVM. WebUI revision {{ webuiCommit }}.
+          </p>
+          <a
+            href="https://github.com/ctlab/HiCT_JVM/blob/jvm-sfx-native/CITATION.cff"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Machine-readable software citation</a
+          >
+        </section>
         <section class="ask-authors">
           <h3>Ask Authors</h3>
           <div class="ask-authors-grid">
             <article>
-              <div class="ask-authors-title">Implementation details, technical inquiries</div>
+              <div class="ask-authors-title">
+                Implementation details, technical inquiries
+              </div>
               <a href="mailto:ntwwwnt@gmail.com">ntwwwnt@gmail.com</a>
               <a href="mailto:anserdiukov@itmo.ru">anserdiukov@itmo.ru</a>
             </article>
             <article>
-              <div class="ask-authors-title">Fundamental design, conceptual questions</div>
-              <a href="mailto:zamyatin.anton@gmail.com">zamyatin.anton@gmail.com</a>
+              <div class="ask-authors-title">
+                Fundamental design, conceptual questions
+              </div>
+              <a href="mailto:zamyatin.anton@gmail.com"
+                >zamyatin.anton@gmail.com</a
+              >
               <a href="mailto:azamyatin@psu.edu">azamyatin@psu.edu</a>
             </article>
           </div>
         </section>
         <pre class="about-license">{{ licenseText }}</pre>
       </div>
-      <div v-else-if="aboutActiveTab === 'attribution'" class="about-body attribution-panel">
+      <div
+        v-else-if="aboutActiveTab === 'attribution'"
+        class="about-body attribution-panel"
+      >
         <section class="attribution-section">
           <h3>Project</h3>
           <article class="attribution-card">
             <div class="attribution-title">{{ projectAttribution.name }}</div>
             <div>{{ projectAttribution.authors }}</div>
-            <div><strong>License:</strong> {{ projectAttribution.license }}</div>
-            <div v-if="projectAttribution.note">{{ projectAttribution.note }}</div>
-            <div v-if="projectAttribution.links?.length" class="attribution-links">
+            <div>
+              <strong>License:</strong> {{ projectAttribution.license }}
+            </div>
+            <div v-if="projectAttribution.note">
+              {{ projectAttribution.note }}
+            </div>
+            <div
+              v-if="projectAttribution.links?.length"
+              class="attribution-links"
+            >
               <a
                 v-for="link in projectAttribution.links"
                 :key="link.href"
@@ -676,7 +1030,10 @@
       </div>
       <div v-else class="about-body">
         <div v-if="changelogLoading" class="d-flex align-items-center gap-2">
-          <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+          <span
+            class="spinner-border spinner-border-sm"
+            aria-hidden="true"
+          ></span>
           <span>Loading changelog...</span>
         </div>
         <div
@@ -692,10 +1049,19 @@
     class="settings-backdrop"
     @click.self="resolutionSettingsOpen = false"
   >
-    <div class="settings-modal resolution-settings-modal" role="dialog" aria-modal="true">
+    <div
+      ref="resolutionSettingsElement"
+      aria-labelledby="resolution-settings-title"
+      class="settings-modal resolution-settings-modal"
+      role="dialog"
+      aria-modal="true"
+    >
       <div class="settings-header">
-        <h2>Restrict Resolutions</h2>
-        <button class="btn-close" @click="resolutionSettingsOpen = false"></button>
+        <h2 id="resolution-settings-title">Restrict Resolutions</h2>
+        <button
+          class="btn-close"
+          @click="resolutionSettingsOpen = false"
+        ></button>
       </div>
       <div class="settings-body">
         <p class="settings-description">
@@ -725,7 +1091,11 @@
             />
           </label>
         </div>
-        <button class="btn btn-sm btn-outline-primary w-100 mb-3" type="button" @click="applyResolutionLimits">
+        <button
+          class="btn btn-sm btn-outline-primary w-100 mb-3"
+          type="button"
+          @click="applyResolutionLimits"
+        >
           Set limits
         </button>
         <div v-if="availableResolutions.length > 0" class="resolution-list">
@@ -737,12 +1107,25 @@
             <input
               :id="`resolution-modal-${resolution}`"
               :checked="enabledResolutionSet.has(resolution)"
+              :disabled="
+                enabledResolutionSet.size === 1 &&
+                enabledResolutionSet.has(resolution)
+              "
+              title="At least one map resolution must stay enabled."
               class="form-check-input"
               type="checkbox"
               role="switch"
-              @change="toggleResolution(resolution, ($event.target as HTMLInputElement).checked)"
+              @change="
+                toggleResolution(
+                  resolution,
+                  ($event.target as HTMLInputElement).checked
+                )
+              "
             />
-            <label class="form-check-label" :for="`resolution-modal-${resolution}`">
+            <label
+              class="form-check-label"
+              :for="`resolution-modal-${resolution}`"
+            >
               1:{{ resolution.toLocaleString() }}
             </label>
           </div>
@@ -752,7 +1135,11 @@
         </div>
       </div>
       <div class="settings-footer">
-        <button class="btn btn-primary" type="button" @click="resolutionSettingsOpen = false">
+        <button
+          class="btn btn-primary"
+          type="button"
+          @click="resolutionSettingsOpen = false"
+        >
           Done
         </button>
       </div>
@@ -761,9 +1148,23 @@
 </template>
 
 <script setup lang="ts">
+import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
+/* global __HICT_WEBUI_BUILD_VERSION__, __HICT_WEBUI_BUILD_COMMIT__ */
+import BackgroundJobsPanel from "./BackgroundJobsPanel.vue";
+import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
+import { reportFailure } from "@/app/ui/reportFailure";
+import { AgpImportCancelledError } from "@/app/core/net/agpImportChoice";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { marked } from "marked";
-import { computed, defineAsyncComponent, onMounted, Ref, ref, watch } from "vue";
+import {
+  computed,
+  defineAsyncComponent,
+  onBeforeUnmount,
+  onMounted,
+  Ref,
+  ref,
+  watch,
+} from "vue";
 import {
   GetAGPForAssemblyRequest,
   GetFastaForAssemblyRequest,
@@ -772,11 +1173,6 @@ import {
   ApplyJuiceboxAssemblyRequest,
 } from "@/app/core/net/api/request";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import CoolerConverter from "./CoolerConverter.vue";
-import MatrixExportModal from "./MatrixExportModal.vue";
-import DotplotGenerator from "./DotplotGenerator.vue";
-import UniversalFileSelector from "@/app/ui/components/upper_ribbon/UniversalFileSelector.vue";
-import TrackManager from "@/app/ui/components/upper_ribbon/TrackManager.vue";
 import FastaLinkWarningModal from "@/app/ui/components/upper_ribbon/FastaLinkWarningModal.vue";
 import WorkerDiagnosticsModal from "@/app/ui/components/upper_ribbon/WorkerDiagnosticsModal.vue";
 import ServerStatisticsModal from "@/app/ui/components/upper_ribbon/ServerStatisticsModal.vue";
@@ -784,6 +1180,7 @@ import { toast } from "vue-sonner";
 import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+import { useSessionStore } from "@/app/stores/sessionStore";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import type {
   ConversionToolchainStatusResponse,
@@ -797,7 +1194,7 @@ import {
   runtimeAttributions,
   webAttributions,
 } from "@/app/core/attribution";
-import pkg from "../../../../../package.json";
+import { useModalFocus } from "@/app/ui/modalFocus";
 import hictLogo from "@/assets/hict-logo.png";
 const openingFile = ref(false);
 const openingFASTAFile = ref(false);
@@ -807,6 +1204,9 @@ const openingJuiceboxAssemblyFastaFile = ref(false);
 const convertingCoolers = ref(false);
 const exportingMatrix = ref(false);
 const generatingDotplots = ref(false);
+const sequenceSearchOpen = ref(false);
+const modDotPlotOpen = ref(false);
+const assemblyDotPlotOpen = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
 const lastLinkedFastaFilename = ref<string | undefined>(undefined);
 const trackManagerOpen = ref(false);
@@ -824,6 +1224,19 @@ const changelogLoading = ref(false);
 const renderedChangelog = computed(() => renderMarkdown(changelogText.value));
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
+const sessionStore = useSessionStore();
+const {
+  linkedFastaFilename,
+  lastAgpFilename,
+  openMapFilename,
+  secondaryMapFilename,
+} = storeToRefs(sessionStore);
+const MAP_CHIP_LIMIT = 28;
+const fastaLinking = ref(false);
+const agpLoading = ref(false);
+const juiceboxFastaPromptOpen = ref(false);
+type FastaDependentTool = "search" | "moddotplot" | "dotplot";
+const toolAfterFastaLink = ref<null | FastaDependentTool>(null);
 const pendingJuiceboxAssemblyFilename = ref("");
 const pendingJuiceboxAssemblyFastaFilename = ref("");
 const nativeProcessingStatus = ref<NativeProcessingStatusResponse | null>(null);
@@ -833,12 +1246,48 @@ const toolchainStatus = ref<ConversionToolchainStatusResponse | null>(null);
 const dotplotAlignerPreference = ref("auto");
 const dotplotAlignerBusy = ref(false);
 const backendVersion = ref("loading...");
-const webuiVersion = ref(String((pkg as { version?: string })?.version ?? "unknown"));
-const webuiCommit = ref("unknown");
+const webuiVersion = __HICT_WEBUI_BUILD_VERSION__;
+const webuiCommit = __HICT_WEBUI_BUILD_COMMIT__;
+const CoolerConverter = defineAsyncComponent(
+  () => import("./CoolerConverter.vue")
+);
+const MatrixExportModal = defineAsyncComponent(
+  () => import("./MatrixExportModal.vue")
+);
+const ModDotPlotModal = defineAsyncComponent(
+  () => import("./ModDotPlotModal.vue")
+);
+const DotplotGenerator = defineAsyncComponent(
+  () => import("./DotplotGenerator.vue")
+);
+const SequenceSearchModal = defineAsyncComponent(
+  () => import("./SequenceSearchModal.vue")
+);
+const UniversalFileSelector = defineAsyncComponent(
+  () => import("./UniversalFileSelector.vue")
+);
+const TrackManager = defineAsyncComponent(() => import("./TrackManager.vue"));
 const RenderingPipelineModal = defineAsyncComponent(
   () => import("@/app/ui/components/upper_ribbon/RenderingPipelineModal.vue")
 );
+/** A map made from a FASTA alone has no contacts, so it is an assembly and not a Hi-C map. */
+const noContactData = computed(
+  () =>
+    props.mapManager?.networkManager.requestManager.sourceCapabilities.PRIMARY
+      ?.contactDataState === "ABSENT"
+);
+
+const aboutElement = ref<HTMLElement | null>(null);
+const osdSettingsElement = ref<HTMLElement | null>(null);
+const resolutionSettingsElement = ref<HTMLElement | null>(null);
+const juiceboxFastaPromptElement = ref<HTMLElement | null>(null);
+useModalFocus(aboutElement, () => aboutOpen.value);
+useModalFocus(osdSettingsElement, () => osdSettingsOpen.value);
+useModalFocus(resolutionSettingsElement, () => resolutionSettingsOpen.value);
+useModalFocus(juiceboxFastaPromptElement, () => juiceboxFastaPromptOpen.value);
+
 const emit = defineEmits<{
+  (e: "jobResult", output: BackgroundJobOutput): void;
   (e: "selected", filename: string): void;
   (e: "closed"): void;
   (e: "attached"): void;
@@ -847,6 +1296,8 @@ const emit = defineEmits<{
   (e: "agpLoaded", filename: string): void;
   (e: "fastaLinked", filename: string): void;
   (e: "wizardRequested"): void;
+  (e: "fastaOnlyRequested"): void;
+  (e: "examplesRequested"): void;
 }>();
 
 useEscDismissableDialog({
@@ -877,7 +1328,15 @@ useEscDismissableDialog({
   priority: 2200,
   isOpen: () => fastaLinkReport.value !== null,
   requestClose: () => {
-    fastaLinkReport.value = null;
+    cancelFastaLinkWarning();
+  },
+});
+
+useEscDismissableDialog({
+  priority: 1042,
+  isOpen: () => juiceboxFastaPromptOpen.value,
+  requestClose: () => {
+    cancelJuiceboxFlow();
   },
 });
 
@@ -898,8 +1357,7 @@ const {
   osdOverlayPosition,
   osdOverlayFields,
   osdOverlayFieldOrder,
-} =
-  storeToRefs(uiSettingsStore);
+} = storeToRefs(uiSettingsStore);
 
 const osdFieldLabels: Record<string, string> = {
   global: "Global coordinates",
@@ -921,8 +1379,9 @@ const osdFieldOrder = computed(() =>
 const enabledResolutions = ref<number[]>([]);
 const resolutionFinestLimit = ref<number | null>(null);
 const resolutionCoarsestLimit = ref<number | null>(null);
-const availableResolutions = computed(() =>
-  props.mapManager?.getLayersManager().getAllNavigationBpResolutions() ?? []
+const availableResolutions = computed(
+  () =>
+    props.mapManager?.getLayersManager().getAllNavigationBpResolutions() ?? []
 );
 const enabledResolutionSet = computed(() => new Set(enabledResolutions.value));
 
@@ -983,8 +1442,14 @@ function toggleResolution(resolution: number, enabled: boolean): void {
 function applyResolutionLimits(): void {
   const finest = Number(resolutionFinestLimit.value);
   const coarsest = Number(resolutionCoarsestLimit.value);
-  if (!Number.isFinite(finest) || !Number.isFinite(coarsest) || finest > coarsest) {
-    toast.error("Resolution limits must be valid and finest must not exceed coarsest.");
+  if (
+    !Number.isFinite(finest) ||
+    !Number.isFinite(coarsest) ||
+    finest > coarsest
+  ) {
+    toast.error(
+      "Resolution limits must be valid and finest must not exceed coarsest."
+    );
     return;
   }
   applyEnabledResolutions(
@@ -1008,7 +1473,8 @@ const currentPrimaryHictFilename = computed(() => {
 const nativeProcessingStatusClass = computed(() => ({
   "text-success": nativeProcessingStatus.value?.enabled,
   "text-warning":
-    nativeProcessingStatus.value?.requested && !nativeProcessingStatus.value?.enabled,
+    nativeProcessingStatus.value?.requested &&
+    !nativeProcessingStatus.value?.enabled,
   "text-muted": !nativeProcessingStatus.value?.requested,
 }));
 
@@ -1055,17 +1521,35 @@ type HictDesktopBridge = {
 
 type TauriBridge = {
   core?: {
-    invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+    invoke?: (
+      command: string,
+      args?: Record<string, unknown>
+    ) => Promise<unknown>;
   };
-  invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+  invoke?: (
+    command: string,
+    args?: Record<string, unknown>
+  ) => Promise<unknown>;
 };
 
 function onOpenFile() {
   openingFile.value = true;
 }
 
+defineExpose({ openFile: onOpenFile });
+
 function onOpenWizard(): void {
   emit("wizardRequested");
+}
+
+function defaultDotplotResolutions(): number[] {
+  const view = props.mapManager?.viewAndLayersManager;
+  return view
+    ? defaultSequenceResolutions(
+        view.resolutions,
+        view.currentViewState.resolutionDesciptor.bpResolution
+      )
+    : [];
 }
 
 function onGenerateDotplotClicked(): void {
@@ -1126,18 +1610,21 @@ async function onNativeProcessingChanged(): Promise<void> {
     if (status.enabled) {
       toast.success("Native code processing enabled.");
     } else if (status.requested) {
-      toast("Native code processing is unavailable; Java backend remains active.", {
-        style: {
-          "background-color": "lightyellow",
-          color: "black",
-        },
-      });
+      toast.message(
+        "Native code processing is unavailable; Java backend remains active.",
+        {
+          style: {
+            "background-color": "lightyellow",
+            color: "black",
+          },
+        }
+      );
     } else {
-      toast("Native code processing disabled; Java backend is active.");
+      toast.message("Native code processing disabled; Java backend is active.");
     }
     props.mapManager?.reloadTiles();
   } catch (error) {
-    toast.error("Failed to update native processing setting: " + String(error));
+    reportFailure("Update native processing settings", error);
     await refreshNativeProcessingStatus();
   } finally {
     nativeProcessingBusy.value = false;
@@ -1171,7 +1658,7 @@ async function onDotplotAlignerPreferenceChanged(): Promise<void> {
     if (status.selectedDotplotAlignerCommand) {
       toast.success(`Dotplot aligner set to ${status.selectedDotplotAligner}.`);
     } else {
-      toast("No usable dotplot aligner for this preference.", {
+      toast.message("No usable dotplot aligner for this preference.", {
         style: {
           "background-color": "lightyellow",
           color: "black",
@@ -1179,7 +1666,7 @@ async function onDotplotAlignerPreferenceChanged(): Promise<void> {
       });
     }
   } catch (error) {
-    toast.error("Failed to update dotplot aligner: " + String(error));
+    reportFailure("Update the dotplot aligner", error);
     await refreshConversionToolchainStatus();
   } finally {
     dotplotAlignerBusy.value = false;
@@ -1192,24 +1679,26 @@ function onOpenApiDocs(): void {
 }
 
 function onQuitClicked(): void {
-  const desktopBridge = (window as unknown as { hictDesktop?: HictDesktopBridge })
-    .hictDesktop;
+  const desktopBridge = (
+    window as unknown as { hictDesktop?: HictDesktopBridge }
+  ).hictDesktop;
   if (typeof desktopBridge?.quit === "function") {
     void Promise.resolve(desktopBridge.quit()).catch((error) => {
       console.error("Failed to close Electron HiCT WebUI", error);
-      toast.error("Failed to close bundled WebUI: " + String(error));
+      reportFailure("Close bundled WebUI", error);
     });
     return;
   }
 
-  const tauriBridge = (window as unknown as { __TAURI__?: TauriBridge }).__TAURI__;
+  const tauriBridge = (window as unknown as { __TAURI__?: TauriBridge })
+    .__TAURI__;
   const invoke = tauriBridge?.core?.invoke ?? tauriBridge?.invoke;
   if (typeof invoke === "function") {
     void invoke("quit_app")
       .catch(() => invoke("quit-app"))
       .catch((error) => {
         console.error("Failed to close Tauri HiCT WebUI", error);
-        toast.error("Failed to close bundled WebUI: " + String(error));
+        reportFailure("Close bundled WebUI", error);
       });
     return;
   }
@@ -1217,7 +1706,7 @@ function onQuitClicked(): void {
   const message =
     "File -> Quit closes only bundled Electron/Tauri WebUI windows. Use the browser tab/window controls here.";
   console.info(message);
-  toast(message);
+  toast.message(message);
 }
 
 function onLoadAGP() {
@@ -1284,7 +1773,7 @@ async function onDropCachesClicked(): Promise<void> {
       `Dropped caches: ${result.matrixMetadataDeleted} matrix metadata entries, ${result.trackCacheEntriesDeleted} track cache files`
     );
   } catch (error) {
-    errorMessage.value = error;
+    reportFailure("Clear caches", error);
   }
 }
 
@@ -1305,7 +1794,6 @@ function openAbout(): void {
         backendVersion.value = v;
       } else {
         backendVersion.value = v.version ?? "unknown";
-        webuiVersion.value = v.webuiVersion ?? webuiVersion.value;
       }
     })
     .catch(() => (backendVersion.value = "unknown"));
@@ -1336,6 +1824,34 @@ function renderMarkdown(markdown: string): string {
   }) as string;
 }
 
+function shortFileLabel(path: string, limit = 18): string {
+  const base = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+  return base.length > limit ? base.slice(0, limit - 1) + "…" : base;
+}
+
+function startLinkFastaForTool(tool: FastaDependentTool): void {
+  sequenceSearchOpen.value = false;
+  modDotPlotOpen.value = false;
+  assemblyDotPlotOpen.value = false;
+  toolAfterFastaLink.value = tool;
+  onOpenFASTAFile();
+}
+
+function reopenToolAfterFastaLink(): void {
+  const tool = toolAfterFastaLink.value;
+  toolAfterFastaLink.value = null;
+  if (tool === "search") sequenceSearchOpen.value = true;
+  else if (tool === "moddotplot") modDotPlotOpen.value = true;
+  else if (tool === "dotplot") assemblyDotPlotOpen.value = true;
+}
+
+function chooseAnotherFasta(): void {
+  // Deliberately keeps toolAfterFastaLink: the user is still on the same flow.
+  pendingFastaFilename.value = null;
+  fastaLinkReport.value = null;
+  openingFASTAFile.value = true;
+}
+
 function onOpenFASTAFile() {
   pendingFastaFilename.value = null;
   fastaLinkReport.value = null;
@@ -1344,6 +1860,7 @@ function onOpenFASTAFile() {
 
 function onFASTAFileDismissed() {
   openingFASTAFile.value = false;
+  toolAfterFastaLink.value = null;
   pendingFastaFilename.value = null;
   fastaLinkReport.value = null;
 }
@@ -1362,11 +1879,31 @@ function onJuiceboxAssemblyFileDismissed(): void {
 }
 
 function onJuiceboxAssemblyFastaFileDismissed(): void {
+  // Cancelling the optional FASTA picker must not apply anything: go back to the prompt.
   openingJuiceboxAssemblyFastaFile.value = false;
   pendingJuiceboxAssemblyFastaFilename.value = "";
+  juiceboxFastaPromptOpen.value = true;
+}
+
+function cancelJuiceboxFlow(): void {
+  juiceboxFastaPromptOpen.value = false;
+  openingJuiceboxAssemblyFile.value = false;
+  openingJuiceboxAssemblyFastaFile.value = false;
+  pendingJuiceboxAssemblyFilename.value = "";
+  pendingJuiceboxAssemblyFastaFilename.value = "";
+}
+
+function applyJuiceboxWithoutFasta(): void {
+  juiceboxFastaPromptOpen.value = false;
+  pendingJuiceboxAssemblyFastaFilename.value = "";
   void applyPendingJuiceboxAssembly().catch((error) => {
-    toast.error(String(error));
+    reportFailure("Apply assembly", error);
   });
+}
+
+function chooseJuiceboxFasta(): void {
+  juiceboxFastaPromptOpen.value = false;
+  openingJuiceboxAssemblyFastaFile.value = true;
 }
 
 async function onFileSelected(filename: string) {
@@ -1388,7 +1925,7 @@ async function onFileSelected(filename: string) {
           );
         if (resolution.action === "REUSE_CONVERTED") {
           openingFile.value = false;
-          resolution.warnings.forEach((warning) => toast(warning));
+          resolution.warnings.forEach((warning) => toast.message(warning));
           emit("selected", resolution.resolvedFilename);
           return;
         }
@@ -1396,7 +1933,7 @@ async function onFileSelected(filename: string) {
         coolerToConvert.value = filename;
         convertingCoolers.value = true;
         resolution.warnings.forEach((warning) =>
-          toast(warning, {
+          toast.message(warning, {
             style: {
               "background-color": "lightyellow",
               color: "black",
@@ -1412,7 +1949,8 @@ async function onFileSelected(filename: string) {
       linkFASTA(filename);
     } else {
       errorMessage.value = "Unknown type of file to be opened: " + filename;
-      toast.error(String(errorMessage.value));
+      reportFailure("Choose map", errorMessage.value);
+      errorMessage.value = null;
     }
   }
 }
@@ -1450,6 +1988,7 @@ function isHictkLoadFilename(name: string): boolean {
 }
 
 function openAGP(filename: string) {
+  agpLoading.value = true;
   props.networkManager.requestManager
     .loadAGP(new LoadAGPRequest({ agpFilename: filename }))
     .then(() => {
@@ -1460,7 +1999,17 @@ function openAGP(filename: string) {
       toast.message("Assembly loaded from AGP file " + filename);
     })
     .catch((e) => {
+      if (e instanceof AgpImportCancelledError) {
+        openingAGPFile.value = false;
+        openingFile.value = false;
+        errorMessage.value = null;
+        toast.message(e.message);
+        return;
+      }
       errorMessage.value = e;
+    })
+    .finally(() => {
+      agpLoading.value = false;
     });
 }
 
@@ -1476,7 +2025,7 @@ async function applyPendingJuiceboxAssembly(): Promise<void> {
   }
   const fastaFilename = pendingJuiceboxAssemblyFastaFilename.value;
   if (!fastaFilename) {
-    toast(
+    toast.message(
       "No original FASTA selected. Applying the Juicebox assembly in best-effort mode; contig-border issues may remain.",
       {
         style: {
@@ -1501,28 +2050,20 @@ async function applyPendingJuiceboxAssembly(): Promise<void> {
   pendingJuiceboxAssemblyFastaFilename.value = "";
   openingJuiceboxAssemblyFile.value = false;
   openingJuiceboxAssemblyFastaFile.value = false;
+  toast.success("Juicebox assembly applied");
 }
 
 function onJuiceboxAssemblySelected(filename: string): void {
   pendingJuiceboxAssemblyFilename.value = filename;
   openingJuiceboxAssemblyFile.value = false;
-  const wantsFasta = window.confirm(
-    "Select an original FASTA for exact contig matching? It is optional, but recommended when you have the contig-level FASTA used to build this Juicebox assembly."
-  );
-  if (wantsFasta) {
-    openingJuiceboxAssemblyFastaFile.value = true;
-    return;
-  }
-  void applyPendingJuiceboxAssembly().catch((error) => {
-    toast.error(String(error));
-  });
+  juiceboxFastaPromptOpen.value = true;
 }
 
 function onJuiceboxAssemblyFastaSelected(filename: string): void {
   pendingJuiceboxAssemblyFastaFilename.value = filename;
   openingJuiceboxAssemblyFastaFile.value = false;
   void applyPendingJuiceboxAssembly().catch((error) => {
-    toast.error(String(error));
+    reportFailure("Apply assembly", error);
   });
 }
 
@@ -1543,6 +2084,7 @@ function isFastaFilename(name: string): boolean {
 function cancelFastaLinkWarning(): void {
   pendingFastaFilename.value = null;
   fastaLinkReport.value = null;
+  toolAfterFastaLink.value = null;
 }
 
 function proceedFastaLinkWarning(): void {
@@ -1555,6 +2097,7 @@ function proceedFastaLinkWarning(): void {
 }
 
 function linkFASTA(filename: string, allowMismatch = false) {
+  fastaLinking.value = true;
   props.networkManager.requestManager
     .linkFASTA(new LinkFASTARequest({ fastaFilename: filename, allowMismatch }))
     .then((response) => {
@@ -1573,7 +2116,7 @@ function linkFASTA(filename: string, allowMismatch = false) {
       lastLinkedFastaFilename.value = filename;
       emit("fastaLinked", filename);
       response.warnings.forEach((warning) =>
-        toast(warning, {
+        toast.message(warning, {
           style: {
             "background-color": "lightyellow",
             color: "black",
@@ -1581,20 +2124,15 @@ function linkFASTA(filename: string, allowMismatch = false) {
         })
       );
       toast.message("Linked FASTA file " + filename);
+      reopenToolAfterFastaLink();
     })
     .catch((e) => {
-      errorMessage.value = e;
+      reportFailure("Link FASTA", e);
+    })
+    .finally(() => {
+      fastaLinking.value = false;
     });
 }
-
-watch(
-  () => errorMessage.value,
-  (message) => {
-    if (message) {
-      toast.error(message);
-    }
-  }
-);
 
 watch(
   () => binaryTileTransportEnabled.value,
@@ -1603,9 +2141,21 @@ watch(
   }
 );
 
+function openTrackManagerFromEvent(): void {
+  trackManagerOpen.value = true;
+}
+
 onMounted(() => {
+  window.addEventListener("hict:open-track-manager", openTrackManagerFromEvent);
   void refreshNativeProcessingStatus();
   void refreshConversionToolchainStatus();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener(
+    "hict:open-track-manager",
+    openTrackManagerFromEvent
+  );
 });
 
 function onFASTAFileSelected() {
@@ -1617,6 +2167,7 @@ function onAGPFileSelected() {
 }
 
 function onAssemblyFASTARequest() {
+  toast.message("Preparing export…");
   props.networkManager.requestManager
     .getFASTAForAssembly(new GetFastaForAssemblyRequest())
     .then((data) => {
@@ -1626,7 +2177,8 @@ function onAssemblyFASTARequest() {
       link.href = window.URL.createObjectURL(blob);
       link.download = `assembly.fasta`;
       link.click();
-    });
+    })
+    .catch((error) => reportFailure("Export assembly", error));
 }
 
 function onSelectionFASTARequest() {
@@ -1634,6 +2186,7 @@ function onSelectionFASTARequest() {
 }
 
 function onAssemblyAGPRequest() {
+  toast.message("Preparing export…");
   props.networkManager.requestManager
     .getAGPForAssembly(new GetAGPForAssemblyRequest())
     .then((data) => {
@@ -1643,11 +2196,32 @@ function onAssemblyAGPRequest() {
       link.href = window.URL.createObjectURL(blob);
       link.download = `assembly.agp`;
       link.click();
-    });
+    })
+    .catch((error) => reportFailure("Export assembly", error));
 }
 </script>
 
 <style scoped>
+/* Narrow windows: keep the menus in one wrapping row instead of a tall column, so the map keeps its room. */
+@media (max-width: 767.98px) {
+  .navbar-bar .navbar-collapse {
+    flex-basis: auto;
+    flex-grow: 1;
+  }
+  .navbar-bar .navbar-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 0 !important;
+  }
+  .navbar-bar .nav-link {
+    padding: 0.25rem 0.5rem;
+  }
+  .navbar-bar .file-chips {
+    flex-wrap: wrap;
+    margin-left: 0 !important;
+  }
+}
+
 .navbar-bar {
   /* Navbar */
 
@@ -1672,6 +2246,22 @@ function onAssemblyAGPRequest() {
   flex: none;
   order: 0;
   flex-grow: 0;
+}
+
+@media (max-width: 700px) {
+  .navbar-bar {
+    height: auto;
+    min-height: 56px;
+  }
+  .navbar-bar .container-fluid {
+    flex-wrap: wrap;
+  }
+  .navbar-bar .navbar-collapse {
+    flex-basis: 100%;
+  }
+  .navbar-bar .navbar-nav {
+    flex-wrap: wrap;
+  }
 }
 
 .navbar-bar :deep(.navbar-brand),
@@ -1705,12 +2295,30 @@ function onAssemblyAGPRequest() {
   width: 28px;
 }
 
-#connection-settings-menu-dropdown {
-  width: 400%;
+.file-chip {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-#set-gateway-btn {
-  margin-right: 30px;
+.file-chip--static {
+  cursor: default;
+  pointer-events: auto;
+}
+
+.file-chip--static:hover,
+.file-chip--static:active {
+  background: transparent;
+  color: inherit;
+}
+
+.juicebox-fasta-modal {
+  width: min(520px, 92vw);
+}
+
+#connection-settings-input-group {
+  min-width: 22rem;
 }
 
 .about-backdrop,

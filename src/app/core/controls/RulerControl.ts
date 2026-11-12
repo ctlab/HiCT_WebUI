@@ -20,6 +20,12 @@
  */
 
 import { MapEvent } from "ol";
+import {
+  buildRulerTicks,
+  type RulerInterval,
+  type RulerTick,
+} from "./rulerTicks";
+import { placeFloatingPanel } from "../visualization/floatingPanel";
 import { Control } from "ol/control";
 import { Options as ControlOptions } from "ol/control/Control";
 import { ContactMapManager } from "../mapmanagers/ContactMapManager";
@@ -31,10 +37,8 @@ import ContigDimensionHolder from "../mapmanagers/ContigDimensionHolder";
 import { transform } from "ol/proj";
 import { storeToRefs } from "pinia";
 import { useStyleStore } from "@/app/stores/styleStore";
-import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { Ref } from "vue";
-import Colormap from "../visualization/colormap/Colormap";
 import { ColorTranslator } from "colortranslator";
 
 interface Options extends ControlOptions {
@@ -44,16 +48,26 @@ interface Options extends ControlOptions {
 }
 
 const DEFAULT_CANVAS_SIZE = 200;
+/** Labels keep at least this many pixels between their drawn extent and the canvas edge. */
+const EDGE_MARGIN_PX = 2;
 
-interface RulerTick {
-  screen: number;
-  mapPx: number;
-  bp: number;
+interface EntityBand {
+  start: number;
+  end: number;
   label: string;
-  contigLabel?: string;
-  scaffoldLabel?: string;
-  major: boolean;
-  boundary?: "start" | "end";
+  count: number;
+}
+
+interface SequenceBreak {
+  screen: number;
+  bp: number;
+  count: number;
+}
+
+interface RulerLayout extends ReturnType<typeof buildRulerTicks> {
+  contigs: EntityBand[];
+  scaffolds: EntityBand[];
+  breaks: SequenceBreak[];
 }
 
 class RulerControl extends Control {
@@ -62,9 +76,9 @@ class RulerControl extends Control {
   protected readonly viewAndLayersManager: HiCViewAndLayersManager;
   protected readonly contigDimensionHolder: ContigDimensionHolder;
   protected readonly tooltip: HTMLDivElement;
+  private layout?: RulerLayout;
 
   protected readonly mapBackgroundColor: Ref<ColorTranslator>;
-  protected readonly colormap: Ref<Colormap>;
   protected readonly rulerCoordinateMode: Ref<"global" | "contig" | "scaffold">;
 
   public readonly canvasSize: number[];
@@ -74,10 +88,15 @@ class RulerControl extends Control {
     const canvas = document.createElement("canvas");
     const tooltip = document.createElement("div");
     tooltip.className = "hict-ruler-tooltip";
+    // Lives on <body> with fixed positioning so it can cover the map instead
+    // of being clipped by the narrow ruler container.
     Object.assign(tooltip.style, {
-      position: "absolute",
-      zIndex: "18",
-      maxWidth: "250px",
+      position: "fixed",
+      left: "0px",
+      top: "0px",
+      zIndex: "1065",
+      width: "max-content",
+      maxWidth: "min(300px, calc(100vw - 24px))",
       padding: "6px 8px",
       borderRadius: "6px",
       border: "1px solid rgba(17, 24, 39, 0.35)",
@@ -99,7 +118,6 @@ class RulerControl extends Control {
           : (opt_options.target as HTMLElement);
       if (parent) {
         parent.appendChild(canvas);
-        parent.appendChild(tooltip);
         parent.style.position ||= "relative";
       } else {
         throw new Error(
@@ -137,14 +155,11 @@ class RulerControl extends Control {
     this.contigDimensionHolder = this.mapManager.getContigDimensionHolder();
     this.direction = opt_options.direction;
 
-    const visualizationOptionsStore = useVisualizationOptionsStore();
-    const { colormap } = storeToRefs(visualizationOptionsStore);
     const stylesStore = useStyleStore();
     const { mapBackgroundColor } = storeToRefs(stylesStore);
     const uiSettingsStore = useUiSettingsStore();
     const { rulerCoordinateMode } = storeToRefs(uiSettingsStore);
 
-    this.colormap = colormap;
     this.mapBackgroundColor = mapBackgroundColor as Ref<ColorTranslator>;
     this.rulerCoordinateMode = rulerCoordinateMode;
 
@@ -153,20 +168,44 @@ class RulerControl extends Control {
       this.showRulerTooltip(event)
     );
     this.canvas.addEventListener("mouseleave", () => this.hideRulerTooltip());
+    this.canvas.addEventListener("contextmenu", this.onContextMenu);
   }
+
+  /** Hands the position under the pointer to the workspace, which owns the menu UI. */
+  private readonly onContextMenu = (event: MouseEvent): void => {
+    event.preventDefault();
+    this.hideRulerTooltip();
+    const hover = this.resolveRulerHover(event.offsetX, event.offsetY);
+    if (!hover) return;
+    window.dispatchEvent(
+      new CustomEvent("hict:ruler-context-menu", {
+        detail: {
+          clientX: event.clientX,
+          clientY: event.clientY,
+          bp: hover.bp,
+          direction: this.direction,
+        },
+      })
+    );
+  };
 
   render(mapEvent: MapEvent) {
     //this.updateCanvasSize();
     const map = mapEvent.map;
     const parent = this.canvas.parentElement;
-    const width = parent ? Math.max(1, Math.floor(parent.clientWidth)) : this.canvasSize[0];
-    const height = parent ? Math.max(1, Math.floor(parent.clientHeight)) : this.canvasSize[1];
+    const width = parent
+      ? Math.max(1, Math.floor(parent.clientWidth))
+      : this.canvasSize[0];
+    const height = parent
+      ? Math.max(1, Math.floor(parent.clientHeight))
+      : this.canvasSize[1];
     this.canvas.width = width;
     this.canvas.height = height;
     const context = this.canvas.getContext("2d");
     if (!context) return;
 
     context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.layout = undefined;
 
     const mapView = map.getView();
 
@@ -222,26 +261,22 @@ class RulerControl extends Control {
     const bottommostMapPx = -fixed_coordinates[1];
 
     const mapBoxPixelCoordinates = {
-      left: Math.round(leftmostMapPx),
-      right: Math.round(rightmostMapPx),
-      top: Math.round(topmostMapPx),
-      bottom: Math.round(bottommostMapPx),
+      left: leftmostMapPx,
+      right: rightmostMapPx,
+      top: topmostMapPx,
+      bottom: bottommostMapPx,
     };
 
     const visibleMapBoxExtentPixel = {
-      left: Math.round(Math.max(0, leftmostMapPx)),
-      right: Math.round(
-        Math.min(
-          mapBoxPixelCoordinates.left + pixelMapSize / fraction1,
-          this.canvas.width
-        )
+      left: Math.max(0, leftmostMapPx),
+      right: Math.min(
+        mapBoxPixelCoordinates.left + pixelMapSize / fraction1,
+        this.canvas.width
       ),
-      top: Math.round(Math.max(0, topmostMapPx)),
-      bottom: Math.round(
-        Math.min(
-          mapBoxPixelCoordinates.top + pixelMapSize / fraction1,
-          this.canvas.height
-        )
+      top: Math.max(0, topmostMapPx),
+      bottom: Math.min(
+        mapBoxPixelCoordinates.top + pixelMapSize / fraction1,
+        this.canvas.height
       ),
     };
     if (
@@ -250,6 +285,19 @@ class RulerControl extends Control {
       !Number.isFinite(visibleMapBoxExtentPixel.top) ||
       !Number.isFinite(visibleMapBoxExtentPixel.bottom)
     ) {
+      return;
+    }
+
+    const scopePixelBounds = this.viewAndLayersManager.getActiveMapPixelBounds(
+      resolutionDescriptor.bpResolution
+    );
+    const scopedVisibleExtentPixel = this.getScopedVisibleRulerExtent({
+      mapBoxPixelCoordinates,
+      visibleMapBoxExtentPixel,
+      fraction: fraction1,
+      scopePixelBounds,
+    });
+    if (!scopedVisibleExtentPixel) {
       return;
     }
 
@@ -276,82 +324,27 @@ class RulerControl extends Control {
     //   fraction1
     // );
 
-    const [start, end, deltaDir]: [
-      [number, number],
-      [number, number],
-      [number, number]
-    ] = (() => {
-      switch (this.opt_options.direction) {
-        case "vertical":
-          return [
-            [Math.round(this.canvas.width), visibleMapBoxExtentPixel.top],
-            [Math.round(this.canvas.width), visibleMapBoxExtentPixel.bottom],
-            [0, 1],
-          ];
-        case "horizontal":
-          return [
-            [visibleMapBoxExtentPixel.left, Math.round(this.canvas.height)],
-            [visibleMapBoxExtentPixel.right, Math.round(this.canvas.height)],
-            [1, 0],
-          ];
-      }
-    })();
-
-    // TODO: Fix this part so that ruler is not overlaid by something else:
-    /*
-    if ((end[0] - start[0]) * deltaDir[0] + (end[1] - start[1]) * deltaDir[1]) {
-      start[0] += (this.canvas.width / 20) * deltaDir[0];
-      start[1] += (this.canvas.height / 20) * deltaDir[1];
-      end[0] -= (this.canvas.width / 20) * deltaDir[0];
-      end[1] -= (this.canvas.height / 20) * deltaDir[1];
-    }
-    */
-
-    // const startX = visibleMapBoxExtentPixel.left;
-    // const endX = visibleMapBoxExtentPixel.right;
-    // const y0 = Math.round(this.canvas.height / 2);
-    // context.save();
-    const { mainStroke, outlineStroke } = this.getRulerStrokeColors();
-    context.strokeStyle = outlineStroke;
-    context.lineWidth = 10;
-    context.beginPath();
-    context.moveTo(start[0], start[1]);
-    context.lineTo(end[0], end[1]);
-    context.stroke();
-    context.lineWidth = 5;
-    context.beginPath();
-    context.moveTo(start[0], start[1]);
-    context.lineTo(end[0], end[1]);
+    const horizontal = this.direction === "horizontal";
+    const depth = horizontal ? this.canvas.height : this.canvas.width;
+    const axisStart = scopedVisibleExtentPixel.start;
+    const axisEnd = scopedVisibleExtentPixel.end;
+    const mapStartScreen = horizontal
+      ? mapBoxPixelCoordinates.left
+      : mapBoxPixelCoordinates.top;
+    const { mainStroke } = this.getRulerStrokeColors();
     context.strokeStyle = mainStroke;
+    context.lineWidth = 1;
+    context.beginPath();
+    if (horizontal) {
+      context.moveTo(axisStart, depth - 0.5);
+      context.lineTo(axisEnd, depth - 0.5);
+    } else {
+      context.moveTo(depth - 0.5, axisStart);
+      context.lineTo(depth - 0.5, axisEnd);
+    }
     context.stroke();
-    // context.reset();
 
-    // context.lineWidth = 7;
-    // context.beginPath();
-    // context.moveTo(
-    //   this.canvas.width * deltaDir[1],
-    //   this.canvas.height * deltaDir[0]
-    // );
-    // context.lineTo(this.canvas.width, this.canvas.height);
-    // context.strokeStyle = "white";
-    // context.stroke();
-    // context.lineWidth = 5;
-    // context.beginPath();
-    // context.moveTo(
-    //   this.canvas.width * deltaDir[1],
-    //   this.canvas.height * deltaDir[0]
-    // );
-    // context.lineTo(this.canvas.width, this.canvas.height);
-    // context.strokeStyle = "black";
-    // context.stroke();
-
-    const axisStart = this.direction === "horizontal" ? start[0] : start[1];
-    const axisEnd = this.direction === "horizontal" ? end[0] : end[1];
-    const mapStartScreen =
-      this.direction === "horizontal"
-        ? mapBoxPixelCoordinates.left
-        : mapBoxPixelCoordinates.top;
-    const ticks = this.buildVisibleRulerTicks({
+    this.layout = this.getRulerLayout({
       axisStart,
       axisEnd,
       mapStartScreen,
@@ -359,9 +352,14 @@ class RulerControl extends Control {
       pixelMapSize,
       resolutionDescriptor,
     });
-    for (const tick of ticks) {
-      this.drawRulerTick(context, tick, start, deltaDir);
-    }
+    this.drawRulerTicks(
+      context,
+      this.layout.ticks,
+      this.layout.unit,
+      axisStart,
+      axisEnd
+    );
+    this.drawEntityBands(context, this.layout);
   }
 
   private updateCanvasSize(): void {
@@ -386,34 +384,113 @@ class RulerControl extends Control {
   }
 
   private showRulerTooltip(event: MouseEvent): void {
-    const details = this.resolveRulerHoverDetails(event.offsetX, event.offsetY);
+    const horizontal = this.direction === "horizontal";
+    const axis = horizontal ? event.offsetX : event.offsetY;
+    const depth = horizontal ? event.offsetY : event.offsetX;
+    const gap =
+      depth < 13
+        ? this.layout?.breaks.find((item) => Math.abs(item.screen - axis) < 6)
+        : undefined;
+    const band = this.layout?.contigs.find(
+      (item) => item.count > 1 && axis >= item.start && axis < item.end
+    );
+    const locus = this.resolveRulerHover(event.offsetX, event.offsetY)?.html;
+    const details = gap
+      ? `${this.formatInteger(gap.bp)} bp hidden across ${gap.count} ${
+          gap.count === 1 ? "contig" : "contigs"
+        }`
+      : band && locus
+      ? `<strong>${band.count} contigs</strong><br />${locus}`
+      : locus;
     if (!details) {
       this.hideRulerTooltip();
       return;
     }
-    const parent = this.canvas.parentElement;
-    if (!parent) {
-      return;
-    }
-    const left = Math.min(
-      Math.max(6, event.offsetX + 12),
-      Math.max(6, parent.clientWidth - 260)
-    );
-    const top = Math.min(
-      Math.max(6, event.offsetY + 12),
-      Math.max(6, parent.clientHeight - 86)
-    );
+    // Rulers are rendered manually rather than added to the map, so the
+    // body-level tooltip is attached only while hovering (nothing leaks when
+    // a map is replaced).
+    if (!this.tooltip.isConnected) document.body.appendChild(this.tooltip);
     this.tooltip.innerHTML = details;
-    this.tooltip.style.left = `${Math.round(left)}px`;
-    this.tooltip.style.top = `${Math.round(top)}px`;
     this.tooltip.style.display = "block";
+    const rect = this.tooltip.getBoundingClientRect();
+    const position = placeFloatingPanel(
+      event.clientX,
+      event.clientY,
+      rect.width,
+      rect.height,
+      window.innerWidth,
+      window.innerHeight
+    );
+    this.tooltip.style.left = `${Math.round(position.left)}px`;
+    this.tooltip.style.top = `${Math.round(position.top)}px`;
   }
 
   private hideRulerTooltip(): void {
     this.tooltip.style.display = "none";
+    this.tooltip.remove();
   }
 
-  private resolveRulerHoverDetails(offsetX: number, offsetY: number): string | null {
+  protected override disposeInternal(): void {
+    this.canvas.removeEventListener("contextmenu", this.onContextMenu);
+    this.tooltip.remove();
+    super.disposeInternal();
+  }
+
+  private getScopedVisibleRulerExtent(options: {
+    mapBoxPixelCoordinates: {
+      left: number;
+      top: number;
+    };
+    visibleMapBoxExtentPixel: {
+      left: number;
+      right: number;
+      top: number;
+      bottom: number;
+    };
+    fraction: number;
+    scopePixelBounds: {
+      colStartPx: number;
+      colEndPx: number;
+      rowStartPx: number;
+      rowEndPx: number;
+    };
+  }): { start: number; end: number } | null {
+    const axisIsHorizontal = this.direction === "horizontal";
+    const mapStartScreen = axisIsHorizontal
+      ? options.mapBoxPixelCoordinates.left
+      : options.mapBoxPixelCoordinates.top;
+    const visibleStart = axisIsHorizontal
+      ? options.visibleMapBoxExtentPixel.left
+      : options.visibleMapBoxExtentPixel.top;
+    const visibleEnd = axisIsHorizontal
+      ? options.visibleMapBoxExtentPixel.right
+      : options.visibleMapBoxExtentPixel.bottom;
+    const scopeStartPx = axisIsHorizontal
+      ? options.scopePixelBounds.colStartPx
+      : options.scopePixelBounds.rowStartPx;
+    const scopeEndPx = axisIsHorizontal
+      ? options.scopePixelBounds.colEndPx
+      : options.scopePixelBounds.rowEndPx;
+    const scopeStartScreen = mapStartScreen + scopeStartPx / options.fraction;
+    const scopeEndScreen = mapStartScreen + scopeEndPx / options.fraction;
+    const start = Math.max(
+      visibleStart,
+      Math.min(scopeStartScreen, scopeEndScreen)
+    );
+    const end = Math.min(
+      visibleEnd,
+      Math.max(scopeStartScreen, scopeEndScreen)
+    );
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      return null;
+    }
+    return { start, end };
+  }
+
+  private resolveRulerHover(
+    offsetX: number,
+    offsetY: number
+  ): { html: string; bp: number } | null {
     const map = this.mapManager.getMap();
     const mapSize = map.getSize();
     if (!mapSize) {
@@ -455,30 +532,31 @@ class RulerControl extends Control {
       : 1;
     const fraction =
       layerPixelResolution > 0 ? pixelResolution / layerPixelResolution : 1;
-    const mapBoxPixelCoordinates = {
-      left: Math.round(-fixed[0]),
-      top: Math.round(fixed[3]),
-    };
-    const visibleStart =
-      this.direction === "horizontal"
-        ? Math.round(Math.max(0, -fixed[0]))
-        : Math.round(Math.max(0, fixed[3]));
-    const axisOffset = this.direction === "horizontal" ? offsetX : offsetY;
-    const unclampedPx =
-      Math.round(
-        axisOffset -
-          visibleStart -
-          Math.min(
-            0,
-            this.direction === "horizontal"
-              ? mapBoxPixelCoordinates.left
-              : mapBoxPixelCoordinates.top
-          )
-      ) * fraction;
-    const px = Math.max(0, Math.min(pixelMapSize - 1, Math.round(unclampedPx)));
-    const bp = this.contigDimensionHolder.getStartBpOfPx(
-      px,
+    const horizontal = this.direction === "horizontal";
+    const mapStartScreen = horizontal ? -fixed[0] : fixed[3];
+    const axisOffset = horizontal ? offsetX : offsetY;
+    const unclampedPx = (axisOffset - mapStartScreen) * fraction;
+    if (unclampedPx < 0 || unclampedPx >= pixelMapSize) return null;
+    const px = Math.floor(unclampedPx);
+    const scopePixelBounds = this.viewAndLayersManager.getActiveMapPixelBounds(
       resolutionDescriptor.bpResolution
+    );
+    const scopeStartPx =
+      this.direction === "horizontal"
+        ? scopePixelBounds.colStartPx
+        : scopePixelBounds.rowStartPx;
+    const scopeEndPx =
+      this.direction === "horizontal"
+        ? scopePixelBounds.colEndPx
+        : scopePixelBounds.rowEndPx;
+    if (px < scopeStartPx || px >= scopeEndPx) {
+      return null;
+    }
+    const bp = Math.floor(
+      this.contigDimensionHolder.getFractionalBpOfPx(
+        unclampedPx,
+        resolutionDescriptor.bpResolution
+      )
     );
     const bin = this.contigDimensionHolder.pixelToBin(
       px,
@@ -487,16 +565,27 @@ class RulerControl extends Control {
     const contig = this.contigDimensionHolder.getContigLocusByBp(bp);
     const scaffold = this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp);
     const scaffoldLine = scaffold
-      ? `Scaffold: ${this.escapeHtml(scaffold.scaffoldName)} +${this.formatInteger(scaffold.inScaffoldBp)} bp`
+      ? `Scaffold: ${this.escapeHtml(
+          scaffold.scaffoldName
+        )} +${this.formatInteger(scaffold.inScaffoldBp)} bp`
       : "Scaffold: n/a";
     const source = this.contigDimensionHolder.getSourceLocusByBp(bp);
-    return [
-      `<strong>${this.direction === "horizontal" ? "Horizontal" : "Vertical"} ruler</strong>`,
-      `Assembly: ${this.formatInteger(bp)} bp, bin ${this.formatInteger(bin)}, px ${this.formatInteger(px)}`,
-      `Contig: ${this.escapeHtml(contig.contigName)} +${this.formatInteger(contig.inContigBp)} bp`,
+    const html = [
+      `<strong>${
+        this.direction === "horizontal" ? "Horizontal" : "Vertical"
+      } ruler</strong>`,
+      `Assembly: ${this.formatInteger(bp)} bp, bin ${this.formatInteger(
+        bin
+      )}, px ${this.formatInteger(px)}`,
+      `Contig: ${this.escapeHtml(contig.contigName)} +${this.formatInteger(
+        contig.inContigBp
+      )} bp`,
       scaffoldLine,
-      `Source: ${this.escapeHtml(source.sourceContig)}:${this.formatInteger(source.sourceBp)} bp`,
+      `Source: ${this.escapeHtml(source.sourceContig)}:${this.formatInteger(
+        source.sourceBp
+      )} bp`,
     ].join("<br />");
+    return { html, bp };
   }
 
   private escapeHtml(value: string): string {
@@ -511,306 +600,265 @@ class RulerControl extends Control {
     return Math.round(value).toLocaleString();
   }
 
-  private buildVisibleRulerTicks(options: {
+  private getRulerLayout(options: {
     axisStart: number;
     axisEnd: number;
     mapStartScreen: number;
     fraction: number;
     pixelMapSize: number;
     resolutionDescriptor: LayerResolutionDescriptor;
-  }): RulerTick[] {
-    const axisStart = Math.round(Math.min(options.axisStart, options.axisEnd));
-    const axisEnd = Math.round(Math.max(options.axisStart, options.axisEnd));
-    const axisSpan = axisEnd - axisStart;
-    if (axisSpan <= 0) {
-      return [];
-    }
+  }): RulerLayout {
+    const { axisStart, axisEnd, mapStartScreen, fraction, pixelMapSize } =
+      options;
+    const resolution = options.resolutionDescriptor.bpResolution;
+    const holder = this.contigDimensionHolder;
+    const prefix = holder.prefix_sum_px.get(resolution);
+    const intervals: RulerInterval[] = [];
+    const contigs: EntityBand[] = [];
+    const scaffolds: EntityBand[] = [];
+    const breaks: SequenceBreak[] = [];
+    const empty = { ticks: [], unit: "bp", contigs, scaffolds, breaks };
+    if (
+      !prefix ||
+      !holder.contig_count ||
+      !Number.isFinite(fraction) ||
+      fraction <= 0
+    )
+      return empty;
+    const visibleStart = Math.max(0, (axisStart - mapStartScreen) * fraction);
+    const visibleEnd = Math.min(
+      pixelMapSize,
+      (axisEnd - mapStartScreen) * fraction
+    );
+    if (visibleEnd <= visibleStart) return empty;
 
-    const spacing = 100;
-    const screens: number[] = [axisStart];
-    for (let screen = axisStart + spacing; screen < axisEnd - 42; screen += spacing) {
-      screens.push(Math.round(screen));
+    const first =
+      visibleStart === 0
+        ? 0
+        : holder.getContigOrderByPx(visibleStart, resolution);
+    const last =
+      visibleEnd === pixelMapSize
+        ? holder.contig_count - 1
+        : holder.getContigOrderByPx(Math.ceil(visibleEnd) - 1, resolution);
+    const mode = this.rulerCoordinateMode.value;
+    let scaffoldId: number | undefined;
+    let hiddenBp = 0;
+    let hiddenCount = 0;
+    const screenAt = (pixel: number) => mapStartScreen + pixel / fraction;
+    const appendBreak = (screen: number) => {
+      if (!hiddenCount) return;
+      const previous = breaks[breaks.length - 1];
+      if (previous && screen - previous.screen < 8) {
+        previous.count += hiddenCount;
+        previous.bp += hiddenBp;
+      } else {
+        breaks.push({ screen, count: hiddenCount, bp: hiddenBp });
+      }
+      hiddenBp = hiddenCount = 0;
+      scaffoldId = undefined;
+    };
+    for (let index = first; index <= last; index++) {
+      const contigStart = holder.prefix_sum_bp[index];
+      const contigEnd = holder.prefix_sum_bp[index + 1];
+      if (prefix[index] === prefix[index + 1]) {
+        hiddenBp += contigEnd - contigStart;
+        hiddenCount++;
+        continue;
+      }
+      const startPx = Math.max(visibleStart, prefix[index]);
+      const endPx = Math.min(visibleEnd, prefix[index + 1]);
+      if (endPx <= startPx) continue;
+      const start = screenAt(startPx);
+      const end = screenAt(endPx);
+      appendBreak(start);
+      const contig = holder.contigDescriptors[index];
+      this.appendContigBand(contigs, {
+        start,
+        end,
+        label: contig.contigName,
+        count: 1,
+      });
+      const scaffold =
+        this.mapManager.scaffoldHolder.getScaffoldLocusByBp(contigStart);
+      if (!scaffold) {
+        scaffoldId = undefined;
+      } else if (scaffold.scaffoldId === scaffoldId) {
+        scaffolds[scaffolds.length - 1].end = end;
+      } else {
+        scaffolds.push({ start, end, label: scaffold.scaffoldName, count: 1 });
+        scaffoldId = scaffold.scaffoldId;
+      }
+
+      if (mode !== "global" && end - start < 3) continue;
+      const startBp =
+        startPx === prefix[index]
+          ? contigStart
+          : Math.max(
+              contigStart,
+              Math.ceil(holder.getFractionalBpOfPx(startPx, resolution))
+            );
+      const endBp =
+        endPx === prefix[index + 1]
+          ? contigEnd
+          : Math.min(
+              contigEnd,
+              Math.ceil(holder.getFractionalBpOfPx(endPx, resolution))
+            );
+      const originBp =
+        mode === "global"
+          ? 0
+          : mode === "contig"
+          ? contigStart
+          : scaffold?.startBp ?? contigStart;
+      intervals.push({ startBp, endBp, originBp });
     }
-    if (axisEnd - screens[screens.length - 1] >= 34) {
-      screens.push(axisEnd);
+    appendBreak(screenAt(visibleEnd));
+    const projected = buildRulerTicks(
+      intervals,
+      fraction * resolution,
+      axisStart,
+      axisEnd,
+      (bp) => screenAt(holder.getFractionalPxOfBp(bp, resolution))
+    );
+    return { ...projected, contigs, scaffolds, breaks };
+  }
+
+  private appendContigBand(bands: EntityBand[], band: EntityBand): void {
+    const previous = bands[bands.length - 1];
+    if (
+      band.end - band.start < 3 &&
+      previous &&
+      previous.end === band.start &&
+      (previous.count > 1 || previous.end - previous.start < 3)
+    ) {
+      previous.end = band.end;
+      previous.count++;
     } else {
-      screens[screens.length - 1] = axisEnd;
+      bands.push(band);
     }
-
-    const mapPxValues = screens.map((screen) =>
-      this.screenPositionToMapPx(
-        screen,
-        options.mapStartScreen,
-        options.fraction,
-        options.pixelMapSize
-      )
-    );
-    const bpValues = mapPxValues.map((mapPx) =>
-      this.contigDimensionHolder.getStartBpOfPx(
-        mapPx,
-        options.resolutionDescriptor.bpResolution
-      )
-    );
-    const maxBp = Math.max(
-      ...bpValues.map((bp) => this.coordinateValueForMode(bp)),
-      0
-    );
-    const labelUnit = this.absoluteLabelUnit(maxBp);
-    let currentAnchor = this.roundDownToUnit(
-      this.coordinateValueForMode(bpValues[0] ?? 0),
-      labelUnit
-    );
-    return screens.map((screen, index) => {
-      const bp = bpValues[index] ?? 0;
-      const mapPx = mapPxValues[index] ?? 0;
-      const coordinateValue = this.coordinateValueForMode(bp);
-      const anchor = this.roundDownToUnit(coordinateValue, labelUnit);
-      const boundary =
-        index === 0 ? "start" : index === screens.length - 1 ? "end" : undefined;
-      const major = boundary !== undefined || anchor !== currentAnchor;
-      if (major) {
-        currentAnchor = anchor;
-      }
-      const delta = Math.max(0, Math.round(coordinateValue - currentAnchor));
-      const contig = this.contigDimensionHolder.getContigLocusByBp(bp);
-      const scaffold = this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp);
-      const prefix = this.coordinatePrefixForMode();
-      return {
-        screen,
-        mapPx,
-        bp,
-        major,
-        boundary,
-        label:
-          major || delta <= 0
-            ? `${prefix}${this.formatBpLabel(anchor, 0)}`
-            : `+${this.formatBpLabel(delta, 0)}`,
-        contigLabel: major && this.rulerCoordinateMode.value === "global"
-          ? `ctg +${this.formatBpLabel(contig.inContigBp, 0)}`
-          : undefined,
-        scaffoldLabel:
-          major && scaffold && this.rulerCoordinateMode.value === "global"
-            ? `scf +${this.formatBpLabel(scaffold.inScaffoldBp, 0)}`
-            : undefined,
-      };
-    });
   }
 
-  private coordinateValueForMode(bp: number): number {
-    if (this.rulerCoordinateMode.value === "contig") {
-      return this.contigDimensionHolder.getContigLocusByBp(bp).inContigBp;
-    }
-    if (this.rulerCoordinateMode.value === "scaffold") {
-      return this.mapManager.scaffoldHolder.getScaffoldLocusByBp(bp)?.inScaffoldBp ?? bp;
-    }
-    return bp;
-  }
-
-  private coordinatePrefixForMode(): string {
-    if (this.rulerCoordinateMode.value === "contig") {
-      return "ctg ";
-    }
-    if (this.rulerCoordinateMode.value === "scaffold") {
-      return "scf ";
-    }
-    return "";
-  }
-
-  private screenPositionToMapPx(
-    screenPosition: number,
-    mapStartScreen: number,
-    fraction: number,
-    pixelMapSize: number
-  ): number {
-    const raw = Math.round((screenPosition - mapStartScreen) * fraction);
-    return Math.max(0, Math.min(Math.max(0, pixelMapSize - 1), raw));
-  }
-
-  private drawRulerTick(
+  private drawEntityBands(
     context: CanvasRenderingContext2D,
-    tick: RulerTick,
-    start: [number, number],
-    deltaDir: [number, number]
+    layout: RulerLayout
   ): void {
-    const majorTickLength = Math.max(
-      8,
-      Math.min(16, Math.min(this.canvas.width, this.canvas.height) * 0.24)
-    );
-    const minorTickLength = Math.max(5, majorTickLength * 0.62);
-    const tickLength = tick.major ? majorTickLength : minorTickLength;
-    const coord: [number, number] =
-      this.direction === "horizontal"
-        ? [tick.screen, start[1]]
-        : [start[0], tick.screen];
-
-    const { mainStroke, outlineStroke } = this.getRulerStrokeColors();
-    context.strokeStyle = outlineStroke;
-    context.lineWidth = tick.major ? 5 : 4;
-    context.beginPath();
-    context.moveTo(coord[0], coord[1]);
-    context.lineTo(
-      coord[0] - tickLength * deltaDir[1],
-      coord[1] - tickLength * deltaDir[0]
-    );
-    context.stroke();
-    context.strokeStyle = mainStroke;
-    context.lineWidth = tick.major ? 2.5 : 1.8;
-    context.beginPath();
-    context.moveTo(coord[0], coord[1]);
-    context.lineTo(
-      coord[0] - tickLength * deltaDir[1],
-      coord[1] - tickLength * deltaDir[0]
-    );
-    context.stroke();
-
-    const fontSize = tick.major ? 11 : 9;
-    const font = `${tick.major ? "bold" : "normal"} ${fontSize}px sans-serif`;
-    if (this.direction === "horizontal") {
-      const textX = this.clamp(
-        tick.boundary === "start"
-          ? tick.screen + 2
-          : tick.boundary === "end"
-            ? tick.screen - 2
-            : tick.screen,
-        4,
-        this.canvas.width - 4
-      );
-      const textAlign: CanvasTextAlign =
-        tick.boundary === "start"
-          ? "left"
-          : tick.boundary === "end"
-            ? "right"
-            : "center";
-      this.drawRotatedText(
-        tick.label,
-        textX,
-        Math.max(9, coord[1] - tickLength - 3),
-        context,
-        tick.boundary ? 0 : -35,
-        font,
-        textAlign,
-        true,
-        false
-      );
-      if (tick.major && (tick.contigLabel || tick.scaffoldLabel)) {
-        this.drawRotatedText(
-          [tick.contigLabel, tick.scaffoldLabel].filter(Boolean).join(" / "),
-          textX,
-          Math.max(22, coord[1] - tickLength + 10),
-          context,
-          0,
-          "9px sans-serif",
-          textAlign,
-          true,
-          false
-        );
-      }
-      return;
-    }
-
-    const textY = this.clamp(tick.screen + fontSize / 2, fontSize + 1, this.canvas.height - 3);
-    this.drawRotatedText(
-      tick.label,
-      Math.max(2, coord[0] - tickLength - 4),
-      textY,
-      context,
-      0,
-      font,
-      "right",
-      true,
-      false
-    );
-    if (tick.major && (tick.contigLabel || tick.scaffoldLabel)) {
-      this.drawRotatedText(
-        [tick.contigLabel, tick.scaffoldLabel].filter(Boolean).join(" / "),
-        Math.max(2, coord[0] - tickLength - 4),
-        this.clamp(textY + 12, 12, this.canvas.height - 3),
-        context,
-        0,
-        "9px sans-serif",
-        "right",
-        true,
-        false
-      );
-    }
-  }
-
-  private formatBpLabel(bp: number, precision: number): string {
-    const value = Math.max(0, Math.round(bp));
-    const units: Array<[number, string]> = [
-      [1_000_000_000, "G"],
-      [1_000_000, "M"],
-      [1_000, "K"],
-    ];
-    const [scale, suffix] =
-      units.find(([candidate]) => value >= candidate) ?? [1, ""];
-    const scaled = value / scale;
-    const digits = precision > 0 && scaled < 100 ? precision : 0;
-    return `${scaled.toFixed(digits).replace(/\.0+$/, "")}${suffix}`;
-  }
-
-  private absoluteLabelUnit(maxBp: number): number {
-    if (maxBp >= 1_000_000_000) {
-      return 1_000_000_000;
-    }
-    if (maxBp >= 1_000_000) {
-      return 1_000_000;
-    }
-    if (maxBp >= 1_000) {
-      return 1_000;
-    }
-    return 1;
-  }
-
-  private roundDownToUnit(bp: number, unit: number): number {
-    const safeUnit = Math.max(1, Math.round(unit));
-    return Math.floor(Math.max(0, Math.round(bp)) / safeUnit) * safeUnit;
-  }
-
-  private clamp(value: number, min: number, max: number): number {
-    return Math.max(min, Math.min(max, value));
-  }
-
-  protected drawRotatedText(
-    text: string,
-    x: number,
-    y: number,
-    context: CanvasRenderingContext2D,
-    angleDeg: number,
-    font: string,
-    textAlign: CanvasTextAlign,
-    stroke?: boolean,
-    fillBackground?: boolean
-  ): void {
+    const horizontal = this.direction === "horizontal";
+    const depth = horizontal ? this.canvas.height : this.canvas.width;
+    const bands = [layout.contigs, layout.scaffolds];
+    const { mainStroke } = this.getRulerStrokeColors();
     context.save();
-    context.translate(x, y);
-    context.rotate(angleDeg * (Math.PI / 180));
-    context.font = font;
-    context.textAlign = textAlign;
-
-    const mt = context.measureText(text);
-
-    if (fillBackground) {
-      const backgroundColor = this.mapBackgroundColor.value;
-      context.fillStyle = backgroundColor.RGB;
-      context.fillRect(
-        -5,
-        5,
-        mt.width + 5 + 5,
-        -(mt.fontBoundingBoxAscent + 5)
-      );
+    this.setFillStrokeContrastColors(context);
+    context.strokeStyle = mainStroke;
+    context.font = "10px HiCT Sans";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    for (let row = 0; row < bands.length; row++) {
+      const offset = horizontal ? depth - 41 - row * 14 : 24 - row * 14;
+      for (const band of bands[row]) {
+        const width = band.end - band.start;
+        context.globalAlpha = row === 0 ? 0.14 : 0.22;
+        if (horizontal)
+          context.fillRect(band.start, offset, Math.max(1, width - 1), 12);
+        else context.fillRect(offset, band.start, 12, Math.max(1, width - 1));
+        const label = band.count > 1 ? `${band.count} contigs` : band.label;
+        if (width < context.measureText(label).width + 6) continue;
+        context.globalAlpha = 1;
+        const center = (band.start + band.end) / 2;
+        if (horizontal) {
+          context.fillText(label, center, offset + 6);
+        } else {
+          context.save();
+          context.translate(offset + 6, center);
+          context.rotate(-Math.PI / 2);
+          context.fillText(label, 0, 0);
+          context.restore();
+        }
+      }
     }
+
+    context.globalAlpha = 1;
+    context.beginPath();
+    for (const gap of layout.breaks) {
+      const screen = gap.screen;
+      if (horizontal) {
+        context.moveTo(screen - 4, 3);
+        context.lineTo(screen - 1, 9);
+        context.moveTo(screen + 1, 3);
+        context.lineTo(screen + 4, 9);
+      } else {
+        context.moveTo(2, screen - 4);
+        context.lineTo(8, screen - 1);
+        context.moveTo(2, screen + 1);
+        context.lineTo(8, screen + 4);
+      }
+    }
+    context.stroke();
+    context.restore();
+  }
+
+  private drawRulerTicks(
+    context: CanvasRenderingContext2D,
+    ticks: readonly RulerTick[],
+    unit: string,
+    axisStart: number,
+    axisEnd: number
+  ): void {
+    if (!ticks.length) return;
+    const horizontal = this.direction === "horizontal";
+    const axisLength = horizontal ? this.canvas.width : this.canvas.height;
+    const depth = horizontal ? this.canvas.height : this.canvas.width;
+    const { mainStroke } = this.getRulerStrokeColors();
+    context.save();
+    context.strokeStyle = mainStroke;
+    context.lineWidth = 1;
+    context.beginPath();
+    for (const tick of ticks) {
+      const length = tick.major ? 9 : 5;
+      if (horizontal) {
+        context.moveTo(tick.screen, depth);
+        context.lineTo(tick.screen, depth - length);
+      } else {
+        context.moveTo(depth, tick.screen);
+        context.lineTo(depth - length, tick.screen);
+      }
+    }
+    context.stroke();
 
     this.setFillStrokeContrastColors(context);
+    context.font = "11px HiCT Sans";
+    context.textBaseline = "middle";
+    context.textAlign = "right";
+    const unitWidth = context.measureText(unit).width;
+    const unitEnd = Math.min(
+      axisLength - EDGE_MARGIN_PX,
+      Math.max(unitWidth + EDGE_MARGIN_PX, axisEnd)
+    );
+    const unitStart = unitEnd - unitWidth;
+    const unitY = Math.max(EDGE_MARGIN_PX + 6, axisStart + 6);
+    if (horizontal) context.fillText(unit, unitEnd, depth - 18);
+    else context.fillText(unit, depth - 12, unitY);
 
-    if (stroke) {
-      const fontSizeMatch = font.match(/(\d+(?:\.\d+)?)px/);
-      const fontSize = fontSizeMatch ? Number.parseFloat(fontSizeMatch[1]) : 10;
-      context.lineWidth = Math.max(2, fontSize / 5);
-      context.strokeText(text, 0, 0);
+    let labelEnd = horizontal ? -Infinity : unitY + 7;
+    for (const tick of ticks) {
+      if (!tick.major) continue;
+      if (horizontal) {
+        const width = context.measureText(tick.label).width;
+        const center = Math.max(
+          EDGE_MARGIN_PX + width / 2,
+          Math.min(unitStart - width / 2 - 4, tick.screen)
+        );
+        const left = center - width / 2;
+        if (left <= labelEnd + 3 || left + width > unitStart - 3) continue;
+        context.textAlign = "center";
+        context.fillText(tick.label, center, depth - 18);
+        labelEnd = center + width / 2;
+      } else {
+        const center = Math.max(7, Math.min(axisLength - 7, tick.screen));
+        if (center - 6 <= labelEnd + 2) continue;
+        context.fillText(tick.label, depth - 12, center, depth - 52);
+        labelEnd = center + 6;
+      }
     }
-    context.fillText(text, 0, 0);
-
     context.restore();
   }
 

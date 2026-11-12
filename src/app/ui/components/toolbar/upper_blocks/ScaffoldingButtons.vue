@@ -24,9 +24,15 @@
     <button
       class="btn btn-outline-primary"
       type="button"
+      :disabled="!props.mapManager"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Group selection into scaffold"
+      :title="
+        props.mapManager
+          ? 'Group selection into scaffold'
+          : 'Open a map to use this control'
+      "
+      aria-label="Group selection into scaffold"
       @click="addScaffoldClicked"
     >
       <i class="bi bi-box-arrow-in-down-right"></i>
@@ -34,9 +40,15 @@
     <button
       class="btn btn-outline-primary"
       type="button"
+      :disabled="!props.mapManager"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Remove all scaffolds in selection"
+      :title="
+        props.mapManager
+          ? 'Ungroup selection into singleton scaffolds'
+          : 'Open a map to use this control'
+      "
+      aria-label="Ungroup selection into singleton scaffolds"
       @click="removeScaffoldClicked"
     >
       <i class="bi bi-box-arrow-up-left"></i>
@@ -45,9 +57,30 @@
     <button
       class="btn btn-outline-primary"
       type="button"
+      :title="
+        props.mapManager ? 'Unscaffold all' : 'Open a map to use this control'
+      "
+      aria-label="Unscaffold all"
+      :disabled="
+        !props.mapManager ||
+        props.mapManager.networkManager.requestManager.history.busy > 0
+      "
+      @click="unscaffoldAllClicked"
+    >
+      <i class="bi bi-box-arrow-up-right"></i>
+    </button>
+    <button
+      class="btn btn-outline-primary"
+      type="button"
+      :disabled="!props.mapManager"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Export FASTA for selection"
+      :title="
+        props.mapManager
+          ? 'Export FASTA for selection'
+          : 'Open a map to use this control'
+      "
+      aria-label="Export FASTA for selection"
       @click="exportFASTAForSelectionClicked"
     >
       <i class="bi bi-type"></i>
@@ -56,11 +89,20 @@
 </template>
 
 <script setup lang="ts">
+import { reportFailure } from "@/app/ui/reportFailure";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 
 const props = defineProps<{
   mapManager?: ContactMapManager | undefined;
 }>();
+
+async function unscaffoldAllClicked() {
+  try {
+    await props.mapManager?.eventManager.onUnscaffoldAllClicked();
+  } catch (error) {
+    reportFailure("Ungroup all scaffolds", error);
+  }
+}
 
 function addScaffoldClicked() {
   props.mapManager?.eventManager.onAddScaffoldClicked();

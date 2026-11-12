@@ -26,7 +26,10 @@
       type="button"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Save current location"
+      title="Bookmark current location (listed under Entities → Bookmarks)"
+      aria-label="Bookmark current location"
+      :disabled="!props.mapManager"
+      @click="saveCurrentLocation"
     >
       <i class="bi bi-bookmark-plus"></i>
     </button>
@@ -36,25 +39,45 @@
       data-bs-toggle="tooltip"
       data-bs-placement="right"
       title="Move selection to debris"
+      aria-label="Move selection to debris"
+      :disabled="!props.mapManager"
       @click="moveToDebrisClicked"
     >
       <i class="bi bi-trash"></i>
-    </button>
-    <button class="btn btn-outline-primary" type="button">
-      <i class="bi bi-crop"></i>
-    </button>
-    <button class="btn btn-outline-primary" type="button">
-      <i class="bi bi-plus-lg"></i>
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import { useSessionStore } from "@/app/stores/sessionStore";
+import { toast } from "vue-sonner";
 
 const props = defineProps<{
   mapManager?: ContactMapManager | undefined;
 }>();
+
+const sessionStore = useSessionStore();
+
+function saveCurrentLocation() {
+  const view = props.mapManager?.getMap().getView();
+  const center = view?.getCenter();
+  const resolution = view?.getResolution();
+  if (!view || !center || resolution === undefined) return;
+  const existing = sessionStore.savedLocations;
+  sessionStore.setSavedLocations([
+    ...existing,
+    {
+      location_id: existing.length,
+      center_point: [center[0], center[1]],
+      resolution,
+      rotation: view.getRotation(),
+    },
+  ]);
+  toast.success(
+    `Location ${existing.length + 1} bookmarked (Entities → Bookmarks)`
+  );
+}
 
 function moveToDebrisClicked() {
   props.mapManager?.eventManager.onMoveToDebrisClicked();

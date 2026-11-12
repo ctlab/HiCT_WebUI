@@ -20,249 +20,233 @@
  -->
 
 <template>
-  <div
-    class="dropdown dropdown-sm"
+  <section
     id="normalization-settings-dropdown"
-    data-bs-auto-close="false"
+    class="signal-processing"
+    aria-label="Signal processing"
   >
-    <button
-      class="btn btn-sm btn-light dropdown-toggle"
-      type="button"
-      data-bs-toggle="dropdown"
-      data-bs-auto-close="false"
-      aria-expanded="false"
+    <p
+      v-if="!signalEditable"
+      id="custom-signal-graph"
+      class="small text-muted mb-2"
+      role="status"
     >
-      Normalization settings
-    </button>
-    <ul id="normalization-dropdown-menu" class="dropdown-menu p-3">
-      <li v-if="hasTwoSources">
-        <div class="mb-2 normalization-source-block">
-          <label class="form-label small mb-1">Source selection</label>
-          <div class="normalization-source-row">
-            <div class="btn-group flex-grow-1" role="group" aria-label="Visualization source">
-              <button
-                type="button"
-                class="btn btn-sm normalization-source-button"
-                :class="{ 'is-active': activeVisualizationSource === 'PRIMARY' }"
-                :aria-pressed="activeVisualizationSource === 'PRIMARY'"
-                @click.stop.prevent="selectVisualizationSource('PRIMARY')"
-              >
-                PRIMARY
-              </button>
-              <button
-                type="button"
-                class="btn btn-sm normalization-source-button"
-                :class="{ 'is-active': activeVisualizationSource === 'SECONDARY' }"
-                :aria-pressed="activeVisualizationSource === 'SECONDARY'"
-                @click.stop.prevent="selectVisualizationSource('SECONDARY')"
-              >
-                SECONDARY
-              </button>
-            </div>
-            <button
-              type="button"
-              class="btn btn-sm layer-swap-button"
-              :class="layersSwapped ? 'btn-secondary active' : 'btn-outline-secondary'"
-              title="Swap Layers"
-              aria-label="Swap Layers"
-              @click.stop.prevent="swapLayers"
-            >
-              <i class="bi bi-shuffle"></i>
-            </button>
-          </div>
-          <small class="text-muted d-block mt-1">
-            Applies normalization and thresholds only to the selected layer.
-          </small>
-        </div>
-      </li>
-      <li v-if="hasTwoSources">
-        <hr class="dropdown-divider" />
-      </li>
-      <li>
-        <div class="form-check">
-          <input
-            class="form-check-input"
-            type="checkbox"
-            value=""
-            id="checkbox-normalization-pre-log"
-            v-model="applyPreLog"
-            @change="preLogCheckChange"
-          />
-          <label class="form-check-label" for="checkbox-normalization-pre-log">
-            Apply pre log-normalization
-          </label>
-        </div>
-      </li>
-      <li v-if="applyPreLog">
-        <div>
-          <label for="normalization-pre-log-base"> Logarithm base: </label>
-          <input
-            class="form-check-input number-input"
-            type="number"
-            id="normalization-pre-log-base"
-            min="0.00000001"
-            max="1000.0"
-            step="0.1"
-            v-model.number="preLogBase"
-          />
-        </div>
-      </li>
-      <li>
-        <hr class="dropdown-divider" />
-      </li>
-      <li>
-        <div class="form-check">
-          <input
-            class="form-check-input"
-            type="checkbox"
-            role="switch"
-            value=""
-            id="checkbox-normalization-resolution-scaling"
-            v-model="resolutionScaling"
-          />
-          <label
-            class="form-check-label"
-            for="checkbox-normalization-resolution-scaling"
-          >
-            Apply resolution scaling
-          </label>
-        </div>
-      </li>
-      <li>
-        <hr class="dropdown-divider" />
-      </li>
-      <li>
-        <div class="form-check">
-          <input
-            class="form-check-input"
-            type="checkbox"
-            role="switch"
-            value=""
-            id="checkbox-normalization-resolution-linear-scaling"
-            v-model="resolutionLinearScaling"
-          />
-          <label
-            class="form-check-label"
-            for="checkbox-normalization-resolution-linear-scaling"
-          >
-            Apply linear resolution scaling
-          </label>
-        </div>
-      </li>
-      <li>
-        <hr class="dropdown-divider" />
-      </li>
-      <li>
-        <div class="form-check">
-          <input
-            class="form-check-input"
-            type="checkbox"
-            role="switch"
-            value=""
-            id="checkbox-normalization-cooler-weigths"
-            v-model="applyCoolerWeights"
-          />
-          <label
-            class="form-check-label"
-            for="checkbox-normalization-cooler-weights"
-          >
-            Apply weights from Cooler
-          </label>
-        </div>
-      </li>
-      <li>
-        <hr class="dropdown-divider" />
-      </li>
-      <li>
-        <div class="form-check">
-          <input
-            class="form-check-input"
-            type="checkbox"
-            value=""
-            id="checkbox-normalization-post-log"
-            v-model="applyPostLog"
-            @change="postLogCheckChange"
-          />
-          <label class="form-check-label" for="checkbox-normalization-post-log">
-            Apply post log-normalization
-          </label>
-        </div>
-      </li>
-      <li v-if="applyPostLog">
-        <div>
-          <label for="normalization-post-log-base"> Logarithm base: </label>
-          <input
-            class="form-check-input number-input"
-            type="number"
-            id="normalization-post-log-base"
-            min="0.00000001"
-            max="1000.0"
-            step="0.1"
-            v-model.number="postLogBase"
-          />
-        </div>
-      </li>
-      <li>
-        <hr class="dropdown-divider" />
-      </li>
-      <li>
-        <div class="form-check">
-          <input
-            id="checkbox-normalization-auto-threshold"
-            v-model="autoThresholdEnabled"
-            class="form-check-input"
-            type="checkbox"
-          />
-          <label
-            class="form-check-label"
-            for="checkbox-normalization-auto-threshold"
-          >
-            Auto upper threshold
-          </label>
-        </div>
-      </li>
-      <li v-if="autoThresholdEnabled">
-        <div class="mt-1">
-          <label for="normalization-auto-threshold-quantile">
-            Visible quantile:
-          </label>
-          <input
-            id="normalization-auto-threshold-quantile"
-            v-model.number="autoThresholdQuantile"
-            class="form-check-input number-input"
-            type="number"
-            min="0.5"
-            max="0.999999"
-            step="0.001"
-          />
-          <small class="text-muted d-block mt-1">
-            Recomputes the colormap upper bound from the current viewport.
-          </small>
-        </div>
-      </li>
-      <li>
-        <hr class="dropdown-divider" />
-      </li>
-      <li>
-        <button type="button" class="btn btn-sm btn-outline-primary w-100" @click="openRenderingPipeline">
-          Rendering pipeline...
+      This layer uses a custom processing graph. Edit it in Rendering pipeline.
+    </p>
+    <p
+      v-if="contactUnavailable"
+      id="contact-normalization-unavailable"
+      class="small text-muted"
+    >
+      {{ capabilities?.contactNormalization.reason }}
+    </p>
+    <p
+      v-if="weightsUnavailable && !contactUnavailable"
+      id="imported-weights-unavailable"
+      class="small text-muted"
+    >
+      {{ weightsAvailability?.reason }}
+    </p>
+
+    <div class="signal-row">
+      <span id="signal-transform-label" class="signal-label">
+        Signal transform
+      </span>
+      <div
+        class="scale-choice"
+        role="group"
+        aria-labelledby="signal-transform-label"
+        title="Changes the displayed matrix values: log(1 + x) / log(base)"
+      >
+        <button
+          id="signal-transform-linear"
+          type="button"
+          :aria-pressed="!logEnabled"
+          :disabled="!signalEditable"
+          @click="setTransform(false)"
+        >
+          Linear
         </button>
-      </li>
-      <li>
-        <hr class="dropdown-divider" />
-      </li>
-      <li>
-        <div class="btn-group" role="group" id="normalization-apply-group">
-          <button type="button" class="btn btn-success normalization-action-apply" @click="applySettings">
-            Apply
+        <button
+          id="signal-transform-log"
+          type="button"
+          :aria-pressed="logEnabled"
+          :disabled="!signalEditable"
+          @click="setTransform(true)"
+        >
+          {{ logButtonLabel }}
+        </button>
+      </div>
+    </div>
+
+    <div class="signal-row">
+      <label
+        id="normalization-mode-label"
+        for="normalization-mode"
+        class="signal-label"
+      >
+        Normalization
+      </label>
+      <select
+        id="normalization-mode"
+        class="form-select form-select-sm normalization-select"
+        :value="choice"
+        :disabled="preparing || contactUnavailable || !signalEditable"
+        :aria-describedby="normalizationHelpId"
+        @change="onChoose(($event.target as HTMLSelectElement).value)"
+      >
+        <option value="none">None</option>
+        <option value="sqrt">Square-root coverage</option>
+        <option value="file" :disabled="weightsUnavailable">
+          Weights from file
+        </option>
+      </select>
+    </div>
+    <p
+      v-if="choice === 'sqrt' && !preparing"
+      id="normalization-help"
+      class="small text-muted mb-0"
+    >
+      Each bin is divided by the square root of its total contacts in the whole
+      map. Bins without contacts stay empty.
+    </p>
+    <div
+      v-if="preparing"
+      id="normalization-progress"
+      class="normalization-progress"
+      role="status"
+      aria-live="polite"
+    >
+      <progress
+        :value="prepareProgress"
+        max="1"
+        aria-labelledby="normalization-mode-label"
+      ></progress>
+      <span class="small"
+        >{{ prepareMessage }} {{ Math.round(prepareProgress * 100) }}%</span
+      >
+      <button
+        id="normalization-cancel"
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        @click="cancelPreparation"
+      >
+        Cancel
+      </button>
+    </div>
+    <p
+      v-if="prepareError"
+      id="normalization-error"
+      class="small text-danger mb-0"
+      role="alert"
+    >
+      {{ prepareError }}
+    </p>
+    <p
+      v-if="choice === 'sqrt' && status && !status.consistent"
+      id="normalization-inconsistent"
+      class="small text-warning-emphasis mb-0"
+      role="status"
+    >
+      A source was attached after this was chosen and still uses file weights.
+      <button type="button" class="link-button" @click="reapplyCoverage">
+        Apply to both sources
+      </button>
+    </p>
+
+    <p
+      v-if="legacyPreLog || autoThresholdEnabled"
+      id="legacy-signal-summary"
+      class="small text-muted legacy-summary"
+      role="status"
+    >
+      <template v-if="legacyPreLog">
+        This preset applies a log (base {{ preLogBase }}) before scaling.
+        <button type="button" class="link-button" @click="removePreLog">
+          Remove it
+        </button>
+      </template>
+      <template v-if="autoThresholdEnabled">
+        The upper threshold follows the viewport.
+        <button type="button" class="link-button" @click="stopAutoThreshold">
+          Keep it fixed
+        </button>
+      </template>
+    </p>
+
+    <details class="signal-advanced" id="signal-advanced">
+      <summary>Advanced</summary>
+      <div class="signal-advanced-body">
+        <div class="base-row">
+          <label for="normalization-post-log-base">Log base</label>
+          <input
+            id="normalization-post-log-base"
+            v-model="baseDraft"
+            class="form-control form-control-sm number-input"
+            type="text"
+            inputmode="decimal"
+            :disabled="!logEnabled || !signalEditable"
+            :aria-invalid="baseError ? 'true' : undefined"
+            :aria-describedby="baseError ? 'log-base-error' : undefined"
+            @change="commitBase"
+            @keydown.enter="commitBase"
+          />
+        </div>
+        <p
+          v-if="baseError"
+          id="log-base-error"
+          class="small text-danger mb-0"
+          role="alert"
+        >
+          {{ baseError }}
+        </p>
+
+        <div class="base-row">
+          <label for="scaling-across-zoom">Scaling across zoom</label>
+          <select
+            id="scaling-across-zoom"
+            v-model="scalingMode"
+            class="form-select form-select-sm scaling-select"
+            :disabled="contactUnavailable || !signalEditable"
+            :aria-describedby="
+              contactUnavailable
+                ? 'contact-normalization-unavailable'
+                : 'scaling-help'
+            "
+          >
+            <option value="none">None</option>
+            <option value="linear">Linear scaling</option>
+            <option value="quadratic">Quadratic scaling</option>
+            <option v-if="scalingMode === 'both'" value="both" disabled>
+              Linear and quadratic (legacy)
+            </option>
+          </select>
+        </div>
+        <p id="scaling-help" class="small text-muted mb-0">
+          Compensates for bin size when the zoom level changes: linear divides
+          by the resolution ratio, quadratic by its square.
+        </p>
+
+        <div class="d-flex gap-2 mt-1">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary flex-grow-1"
+            @click="openRenderingPipeline"
+          >
+            Rendering pipeline...
           </button>
-          <button type="button" class="btn btn-danger normalization-action-reset" @click="resetAttributes">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            title="Log10, no scaling, no weights. Colors and thresholds are kept."
+            @click="resetAttributes"
+          >
             Reset
           </button>
         </div>
-      </li>
-    </ul>
-  </div>
+      </div>
+    </details>
+  </section>
   <RenderingPipelineModal
     v-if="pipelineModalOpen"
     :map-manager="props.mapManager"
@@ -272,13 +256,23 @@
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import { computed, defineAsyncComponent, onMounted, onUnmounted, Ref, ref, watch } from "vue";
-import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
-import { storeToRefs } from "pinia";
+import {
+  computed,
+  defineAsyncComponent,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 import { toast } from "vue-sonner";
-import type { EventsKey } from "ol/events";
-import { unByKey } from "ol/Observable";
+import type { CoolerWeightsNaNPolicy } from "@/app/core/visualization/VisualizationOptions";
+import { prepareCoverage } from "@/app/core/visualization/coverageNormalization";
+import type { CoverageNormalizationStatus } from "@/app/core/net/api/RequestManager";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import { importedWeightsAvailability } from "@/app/core/net/SourceCapabilities";
+import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
+import { isValidLogBase } from "@/app/core/visualization/signalProfile";
+import { storeToRefs } from "pinia";
 const RenderingPipelineModal = defineAsyncComponent(
   () => import("./RenderingPipelineModal.vue")
 );
@@ -291,299 +285,401 @@ const {
   postLogBase,
   autoThresholdEnabled,
   autoThresholdQuantile,
-  colormap,
+  signalEditable,
+  coolerWeightsNaNPolicy,
 } = storeToRefs(visualizationOptionsStore);
-const matrixViewStore = useMatrixViewStore();
-const { presentationMode, activeVisualizationSource, layersSwapped } = storeToRefs(matrixViewStore);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
 
-const applyPreLog: Ref<boolean> = ref(false);
+const matrixViewStore = useMatrixViewStore();
+const capabilities = computed(
+  () =>
+    props.mapManager?.networkManager.requestManager.sourceCapabilities[
+      matrixViewStore.activeVisualizationSource
+    ]
+);
+const contactUnavailable = computed(
+  () => capabilities.value?.contactNormalization.state === "UNAVAILABLE"
+);
+const weightsAvailability = computed(() =>
+  importedWeightsAvailability(
+    capabilities.value,
+    props.mapManager?.viewAndLayersManager.currentViewState.resolutionDesciptor
+      .bpResolution
+  )
+);
+const weightsUnavailable = computed(
+  () => weightsAvailability.value?.state === "UNAVAILABLE"
+);
 
-// const applyCoolerWeights: Ref<boolean> = ref(false);
+const emit = defineEmits<{ (e: "apply"): void }>();
 
-const applyPostLog: Ref<boolean> = ref(true);
+const DEFAULT_BASE = 2;
+const MAX_BASE = 1000;
 const pipelineModalOpen = ref(false);
-let autoThresholdMoveEndKey: EventsKey | undefined;
-let autoThresholdTimer: number | undefined;
 
-const hasTwoSources = computed(() => presentationMode.value !== "single");
+/** A positive, valid base means the transform is on. The sign of the stored value is only the on/off marker. */
+const logEnabled = computed(
+  () => postLogBase.value > 0 && isValidLogBase(postLogBase.value)
+);
+// The base to come back to when the transform is switched on again. Never 1 or invalid.
+const rememberedBase = ref(
+  isValidLogBase(Math.abs(postLogBase.value))
+    ? Math.abs(postLogBase.value)
+    : DEFAULT_BASE
+);
+watch(
+  () => postLogBase.value,
+  (value) => {
+    if (isValidLogBase(value) && value > 0) rememberedBase.value = value;
+    else if (isValidLogBase(Math.abs(value)))
+      rememberedBase.value = Math.abs(value);
+  }
+);
+const logButtonLabel = computed(() => {
+  const base = rememberedBase.value;
+  return Math.abs(base - 2) < 1e-9
+    ? "Log2"
+    : Math.abs(base - 10) < 1e-9
+    ? "Log10"
+    : "Log";
+});
+function formatBase(base: number): string {
+  return String(Number(base.toPrecision(10)));
+}
+const baseDraft = ref(formatBase(rememberedBase.value));
+const baseError = ref("");
+watch(rememberedBase, (base) => {
+  baseDraft.value = formatBase(base);
+  baseError.value = "";
+});
 
-// const preLogBase: Ref<number> = ref(10);
+function setTransform(on: boolean): void {
+  if (!signalEditable.value) return;
+  baseError.value = "";
+  // Off is a separate state: the remembered base is kept, never negated into something else.
+  postLogBase.value = on ? rememberedBase.value : -rememberedBase.value;
+}
 
-// const postLogBase: Ref<number> = ref(10);
+function commitBase(): void {
+  const text = baseDraft.value.trim().replace(",", ".");
+  const value = text === "" ? Number.NaN : Number(text);
+  if (!isValidLogBase(value) || value > MAX_BASE) {
+    baseError.value = `Log base must be a number above 0 and up to ${MAX_BASE}, other than 1. Kept ${formatBase(
+      rememberedBase.value
+    )}.`;
+    baseDraft.value = formatBase(rememberedBase.value);
+    return;
+  }
+  baseError.value = "";
+  rememberedBase.value = value;
+  baseDraft.value = formatBase(value);
+  if (logEnabled.value) postLogBase.value = value;
+}
+
+type ScalingMode = "none" | "linear" | "quadratic" | "both";
+const scalingMode = computed<ScalingMode>({
+  get: () =>
+    resolutionScaling.value && resolutionLinearScaling.value
+      ? "both"
+      : resolutionScaling.value
+      ? "quadratic"
+      : resolutionLinearScaling.value
+      ? "linear"
+      : "none",
+  set: (mode) => {
+    // Mutually exclusive: choosing one clears the other. The legacy "both" is only ever shown.
+    if (mode === "both") return;
+    resolutionLinearScaling.value = mode === "linear";
+    resolutionScaling.value = mode === "quadratic";
+  },
+});
+
+const legacyPreLog = computed(
+  () => preLogBase.value > 0 && isValidLogBase(preLogBase.value)
+);
+function removePreLog(): void {
+  preLogBase.value = -1;
+}
+function stopAutoThreshold(): void {
+  autoThresholdEnabled.value = false;
+}
 
 function resetAttributes(): void {
-  applyPreLog.value = false;
-  preLogBase.value = 10;
-  applyPostLog.value = true;
+  preLogBase.value = -1;
+  rememberedBase.value = 10;
   postLogBase.value = 10;
   applyCoolerWeights.value = false;
   resolutionScaling.value = false;
   resolutionLinearScaling.value = false;
   autoThresholdEnabled.value = false;
   autoThresholdQuantile.value = 0.995;
-  applySettings();
+  emit("apply");
 }
 
-function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
-  return hasTwoSources.value ? activeVisualizationSource.value : undefined;
-}
+// ---- Normalization --------------------------------------------------------------------------
+const status = ref<CoverageNormalizationStatus | null>(null);
+const preparing = ref(false);
+const prepareProgress = ref(0);
+const prepareMessage = ref("");
+const prepareError = ref("");
+let disposed = false;
 
-function syncLocalLogFlags(): void {
-  applyPreLog.value = preLogBase.value > 0;
-  applyPostLog.value = postLogBase.value > 0;
-}
+type NormalizationChoice = "none" | "sqrt" | "file";
+/** What is shown is what tiles use: weights off, the file's weights, or computed coverage. */
+const choice = computed<NormalizationChoice>(() =>
+  !applyCoolerWeights.value ||
+  coolerWeightsNaNPolicy.value === "DISABLE_WEIGHTS"
+    ? "none"
+    : requests()?.normalizationWeightsMode === "SQRT_COVERAGE"
+    ? "sqrt"
+    : "file"
+);
+const normalizationHelpId = computed(() =>
+  contactUnavailable.value
+    ? "contact-normalization-unavailable"
+    : choice.value === "sqrt"
+    ? "normalization-help"
+    : undefined
+);
 
-async function refreshOptionsForActiveSource(): Promise<void> {
-  if (!props.mapManager) {
+const requests = () => props.mapManager?.networkManager.requestManager;
+
+async function refreshStatus(): Promise<void> {
+  const rm = requests();
+  if (!rm) {
+    status.value = null;
     return;
   }
-  await props.mapManager.visualizationManager
-    .loadVisualizationOptionsForSource(activeSourceForOptions())
-    .then(syncLocalLogFlags)
-    .catch(() => undefined);
-}
-
-function selectVisualizationSource(source: "PRIMARY" | "SECONDARY"): void {
-  matrixViewStore.setActiveVisualizationSource(source);
-}
-
-watch(
-  () => preLogBase.value,
-  (value) => {
-    applyPreLog.value = value > 0;
+  try {
+    status.value = await rm.coverageNormalizationStatus();
+    if (status.value.state === "RUNNING" && !preparing.value)
+      void waitForPreparation(false);
+  } catch (error) {
+    console.debug("Normalization status unavailable", error);
+    status.value = null;
   }
-);
-
-watch(
-  () => postLogBase.value,
-  (value) => {
-    applyPostLog.value = value > 0;
-  }
-);
-
-function applySettings(): void {
-  const source = hasTwoSources.value ? activeVisualizationSource.value : undefined;
-  const action = source
-    ? props.mapManager?.visualizationManager.applyVisualizationSettingsForSourceAndReload(
-        source
-      )
-    : props.mapManager?.visualizationManager.applyVisualizationSettingsAndReload();
-  action?.catch((error) => {
-    toast.error(String(error ?? "Failed to apply normalization settings"));
-  });
 }
 
-function preLogCheckChange() {
-  // applyPreLog.value = !applyPreLog.value;
-  if (!applyPreLog.value) {
-    preLogBase.value = Math.min(-preLogBase.value, -1e-6);
+/** Follows the background job until it ends. Returns true when the vectors are ready. */
+async function waitForPreparation(start: boolean): Promise<boolean> {
+  const rm = requests();
+  if (!rm) return false;
+  preparing.value = true;
+  prepareError.value = "";
+  try {
+    const outcome = await prepareCoverage(
+      rm,
+      (current) => {
+        status.value = current;
+        prepareProgress.value = current.progress;
+        prepareMessage.value = current.message || "Preparing";
+      },
+      { start, shouldStop: () => disposed }
+    );
+    if (!outcome.ok && !outcome.cancelled) prepareError.value = outcome.message;
+    return outcome.ok;
+  } finally {
+    preparing.value = false;
+  }
+}
+
+async function cancelPreparation(): Promise<void> {
+  try {
+    await requests()?.cancelCoverageNormalization();
+  } catch (error) {
+    console.debug("Cancel failed", error);
+  }
+}
+
+async function switchWeights(mode: "FILE" | "SQRT_COVERAGE"): Promise<boolean> {
+  const rm = requests();
+  if (!rm) return false;
+  try {
+    await rm.selectNormalizationWeights(mode);
+    await refreshStatus();
+    return true;
+  } catch (error) {
+    console.debug("Switching weights failed", error);
+    prepareError.value =
+      "The weights could not be switched. Nothing was changed.";
+    return false;
+  }
+}
+
+/**
+ * Applies the choice through the one routine that rewrites the pipeline, the options and the color
+ * range together. A change of normalization changes the scale of the values, so the range is refitted;
+ * keeping the old one would leave the map blank or saturated.
+ */
+async function applyChoice(useWeights: boolean): Promise<void> {
+  const manager = props.mapManager;
+  if (!manager) return;
+  const policy: CoolerWeightsNaNPolicy = !useWeights
+    ? "DISABLE_WEIGHTS"
+    : coolerWeightsNaNPolicy.value === "DISABLE_WEIGHTS"
+    ? "REPLACE_NANS_WITH_ZERO"
+    : coolerWeightsNaNPolicy.value;
+  try {
+    await manager.visualizationManager.applyCoolerWeightsPolicy(
+      policy,
+      useWeights
+    );
+  } catch (error) {
+    console.debug("Applying the normalization failed", error);
+    prepareError.value = "The normalization could not be applied.";
+  }
+}
+
+async function useCoverage(): Promise<void> {
+  if (!(await waitForPreparation(true))) return;
+  if (!(await switchWeights("SQRT_COVERAGE"))) return;
+  await applyChoice(true);
+}
+
+async function onChoose(value: string): Promise<void> {
+  prepareError.value = "";
+  const next = value as NormalizationChoice;
+  if (next === choice.value) return;
+  if (next === "none") {
+    await applyChoice(false);
+  } else if (next === "file") {
+    if (!(await switchWeights("FILE"))) return;
+    await applyChoice(true);
   } else {
-    preLogBase.value = Math.max(-preLogBase.value, 1e-6);
+    await useCoverage();
   }
-  // toast.message(
-  //   `Apply pre log: ${applyPreLog.value}, preLogBase: ${preLogBase.value}`
-  // );
+  // A refused or cancelled change leaves the control showing what is really in use.
+  const element = document.getElementById(
+    "normalization-mode"
+  ) as HTMLSelectElement | null;
+  if (element) element.value = choice.value;
 }
 
-function postLogCheckChange() {
-  // applyPostLog.value = !applyPostLog.value;
-  if (!applyPostLog.value) {
-    postLogBase.value = Math.min(-postLogBase.value, -1e-6);
-  } else {
-    postLogBase.value = Math.max(-postLogBase.value, 1e-6);
-  }
-  // toast.message(
-  //   `Apply pre log: ${applyPostLog.value}, preLogBase: ${postLogBase.value}`
-  // );
+async function reapplyCoverage(): Promise<void> {
+  toast.message("Preparing square-root coverage for the attached source…");
+  await useCoverage();
 }
+
+onMounted(() => void refreshStatus());
+watch(
+  () => props.mapManager,
+  () => void refreshStatus()
+);
+onBeforeUnmount(() => {
+  disposed = true;
+});
 
 function openRenderingPipeline(): void {
   pipelineModalOpen.value = true;
 }
-
-function swapLayers(): void {
-  props.mapManager?.visualizationManager
-    .swapRenderPipelineLayersAndReload()
-    .then((swapped) => {
-      if (!swapped) {
-        toast("No active two-layer rendering pipeline to swap");
-        return;
-      }
-      matrixViewStore.toggleLayersSwapped();
-    })
-    .catch((error) => {
-      toast.error(String(error ?? "Failed to swap rendering layers"));
-    });
-}
-
-function clearAutoThresholdTimer(): void {
-  if (autoThresholdTimer !== undefined) {
-    window.clearTimeout(autoThresholdTimer);
-    autoThresholdTimer = undefined;
-  }
-}
-
-function scheduleAutoThresholdRefresh(): void {
-  clearAutoThresholdTimer();
-  if (!autoThresholdEnabled.value || !props.mapManager) {
-    return;
-  }
-  autoThresholdTimer = window.setTimeout(() => {
-    props.mapManager?.visualizationManager
-      .refreshAutoThresholdAndReload(
-        hasTwoSources.value ? activeVisualizationSource.value : undefined
-      )
-      .catch(() => undefined);
-  }, 180);
-}
-
-function detachAutoThresholdMoveListener(): void {
-  if (autoThresholdMoveEndKey) {
-    unByKey(autoThresholdMoveEndKey);
-    autoThresholdMoveEndKey = undefined;
-  }
-}
-
-watch(
-  () => props.mapManager,
-  (manager) => {
-    detachAutoThresholdMoveListener();
-    clearAutoThresholdTimer();
-    if (!manager) {
-      return;
-    }
-    autoThresholdMoveEndKey = manager.getMap().on("moveend", () => {
-      scheduleAutoThresholdRefresh();
-    });
-  },
-  { immediate: true }
-);
-
-watch(
-  () => autoThresholdEnabled.value,
-  (enabled) => {
-    if (enabled) {
-      scheduleAutoThresholdRefresh();
-    }
-  }
-);
-
-watch(
-  () => autoThresholdQuantile.value,
-  () => {
-    if (autoThresholdEnabled.value) {
-      scheduleAutoThresholdRefresh();
-    }
-  }
-);
-
-watch(
-  () => activeVisualizationSource.value,
-  () => {
-    void refreshOptionsForActiveSource();
-    if (autoThresholdEnabled.value) {
-      scheduleAutoThresholdRefresh();
-    }
-  }
-);
-
-watch(
-  () => [props.mapManager, presentationMode.value] as const,
-  () => {
-    void refreshOptionsForActiveSource();
-  },
-  { immediate: true }
-);
-
-onMounted(() => {
-  syncLocalLogFlags();
-  void refreshOptionsForActiveSource();
-});
-
-onUnmounted(() => {
-  detachAutoThresholdMoveListener();
-  clearAutoThresholdTimer();
-});
 </script>
 
 <style scoped>
-#normalization-dropdown-menu {
-  min-width: min(34rem, calc(100vw - 2rem));
-  max-width: min(36rem, calc(100vw - 2rem));
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.number-input {
-  width: 7.25rem;
-  float: right;
-}
-
-#normalization-apply-group {
-  width: 100%;
-}
-
-.normalization-source-row {
+.signal-processing {
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.875rem;
   display: flex;
-  align-items: stretch;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.signal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
 }
 
-.normalization-source-button {
-  color: #0d6efd !important;
-  background: #ffffff !important;
-  border-color: #0d6efd !important;
-  text-shadow:
-    -1px -1px 0 rgba(255, 255, 255, 0.9),
-    1px -1px 0 rgba(255, 255, 255, 0.9),
-    -1px 1px 0 rgba(255, 255, 255, 0.9),
-    1px 1px 0 rgba(255, 255, 255, 0.9);
+.signal-label {
+  font-weight: 600;
 }
 
-.normalization-source-button.is-active {
-  color: #ffffff !important;
-  background: #0d6efd !important;
-  border-color: #0d6efd !important;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.65),
-    1px -1px 0 rgba(0, 0, 0, 0.65),
-    -1px 1px 0 rgba(0, 0, 0, 0.65),
-    1px 1px 0 rgba(0, 0, 0, 0.65);
+.scale-choice {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 7px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
 }
 
-.layer-swap-button {
-  width: 2.35rem;
-  min-width: 2.35rem;
-  border-radius: 0.55rem;
+.scale-choice button {
+  padding: 3px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: #475569;
+  font-size: 0.8rem;
 }
 
-.layer-swap-button.active {
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+.scale-choice button[aria-pressed="true"] {
+  background: white;
+  color: #1d4ed8;
+  box-shadow: 0 1px 3px #0f172a20;
+  font-weight: 600;
 }
 
-.normalization-action-apply {
-  color: #ffffff !important;
-  background: #198754 !important;
-  border-color: #198754 !important;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.7),
-    1px -1px 0 rgba(0, 0, 0, 0.7),
-    -1px 1px 0 rgba(0, 0, 0, 0.7),
-    1px 1px 0 rgba(0, 0, 0, 0.7);
+.scale-choice button:disabled {
+  opacity: 0.55;
 }
 
-.normalization-action-reset {
-  color: #ffffff !important;
-  background: #dc3545 !important;
-  border-color: #dc3545 !important;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.7),
-    1px -1px 0 rgba(0, 0, 0, 0.7),
-    -1px 1px 0 rgba(0, 0, 0, 0.7),
-    1px 1px 0 rgba(0, 0, 0, 0.7);
+.signal-advanced > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.signal-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.base-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.number-input {
+  width: 6.5rem;
+  max-width: 100%;
+}
+
+.scaling-select {
+  width: 11rem;
+  max-width: 100%;
+}
+
+.normalization-select {
+  width: 13rem;
+  max-width: 100%;
+}
+
+.normalization-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.normalization-progress progress {
+  flex: 1;
+  min-width: 0;
+}
+
+.legacy-summary {
+  margin: 0;
+}
+
+.link-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: #0d6efd;
+  text-decoration: underline;
+  font-size: inherit;
 }
 </style>

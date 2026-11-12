@@ -122,7 +122,9 @@ class TrackSummaryResponse {
     public readonly logScale: boolean,
     public readonly rangeAuto: boolean,
     public readonly rangeMin: number,
-    public readonly rangeMax: number
+    public readonly rangeMax: number,
+    /** Records skipped or corrected while reading the file. Empty when nothing was changed. */
+    public readonly importWarnings: readonly string[] = []
   ) {}
 }
 
@@ -165,7 +167,9 @@ class TrackRenderResponse {
     public readonly renderStyle: string,
     public readonly bins: TrackBinResponse[],
     public readonly maxValue: number,
-    public readonly error: string | null
+    public readonly error: string | null,
+    public readonly statusMessage: string | null = null,
+    public readonly analysisWarning: string | null = null
   ) {}
 }
 
@@ -364,7 +368,8 @@ class FastaLinkCompatibilityResponse {
     public readonly sameOrderLengthAndOriginalNames: boolean,
     public readonly sameOrderLengthAndSourceNames: boolean,
     public readonly sameLengthMultiset: boolean,
-    public readonly mismatches: FastaLinkMismatchResponse[]
+    public readonly mismatches: FastaLinkMismatchResponse[],
+    public readonly sourceIntervalsCovered: boolean = false
   ) {}
 }
 

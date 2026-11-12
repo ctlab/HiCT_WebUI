@@ -21,15 +21,15 @@
 
 <template>
   <div class="layer-record">
-    <span class="layer-name">{{ layerName }}</span>
+    <span class="layer-name" :title="displayName">{{ displayName }}</span>
     <div class="button-block">
       <i
-        v-if="visible"
+        v-if="layerName !== 'Background' && visible"
         class="bi bi-eye-fill visibility-btn"
         @click="updateVisibility"
       ></i>
       <i
-        v-if="!visible"
+        v-if="layerName !== 'Background' && !visible"
         class="bi bi-eye-slash visibility-btn"
         @click="updateVisibility"
       ></i>
@@ -38,11 +38,32 @@
         :getDefaultColor="getBaseColor"
         @onColorChanged="updateBackgroundColor"
       ></ColorPickerRectangle>
-      <div class="tri-square border-style-btn" @click="updateBorderStyle">
+      <div
+        v-if="layerName !== 'Background' && !layerName.endsWith('names')"
+        class="tri-square border-style-btn"
+        @click="updateBorderStyle"
+      >
         <i v-if="bordersStyle === 0" class="bi bi-square"></i>
         <i v-if="bordersStyle === 1" class="bi bi-arrow-down-left"></i>
         <i v-if="bordersStyle === 2" class="bi bi-arrow-up-right"></i>
       </div>
+      <select
+        v-if="layerName.endsWith('names')"
+        class="form-select form-select-sm caption-placement"
+        :aria-label="`${displayName} caption side`"
+        title="Caption position"
+        v-model.number="bordersStyle"
+        @change="
+          visible = true;
+          emit('onBorderStyleChanged', layerName, bordersStyle);
+        "
+      >
+        <option :value="BorderStyle.TOP">Above</option>
+        <option :value="BorderStyle.BOTTOM">Below</option>
+        <option :value="BorderStyle.LEFT">Left</option>
+        <option :value="BorderStyle.RIGHT">Right</option>
+        <option :value="BorderStyle.FULL">Inside</option>
+      </select>
       <div
         v-if="enableStyleEditor"
         class="dropdown dropdown-sm"
@@ -55,6 +76,17 @@
           @click="openStyleEditor"
         ></i>
         <div class="dropdown-menu p-3 track-style-menu">
+          <label
+            v-if="layerName === 'Contigs' || layerName === 'Scaffolds'"
+            class="form-check mb-2"
+          >
+            <input
+              type="checkbox"
+              class="form-check-input"
+              v-model="borderOutline"
+            />
+            Black border outline
+          </label>
           <div class="mb-2">
             <label class="form-label" for="track-border-width"
               >Border width</label
@@ -156,13 +188,13 @@
           </div>
         </div>
       </div>
-      <div v-else class="edit-spacer"></div>
+      <div v-else-if="layerName !== 'Background'" class="edit-spacer"></div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { type Ref, ref } from "vue";
+import { computed, type Ref, ref, watch } from "vue";
 import { BorderStyle } from "@/app/core/tracks/Track2DSymmetric";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import Style from "ol/style/Style";
@@ -172,6 +204,7 @@ import type { ColorLike } from "ol/colorlike";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const props = defineProps<{
   layerName: string;
+  currentBorderStyle?: BorderStyle;
   getDefaultColor?: () => Style | undefined;
   enableStyleEditor?: boolean;
   getLabelSize?: () => number;
@@ -180,6 +213,7 @@ const props = defineProps<{
   getLabelOutline?: () => boolean;
   getLabelOutlineWidth?: () => number;
   getIncludeInSvg?: () => boolean;
+  getBorderOutline?: () => boolean;
 }>();
 
 function getBaseColor(): ColorTranslator {
@@ -216,7 +250,8 @@ const emit = defineEmits<{
     labelBold: boolean,
     labelOutline: boolean,
     labelOutlineWidth: number,
-    includeInSvg: boolean
+    includeInSvg: boolean,
+    borderOutline: boolean
   ): void;
 }>();
 
@@ -231,11 +266,38 @@ const labelBold: Ref<boolean> = ref(true);
 const labelOutline: Ref<boolean> = ref(true);
 const labelOutlineWidth: Ref<number> = ref(2);
 const includeInSvg: Ref<boolean> = ref(true);
+const borderOutline = ref(false);
 
+// Internal names drive behavior elsewhere (borders vs names, track lookup); only the text shown differs.
+const DISPLAY_NAMES: Record<string, string> = {
+  Contigs: "Contig borders",
+  Scaffolds: "Scaffold borders",
+  Cnames: "Contig names",
+  Snames: "Scaffold names",
+};
+const displayName = computed(
+  () => DISPLAY_NAMES[props.layerName] ?? props.layerName
+);
+
+// Contig names default below and scaffold names above, so they do not share a line.
 const bordersStyle: Ref<number> = ref(
-  props.layerName.includes("names") ? BorderStyle.TOP : 0
+  props.layerName === "Cnames"
+    ? BorderStyle.BOTTOM
+    : props.layerName.includes("names")
+    ? BorderStyle.TOP
+    : 0
 );
 const visible: Ref<boolean> = ref(true);
+
+watch(
+  () => props.currentBorderStyle,
+  (style) => {
+    if (style === undefined) return;
+    visible.value = style !== BorderStyle.NONE;
+    if (visible.value) bordersStyle.value = style;
+  },
+  { immediate: true }
+);
 
 function updateVisibility() {
   visible.value = !visible.value;
@@ -271,6 +333,7 @@ function getDefaultFillColor(): ColorTranslator {
 }
 
 function openStyleEditor() {
+  borderOutline.value = props.getBorderOutline?.() ?? false;
   if (!props.getDefaultColor) return;
   const style = props.getDefaultColor();
   const strokeWidth = style?.getStroke()?.getWidth();
@@ -309,7 +372,8 @@ function applyStyle() {
     labelBold.value,
     labelOutline.value,
     labelOutlineWidth.value,
-    includeInSvg.value
+    includeInSvg.value,
+    borderOutline.value
   );
 }
 
@@ -320,6 +384,12 @@ function resetStyle() {
 </script>
 
 <style scoped>
+.caption-placement {
+  width: 4.9rem;
+  font-size: 0.8rem;
+  padding-left: 0.4rem;
+  padding-right: 1.4rem;
+}
 .layer-record {
   /* layer */
 
@@ -329,9 +399,9 @@ function resetStyle() {
   justify-content: space-between;
   align-items: flex-start;
   padding: 0px;
-  gap: 20px;
+  gap: 8px;
 
-  width: 200px;
+  width: 100%;
   min-height: 20px;
   height: auto;
   overflow: visible;
@@ -343,9 +413,13 @@ function resetStyle() {
 }
 
 .layer-name {
-  /* layer name */
+  /* layer name: takes the free space; the button column stays right-aligned */
 
-  width: 28px;
+  flex: 1 1 6.5rem;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   height: 20px;
 
   /* Body/Small */
@@ -356,17 +430,13 @@ function resetStyle() {
   line-height: 19px;
 
   /* identical to box height, or 150% */
-  display: flex;
-  align-items: center;
-  text-align: center;
+  display: block;
+  text-align: left;
 
   /* Global/08. Dark */
   color: #343a40;
 
-  /* Inside auto layout */
-  flex: none;
   order: 0;
-  flex-grow: 0;
 }
 
 .button-block {
@@ -377,9 +447,9 @@ function resetStyle() {
   flex-direction: row;
   align-items: flex-start;
   padding: 0px;
-  gap: 12px;
+  gap: 8px;
 
-  width: 116px;
+  width: auto;
   min-height: 20px;
   height: auto;
   overflow: visible;

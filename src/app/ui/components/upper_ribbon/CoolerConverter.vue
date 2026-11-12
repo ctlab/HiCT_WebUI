@@ -24,14 +24,19 @@
     class="modal fade in"
     id="loadAGPModal"
     ref="convertCoolerModal"
+    aria-labelledby="matrix-converter-title"
     tabindex="-1"
     data-keyboard="false"
     data-backdrop="static"
   >
-    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable converter-dialog">
-        <div class="modal-content">
+    <div
+      class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable converter-dialog"
+    >
+      <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">Convert matrix files for HiCT</h5>
+          <h5 id="matrix-converter-title" class="modal-title">
+            Convert matrix files for HiCT
+          </h5>
           <button
             type="button"
             class="btn-close"
@@ -42,7 +47,10 @@
           <div class="d-flex align-items-center" v-if="errorMessage">
             <p class="error-message">Error: {{ errorMessage }}</p>
           </div>
-          <div class="toolchain-card" v-if="toolchainStatus || toolchainLoading">
+          <div
+            class="toolchain-card"
+            v-if="toolchainStatus || toolchainLoading"
+          >
             <div class="toolchain-header">
               <strong>.hic conversion</strong>
               <span
@@ -56,7 +64,12 @@
             </div>
             <p class="toolchain-summary">
               .hic files are handled by
-              <a href="https://github.com/paulsengroup/hictk" target="_blank" rel="noopener noreferrer">hictk</a>.
+              <a
+                href="https://github.com/paulsengroup/hictk"
+                target="_blank"
+                rel="noopener noreferrer"
+                >hictk</a
+              >.
               <span :class="hictkAvailabilityClass">
                 {{ hictkAvailabilityLabel }}.
               </span>
@@ -96,22 +109,40 @@
           <div>
             <div v-if="batchStep === 'select'">
               <div class="batch-actions">
-                <button class="btn btn-sm btn-outline-primary" @click="selectAll">
+                <button
+                  class="btn btn-sm btn-outline-primary"
+                  @click="selectAll"
+                >
                   Select All
                 </button>
-                <button class="btn btn-sm btn-outline-secondary" @click="selectNone">
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  @click="selectNone"
+                >
                   Select None
                 </button>
-                <button class="btn btn-sm btn-outline-secondary" @click="invertSelection">
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  @click="invertSelection"
+                >
                   Invert Selection
                 </button>
-                <button class="btn btn-sm btn-outline-success" @click="selectAllConverted">
+                <button
+                  class="btn btn-sm btn-outline-success"
+                  @click="selectAllConverted"
+                >
                   Select All Converted
                 </button>
-                <button class="btn btn-sm btn-outline-success" @click="selectAllUnconverted">
+                <button
+                  class="btn btn-sm btn-outline-success"
+                  @click="selectAllUnconverted"
+                >
                   Select All Unconverted
                 </button>
-                <button class="btn btn-sm btn-outline-secondary" @click="viewCurrentJobs">
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  @click="viewCurrentJobs"
+                >
                   View current conversion jobs
                 </button>
               </div>
@@ -133,7 +164,9 @@
                 <button
                   class="btn btn-primary"
                   @click="proceedBatchSettings"
-                  :disabled="batchSelection.size === 0 || Boolean(batchBlockedMessage)"
+                  :disabled="
+                    batchSelection.size === 0 || Boolean(batchBlockedMessage)
+                  "
                 >
                   Continue
                 </button>
@@ -147,15 +180,22 @@
             </div>
             <div v-if="batchStep === 'settings'">
               <div class="mb-3">
-                <label class="form-label">Optional .assembly for selected .hic files</label>
+                <label class="form-label"
+                  >Optional .assembly for selected .hic files</label
+                >
                 <div class="input-group">
                   <input
                     class="form-control"
                     type="text"
                     readonly
-                    :value="batchAssemblyFilename || 'No Juicebox .assembly selected'"
+                    :value="
+                      batchAssemblyFilename || 'No Juicebox .assembly selected'
+                    "
                   />
-                  <button class="btn btn-outline-secondary" @click="assemblySelectorOpen = true">
+                  <button
+                    class="btn btn-outline-secondary"
+                    @click="assemblySelectorOpen = true"
+                  >
                     Browse…
                   </button>
                   <button
@@ -167,7 +207,8 @@
                   </button>
                 </div>
                 <small class="text-muted">
-                  The assembly file is passed only to .hic conversions. Leave empty to keep the sealed single-contig conversion layout.
+                  The assembly file is passed only to .hic conversions. Leave
+                  empty to keep the sealed single-contig conversion layout.
                 </small>
               </div>
               <div class="mb-3">
@@ -177,9 +218,15 @@
                     class="form-control"
                     type="text"
                     readonly
-                    :value="batchBinTableFilename || 'Auto-detect same-stem .bed when possible'"
+                    :value="
+                      batchBinTableFilename ||
+                      'Auto-detect same-stem .bed when possible'
+                    "
                   />
-                  <button class="btn btn-outline-secondary" @click="sidecarSelectorKind = 'bin-table'">
+                  <button
+                    class="btn btn-outline-secondary"
+                    @click="sidecarSelectorKind = 'bin-table'"
+                  >
                     Browse…
                   </button>
                   <button
@@ -191,7 +238,8 @@
                   </button>
                 </div>
                 <small class="text-muted">
-                  Used by Hi-C Pro .matrix and generic COO conversions. Leave empty for auto-discovery or synthetic COO bins.
+                  Used by Hi-C Pro .matrix and generic COO conversions. Leave
+                  empty for auto-discovery or synthetic COO bins.
                 </small>
               </div>
               <div class="row g-2 mb-3">
@@ -202,9 +250,15 @@
                       class="form-control"
                       type="text"
                       readonly
-                      :value="batchChromSizesFilename || 'Required for BEDPE/bedGraph2 and validPairs'"
+                      :value="
+                        batchChromSizesFilename ||
+                        'Required for BEDPE/bedGraph2 and validPairs'
+                      "
                     />
-                    <button class="btn btn-outline-secondary" @click="sidecarSelectorKind = 'chrom-sizes'">
+                    <button
+                      class="btn btn-outline-secondary"
+                      @click="sidecarSelectorKind = 'chrom-sizes'"
+                    >
                       Browse…
                     </button>
                     <button
@@ -218,16 +272,32 @@
                 </div>
                 <div class="col-md-4">
                   <label class="form-label">Bin size</label>
-                  <input type="number" class="form-control" v-model.number="batchBinSize" min="1" />
+                  <input
+                    type="number"
+                    class="form-control"
+                    v-model.number="batchBinSize"
+                    min="1"
+                  />
                 </div>
               </div>
               <div class="mb-3">
                 <label class="form-label">Parallel jobs</label>
-                <input type="number" class="form-control" v-model.number="batchParallelJobs" min="1" />
+                <input
+                  type="number"
+                  class="form-control"
+                  v-model.number="batchParallelJobs"
+                  min="1"
+                />
               </div>
               <div class="mb-3">
                 <label class="form-label">Parallelism per file</label>
-                <input type="number" class="form-control" v-model.number="batchParallelism" min="1" />
+                <input
+                  type="number"
+                  class="form-control"
+                  v-model.number="batchParallelism"
+                  min="-1"
+                  title="-1: automatic server CPU allocation"
+                />
               </div>
               <div class="mt-3 d-flex gap-2">
                 <button
@@ -247,7 +317,10 @@
             </div>
             <div v-if="batchStep === 'progress'">
               <h6>Batch progress</h6>
-              <div class="overall-status">
+              <p v-if="batchJobIds.length === 0" class="text-muted">
+                No active conversion jobs.
+              </p>
+              <div v-else class="overall-status">
                 <span class="status-pill" :class="overallBatchStatusClass">
                   {{ overallBatchStatusLabel }}
                 </span>
@@ -280,10 +353,18 @@
               <h6 class="card-title mb-2">Overwrite converted output?</h6>
               <p class="card-text mb-3">{{ overwriteConfirmMessage }}</p>
               <div class="d-flex justify-content-end gap-2">
-                <button type="button" class="btn btn-outline-secondary" @click="resolveOverwriteConfirm(false)">
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary"
+                  @click="resolveOverwriteConfirm(false)"
+                >
                   Cancel
                 </button>
-                <button type="button" class="btn btn-danger" @click="resolveOverwriteConfirm(true)">
+                <button
+                  type="button"
+                  class="btn btn-danger"
+                  @click="resolveOverwriteConfirm(true)"
+                >
                   Overwrite
                 </button>
               </div>
@@ -305,10 +386,22 @@
     <UniversalFileSelector
       v-if="sidecarSelectorKind !== null"
       :network-manager="networkManager"
-      :title="sidecarSelectorKind === 'bin-table' ? 'Select BED bin table' : 'Select chrom sizes file'"
+      :title="
+        sidecarSelectorKind === 'bin-table'
+          ? 'Select BED bin table'
+          : 'Select chrom sizes file'
+      "
       :file-type="sidecarSelectorKind === 'bin-table' ? '.bed' : '.chrom.sizes'"
-      :note="sidecarSelectorKind === 'bin-table' ? 'BED3+ bin table for hictk load.' : 'Chrom sizes for hictk load.'"
-      :file-name-predicate="sidecarSelectorKind === 'bin-table' ? isBinTableFilename : isChromSizesFilename"
+      :note="
+        sidecarSelectorKind === 'bin-table'
+          ? 'BED3+ bin table for hictk load.'
+          : 'Chrom sizes for hictk load.'
+      "
+      :file-name-predicate="
+        sidecarSelectorKind === 'bin-table'
+          ? isBinTableFilename
+          : isChromSizesFilename
+      "
       @selected="onSidecarSelected"
       @dismissed="sidecarSelectorKind = null"
     />
@@ -318,10 +411,9 @@
 <script setup lang="ts">
 import { type Ref, ref, onMounted, computed } from "vue";
 import { Modal } from "bootstrap";
+import { useModalFocus } from "@/app/ui/modalFocus";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
-import {
-  StartBatchConversionJobsRequest,
-} from "@/app/core/net/api/request";
+import { StartBatchConversionJobsRequest } from "@/app/core/net/api/request";
 import { ConversionToolchainStatusResponse } from "@/app/core/net/api/response";
 import ConverterStatusChecker from "./converter/ConverterStatusChecker.vue";
 import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
@@ -341,6 +433,7 @@ const props = defineProps<{
 const errorMessage: Ref<unknown | null> = ref(null);
 const modal: Ref<Modal | null> = ref(null);
 const convertCoolerModal = ref<HTMLElement | null>(null);
+useModalFocus(convertCoolerModal);
 const batchStep: Ref<"select" | "settings" | "progress"> = ref("select");
 const batchFiles: Ref<string[]> = ref([]);
 const batchSelection: Ref<Set<string>> = ref(new Set<string>());
@@ -351,14 +444,15 @@ const batchChromSizesFilename: Ref<string> = ref("");
 const batchBinSize: Ref<number | null> = ref(null);
 const sidecarSelectorKind: Ref<"bin-table" | "chrom-sizes" | null> = ref(null);
 const batchParallelJobs: Ref<number> = ref(2);
-const batchParallelism: Ref<number> = ref(Math.max(1, navigator.hardwareConcurrency || 4));
+const batchParallelism: Ref<number> = ref(-1);
 const batchJobIds: Ref<string[]> = ref([]);
 const batchStatusMap: Ref<Map<string, string>> = ref(new Map());
 const batchProgressMap: Ref<Map<string, number>> = ref(new Map());
 const allFiles: Ref<Set<string>> = ref(new Set<string>());
 const overwriteConfirmVisible: Ref<boolean> = ref(false);
 const overwriteConfirmMessage: Ref<string> = ref("");
-const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> = ref(null);
+const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> =
+  ref(null);
 const toolchainLoading: Ref<boolean> = ref(true);
 let overwriteConfirmResolver: ((approved: boolean) => void) | null = null;
 
@@ -552,7 +646,10 @@ function deriveOutputFilename(file: string): string {
   if (lower.endsWith(".cool")) {
     return file.slice(0, -".cool".length) + ".hict.hdf5";
   }
-  const withoutCompression = file.replace(/\.(gz|bgz|xz|zst|zstd|bz2|lz4|lzo)$/i, "");
+  const withoutCompression = file.replace(
+    /\.(gz|bgz|xz|zst|zstd|bz2|lz4|lzo)$/i,
+    ""
+  );
   const stripped = withoutCompression.replace(
     /\.(coo\.tsv|coo\.csv|bedgraph2|validpairs|matrix|pairs|bedpe|coo|bg2|tsv|csv)$/i,
     ""
@@ -700,7 +797,9 @@ const batchBlockedMessage = computed(() => {
 });
 
 const hictkAvailabilityLabel = computed(() =>
-  toolchainStatus.value?.hicConversionAvailable ? "hictk available" : "hictk unavailable"
+  toolchainStatus.value?.hicConversionAvailable
+    ? "hictk available"
+    : "hictk unavailable"
 );
 
 const hictkAvailabilityClass = computed(() =>
@@ -734,7 +833,11 @@ function isBinTableFilename(name: string): boolean {
 
 function isChromSizesFilename(name: string): boolean {
   const lowered = name.toLowerCase();
-  return lowered.endsWith(".chrom.sizes") || lowered.endsWith(".chromsizes") || lowered.endsWith(".chrom_sizes.txt");
+  return (
+    lowered.endsWith(".chrom.sizes") ||
+    lowered.endsWith(".chromsizes") ||
+    lowered.endsWith(".chrom_sizes.txt")
+  );
 }
 </script>
 

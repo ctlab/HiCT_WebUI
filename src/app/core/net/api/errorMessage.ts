@@ -1,6 +1,13 @@
-const ERROR_FIELD_KEYS = ["error", "message", "detail", "reason", "info"] as const;
+const ERROR_FIELD_KEYS = [
+  "error",
+  "message",
+  "detail",
+  "reason",
+  "info",
+] as const;
 
-const ERROR_PREFIX_RE = /^(AxiosError|Error|TypeError|ReferenceError|RangeError|URIError|SyntaxError|EvalError|AggregateError):\s*/;
+const ERROR_PREFIX_RE =
+  /^(AxiosError|Error|TypeError|ReferenceError|RangeError|URIError|SyntaxError|EvalError|AggregateError):\s*/;
 
 const normalizeString = (value: string): string => {
   const trimmed = value.trim();
@@ -74,7 +81,8 @@ export const extractErrorMessage = (
       record.response && typeof record.response === "object"
         ? (record.response as Record<string, unknown>).data
         : undefined;
-    const nested = readErrorCandidate(responseData) || readFirstStringField(responseData);
+    const nested =
+      readErrorCandidate(responseData) || readFirstStringField(responseData);
     if (nested) {
       return nested;
     }
@@ -82,10 +90,16 @@ export const extractErrorMessage = (
     if (direct) {
       return direct;
     }
-    if (typeof record.message === "string" && record.message.trim().length > 0) {
+    if (
+      typeof record.message === "string" &&
+      record.message.trim().length > 0
+    ) {
       return normalizeString(record.message) || fallback;
     }
-    if (typeof record.statusText === "string" && record.statusText.trim().length > 0) {
+    if (
+      typeof record.statusText === "string" &&
+      record.statusText.trim().length > 0
+    ) {
       return normalizeString(record.statusText) || fallback;
     }
   }

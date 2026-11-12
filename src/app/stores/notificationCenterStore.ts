@@ -13,6 +13,7 @@ export type NotificationEntry = {
   level: NotificationLevel;
   message: string;
   createdAt: number;
+  diagnostics?: string;
 };
 
 export const useNotificationCenterStore = defineStore(
@@ -24,13 +25,18 @@ export const useNotificationCenterStore = defineStore(
     const nextId = ref(1);
     const expandedEntryIds = ref<number[]>([]);
 
-    const add = (level: NotificationLevel, message: string): number => {
+    const add = (
+      level: NotificationLevel,
+      message: string,
+      diagnostics?: string
+    ): number => {
       const id = nextId.value++;
       entries.value.push({
         id,
         level,
         message,
         createdAt: Date.now(),
+        diagnostics,
       });
       if (keepLast100.value && entries.value.length > 100) {
         entries.value.splice(0, entries.value.length - 100);

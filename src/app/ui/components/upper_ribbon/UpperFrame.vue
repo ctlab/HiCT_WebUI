@@ -22,8 +22,10 @@
 <template>
   <div class="upper-frame">
     <NavigationBar
+      ref="navigationBar"
       :networkManager="props.networkManager"
       :mapManager="props.mapManager"
+      @jobResult="emit('jobResult', $event)"
       @selected="onFileSelected"
       @closed="onClosed"
       @attached="onAttached"
@@ -32,17 +34,22 @@
       @agpLoaded="onAgpLoaded"
       @fastaLinked="onFastaLinked"
       @wizardRequested="onWizardRequested"
+      @fastaOnlyRequested="emit('fastaOnlyRequested')"
+      @examplesRequested="emit('examplesRequested')"
     ></NavigationBar>
     <HeaderRibbon :mapManager="props.mapManager"></HeaderRibbon>
   </div>
 </template>
 
 <script setup lang="ts">
+import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
+import { ref } from "vue";
 import NavigationBar from "@/app/ui/components/upper_ribbon/NavigationBar.vue";
 import HeaderRibbon from "@/app/ui/components/upper_ribbon/HeaderRibbon.vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 const emit = defineEmits<{
+  (e: "jobResult", output: BackgroundJobOutput): void;
   (e: "selected", filename: string): void;
   (e: "closed"): void;
   (e: "attached"): void;
@@ -51,12 +58,17 @@ const emit = defineEmits<{
   (e: "agpLoaded", filename: string): void;
   (e: "fastaLinked", filename: string): void;
   (e: "wizardRequested"): void;
+  (e: "fastaOnlyRequested"): void;
+  (e: "examplesRequested"): void;
 }>();
 
 const props = defineProps<{
   networkManager: NetworkManager;
   mapManager?: ContactMapManager;
 }>();
+
+const navigationBar = ref<InstanceType<typeof NavigationBar> | null>(null);
+defineExpose({ openFile: () => navigationBar.value?.openFile() });
 
 function onFileSelected(filename: string): void {
   emit("selected", filename);
@@ -105,7 +117,8 @@ function onWizardRequested(): void {
   /* width: 1840px; */
   width: 100%;
   /* TODO: Константа глобальная */
-  height: 109px;
+  height: auto;
+  flex: 0 0 auto;
   left: 0px;
   top: 0px;
   box-shadow: inset 0 -1px 0 #000000;

@@ -33,13 +33,32 @@
     @dblclick.prevent="onDoubleClickForward"
     @mousemove="onMouseMoveFeature"
     @mouseleave="onMouseLeaveFeature"
+    @contextmenu.prevent="onContextMenu"
   >
     <canvas ref="trackCanvas"></canvas>
+    <button
+      v-for="(track, index) in axisTracks"
+      :key="track.trackId"
+      type="button"
+      class="track-close-button"
+      :style="{
+        left: `calc(${((index + 0.5) * 100) / axisTracks.length}% - 10px)`,
+      }"
+      :title="`Hide ${track.name} vertically`"
+      :aria-label="`Hide ${track.name} vertically`"
+      @pointerdown.stop
+      @click.stop="hideTrack(track.trackId)"
+    >
+      <i class="bi bi-x"></i>
+    </button>
     <div ref="statusOverlay" class="track-status-overlay"></div>
-    <div
-      v-if="featureTooltipVisible"
-      class="track-feature-tooltip"
-      :style="featureTooltipStyle"
+    <FloatingTrackTooltip
+      :open="featureTooltipVisible"
+      :x="featureTooltipPoint.x"
+      :y="featureTooltipPoint.y"
+      @enter="cancelTooltipHide"
+      @leave="scheduleTooltipHide"
+      @dismiss="hideFeatureTooltip"
     >
       <div class="feature-title">
         {{ featureTooltipTitle }}
@@ -62,11 +81,23 @@
         ></span>
         {{ attribute.key }}: {{ attribute.value }}
       </div>
-    </div>
+    </FloatingTrackTooltip>
+    <AxisContextMenu
+      v-if="contextMenu"
+      :items="contextMenu.items"
+      :title="contextMenu.title"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      @close="contextMenu = null"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import FloatingTrackTooltip from "./FloatingTrackTooltip.vue";
+import AxisContextMenu from "../common/AxisContextMenu.vue";
+import { buildTrackContextMenu } from "./trackContextMenu";
+import type { ContextMenuItem } from "@/app/core/mapmanagers/contextMenuActions";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
@@ -80,7 +111,11 @@ const props = defineProps<{
 const trackCanvas = ref<HTMLCanvasElement | null>(null);
 const statusOverlay = ref<HTMLDivElement | null>(null);
 const trackHost = ref<HTMLDivElement | null>(null);
+const axisTracks = ref(
+  props.mapManager?.linearTrackManager.getVisibleTracksForAxis("vertical") ?? []
+);
 let unsubscribeRenderState: (() => void) | undefined;
+let unsubscribeTrackList: (() => void) | undefined;
 let draggingPointerId: number | null = null;
 let dragStartClientY = 0;
 let dragCenterY = 0;
@@ -90,15 +125,22 @@ const featureTooltipVisible = ref(false);
 const featureTooltipTitle = ref("");
 const featureTooltipRange = ref("");
 const featureTooltipSecondary = ref("");
-const featureTooltipAttributes = ref<Array<{
-  key: string;
-  value: string;
-  swatch?: string;
-}>>([]);
-const featureTooltipStyle = ref<Record<string, string>>({
-  left: "0px",
-  top: "0px",
-});
+const featureTooltipAttributes = ref<
+  Array<{
+    key: string;
+    value: string;
+    swatch?: string;
+  }>
+>([]);
+const featureTooltipPoint = ref({ x: 0, y: 0 });
+let tooltipHideTimer: number | undefined;
+function cancelTooltipHide() {
+  window.clearTimeout(tooltipHideTimer);
+}
+function scheduleTooltipHide() {
+  cancelTooltipHide();
+  tooltipHideTimer = window.setTimeout(hideFeatureTooltip, 150);
+}
 
 const styleStore = useStyleStore();
 const uiSettingsStore = useUiSettingsStore();
@@ -120,8 +162,11 @@ const bindCanvas = () => {
 
 const bindSubscriptions = () => {
   unsubscribeRenderState?.();
+  unsubscribeTrackList?.();
   if (statusOverlay.value) {
-    statusOverlay.value.textContent = props.mapManager ? "No tracks loaded" : "";
+    statusOverlay.value.textContent = props.mapManager
+      ? "No tracks loaded"
+      : "";
   }
   if (!props.mapManager) {
     return;
@@ -132,18 +177,64 @@ const bindSubscriptions = () => {
       (state) => {
         if (statusOverlay.value) {
           statusOverlay.value.textContent = state.statusMessage ?? "";
-          statusOverlay.value.style.display = state.statusMessage ? "block" : "none";
+          statusOverlay.value.style.display = state.statusMessage
+            ? "block"
+            : "none";
         }
       }
     );
+  unsubscribeTrackList = props.mapManager.linearTrackManager.subscribeTrackList(
+    () => {
+      axisTracks.value =
+        props.mapManager?.linearTrackManager.getVisibleTracksForAxis(
+          "vertical"
+        ) ?? [];
+    }
+  );
+};
+
+const hideTrack = (trackId: string) =>
+  props.mapManager?.linearTrackManager.setTrackVisibleOnAxis(
+    trackId,
+    "vertical",
+    false
+  );
+
+const contextMenu = ref<{
+  x: number;
+  y: number;
+  title: string;
+  items: ContextMenuItem[];
+} | null>(null);
+
+const onContextMenu = (event: MouseEvent): void => {
+  hideFeatureTooltip();
+  const host = trackHost.value;
+  if (!props.mapManager || !host) {
+    return;
+  }
+  const rect = host.getBoundingClientRect();
+  contextMenu.value = {
+    x: event.clientX,
+    y: event.clientY,
+    ...buildTrackContextMenu(
+      props.mapManager,
+      "vertical",
+      event.clientY - rect.top,
+      event.clientX - rect.left,
+      hideTrack
+    ),
+  };
 };
 
 const hideFeatureTooltip = (): void => {
+  cancelTooltipHide();
   featureTooltipVisible.value = false;
 };
 
 const onMouseMoveFeature = (event: MouseEvent): void => {
-  if (!props.mapManager || draggingPointerId !== null) {
+  cancelTooltipHide();
+  if (!props.mapManager || draggingPointerId !== null || contextMenu.value) {
     hideFeatureTooltip();
     return;
   }
@@ -161,19 +252,7 @@ const onMouseMoveFeature = (event: MouseEvent): void => {
     hideFeatureTooltip();
     return;
   }
-  const hostRect = host.getBoundingClientRect();
-  const desiredLeft = Math.min(
-    hostRect.width - 250,
-    Math.max(6, event.offsetX + 10)
-  );
-  const desiredTop = Math.min(
-    hostRect.height - 70,
-    Math.max(6, event.offsetY + 10)
-  );
-  featureTooltipStyle.value = {
-    left: `${Math.round(desiredLeft)}px`,
-    top: `${Math.round(desiredTop)}px`,
-  };
+  featureTooltipPoint.value = { x: event.clientX, y: event.clientY };
   featureTooltipTitle.value =
     hit.kind === "feature"
       ? hit.label ?? hit.featureType ?? hit.trackName
@@ -227,7 +306,9 @@ const bedRgbToCss = (value: string): string | undefined => {
   const channels = value.split(",").map((part) => Number(part.trim()));
   if (
     channels.length !== 3 ||
-    channels.some((channel) => !Number.isInteger(channel) || channel < 0 || channel > 255)
+    channels.some(
+      (channel) => !Number.isInteger(channel) || channel < 0 || channel > 255
+    )
   ) {
     return undefined;
   }
@@ -246,7 +327,7 @@ const formatHoverRange = (hit: {
 };
 
 const onMouseLeaveFeature = (): void => {
-  hideFeatureTooltip();
+  scheduleTooltipHide();
 };
 
 const onPointerDown = (event: PointerEvent): void => {
@@ -308,13 +389,17 @@ const stopPointerDrag = (event: PointerEvent): void => {
 };
 
 const onWheelForward = (event: WheelEvent): void => {
+  hideFeatureTooltip();
   if (!props.mapManager || !trackHost.value) {
     return;
   }
   const viewport = props.mapManager.getMap().getViewport();
   const viewportRect = viewport.getBoundingClientRect();
   const hostRect = trackHost.value.getBoundingClientRect();
-  const ratioY = hostRect.height > 0 ? event.offsetY / hostRect.height : 0.5;
+  const ratioY =
+    hostRect.height > 0
+      ? (event.clientY - hostRect.top) / hostRect.height
+      : 0.5;
   const clientX = viewportRect.left + viewportRect.width * 0.5;
   const clientY = viewportRect.top + viewportRect.height * ratioY;
   const forwarded = new WheelEvent("wheel", {
@@ -335,13 +420,17 @@ const onWheelForward = (event: WheelEvent): void => {
 };
 
 const onDoubleClickForward = (event: MouseEvent): void => {
+  hideFeatureTooltip();
   if (!props.mapManager || !trackHost.value) {
     return;
   }
   const viewport = props.mapManager.getMap().getViewport();
   const viewportRect = viewport.getBoundingClientRect();
   const hostRect = trackHost.value.getBoundingClientRect();
-  const ratioY = hostRect.height > 0 ? event.offsetY / hostRect.height : 0.5;
+  const ratioY =
+    hostRect.height > 0
+      ? (event.clientY - hostRect.top) / hostRect.height
+      : 0.5;
   const clientX = viewportRect.left + viewportRect.width * 0.5;
   const clientY = viewportRect.top + viewportRect.height * ratioY;
   const forwarded = new MouseEvent("dblclick", {
@@ -366,6 +455,7 @@ onMounted(() => {
 watch(
   () => props.mapManager,
   () => {
+    hideFeatureTooltip();
     bindCanvas();
     bindSubscriptions();
   }
@@ -374,6 +464,7 @@ watch(
 onBeforeUnmount(() => {
   props.mapManager?.linearTrackManager.registerCanvas("vertical", null);
   unsubscribeRenderState?.();
+  unsubscribeTrackList?.();
   hideFeatureTooltip();
 });
 </script>
@@ -402,6 +493,23 @@ onBeforeUnmount(() => {
 .track-chip-list {
   display: none;
 }
+.track-close-button {
+  position: absolute;
+  top: 3px;
+  z-index: 12;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid #adb5bd;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #495057;
+  line-height: 18px;
+}
+.track-close-button:hover {
+  color: #b02a37;
+  border-color: #b02a37;
+}
 
 .track-status-overlay {
   position: absolute;
@@ -418,21 +526,6 @@ onBeforeUnmount(() => {
   writing-mode: vertical-rl;
   text-orientation: mixed;
   pointer-events: none;
-}
-
-.track-feature-tooltip {
-  position: absolute;
-  z-index: 14;
-  max-width: 240px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(17, 24, 39, 0.35);
-  background: rgba(17, 24, 39, 0.9);
-  color: rgba(244, 247, 252, 0.98);
-  font-size: 11px;
-  line-height: 1.25;
-  pointer-events: none;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
 }
 
 .feature-title {

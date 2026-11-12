@@ -30,4 +30,16 @@ module.exports = {
     "@vue/eslint-config-typescript/recommended",
     "@vue/eslint-config-prettier",
   ],
+  overrides: [
+    {
+      // Stand-alone Node ES modules: top-level await and Node globals are valid here.
+      files: ["scripts/**/*.mjs"],
+      env: { node: true, es2022: true },
+      parserOptions: { ecmaVersion: 2022, sourceType: "module" },
+      rules: {
+        // The checks replace browser and Electron objects with inert stubs.
+        "@typescript-eslint/no-empty-function": "off",
+      },
+    },
+  ],
 };

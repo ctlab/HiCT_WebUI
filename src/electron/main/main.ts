@@ -21,9 +21,9 @@
  */
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, session } from "electron";
-import { writeFile } from "node:fs/promises";
+import { writeFile, readFile, stat, mkdir } from "node:fs/promises";
 import { isIP } from "node:net";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const DEFAULT_HICT_URL = "http://127.0.0.1:8080/";
@@ -177,22 +177,47 @@ function configureSecurity(baseUrl: URL): void {
   ipcMain.handle(
     "hict:save-export",
     async (
-      _event,
-      payload: { filename?: string; bytes?: number[] }
+      event,
+      payload: { filename?: string; bytes?: number[] | Uint8Array | ArrayBuffer }
     ): Promise<{ saved: boolean; path?: string }> => {
       const filename =
         typeof payload.filename === "string" && payload.filename.trim().length > 0
           ? payload.filename.trim()
           : "hict-export.bin";
-      const result = await dialog.showSaveDialog({
+      const parent = BrowserWindow.fromWebContents(event.sender);
+      let directory = process.env.HICT_EXPORT_DIR;
+      const preferencePath = join(app.getPath("userData"), "last-export-directory.txt");
+      try {
+        const saved = await readFile(preferencePath, "utf8");
+        if ((await stat(saved)).isDirectory()) directory = saved;
+      } catch { /* First export, removed folder or unreadable preference: use default. */ }
+      const safeFilename = filename.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_");
+      const options = {
         title: "Save HiCT export",
-        defaultPath: filename,
-      });
+        defaultPath: directory ? join(directory, safeFilename) : safeFilename,
+      };
+      const result = parent
+        ? await dialog.showSaveDialog(parent, options)
+        : await dialog.showSaveDialog(options);
       if (result.canceled || !result.filePath) {
         return { saved: false };
       }
-      const bytes = Array.isArray(payload.bytes) ? payload.bytes : [];
-      await writeFile(result.filePath, Buffer.from(bytes));
+      // Renderers send a structured-clone Uint8Array (fast for large PDFs/PNGs);
+      // plain number arrays from older renderers remain accepted.
+      const raw = payload.bytes;
+      const data = ArrayBuffer.isView(raw)
+        ? Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength)
+        : Object.prototype.toString.call(raw) === "[object ArrayBuffer]"
+        ? Buffer.from(raw as ArrayBuffer)
+        : Buffer.from(Array.isArray(raw) ? raw : []);
+      await writeFile(result.filePath, data);
+      // Only remember a successfully written export, never a cancelled/failed one.
+      try {
+        await mkdir(dirname(preferencePath), { recursive: true });
+        await writeFile(preferencePath, dirname(result.filePath), "utf8");
+      } catch (error) {
+        console.warn("Export saved, but its destination could not be remembered:", error);
+      }
       return { saved: true, path: result.filePath };
     }
   );
@@ -219,7 +244,9 @@ function configureSecurity(baseUrl: URL): void {
             "script-src 'self' 'unsafe-eval' 'unsafe-inline'; " +
             "style-src 'self' 'unsafe-inline'; " +
             `img-src 'self' data: blob: ${httpOrigin} ${httpSameHostAllPorts} http://127.0.0.1:* http://localhost:*; ` +
-            `connect-src 'self' ${httpOrigin} ${httpSameHostAllPorts} ${wsOrigin} ${wsSameHostAllPorts} http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; ` +
+            // svg2pdf reads temporary in-memory PNG blobs through XHR. Keep
+            // data: and external network origins excluded from connect-src.
+            `connect-src 'self' blob: ${httpOrigin} ${httpSameHostAllPorts} ${wsOrigin} ${wsSameHostAllPorts} http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; ` +
             "font-src 'self' data:;"
         ],
       },
@@ -239,8 +266,13 @@ if (process.platform === "win32") {
 
 let mainWindow: BrowserWindow | undefined;
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const baseUrl = normalizeAllowedUrl(requestedUrl());
+  if (process.env.HICT_RESET_WEBUI === "1") {
+    await session.defaultSession.clearStorageData();
+    await session.defaultSession.clearCache();
+    console.error("HICT_WEBUI_RESET_COMPLETE");
+  }
   configureSecurity(baseUrl);
   mainWindow = createWindow(baseUrl);
 

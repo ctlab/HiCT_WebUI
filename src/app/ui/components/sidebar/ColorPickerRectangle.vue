@@ -186,20 +186,28 @@ function positionOverlay() {
   const margin = 8;
   const viewportWidth = document.documentElement.clientWidth;
   const viewportHeight = document.documentElement.clientHeight;
-  const preferredPositions = (Array.isArray(props.position)
-    ? props.position
-    : [props.position ?? "top"]
-  ).filter((candidate): candidate is Exclude<PickerPosition, false> => Boolean(candidate));
-  const candidates: Exclude<PickerPosition, false>[] = preferredPositions.length > 0 ? preferredPositions : ["top"];
+  const preferredPositions = (
+    Array.isArray(props.position) ? props.position : [props.position ?? "top"]
+  ).filter((candidate): candidate is Exclude<PickerPosition, false> =>
+    Boolean(candidate)
+  );
+  const candidates: Exclude<PickerPosition, false>[] =
+    preferredPositions.length > 0 ? preferredPositions : ["top"];
 
   const rawPlacement = (candidate: Exclude<PickerPosition, false>) => {
     switch (candidate) {
       case "top":
-        return { left: trigger.left, top: trigger.top - overlay.height - margin };
+        return {
+          left: trigger.left,
+          top: trigger.top - overlay.height - margin,
+        };
       case "bottom":
         return { left: trigger.left, top: trigger.bottom + margin };
       case "left":
-        return { left: trigger.left - overlay.width - margin, top: trigger.top };
+        return {
+          left: trigger.left - overlay.width - margin,
+          top: trigger.top,
+        };
       case "right":
         return { left: trigger.right + margin, top: trigger.top };
     }

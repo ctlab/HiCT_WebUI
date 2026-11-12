@@ -38,13 +38,25 @@ export function buildSourceResolutionDescriptorSet(
     Number.isFinite(coordinateBaseBp) && coordinateBaseBp > 0
       ? coordinateBaseBp
       : 1;
-  const resolutions = resolutionsRaw
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value) && value > 0);
-  const imageSizes = imageSizesRaw
-    .slice(0, resolutions.length)
-    .map((value) => Number(value));
-  const pixelResolutionSet = resolutions.map((resolution) => resolution / baseBp);
+  const levels = new Map<number, number>();
+  for (let i = 0; i < resolutionsRaw.length; i += 1) {
+    const bp = resolutionsRaw[i];
+    const size = imageSizesRaw[i];
+    if (
+      Number.isSafeInteger(bp) &&
+      bp > 0 &&
+      Number.isSafeInteger(size) &&
+      size >= 0 &&
+      !levels.has(bp)
+    ) {
+      levels.set(bp, size);
+    }
+  }
+  const resolutions = [...levels.keys()];
+  const imageSizes = [...levels.values()];
+  const pixelResolutionSet = resolutions.map(
+    (resolution) => resolution / baseBp
+  );
   const resolutionToPixelResolution = new Map<number, number>();
   const layerResolutionBorders = new Map<number, LayerResolutionBorders>();
   const resolutionTuples: LayerResolutionDescriptor[] = [];
@@ -69,7 +81,9 @@ export function buildSourceResolutionDescriptorSet(
   for (let i = 0; i < resolutionTuples.length; ++i) {
     const borders: LayerResolutionBorders = {
       minResolutionInclusive:
-        i === 0 ? Number.NEGATIVE_INFINITY : resolutionTuples[i].pixelResolution,
+        i === 0
+          ? Number.NEGATIVE_INFINITY
+          : resolutionTuples[i].pixelResolution,
       maxResolutionExclusive:
         i === resolutionTuples.length - 1
           ? Number.POSITIVE_INFINITY
@@ -194,4 +208,56 @@ export function getResolutionDescriptorForViewResolution(
     }
   }
   return descriptor;
+}
+
+// A 4% band around the crossover prevents repeated switching during wheel
+// animation. At a fresh geometric-midpoint tie, select the finer level.
+const RESOLUTION_HYSTERESIS = 1.04;
+
+export function selectNearestResolution(
+  sorted: readonly LayerResolutionDescriptor[],
+  target: number,
+  currentBp?: number
+): LayerResolutionDescriptor {
+  if (sorted.length === 0) throw new Error("No resolutions available");
+  const currentIndex = sorted.findIndex(
+    (level) => level.bpResolution === currentBp
+  );
+  if (currentIndex >= 0) {
+    const current = sorted[currentIndex].pixelResolution;
+    const lower = sorted[currentIndex - 1]?.pixelResolution ?? 0;
+    const upper = sorted[currentIndex + 1]?.pixelResolution ?? Infinity;
+    if (
+      target >= Math.sqrt(lower * current) / RESOLUTION_HYSTERESIS &&
+      target <= Math.sqrt(upper * current) * RESOLUTION_HYSTERESIS
+    ) {
+      return sorted[currentIndex];
+    }
+  }
+  for (let i = 0; i < sorted.length - 1; i += 1) {
+    const crossover = Math.sqrt(
+      sorted[i].pixelResolution * sorted[i + 1].pixelResolution
+    );
+    if (target <= crossover || Number.isNaN(target)) return sorted[i];
+  }
+  return sorted[sorted.length - 1];
+}
+
+/** Keep enough visible bins for a useful overview; tiny genomes can have empty coarse levels. */
+export function selectOverviewResolution(
+  levels: readonly { bpResolution: number; visibleBins: number }[],
+  minimumBins = 64
+): number | undefined {
+  const nonempty = levels.filter(
+    (level) => Number.isFinite(level.visibleBins) && level.visibleBins > 0
+  );
+  const detailed = nonempty.filter((level) => level.visibleBins >= minimumBins);
+  const candidates = detailed.length ? detailed : nonempty;
+  return candidates.reduce<number | undefined>(
+    (best, level) =>
+      best === undefined || level.bpResolution > best
+        ? level.bpResolution
+        : best,
+    undefined
+  );
 }

@@ -23,43 +23,53 @@
   <div class="saved-locations">
     <div class="input-group">
       <input
+        v-if="editingName"
+        ref="nameInput"
         type="text"
         class="form-control form-control-sm m-0"
         placeholder="Preset name"
         aria-label="Name of visualization preset"
         v-model="name"
-        @change="() => (showRenameButton = true)"
+        @keydown.enter.prevent="renamePreset"
+        @keydown.escape.prevent="cancelRename"
       />
       <button
-        class="btn btn-sm btn-outline-success"
+        v-else
         type="button"
-        title="Rename preset"
-        data-bs-toggle="tooltip"
-        data-bs-placement="bottom"
-        v-if="showRenameButton"
-        @click="renamePreset"
-      >
-        <i class="bi bi-check-square-fill"></i>
-      </button>
-      <button
-        class="btn btn-sm btn-outline-primary"
-        type="button"
-        title="Load visualization preset"
-        data-bs-toggle="tooltip"
-        data-bs-placement="bottom"
+        class="form-control form-control-sm m-0 preset-apply-button"
+        :title="`Apply preset “${name}”`"
         @click="setOptionsPreset"
       >
-        <i class="bi bi-brush"></i>
+        {{ name }}
+      </button>
+      <button
+        v-if="editingName"
+        class="btn btn-sm btn-outline-success"
+        type="button"
+        title="Save new name (Enter)"
+        aria-label="Save preset name"
+        @click="renamePreset"
+      >
+        <i class="bi bi-check-lg"></i>
+      </button>
+      <button
+        v-else
+        class="btn btn-sm btn-outline-secondary"
+        type="button"
+        title="Rename preset"
+        aria-label="Rename preset"
+        @click="startRename"
+      >
+        <i class="bi bi-pencil"></i>
       </button>
       <button
         class="btn btn-sm btn-outline-danger"
         type="button"
         title="Remove visualization preset"
-        data-bs-toggle="tooltip"
-        data-bs-placement="bottom"
+        aria-label="Remove visualization preset"
         @click="$emit('remove', props.option_id)"
       >
-        <i class="bi bi-x-square-fill"></i>
+        <i class="bi bi-x-lg"></i>
       </button>
     </div>
   </div>
@@ -68,13 +78,22 @@
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
 import type { TrackStylePresetBundle } from "@/app/core/tracks/TrackStylePreset";
-import { ref } from "vue";
+import { nextTick, ref } from "vue";
+import {
+  parseRenderPipelinePreset,
+  restorePresetEditorState,
+  type RenderPipelinePreset,
+} from "@/app/core/visualization/renderPipelinePreset";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import { useStyleStore } from "@/app/stores/styleStore";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import { ColorTranslator } from "colortranslator";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import type { VisualizationPresetAction } from "@/app/stores/sessionStore";
+import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
+import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
 
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
@@ -84,7 +103,11 @@ const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
 const stylesStore = useStyleStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const matrixViewStore = useMatrixViewStore();
-const { presentationMode, activeVisualizationSource } = storeToRefs(matrixViewStore);
+const {
+  presentationMode,
+  activeVisualizationSource,
+  activeVisualizationTargetId,
+} = storeToRefs(matrixViewStore);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -94,6 +117,8 @@ const props = defineProps<{
   backgroundColor: ColorTranslator;
   trackStyles?: TrackStylePresetBundle;
   signalThresholds?: { lowerSignalBound?: number; upperSignalBound?: number };
+  action?: VisualizationPresetAction;
+  renderPipeline?: RenderPipelinePreset;
 }>();
 
 const emits = defineEmits<{
@@ -107,11 +132,100 @@ const emits = defineEmits<{
 }>();
 
 const showRenameButton = ref(false);
+const editingName = ref(false);
+const nameInput = ref<HTMLInputElement | null>(null);
+
+function startRename(): void {
+  editingName.value = true;
+  void nextTick(() => {
+    nameInput.value?.focus();
+    nameInput.value?.select();
+  });
+}
+
+function cancelRename(): void {
+  name.value = props.name;
+  editingName.value = false;
+}
 
 const name = ref(props.name);
 
-function setOptionsPreset() {
+async function setOptionsPreset() {
   if (props.mapManager) {
+    if (props.action?.type === "sequence-overlay") {
+      try {
+        await displaySequenceOverlay(
+          props.mapManager,
+          props.action.mode,
+          props.action.kind
+        );
+      } catch (error) {
+        useNotificationCenterStore().add("warning", extractErrorMessage(error));
+      }
+      return;
+    }
+    if (props.action?.type === "active-source-palette") {
+      const current = visualizationOptionsStore.asVisualizationOptions();
+      const active =
+        current.colormap instanceof SimpleLinearGradient
+          ? current.colormap
+          : null;
+      visualizationOptionsStore.setVisualizationOptions(
+        new VisualizationOptions(
+          current.preLogBase,
+          current.postLogBase,
+          current.applyCoolerWeights,
+          current.resolutionScaling,
+          current.resolutionLinearScaling,
+          new SimpleLinearGradient(
+            new ColorTranslator(props.action.startColor, { legacyCSS: true }),
+            new ColorTranslator(props.action.endColor, { legacyCSS: true }),
+            active?.minSignal ?? 0,
+            active?.maxSignal ?? 1
+          ),
+          current.autoThresholdEnabled,
+          current.autoThresholdQuantile,
+          current.signalDisplayMode,
+          current.coolerWeightsNaNPolicy,
+          current.coolerWeightsHaveNaNs,
+          current.coolerWeightsNaNCount
+        )
+      );
+      try {
+        await props.mapManager.visualizationManager.applyVisualizationSettingsForSourceAndReload(
+          activeVisualizationSource.value,
+          activeVisualizationTargetId.value
+        );
+      } catch (error) {
+        useNotificationCenterStore().add("warning", extractErrorMessage(error));
+      }
+      return;
+    }
+    if (props.renderPipeline) {
+      try {
+        const pipeline = parseRenderPipelinePreset(props.renderPipeline);
+        const config = {
+          enabled: pipeline.enabled,
+          swapUpperLower: pipeline.swapUpperLower,
+          upperExpression: pipeline.upperExpression,
+          lowerExpression: pipeline.lowerExpression,
+        };
+        const manager = props.mapManager;
+        await manager.visualizationManager.sendVisualizationOptionsToServer({
+          skipAutoThresholdRefresh: true,
+          visualizationOptions: props.visualizationOptions,
+          renderPipeline: config,
+        });
+        stylesStore.setMapBackground(props.backgroundColor);
+        if (props.trackStyles)
+          manager.getLayersManager().applyTrackStylePreset(props.trackStyles);
+        restorePresetEditorState(pipeline, manager.networkManager.host);
+        manager.reloadTiles();
+      } catch (error) {
+        useNotificationCenterStore().add("warning", extractErrorMessage(error));
+      }
+      return;
+    }
     // console.log("Setting preset: ", props.visualizationOptions);
     visualizationOptionsStore.setVisualizationOptions(
       props.visualizationOptions
@@ -134,27 +248,36 @@ function setOptionsPreset() {
     }
     stylesStore.setMapBackground(props.backgroundColor);
     if (props.trackStyles) {
-      props.mapManager.getLayersManager().applyTrackStylePreset(props.trackStyles);
+      props.mapManager
+        .getLayersManager()
+        .applyTrackStylePreset(props.trackStyles);
     }
     const source =
-      presentationMode.value === "single" ? undefined : activeVisualizationSource.value;
+      presentationMode.value === "single"
+        ? undefined
+        : activeVisualizationSource.value;
     const action = source
       ? props.mapManager?.visualizationManager.applyVisualizationSettingsForSourceAndReload(
-          source
+          source,
+          activeVisualizationTargetId.value
         )
       : props.mapManager
-        ? props.mapManager.visualizationManager
-            .sendVisualizationOptionsToServer()
-            .then(() => props.mapManager?.reloadTiles())
-        : undefined;
+      ? props.mapManager.visualizationManager
+          .sendVisualizationOptionsToServer()
+          .then(() => props.mapManager?.reloadTiles())
+      : undefined;
     action?.catch((error) => {
       console.error("Failed to apply visualization preset", error);
     });
   }
 }
 
+defineExpose({ apply: setOptionsPreset });
+
 function renamePreset() {
   showRenameButton.value = false;
+  editingName.value = false;
+  name.value = name.value.trim() || props.name;
   emits("rename", props.option_id, name.value);
 }
 </script>
@@ -170,7 +293,7 @@ function renamePreset() {
   padding: 0px;
   /* gap: 20px; */
 
-  width: 100%;
+  width: calc(100% - 16px);
   height: 32px;
   margin-left: 8px;
   margin-right: 8px;
@@ -179,5 +302,27 @@ function renamePreset() {
   flex: none;
   order: 0;
   flex-grow: 0;
+}
+
+.saved-locations > .input-group {
+  width: 100%;
+  flex-wrap: nowrap;
+}
+
+.preset-apply-button {
+  flex: 1 1 auto;
+  width: 1%;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.preset-apply-button:hover,
+.preset-apply-button:focus-visible {
+  background: #eef4ff;
+  border-color: #86b7fe;
 }
 </style>

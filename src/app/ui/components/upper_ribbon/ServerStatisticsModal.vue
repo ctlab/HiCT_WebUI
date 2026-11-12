@@ -1,11 +1,22 @@
 <template>
   <div class="modal-backdrop fade show"></div>
-  <div class="modal fade show" style="display: block" tabindex="-1" role="dialog">
+  <div
+    class="modal fade show"
+    style="display: block"
+    tabindex="-1"
+    ref="modalFocusElement"
+    role="dialog"
+    aria-modal="true"
+  >
     <div class="modal-dialog modal-xl modal-dialog-scrollable" role="document">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Runtime Statistics</h5>
-          <button type="button" class="btn-close" @click="emit('dismissed')"></button>
+          <button
+            type="button"
+            class="btn-close"
+            @click="emit('dismissed')"
+          ></button>
         </div>
         <div class="modal-body">
           <div v-if="loading" class="text-muted">Loading statistics...</div>
@@ -28,14 +39,18 @@
               </div>
               <div class="statistics-card">
                 <div class="statistics-label">Total requests</div>
-                <div class="statistics-value">{{ statistics.totalRequests }}</div>
+                <div class="statistics-value">
+                  {{ statistics.totalRequests }}
+                </div>
                 <div class="statistics-subtitle">
                   {{ formatDuration(statistics.uptimeSeconds) }} uptime
                 </div>
               </div>
               <div class="statistics-card">
                 <div class="statistics-label">In flight</div>
-                <div class="statistics-value">{{ statistics.inFlightRequests }}</div>
+                <div class="statistics-value">
+                  {{ statistics.inFlightRequests }}
+                </div>
                 <div class="statistics-subtitle">HTTP requests</div>
               </div>
             </div>
@@ -45,9 +60,13 @@
                 <h6>Native Processing</h6>
                 <dl class="row mb-0">
                   <dt class="col-sm-5">Enabled</dt>
-                  <dd class="col-sm-7">{{ statistics.nativeProcessing.enabled }}</dd>
+                  <dd class="col-sm-7">
+                    {{ statistics.nativeProcessing.enabled }}
+                  </dd>
                   <dt class="col-sm-5">Available</dt>
-                  <dd class="col-sm-7">{{ statistics.nativeProcessing.available }}</dd>
+                  <dd class="col-sm-7">
+                    {{ statistics.nativeProcessing.available }}
+                  </dd>
                   <dt class="col-sm-5">Version</dt>
                   <dd class="col-sm-7 text-break">
                     {{ statistics.nativeProcessing.version }}
@@ -56,7 +75,11 @@
                   <dd class="col-sm-7">
                     {{ statistics.nativeProcessing.nativeOperationCount ?? 0 }}
                     <span class="text-muted">
-                      (failed {{ statistics.nativeProcessing.nativeFailedOperationCount ?? 0 }})
+                      (failed
+                      {{
+                        statistics.nativeProcessing
+                          .nativeFailedOperationCount ?? 0
+                      }})
                     </span>
                   </dd>
                 </dl>
@@ -73,7 +96,9 @@
                     </span>
                   </dd>
                   <dt class="col-sm-5">Non-heap used</dt>
-                  <dd class="col-sm-7">{{ formatBytes(statistics.nonHeapUsedBytes) }}</dd>
+                  <dd class="col-sm-7">
+                    {{ formatBytes(statistics.nonHeapUsedBytes) }}
+                  </dd>
                   <dt class="col-sm-5">Processors</dt>
                   <dd class="col-sm-7">{{ statistics.availableProcessors }}</dd>
                   <dt class="col-sm-5">Threads</dt>
@@ -98,11 +123,18 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="endpoint in statistics.endpoints" :key="endpoint.path">
+                  <tr
+                    v-for="endpoint in statistics.endpoints"
+                    :key="endpoint.path"
+                  >
                     <td class="text-break">{{ endpoint.path }}</td>
                     <td>{{ endpoint.totalRequests }}</td>
-                    <td>{{ formatNumber(endpoint.requestsPerSecondLast10s) }}</td>
-                    <td>{{ formatNumber(endpoint.requestsPerSecondLast60s) }}</td>
+                    <td>
+                      {{ formatNumber(endpoint.requestsPerSecondLast10s) }}
+                    </td>
+                    <td>
+                      {{ formatNumber(endpoint.requestsPerSecondLast60s) }}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -111,7 +143,11 @@
           <div v-else class="text-muted">No statistics data yet.</div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" @click="emit('dismissed')">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="emit('dismissed')"
+          >
             Close
           </button>
         </div>
@@ -121,6 +157,7 @@
 </template>
 
 <script setup lang="ts">
+import { useModalFocus } from "@/app/ui/modalFocus";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
 import type { ServerStatisticsResponse } from "@/app/core/net/api/RequestManager";
@@ -149,7 +186,8 @@ async function fetchStatistics(): Promise<void> {
   }
   inFlight = true;
   try {
-    statistics.value = await props.networkManager.requestManager.getServerStatistics();
+    statistics.value =
+      await props.networkManager.requestManager.getServerStatistics();
     error.value = "";
   } catch (err) {
     error.value =
@@ -213,6 +251,9 @@ onBeforeUnmount(() => {
     pollTimer = undefined;
   }
 });
+
+const modalFocusElement = ref<HTMLElement | null>(null);
+useModalFocus(modalFocusElement);
 </script>
 
 <style scoped>

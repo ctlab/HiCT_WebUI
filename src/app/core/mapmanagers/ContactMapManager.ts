@@ -33,6 +33,7 @@ import { transform, transformExtent } from "ol/proj";
 import { getCenter, getHeight, getWidth, intersects } from "ol/extent";
 import { unByKey } from "ol/Observable";
 import type { EventsKey } from "ol/events";
+import { selectOverviewResolution } from "./resolutionModel";
 import ContigDimensionHolder from "./ContigDimensionHolder";
 import { ScaffoldHolder } from "./ScaffoldHolder";
 import { HiCViewAndLayersManager } from "./HiCViewAndLayersManager";
@@ -43,12 +44,18 @@ import type { ContigDescriptor } from "../domain/ContigDescriptor";
 import { CommonEventManager } from "./CommonEventManager";
 import { CurrentSignalRangeResponse } from "../net/api/response";
 import { VisualizationManager } from "./VisualizationManager";
-import { Ref } from "vue";
+import { Ref, markRaw } from "vue";
 import { VersionedXYZContactMapSource } from "../VersionedXYZSource";
+import { AlignmentDetailLayer } from "./AlignmentDetailLayer";
 import { LinearTrackManager } from "./LinearTrackManager";
 import { useStyleStore } from "@/app/stores/styleStore";
 
 class ContactMapManager {
+  private disposed = false;
+
+  public get isDisposed(): boolean {
+    return this.disposed;
+  }
   public readonly map: Map;
   public readonly contigDimensionHolder: ContigDimensionHolder;
   public readonly scaffoldHolder: ScaffoldHolder;
@@ -66,6 +73,8 @@ class ContactMapManager {
   private minimapPointerCleanup: (() => void)[];
   private minimapDragPointerId: number | null;
   private minimapRenderFramePending: boolean;
+  private workspaceLayoutRefreshFramePending: boolean;
+  private workspaceLayoutRefreshShouldRenderTracks: boolean;
 
   constructor(
     protected readonly options: {
@@ -96,10 +105,14 @@ class ContactMapManager {
       options.response
     );
 
-    this.map = new Map({
-      layers: [],
-      interactions: [],
-    });
+    // OpenLayers owns its observable object graph. Vue must not recursively
+    // proxy native renderer objects and their geometry/event-listener arrays.
+    this.map = markRaw(
+      new Map({
+        layers: [],
+        interactions: [],
+      })
+    );
 
     this.visualizationManager = new VisualizationManager(this);
     this.visualizationManager.fetchVisualizationOptions();
@@ -112,12 +125,16 @@ class ContactMapManager {
     this.minimapPointerCleanup = [];
     this.minimapDragPointerId = null;
     this.minimapRenderFramePending = false;
+    this.workspaceLayoutRefreshFramePending = false;
+    this.workspaceLayoutRefreshShouldRenderTracks = false;
   }
+
+  public alignmentDetail?: AlignmentDetailLayer;
 
   public initializeMap(): void {
     this.map.setTarget(this.options.mapTargetSelector);
     this.sizeObserver = new ResizeObserver(() => {
-      this.map.updateSize();
+      this.scheduleWorkspaceLayoutRefresh({ renderTracks: false });
     });
     this.sizeObserver.observe(
       document.querySelector("#" + this.options.mapTargetSelector) as Element
@@ -127,8 +144,8 @@ class ContactMapManager {
     this.viewAndLayersManager.initializeTracks();
     this.initializeMapInteractions();
     this.initializeMapControls();
+    this.alignmentDetail = markRaw(new AlignmentDetailLayer(this));
     void this.linearTrackManager.refreshTrackList();
-    console.log("Map initialized. Contact map manager: ", this);
   }
 
   public initializeMapInteractions(): void {
@@ -161,9 +178,7 @@ class ContactMapManager {
   public addOverviewMapTarget(target: HTMLElement | string) {
     this.clearOverviewMapTarget();
     const resolvedTarget =
-      typeof target === "string"
-        ? document.getElementById(target)
-        : target;
+      typeof target === "string" ? document.getElementById(target) : target;
     if (!resolvedTarget) {
       return;
     }
@@ -184,33 +199,50 @@ class ContactMapManager {
       style: [
         new Style({
           stroke: new Stroke({
-            color: "rgba(34, 211, 238, 0.98)",
+            color: "rgba(255, 255, 255, 0.9)",
             width: 5,
           }),
         }),
         new Style({
           stroke: new Stroke({
-            color: "rgba(217, 70, 239, 0.98)",
+            color: "#0673ff",
             width: 2,
           }),
         }),
       ],
     });
 
-    const projectionExtentTuple = projectionExtent as [number, number, number, number];
-    const minimap = new Map({
-      target: resolvedTarget,
-      controls: [],
-      interactions: [],
-      layers: [coarsestLayer, viewportLayer],
-      view: new View({
-        projection,
-        center: getCenter(projectionExtentTuple),
-        resolution: this.estimateMinimapResolution(projectionExtentTuple, resolvedTarget),
-        constrainResolution: false,
-        extent: projectionExtentTuple,
-      }),
-    });
+    const projectionExtentTuple = projectionExtent as [
+      number,
+      number,
+      number,
+      number
+    ];
+    const minimap = markRaw(
+      new Map({
+        target: resolvedTarget,
+        controls: [],
+        interactions: [],
+        layers: [coarsestLayer, viewportLayer],
+        view: new View({
+          projection,
+          center: getCenter(projectionExtentTuple),
+          resolution: this.estimateMinimapResolution(
+            projectionExtentTuple,
+            resolvedTarget
+          ),
+          // The default View maximum assumes a 256-pixel viewport. A smaller
+          // minimap needs to zoom farther out to display its entire projection.
+          maxResolution: Math.max(
+            getWidth(projectionExtentTuple),
+            getHeight(projectionExtentTuple)
+          ),
+          showFullExtent: true,
+          constrainResolution: false,
+          extent: projectionExtentTuple,
+        }),
+      })
+    );
     this.minimap = minimap;
     this.minimapViewportFeature = viewportFeature;
     this.fitMinimapToFullExtent();
@@ -248,6 +280,22 @@ class ContactMapManager {
       return;
     }
     this.minimap.setTarget(undefined);
+    try {
+      for (const layer of this.minimap.getLayers().getArray().slice()) {
+        (
+          layer as unknown as {
+            getSource?: () => { clear?: () => void; dispose?: () => void };
+          }
+        )
+          .getSource?.()
+          ?.clear?.();
+      }
+      this.minimap.getLayers().clear();
+      this.minimap.getInteractions().clear();
+      this.minimap.dispose();
+    } catch (error) {
+      console.debug("Overview map resources were not fully released", error);
+    }
     this.minimap = null;
   }
 
@@ -287,21 +335,115 @@ class ContactMapManager {
   public reloadTiles(): void {
     this.viewAndLayersManager.reloadTiles();
     void this.linearTrackManager.clearCachesAndRender();
+    this.viewAndLayersManager.updateCurrentHiCViewState();
+    this.scheduleWorkspaceLayoutRefresh({ renderTracks: false });
     this.scheduleMinimapViewportSync();
   }
 
   public async reloadTilesFromBackend(): Promise<void> {
-    const version = await this.networkManager.requestManager.reloadTilesVersion();
+    const version =
+      await this.networkManager.requestManager.reloadTilesVersion();
+    if (this.disposed) return;
     this.viewAndLayersManager.reloadTiles(version);
     void this.linearTrackManager.clearCachesAndRender();
+    this.viewAndLayersManager.updateCurrentHiCViewState();
+    this.scheduleWorkspaceLayoutRefresh({ renderTracks: false });
     this.scheduleMinimapViewportSync();
+  }
+
+  public async stabilizeInitialViewport(options?: {
+    fit?: boolean;
+  }): Promise<void> {
+    await this.waitForNextAnimationFrame();
+    await this.waitForNextAnimationFrame();
+    if (this.disposed) return;
+    this.map.updateSize();
+    if (options?.fit === false) {
+      this.viewAndLayersManager.updateCurrentHiCViewState();
+      this.viewAndLayersManager.scheduleRulerRender();
+      this.map.changed();
+    } else {
+      this.viewAndLayersManager.fitViewToActiveExtent();
+    }
+    await this.linearTrackManager.render({ allowFetch: true }).catch(() => {
+      // Track rendering is best-effort during startup; map tiles must still appear.
+    });
+    if (this.disposed) return;
+    this.scheduleMinimapViewportSync();
+    this.map.renderSync();
+  }
+
+  public scheduleWorkspaceLayoutRefresh(options?: {
+    renderTracks?: boolean;
+  }): void {
+    if (this.disposed) return;
+    if (options?.renderTracks !== false) {
+      this.workspaceLayoutRefreshShouldRenderTracks = true;
+    }
+    if (this.workspaceLayoutRefreshFramePending) {
+      return;
+    }
+    this.workspaceLayoutRefreshFramePending = true;
+    this.scheduleAnimationFrame(() => {
+      const renderTracks = this.workspaceLayoutRefreshShouldRenderTracks;
+      this.workspaceLayoutRefreshShouldRenderTracks = false;
+      this.workspaceLayoutRefreshFramePending = false;
+      this.refreshWorkspaceLayout({ renderTracks });
+    });
+  }
+
+  private refreshWorkspaceLayout(options?: { renderTracks?: boolean }): void {
+    if (this.disposed) return;
+    // A map shown fully zoomed out (fitted) should stay fitted when the window
+    // or side panels resize, instead of being cropped or left off-centre.
+    const view = this.map.getView();
+    const resolution = view.getResolution();
+    const maxResolution = view.getMaxResolution();
+    const wasFitted =
+      !this.exportInProgress &&
+      resolution !== undefined &&
+      Number.isFinite(maxResolution) &&
+      resolution >= maxResolution * 0.999;
+    this.map.updateSize();
+    this.viewAndLayersManager.updateZoomLimit();
+    if (wasFitted && view.getMaxResolution() !== maxResolution) {
+      this.viewAndLayersManager.fitViewToActiveExtent();
+    }
+    this.viewAndLayersManager.updateCurrentHiCViewState();
+    this.viewAndLayersManager.scheduleRulerRender();
+    if (options?.renderTracks !== false) {
+      void this.linearTrackManager.render({ allowFetch: true });
+    }
+    if (this.disposed) return;
+    this.scheduleMinimapViewportSync();
+    this.map.renderSync();
+  }
+
+  private waitForNextAnimationFrame(): Promise<void> {
+    return new Promise((resolve) => {
+      this.scheduleAnimationFrame(() => resolve());
+    });
+  }
+
+  private scheduleAnimationFrame(callback: () => void): void {
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      window.requestAnimationFrame(callback);
+      return;
+    }
+    setTimeout(callback, 0);
   }
 
   private resolveExportMapSizePx(
     bpResolution: number,
     configuredMapSizePx: number
   ): number {
-    const safeConfiguredSize = Math.max(1, Math.round(configuredMapSizePx || 1));
+    const safeConfiguredSize = Math.max(
+      1,
+      Math.round(configuredMapSizePx || 1)
+    );
     const prefixPx = this.contigDimensionHolder.prefix_sum_px.get(bpResolution);
     const assemblyMapSizePx =
       prefixPx?.[this.contigDimensionHolder.contig_count] ?? safeConfiguredSize;
@@ -326,20 +468,20 @@ class ContactMapManager {
       const dataUrl = composite.toDataURL("image/png");
       progressCallback?.(1);
       let svg =
-        `<?xml version=\"1.0\" encoding=\"UTF-8\"?>` +
-        `<svg xmlns=\"http://www.w3.org/2000/svg\" ` +
-        `xmlns:xlink=\"http://www.w3.org/1999/xlink\" ` +
-        `width=\"${composite.width}\" height=\"${composite.height}\" viewBox=\"0 0 ${composite.width} ${composite.height}\">`;
-      svg += `<rect width=\"${composite.width}\" height=\"${composite.height}\" fill=\"${
-        options?.backgroundColor ?? "rgba(255,255,255,1)"
-      }\" />`;
+        `<?xml version="1.0" encoding="UTF-8"?>` +
+        `<svg xmlns="http://www.w3.org/2000/svg" ` +
+        `xmlns:xlink="http://www.w3.org/1999/xlink" ` +
+        `width="${composite.width}" height="${composite.height}" viewBox="0 0 ${composite.width} ${composite.height}">`;
+      svg += `<rect width="${composite.width}" height="${
+        composite.height
+      }" fill="${options?.backgroundColor ?? "rgba(255,255,255,1)"}" />`;
       if (options?.metadata) {
         const metaJson = JSON.stringify(options.metadata);
         svg += `<metadata><![CDATA[${metaJson}]]></metadata>`;
       }
-      svg += `<image x=\"0\" y=\"0\" width=\"${composite.width}\" height=\"${composite.height}\" href=\"${ContactMapManager.escapeXml(
-        dataUrl
-      )}\" />`;
+      svg += `<image x="0" y="0" width="${composite.width}" height="${
+        composite.height
+      }" href="${ContactMapManager.escapeXml(dataUrl)}" />`;
       svg += `</svg>`;
       return svg;
     }
@@ -349,6 +491,17 @@ class ContactMapManager {
     const mapSizePx = this.resolveExportMapSizePx(
       descriptor.bpResolution,
       this.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex] ?? 1
+    );
+    const pixelBounds = this.viewAndLayersManager.getActiveMapPixelBounds(
+      descriptor.bpResolution
+    );
+    const mapWidthPx = Math.max(
+      1,
+      Math.min(mapSizePx, pixelBounds.colEndPx) - pixelBounds.colStartPx
+    );
+    const mapHeightPx = Math.max(
+      1,
+      Math.min(mapSizePx, pixelBounds.rowEndPx) - pixelBounds.rowStartPx
     );
     const tileSize = this.options.tileSize;
 
@@ -369,21 +522,26 @@ class ContactMapManager {
     const tileUrlFn = source.getTileUrlFunction();
     const projection = this.map.getView().getProjection();
     const pixelRatio = window.devicePixelRatio ?? 1;
-    const tilesPerSide = Math.ceil(mapSizePx / tileSize);
     const tiles: { col: number; row: number; url: string }[] = [];
-    for (let row = 0; row < tilesPerSide; row++) {
-      for (let col = 0; col < tilesPerSide; col++) {
+    const firstTileCol = Math.floor(pixelBounds.colStartPx / tileSize);
+    const lastTileCol = Math.ceil(pixelBounds.colEndPx / tileSize) - 1;
+    const firstTileRow = Math.floor(pixelBounds.rowStartPx / tileSize);
+    const lastTileRow = Math.ceil(pixelBounds.rowEndPx / tileSize) - 1;
+    for (let row = firstTileRow; row <= lastTileRow; row++) {
+      for (let col = firstTileCol; col <= lastTileCol; col++) {
         const url = tileUrlFn([0, col, row], pixelRatio, projection);
         if (url) {
           const withPriority =
-            url.indexOf("?") >= 0 ? `${url}&priority=low` : `${url}?priority=low`;
+            url.indexOf("?") >= 0
+              ? `${url}&priority=low`
+              : `${url}?priority=low`;
           tiles.push({ col, row, url: withPriority });
         }
       }
     }
 
-    const width = mapSizePx;
-    const height = mapSizePx;
+    const width = mapWidthPx;
+    const height = mapHeightPx;
     const backgroundColor = options?.backgroundColor ?? "rgba(255,255,255,0)";
     const escapeAttr = ContactMapManager.escapeXml;
     const svgImages: string[] = [];
@@ -391,7 +549,7 @@ class ContactMapManager {
     let nextIndex = 0;
     const concurrency = 8;
     const worker = async () => {
-      while (true) {
+      for (;;) {
         const idx = nextIndex++;
         if (idx >= tiles.length) {
           return;
@@ -401,20 +559,12 @@ class ContactMapManager {
           const response = await fetch(tile.url);
           const data = await response.json();
           if (data && data.image) {
-            const x = tile.col * tileSize;
-            const y = tile.row * tileSize;
-            const tileWidth = Math.min(tileSize, width - x);
-            const tileHeight = Math.min(tileSize, height - y);
-            const imageHref =
-              tileWidth < tileSize || tileHeight < tileSize
-                ? await this.cropTileImageDataUrl(
-                    String(data.image),
-                    tileWidth,
-                    tileHeight
-                  )
-                : String(data.image);
+            const x = tile.col * tileSize - pixelBounds.colStartPx;
+            const y = tile.row * tileSize - pixelBounds.rowStartPx;
             svgImages.push(
-              `<image x=\"${x}\" y=\"${y}\" width=\"${tileWidth}\" height=\"${tileHeight}\" href=\"${escapeAttr(imageHref)}\" />`
+              `<image x="${x}" y="${y}" width="${tileSize}" height="${tileSize}" href="${escapeAttr(
+                String(data.image)
+              )}" />`
             );
           }
           completed += 1;
@@ -434,19 +584,19 @@ class ContactMapManager {
     await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
     let svg =
-      `<?xml version=\"1.0\" encoding=\"UTF-8\"?>` +
-      `<svg xmlns=\"http://www.w3.org/2000/svg\" ` +
-      `xmlns:xlink=\"http://www.w3.org/1999/xlink\" ` +
-      `width=\"${width}\" height=\"${height}\" viewBox=\"0 0 ${width} ${height}\">`;
+      `<?xml version="1.0" encoding="UTF-8"?>` +
+      `<svg xmlns="http://www.w3.org/2000/svg" ` +
+      `xmlns:xlink="http://www.w3.org/1999/xlink" ` +
+      `width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
 
-    svg += `<rect width=\"${width}\" height=\"${height}\" fill=\"${backgroundColor}\" />`;
+    svg += `<rect width="${width}" height="${height}" fill="${backgroundColor}" />`;
     if (options?.metadata) {
       const metaJson = JSON.stringify(options.metadata);
       svg += `<metadata><![CDATA[${metaJson}]]></metadata>`;
     }
 
     svg += svgImages.join("");
-    svg += this.exportTracksSvg(descriptor.bpResolution);
+    svg += this.exportTracksSvg(descriptor.bpResolution, pixelBounds);
     svg += `</svg>`;
 
     if (typeof DOMParser !== "undefined") {
@@ -568,9 +718,9 @@ class ContactMapManager {
       ticks.push(Math.round(value));
     }
     ticks.push(pixelSpan);
-    return [...new Set(ticks.map((value) => Math.max(0, Math.min(pixelSpan, value))))].sort(
-      (a, b) => a - b
-    );
+    return [
+      ...new Set(ticks.map((value) => Math.max(0, Math.min(pixelSpan, value)))),
+    ].sort((a, b) => a - b);
   }
 
   private formatRulerTickLabel(
@@ -603,8 +753,10 @@ class ContactMapManager {
       [1_000_000, "M"],
       [1_000, "K"],
     ];
-    const [scale, suffix] =
-      units.find(([candidate]) => value >= candidate) ?? [1, ""];
+    const [scale, suffix] = units.find(([candidate]) => value >= candidate) ?? [
+      1,
+      "",
+    ];
     const scaled = value / scale;
     const digits = precision > 0 && scaled < 100 ? precision : 0;
     return `${scaled.toFixed(digits).replace(/\.0+$/, "")}${suffix}`;
@@ -614,15 +766,26 @@ class ContactMapManager {
     context: CanvasRenderingContext2D,
     options: {
       mapOffset: number;
-      mapSizePx: number;
+      mapWidthPx: number;
+      mapHeightPx: number;
+      colStartPx: number;
+      rowStartPx: number;
       trackPanelSizePx: number;
       rulerPanelSizePx: number;
       bpResolution: number;
       backgroundColor: string;
     }
   ): void {
-    const { mapOffset, mapSizePx, trackPanelSizePx, rulerPanelSizePx, bpResolution } =
-      options;
+    const {
+      mapOffset,
+      mapWidthPx,
+      mapHeightPx,
+      colStartPx,
+      rowStartPx,
+      trackPanelSizePx,
+      rulerPanelSizePx,
+      bpResolution,
+    } = options;
     const palette = (() => {
       const darkBackground = useStyleStore().mapBackgroundColor.L <= 55;
       return darkBackground
@@ -640,24 +803,30 @@ class ContactMapManager {
 
     context.save();
     context.fillStyle = options.backgroundColor;
-    context.fillRect(mapOffset, trackPanelSizePx, mapSizePx, rulerPanelSizePx);
-    context.fillRect(trackPanelSizePx, mapOffset, rulerPanelSizePx, mapSizePx);
+    context.fillRect(mapOffset, trackPanelSizePx, mapWidthPx, rulerPanelSizePx);
+    context.fillRect(
+      trackPanelSizePx,
+      mapOffset,
+      rulerPanelSizePx,
+      mapHeightPx
+    );
 
     const axisY = trackPanelSizePx + rulerPanelSizePx - 8;
     context.strokeStyle = palette.line;
     context.lineWidth = 2;
     context.beginPath();
     context.moveTo(mapOffset, axisY);
-    context.lineTo(mapOffset + mapSizePx, axisY);
+    context.lineTo(mapOffset + mapWidthPx, axisY);
     context.stroke();
 
     const axisX = trackPanelSizePx + rulerPanelSizePx - 8;
     context.beginPath();
     context.moveTo(axisX, mapOffset);
-    context.lineTo(axisX, mapOffset + mapSizePx);
+    context.lineTo(axisX, mapOffset + mapHeightPx);
     context.stroke();
 
-    const tickPositions = this.buildRulerTickPositions(mapSizePx);
+    const horizontalTickPositions = this.buildRulerTickPositions(mapWidthPx);
+    const verticalTickPositions = this.buildRulerTickPositions(mapHeightPx);
     context.strokeStyle = palette.line;
     context.fillStyle = palette.text;
     context.lineWidth = 1.5;
@@ -667,10 +836,10 @@ class ContactMapManager {
 
     let previousHorizontalRaw: string | null = null;
     let previousHorizontalBp: number | null = null;
-    for (const tickPx of tickPositions) {
-      const mapPx = Math.max(0, Math.min(mapSizePx - 1, tickPx));
+    for (const tickPx of horizontalTickPositions) {
+      const mapPx = Math.max(0, Math.min(mapWidthPx - 1, tickPx));
       const bpValue = this.contigDimensionHolder.getStartBpOfPx(
-        mapPx,
+        colStartPx + mapPx,
         bpResolution
       );
       const label = this.formatRulerTickLabel(
@@ -698,10 +867,10 @@ class ContactMapManager {
 
     let previousVerticalRaw: string | null = null;
     let previousVerticalBp: number | null = null;
-    for (const tickPx of tickPositions) {
-      const mapPx = Math.max(0, Math.min(mapSizePx - 1, tickPx));
+    for (const tickPx of verticalTickPositions) {
+      const mapPx = Math.max(0, Math.min(mapHeightPx - 1, tickPx));
       const bpValue = this.contigDimensionHolder.getStartBpOfPx(
-        mapPx,
+        rowStartPx + mapPx,
         bpResolution
       );
       const label = this.formatRulerTickLabel(
@@ -743,9 +912,11 @@ class ContactMapManager {
       activeHiCLayer.getSource()?.getProjection() ?? mapView.getProjection();
     const extent = mapView.calculateExtent(mapSize);
     const pixelResolution = mapView.getResolution() ?? 1;
-    const fixed = transform(extent, mapView.getProjection(), targetProjection).map(
-      (coordinate) => coordinate / pixelResolution
-    );
+    const fixed = transform(
+      extent,
+      mapView.getProjection(),
+      targetProjection
+    ).map((coordinate) => coordinate / pixelResolution);
     const unclampedLeft = -fixed[0];
     const unclampedRight = fixed[2];
     const unclampedTop = fixed[3];
@@ -841,14 +1012,24 @@ class ContactMapManager {
       bpResolution,
       configuredMapSizePx
     );
+    const pixelBounds =
+      this.viewAndLayersManager.getActiveMapPixelBounds(bpResolution);
+    const mapWidthPx = Math.max(
+      1,
+      Math.min(mapSizePx, pixelBounds.colEndPx) - pixelBounds.colStartPx
+    );
+    const mapHeightPx = Math.max(
+      1,
+      Math.min(mapSizePx, pixelBounds.rowEndPx) - pixelBounds.rowStartPx
+    );
     const visibleTrackCount = this.linearTrackManager
       .getTracksSnapshot()
       .filter((track) => track.visible).length;
     const trackPanelSizePx = visibleTrackCount > 0 ? 140 : 0;
     const rulerPanelSizePx = 44;
     const mapOffset = trackPanelSizePx + rulerPanelSizePx;
-    const totalWidth = mapOffset + mapSizePx;
-    const totalHeight = mapOffset + mapSizePx;
+    const totalWidth = mapOffset + mapWidthPx;
+    const totalHeight = mapOffset + mapHeightPx;
     const backgroundColor =
       options?.backgroundColor ?? useStyleStore().mapBackgroundColor.RGBA;
 
@@ -871,17 +1052,18 @@ class ContactMapManager {
       }
     );
     const mapImage = await this.loadSvgImage(mapSvg);
-    const sourceSize = Math.min(mapSizePx, mapImage.width, mapImage.height);
+    const sourceWidth = Math.min(mapWidthPx, mapImage.width);
+    const sourceHeight = Math.min(mapHeightPx, mapImage.height);
     context.drawImage(
       mapImage,
       0,
       0,
-      sourceSize,
-      sourceSize,
+      sourceWidth,
+      sourceHeight,
       mapOffset,
       mapOffset,
-      mapSizePx,
-      mapSizePx
+      mapWidthPx,
+      mapHeightPx
     );
     progressCallback?.(0.68);
 
@@ -889,14 +1071,14 @@ class ContactMapManager {
       const [horizontalTrackCanvas, verticalTrackCanvas] = await Promise.all([
         this.linearTrackManager.renderFullExtentCanvasForExport("horizontal", {
           bpResolution,
-          startPx: 0,
-          endPx: mapSizePx,
+          startPx: pixelBounds.colStartPx,
+          endPx: pixelBounds.colEndPx,
           trackPanelSizePx,
         }),
         this.linearTrackManager.renderFullExtentCanvasForExport("vertical", {
           bpResolution,
-          startPx: 0,
-          endPx: mapSizePx,
+          startPx: pixelBounds.rowStartPx,
+          endPx: pixelBounds.rowEndPx,
           trackPanelSizePx,
         }),
       ]);
@@ -905,7 +1087,7 @@ class ContactMapManager {
           horizontalTrackCanvas,
           mapOffset,
           0,
-          mapSizePx,
+          mapWidthPx,
           trackPanelSizePx
         );
       }
@@ -915,7 +1097,7 @@ class ContactMapManager {
           0,
           mapOffset,
           trackPanelSizePx,
-          mapSizePx
+          mapHeightPx
         );
       }
     }
@@ -923,7 +1105,10 @@ class ContactMapManager {
 
     this.drawFullExtentExportRulers(context, {
       mapOffset,
-      mapSizePx,
+      mapWidthPx,
+      mapHeightPx,
+      colStartPx: pixelBounds.colStartPx,
+      rowStartPx: pixelBounds.rowStartPx,
       trackPanelSizePx,
       rulerPanelSizePx,
       bpResolution,
@@ -941,64 +1126,310 @@ class ContactMapManager {
     return canvas;
   }
 
+  private exportInProgress = false;
+  public get isExporting(): boolean {
+    return this.exportInProgress;
+  }
+  private sequenceViewExporter?: (options?: {
+    metadata?: Record<string, unknown>;
+    progress?: (value: number) => void;
+  }) => Promise<{ svg: SVGSVGElement; canvas: HTMLCanvasElement }>;
+  public registerSequenceViewExporter(
+    exporter: NonNullable<ContactMapManager["sequenceViewExporter"]>
+  ): () => void {
+    this.sequenceViewExporter = exporter;
+    return () => {
+      if (this.sequenceViewExporter === exporter)
+        this.sequenceViewExporter = undefined;
+    };
+  }
+  private readonly sequenceRenderers = new Set<() => Promise<void>>();
+  public registerSequenceRenderer(render: () => Promise<void>): () => void {
+    this.sequenceRenderers.add(render);
+    return () => {
+      this.sequenceRenderers.delete(render);
+    };
+  }
+  private async renderSequenceTracks(): Promise<void> {
+    for (const render of this.sequenceRenderers) await render();
+  }
+
+  private async buildViewportExportSvg(options?: {
+    backgroundColor?: string;
+    metadata?: Record<string, unknown>;
+    includeWorkspaceComposite?: boolean;
+    scope?: "viewport" | "whole-map" | "selection";
+    cropToMap?: boolean;
+    progress?: (value: number) => void;
+  }): Promise<{ svg: SVGSVGElement; canvas: HTMLCanvasElement }> {
+    if (this.exportInProgress) throw new Error("An export is already running.");
+    if (this.networkManager.requestManager.sequenceViewReadOnly) {
+      if (!this.sequenceViewExporter || this.disposed)
+        throw new Error(
+          "Wait for the sequence view to finish loading before exporting."
+        );
+      this.exportInProgress = true;
+      try {
+        return await this.sequenceViewExporter(options);
+      } finally {
+        this.exportInProgress = false;
+      }
+    }
+    const workspace = document.querySelector(
+      ".interactive-workspace"
+    ) as HTMLElement | null;
+    if (!workspace || this.disposed)
+      throw new Error("Open a map before exporting.");
+    const view = this.map.getView(),
+      center = view.getCenter()?.slice(),
+      resolution = view.getResolution(),
+      rotation = view.getRotation();
+    const whole =
+      options?.scope === "whole-map" ||
+      options?.includeWorkspaceComposite === false;
+    const selection =
+      options?.scope === "selection"
+        ? this.viewAndLayersManager.selectionInteractions.contigSelectExtent
+            .getExtent()
+            ?.slice()
+        : undefined;
+    if (
+      options?.scope === "selection" &&
+      (!selection ||
+        selection[2] <= selection[0] ||
+        selection[3] <= selection[1])
+    )
+      throw new Error("Select a nonempty rectangle before exporting.");
+    const history = this.networkManager.requestManager.history.applied;
+    const workspaceStyle = workspace.getAttribute("style");
+    const descriptor =
+      this.viewAndLayersManager.currentViewState.resolutionDesciptor;
+    const pixels = this.viewAndLayersManager.getActiveMapPixelBounds(
+      descriptor.bpResolution
+    );
+    const dataExtent = [
+      pixels.colStartPx * descriptor.pixelResolution,
+      -pixels.rowEndPx * descriptor.pixelResolution,
+      pixels.colEndPx * descriptor.pixelResolution,
+      -pixels.rowStartPx * descriptor.pixelResolution,
+    ];
+    const interactions = this.map
+      .getInteractions()
+      .getArray()
+      .map((item) => [item, item.getActive()] as const);
+    this.exportInProgress = true;
+    try {
+      options?.progress?.(0.05);
+      interactions.forEach(([item]) => item.setActive(false));
+      if (whole) {
+        const extent = dataExtent;
+        const scale =
+          this.viewAndLayersManager.currentViewState.resolutionDesciptor
+            .pixelResolution;
+        const mapRect = this.map.getViewport().getBoundingClientRect(),
+          sceneRect = workspace.getBoundingClientRect();
+        const tracks = this.viewAndLayersManager.track2DHolder;
+        const padding = Math.ceil(
+          Math.max(
+            tracks.contigBordersTrack.labelExportPadding(
+              this.getContigDimensionHolder().contigDescriptors.map(
+                (c) => c.contigName
+              )
+            ),
+            tracks.scaffoldBordersTrack.labelExportPadding(
+              Array.from(this.scaffoldHolder.scaffoldTable.values()).map(
+                (s) => s.scaffoldName
+              )
+            )
+          )
+        );
+        const width = Math.ceil((extent[2] - extent[0]) / scale) + 2 * padding;
+        const height = Math.ceil((extent[3] - extent[1]) / scale) + 2 * padding;
+        const totalWidth = width + mapRect.left - sceneRect.left;
+        const totalHeight = height + mapRect.top - sceneRect.top;
+        if (
+          totalWidth > 16384 ||
+          totalHeight > 16384 ||
+          totalWidth * totalHeight > 64 * 1024 * 1024
+        )
+          throw new Error(
+            "The whole map is too large for an image at this resolution. Select a coarser resolution or export a selection."
+          );
+        workspace.style.width = `${totalWidth}px`;
+        workspace.style.height = `${totalHeight}px`;
+        workspace.style.maxWidth = "none";
+        workspace.style.maxHeight = "none";
+        workspace.style.minWidth = `${totalWidth}px`;
+        workspace.style.minHeight = `${totalHeight}px`;
+        workspace.style.flexShrink = "0";
+        this.viewAndLayersManager.setExportMaxResolution(scale);
+        await this.waitForNextAnimationFrame();
+        this.map.updateSize();
+        this.viewAndLayersManager.updateZoomLimit();
+        view.setRotation(0);
+        view.setCenter([
+          (extent[0] + extent[2]) / 2,
+          (extent[1] + extent[3]) / 2,
+        ]);
+        view.setResolution(scale);
+        this.viewAndLayersManager.updateCurrentHiCViewState();
+      }
+      if (selection) {
+        view.setRotation(0);
+        view.fit(selection, {
+          size: this.map.getSize(),
+          padding: [1, 1, 1, 1],
+        });
+      }
+      if (selection) {
+        const a = this.map.getPixelFromCoordinate([selection[0], selection[3]]),
+          b = this.map.getPixelFromCoordinate([selection[2], selection[1]]);
+        const size = this.map.getSize()!;
+        this.linearTrackManager.exportLabelBounds = {
+          left: a[0] / size[0],
+          right: b[0] / size[0],
+          top: a[1] / size[1],
+          bottom: b[1] / size[1],
+        };
+      }
+      await document.fonts.ready;
+      await this.linearTrackManager.render({ allowFetch: true });
+      await this.renderSequenceTracks();
+      options?.progress?.(0.2);
+      await new Promise<void>((resolve, reject) => {
+        const done = () => {
+          window.clearTimeout(timer);
+          resolve();
+        };
+        const timer = window.setTimeout(() => {
+          this.map.un("rendercomplete", done);
+          reject(
+            new Error(
+              "The map did not finish rendering for export. Retry after loading completes."
+            )
+          );
+        }, 60000);
+        this.map.once("rendercomplete", done);
+        this.map.renderSync();
+      });
+      options?.progress?.(0.4);
+      const { captureCanvasScene } = await import("../export/CanvasScene");
+      const svg = await captureCanvasScene(
+        workspace,
+        async () => {
+          this.map.getLayers().forEach((layer) => layer.changed());
+          this.map.renderSync();
+          this.viewAndLayersManager.scheduleRulerRender();
+          await this.linearTrackManager.render({ allowFetch: false });
+          await this.renderSequenceTracks();
+          await this.waitForNextAnimationFrame();
+          await this.waitForNextAnimationFrame();
+        },
+        options?.metadata,
+        {
+          mapRoot: this.map.getViewport(),
+          excludedRoots: this.minimap ? [this.minimap.getTargetElement()] : [],
+        }
+      );
+      const { prepareSvgForEditors } = await import(
+        "../export/SvgCompatibility"
+      );
+      prepareSvgForEditors(svg.svg);
+      options?.progress?.(0.65);
+      if (history !== this.networkManager.requestManager.history.applied)
+        throw new Error(
+          "The assembly changed during export. Please export the updated view again."
+        );
+      const cropExtent =
+        selection ?? (options?.cropToMap !== false ? dataExtent : undefined);
+      if (cropExtent) {
+        const size = this.map.getSize()!;
+        const { cropSelectionScene, visibleMapBounds } = await import(
+          "../export/SelectionScene"
+        );
+        const bounds = visibleMapBounds(
+          [
+            [cropExtent[0], cropExtent[3]],
+            [cropExtent[2], cropExtent[3]],
+            [cropExtent[2], cropExtent[1]],
+            [cropExtent[0], cropExtent[1]],
+          ].map((point) => this.map.getPixelFromCoordinate(point)),
+          size
+        );
+        if (!bounds)
+          throw new Error(
+            "The map is outside the viewport. Fit the map before exporting."
+          );
+        const mapRect = this.map.getViewport().getBoundingClientRect(),
+          sceneRect = workspace.getBoundingClientRect();
+        const marginLeft = mapRect.left - sceneRect.left,
+          marginTop = mapRect.top - sceneRect.top;
+        let crop = {
+          left: marginLeft + bounds.left,
+          top: marginTop + bounds.top,
+          width: bounds.width,
+          height: bounds.height,
+        };
+        if (!selection) {
+          const { includeMapCaptions } = await import(
+            "../export/SelectionScene"
+          );
+          crop = includeMapCaptions(svg.svg, crop, {
+            left: marginLeft,
+            top: marginTop,
+            width: size[0],
+            height: size[1],
+          });
+        }
+        return cropSelectionScene(svg, { ...crop, marginLeft, marginTop });
+      }
+      return svg;
+    } finally {
+      if (whole) {
+        this.viewAndLayersManager.setExportMaxResolution(undefined);
+        if (workspaceStyle === null) workspace.removeAttribute("style");
+        else workspace.setAttribute("style", workspaceStyle);
+        this.map.updateSize();
+        this.viewAndLayersManager.updateZoomLimit();
+      }
+      this.linearTrackManager.exportLabelBounds = undefined;
+      if ((whole || selection) && !this.disposed) {
+        view.setCenter(center);
+        view.setResolution(resolution);
+        view.setRotation(rotation);
+        this.map.renderSync();
+        this.viewAndLayersManager.scheduleRulerRender();
+        void this.linearTrackManager.render();
+      }
+      interactions.forEach(([item, active]) => item.setActive(active));
+      this.exportInProgress = false;
+    }
+  }
+
   public async exportCurrentMapSvg(
     progressCallback?: (progress: number) => void,
     options?: {
       backgroundColor?: string;
       metadata?: Record<string, unknown>;
       includeWorkspaceComposite?: boolean;
+      scope?: "viewport" | "whole-map" | "selection";
+      cropToMap?: boolean;
     }
   ): Promise<void> {
-    let svg: string;
-    if (options?.includeWorkspaceComposite === true) {
-      const workspaceCanvas = await this.renderWorkspaceCompositeCanvas(
-        options?.backgroundColor
-      );
-      progressCallback?.(1);
-      const dataUrl = workspaceCanvas.toDataURL("image/png");
-      svg =
-        `<?xml version=\"1.0\" encoding=\"UTF-8\"?>` +
-        `<svg xmlns=\"http://www.w3.org/2000/svg\" ` +
-        `xmlns:xlink=\"http://www.w3.org/1999/xlink\" ` +
-        `width=\"${workspaceCanvas.width}\" height=\"${workspaceCanvas.height}\" viewBox=\"0 0 ${workspaceCanvas.width} ${workspaceCanvas.height}\">` +
-        `${
-          options?.metadata
-            ? `<metadata><![CDATA[${JSON.stringify(options.metadata)}]]></metadata>`
-            : ""
-        }` +
-        `<rect width=\"${workspaceCanvas.width}\" height=\"${workspaceCanvas.height}\" fill=\"${
-          options?.backgroundColor ?? "rgba(255,255,255,1)"
-        }\" />` +
-        `<image x=\"0\" y=\"0\" width=\"${workspaceCanvas.width}\" height=\"${workspaceCanvas.height}\" href=\"${ContactMapManager.escapeXml(
-          dataUrl
-        )}\" />` +
-        `</svg>`;
-    } else {
-      const composite = await this.buildDataDrivenExportCompositeCanvas(
-        progressCallback,
-        options
-      );
-      const dataUrl = composite.toDataURL("image/png");
-      svg =
-        `<?xml version=\"1.0\" encoding=\"UTF-8\"?>` +
-        `<svg xmlns=\"http://www.w3.org/2000/svg\" ` +
-        `xmlns:xlink=\"http://www.w3.org/1999/xlink\" ` +
-        `width=\"${composite.width}\" height=\"${composite.height}\" viewBox=\"0 0 ${composite.width} ${composite.height}\">` +
-        `${
-          options?.metadata
-            ? `<metadata><![CDATA[${JSON.stringify(options.metadata)}]]></metadata>`
-            : ""
-        }` +
-        `<rect width=\"${composite.width}\" height=\"${composite.height}\" fill=\"${
-          options?.backgroundColor ?? "rgba(255,255,255,1)"
-        }\" />` +
-        `<image x=\"0\" y=\"0\" width=\"${composite.width}\" height=\"${composite.height}\" href=\"${ContactMapManager.escapeXml(
-          dataUrl
-        )}\" />` +
-        `</svg>`;
-    }
-    const blob = new Blob([svg], { type: "image/svg+xml" });
-    await this.saveExportBlob(blob, `${this.options.filename}.svg`);
+    const { svg } = await this.buildViewportExportSvg({
+      ...options,
+      progress: progressCallback,
+    });
+    const { embedSvgFonts } = await import("../rendering/MapFonts");
+    await embedSvgFonts(svg);
+    progressCallback?.(0.9);
+    await this.saveExportBlob(
+      new Blob([new XMLSerializer().serializeToString(svg)], {
+        type: "image/svg+xml",
+      }),
+      `${this.options.filename}.svg`
+    );
+    progressCallback?.(1);
   }
 
   public async exportCurrentMapPng(
@@ -1007,29 +1438,24 @@ class ContactMapManager {
       backgroundColor?: string;
       metadata?: Record<string, unknown>;
       includeWorkspaceComposite?: boolean;
+      scope?: "viewport" | "whole-map" | "selection";
+      cropToMap?: boolean;
     }
   ): Promise<void> {
-    const canvas =
-      options?.includeWorkspaceComposite === true
-        ? await this.renderWorkspaceCompositeCanvas(options?.backgroundColor)
-        : await this.buildDataDrivenExportCompositeCanvas(
-            progressCallback,
-            options
-          );
-    if (options?.includeWorkspaceComposite === true) {
-      progressCallback?.(1);
-    }
-    await new Promise<void>((resolve, reject) => {
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          resolve();
-          return;
-        }
-        this.saveExportBlob(blob, `${this.options.filename}.png`)
-          .then(resolve)
-          .catch(reject);
-      }, "image/png");
+    const { canvas } = await this.buildViewportExportSvg({
+      ...options,
+      progress: progressCallback,
     });
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (value) =>
+          value ? resolve(value) : reject(new Error("PNG encoding failed.")),
+        "image/png"
+      )
+    );
+    progressCallback?.(0.9);
+    await this.saveExportBlob(blob, `${this.options.filename}.png`);
+    progressCallback?.(1);
   }
 
   public async exportCurrentMapPdf(
@@ -1038,57 +1464,84 @@ class ContactMapManager {
       backgroundColor?: string;
       metadata?: Record<string, unknown>;
       includeWorkspaceComposite?: boolean;
+      scope?: "viewport" | "whole-map" | "selection";
+      cropToMap?: boolean;
     }
   ): Promise<void> {
-    const canvas =
-      options?.includeWorkspaceComposite === true
-        ? await this.renderWorkspaceCompositeCanvas(options?.backgroundColor)
-        : await this.buildDataDrivenExportCompositeCanvas(
-            progressCallback,
-            options
-          );
-    if (options?.includeWorkspaceComposite === true) {
-      progressCallback?.(1);
-    }
-    const dataUrl = canvas.toDataURL("image/png");
-    const { jsPDF } = await import("jspdf");
-    const orientation = canvas.width >= canvas.height ? "landscape" : "portrait";
-    const pdf = new jsPDF({
-      orientation,
-      unit: "px",
-      format: [canvas.width, canvas.height],
+    const { svg } = await this.buildViewportExportSvg({
+      ...options,
+      progress: progressCallback,
     });
-    pdf.addImage(dataUrl, "PNG", 0, 0, canvas.width, canvas.height);
-    const blob = pdf.output("blob");
-    await this.saveExportBlob(blob, `${this.options.filename}.pdf`);
+    const width = Number(svg.getAttribute("width")),
+      height = Number(svg.getAttribute("height"));
+    const { jsPDF } = await import("jspdf");
+    await import("svg2pdf.js");
+    const { embedPdfFonts, configureMapPdfFonts } = await import(
+      "../rendering/MapFonts"
+    );
+    configureMapPdfFonts(jsPDF);
+    const { renderSvgToPdf, configurePdfTransparency } = await import(
+      "../export/PdfCompatibility"
+    );
+    const pdf = new jsPDF({
+      compress: true,
+      orientation: width >= height ? "landscape" : "portrait",
+      unit: "px",
+      format: [width, height],
+      hotfixes: ["px_scaling"],
+    });
+    configurePdfTransparency(pdf);
+    await embedPdfFonts(pdf);
+    progressCallback?.(0.75);
+    await this.waitForNextAnimationFrame();
+    await renderSvgToPdf(pdf, svg, width, height);
+    progressCallback?.(0.9);
+    await this.saveExportBlob(
+      pdf.output("blob"),
+      `${this.options.filename}.pdf`
+    );
+    progressCallback?.(1);
   }
 
   private async saveExportBlob(blob: Blob, filename: string): Promise<void> {
-    const sanitizedFilename = ContactMapManager.sanitizeDownloadFilename(filename);
-    const desktopBridge = (window as unknown as {
-      hictDesktop?: {
-        saveExport?: (payload: {
-          filename: string;
-          bytes: number[];
-        }) => Promise<unknown> | unknown;
-      };
-    }).hictDesktop;
+    const sanitizedFilename =
+      ContactMapManager.sanitizeDownloadFilename(filename);
+    const desktopBridge = (
+      window as unknown as {
+        hictDesktop?: {
+          saveExport?: (payload: {
+            filename: string;
+            bytes: number[] | Uint8Array;
+          }) => Promise<unknown> | unknown;
+        };
+      }
+    ).hictDesktop;
     if (typeof desktopBridge?.saveExport === "function") {
-      const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+      // Structured clone transfers typed arrays efficiently; Array.from() would
+      // build a JS number per byte and stall large PDF/PNG exports.
+      const bytes = new Uint8Array(await blob.arrayBuffer());
       await Promise.resolve(
         desktopBridge.saveExport({ filename: sanitizedFilename, bytes })
       );
       return;
     }
 
-    const tauriBridge = (window as unknown as {
-      __TAURI__?: {
-        core?: {
-          invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+    const tauriBridge = (
+      window as unknown as {
+        __TAURI__?: {
+          core?: {
+            invoke?: (
+              command: string,
+              args?: Record<string, unknown>
+            ) => Promise<unknown>;
+          };
+          invoke?: (
+            command: string,
+            args?: Record<string, unknown>
+          ) => Promise<unknown>;
         };
-        invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
-      };
-    }).__TAURI__;
+      }
+    ).__TAURI__;
     const invoke = tauriBridge?.core?.invoke ?? tauriBridge?.invoke;
     if (typeof invoke === "function") {
       const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
@@ -1104,11 +1557,18 @@ class ContactMapManager {
   }
 
   private static sanitizeDownloadFilename(filename: string): string {
+    // Control characters are exactly what a download file name must not contain.
+    // eslint-disable-next-line no-control-regex
     const safe = filename.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim();
     return safe.length > 0 ? safe : "hict-export.bin";
   }
 
-  private exportTracksSvg(bpResolution: number): string {
+  private exportTracksSvg(
+    bpResolution: number,
+    pixelBounds = this.viewAndLayersManager.getActiveMapPixelBounds(
+      bpResolution
+    )
+  ): string {
     const flags = this.viewAndLayersManager.getExportTrackFlags();
     if (
       !flags.contigBorders &&
@@ -1119,12 +1579,14 @@ class ContactMapManager {
       return "";
     }
 
-    const contigTrack = this.viewAndLayersManager.track2DHolder.contigBordersTrack;
+    const contigTrack =
+      this.viewAndLayersManager.track2DHolder.contigBordersTrack;
     const scaffoldTrack =
       this.viewAndLayersManager.track2DHolder.scaffoldBordersTrack;
     const pixelResolution =
-      this.viewAndLayersManager.getPixelResolutionForBpResolution(bpResolution) ??
-      1;
+      this.viewAndLayersManager.getPixelResolutionForBpResolution(
+        bpResolution
+      ) ?? 1;
     if (!Number.isFinite(pixelResolution) || pixelResolution <= 0) {
       return "";
     }
@@ -1136,13 +1598,15 @@ class ContactMapManager {
         typeof window !== "undefined"
           ? window.getComputedStyle(document.body).fontFamily
           : "sans-serif";
-      return `${track.getLabelBold() ? "bold " : ""}${track.getLabelSize()}px ${fontFamily}`;
+      return `${
+        track.getLabelBold() ? "bold " : ""
+      }${track.getLabelSize()}px ${fontFamily}`;
     };
     const toFontFamily = (track: typeof contigTrack) =>
       toFont(track).replace(/^[^ ]+ /, "");
     const toSvgPoint = (coordinate: [number, number]): [number, number] => [
-      coordinate[0] / pixelResolution,
-      -coordinate[1] / pixelResolution,
+      coordinate[0] / pixelResolution - pixelBounds.colStartPx,
+      -coordinate[1] / pixelResolution - pixelBounds.rowStartPx,
     ];
     const polylineSvg = (coordinates: [number, number][]): string =>
       coordinates
@@ -1181,23 +1645,40 @@ class ContactMapManager {
         if (borderEnabled && trackType === borderTrackType) {
           const geometryType = geometry.getType();
           if (geometryType === "Polygon") {
-            const ring = (geometry as unknown as { getCoordinates(): [number, number][][] })
-              .getCoordinates()[0] as [number, number][];
-            result += `<polygon points="${polylineSvg(ring)}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
+            const ring = (
+              geometry as unknown as { getCoordinates(): [number, number][][] }
+            ).getCoordinates()[0] as [number, number][];
+            result += `<polygon points="${polylineSvg(
+              ring
+            )}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(
+              strokeColor
+            )}" stroke-width="${strokeWidth}" />`;
           } else if (geometryType === "LineString") {
-            const line = (geometry as unknown as { getCoordinates(): [number, number][] })
-              .getCoordinates() as [number, number][];
-            result += `<polyline points="${polylineSvg(line)}" fill="none" stroke="${escapeAttr(strokeColor)}" stroke-width="${strokeWidth}" />`;
+            const line = (
+              geometry as unknown as { getCoordinates(): [number, number][] }
+            ).getCoordinates() as [number, number][];
+            result += `<polyline points="${polylineSvg(
+              line
+            )}" fill="none" stroke="${escapeAttr(
+              strokeColor
+            )}" stroke-width="${strokeWidth}" />`;
           }
         } else if (namesEnabled && trackType === namesTrackType) {
           if (geometry.getType() !== "Point") {
             continue;
           }
-          const point = (geometry as unknown as { getCoordinates(): [number, number] })
-            .getCoordinates();
+          const point = (
+            geometry as unknown as { getCoordinates(): [number, number] }
+          ).getCoordinates();
           const [x, y] = toSvgPoint(point);
           const labelText = labelExtractor(feature.get("name"));
-          result += `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" fill="${escapeAttr(labelColor)}" font-size="${labelSize}" font-family="${escapeAttr(toFontFamily(featureSource))}" font-weight="${featureSource.getLabelBold() ? "bold" : "normal"}" ${labelStroke}>${escapeXml(labelText)}</text>`;
+          result += `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" fill="${escapeAttr(
+            labelColor
+          )}" font-size="${labelSize}" font-family="${escapeAttr(
+            toFontFamily(featureSource)
+          )}" font-weight="${
+            featureSource.getLabelBold() ? "bold" : "normal"
+          }" ${labelStroke}>${escapeXml(labelText)}</text>`;
         }
       }
       return result;
@@ -1261,11 +1742,39 @@ class ContactMapManager {
   }
 
   public dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.alignmentDetail?.dispose();
+    this.alignmentDetail = undefined;
+    this.sequenceRenderers.clear();
+    this.sequenceViewExporter = undefined;
     this.visualizationManager.dispose();
     this.linearTrackManager.dispose();
     this.clearOverviewMapTarget();
     this.viewAndLayersManager?.dispose?.();
+    this.sizeObserver?.disconnect();
+    this.sizeObserver = undefined;
     this.map.setTarget(undefined);
+    // Release what the map still holds: layer sources keep decoded tile images, and the map keeps its
+    // listeners and interactions. Without this a closed map stays reachable and so does its memory.
+    try {
+      const layers = this.map.getLayers().getArray().slice();
+      for (const layer of layers) {
+        const source = (
+          layer as unknown as {
+            getSource?: () => { clear?: () => void; dispose?: () => void };
+          }
+        ).getSource?.();
+        source?.clear?.();
+        source?.dispose?.();
+        (layer as unknown as { dispose?: () => void }).dispose?.();
+      }
+      this.map.getLayers().clear();
+      this.map.getInteractions().clear();
+      this.map.dispose();
+    } catch (error) {
+      console.debug("Map resources were not fully released", error);
+    }
   }
 
   public addOSM() {
@@ -1303,6 +1812,7 @@ class ContactMapManager {
     this.viewAndLayersManager.selectionInteractions.translocationArrowSelectionInteraction.unset(
       "endContigId"
     );
+    this.viewAndLayersManager.refreshTranslocationArrows();
   }
 
   public deactivateScissors(): void {
@@ -1320,6 +1830,7 @@ class ContactMapManager {
   }
 
   public reloadVisuals(): void {
+    if (this.disposed) return;
     this.viewAndLayersManager.reloadVisuals();
     void this.linearTrackManager.clearCachesAndRender();
     this.scheduleMinimapViewportSync();
@@ -1329,21 +1840,32 @@ class ContactMapManager {
     this.scheduleMinimapViewportSync();
   }
 
-  private createCoarsestMinimapLayer():
-    | TileLayer<VersionedXYZContactMapSource>
-    | null {
+  /** Rebind after a coordinate-base change replaces the primary tile sources. */
+  public rebuildOverviewMinimap(): void {
+    const target = this.minimap?.getTargetElement();
+    if (target) this.addOverviewMapTarget(target);
+  }
+
+  private createCoarsestMinimapLayer(): TileLayer<VersionedXYZContactMapSource> | null {
     if (this.viewAndLayersManager.resolutionTuples.length === 0) {
       return null;
     }
-    const coarsestDescriptor = this.viewAndLayersManager.resolutionTuples.reduce(
-      (accumulator, descriptor) =>
-        descriptor.pixelResolution > accumulator.pixelResolution
-          ? descriptor
-          : accumulator
+    const resolution = selectOverviewResolution(
+      this.viewAndLayersManager.resolutionTuples.map((descriptor) => {
+        const prefix = this.contigDimensionHolder.prefix_sum_px.get(
+          descriptor.bpResolution
+        );
+        return {
+          bpResolution: descriptor.bpResolution,
+          visibleBins: prefix?.at(-1) ?? 0,
+        };
+      })
     );
-    const layer = this.viewAndLayersManager.layersHolder.bpResolutionToHiCDataLayer.get(
-      coarsestDescriptor.bpResolution
-    );
+    if (resolution === undefined) return null;
+    const layer =
+      this.viewAndLayersManager.layersHolder.bpResolutionToHiCDataLayer.get(
+        resolution
+      );
     if (!(layer instanceof TileLayer)) {
       return null;
     }
@@ -1384,7 +1906,11 @@ class ContactMapManager {
     this.applyMinimapBackground(target);
     const extentTuple = extent as [number, number, number, number];
     view.setCenter(getCenter(extentTuple));
-    view.setResolution(this.estimateMinimapResolution(extentTuple, target));
+    // OpenLayers measures the content box; clientWidth includes CSS padding.
+    // Fitting to clientWidth crops the outer map pixels and hides an edge-aligned stroke.
+    const size = this.minimap.getSize();
+    if (size && size[0] > 0 && size[1] > 0)
+      view.fit(extentTuple, { size, padding: [0, 0, 0, 0] });
   }
 
   private bindMinimapPointerInteractions(target: HTMLElement): void {
@@ -1485,13 +2011,13 @@ class ContactMapManager {
   }
 
   private scheduleMinimapViewportSync(): void {
-    if (this.minimapRenderFramePending) {
+    if (this.disposed || this.minimapRenderFramePending) {
       return;
     }
     this.minimapRenderFramePending = true;
     window.requestAnimationFrame(() => {
       this.minimapRenderFramePending = false;
-      this.syncMinimapViewport();
+      if (!this.disposed) this.syncMinimapViewport();
     });
   }
 
@@ -1606,32 +2132,22 @@ class ContactMapManager {
       transformedMainExtent as [number, number, number, number],
       minimapProjectionExtent as [number, number, number, number]
     );
-    this.minimapViewportFeature.setGeometry(fromExtent(clampedExtent));
+    this.minimapViewportFeature.setGeometry(
+      clampedExtent ? fromExtent(clampedExtent) : undefined
+    );
     this.minimap.render();
   }
 
   private applyMinimapBackground(target: HTMLElement): void {
     const color = useStyleStore().mapBackgroundColor.RGB;
     target.style.backgroundColor = color;
+    target.style.overflow = "hidden";
   }
 
   private getMinimapVisibleBounds(
     bounds: [number, number, number, number]
   ): [number, number, number, number] {
-    const minimapResolution = this.minimap?.getView().getResolution() ?? 1;
-    // Keep the viewport stroke inside the minimap projection. Vector strokes
-    // clipped exactly at the projection boundary become invisible at map edges.
-    const inset = Math.max(1e-6, Math.abs(minimapResolution) * 5);
-    const maxInsetX = Math.max(0, (getWidth(bounds) - 1e-6) / 2);
-    const maxInsetY = Math.max(0, (getHeight(bounds) - 1e-6) / 2);
-    const insetX = Math.min(inset, maxInsetX);
-    const insetY = Math.min(inset, maxInsetY);
-    return [
-      bounds[0] + insetX,
-      bounds[1] + insetY,
-      bounds[2] - insetX,
-      bounds[3] - insetY,
-    ];
+    return bounds;
   }
 
   private clampCoordinateToBounds(
@@ -1647,43 +2163,16 @@ class ContactMapManager {
   private clampExtentToBounds(
     extent: [number, number, number, number],
     bounds: [number, number, number, number]
-  ): [number, number, number, number] {
-    const visibleBounds = this.getMinimapVisibleBounds(bounds);
-    if (!intersects(extent, bounds)) {
-      return visibleBounds;
-    }
-    const visibleWidth = Math.max(1e-6, getWidth(visibleBounds));
-    const visibleHeight = Math.max(1e-6, getHeight(visibleBounds));
-    const minimapResolution = Math.abs(this.minimap?.getView().getResolution() ?? 1);
-    const minimumVisibleSize = Math.max(1e-6, minimapResolution * 4);
-    const requestedWidth = Math.max(1e-6, extent[2] - extent[0]);
-    const requestedHeight = Math.max(1e-6, extent[3] - extent[1]);
-    const width = Math.min(
-      visibleWidth,
-      Math.max(requestedWidth, minimumVisibleSize)
-    );
-    const height = Math.min(
-      visibleHeight,
-      Math.max(requestedHeight, minimumVisibleSize)
-    );
-    const clamp = (value: number, minValue: number, maxValue: number): number =>
-      Math.max(minValue, Math.min(maxValue, value));
-    const centerX = clamp(
-      (extent[0] + extent[2]) / 2,
-      visibleBounds[0] + width / 2,
-      visibleBounds[2] - width / 2
-    );
-    const centerY = clamp(
-      (extent[1] + extent[3]) / 2,
-      visibleBounds[1] + height / 2,
-      visibleBounds[3] - height / 2
-    );
-    return [
-      centerX - width / 2,
-      centerY - height / 2,
-      centerX + width / 2,
-      centerY + height / 2,
+  ): [number, number, number, number] | null {
+    // Intersect, never translate or inflate the viewport: its edges represent
+    // actual visible coordinates even when the main map is panned off-map.
+    const clipped: [number, number, number, number] = [
+      Math.max(extent[0], bounds[0]),
+      Math.max(extent[1], bounds[1]),
+      Math.min(extent[2], bounds[2]),
+      Math.min(extent[3], bounds[3]),
     ];
+    return clipped[0] < clipped[2] && clipped[1] < clipped[3] ? clipped : null;
   }
 }
 

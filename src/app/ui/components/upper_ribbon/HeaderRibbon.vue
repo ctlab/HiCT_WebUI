@@ -26,14 +26,24 @@
         <div id="search-input-group" class="input-group input-group-sm mb-3">
           <input
             id="global-search-input"
+            :disabled="!props.mapManager"
+            :title="props.mapManager ? undefined : 'Open a map to search'"
             class="form-control form-control-sm m-0"
-            placeholder="I'm looking for..."
+            placeholder="Find contig, scaffold or feature"
             type="text"
+            autocomplete="off"
             v-model="searchQuery"
             @input="onSearchInput"
+            @keydown.down.prevent="moveSearchHighlight(1)"
+            @keydown.up.prevent="moveSearchHighlight(-1)"
+            @keydown.enter.prevent="goToSelection"
+            @keydown.esc.prevent="searchOpen = false"
+            @blur="deferSearchClose"
           />
           <button
             id="global-search-button"
+            :disabled="!props.mapManager"
+            :title="props.mapManager ? undefined : 'Open a map to search'"
             class="btn btn-sm btn-outline-light"
             type="button"
             @click="goToSelection"
@@ -43,6 +53,7 @@
         </div>
         <div
           v-if="
+            searchOpen &&
             (searchResults.length > 0 || searchLoadingRemote) &&
             searchQuery.length >= 3
           "
@@ -62,7 +73,7 @@
             type="button"
             class="search-result"
             :class="{ active: idx === selectedIndex }"
-            @click="selectResult(idx)"
+            @mousedown.prevent="selectResult(idx)"
           >
             <span class="search-type">{{ item.type }}</span>
             <span class="search-name">{{ item.name }}</span>
@@ -72,60 +83,108 @@
           </button>
         </div>
       </div>
-      <div class="mb-3">
-        <select
-          class="form-select form-select-sm"
-          v-model.lazy="rowContigId"
-          @change="checkOptionsAndSnapToContigIntersection"
-        >
-          <option selected value="null">All Rows</option>
-          <option
-            v-for="cd in mapManager?.getContigDimensionHolder()
-              .contigDescriptors"
-            :key="cd.contigId"
-            :value="cd.contigId"
+      <div class="scope-picker mb-3">
+        <input
+          class="form-control form-control-sm"
+          type="text"
+          v-model="rowScopeQuery"
+          @focus="openScopePicker('row')"
+          @input="onScopeInput('row')"
+          @keydown.down.prevent="moveScopeHighlight('row', 1)"
+          @keydown.up.prevent="moveScopeHighlight('row', -1)"
+          @keydown.enter.prevent="acceptHighlightedScope('row')"
+          @keydown.esc.prevent="restoreScopeQuery('row')"
+          @blur="deferScopePickerClose('row')"
+          aria-label="Rows scope"
+          :disabled="!props.mapManager"
+          :title="
+            props.mapManager
+              ? 'Rows shown on the map'
+              : 'Open a map to change scopes'
+          "
+        />
+        <div v-if="rowScopeOpen" class="scope-dropdown">
+          <button
+            v-for="(option, idx) in filteredRowScopeOptions"
+            :key="option.key"
+            type="button"
+            class="scope-result"
+            :class="{ active: idx === rowScopeIndex }"
+            @mousedown.prevent="selectScope('row', option)"
           >
-            {{ cd.contigName }}
-          </option>
-        </select>
+            <span class="scope-type">{{ option.displayType }}</span>
+            <span class="scope-name">{{ option.label }}</span>
+          </button>
+          <div v-if="filteredRowScope.truncated" class="scope-truncated">
+            Type to narrow the list
+          </div>
+        </div>
       </div>
-      <div class="mb-3">
-        <select
-          class="form-select form-select-sm"
-          v-model.lazy="columnContigId"
-          @change="checkOptionsAndSnapToContigIntersection"
+      <div class="scope-copy-control mb-3">
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm scope-copy-button"
+          :disabled="!props.mapManager"
+          :title="
+            props.mapManager
+              ? 'Copy row scope to columns'
+              : 'Open a map to change scopes'
+          "
+          aria-label="Copy row scope to columns"
+          @click="copyRowScopeToColumn"
         >
-          <option selected value="null">All Columns</option>
-          <option
-            v-for="cd in mapManager?.getContigDimensionHolder()
-              .contigDescriptors"
-            :key="cd.contigId"
-            :value="cd.contigId"
+          <i class="bi bi-arrow-right"></i>
+        </button>
+      </div>
+      <div class="scope-picker mb-3">
+        <input
+          class="form-control form-control-sm"
+          type="text"
+          v-model="columnScopeQuery"
+          @focus="openScopePicker('column')"
+          @input="onScopeInput('column')"
+          @keydown.down.prevent="moveScopeHighlight('column', 1)"
+          @keydown.up.prevent="moveScopeHighlight('column', -1)"
+          @keydown.enter.prevent="acceptHighlightedScope('column')"
+          @keydown.esc.prevent="restoreScopeQuery('column')"
+          @blur="deferScopePickerClose('column')"
+          aria-label="Columns scope"
+          :disabled="!props.mapManager"
+          :title="
+            props.mapManager
+              ? 'Columns shown on the map'
+              : 'Open a map to change scopes'
+          "
+        />
+        <div v-if="columnScopeOpen" class="scope-dropdown">
+          <button
+            v-for="(option, idx) in filteredColumnScopeOptions"
+            :key="option.key"
+            type="button"
+            class="scope-result"
+            :class="{ active: idx === columnScopeIndex }"
+            @mousedown.prevent="selectScope('column', option)"
           >
-            {{ cd.contigName }}
-          </option>
-        </select>
+            <span class="scope-type">{{ option.displayType }}</span>
+            <span class="scope-name">{{ option.label }}</span>
+          </button>
+          <div v-if="filteredColumnScope.truncated" class="scope-truncated">
+            Type to narrow the list
+          </div>
+        </div>
       </div>
       <div class="mb-3">
         <select
           v-model="signalDisplayMode"
           class="form-select form-select-sm"
-          title="Expected and O/E use the standard renderer and are computed within scaffolds; if no scaffolds are present, each contig is treated as its own scaffold."
+          title="Expected and O/E use the standard renderer for the primary map, within scaffolds (or contigs when unscaffolded). The secondary overlay and observed rendering graph are preserved."
+          :disabled="signalDisplayModePending"
           @change="onSignalDisplayModeChanged"
         >
           <option value="OBSERVED">Show Observed</option>
           <option value="EXPECTED">Show Expected</option>
           <option value="OBSERVED_OVER_EXPECTED">Show O/E</option>
         </select>
-      </div>
-      <div class="mb-3">
-        <!-- <select class="form-select form-select-sm" v-model="normalizationTypeInt" @change="onNormalizationChanged">
-          <option selected value="0">Normalization None (Linear)</option>
-          <option value="1">Normalization Log2</option>
-          <option value="2">Normalization Log10</option>
-          <option value="3">Normalization Cooler</option>
-        </select> -->
-        <NormalizationSelector :map-manager="props.mapManager" />
       </div>
     </div>
     <div id="right-header-block" class="header-block">
@@ -135,7 +194,10 @@
         type="button"
         @click="reloadTiles"
       >
-        <span><i class="bi bi-arrow-clockwise me-1"></i>Reload tiles</span>
+        <span
+          ><i class="bi bi-arrow-clockwise me-1"></i
+          ><span class="optional-button-label">Reload tiles</span></span
+        >
       </button>
       <div class="export-group">
         <button
@@ -143,10 +205,14 @@
           class="btn btn-sm btn-outline-primary"
           type="button"
           @click="osdOverlayVisible = !osdOverlayVisible"
-          :title="osdOverlayVisible ? 'Hide map information overlay' : 'Show map information overlay'"
+          :title="
+            osdOverlayVisible
+              ? 'Hide map information overlay'
+              : 'Show map information overlay'
+          "
         >
           <i class="bi bi-card-text" aria-hidden="true"></i>
-          OSD
+          <span class="optional-button-label">OSD</span>
         </button>
         <button
           id="ruler-mode-button"
@@ -156,65 +222,125 @@
           :title="`Cycle ruler coordinate mode. Current: ${rulerModeLabel}`"
         >
           <i class="bi bi-rulers me-1" aria-hidden="true"></i>
-          {{ rulerModeLabel }}
+          <span class="ruler-button-label">{{ rulerModeLabel }}</span>
         </button>
+      </div>
+      <div class="dropdown export-dropdown">
         <button
-          id="export-svg-button"
-          class="btn btn-sm btn-outline-primary"
+          id="export-dropdown-toggle"
+          class="btn btn-sm btn-outline-primary dropdown-toggle"
           type="button"
-          :disabled="exportingType !== null"
-          @click="exportSvg"
-          title="Export full map as SVG"
+          data-bs-toggle="dropdown"
+          data-bs-auto-close="outside"
+          aria-expanded="false"
+          :disabled="!props.mapManager"
+          :title="
+            props.mapManager
+              ? 'Export the map as SVG, PNG or PDF'
+              : 'Open a map to export it'
+          "
         >
-          <span v-if="exportingType !== 'svg'"
-            ><i class="bi bi-box-arrow-up"></i> SVG</span
-          >
-          <span v-else>
-            <span class="spinner-border spinner-border-sm me-2"></span>
+          <template v-if="exportingType !== null">
+            <span
+              class="spinner-border spinner-border-sm me-1"
+              aria-hidden="true"
+            ></span>
+            {{ exportingType.toUpperCase() }}
             {{ Math.round(svgProgress * 100) }}%
-          </span>
+          </template>
+          <template v-else>Export</template>
         </button>
-        <button
-          id="export-png-button"
-          class="btn btn-sm btn-outline-primary"
-          type="button"
-          :disabled="exportingType !== null"
-          @click="exportPng"
-          title="Export full map as PNG"
+        <div
+          class="dropdown-menu dropdown-menu-end p-2 export-menu"
+          role="group"
+          aria-label="Image export"
         >
-          <span v-if="exportingType !== 'png'"
-            ><i class="bi bi-box-arrow-up"></i> PNG</span
+          <span
+            v-if="
+              props.mapManager?.networkManager.requestManager
+                .sequenceViewReadOnly
+            "
+            class="text-nowrap px-2"
+            >Sequence windows</span
           >
-          <span v-else>
-            <span class="spinner-border spinner-border-sm me-2"></span>
-            {{ Math.round(svgProgress * 100) }}%
-          </span>
-        </button>
-        <button
-          id="export-pdf-button"
-          class="btn btn-sm btn-outline-primary"
-          type="button"
-          :disabled="exportingType !== null"
-          @click="exportPdf"
-          title="Export full map as PDF"
-        >
-          <span v-if="exportingType !== 'pdf'"
-            ><i class="bi bi-box-arrow-up"></i> PDF</span
-          >
-          <span v-else>
-            <span class="spinner-border spinner-border-sm me-2"></span>
-            {{ Math.round(svgProgress * 100) }}%
-          </span>
-        </button>
+          <template v-else>
+            <select
+              v-model="exportScope"
+              class="form-select form-select-sm export-scope mb-2"
+              aria-label="Export area"
+              title="Area used by SVG, PNG and PDF exports"
+            >
+              <option value="viewport">Viewport</option>
+              <option value="whole-map">Whole map</option>
+            </select>
+            <label
+              class="d-flex align-items-center gap-1 text-nowrap mb-2"
+              title="Crop exports to the map: no empty margin outside the contact map"
+            >
+              <input
+                type="checkbox"
+                v-model="cropExportToMap"
+                aria-label="Crop export to map"
+              />
+              Crop
+            </label>
+          </template>
+          <div class="d-flex gap-1">
+            <button
+              id="export-svg-button"
+              class="btn btn-sm btn-outline-primary"
+              type="button"
+              :disabled="exportingType !== null"
+              @click="runExport('svg')"
+              title="Export selected area as SVG"
+            >
+              <i
+                class="bi bi-box-arrow-up export-button-icon"
+                aria-hidden="true"
+              ></i
+              ><span class="export-button-label">SVG</span>
+            </button>
+            <button
+              id="export-png-button"
+              class="btn btn-sm btn-outline-primary"
+              type="button"
+              :disabled="exportingType !== null"
+              @click="runExport('png')"
+              title="Export selected area as PNG"
+            >
+              <i
+                class="bi bi-box-arrow-up export-button-icon"
+                aria-hidden="true"
+              ></i
+              ><span class="export-button-label">PNG</span>
+            </button>
+            <button
+              id="export-pdf-button"
+              class="btn btn-sm btn-outline-primary"
+              type="button"
+              :disabled="exportingType !== null"
+              @click="runExport('pdf')"
+              title="Export selected area as PDF"
+            >
+              <i
+                class="bi bi-box-arrow-up export-button-icon"
+                aria-hidden="true"
+              ></i
+              ><span class="export-button-label">PDF</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { reportFailure } from "@/app/ui/reportFailure";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import NormalizationSelector from "./NormalizationSelector.vue";
-import { Ref, computed, onBeforeUnmount, ref } from "vue";
+import type { AxisScopeSelection } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
+import { useVisualizationOptionsSync } from "./useVisualizationOptionsSync";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { toast } from "vue-sonner";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
@@ -226,12 +352,35 @@ const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
 
+useVisualizationOptionsSync(() => props.mapManager);
+
 const uiSettingsStore = useUiSettingsStore();
 const { osdOverlayVisible, rulerCoordinateMode } = storeToRefs(uiSettingsStore);
-const rowContigId: Ref<number | null> = ref(null);
-const columnContigId: Ref<number | null> = ref(null);
 const exportingType = ref<"svg" | "png" | "pdf" | null>(null);
 const svgProgress = ref(0);
+type ScopeAxis = "row" | "column";
+interface ScopeOption extends AxisScopeSelection {
+  key: string;
+  displayType: "All" | "Scaffold" | "Contig";
+  order: number;
+  searchText: string;
+}
+const selectedRowScope = ref<AxisScopeSelection>({
+  kind: "all",
+  label: "All Rows",
+});
+const selectedColumnScope = ref<AxisScopeSelection>({
+  kind: "all",
+  label: "All Columns",
+});
+const rowScopeQuery = ref("All Rows");
+const columnScopeQuery = ref("All Columns");
+const rowScopeFilterQuery = ref("");
+const columnScopeFilterQuery = ref("");
+const rowScopeOpen = ref(false);
+const columnScopeOpen = ref(false);
+const rowScopeIndex = ref(0);
+const columnScopeIndex = ref(0);
 const searchQuery = ref("");
 const searchResults = ref<
   {
@@ -265,12 +414,291 @@ const {
   colormap,
 } = storeToRefs(visualizationOptionsStore);
 
+const allScopeLabel = (axis: ScopeAxis) =>
+  axis === "row" ? "All Rows" : "All Columns";
+
+const allScopeOption = (axis: ScopeAxis): ScopeOption => ({
+  kind: "all",
+  label: allScopeLabel(axis),
+  key: `${axis}-all`,
+  displayType: "All",
+  order: -1,
+  searchText: allScopeLabel(axis).toLowerCase(),
+});
+
+function scopeToSelection(option: AxisScopeSelection): AxisScopeSelection {
+  if (option.kind === "all" || option.id === undefined) {
+    return { kind: "all", label: option.label };
+  }
+  return {
+    kind: option.kind,
+    id: option.id,
+    label: option.label,
+    startBp: option.startBp,
+    endBp: option.endBp,
+  };
+}
+
+function normalizeSelectionForAxis(
+  selection: AxisScopeSelection,
+  axis: ScopeAxis
+): AxisScopeSelection {
+  if (selection.kind === "all" || selection.id === undefined) {
+    return { kind: "all", label: allScopeLabel(axis) };
+  }
+  return scopeToSelection(selection);
+}
+
+function buildScopeOptions(axis: ScopeAxis): ScopeOption[] {
+  const manager = props.mapManager;
+  if (!manager) {
+    return [allScopeOption(axis)];
+  }
+  void manager.getLayersManager().axisScopeRevision;
+  const options: ScopeOption[] = [allScopeOption(axis)];
+  const scaffolds = manager.scaffoldHolder.scaffoldBordersSorted;
+  for (let i = 0; i < scaffolds.length; i += 1) {
+    const [borders, scaffoldId] = scaffolds[i];
+    const descriptor = manager.scaffoldHolder.scaffoldTable.get(scaffoldId);
+    if (!descriptor || !borders) {
+      continue;
+    }
+    const label = descriptor.scaffoldName ?? `scaffold ${scaffoldId}`;
+    const original = descriptor.scaffoldOriginalName ?? "";
+    options.push({
+      kind: "scaffold",
+      id: scaffoldId,
+      label,
+      startBp: borders.startBP,
+      endBp: borders.endBP,
+      key: `${axis}-scaffold-${scaffoldId}`,
+      displayType: "Scaffold",
+      order: i,
+      searchText: `${label} ${original}`.toLowerCase(),
+    });
+  }
+  const contigs = manager.getContigDimensionHolder().contigDescriptors ?? [];
+  const prefixes = manager.getContigDimensionHolder().prefix_sum_bp ?? [];
+  const contigOffset = options.length + 100000;
+  for (let i = 0; i < contigs.length; i += 1) {
+    const descriptor = contigs[i];
+    const label = descriptor.contigName ?? `contig ${descriptor.contigId}`;
+    const original = descriptor.contigOriginalName ?? "";
+    const startBp = prefixes[i] ?? 0;
+    options.push({
+      kind: "contig",
+      id: descriptor.contigId,
+      label,
+      startBp,
+      endBp: startBp + descriptor.contigLengthBp,
+      key: `${axis}-contig-${descriptor.contigId}`,
+      displayType: "Contig",
+      order: contigOffset + i,
+      searchText: `${label} ${original}`.toLowerCase(),
+    });
+  }
+  return options;
+}
+
+function fuzzyScore(searchText: string, query: string): number | null {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return 0;
+  }
+  if (searchText.startsWith(normalized)) {
+    return 0;
+  }
+  if (searchText.includes(normalized)) {
+    return 1;
+  }
+  let q = 0;
+  for (let i = 0; i < searchText.length && q < normalized.length; i += 1) {
+    if (searchText[i] === normalized[q]) {
+      q += 1;
+    }
+  }
+  return q === normalized.length ? 2 : null;
+}
+
+/** A large assembly has tens of thousands of contigs: never create a button for each one. */
+const SCOPE_LIST_LIMIT = 200;
+const SCOPE_MATCH_LIMIT = 80;
+
+function filterScopeOptions(
+  options: ScopeOption[],
+  query: string
+): { items: ScopeOption[]; truncated: boolean } {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return {
+      items: options.slice(0, SCOPE_LIST_LIMIT),
+      truncated: options.length > SCOPE_LIST_LIMIT,
+    };
+  }
+  const matches = options
+    .map((option) => ({
+      option,
+      score: fuzzyScore(option.searchText, normalized),
+    }))
+    .filter(
+      (entry): entry is { option: ScopeOption; score: number } =>
+        entry.score !== null
+    )
+    .sort((a, b) => a.score - b.score || a.option.order - b.option.order);
+  return {
+    items: matches.slice(0, SCOPE_MATCH_LIMIT).map((entry) => entry.option),
+    truncated: matches.length > SCOPE_MATCH_LIMIT,
+  };
+}
+
+const rowScopeOptions = computed(() => buildScopeOptions("row"));
+const columnScopeOptions = computed(() => buildScopeOptions("column"));
+const filteredRowScope = computed(() =>
+  filterScopeOptions(rowScopeOptions.value, rowScopeFilterQuery.value)
+);
+const filteredColumnScope = computed(() =>
+  filterScopeOptions(columnScopeOptions.value, columnScopeFilterQuery.value)
+);
+const filteredRowScopeOptions = computed(() => filteredRowScope.value.items);
+const filteredColumnScopeOptions = computed(
+  () => filteredColumnScope.value.items
+);
+
+function selectScope(axis: ScopeAxis, option: ScopeOption): void {
+  const selection = scopeToSelection(option);
+  if (axis === "row") {
+    selectedRowScope.value = selection;
+    rowScopeQuery.value = selection.label;
+    rowScopeFilterQuery.value = "";
+    rowScopeOpen.value = false;
+    rowScopeIndex.value = 0;
+  } else {
+    selectedColumnScope.value = selection;
+    columnScopeQuery.value = selection.label;
+    columnScopeFilterQuery.value = "";
+    columnScopeOpen.value = false;
+    columnScopeIndex.value = 0;
+  }
+  props.mapManager
+    ?.getLayersManager()
+    .setAxisScopes(selectedRowScope.value, selectedColumnScope.value);
+}
+
+function openScopePicker(axis: ScopeAxis): void {
+  syncScopeQueriesFromManager();
+  if (axis === "row") {
+    rowScopeOpen.value = true;
+    rowScopeFilterQuery.value = "";
+    rowScopeIndex.value = 0;
+  } else {
+    columnScopeOpen.value = true;
+    columnScopeFilterQuery.value = "";
+    columnScopeIndex.value = 0;
+  }
+}
+
+function onScopeInput(axis: ScopeAxis): void {
+  if (axis === "row") {
+    rowScopeOpen.value = true;
+    rowScopeFilterQuery.value = rowScopeQuery.value;
+    rowScopeIndex.value = 0;
+  } else {
+    columnScopeOpen.value = true;
+    columnScopeFilterQuery.value = columnScopeQuery.value;
+    columnScopeIndex.value = 0;
+  }
+}
+
+function deferScopePickerClose(axis: ScopeAxis): void {
+  window.setTimeout(() => {
+    restoreScopeQuery(axis);
+  }, 120);
+}
+
+function restoreScopeQuery(axis: ScopeAxis): void {
+  if (axis === "row") {
+    rowScopeQuery.value = selectedRowScope.value.label || "All Rows";
+    rowScopeFilterQuery.value = "";
+    rowScopeOpen.value = false;
+    rowScopeIndex.value = 0;
+  } else {
+    columnScopeQuery.value = selectedColumnScope.value.label || "All Columns";
+    columnScopeFilterQuery.value = "";
+    columnScopeOpen.value = false;
+    columnScopeIndex.value = 0;
+  }
+}
+
+function copyRowScopeToColumn(): void {
+  const nextColumn = normalizeSelectionForAxis(
+    selectedRowScope.value,
+    "column"
+  );
+  selectedColumnScope.value = nextColumn;
+  columnScopeQuery.value = nextColumn.label;
+  columnScopeFilterQuery.value = "";
+  columnScopeOpen.value = false;
+  columnScopeIndex.value = 0;
+  props.mapManager
+    ?.getLayersManager()
+    .setAxisScopes(selectedRowScope.value, selectedColumnScope.value);
+}
+
+function moveScopeHighlight(axis: ScopeAxis, delta: number): void {
+  const options =
+    axis === "row"
+      ? filteredRowScopeOptions.value
+      : filteredColumnScopeOptions.value;
+  if (options.length === 0) {
+    return;
+  }
+  const indexRef = axis === "row" ? rowScopeIndex : columnScopeIndex;
+  indexRef.value = (indexRef.value + delta + options.length) % options.length;
+}
+
+function acceptHighlightedScope(axis: ScopeAxis): void {
+  const options =
+    axis === "row"
+      ? filteredRowScopeOptions.value
+      : filteredColumnScopeOptions.value;
+  const index = axis === "row" ? rowScopeIndex.value : columnScopeIndex.value;
+  const option = options[index] ?? options[0];
+  if (option) {
+    selectScope(axis, option);
+  }
+}
+
+function syncScopeQueriesFromManager(): void {
+  const scopes = props.mapManager?.getLayersManager().getAxisScopes();
+  if (!scopes) {
+    selectedRowScope.value = { kind: "all", label: "All Rows" };
+    selectedColumnScope.value = { kind: "all", label: "All Columns" };
+  } else {
+    selectedRowScope.value = scopes.row;
+    selectedColumnScope.value = scopes.column;
+  }
+  if (!rowScopeOpen.value) {
+    rowScopeQuery.value = selectedRowScope.value.label || "All Rows";
+    rowScopeFilterQuery.value = "";
+  }
+  if (!columnScopeOpen.value) {
+    columnScopeQuery.value = selectedColumnScope.value.label || "All Columns";
+    columnScopeFilterQuery.value = "";
+  }
+}
+
+watch(
+  () => props.mapManager?.getLayersManager().axisScopeRevision,
+  () => syncScopeQueriesFromManager(),
+  { immediate: true }
+);
+
 const rulerModeLabel = computed(() => {
   switch (rulerCoordinateMode.value) {
     case "contig":
-      return "Ruler: in-ctg";
+      return "Ruler: In contig";
     case "scaffold":
-      return "Ruler: in-scf";
+      return "Ruler: In scaffold";
     default:
       return "Ruler: Global";
   }
@@ -281,18 +709,18 @@ function cycleRulerMode(): void {
     rulerCoordinateMode.value === "global"
       ? "contig"
       : rulerCoordinateMode.value === "contig"
-        ? "scaffold"
-        : "global";
+      ? "scaffold"
+      : "global";
   props.mapManager?.getLayersManager().scheduleRulerRender();
 }
 
-async function exportSvg() {
-  if (!props.mapManager || exportingType.value) return;
-  exportingType.value = "svg";
-  svgProgress.value = 0;
+const exportScope = ref<"viewport" | "whole-map">("viewport");
+const cropExportToMap = ref(true);
+
+function buildExportMetadata(): Record<string, unknown> {
   const cmap = colormap.value;
-  const metadata: Record<string, unknown> = {
-    filename: props.mapManager.getOptions().filename,
+  return {
+    filename: props.mapManager?.getOptions().filename,
     visualization: {
       preLogBase: preLogBase.value,
       postLogBase: postLogBase.value,
@@ -312,102 +740,32 @@ async function exportSvg() {
           : { type: cmap?.colormapType ?? "Unknown" },
     },
   };
-  try {
-    await props.mapManager.exportCurrentMapSvg(
-      (progress) => {
-        svgProgress.value = progress;
-      },
-      {
-        backgroundColor: mapBackgroundColor.value.RGBA,
-        metadata,
-      }
-    );
-  } catch (e) {
-    toast.error((e as Error)?.message ?? "Failed to export SVG");
-  } finally {
-    exportingType.value = null;
-  }
 }
 
-async function exportPng() {
-  if (!props.mapManager || exportingType.value) return;
-  exportingType.value = "png";
+async function runExport(type: "svg" | "png" | "pdf") {
+  const manager = props.mapManager;
+  if (!manager || exportingType.value) return;
+  exportingType.value = type;
   svgProgress.value = 0;
-  const cmap = colormap.value;
-  const metadata: Record<string, unknown> = {
-    filename: props.mapManager.getOptions().filename,
-    visualization: {
-      preLogBase: preLogBase.value,
-      postLogBase: postLogBase.value,
-      applyCoolerWeights: applyCoolerWeights.value,
-      resolutionScaling: resolutionScaling.value,
-      resolutionLinearScaling: resolutionLinearScaling.value,
-      colormap:
-        cmap instanceof SimpleLinearGradient
-          ? {
-              type: cmap.colormapType,
-              startColor: cmap.startColorRGBA?.RGBA,
-              endColor: cmap.endColorRGBA?.RGBA,
-              minSignal: cmap.minSignal,
-              maxSignal: cmap.maxSignal,
-            }
-          : { type: cmap?.colormapType ?? "Unknown" },
-    },
+  const options = {
+    backgroundColor: mapBackgroundColor.value.RGBA,
+    metadata: buildExportMetadata(),
+    scope: exportScope.value,
+    cropToMap: cropExportToMap.value,
+  };
+  const onProgress = (progress: number) => {
+    svgProgress.value = progress;
   };
   try {
-    await props.mapManager.exportCurrentMapPng(
-      (progress) => {
-        svgProgress.value = progress;
-      },
-      {
-        backgroundColor: mapBackgroundColor.value.RGBA,
-        metadata,
-      }
-    );
+    if (type === "svg") {
+      await manager.exportCurrentMapSvg(onProgress, options);
+    } else if (type === "png") {
+      await manager.exportCurrentMapPng(onProgress, options);
+    } else {
+      await manager.exportCurrentMapPdf(onProgress, options);
+    }
   } catch (e) {
-    toast.error((e as Error)?.message ?? "Failed to export PNG");
-  } finally {
-    exportingType.value = null;
-  }
-}
-
-async function exportPdf() {
-  if (!props.mapManager || exportingType.value) return;
-  exportingType.value = "pdf";
-  svgProgress.value = 0;
-  const cmap = colormap.value;
-  const metadata: Record<string, unknown> = {
-    filename: props.mapManager.getOptions().filename,
-    visualization: {
-      preLogBase: preLogBase.value,
-      postLogBase: postLogBase.value,
-      applyCoolerWeights: applyCoolerWeights.value,
-      resolutionScaling: resolutionScaling.value,
-      resolutionLinearScaling: resolutionLinearScaling.value,
-      colormap:
-        cmap instanceof SimpleLinearGradient
-          ? {
-              type: cmap.colormapType,
-              startColor: cmap.startColorRGBA?.RGBA,
-              endColor: cmap.endColorRGBA?.RGBA,
-              minSignal: cmap.minSignal,
-              maxSignal: cmap.maxSignal,
-            }
-          : { type: cmap?.colormapType ?? "Unknown" },
-    },
-  };
-  try {
-    await props.mapManager.exportCurrentMapPdf(
-      (progress) => {
-        svgProgress.value = progress;
-      },
-      {
-        backgroundColor: mapBackgroundColor.value.RGBA,
-        metadata,
-      }
-    );
-  } catch (e) {
-    toast.error((e as Error)?.message ?? "Failed to export PDF");
+    reportFailure(`Export ${type.toUpperCase()}`, e);
   } finally {
     exportingType.value = null;
   }
@@ -479,7 +837,23 @@ function buildSearchResults(): void {
   selectedIndex.value = 0;
 }
 
+const searchOpen = ref(false);
+
+function deferSearchClose(): void {
+  window.setTimeout(() => {
+    searchOpen.value = false;
+  }, 120);
+}
+
+function moveSearchHighlight(delta: number): void {
+  const count = searchResults.value.length;
+  if (count === 0) return;
+  searchOpen.value = true;
+  selectedIndex.value = (selectedIndex.value + delta + count) % count;
+}
+
 function onSearchInput(): void {
+  searchOpen.value = true;
   buildSearchResults();
   scheduleRemoteSearch();
 }
@@ -489,10 +863,12 @@ function selectResult(idx: number): void {
   const item = searchResults.value[idx];
   if (item) {
     searchQuery.value = item.name;
+    goToSelection();
   }
 }
 
 function goToSelection(): void {
+  searchOpen.value = false;
   if (!props.mapManager) return;
   const item =
     searchResults.value[selectedIndex.value] ?? searchResults.value[0];
@@ -503,7 +879,6 @@ function goToSelection(): void {
         .getContigDimensionHolder()
         .contigDescriptors.find((c) => c.contigId === Number(item.id)) ?? null;
     if (!contig) return;
-    const view = props.mapManager.getView();
     const prefix = props.mapManager.contigDimensionHolder.prefix_sum_bp;
     const ord =
       props.mapManager.contigDimensionHolder.contigIdToOrd[contig.contigId];
@@ -513,10 +888,7 @@ function goToSelection(): void {
     }
     const startBp = prefix[ord];
     const endBp = startBp + contig.contigLengthBp;
-    const midBp = (startBp + endBp) / 2;
-    const res = view.getResolution() ?? 1;
-    const midPx = midBp / res;
-    view.animate({ center: [midPx, -midPx] });
+    props.mapManager.linearTrackManager.centerOnBpRange(startBp, endBp);
     scheduleFeatureContextPrefetch(startBp, endBp);
   } else if (item.type === "Scaffold") {
     const scaffold = props.mapManager.scaffoldHolder.getScaffoldById(
@@ -527,11 +899,10 @@ function goToSelection(): void {
       toast.error("Scaffold has no borders in the current assembly");
       return;
     }
-    const view = props.mapManager.getView();
-    const midBp = (borders.startBP + borders.endBP) / 2;
-    const res = view.getResolution() ?? 1;
-    const midPx = midBp / res;
-    view.animate({ center: [midPx, -midPx] });
+    props.mapManager.linearTrackManager.centerOnBpRange(
+      borders.startBP,
+      borders.endBP
+    );
     scheduleFeatureContextPrefetch(borders.startBP, borders.endBP);
   } else if (
     typeof item.featureStartBp === "number" &&
@@ -666,75 +1037,6 @@ onBeforeUnmount(() => {
   }
 });
 
-function checkOptionsAndSnapToContigIntersection() {
-  // alert("Row " + rowContigId.value + " Column " + columnContigId.value);
-  const rowCtgId = rowContigId.value;
-  const colCtgId = columnContigId.value;
-  if (rowCtgId && colCtgId && props.mapManager) {
-    const mapManager = props.mapManager;
-    const map = props.mapManager?.getMap();
-    const view = map?.getView();
-    if (mapManager && map && view) {
-      const mapSize = map.getSize() ?? [100, 100];
-      const rowContigSizes =
-        mapManager.getContigDimensionHolder().contigDescriptors[rowCtgId]
-          .contigLengthBins;
-      const colContigSizes =
-        mapManager.getContigDimensionHolder().contigDescriptors[colCtgId]
-          .contigLengthBins;
-      const minWidth = Math.min(200, mapSize[0]);
-      const minHeight = Math.min(200, mapSize[1]);
-      let bpResolutionToSnapAt: number = rowContigSizes.keys().next().value;
-      for (const [res, rowCtgLen] of rowContigSizes) {
-        const colCtgLen = colContigSizes.get(res) ?? 1;
-        if (
-          minWidth < colCtgLen &&
-          colCtgLen < mapSize[0] &&
-          minHeight < rowCtgLen &&
-          rowCtgLen < mapSize[1]
-        ) {
-          bpResolutionToSnapAt = res;
-          break;
-        }
-      }
-      const [lu_x, lu_y] =
-        mapManager.viewAndLayersManager.bpCoordinatesToGlobalCoordinates(
-          [
-            mapManager.getContigDimensionHolder().prefix_sum_bp[
-              mapManager.getContigDimensionHolder().contigIdToOrd[colCtgId]
-            ],
-            mapManager.getContigDimensionHolder().prefix_sum_bp[
-              mapManager.getContigDimensionHolder().contigIdToOrd[rowCtgId]
-            ],
-          ],
-          bpResolutionToSnapAt
-        );
-      const [br_x, br_y] =
-        mapManager.viewAndLayersManager.bpCoordinatesToGlobalCoordinates(
-          [
-            mapManager.getContigDimensionHolder().prefix_sum_bp[
-              mapManager.getContigDimensionHolder().contigIdToOrd[1 + colCtgId]
-            ],
-            mapManager.getContigDimensionHolder().prefix_sum_bp[
-              mapManager.getContigDimensionHolder().contigIdToOrd[1 + rowCtgId]
-            ],
-          ],
-          bpResolutionToSnapAt
-        );
-      const centerCoordiate = [(lu_x + br_x) / 2, (lu_y + br_y) / 2];
-      view.animate({
-        center: centerCoordiate,
-        resolution:
-          mapManager.viewAndLayersManager.getPixelResolutionForBpResolution(
-            bpResolutionToSnapAt
-          ),
-      });
-
-      //([lu_x, lu_y, br_x, br_y], {minResolution: bpResolutionToSnapAt})
-    }
-  }
-}
-
 async function reloadTiles() {
   try {
     await props.mapManager?.reloadTilesFromBackend();
@@ -744,50 +1046,43 @@ async function reloadTiles() {
   }
 }
 
+const signalDisplayModePending = ref(false);
 async function onSignalDisplayModeChanged() {
+  if (!props.mapManager || signalDisplayModePending.value) return;
+  signalDisplayModePending.value = true;
   try {
-    await props.mapManager?.visualizationManager.sendVisualizationOptionsAndReload();
+    await props.mapManager.visualizationManager.setSignalDisplayMode(
+      signalDisplayMode.value
+    );
   } catch (error) {
     toast.error("Failed to update signal display mode");
-    console.error(error);
+    console.debug(error);
+  } finally {
+    signalDisplayModePending.value = false;
   }
 }
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-// const emit = defineEmits<{
-//   (e: "reloadTiles"): void;
-//   // (e: "normalizationChanged", normalizationType: NormalizationType): void;
-// }>();
-
-// const normalizationTypeInt: Ref<number> = ref(0);
-
-/*
-function onNormalizationChanged() {
-  let normalizationType: NormalizationType;
-  switch (Number(unref(normalizationTypeInt))) {
-    case 0:
-      normalizationType = NormalizationType.LINEAR;
-      break;
-    case 1:
-      normalizationType = NormalizationType.LOG2;
-      break;
-    case 2:
-      normalizationType = NormalizationType.LOG10;
-      break;
-    case 3:
-      normalizationType = NormalizationType.COOLER_BALANCE;
-      break;
-    default:
-      throw new Error(
-        `Unknown Normalization Type requested: ${normalizationTypeInt.value}`
-      );
-  }
-  emit("normalizationChanged", normalizationType);
-}
-*/
 </script>
 
 <style scoped>
+/* Narrow windows: tighter spacing so the toolbar takes fewer rows. */
+@media (max-width: 767.98px) {
+  .header-ribbon {
+    padding: 4px 8px;
+    gap: 4px 8px;
+    min-height: 0;
+  }
+}
+
+.export-scope {
+  width: 110px;
+  flex-shrink: 0;
+}
+.scope-truncated {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  font-style: italic;
+  opacity: 0.75;
+}
 .header-ribbon {
   /* header */
 
@@ -796,17 +1091,17 @@ function onNormalizationChanged() {
   flex-direction: row;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: nowrap;
-  padding: 12px 16px;
-  gap: 16px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  gap: 8px 12px;
 
   width: 100%;
-  height: 53px;
+  min-height: 53px;
+  height: auto;
 
   background: linear-gradient(180deg, #909aa4 0%, #7f8993 42%, #6d7781 100%);
   color: rgba(24, 30, 38, 0.95);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32),
     inset 0 -1px 0 rgba(0, 0, 0, 0.28);
 
   /* Inside auto layout */
@@ -847,8 +1142,9 @@ function onNormalizationChanged() {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
   flex-wrap: nowrap;
+  min-width: 0;
 }
 
 #left-header-block {
@@ -860,7 +1156,8 @@ function onNormalizationChanged() {
   gap: 16px;
 
   width: auto;
-  height: 30px;
+  min-height: 30px;
+  height: auto;
 
   /* Inside auto layout */
   flex: 1 1 auto;
@@ -870,9 +1167,10 @@ function onNormalizationChanged() {
 }
 
 #right-header-block {
-  gap: 12px;
+  gap: 6px;
   margin-left: auto;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 #search-container {
@@ -979,6 +1277,77 @@ function onNormalizationChanged() {
   color: var(--hict-surface-muted, #6c757d);
 }
 
+.scope-picker {
+  position: relative;
+  width: 180px;
+  flex: 0 0 180px;
+}
+
+.scope-picker .form-control {
+  height: 30px;
+  font-size: 13px;
+}
+
+.scope-copy-control {
+  flex: 0 0 auto;
+}
+
+.scope-copy-button {
+  height: 30px;
+  width: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scope-dropdown {
+  position: absolute;
+  top: 34px;
+  left: 0;
+  width: 280px;
+  max-height: 280px;
+  overflow: auto;
+  background: var(--hict-surface-bg, #ffffff);
+  border: 1px solid var(--hict-surface-border, #ced4da);
+  border-radius: 6px;
+  box-shadow: var(--hict-surface-shadow, 0 8px 16px rgba(0, 0, 0, 0.12));
+  z-index: 35;
+  padding: 4px;
+}
+
+.scope-result {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 6px 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.scope-result:hover,
+.scope-result.active {
+  background: var(--hict-surface-bg-muted, #f1f3f5);
+}
+
+.scope-type {
+  font-size: 11px;
+  color: var(--hict-surface-muted, #6c757d);
+  min-width: 54px;
+}
+
+.scope-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--hict-surface-fg, #212529);
+}
+
 #reload-tiles-button {
   /* _base */
 
@@ -999,7 +1368,7 @@ function onNormalizationChanged() {
 
   text-align: center;
 
-  width: 115px;
+  width: auto;
   height: 30px;
 
   /* Global/07. Light */
@@ -1028,7 +1397,7 @@ function onNormalizationChanged() {
   align-items: center;
   padding: 4px 8px;
 
-  min-width: 140px;
+  min-width: 2.45rem;
   height: 30px;
 
   /* Global/07. Light */
@@ -1045,7 +1414,82 @@ function onNormalizationChanged() {
 
 .export-group {
   display: flex;
+  flex: 0 1 auto;
   gap: 6px;
+  min-width: 0;
+}
+
+.export-group .btn,
+.export-menu .btn,
+#reload-tiles-button {
+  flex-direction: row;
+  align-items: center;
+  display: inline-flex;
+  gap: 0.25rem;
+  justify-content: center;
+  min-width: 2.45rem;
+  white-space: nowrap;
+}
+
+.export-button-label,
+.optional-button-label,
+.ruler-button-label {
+  margin-left: 0.25rem;
+}
+
+.export-menu {
+  min-width: 15rem;
+}
+
+.export-menu .export-scope {
+  width: 100%;
+}
+
+@media (max-width: 1320px) {
+  /* Keep the format names: three identical icons are indistinguishable. */
+  .export-button-icon {
+    display: none;
+  }
+
+  #export-svg-button,
+  #export-png-button,
+  #export-pdf-button {
+    padding-left: 0.55rem;
+    padding-right: 0.55rem;
+  }
+}
+
+@media (max-width: 1120px) {
+  .optional-button-label {
+    display: none;
+  }
+
+  #ruler-mode-button {
+    max-width: 8.75rem;
+  }
+
+  .ruler-button-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+@media (max-width: 900px) {
+  #left-header-block,
+  #right-header-block {
+    flex: 1 1 100%;
+  }
+
+  #right-header-block {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+
+  #left-header-block,
+  #right-header-block,
+  .export-group {
+    flex-wrap: wrap;
+  }
 }
 
 #global-search-button {

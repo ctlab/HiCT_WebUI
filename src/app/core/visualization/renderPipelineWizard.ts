@@ -21,6 +21,10 @@
 
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
+import {
+  buildSignalInput,
+  flagsFromOptions,
+} from "@/app/core/visualization/signalProfile";
 
 export type WizardViewMode = "single" | "overlay" | "split";
 export type WizardBlendMode =
@@ -69,13 +73,13 @@ type PipelineExpression =
       bottomOpacity: number;
     };
 
-const BUILTIN_COOLER_WEIGHTS_TRACK_ID = "__builtin_cooler_weights__";
-
 const cloneExpression = <T>(value: T): T =>
   JSON.parse(JSON.stringify(value)) as T;
 
 const safeHexa = (value: string, fallback: string): string => {
-  const normalized = String(value ?? fallback).trim().toLowerCase();
+  const normalized = String(value ?? fallback)
+    .trim()
+    .toLowerCase();
   if (/^#[0-9a-f]{8}$/.test(normalized)) {
     return normalized;
   }
@@ -88,78 +92,11 @@ const safeHexa = (value: string, fallback: string): string => {
 const buildSignalExpression = (
   source: SourceName,
   options: VisualizationOptions
-): PipelineExpression => {
-  let expression: PipelineExpression = {
-    type: "source",
+): PipelineExpression =>
+  buildSignalInput(
     source,
-  };
-  if (
-    Number.isFinite(options.preLogBase) &&
-    options.preLogBase > 0 &&
-    Math.abs(options.preLogBase - 1) > 1e-9
-  ) {
-    expression = {
-      type: "log",
-      input: expression,
-      base: options.preLogBase,
-    };
-  }
-  if (options.resolutionScaling) {
-    expression = {
-      type: "binary",
-      op: "MUL",
-      left: expression,
-      right: {
-        type: "dynamic",
-        field: "RESOLUTION_SCALING_COEFF",
-      },
-    };
-  }
-  if (options.resolutionLinearScaling) {
-    expression = {
-      type: "binary",
-      op: "MUL",
-      left: expression,
-      right: {
-        type: "dynamic",
-        field: "RESOLUTION_LINEAR_SCALING_COEFF",
-      },
-    };
-  }
-  if (options.applyCoolerWeights) {
-    expression = {
-      type: "binary",
-      op: "MUL",
-      left: expression,
-      right: {
-        type: "binary",
-        op: "MUL",
-        left: {
-          type: "track1d",
-          trackId: BUILTIN_COOLER_WEIGHTS_TRACK_ID,
-          axis: "ROW",
-        },
-        right: {
-          type: "track1d",
-          trackId: BUILTIN_COOLER_WEIGHTS_TRACK_ID,
-          axis: "COL",
-        },
-      },
-    };
-  }
-  if (
-    Number.isFinite(options.postLogBase) &&
-    options.postLogBase > 0 &&
-    Math.abs(options.postLogBase - 1) > 1e-9
-  ) {
-    expression = {
-      type: "log",
-      input: expression,
-      base: options.postLogBase,
-    };
-  }
-  return expression;
-};
+    flagsFromOptions(options)
+  ) as unknown as PipelineExpression;
 
 export const buildColorExpression = (
   source: SourceName,
@@ -231,9 +168,7 @@ export const buildWizardRenderPipelineConfig = (options: {
       topOpacity:
         typeof options.topOpacity === "number" ? options.topOpacity : 0.5,
       bottomOpacity:
-        typeof options.bottomOpacity === "number"
-          ? options.bottomOpacity
-          : 1.0,
+        typeof options.bottomOpacity === "number" ? options.bottomOpacity : 1.0,
     };
     return {
       enabled: true,

@@ -38,6 +38,7 @@
       @value-change="onValueChange"
     >
       <Column
+        v-if="props.multiSelect"
         header=""
         body-class="selection-cell"
         header-class="selection-cell"
@@ -55,12 +56,27 @@
           />
         </template>
       </Column>
-      <Column field="name" header="Name" sortable style="min-width: 14rem; width: 24%">
+      <Column
+        field="name"
+        header="Name"
+        sortable
+        style="min-width: 14rem; width: 24%"
+      >
         <template #body="{ data }">
           <span class="file-name-cell">
             <i :class="data.iconClass" aria-hidden="true"></i>
-            <span :title="data.name">{{ data.name }}</span>
-            <span v-if="data.symbolicLink" class="file-link-badge" title="Symbolic link">link</span>
+            <span
+              :title="data.name"
+              :tabindex="props.multiSelect ? undefined : 0"
+              @keydown.enter.stop.prevent="onRowDoubleClick({ data })"
+              >{{ data.name }}</span
+            >
+            <span
+              v-if="data.symbolicLink"
+              class="file-link-badge"
+              title="Symbolic link"
+              >link</span
+            >
           </span>
         </template>
       </Column>
@@ -180,7 +196,8 @@ const lastSelectedPath = ref<string | null>(null);
 const tableRows = computed<FileSelectionTableRow[]>(() =>
   props.entries.map((entry) => {
     const path = entry.path;
-    const name = entry.name && entry.name.trim().length > 0 ? entry.name : basename(path);
+    const name =
+      entry.name && entry.name.trim().length > 0 ? entry.name : basename(path);
     const extension = entry.extension ?? extensionOf(path);
     const type = entry.type ?? "file";
     return {
@@ -272,7 +289,10 @@ const emitSelectedPaths = (selected: Set<string>): void => {
   emit("update:selectedPaths", ordered);
 };
 
-const onRowClick = (event: { data?: FileSelectionTableRow; originalEvent?: Event }): void => {
+const onRowClick = (event: {
+  data?: FileSelectionTableRow;
+  originalEvent?: Event;
+}): void => {
   const path = event.data?.path;
   if (path !== undefined) {
     selectPath(path, event.originalEvent as MouseEvent | undefined);
@@ -304,12 +324,20 @@ const extensionOf = (path: string): string => {
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
 };
 
-const iconClassForPath = (path: string, extension: string, type: "file" | "directory" = "file"): string => {
+const iconClassForPath = (
+  path: string,
+  extension: string,
+  type: "file" | "directory" = "file"
+): string => {
   if (type === "directory") {
     return "pi pi-fw pi-folder";
   }
   const normalized = path.toLowerCase();
-  if (normalized.endsWith(".hict") || normalized.endsWith(".hict.hdf5") || normalized.endsWith(".hdf5")) {
+  if (
+    normalized.endsWith(".hict") ||
+    normalized.endsWith(".hict.hdf5") ||
+    normalized.endsWith(".hdf5")
+  ) {
     return "pi pi-fw pi-map";
   }
   if (
@@ -329,7 +357,11 @@ const iconClassForPath = (path: string, extension: string, type: "file" | "direc
   if (normalized.endsWith(".bw") || normalized.endsWith(".bigwig")) {
     return "pi pi-fw pi-chart-line";
   }
-  if (normalized.endsWith(".bed") || normalized.endsWith(".bed.gz") || normalized.endsWith(".bam")) {
+  if (
+    normalized.endsWith(".bed") ||
+    normalized.endsWith(".bed.gz") ||
+    normalized.endsWith(".bam")
+  ) {
     return "pi pi-fw pi-list";
   }
   if (["gff", "gtf", "gff3"].includes(extension)) {
@@ -339,7 +371,10 @@ const iconClassForPath = (path: string, extension: string, type: "file" | "direc
 };
 
 const isTextMatrixPath = (normalized: string): boolean => {
-  const stripped = normalized.replace(/\.(gz|bgz|xz|zst|zstd|bz2|lz4|lzo)$/i, "");
+  const stripped = normalized.replace(
+    /\.(gz|bgz|xz|zst|zstd|bz2|lz4|lzo)$/i,
+    ""
+  );
   return (
     stripped.endsWith(".matrix") ||
     stripped.endsWith(".coo") ||
@@ -366,7 +401,9 @@ const formatBytes = (sizeBytes: number): string => {
     value /= 1024;
     unitIdx++;
   }
-  return `${value.toFixed(value >= 10 || unitIdx === 0 ? 0 : 1)} ${units[unitIdx]}`;
+  return `${value.toFixed(value >= 10 || unitIdx === 0 ? 0 : 1)} ${
+    units[unitIdx]
+  }`;
 };
 
 const formatTimestamp = (timestampMs: number): string => {
@@ -395,7 +432,8 @@ const formatTimestamp = (timestampMs: number): string => {
   cursor: pointer;
 }
 
-.file-selection-datatable :deep(.p-datatable-tbody > tr.file-selection-row-selected > td) {
+.file-selection-datatable
+  :deep(.p-datatable-tbody > tr.file-selection-row-selected > td) {
   background: rgba(56, 132, 255, 0.16);
 }
 

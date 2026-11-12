@@ -25,7 +25,9 @@
   </div>
   <div class="w-100">
     <div class="threshold-compact-card">
-      <div class="threshold-card-title">Range / Thresholds</div>
+      <div class="threshold-card-title">
+        Color range{{ percentageSignalScale ? " (%)" : "" }}
+      </div>
       <div class="threshold-input-grid">
         <label class="threshold-field">
           <span>Lower</span>
@@ -33,6 +35,7 @@
             <input
               class="form-control form-control-sm threshold-number-input"
               type="number"
+              :aria-label="'Lower signal threshold'"
               lang="en"
               step="any"
               v-model.number="lowerBound"
@@ -51,6 +54,7 @@
             <input
               class="form-control form-control-sm threshold-number-input"
               type="number"
+              aria-label="Upper signal threshold"
               lang="en"
               step="any"
               v-model.number="upperBound"
@@ -65,84 +69,158 @@
         </label>
       </div>
 
-      <div
-        class="threshold-range-slider"
-        aria-label="Threshold range"
-        :style="thresholdSliderVars"
-      >
-        <div class="threshold-range-track" :style="thresholdTrackStyle"></div>
-        <input
-          class="threshold-range-input threshold-range-input_lower"
-          type="range"
-          :min="sliderPositionMin"
-          :max="sliderPositionMax"
-          :step="sliderStep"
-          :value="lowerSliderValue"
-          aria-label="Lower threshold"
-          @input="onLowerRangeInput"
-        />
-        <input
-          class="threshold-range-input threshold-range-input_upper"
-          type="range"
-          :min="sliderPositionMin"
-          :max="sliderPositionMax"
-          :step="sliderStep"
-          :value="upperSliderValue"
-          aria-label="Upper threshold"
-          @input="onUpperRangeInput"
-        />
-        <div class="threshold-range-labels">
-          <input
-            v-model.number="sliderLowerLimit"
-            type="number"
-            class="threshold-edge-input"
-            step="any"
-            aria-label="Slider minimum signal"
-            @change="onSliderLimitChanged"
-          />
-          <span>{{ formatSignal(lowerBound) }} - {{ formatSignal(upperBound) }}</span>
-          <input
-            v-model.number="sliderUpperLimit"
-            type="number"
-            class="threshold-edge-input text-end"
-            step="any"
-            aria-label="Slider maximum signal"
-            @change="onSliderLimitChanged"
-          />
+      <SignalRangeControl
+        :min="sliderPositionMin"
+        :max="sliderPositionMax"
+        :lower="lowerSliderValue"
+        :upper="upperSliderValue"
+        :lower-text="formatSignal(lowerBound)"
+        :upper-text="formatSignal(upperBound)"
+        :lower-color="fromColor.RGBA"
+        :upper-color="toColor.RGBA"
+        @lower="onLowerRangeInput"
+        @upper="onUpperRangeInput"
+      />
+      <div class="range-actions">
+        <div class="scale-group">
+          <span id="slider-scale-label" class="scale-caption"
+            >Slider scale</span
+          >
+          <div
+            class="scale-choice"
+            role="group"
+            aria-labelledby="slider-scale-label"
+            title="Changes slider sensitivity, not matrix values"
+          >
+            <button
+              type="button"
+              :aria-pressed="!sliderLogScale"
+              @click="sliderLogScale = false"
+            >
+              Linear
+            </button>
+            <button
+              type="button"
+              :aria-pressed="sliderLogScale"
+              @click="sliderLogScale = true"
+            >
+              Log
+            </button>
+          </div>
         </div>
+        <button
+          type="button"
+          class="range-text-button"
+          @click="focusThresholds"
+          title="Expand the selected range across the slider for finer adjustment"
+        >
+          Focus range
+        </button>
       </div>
-
-      <div class="threshold-toolbar">
-        <div class="form-check form-switch threshold-log-switch">
-          <input
-            id="threshold-log-scale"
-            v-model="sliderLogScale"
-            class="form-check-input"
-            type="checkbox"
-            role="switch"
-          />
-          <label class="form-check-label" for="threshold-log-scale">
-            log10 scale
-          </label>
+      <details class="range-details">
+        <summary>
+          <span>Slider limits &amp; data</span
+          ><span class="range-summary-value"
+            >{{ formatSignal(sliderMin) }} – {{ formatSignal(sliderMax) }}</span
+          >
+        </summary>
+        <p class="range-help">
+          Slider limits control adjustment precision. They do not change the
+          selected colors or thresholds.
+        </p>
+        <div class="domain-inputs">
+          <label
+            >Minimum<input
+              v-model.number="sliderLowerLimit"
+              type="number"
+              step="any"
+              aria-label="Slider minimum signal"
+              @change="onSliderLimitChanged"
+          /></label>
+          <label
+            >Maximum<input
+              v-model.number="sliderUpperLimit"
+              type="number"
+              step="any"
+              aria-label="Slider maximum signal"
+              @change="onSliderLimitChanged"
+          /></label>
         </div>
-        <details v-if="applyCoolerWeights" class="cooler-weights-hint">
-          <summary title="Cooler weights warning">
-            <i class="bi bi-exclamation-triangle-fill"></i>
+        <button
+          type="button"
+          class="range-text-button"
+          title="Use the exact minimum and maximum of the loaded tiles, including rare extreme pixels"
+          @click="useLoadedRange"
+        >
+          Use full loaded range
+        </button>
+        <p class="range-help" role="status" data-testid="exact-range-status">
+          {{ percentageSignalScale ? "Percentage scale: 0–100" : rangeStatus }}
+        </p>
+        <button
+          v-if="!percentageSignalScale"
+          type="button"
+          class="range-text-button"
+          @click="fetchExactRange"
+        >
+          Scan whole map
+        </button>
+        <span v-if="!percentageSignalScale" class="range-help">
+          · Reads all tiles; may take time.</span
+        >
+      </details>
+      <div class="threshold-toolbar">
+        <details v-if="coolerWeightsHaveNaNs" :class="coolerWeightsHintClass">
+          <summary
+            :title="
+              applyCoolerWeights
+                ? 'Cooler weights warning'
+                : 'Excluded-bin settings'
+            "
+          >
+            <i
+              v-if="applyCoolerWeights"
+              class="bi bi-exclamation-triangle-fill"
+            ></i>
             Cooler weights
           </summary>
-          <div>
-            Bins with missing or near-zero weights can appear as white stripes;
-            compare with an unweighted/raw preset before treating those regions
-            as absent signal.
+          <div v-if="coolerWeightsHaveNaNs">
+            Detected {{ coolerWeightsNaNCount }} non-finite Cooler balancing
+            weight{{ coolerWeightsNaNCount === 1 ? "" : "s" }}. Selected tactic:
+            {{ coolerWeightsNaNPolicyLabel }}.
+            <label
+              class="form-label small mt-2 mb-1"
+              for="cooler-weights-nan-policy"
+            >
+              NaN weight tactic
+            </label>
+            <select
+              id="cooler-weights-nan-policy"
+              v-model="coolerWeightsNaNPolicy"
+              class="form-select form-select-sm"
+              @change="onCoolerWeightsNaNPolicyChanged"
+            >
+              <option value="DISABLE_WEIGHTS">Do not use Cooler weights</option>
+              <option value="REPLACE_NANS_WITH_ONE">
+                Replace NaNs with weight 1.0
+              </option>
+              <option value="REPLACE_NANS_WITH_ZERO">
+                Replace NaNs with weight 0
+              </option>
+            </select>
           </div>
         </details>
       </div>
 
+      <NormalizationSelector
+        :map-manager="props.mapManager"
+        @apply="applySettings"
+      />
+
       <button
         type="button"
         id="gradient-apply-button"
-        class="btn gradient-apply-button"
-        :style="gradstyle"
+        class="btn btn-primary gradient-apply-button"
         @click="applySettings"
       >
         Apply
@@ -154,20 +232,38 @@
 <script setup lang="ts">
 import { computed, Ref, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import SignalRangeControl from "./SignalRangeControl.vue";
+import NormalizationSelector from "../upper_ribbon/NormalizationSelector.vue";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import { toast } from "vue-sonner";
+import { reportFailure } from "@/app/ui/reportFailure";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import { ColorTranslator } from "colortranslator";
 import type { CurrentSignalRangeResponse } from "@/app/core/net/api/response";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import { robustUpperLimit } from "@/app/core/visualization/tileSignalRange";
+import {
+  scanExactSignalRange,
+  type ExactRange,
+} from "@/app/core/visualization/exactSignalRange";
 const visualizationOptionsStore = useVisualizationOptionsStore();
-const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
-  visualizationOptionsStore
-);
+const {
+  preLogBase,
+  applyCoolerWeights,
+  postLogBase,
+  colormap,
+  coolerWeightsNaNPolicy,
+  coolerWeightsHaveNaNs,
+  coolerWeightsNaNCount,
+} = storeToRefs(visualizationOptionsStore);
 const matrixViewStore = useMatrixViewStore();
-const { presentationMode, activeVisualizationSource } = storeToRefs(matrixViewStore);
+const {
+  presentationMode,
+  activeVisualizationSource,
+  activeVisualizationTargetId,
+} = storeToRefs(matrixViewStore);
 
 const errorMessage: Ref<string | undefined> = ref(undefined);
 
@@ -191,8 +287,20 @@ const sliderBoundsManual: Ref<boolean> = ref(false);
 const sliderLogScale: Ref<boolean> = ref(false);
 const syncingFromColormap: Ref<boolean> = ref(false);
 const liveApplyReady: Ref<boolean> = ref(false);
+const percentageSignalScale: Ref<boolean> = ref(false);
 let registeredRangeMapManager: ContactMapManager | undefined;
 let liveApplyTimer: number | undefined;
+let optionsHydrationGeneration = 0;
+let rangeController: AbortController | undefined;
+let rangeRequestKey = "";
+let rangeTimer: number | undefined;
+let rangeGeneration = 0;
+let rangeProbe = 0;
+const rangeStatus = ref("Waiting for visible tile limits");
+let activeRangeExpression: Record<string, unknown> | undefined;
+let rangeMap: ContactMapManager | undefined;
+const onViewportRangeChanged = () => refreshProcessedRange();
+const rangeCache = new Map<string, ExactRange>();
 const LOG_SLIDER_FLOOR_FRACTION = 1e-10;
 const LIVE_APPLY_DELAY_MS = 350;
 
@@ -203,12 +311,22 @@ const toColorFn: Ref<() => ColorTranslator> = ref(() => toColor.value) as Ref<
   () => ColorTranslator
 >;
 
-const gradstyle = computed<Record<string, string>>(() => ({
-  width: "100%",
-  height: "1.8rem",
-  margin: "0",
-  "background-image": `linear-gradient(to right, ${fromColor.value.RGBA}, ${toColor.value.RGBA})`,
-  color: "#ffffff",
+const coolerWeightsNaNPolicyLabel = computed(() => {
+  switch (coolerWeightsNaNPolicy.value) {
+    case "DISABLE_WEIGHTS":
+      return "do not use Cooler weights";
+    case "REPLACE_NANS_WITH_ZERO":
+      return "replace NaNs with weight 0";
+    case "REPLACE_NANS_WITH_ONE":
+    default:
+      return "replace NaNs with weight 1";
+  }
+});
+
+const coolerWeightsHintClass = computed(() => ({
+  "cooler-weights-hint": true,
+  "cooler-weights-hint_error":
+    applyCoolerWeights.value && coolerWeightsHaveNaNs.value,
 }));
 
 const sliderMin = computed(() =>
@@ -230,39 +348,18 @@ const sliderPositionMin = computed(() => toSliderPosition(sliderMin.value));
 const sliderPositionMax = computed(() => toSliderPosition(sliderMax.value));
 const lowerSliderValue = computed(() => toSliderPosition(lowerBound.value));
 const upperSliderValue = computed(() => toSliderPosition(upperBound.value));
-const sliderStep = computed(() => {
-  if (sliderLogScale.value) {
-    return 1e-12;
-  }
-  const span = Math.max(
-    sliderPositionMax.value - sliderPositionMin.value,
-    Number.MIN_VALUE
-  );
-  return Math.max(span / 1_000_000, Number.MIN_VALUE);
-});
-const thresholdSliderVars = computed<Record<string, string>>(() => ({
-  "--lower-thumb-color": fromColor.value.RGBA,
-  "--upper-thumb-color": toColor.value.RGBA,
-}));
-const thresholdTrackStyle = computed(() => {
-  const span = Math.max(
-    sliderPositionMax.value - sliderPositionMin.value,
-    Number.EPSILON
-  );
-  const left =
-    ((Math.min(lowerSliderValue.value, upperSliderValue.value) -
-      sliderPositionMin.value) /
-      span) *
-    100;
-  const right =
-    ((Math.max(lowerSliderValue.value, upperSliderValue.value) -
-      sliderPositionMin.value) /
-      span) *
-    100;
-  return {
-    "background-image": `linear-gradient(to right, #e9ecef 0%, #e9ecef ${left}%, ${fromColor.value.RGBA} ${left}%, ${toColor.value.RGBA} ${right}%, #e9ecef ${right}%, #e9ecef 100%)`,
-  };
-});
+function focusThresholds() {
+  if (!(upperBound.value > lowerBound.value)) return;
+  sliderBoundsManual.value = true;
+  sliderLowerLimit.value = lowerBound.value;
+  sliderUpperLimit.value = upperBound.value;
+}
+function useLoadedRange() {
+  sliderBoundsManual.value = false;
+  sliderLowerLimit.value = signalMin.value;
+  sliderUpperLimit.value =
+    signalMax.value > signalMin.value ? signalMax.value : signalMin.value + 1;
+}
 
 watch(
   () => {
@@ -366,46 +463,43 @@ watch(
 watch(
   () => props.mapManager,
   () => {
-    if (props.mapManager) {
-      liveApplyReady.value = false;
+    if (props.mapManager && !props.mapManager.isDisposed) {
       registerSignalRangeCallback(props.mapManager);
-      props.mapManager.visualizationManager
-        .loadVisualizationOptionsForSource(activeSourceForOptions())
-        .then(() => {
-          updateFromStore();
-          liveApplyReady.value = true;
-        });
+      void hydrateOptionsForActiveSource();
     }
   }
 );
 
 watch(
-  () => [activeVisualizationSource.value, presentationMode.value] as const,
+  () =>
+    [
+      activeVisualizationSource.value,
+      presentationMode.value,
+      activeVisualizationTargetId.value,
+    ] as const,
   () => {
-    liveApplyReady.value = false;
-    props.mapManager?.visualizationManager
-      .loadVisualizationOptionsForSource(activeSourceForOptions())
-      .then(() => {
-        updateFromStore();
-        liveApplyReady.value = true;
-      })
-      .catch(() => undefined);
+    if (!props.mapManager || props.mapManager.isDisposed) return;
+    void hydrateOptionsForActiveSource();
   }
 );
 
 onMounted(() => {
-  if (props.mapManager) {
+  window.addEventListener("hict:render-pipeline-changed", onPipelineChanged);
+  if (props.mapManager && !props.mapManager.isDisposed) {
     registerSignalRangeCallback(props.mapManager);
   }
-  props.mapManager?.visualizationManager
-    .loadVisualizationOptionsForSource(activeSourceForOptions())
-    .then(() => {
-      updateFromStore();
-      liveApplyReady.value = true;
-    });
+  if (!props.mapManager || props.mapManager.isDisposed) return;
+  void hydrateOptionsForActiveSource();
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("hict:render-pipeline-changed", onPipelineChanged);
+  rangeMap?.getMap().un("moveend", onViewportRangeChanged);
+  rangeMap?.getMap().un("rendercomplete", onViewportRangeChanged);
+  ++rangeGeneration;
+  ++rangeProbe;
+  window.clearTimeout(rangeTimer);
+  rangeController?.abort();
   if (liveApplyTimer !== undefined) {
     window.clearTimeout(liveApplyTimer);
     liveApplyTimer = undefined;
@@ -413,7 +507,64 @@ onBeforeUnmount(() => {
 });
 
 function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
-  return presentationMode.value !== "single" ? activeVisualizationSource.value : undefined;
+  return activeVisualizationSource.value;
+}
+
+function onPipelineChanged(): void {
+  void hydrateOptionsForActiveSource();
+}
+
+async function hydrateOptionsForActiveSource(): Promise<void> {
+  const manager = props.mapManager;
+  if (!manager || manager.isDisposed) return;
+  ++rangeProbe;
+  ++rangeGeneration;
+  rangeController?.abort();
+  rangeRequestKey = "";
+  rangeStatus.value = "Waiting for visible tile limits";
+  activeRangeExpression = undefined;
+  const generation = ++optionsHydrationGeneration;
+  liveApplyReady.value = false;
+  percentageSignalScale.value = false;
+  if (liveApplyTimer !== undefined) {
+    window.clearTimeout(liveApplyTimer);
+    liveApplyTimer = undefined;
+  }
+  try {
+    await manager.visualizationManager.loadVisualizationOptionsForSource(
+      activeSourceForOptions(),
+      activeVisualizationTargetId.value
+    );
+    if (generation !== optionsHydrationGeneration || manager.isDisposed) return;
+    const targets =
+      await manager.visualizationManager.getVisualizationPipelineTargets();
+    if (generation !== optionsHydrationGeneration || manager.isDisposed) return;
+    const sourceTargets = targets.filter(
+      (target) => target.source === activeVisualizationSource.value
+    );
+    const activeTarget =
+      sourceTargets.find(
+        (target) => target.id === activeVisualizationTargetId.value
+      ) ?? sourceTargets[0];
+    percentageSignalScale.value = activeTarget?.displayUnit === "PERCENT";
+    activeRangeExpression =
+      await manager.visualizationManager.getSourceSignalExpression(
+        activeVisualizationSource.value,
+        activeVisualizationTargetId.value
+      );
+    if (generation !== optionsHydrationGeneration || manager.isDisposed) return;
+    updateFromStore();
+    rangeRequestKey = "";
+    void refreshProcessedRange();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    if (generation === optionsHydrationGeneration && !manager.isDisposed) {
+      liveApplyReady.value = true;
+    }
+  } catch {
+    if (generation === optionsHydrationGeneration) {
+      liveApplyReady.value = true;
+    }
+  }
 }
 
 function registerSignalRangeCallback(mapManager: ContactMapManager): void {
@@ -421,10 +572,27 @@ function registerSignalRangeCallback(mapManager: ContactMapManager): void {
     return;
   }
   registeredRangeMapManager = mapManager;
+  rangeMap?.getMap().un("moveend", onViewportRangeChanged);
+  rangeMap?.getMap().un("rendercomplete", onViewportRangeChanged);
+  rangeMap = mapManager;
+  mapManager.getMap().on("moveend", onViewportRangeChanged);
+  mapManager.getMap().on("rendercomplete", onViewportRangeChanged);
   mapManager.addContrastSliderCallback(updateSignalRange);
 }
 
 function updateSignalRange(ranges: CurrentSignalRangeResponse): void {
+  if (percentageSignalScale.value) {
+    signalMin.value = 0;
+    signalMax.value = 100;
+    if (!sliderBoundsManual.value) {
+      sliderLowerLimit.value = 0;
+      sliderUpperLimit.value = 100;
+    }
+    return;
+  }
+  void refreshProcessedRange();
+  // Tile ranges describe the traditional renderer, not arbitrary graph inputs.
+  if (props.mapManager) return;
   const nextMin = finiteOr(ranges.globalMinSignal, signalMin.value);
   const nextMax = finiteOr(ranges.globalMaxSignal, signalMax.value);
   if (nextMax > nextMin) {
@@ -433,6 +601,153 @@ function updateSignalRange(ranges: CurrentSignalRangeResponse): void {
     if (!sliderBoundsManual.value) {
       sliderLowerLimit.value = nextMin;
       sliderUpperLimit.value = nextMax;
+    }
+  }
+}
+
+function refreshProcessedRange(): void {
+  window.clearTimeout(rangeTimer);
+  rangeTimer = window.setTimeout(() => void fetchProcessedRange(), 250);
+}
+
+function fetchProcessedRange(): void {
+  const manager = props.mapManager;
+  if (
+    !manager ||
+    manager.isDisposed ||
+    percentageSignalScale.value ||
+    !activeRangeExpression
+  )
+    return;
+  const range = manager.viewAndLayersManager.loadedViewportSignalRange(
+    activeVisualizationSource.value,
+    activeRangeExpression
+  );
+  if (
+    !range ||
+    !range.processed.count ||
+    range.processed.min == null ||
+    range.processed.max == null
+  ) {
+    rangeStatus.value =
+      "No visible finite tile limits yet; previous bounds retained";
+    return;
+  }
+  signalMin.value = range.processed.min;
+  signalMax.value = range.processed.max;
+  // Hi-C signal is heavy-tailed: a few diagonal pixels can exceed typical
+  // thresholds by orders of magnitude and would pin both handles to the left.
+  const robustMax = robustUpperLimit(range.processed) ?? range.processed.max;
+  if (!sliderBoundsManual.value) {
+    sliderLowerLimit.value = signalMin.value;
+    sliderUpperLimit.value =
+      robustMax > signalMin.value ? robustMax : signalMax.value;
+  }
+  rangeStatus.value = `Loaded viewport tiles (${range.tiles}): ${formatSignal(
+    range.processed.min
+  )} – ${formatSignal(range.processed.max)}${
+    robustMax < range.processed.max
+      ? `; slider limited to ${formatSignal(robustMax)} (4 × 99.5th percentile)`
+      : ""
+  }; raw ${formatSignal(range.raw.min ?? 0)} – ${formatSignal(
+    range.raw.max ?? 0
+  )}`;
+}
+
+async function fetchExactRange(): Promise<void> {
+  const manager = props.mapManager;
+  const probe = ++rangeProbe;
+  if (!manager || manager.isDisposed || percentageSignalScale.value) {
+    ++rangeGeneration;
+    rangeController?.abort();
+    rangeRequestKey = "";
+    return;
+  }
+  let generation: number | undefined;
+  try {
+    const bpResolution =
+      manager.viewAndLayersManager.currentViewState.resolutionDesciptor
+        .bpResolution;
+    const expression =
+      await manager.visualizationManager.getSourceSignalExpression(
+        activeVisualizationSource.value,
+        activeVisualizationTargetId.value
+      );
+    const api = manager.networkManager.requestManager;
+    const snapshot = await api.querySignalStatistics({
+      bpResolution,
+      metadataOnly: true,
+    });
+    if (probe !== rangeProbe || manager.isDisposed) return;
+    const key = JSON.stringify([
+      bpResolution,
+      expression,
+      snapshot.revision,
+      snapshot.size,
+    ]);
+    if (key === rangeRequestKey) return;
+    generation = ++rangeGeneration;
+    rangeController?.abort();
+    const controller = new AbortController();
+    rangeController = controller;
+    rangeRequestKey = key;
+    const range =
+      rangeCache.get(key) ??
+      (await scanExactSignalRange(
+        snapshot,
+        (startRowPx, startColPx) => {
+          if (
+            manager.isDisposed ||
+            manager.viewAndLayersManager.currentViewState.resolutionDesciptor
+              .bpResolution !== bpResolution
+          )
+            controller.abort();
+          return api.querySignalStatistics({
+            bpResolution,
+            expression,
+            revision: snapshot.revision,
+            startRowPx,
+            startColPx,
+            signal: controller.signal,
+          });
+        },
+        controller.signal,
+        (completed, total) => {
+          rangeStatus.value = `Exact limits: ${(
+            (100 * completed) /
+            total
+          ).toFixed(1)}% (${completed}/${total} blocks)`;
+        }
+      ));
+    if (controller.signal.aborted || generation !== rangeGeneration) return;
+    rangeCache.set(key, range);
+    const oldestKey = rangeCache.keys().next().value;
+    if (rangeCache.size > 8 && oldestKey !== undefined)
+      rangeCache.delete(oldestKey);
+    signalMin.value = range.min;
+    signalMax.value = range.max > range.min ? range.max : range.min + 1;
+    if (!sliderBoundsManual.value) {
+      sliderLowerLimit.value = signalMin.value;
+      sliderUpperLimit.value = signalMax.value;
+    }
+    rangeStatus.value = `Exact limits: ${formatSignal(
+      range.min
+    )} - ${formatSignal(range.max)}`;
+  } catch (error) {
+    if (
+      (generation === undefined
+        ? probe !== rangeProbe
+        : generation !== rangeGeneration) ||
+      manager.isDisposed
+    )
+      return;
+    rangeRequestKey = "";
+    rangeStatus.value = "Exact limits unavailable; previous bounds retained";
+    if (
+      (error as { response?: { status?: number } })?.response?.status === 409
+    ) {
+      rangeStatus.value = "Exact limits pending";
+      refreshProcessedRange();
     }
   }
 }
@@ -451,6 +766,13 @@ function updateFromStore() {
         if (toColor.value?.RGBA !== grad.endColorRGBA?.RGBA) {
           toColor.value = grad.endColorRGBA;
         }
+        if (percentageSignalScale.value) {
+          signalMin.value = 0;
+          signalMax.value = 100;
+          sliderBoundsManual.value = false;
+          sliderLowerLimit.value = 0;
+          sliderUpperLimit.value = 100;
+        }
         queueMicrotask(() => {
           syncingFromColormap.value = false;
         });
@@ -463,20 +785,41 @@ function updateFromStore() {
 }
 
 function applySettings() {
+  if (liveApplyTimer !== undefined) {
+    window.clearTimeout(liveApplyTimer);
+    liveApplyTimer = undefined;
+  }
   if (!(upperBound.value > lowerBound.value)) {
-    toast.error("Signal range must be positive: lower threshold must be below upper threshold.");
+    toast.error(
+      "Signal range must be positive: lower threshold must be below upper threshold."
+    );
     return;
   }
-  const source =
-    presentationMode.value !== "single" ? activeVisualizationSource.value : undefined;
+  const source = activeVisualizationSource.value;
   const action = source
     ? props.mapManager?.visualizationManager.applyVisualizationSettingsForSourceAndReload(
-        source
+        source,
+        activeVisualizationTargetId.value
       )
     : props.mapManager?.visualizationManager.applyVisualizationSettingsAndReload();
   action?.catch((error) => {
-    toast.error(String(error ?? "Failed to apply visualization settings"));
+    reportFailure("Apply visualization settings", error);
   });
+}
+
+function onCoolerWeightsNaNPolicyChanged(): void {
+  const keepWeights = coolerWeightsNaNPolicy.value !== "DISABLE_WEIGHTS";
+  const manager = props.mapManager;
+  if (!manager) {
+    applyCoolerWeights.value = keepWeights;
+    applySettings();
+    return;
+  }
+  manager.visualizationManager
+    .applyCoolerWeightsPolicy(coolerWeightsNaNPolicy.value, keepWeights)
+    .catch((error) => {
+      reportFailure("Apply Cooler weight policy", error);
+    });
 }
 
 function scheduleLiveApply(): void {
@@ -492,23 +835,29 @@ function scheduleLiveApply(): void {
   }, LIVE_APPLY_DELAY_MS);
 }
 
-function onLowerRangeInput(event: Event): void {
-  const value = Number((event.target as HTMLInputElement).value);
+function onLowerRangeInput(value: number): void {
   if (!Number.isFinite(value)) {
     return;
   }
   const actual = fromSliderPosition(value);
-  const minGap = Math.max((sliderMax.value - sliderMin.value) / 1_000_000, Number.EPSILON);
+  const minGap = Math.max(
+    Math.abs(upperBound.value) * Number.EPSILON,
+    Math.abs(sliderMin.value) * Number.EPSILON,
+    Math.abs(sliderMax.value) * Number.EPSILON
+  );
   lowerBound.value = Math.min(actual, upperBound.value - minGap);
 }
 
-function onUpperRangeInput(event: Event): void {
-  const value = Number((event.target as HTMLInputElement).value);
+function onUpperRangeInput(value: number): void {
   if (!Number.isFinite(value)) {
     return;
   }
   const actual = fromSliderPosition(value);
-  const minGap = Math.max((sliderMax.value - sliderMin.value) / 1_000_000, Number.EPSILON);
+  const minGap = Math.max(
+    Math.abs(lowerBound.value) * Number.EPSILON,
+    Math.abs(sliderMin.value) * Number.EPSILON,
+    Math.abs(sliderMax.value) * Number.EPSILON
+  );
   upperBound.value = Math.max(actual, lowerBound.value + minGap);
 }
 
@@ -561,7 +910,10 @@ function formatSignal(value: number): string {
   if (!Number.isFinite(value)) {
     return "n/a";
   }
-  if (Math.abs(value) >= 1000 || (Math.abs(value) > 0 && Math.abs(value) < 0.01)) {
+  if (
+    Math.abs(value) >= 1000 ||
+    (Math.abs(value) > 0 && Math.abs(value) < 0.01)
+  ) {
     return value.toExponential(2);
   }
   return value.toLocaleString(undefined, {
@@ -571,202 +923,156 @@ function formatSignal(value: number): string {
 </script>
 
 <style scoped>
-#contrast-slider-div {
-  margin-top: -20px;
-  margin-bottom: -20px;
-  margin-left: 0px;
-  margin-right: 0px;
-  width: 100%;
-  text-align: left;
-}
-
-#gradient-apply-button {
-  width: 100%;
-  margin: 0;
-}
-
-.gradient-apply-button {
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.9),
-    1px -1px 0 rgba(0, 0, 0, 0.9),
-    -1px 1px 0 rgba(0, 0, 0, 0.9),
-    1px 1px 0 rgba(0, 0, 0, 0.9),
-    0 0 2px #000,
-    0 0 1px #000;
-  border: none;
-  border-radius: 0.45rem;
-  font-weight: 600;
-  color: #ffffff !important;
-}
-
 .threshold-compact-card {
   display: grid;
-  gap: 0.45rem;
-  padding: 0.45rem 0.55rem 0.55rem;
-  background: var(--hict-surface-bg, #ffffff);
+  gap: 10px;
+  padding: 14px 12px;
+  background: var(--hict-surface-bg, #fff);
+  color: var(--hict-surface-fg, #334155);
   position: relative;
   z-index: 30;
-  overflow: visible;
 }
-
+.threshold-card-title {
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
 .threshold-input-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.45rem;
-  overflow: visible;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
 }
-
-.threshold-card-title {
-  color: #5c6773;
-  font-size: 0.72rem;
-  font-weight: 700;
-  line-height: 1.1;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
 .threshold-field {
   display: grid;
-  gap: 0.15rem;
+  gap: 5px;
   margin: 0;
-  color: #4b5563;
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #64748b;
 }
-
 .threshold-field-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 1.45rem;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  gap: 6px;
   align-items: center;
-  gap: 0.25rem;
-  overflow: visible;
 }
-
-.threshold-number-input {
-  min-height: 1.7rem;
-  padding: 0.15rem 0.35rem;
-  font-size: 0.82rem;
-}
-
-.threshold-range-slider {
-  position: relative;
-  padding: 0.48rem 0.35rem 0;
-  min-height: 2.75rem;
-}
-
-.threshold-range-track {
-  position: absolute;
-  left: 0.35rem;
-  right: 0.35rem;
-  top: 0.83rem;
-  height: 0.34rem;
-  border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  pointer-events: none;
-}
-
-.threshold-range-input {
-  position: absolute;
-  left: 0.35rem;
-  right: 0.35rem;
-  top: 0.42rem;
-  width: calc(100% - 0.7rem);
-  pointer-events: none;
-  appearance: none;
-  background: transparent;
-}
-
-.threshold-range-input::-webkit-slider-thumb {
-  appearance: none;
-  width: 0.82rem;
-  height: 0.82rem;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  background: #0d6efd;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
-  pointer-events: auto;
-}
-
-.threshold-range-input::-moz-range-thumb {
-  width: 0.82rem;
-  height: 0.82rem;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  background: #0d6efd;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
-  pointer-events: auto;
-}
-
-.threshold-range-input_lower::-webkit-slider-thumb {
-  background: var(--lower-thumb-color, #198754);
-}
-
-.threshold-range-input_lower::-moz-range-thumb {
-  background: var(--lower-thumb-color, #198754);
-}
-
-.threshold-range-input_upper::-webkit-slider-thumb {
-  background: var(--upper-thumb-color, #dc3545);
-}
-
-.threshold-range-input_upper::-moz-range-thumb {
-  background: var(--upper-thumb-color, #dc3545);
-}
-
-.threshold-range-labels {
-  display: grid;
-  grid-template-columns: 4.4rem minmax(0, 1fr) 4.4rem;
-  align-items: center;
-  gap: 0.35rem;
-  margin-top: 1.2rem;
-  font-size: 0.75rem;
-  color: #5c6773;
-}
-
-.threshold-range-labels > span {
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.threshold-edge-input {
+.threshold-number-input,
+.domain-inputs input {
   width: 100%;
   min-width: 0;
-  border: 0;
-  border-bottom: 1px dotted rgba(92, 103, 115, 0.65);
-  border-radius: 0;
-  background: transparent;
-  color: #5c6773;
-  font-size: 0.75rem;
-  line-height: 1.1;
-  padding: 0 0.1rem;
+  padding: 7px 8px;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: var(--hict-surface-bg, #fff);
+  color: var(--hict-surface-fg, #1e293b);
+  appearance: textfield;
 }
-
-.threshold-edge-input:focus {
-  outline: 1px solid rgba(13, 110, 253, 0.4);
-  background: rgba(13, 110, 253, 0.06);
+.threshold-number-input::-webkit-inner-spin-button {
+  appearance: none;
 }
-
-.threshold-toolbar {
+.threshold-number-input:focus,
+.domain-inputs input:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+  box-shadow: none;
+}
+.range-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.35rem;
-  min-height: 1.45rem;
+  gap: 8px;
 }
-
-.threshold-log-switch {
-  margin: 0;
-  min-height: 0;
-  font-size: 0.75rem;
+.scale-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.scale-caption {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+}
+.scale-choice {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 7px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+.scale-choice button {
+  padding: 3px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: #475569;
+  font-size: 0.8rem;
+}
+.scale-choice button[aria-pressed="true"] {
+  background: white;
+  color: #1d4ed8;
+  box-shadow: 0 1px 3px #0f172a20;
+  font-weight: 600;
+}
+.range-text-button {
+  background: none;
+  border: 0;
+  padding: 3px 0;
+  font-size: 0.8rem;
+  color: #1d4ed8;
+  text-align: left;
+}
+.range-text-button:hover {
+  text-decoration: underline;
+}
+.range-details {
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.8rem;
+}
+.range-details summary {
+  cursor: pointer;
+  color: #475569;
+}
+.range-summary-value {
+  float: right;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.threshold-log-switch .form-check-input {
-  margin-top: 0.12rem;
+.range-help {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin: 8px 0 4px;
+  line-height: 1.5;
 }
-
+.domain-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.domain-inputs label {
+  display: grid;
+  gap: 4px;
+  color: #64748b;
+}
+.domain-inputs input {
+  font-size: 0.75rem;
+}
+.threshold-toolbar:empty {
+  display: none;
+}
+.gradient-apply-button {
+  width: 100%;
+  min-height: 34px;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
 .cooler-weights-hint {
   min-width: 0;
   margin: 0;
@@ -785,6 +1091,11 @@ function formatSignal(value: number): string {
   white-space: nowrap;
 }
 
+.cooler-weights-hint_error summary {
+  color: #b02a37;
+  font-weight: 700;
+}
+
 .cooler-weights-hint summary::-webkit-details-marker {
   display: none;
 }
@@ -794,6 +1105,12 @@ function formatSignal(value: number): string {
   border-left: 3px solid #f0ad4e;
   border-radius: 0.35rem;
   background: rgba(240, 173, 78, 0.12);
+}
+
+.cooler-weights-hint_error[open] {
+  border-left-color: #dc3545;
+  background: rgba(220, 53, 69, 0.12);
+  color: #842029;
 }
 
 .cooler-weights-hint[open] summary {

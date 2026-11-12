@@ -27,7 +27,9 @@
       :class="{ 'pipeline-preview': previewMode }"
       tabindex="-1"
       style="display: block"
+      ref="modalFocusElement"
       role="dialog"
+      :aria-modal="!previewMode"
     >
       <div class="modal-dialog pipeline-dialog">
         <div class="modal-content">
@@ -41,20 +43,41 @@
               <i :class="previewMode ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
               <span>{{ previewMode ? "Show editor" : "Preview" }}</span>
             </button>
-            <button type="button" class="btn-close" @click="dismissModal"></button>
+            <button
+              type="button"
+              class="btn-close"
+              @click="dismissModal"
+            ></button>
           </div>
-          <div v-if="!previewMode" class="modal-body">
+          <div v-show="!previewMode" class="modal-body">
             <div class="alert alert-warning py-2 mb-3">
-              Normalization dropdown updates this pipeline, but pipeline edits are not fully back-synced to checkbox controls. Expected and O/E views fall back to the standard renderer because custom pipelines operate on per-pixel signals.
+              Normalization dropdown updates this pipeline, but pipeline edits
+              are not fully back-synced to checkbox controls. Expected and O/E
+              views fall back to the standard renderer because custom pipelines
+              operate on per-pixel signals.
             </div>
             <div class="d-flex gap-3 align-items-center mb-3">
               <div class="form-check">
-                <input id="pipeline-enabled" v-model="enabled" class="form-check-input" type="checkbox" />
-                <label class="form-check-label" for="pipeline-enabled">Enable custom pipeline</label>
+                <input
+                  id="pipeline-enabled"
+                  v-model="enabled"
+                  class="form-check-input"
+                  type="checkbox"
+                />
+                <label class="form-check-label" for="pipeline-enabled"
+                  >Enable custom pipeline</label
+                >
               </div>
               <div class="form-check">
-                <input id="pipeline-swap" v-model="swapUpperLower" class="form-check-input" type="checkbox" />
-                <label class="form-check-label" for="pipeline-swap">Swap upper/lower diagonal branches</label>
+                <input
+                  id="pipeline-swap"
+                  v-model="swapUpperLower"
+                  class="form-check-input"
+                  type="checkbox"
+                />
+                <label class="form-check-label" for="pipeline-swap"
+                  >Swap upper/lower diagonal branches</label
+                >
               </div>
               <select
                 v-model="selectedPresetId"
@@ -76,7 +99,11 @@
               >
                 Load preset
               </button>
-              <button class="btn btn-sm btn-outline-secondary ms-auto" :disabled="loading || saving" @click="loadConfig">
+              <button
+                class="btn btn-sm btn-outline-secondary ms-auto"
+                :disabled="loading || saving"
+                @click="loadConfig"
+              >
                 Reload
               </button>
             </div>
@@ -89,7 +116,9 @@
               </div>
             </div>
             <small class="text-muted d-block mb-2">
-              Right-click to add HiCT nodes only. Upper/Lower sinks accept color outputs; use the same full-map graph on both sinks for overlays.
+              Blue round ports carry numeric signals; purple square ports carry
+              colors. Sinks accept only colors. Right-click to add nodes; use
+              the same full-map graph on both sinks for overlays.
             </small>
 
             <div v-if="loading" class="py-2">
@@ -97,8 +126,12 @@
               Loading pipeline configuration…
             </div>
           </div>
-          <div v-if="!previewMode" class="modal-footer">
-            <button class="btn btn-outline-danger me-auto" :disabled="saving" @click="resetConfig">
+          <div v-show="!previewMode" class="modal-footer">
+            <button
+              class="btn btn-outline-danger me-auto"
+              :disabled="saving"
+              @click="resetConfig"
+            >
               Reset
             </button>
             <input
@@ -108,13 +141,23 @@
               class="d-none"
               @change="onImportFileSelected"
             />
-            <button class="btn btn-outline-secondary" :disabled="saving || loading" @click="exportGraphToFile">
+            <button
+              class="btn btn-outline-secondary"
+              :disabled="saving || loading"
+              @click="exportGraphToFile"
+            >
               Export graph
             </button>
-            <button class="btn btn-outline-secondary" :disabled="saving || loading" @click="triggerImportGraph">
+            <button
+              class="btn btn-outline-secondary"
+              :disabled="saving || loading"
+              @click="triggerImportGraph"
+            >
               Import graph
             </button>
-            <button class="btn btn-secondary" @click="dismissModal">Close</button>
+            <button class="btn btn-secondary" @click="dismissModal">
+              Close
+            </button>
             <button
               class="btn btn-outline-primary"
               :disabled="saving || previewing"
@@ -126,8 +169,15 @@
               ></span>
               Preview
             </button>
-            <button class="btn btn-primary" :disabled="saving" @click="saveConfig">
-              <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>
+            <button
+              class="btn btn-primary"
+              :disabled="saving"
+              @click="saveConfig"
+            >
+              <span
+                v-if="saving"
+                class="spinner-border spinner-border-sm me-2"
+              ></span>
               Apply
             </button>
           </div>
@@ -135,16 +185,32 @@
       </div>
     </div>
   </div>
+  <SignalHistogramModal
+    v-if="histogramExpression && mapManager"
+    :map-manager="mapManager"
+    :expression="histogramExpression"
+    @dismissed="histogramExpression = null"
+  />
 </template>
 
 <script setup lang="ts">
+import { pipelineEditorStorageKey } from "@/app/core/visualization/renderPipelinePreset";
+import { reportFailure } from "@/app/ui/reportFailure";
+import { useModalFocus } from "@/app/ui/modalFocus";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { VisualizationManager } from "@/app/core/mapmanagers/VisualizationManager";
 import type { TrackSummaryResponse } from "@/app/core/net/api/response";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
+import SignalHistogramModal from "./SignalHistogramModal.vue";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
+import { modDotPlotLowerExpression } from "@/app/core/sequence/modDotPlot";
+import {
+  restorePipelineEditorGraph,
+  pipelineExpressionSignature,
+} from "@/app/core/visualization/pipelineEditorState";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
-import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { toast } from "vue-sonner";
 import { LGraph, LGraphCanvas, LGraphNode, LiteGraph } from "litegraph.js";
 import "litegraph.js/css/litegraph.css";
@@ -184,7 +250,12 @@ type PixelBlendMode =
 type PipelineExpression =
   | { type: "source"; source: SourceName }
   | { type: "track1d"; trackId: string; axis: TrackAxis }
-  | { type: "constant"; value: number }
+  | {
+      type: "constant";
+      value: number;
+      rangeSource?: SourceName;
+      rangeOutput?: "selectedMin" | "selectedMax";
+    }
   | { type: "dynamic"; field: DynamicField }
   | { type: "unary"; op: UnaryOp; input: PipelineExpression }
   | {
@@ -211,12 +282,14 @@ type PipelineExpression =
     }
   | {
       type: "colormap";
-      mode: "LINEAR";
+      mode: "LINEAR" | "MODDOTPLOT_IDENTITY";
       input: PipelineExpression;
       startColor: string;
       endColor: string;
       minSignal: number;
       maxSignal: number;
+      min?: PipelineExpression;
+      max?: PipelineExpression;
     }
   | {
       type: ColorSpaceNodeType;
@@ -237,6 +310,8 @@ type PipelineExpression =
 const SOURCE_NODE_TYPE = "hict/source";
 const TRACK1D_NODE_TYPE = "hict/track1d";
 const CONSTANT_NODE_TYPE = "hict/constant";
+const RANGE_NODE_TYPE = "hict/signal_range";
+const HISTOGRAM_NODE_TYPE = "hict/histogram";
 const DYNAMIC_NODE_TYPE = "hict/dynamic";
 const UNARY_NODE_TYPE = "hict/unary";
 const LOG_NODE_TYPE = "hict/log";
@@ -244,6 +319,7 @@ const LOG_INPUT_NODE_TYPE = "hict/log_input";
 const BINARY_NODE_TYPE = "hict/binary";
 const CLAMP_NODE_TYPE = "hict/clamp";
 const COLORMAP_NODE_TYPE = "hict/colormap";
+const MODDOTPLOT_COLORMAP_NODE_TYPE = "hict/moddotplot_identity";
 const RGB_NODE_TYPE = "hict/rgb";
 const HSL_NODE_TYPE = "hict/hsl";
 const HSV_NODE_TYPE = "hict/hsv";
@@ -290,20 +366,37 @@ const NODE_MENU_CATEGORY_ORDER = [
   "Compositing",
   "Outputs",
 ] as const;
-const NODE_MENU_NODE_TYPES_BY_CATEGORY: Record<(typeof NODE_MENU_CATEGORY_ORDER)[number], string[]> = {
+const NODE_MENU_NODE_TYPES_BY_CATEGORY: Record<
+  typeof NODE_MENU_CATEGORY_ORDER[number],
+  string[]
+> = {
   Sources: [SOURCE_NODE_TYPE, TRACK1D_NODE_TYPE, DYNAMIC_NODE_TYPE],
-  Constants: [CONSTANT_NODE_TYPE],
-  Math: [UNARY_NODE_TYPE, LOG_NODE_TYPE, LOG_INPUT_NODE_TYPE, BINARY_NODE_TYPE, CLAMP_NODE_TYPE],
-  Colormaps: [COLORMAP_NODE_TYPE, RGB_NODE_TYPE, HSL_NODE_TYPE, HSV_NODE_TYPE],
+  Constants: [CONSTANT_NODE_TYPE, RANGE_NODE_TYPE],
+  Math: [
+    UNARY_NODE_TYPE,
+    LOG_NODE_TYPE,
+    LOG_INPUT_NODE_TYPE,
+    BINARY_NODE_TYPE,
+    CLAMP_NODE_TYPE,
+  ],
+  Colormaps: [
+    COLORMAP_NODE_TYPE,
+    MODDOTPLOT_COLORMAP_NODE_TYPE,
+    RGB_NODE_TYPE,
+    HSL_NODE_TYPE,
+    HSV_NODE_TYPE,
+  ],
   Compositing: [PIXEL_BLEND_NODE_TYPE],
-  Outputs: [SINK_NODE_TYPE],
+  Outputs: [SINK_NODE_TYPE, HISTOGRAM_NODE_TYPE],
 };
 
 const RENDERING_PRESETS = [
   { id: "primary_only", label: "Default Primary only" },
   { id: "dotplot_overlay", label: "Dotplot overlay" },
+  { id: "moddotplot_below", label: "ModDotPlot identity below diagonal" },
+  { id: "moddotplot_overlay", label: "ModDotPlot multicolor overlay" },
 ] as const;
-type RenderingPresetId = (typeof RENDERING_PRESETS)[number]["id"];
+type RenderingPresetId = typeof RENDERING_PRESETS[number]["id"];
 
 const emit = defineEmits<{
   (e: "dismissed"): void;
@@ -327,6 +420,8 @@ const loading = ref(false);
 const saving = ref(false);
 const previewing = ref(false);
 const previewMode = ref(false);
+const histogramExpression = ref<Record<string, unknown> | null>(null);
+const rangeNodes = new Map<string, LGraphNode>();
 const selectedPresetId = ref<RenderingPresetId>("primary_only");
 const graphHost = ref<HTMLDivElement | null>(null);
 const graphCanvasRef = ref<HTMLCanvasElement | null>(null);
@@ -343,12 +438,14 @@ const previewSnapshot = ref<{
 let graph: LGraph | null = null;
 let graphCanvas: LGraphCanvas | null = null;
 let resizeObserver: ResizeObserver | null = null;
+let resizeFrame: number | null = null;
 let upperSinkId: number | null = null;
 let lowerSinkId: number | null = null;
 let nodeTypesRegistered = false;
 let activeNativeColorInput: HTMLInputElement | null = null;
 
-let originalGetNodeTypesCategories: ((filter?: string) => string[]) | null = null;
+let originalGetNodeTypesCategories: ((filter?: string) => string[]) | null =
+  null;
 let originalGetNodeTypesInCategory:
   | ((category: string, filter?: string) => Array<{ type: string }>)
   | null = null;
@@ -368,7 +465,9 @@ const clampToRange = (value: number, min: number, max: number): number => {
   return Math.min(max, Math.max(min, value));
 };
 
-const defaultColorExpression = (input?: PipelineExpression): PipelineExpression => ({
+const defaultColorExpression = (
+  input?: PipelineExpression
+): PipelineExpression => ({
   type: "colormap",
   mode: "LINEAR",
   input: input ?? defaultSignalExpression(),
@@ -397,7 +496,9 @@ const sanitizeColor = (value: unknown, fallback: string): string => {
 };
 
 const toPixelBlendMode = (value: unknown): PixelBlendMode => {
-  const normalized = String(value ?? "OVER").trim().toUpperCase();
+  const normalized = String(value ?? "OVER")
+    .trim()
+    .toUpperCase();
   return PIXEL_BLEND_MODES.includes(normalized as PixelBlendMode)
     ? (normalized as PixelBlendMode)
     : "OVER";
@@ -426,8 +527,7 @@ const buildSignalExpressionFromVisualizationOptions = (
     overrides?.applyCoolerWeights ??
     visualizationOptionsStore.applyCoolerWeights;
   const resolutionScaling =
-    overrides?.resolutionScaling ??
-    visualizationOptionsStore.resolutionScaling;
+    overrides?.resolutionScaling ?? visualizationOptionsStore.resolutionScaling;
   const resolutionLinearScaling =
     overrides?.resolutionLinearScaling ??
     visualizationOptionsStore.resolutionLinearScaling;
@@ -436,7 +536,11 @@ const buildSignalExpressionFromVisualizationOptions = (
     type: "source",
     source,
   };
-  if (Number.isFinite(preLogBase) && preLogBase > 0 && Math.abs(preLogBase - 1) > 1e-9) {
+  if (
+    Number.isFinite(preLogBase) &&
+    preLogBase > 0 &&
+    Math.abs(preLogBase - 1) > 1e-9
+  ) {
     expression = {
       type: "log",
       input: expression,
@@ -480,7 +584,11 @@ const buildSignalExpressionFromVisualizationOptions = (
       },
     };
   }
-  if (Number.isFinite(postLogBase) && postLogBase > 0 && Math.abs(postLogBase - 1) > 1e-9) {
+  if (
+    Number.isFinite(postLogBase) &&
+    postLogBase > 0 &&
+    Math.abs(postLogBase - 1) > 1e-9
+  ) {
     expression = {
       type: "log",
       input: expression,
@@ -710,7 +818,9 @@ const isColorExpression = (expression: PipelineExpression): boolean => {
   );
 };
 
-const ensureColorRootExpression = (expression: PipelineExpression): PipelineExpression => {
+const ensureColorRootExpression = (
+  expression: PipelineExpression
+): PipelineExpression => {
   return isColorExpression(expression)
     ? expression
     : defaultColorExpression(expression);
@@ -723,6 +833,15 @@ const parseExpression = (raw: unknown): PipelineExpression => {
     return {
       type: "constant",
       value: toFiniteNumber(node.value, 0),
+      ...(node.rangeSource
+        ? {
+            rangeSource: toSourceName(node.rangeSource),
+            rangeOutput:
+              node.rangeOutput === "selectedMax"
+                ? ("selectedMax" as const)
+                : ("selectedMin" as const),
+          }
+        : {}),
     };
   }
   if (type === "dynamic") {
@@ -778,40 +897,69 @@ const parseExpression = (raw: unknown): PipelineExpression => {
     return {
       type: "clamp",
       input: parseExpression(node.input),
-      minValue: parseClampBoundary(node.minValue ?? node.minSignal ?? node.min, 0),
-      maxValue: parseClampBoundary(node.maxValue ?? node.maxSignal ?? node.max, 1),
+      minValue: parseClampBoundary(
+        node.minValue ?? node.minSignal ?? node.min,
+        0
+      ),
+      maxValue: parseClampBoundary(
+        node.maxValue ?? node.maxSignal ?? node.max,
+        1
+      ),
     };
   }
   if (type === "colormap") {
     return {
       type: "colormap",
-      mode: "LINEAR",
+      mode:
+        node.mode === "MODDOTPLOT_IDENTITY" ? "MODDOTPLOT_IDENTITY" : "LINEAR",
       input: parseExpression(node.input),
       startColor: sanitizeColor(node.startColor, "#ffffff00"),
       endColor: sanitizeColor(node.endColor, "#006000ff"),
       minSignal: toFiniteNumber(node.minSignal ?? 0, 0),
       maxSignal: toFiniteNumber(node.maxSignal ?? 1, 1),
+      ...(node.min ? { min: parseExpression(node.min) } : {}),
+      ...(node.max ? { max: parseExpression(node.max) } : {}),
     };
   }
   if (type === "rgb" || type === "hsl" || type === "hsv") {
     return {
       type,
-      c1: parseExpression(node.c1 ?? node.r ?? node.h ?? { type: "constant", value: 0 }),
-      c2: parseExpression(node.c2 ?? node.g ?? node.s ?? { type: "constant", value: 1 }),
-      c3: parseExpression(node.c3 ?? node.b ?? node.l ?? node.v ?? { type: "constant", value: 1 }),
-      alpha: parseExpression(node.alpha ?? node.a ?? { type: "constant", value: 255 }),
+      c1: parseExpression(
+        node.c1 ?? node.r ?? node.h ?? { type: "constant", value: 0 }
+      ),
+      c2: parseExpression(
+        node.c2 ?? node.g ?? node.s ?? { type: "constant", value: 1 }
+      ),
+      c3: parseExpression(
+        node.c3 ?? node.b ?? node.l ?? node.v ?? { type: "constant", value: 1 }
+      ),
+      alpha: parseExpression(
+        node.alpha ?? node.a ?? { type: "constant", value: 255 }
+      ),
     };
   }
   if (type === "pixel_blend") {
     return {
       type: "pixel_blend",
       mode: toPixelBlendMode(node.mode),
-      top: ensureColorRootExpression(parseExpression(node.top ?? node.foreground ?? node.upper)),
-      bottom: ensureColorRootExpression(
-        parseExpression(node.bottom ?? node.background ?? node.lower ?? { type: "source", source: "SECONDARY" })
+      top: ensureColorRootExpression(
+        parseExpression(node.top ?? node.foreground ?? node.upper)
       ),
-      topOpacity: toFiniteNumber(node.topOpacity ?? node.topOpacityValue ?? 1, 1),
-      bottomOpacity: toFiniteNumber(node.bottomOpacity ?? node.bottomOpacityValue ?? 1, 1),
+      bottom: ensureColorRootExpression(
+        parseExpression(
+          node.bottom ??
+            node.background ??
+            node.lower ?? { type: "source", source: "SECONDARY" }
+        )
+      ),
+      topOpacity: toFiniteNumber(
+        node.topOpacity ?? node.topOpacityValue ?? 1,
+        1
+      ),
+      bottomOpacity: toFiniteNumber(
+        node.bottomOpacity ?? node.bottomOpacityValue ?? 1,
+        1
+      ),
     };
   }
   return {
@@ -845,24 +993,34 @@ const installNodeTypeFilterOverrides = (): void => {
     ).getNodeTypesInCategory.bind(LiteGraph);
   }
 
-  (LiteGraph as unknown as { getNodeTypesCategories: (filter?: string) => string[] }).getNodeTypesCategories =
-    (() => {
-      const registeredTypes = LiteGraph.registered_node_types as Record<string, unknown>;
-      return NODE_MENU_CATEGORY_ORDER.filter((category) =>
-        NODE_MENU_NODE_TYPES_BY_CATEGORY[category].some((nodeType) => Boolean(registeredTypes[nodeType]))
-      );
-    }) as never;
-  (LiteGraph as unknown as {
-    getNodeTypesInCategory: (
-      category: string,
-      filter?: string
-    ) => Array<{ type: string }>;
-  }).getNodeTypesInCategory = ((category: string) => {
+  (
+    LiteGraph as unknown as {
+      getNodeTypesCategories: (filter?: string) => string[];
+    }
+  ).getNodeTypesCategories = (() => {
+    const registeredTypes = LiteGraph.registered_node_types as Record<
+      string,
+      unknown
+    >;
+    return NODE_MENU_CATEGORY_ORDER.filter((category) =>
+      NODE_MENU_NODE_TYPES_BY_CATEGORY[category].some((nodeType) =>
+        Boolean(registeredTypes[nodeType])
+      )
+    );
+  }) as never;
+  (
+    LiteGraph as unknown as {
+      getNodeTypesInCategory: (
+        category: string,
+        filter?: string
+      ) => Array<{ type: string }>;
+    }
+  ).getNodeTypesInCategory = ((category: string) => {
     const registeredTypes = LiteGraph.registered_node_types as Record<
       string,
       { type?: string } | undefined
     >;
-    const typedCategory = category as (typeof NODE_MENU_CATEGORY_ORDER)[number];
+    const typedCategory = category as typeof NODE_MENU_CATEGORY_ORDER[number];
     const allowedTypes = NODE_MENU_NODE_TYPES_BY_CATEGORY[typedCategory] ?? [];
     return allowedTypes
       .map((nodeType) => registeredTypes[nodeType])
@@ -875,16 +1033,21 @@ const installNodeTypeFilterOverrides = (): void => {
 
 const restoreNodeTypeFilterOverrides = (): void => {
   if (originalGetNodeTypesCategories) {
-    (LiteGraph as unknown as { getNodeTypesCategories: (filter?: string) => string[] }).getNodeTypesCategories =
-      originalGetNodeTypesCategories as never;
+    (
+      LiteGraph as unknown as {
+        getNodeTypesCategories: (filter?: string) => string[];
+      }
+    ).getNodeTypesCategories = originalGetNodeTypesCategories as never;
   }
   if (originalGetNodeTypesInCategory) {
-    (LiteGraph as unknown as {
-      getNodeTypesInCategory: (
-        category: string,
-        filter?: string
-      ) => Array<{ type: string }>;
-    }).getNodeTypesInCategory = originalGetNodeTypesInCategory as never;
+    (
+      LiteGraph as unknown as {
+        getNodeTypesInCategory: (
+          category: string,
+          filter?: string
+        ) => Array<{ type: string }>;
+      }
+    ).getNodeTypesInCategory = originalGetNodeTypesInCategory as never;
   }
 };
 
@@ -901,7 +1064,7 @@ const coolerWeightsTrackOption = (): TrackSummaryResponse =>
     renderMode: "SIGNAL",
     aggregationMode: "MEAN",
     logScale: false,
-  }) as TrackSummaryResponse;
+  } as TrackSummaryResponse);
 
 const trackIds = (): string[] => {
   return trackOptions.value.map((track) => track.trackId);
@@ -963,7 +1126,7 @@ const ensureNodeTypesRegistered = (): void => {
         "row axis",
         this.properties.axis === "ROW",
         (value: unknown) => {
-          this.properties.axis = Boolean(value) ? "ROW" : "COL";
+          this.properties.axis = value ? "ROW" : "COL";
         },
         { on: "ROW", off: "COL" }
       );
@@ -977,9 +1140,14 @@ const ensureNodeTypesRegistered = (): void => {
       this.title = "Constant";
       this.addOutput("value", "number");
       this.properties = { value: 0 };
-      this.addWidget("number", "value", this.properties.value, (value: unknown) => {
-        this.properties.value = toFiniteNumber(value, 0);
-      });
+      this.addWidget(
+        "number",
+        "value",
+        this.properties.value,
+        (value: unknown) => {
+          this.properties.value = toFiniteNumber(value, 0);
+        }
+      );
       this.size = [190, 72];
     }
   }
@@ -1030,9 +1198,14 @@ const ensureNodeTypesRegistered = (): void => {
       this.addInput("in", "number");
       this.addOutput("out", "number");
       this.properties = { base: 10 };
-      this.addWidget("number", "base", this.properties.base, (value: unknown) => {
-        this.properties.base = toFiniteNumber(value, 10);
-      });
+      this.addWidget(
+        "number",
+        "base",
+        this.properties.base,
+        (value: unknown) => {
+          this.properties.base = toFiniteNumber(value, 10);
+        }
+      );
       this.size = [200, 84];
     }
   }
@@ -1045,9 +1218,14 @@ const ensureNodeTypesRegistered = (): void => {
       this.addInput("base", "number");
       this.addOutput("out", "number");
       this.properties = { base: 10 };
-      this.addWidget("number", "fallback base", this.properties.base, (value: unknown) => {
-        this.properties.base = toFiniteNumber(value, 10);
-      });
+      this.addWidget(
+        "number",
+        "fallback base",
+        this.properties.base,
+        (value: unknown) => {
+          this.properties.base = toFiniteNumber(value, 10);
+        }
+      );
       this.size = [224, 104];
     }
   }
@@ -1080,13 +1258,72 @@ const ensureNodeTypesRegistered = (): void => {
       this.addInput("in", "number");
       this.addOutput("out", "number");
       this.properties = { minValue: 0, maxValue: 1 };
-      this.addWidget("number", "min", this.properties.minValue, (value: unknown) => {
-        this.properties.minValue = toFiniteNumber(value, 0);
-      });
-      this.addWidget("number", "max", this.properties.maxValue, (value: unknown) => {
-        this.properties.maxValue = toFiniteNumber(value, 1);
-      });
+      this.addWidget(
+        "number",
+        "min",
+        this.properties.minValue,
+        (value: unknown) => {
+          this.properties.minValue = toFiniteNumber(value, 0);
+        }
+      );
+      this.addWidget(
+        "number",
+        "max",
+        this.properties.maxValue,
+        (value: unknown) => {
+          this.properties.maxValue = toFiniteNumber(value, 1);
+        }
+      );
       this.size = [210, 104];
+    }
+  }
+
+  class RangeNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "Signal range";
+      this.addOutput("selectedMin", "number");
+      this.addOutput("selectedMax", "number");
+      this.properties = { source: "PRIMARY", selectedMin: 0, selectedMax: 1 };
+      this.addWidget(
+        "combo",
+        "source",
+        "PRIMARY",
+        (v: unknown) => {
+          this.properties.source = toSourceName(v);
+        },
+        { values: ["PRIMARY", "SECONDARY"] }
+      );
+      this.addWidget("number", "selectedMin", 0, (v: unknown) => {
+        this.properties.selectedMin = toFiniteNumber(v, 0);
+      });
+      this.addWidget("number", "selectedMax", 1, (v: unknown) => {
+        this.properties.selectedMax = toFiniteNumber(v, 1);
+      });
+      this.size = [240, 135];
+    }
+  }
+
+  class HistogramNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "Histogram";
+      this.addInput("signal", "number");
+      this.addWidget("button", "Inspect distribution", "", () => {
+        if (!this.getInputNode(0)) {
+          toast.error("Connect a numeric signal to the histogram first.");
+          return;
+        }
+        window.dispatchEvent(
+          new CustomEvent("hict:pipeline-histogram", {
+            detail: {
+              node: this.getInputNode(0),
+              outputSlot: this.getInputLink(0)?.origin_slot ?? 0,
+            },
+          })
+        );
+      });
+      this.size = [240, 80];
     }
   }
 
@@ -1095,6 +1332,8 @@ const ensureNodeTypesRegistered = (): void => {
       super();
       this.title = "Linear Colormap";
       this.addInput("signal", "number");
+      this.addInput("minSignal", "number");
+      this.addInput("maxSignal", "number");
       this.addOutput("color", "color");
       this.properties = {
         mode: "LINEAR",
@@ -1127,25 +1366,45 @@ const ensureNodeTypesRegistered = (): void => {
           }
         );
       });
-      this.addWidget("text", "start hex", this.properties.startColor, (value: unknown) => {
-        this.properties.startColor = sanitizeColor(value, "#ffffff00");
-      });
-      this.addWidget("text", "end hex", this.properties.endColor, (value: unknown) => {
-        this.properties.endColor = sanitizeColor(value, "#006000ff");
-      });
-      this.addWidget("number", "min", this.properties.minSignal, (value: unknown) => {
-        this.properties.minSignal = toFiniteNumber(value, 0);
-      });
-      this.addWidget("number", "max", this.properties.maxSignal, (value: unknown) => {
-        this.properties.maxSignal = toFiniteNumber(value, 1);
-      });
-      this.size = [250, 188];
+      this.addWidget(
+        "text",
+        "start hex",
+        this.properties.startColor,
+        (value: unknown) => {
+          this.properties.startColor = sanitizeColor(value, "#ffffff00");
+        }
+      );
+      this.addWidget(
+        "text",
+        "end hex",
+        this.properties.endColor,
+        (value: unknown) => {
+          this.properties.endColor = sanitizeColor(value, "#006000ff");
+        }
+      );
+      this.addWidget(
+        "number",
+        "min",
+        this.properties.minSignal,
+        (value: unknown) => {
+          this.properties.minSignal = toFiniteNumber(value, 0);
+        }
+      );
+      this.addWidget(
+        "number",
+        "max",
+        this.properties.maxSignal,
+        (value: unknown) => {
+          this.properties.maxSignal = toFiniteNumber(value, 1);
+        }
+      );
+      this.size = [250, 300];
     }
 
     onDrawForeground(context: CanvasRenderingContext2D): void {
       const start = sanitizeColor(this.properties.startColor, "#ffffff00");
       const end = sanitizeColor(this.properties.endColor, "#006000ff");
-      const rectY = 28;
+      const rectY = this.size[1] - 20;
       const rectW = 48;
       const rectH = 12;
       context.save();
@@ -1157,10 +1416,67 @@ const ensureNodeTypesRegistered = (): void => {
       context.fillRect(84, rectY, rectW, rectH);
       context.strokeStyle = "#d1d5db";
       context.strokeRect(84, rectY, rectW, rectH);
-      context.fillStyle = "#e5e7eb";
+      context.fillStyle = "#374151";
       context.font = "10px sans-serif";
       context.fillText("start", 17, rectY - 3);
       context.fillText("end", 85, rectY - 3);
+      context.restore();
+    }
+  }
+
+  // Palette attribution: public/ModDotPlot-palette-NOTICE.txt.
+  class ModDotPlotColormapNode extends LGraphNode {
+    constructor() {
+      super();
+      this.title = "ModDotPlot Identity";
+      this.addInput("identity score", "number");
+      this.addInput("minSignal", "number");
+      this.addInput("maxSignal", "number");
+      this.addOutput("color", "color");
+      this.properties = {
+        mode: "MODDOTPLOT_IDENTITY",
+        startColor: "#31369500",
+        endColor: "#a50026ff",
+        minSignal: 80,
+        maxSignal: 100,
+      };
+      this.addWidget(
+        "number",
+        "minimum identity (%)",
+        80,
+        (value: unknown) => {
+          this.properties.minSignal =
+            (Math.min(100, Math.max(0, toFiniteNumber(value, 80))) *
+              toFiniteNumber(this.properties.maxSignal, 100)) /
+            100;
+        },
+        { min: 0, max: 100, precision: 1 }
+      );
+      this.size = [270, 115];
+    }
+    onDrawForeground(context: CanvasRenderingContext2D): void {
+      context.save();
+      const gradient = context.createLinearGradient(
+        14,
+        0,
+        this.size[0] - 14,
+        0
+      );
+      [
+        "#313695",
+        "#4575b4",
+        "#74add1",
+        "#abd9e9",
+        "#e0f3f8",
+        "#ffffbf",
+        "#fee090",
+        "#fdae61",
+        "#f46d43",
+        "#d73027",
+        "#a50026",
+      ].forEach((color, index) => gradient.addColorStop(index / 10, color));
+      context.fillStyle = gradient;
+      context.fillRect(14, 78, this.size[0] - 28, 16);
       context.restore();
     }
   }
@@ -1189,9 +1505,14 @@ const ensureNodeTypesRegistered = (): void => {
       this.addWidget("number", "c3", this.properties.c3, (value: unknown) => {
         this.properties.c3 = toFiniteNumber(value, 1);
       });
-      this.addWidget("number", "alpha", this.properties.alpha, (value: unknown) => {
-        this.properties.alpha = toFiniteNumber(value, 255);
-      });
+      this.addWidget(
+        "number",
+        "alpha",
+        this.properties.alpha,
+        (value: unknown) => {
+          this.properties.alpha = toFiniteNumber(value, 255);
+        }
+      );
       this.size = [200, 148];
     }
   }
@@ -1238,9 +1559,14 @@ const ensureNodeTypesRegistered = (): void => {
         },
         { values: PIXEL_BLEND_MODES }
       );
-      this.addWidget("number", "top opacity", this.properties.topOpacity, (value: unknown) => {
-        this.properties.topOpacity = toFiniteNumber(value, 1);
-      });
+      this.addWidget(
+        "number",
+        "top opacity",
+        this.properties.topOpacity,
+        (value: unknown) => {
+          this.properties.topOpacity = toFiniteNumber(value, 1);
+        }
+      );
       this.addWidget(
         "number",
         "bottom opacity",
@@ -1259,8 +1585,6 @@ const ensureNodeTypesRegistered = (): void => {
       this.title = "Sink";
       this.addInput("value", "color");
       this.properties = { branch: "UPPER" };
-      this.color = "#0f766e";
-      this.bgcolor = "#dcfce7";
       this.size = [190, 62];
     }
   }
@@ -1270,6 +1594,8 @@ const ensureNodeTypesRegistered = (): void => {
     [Track1DNode, "1D track", "Sources"],
     [DynamicNode, "Dynamic", "Sources"],
     [ConstantNode, "Constant", "Constants"],
+    [RangeNode, "Signal range", "Constants"],
+    [HistogramNode, "Histogram", "Outputs"],
     [UnaryNode, "Unary", "Math"],
     [LogNode, "Log (base)", "Math"],
     [LogInputNode, "Log (base input)", "Math"],
@@ -1288,43 +1614,98 @@ const ensureNodeTypesRegistered = (): void => {
   }
 
   if (!LiteGraph.registered_node_types[SOURCE_NODE_TYPE]) {
-    LiteGraph.registerNodeType(SOURCE_NODE_TYPE, SourceNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      SOURCE_NODE_TYPE,
+      SourceNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[TRACK1D_NODE_TYPE]) {
-    LiteGraph.registerNodeType(TRACK1D_NODE_TYPE, Track1DNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      TRACK1D_NODE_TYPE,
+      Track1DNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[CONSTANT_NODE_TYPE]) {
-    LiteGraph.registerNodeType(CONSTANT_NODE_TYPE, ConstantNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      CONSTANT_NODE_TYPE,
+      ConstantNode as unknown as { new (): LGraphNode }
+    );
   }
+  if (!LiteGraph.registered_node_types[RANGE_NODE_TYPE])
+    LiteGraph.registerNodeType(
+      RANGE_NODE_TYPE,
+      RangeNode as unknown as { new (): LGraphNode }
+    );
+  if (!LiteGraph.registered_node_types[HISTOGRAM_NODE_TYPE])
+    LiteGraph.registerNodeType(
+      HISTOGRAM_NODE_TYPE,
+      HistogramNode as unknown as { new (): LGraphNode }
+    );
   if (!LiteGraph.registered_node_types[DYNAMIC_NODE_TYPE]) {
-    LiteGraph.registerNodeType(DYNAMIC_NODE_TYPE, DynamicNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      DYNAMIC_NODE_TYPE,
+      DynamicNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[UNARY_NODE_TYPE]) {
-    LiteGraph.registerNodeType(UNARY_NODE_TYPE, UnaryNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      UNARY_NODE_TYPE,
+      UnaryNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[LOG_NODE_TYPE]) {
-    LiteGraph.registerNodeType(LOG_NODE_TYPE, LogNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      LOG_NODE_TYPE,
+      LogNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[LOG_INPUT_NODE_TYPE]) {
-    LiteGraph.registerNodeType(LOG_INPUT_NODE_TYPE, LogInputNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      LOG_INPUT_NODE_TYPE,
+      LogInputNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[BINARY_NODE_TYPE]) {
-    LiteGraph.registerNodeType(BINARY_NODE_TYPE, BinaryNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      BINARY_NODE_TYPE,
+      BinaryNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[CLAMP_NODE_TYPE]) {
-    LiteGraph.registerNodeType(CLAMP_NODE_TYPE, ClampNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      CLAMP_NODE_TYPE,
+      ClampNode as unknown as { new (): LGraphNode }
+    );
+  }
+  if (!LiteGraph.registered_node_types[MODDOTPLOT_COLORMAP_NODE_TYPE]) {
+    LiteGraph.registerNodeType(
+      MODDOTPLOT_COLORMAP_NODE_TYPE,
+      ModDotPlotColormapNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[COLORMAP_NODE_TYPE]) {
-    LiteGraph.registerNodeType(COLORMAP_NODE_TYPE, ColormapNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      COLORMAP_NODE_TYPE,
+      ColormapNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[RGB_NODE_TYPE]) {
-    LiteGraph.registerNodeType(RGB_NODE_TYPE, RGBNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      RGB_NODE_TYPE,
+      RGBNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[HSL_NODE_TYPE]) {
-    LiteGraph.registerNodeType(HSL_NODE_TYPE, HSLNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      HSL_NODE_TYPE,
+      HSLNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[HSV_NODE_TYPE]) {
-    LiteGraph.registerNodeType(HSV_NODE_TYPE, HSVNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      HSV_NODE_TYPE,
+      HSVNode as unknown as { new (): LGraphNode }
+    );
   }
   if (!LiteGraph.registered_node_types[PIXEL_BLEND_NODE_TYPE]) {
     LiteGraph.registerNodeType(
@@ -1333,14 +1714,23 @@ const ensureNodeTypesRegistered = (): void => {
     );
   }
   if (!LiteGraph.registered_node_types[SINK_NODE_TYPE]) {
-    LiteGraph.registerNodeType(SINK_NODE_TYPE, SinkNode as unknown as { new (): LGraphNode });
+    LiteGraph.registerNodeType(
+      SINK_NODE_TYPE,
+      SinkNode as unknown as { new (): LGraphNode }
+    );
   }
 
   nodeTypesRegistered = true;
 };
 
-const setWidgetValue = (node: LGraphNode, widgetName: string, value: unknown): void => {
-  const widgets = (node as unknown as { widgets?: Array<{ name?: string; value?: unknown }> }).widgets ?? [];
+const setWidgetValue = (
+  node: LGraphNode,
+  widgetName: string,
+  value: unknown
+): void => {
+  const widgets =
+    (node as unknown as { widgets?: Array<{ name?: string; value?: unknown }> })
+      .widgets ?? [];
   const widget = widgets.find((entry) => entry.name === widgetName);
   if (widget) {
     widget.value = value;
@@ -1348,13 +1738,31 @@ const setWidgetValue = (node: LGraphNode, widgetName: string, value: unknown): v
 };
 
 const syncNodeWidgetsFromProperties = (node: LGraphNode): void => {
+  if (node.type === RANGE_NODE_TYPE) {
+    setWidgetValue(node, "source", toSourceName(node.properties?.source));
+    setWidgetValue(
+      node,
+      "selectedMin",
+      toFiniteNumber(node.properties?.selectedMin, 0)
+    );
+    setWidgetValue(
+      node,
+      "selectedMax",
+      toFiniteNumber(node.properties?.selectedMax, 1)
+    );
+    return;
+  }
   if (node.type === SOURCE_NODE_TYPE) {
     setWidgetValue(node, "source", toSourceName(node.properties?.source));
     return;
   }
   if (node.type === TRACK1D_NODE_TYPE) {
     setWidgetValue(node, "track", ensureNodeTrackId(node.properties?.trackId));
-    setWidgetValue(node, "row axis", toTrackAxis(node.properties?.axis) === "ROW");
+    setWidgetValue(
+      node,
+      "row axis",
+      toTrackAxis(node.properties?.axis) === "ROW"
+    );
     return;
   }
   if (node.type === CONSTANT_NODE_TYPE) {
@@ -1374,7 +1782,11 @@ const syncNodeWidgetsFromProperties = (node: LGraphNode): void => {
     return;
   }
   if (node.type === LOG_INPUT_NODE_TYPE) {
-    setWidgetValue(node, "fallback base", toFiniteNumber(node.properties?.base, 10));
+    setWidgetValue(
+      node,
+      "fallback base",
+      toFiniteNumber(node.properties?.base, 10)
+    );
     return;
   }
   if (node.type === BINARY_NODE_TYPE) {
@@ -1386,14 +1798,35 @@ const syncNodeWidgetsFromProperties = (node: LGraphNode): void => {
     setWidgetValue(node, "max", toFiniteNumber(node.properties?.maxValue, 1));
     return;
   }
+  if (node.type === MODDOTPLOT_COLORMAP_NODE_TYPE) {
+    setWidgetValue(
+      node,
+      "minimum identity (%)",
+      (100 * toFiniteNumber(node.properties?.minSignal, 80)) /
+        toFiniteNumber(node.properties?.maxSignal, 100)
+    );
+    return;
+  }
   if (node.type === COLORMAP_NODE_TYPE) {
-    setWidgetValue(node, "start hex", sanitizeColor(node.properties?.startColor, "#ffffff00"));
-    setWidgetValue(node, "end hex", sanitizeColor(node.properties?.endColor, "#006000ff"));
+    setWidgetValue(
+      node,
+      "start hex",
+      sanitizeColor(node.properties?.startColor, "#ffffff00")
+    );
+    setWidgetValue(
+      node,
+      "end hex",
+      sanitizeColor(node.properties?.endColor, "#006000ff")
+    );
     setWidgetValue(node, "min", toFiniteNumber(node.properties?.minSignal, 0));
     setWidgetValue(node, "max", toFiniteNumber(node.properties?.maxSignal, 1));
     return;
   }
-  if (node.type === RGB_NODE_TYPE || node.type === HSL_NODE_TYPE || node.type === HSV_NODE_TYPE) {
+  if (
+    node.type === RGB_NODE_TYPE ||
+    node.type === HSL_NODE_TYPE ||
+    node.type === HSV_NODE_TYPE
+  ) {
     setWidgetValue(node, "c1", toFiniteNumber(node.properties?.c1, 0));
     setWidgetValue(node, "c2", toFiniteNumber(node.properties?.c2, 1));
     setWidgetValue(node, "c3", toFiniteNumber(node.properties?.c3, 1));
@@ -1402,7 +1835,11 @@ const syncNodeWidgetsFromProperties = (node: LGraphNode): void => {
   }
   if (node.type === PIXEL_BLEND_NODE_TYPE) {
     setWidgetValue(node, "mode", toPixelBlendMode(node.properties?.mode));
-    setWidgetValue(node, "top opacity", toFiniteNumber(node.properties?.topOpacity, 1));
+    setWidgetValue(
+      node,
+      "top opacity",
+      toFiniteNumber(node.properties?.topOpacity, 1)
+    );
     setWidgetValue(
       node,
       "bottom opacity",
@@ -1417,9 +1854,12 @@ const fitGraphCanvas = (): void => {
   }
   const width = Math.max(640, Math.floor(graphHost.value.clientWidth));
   const height = Math.max(420, Math.floor(graphHost.value.clientHeight));
-  graphCanvasRef.value.width = width;
-  graphCanvasRef.value.height = height;
-  graphCanvas.resize(width, height);
+  if (
+    graphCanvasRef.value.width !== width ||
+    graphCanvasRef.value.height !== height
+  ) {
+    graphCanvas.resize(width, height);
+  }
   graphCanvas.draw(true, true);
 };
 
@@ -1427,8 +1867,14 @@ const fitGraphView = (requiredWidth: number, requiredHeight: number): void => {
   if (!graphCanvas || !graphHost.value) {
     return;
   }
-  const availableWidth = Math.max(1, Math.floor(graphHost.value.clientWidth) - 72);
-  const availableHeight = Math.max(1, Math.floor(graphHost.value.clientHeight) - 72);
+  const availableWidth = Math.max(
+    1,
+    Math.floor(graphHost.value.clientWidth) - 72
+  );
+  const availableHeight = Math.max(
+    1,
+    Math.floor(graphHost.value.clientHeight) - 72
+  );
   const scaleX = availableWidth / Math.max(1, requiredWidth);
   const scaleY = availableHeight / Math.max(1, requiredHeight);
   const targetScale = Math.min(1, scaleX, scaleY);
@@ -1472,14 +1918,25 @@ const updateTrackNodeWidgets = (): void => {
     if (node.type !== TRACK1D_NODE_TYPE) {
       return;
     }
-    const widgets = (node as unknown as { widgets?: Array<{ name?: string; value?: unknown; options?: Record<string, unknown> }> }).widgets ?? [];
+    const widgets =
+      (
+        node as unknown as {
+          widgets?: Array<{
+            name?: string;
+            value?: unknown;
+            options?: Record<string, unknown>;
+          }>;
+        }
+      ).widgets ?? [];
     const trackWidget = widgets.find((widget) => widget.name === "track");
     if (trackWidget) {
       if (!trackWidget.options) {
         trackWidget.options = {};
       }
       trackWidget.options.values = ids;
-      const selected = ensureNodeTrackId((node.properties ?? {}).trackId ?? fallback);
+      const selected = ensureNodeTrackId(
+        (node.properties ?? {}).trackId ?? fallback
+      );
       node.properties = {
         ...(node.properties ?? {}),
         trackId: selected,
@@ -1489,6 +1946,112 @@ const updateTrackNodeWidgets = (): void => {
   });
   graphCanvas?.draw(true, true);
 };
+
+// Colors describe data types, not special node classes. LiteGraph rejects number→color links.
+const graphDark = () => styleStore.mapBackgroundColor.L < 50;
+const stylePipelineNode = (node: LGraphNode): void => {
+  node.color = graphDark() ? "#303e50" : "#dde5ef";
+  node.bgcolor = graphDark() ? "#1e293b" : "#ffffff";
+  (node as LGraphNode & { title_text_color: string }).title_text_color =
+    graphDark() ? "#f1f5f9" : "#172033";
+  // LiteGraph's built-in button hard-codes a dark fill. Use its documented
+  // custom-widget drawing/mouse hooks, leaving the dependency unmodified.
+  for (const widget of (
+    node as LGraphNode & {
+      widgets?: Array<{
+        type: string;
+        name: string;
+        value: unknown;
+        callback?: (...args: unknown[]) => unknown;
+      }>;
+    }
+  ).widgets ?? []) {
+    if (widget.type !== "button") continue;
+    Object.assign(widget, {
+      type: "hict-themed-button",
+      draw: (
+        ctx: CanvasRenderingContext2D,
+        _node: LGraphNode,
+        width: number,
+        y: number,
+        height: number
+      ) => {
+        ctx.fillStyle = graphDark() ? "#334155" : "#e2e8f0";
+        ctx.fillRect(15, y, width - 30, height);
+        ctx.strokeStyle = graphDark() ? "#94a3b8" : "#64748b";
+        ctx.strokeRect(15, y, width - 30, height);
+        ctx.fillStyle = graphDark() ? "#f8fafc" : "#172033";
+        ctx.textAlign = "center";
+        ctx.fillText(widget.name, width / 2, y + height * 0.7);
+      },
+      mouse: (event: MouseEvent) => {
+        if (
+          event.type ===
+          `${
+            (LiteGraph as typeof LiteGraph & { pointerevents_method: string })
+              .pointerevents_method
+          }down`
+        ) {
+          window.setTimeout(
+            () =>
+              widget.callback?.(
+                widget.value,
+                graphCanvas!,
+                node,
+                [0, 0],
+                event
+              ),
+            20
+          );
+        }
+        return true;
+      },
+    });
+  }
+  for (const slot of [...(node.inputs ?? []), ...(node.outputs ?? [])]) {
+    Object.assign(slot, {
+      color_on:
+        slot.type === "color"
+          ? graphDark()
+            ? "#c4b5fd"
+            : "#7c3aed"
+          : graphDark()
+          ? "#7dd3fc"
+          : "#0369a1",
+      color_off: slot.type === "color" ? "#9479c7" : "#5792b1",
+      shape:
+        slot.type === "color" ? LiteGraph.BOX_SHAPE : LiteGraph.CIRCLE_SHAPE,
+    });
+  }
+};
+const applyGraphTheme = (): void => {
+  const dark = graphDark();
+  Object.assign(LiteGraph, {
+    NODE_TEXT_COLOR: dark ? "#e2e8f0" : "#263449",
+    NODE_TITLE_COLOR: dark ? "#f1f5f9" : "#172033",
+    WIDGET_BGCOLOR: dark ? "#172033" : "#f1f5f9",
+    WIDGET_OUTLINE_COLOR: dark ? "#94a3b8" : "#94a3b8",
+    WIDGET_TEXT_COLOR: dark ? "#f8fafc" : "#172033",
+    WIDGET_SECONDARY_TEXT_COLOR: dark ? "#cbd5e1" : "#475569",
+  });
+  Object.assign(LGraphCanvas.link_type_colors, {
+    number: dark ? "#7dd3fc" : "#0369a1",
+    color: dark ? "#c4b5fd" : "#7c3aed",
+  });
+  if (graphHost.value)
+    graphHost.value.style.backgroundColor = dark ? "#111827" : "#f1f5f9";
+  if (graphCanvas)
+    Object.assign(graphCanvas, {
+      clear_background_color: dark ? "#111827" : "#f1f5f9",
+      node_title_color: dark ? "#f1f5f9" : "#172033",
+    });
+  graph?.serialize().nodes.forEach((data) => {
+    const node = graph?.getNodeById(data.id);
+    if (node) stylePipelineNode(node);
+  });
+  graphCanvas?.setDirty(true, true);
+};
+watch(() => styleStore.mapBackgroundColor.RGBA, applyGraphTheme);
 
 const initializeGraph = (): void => {
   if (!graphCanvasRef.value) {
@@ -1501,12 +2064,23 @@ const initializeGraph = (): void => {
   graphCanvas = new LGraphCanvas(graphCanvasRef.value, graph);
   (graphCanvas as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
   graphCanvas.allow_interaction = true;
+  (graphCanvas as unknown as { show_info: boolean }).show_info = false;
   graphCanvas.background_image = "";
+  graph.onNodeAdded = (node: LGraphNode) => stylePipelineNode(node);
+  applyGraphTheme();
   graphCanvas.ds.scale = 0.9;
   createSinkNodes();
   fitGraphCanvas();
   if (graphHost.value) {
-    resizeObserver = new ResizeObserver(() => fitGraphCanvas());
+    resizeObserver = new ResizeObserver(() => {
+      // Resizing the canvas synchronously inside observer delivery can resize
+      // its flex ancestors and trigger a ResizeObserver loop error.
+      if (resizeFrame !== null) return;
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null;
+        fitGraphCanvas();
+      });
+    });
     resizeObserver.observe(graphHost.value);
   }
 };
@@ -1522,7 +2096,7 @@ const clearGraph = (): void => {
 };
 
 const GRAPH_VERTICAL_GAP = 40;
-const GRAPH_HORIZONTAL_GAP = 250;
+const GRAPH_HORIZONTAL_GAP = 310;
 const GRAPH_TOP_PADDING = 44;
 const GRAPH_BRANCH_GAP = 150;
 const GRAPH_LEFT_PADDING = 60;
@@ -1548,7 +2122,7 @@ const estimateNodeHeight = (expression: PipelineExpression): number => {
     case "clamp":
       return 104;
     case "colormap":
-      return 148;
+      return 480;
     case "rgb":
     case "hsl":
     case "hsv":
@@ -1571,7 +2145,12 @@ const measureExpressionHeight = (
   }
 
   let height = estimateNodeHeight(expression);
-  if (expression.type === "unary" || expression.type === "log" || expression.type === "clamp" || expression.type === "colormap") {
+  if (
+    expression.type === "unary" ||
+    expression.type === "log" ||
+    expression.type === "clamp" ||
+    expression.type === "colormap"
+  ) {
     const childHeight = measureExpressionHeight(expression.input, cache);
     height = Math.max(height, childHeight);
   } else if (expression.type === "log_input") {
@@ -1621,7 +2200,12 @@ const measureExpressionDepth = (
   }
 
   let depth = 1;
-  if (expression.type === "unary" || expression.type === "log" || expression.type === "clamp" || expression.type === "colormap") {
+  if (
+    expression.type === "unary" ||
+    expression.type === "log" ||
+    expression.type === "clamp" ||
+    expression.type === "colormap"
+  ) {
     depth = 1 + measureExpressionDepth(expression.input, cache);
   } else if (expression.type === "log_input") {
     depth =
@@ -1663,7 +2247,9 @@ const measureExpressionDepth = (
   return depth;
 };
 
-const createNodeForExpression = (expression: PipelineExpression): LGraphNode | null => {
+const createNodeForExpression = (
+  expression: PipelineExpression
+): LGraphNode | null => {
   let node: LGraphNode | null = null;
   switch (expression.type) {
     case "source":
@@ -1677,7 +2263,12 @@ const createNodeForExpression = (expression: PipelineExpression): LGraphNode | n
       if (node) {
         node.properties.trackId = ensureNodeTrackId(expression.trackId);
         node.properties.axis = expression.axis;
-        const widgets = (node as unknown as { widgets?: Array<{ name?: string; value?: unknown }> }).widgets ?? [];
+        const widgets =
+          (
+            node as unknown as {
+              widgets?: Array<{ name?: string; value?: unknown }>;
+            }
+          ).widgets ?? [];
         const axisWidget = widgets.find((widget) => widget.name === "row axis");
         if (axisWidget) {
           axisWidget.value = expression.axis === "ROW";
@@ -1728,7 +2319,11 @@ const createNodeForExpression = (expression: PipelineExpression): LGraphNode | n
       }
       break;
     case "colormap":
-      node = LiteGraph.createNode(COLORMAP_NODE_TYPE) as LGraphNode | null;
+      node = LiteGraph.createNode(
+        expression.mode === "MODDOTPLOT_IDENTITY"
+          ? MODDOTPLOT_COLORMAP_NODE_TYPE
+          : COLORMAP_NODE_TYPE
+      ) as LGraphNode | null;
       if (node) {
         node.properties.mode = expression.mode;
         node.properties.startColor = expression.startColor;
@@ -1778,11 +2373,19 @@ const positionExpressionTree = (
     return null;
   }
   const nodeHeight = Number(node.size?.[1] ?? estimateNodeHeight(expression));
-  const nodeY = topY + Math.max(0, (subtreeHeight - nodeHeight) / 2);
+  const nodeY =
+    expression.type === "colormap"
+      ? topY
+      : topY + Math.max(0, (subtreeHeight - nodeHeight) / 2);
   const nodeX = sinkX - (depth + 1) * GRAPH_HORIZONTAL_GAP;
   node.pos = [nodeX, nodeY];
 
-  if (expression.type === "unary" || expression.type === "log" || expression.type === "clamp" || expression.type === "colormap") {
+  if (
+    expression.type === "unary" ||
+    expression.type === "log" ||
+    expression.type === "clamp" ||
+    expression.type === "colormap"
+  ) {
     const childHeight = measureExpressionHeight(expression.input, heightCache);
     const childTop = topY + Math.max(0, (subtreeHeight - childHeight) / 2);
     const inputNode = positionExpressionTree(
@@ -1793,13 +2396,65 @@ const positionExpressionTree = (
       heightCache
     );
     inputNode?.connect(0, node, 0);
+    if (expression.type === "colormap") {
+      const findSource = (value: PipelineExpression): SourceName => {
+        if (value.type === "source") return value.source;
+        if ("input" in value) return findSource(value.input);
+        if (value.type === "binary") return findSource(value.left);
+        return "PRIMARY";
+      };
+      const source =
+        expression.min?.type === "constant" && expression.min.rangeSource
+          ? expression.min.rangeSource
+          : findSource(expression.input);
+      const low =
+        expression.min?.type === "constant"
+          ? expression.min.value
+          : expression.minSignal;
+      const high =
+        expression.max?.type === "constant"
+          ? expression.max.value
+          : expression.maxSignal;
+      const key = JSON.stringify([source, low, high]);
+      let range = rangeNodes.get(key);
+      if (!range) {
+        range = LiteGraph.createNode(RANGE_NODE_TYPE) as LGraphNode;
+        range.properties = { source, selectedMin: low, selectedMax: high };
+        range.title = `${source} signal range`;
+        range.pos = [nodeX, nodeY + nodeHeight + 30];
+        graph?.add(range);
+        rangeNodes.set(key, range);
+        setWidgetValue(range, "source", source);
+        setWidgetValue(range, "selectedMin", low);
+        setWidgetValue(range, "selectedMax", high);
+      }
+      for (const [slot, child] of [
+        [1, expression.min],
+        [2, expression.max],
+      ] as const) {
+        if (!child || child.type === "constant")
+          range.connect(slot - 1, node, slot);
+        else
+          positionExpressionTree(
+            child,
+            depth + 1,
+            nodeY + nodeHeight + slot * 180,
+            sinkX,
+            heightCache
+          )?.connect(0, node, slot);
+      }
+    }
   }
 
   if (expression.type === "log_input") {
     const inputHeight = measureExpressionHeight(expression.input, heightCache);
     const baseHeight = measureExpressionHeight(expression.base, heightCache);
     const childrenTop =
-      topY + Math.max(0, (subtreeHeight - (inputHeight + GRAPH_VERTICAL_GAP + baseHeight)) / 2);
+      topY +
+      Math.max(
+        0,
+        (subtreeHeight - (inputHeight + GRAPH_VERTICAL_GAP + baseHeight)) / 2
+      );
     const inputNode = positionExpressionTree(
       expression.input,
       depth + 1,
@@ -1845,7 +2500,11 @@ const positionExpressionTree = (
     rightNode?.connect(0, node, 1);
   }
 
-  if (expression.type === "rgb" || expression.type === "hsl" || expression.type === "hsv") {
+  if (
+    expression.type === "rgb" ||
+    expression.type === "hsl" ||
+    expression.type === "hsv"
+  ) {
     const c1Height = measureExpressionHeight(expression.c1, heightCache);
     const c2Height = measureExpressionHeight(expression.c2, heightCache);
     const c3Height = measureExpressionHeight(expression.c3, heightCache);
@@ -1858,7 +2517,8 @@ const positionExpressionTree = (
       c3Height +
       GRAPH_VERTICAL_GAP +
       alphaHeight;
-    const childrenTop = topY + Math.max(0, (subtreeHeight - childrenTotalHeight) / 2);
+    const childrenTop =
+      topY + Math.max(0, (subtreeHeight - childrenTotalHeight) / 2);
     const c1Node = positionExpressionTree(
       expression.c1,
       depth + 1,
@@ -1876,7 +2536,11 @@ const positionExpressionTree = (
     const c3Node = positionExpressionTree(
       expression.c3,
       depth + 1,
-      childrenTop + c1Height + GRAPH_VERTICAL_GAP + c2Height + GRAPH_VERTICAL_GAP,
+      childrenTop +
+        c1Height +
+        GRAPH_VERTICAL_GAP +
+        c2Height +
+        GRAPH_VERTICAL_GAP,
       sinkX,
       heightCache
     );
@@ -1901,9 +2565,16 @@ const positionExpressionTree = (
 
   if (expression.type === "pixel_blend") {
     const topHeight = measureExpressionHeight(expression.top, heightCache);
-    const bottomHeight = measureExpressionHeight(expression.bottom, heightCache);
+    const bottomHeight = measureExpressionHeight(
+      expression.bottom,
+      heightCache
+    );
     const childrenTop =
-      topY + Math.max(0, (subtreeHeight - (topHeight + GRAPH_VERTICAL_GAP + bottomHeight)) / 2);
+      topY +
+      Math.max(
+        0,
+        (subtreeHeight - (topHeight + GRAPH_VERTICAL_GAP + bottomHeight)) / 2
+      );
     const topNode = positionExpressionTree(
       expression.top,
       depth + 1,
@@ -1932,7 +2603,15 @@ const buildGraphFromExpressions = (
   if (!graph) {
     return;
   }
+  const currentViewport =
+    graphCanvas && graph.serialize().nodes.length > 2
+      ? {
+          scale: graphCanvas.ds.scale,
+          offset: Array.from(graphCanvas.ds.offset),
+        }
+      : undefined;
   clearGraph();
+  rangeNodes.clear();
   createSinkNodes();
 
   const upperSink = upperSinkId != null ? graph.getNodeById(upperSinkId) : null;
@@ -1940,12 +2619,19 @@ const buildGraphFromExpressions = (
   const upperColorExpression = ensureColorRootExpression(upperExpression);
   const lowerColorExpression = ensureColorRootExpression(lowerExpression);
   const sharedPipeline =
-    JSON.stringify(upperColorExpression) === JSON.stringify(lowerColorExpression);
+    JSON.stringify(upperColorExpression) ===
+    JSON.stringify(lowerColorExpression);
   const heightCache = new WeakMap<object, number>();
   const depthCache = new WeakMap<object, number>();
 
-  const upperHeight = measureExpressionHeight(upperColorExpression, heightCache);
-  const lowerHeight = measureExpressionHeight(lowerColorExpression, heightCache);
+  const upperHeight = measureExpressionHeight(
+    upperColorExpression,
+    heightCache
+  );
+  const lowerHeight = measureExpressionHeight(
+    lowerColorExpression,
+    heightCache
+  );
   const maxDepth = Math.max(
     measureExpressionDepth(upperColorExpression, depthCache),
     measureExpressionDepth(lowerColorExpression, depthCache)
@@ -2026,21 +2712,49 @@ const buildGraphFromExpressions = (
     ? GRAPH_TOP_PADDING + upperHeight + GRAPH_TOP_PADDING
     : lowerTopY + lowerHeight + GRAPH_TOP_PADDING;
   fitGraphView(totalWidth, totalHeight);
+  if (currentViewport && graphCanvas) {
+    graphCanvas.ds.scale = currentViewport.scale;
+    graphCanvas.ds.offset[0] = currentViewport.offset[0];
+    graphCanvas.ds.offset[1] = currentViewport.offset[1];
+  } else {
+    restoreGraphViewport();
+  }
   graphCanvas?.draw(true, true);
 };
 
 const expressionFromNode = (
   node: LGraphNode | null,
-  visited: Set<number>
+  visited: Set<number>,
+  outputSlot = 0
 ): PipelineExpression => {
   if (!node) {
     return defaultSignalExpression();
   }
   const nodeId = node.id ?? -1;
   if (visited.has(nodeId)) {
-    return defaultSignalExpression();
+    throw new Error(
+      "The rendering pipeline contains a cycle. Remove the cyclic connection before applying it."
+    );
   }
+  visited = new Set(visited);
   visited.add(nodeId);
+
+  const input = (slot: number): PipelineExpression =>
+    expressionFromNode(
+      node.getInputNode(slot),
+      visited,
+      node.getInputLink(slot)?.origin_slot ?? 0
+    );
+
+  if (node.type === RANGE_NODE_TYPE) {
+    const output = outputSlot === 1 ? "selectedMax" : "selectedMin";
+    return {
+      type: "constant",
+      value: toFiniteNumber(node.properties[output], outputSlot === 1 ? 1 : 0),
+      rangeSource: toSourceName(node.properties.source),
+      rangeOutput: output,
+    };
+  }
 
   if (node.type === SOURCE_NODE_TYPE) {
     return {
@@ -2075,14 +2789,14 @@ const expressionFromNode = (
     return {
       type: "unary",
       op: toUnaryOp(node.properties?.op),
-      input: expressionFromNode(node.getInputNode(0), visited),
+      input: input(0),
     };
   }
 
   if (node.type === LOG_NODE_TYPE) {
     return {
       type: "log",
-      input: expressionFromNode(node.getInputNode(0), visited),
+      input: input(0),
       base: toFiniteNumber(node.properties?.base, 10),
     };
   }
@@ -2090,9 +2804,9 @@ const expressionFromNode = (
   if (node.type === LOG_INPUT_NODE_TYPE) {
     return {
       type: "log_input",
-      input: expressionFromNode(node.getInputNode(0), visited),
+      input: input(0),
       base: node.getInputNode(1)
-        ? expressionFromNode(node.getInputNode(1), visited)
+        ? input(1)
         : {
             type: "constant",
             value: toFiniteNumber(node.properties?.base, 10),
@@ -2104,49 +2818,72 @@ const expressionFromNode = (
     return {
       type: "binary",
       op: toBinaryOp(node.properties?.op),
-      left: expressionFromNode(node.getInputNode(0), visited),
-      right: expressionFromNode(node.getInputNode(1), visited),
+      left: input(0),
+      right: input(1),
     };
   }
 
   if (node.type === CLAMP_NODE_TYPE) {
     return {
       type: "clamp",
-      input: expressionFromNode(node.getInputNode(0), visited),
+      input: input(0),
       minValue: toFiniteNumber(node.properties?.minValue, 0),
       maxValue: toFiniteNumber(node.properties?.maxValue, 1),
     };
   }
 
-  if (node.type === COLORMAP_NODE_TYPE) {
+  if (
+    node.type === COLORMAP_NODE_TYPE ||
+    node.type === MODDOTPLOT_COLORMAP_NODE_TYPE
+  ) {
+    const boundary = (slot: number): PipelineExpression | undefined => {
+      return node.getInputNode(slot) ? input(slot) : undefined;
+    };
+    const min = boundary(1),
+      max = boundary(2);
     return {
       type: "colormap",
-      mode: "LINEAR",
-      input: expressionFromNode(node.getInputNode(0), visited),
+      mode:
+        node.type === MODDOTPLOT_COLORMAP_NODE_TYPE
+          ? "MODDOTPLOT_IDENTITY"
+          : "LINEAR",
+      input: input(0),
       startColor: sanitizeColor(node.properties?.startColor, "#ffffff00"),
       endColor: sanitizeColor(node.properties?.endColor, "#006000ff"),
-      minSignal: toFiniteNumber(node.properties?.minSignal, 0),
-      maxSignal: toFiniteNumber(node.properties?.maxSignal, 1),
+      minSignal:
+        min?.type === "constant"
+          ? min.value
+          : toFiniteNumber(node.properties?.minSignal, 0),
+      maxSignal:
+        max?.type === "constant"
+          ? max.value
+          : toFiniteNumber(node.properties?.maxSignal, 1),
+      min,
+      max,
     };
   }
 
-  if (node.type === RGB_NODE_TYPE || node.type === HSL_NODE_TYPE || node.type === HSV_NODE_TYPE) {
+  if (
+    node.type === RGB_NODE_TYPE ||
+    node.type === HSL_NODE_TYPE ||
+    node.type === HSV_NODE_TYPE
+  ) {
     const fallbackConstant = (value: unknown): PipelineExpression => ({
       type: "constant",
       value: toFiniteNumber(value, 0),
     });
 
     const c1 = node.getInputNode(0)
-      ? expressionFromNode(node.getInputNode(0), visited)
+      ? input(0)
       : fallbackConstant(node.properties?.c1 ?? 0);
     const c2 = node.getInputNode(1)
-      ? expressionFromNode(node.getInputNode(1), visited)
+      ? input(1)
       : fallbackConstant(node.properties?.c2 ?? 1);
     const c3 = node.getInputNode(2)
-      ? expressionFromNode(node.getInputNode(2), visited)
+      ? input(2)
       : fallbackConstant(node.properties?.c3 ?? 1);
     const alpha = node.getInputNode(3)
-      ? expressionFromNode(node.getInputNode(3), visited)
+      ? input(3)
       : fallbackConstant(node.properties?.alpha ?? 255);
 
     if (node.type === RGB_NODE_TYPE) {
@@ -2168,10 +2905,10 @@ const expressionFromNode = (
       type: "pixel_blend",
       mode: toPixelBlendMode(node.properties?.mode),
       top: node.getInputNode(0)
-        ? ensureColorRootExpression(expressionFromNode(node.getInputNode(0), visited))
+        ? ensureColorRootExpression(input(0))
         : topFallback,
       bottom: node.getInputNode(1)
-        ? ensureColorRootExpression(expressionFromNode(node.getInputNode(1), visited))
+        ? ensureColorRootExpression(input(1))
         : bottomFallback,
       topOpacity: toFiniteNumber(node.properties?.topOpacity, 1),
       bottomOpacity: toFiniteNumber(node.properties?.bottomOpacity, 1),
@@ -2191,7 +2928,114 @@ const expressionFromSink = (branch: "UPPER" | "LOWER"): PipelineExpression => {
   }
   const sinkNode = graph.getNodeById(sinkId);
   const sourceNode = sinkNode?.getInputNode(0) ?? null;
-  return ensureColorRootExpression(expressionFromNode(sourceNode, new Set<number>()));
+  return ensureColorRootExpression(
+    expressionFromNode(
+      sourceNode,
+      new Set<number>(),
+      sinkNode?.getInputLink(0)?.origin_slot ?? 0
+    )
+  );
+};
+
+const editorStateKey = () =>
+  pipelineEditorStorageKey(props.mapManager?.networkManager.host ?? "");
+let lastServerSignature = "";
+const expressionPairSignature = (
+  upper: PipelineExpression,
+  lower: PipelineExpression
+): string => pipelineExpressionSignature([upper, lower]);
+const captureEditorState = () => ({
+  liteGraph: graph?.serialize() ?? null,
+  viewport: graphCanvas
+    ? { scale: graphCanvas.ds.scale, offset: Array.from(graphCanvas.ds.offset) }
+    : null,
+});
+const applyEditorViewport = (value: unknown): void => {
+  if (!graphCanvas || !value || typeof value !== "object") return;
+  const view = value as { scale?: number; offset?: number[] };
+  if (
+    typeof view.scale === "number" &&
+    Number.isFinite(view.scale) &&
+    view.scale > 0 &&
+    view.scale <= 10 &&
+    Array.isArray(view.offset) &&
+    view.offset.length === 2 &&
+    view.offset.every(Number.isFinite)
+  ) {
+    graphCanvas.ds.scale = view.scale;
+    graphCanvas.ds.offset[0] = view.offset[0];
+    graphCanvas.ds.offset[1] = view.offset[1];
+  }
+};
+const restoreEditorState = (
+  state: { liteGraph?: unknown; viewport?: unknown },
+  upper: PipelineExpression,
+  lower: PipelineExpression
+): void => {
+  if (!graphCanvas) return;
+  const candidate = restorePipelineEditorGraph(
+    state.liteGraph,
+    new Set(Object.values(NODE_MENU_NODE_TYPES_BY_CATEGORY).flat()),
+    { LGraph, LiteGraph }
+  );
+  const sinks = candidate.findNodesByType(SINK_NODE_TYPE);
+  const upperSinks = sinks.filter((node) => node.properties.branch === "UPPER");
+  const lowerSinks = sinks.filter((node) => node.properties.branch === "LOWER");
+  if (sinks.length !== 2 || upperSinks.length !== 1 || lowerSinks.length !== 1)
+    throw new Error(
+      "The editor graph must contain one upper and one lower sink."
+    );
+  const fromSink = (sink: LGraphNode) =>
+    ensureColorRootExpression(
+      expressionFromNode(
+        sink.getInputNode(0),
+        new Set(),
+        sink.getInputLink(0)?.origin_slot ?? 0
+      )
+    );
+  if (
+    expressionPairSignature(
+      fromSink(upperSinks[0]),
+      fromSink(lowerSinks[0])
+    ) !== expressionPairSignature(upper, lower)
+  )
+    throw new Error("Editor graph does not match the rendering expressions.");
+  graph?.stop();
+  graphCanvas.setGraph(candidate);
+  graph = candidate;
+  (graph as unknown as { filter?: string }).filter = HICT_PIPELINE_FILTER;
+  graph.onNodeAdded = (node) => stylePipelineNode(node);
+  for (const stored of graph.serialize().nodes) {
+    const node = graph.getNodeById(stored.id);
+    if (node) syncNodeWidgetsFromProperties(node);
+  }
+  upperSinkId = upperSinks[0].id;
+  lowerSinkId = lowerSinks[0].id;
+  rangeNodes.clear();
+  applyGraphTheme();
+  updateTrackNodeWidgets();
+  applyEditorViewport(state.viewport);
+  graphCanvas.draw(true, true);
+};
+const rememberEditorState = (): void => {
+  if (!graph || !lastServerSignature) return;
+  try {
+    if (
+      expressionPairSignature(
+        expressionFromSink("UPPER"),
+        expressionFromSink("LOWER")
+      ) !== lastServerSignature
+    )
+      return;
+    const encoded = JSON.stringify({
+      ...captureEditorState(),
+      expressionSignature: lastServerSignature,
+    });
+    if (encoded.length <= 2_000_000)
+      sessionStorage.setItem(editorStateKey(), encoded);
+  } catch {
+    /* Storage may be disabled; never change rendering state to persist layout. */
+  }
 };
 
 const exportGraphToFile = (): void => {
@@ -2203,7 +3047,7 @@ const exportGraphToFile = (): void => {
       swapUpperLower: swapUpperLower.value,
       upperExpression: expressionFromSink("UPPER"),
       lowerExpression: expressionFromSink("LOWER"),
-      liteGraph: graph?.serialize?.() ?? null,
+      ...captureEditorState(),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
@@ -2215,7 +3059,7 @@ const exportGraphToFile = (): void => {
     anchor.click();
     URL.revokeObjectURL(url);
   } catch (error) {
-    toast.error(String(error));
+    reportFailure("Export pipeline", error);
   }
 };
 
@@ -2226,19 +3070,25 @@ const onImportFileSelected = async (event: Event): Promise<void> => {
     return;
   }
   try {
+    if (file.size > 2_000_000)
+      throw new Error("Pipeline files must be smaller than 2 MB.");
     const text = await file.text();
     const parsed = JSON.parse(text) as Record<string, unknown>;
     const importedEnabled = parsed.enabled;
     const importedSwap = parsed.swapUpperLower;
     const upperRaw = parsed.upperExpression ?? parsed.upper;
     const lowerRaw = parsed.lowerExpression ?? parsed.lower;
-    enabled.value = typeof importedEnabled === "boolean" ? importedEnabled : enabled.value;
+    const upper = parseExpression(upperRaw),
+      lower = parseExpression(lowerRaw);
+    if (parsed.liteGraph) restoreEditorState(parsed, upper, lower);
+    else buildGraphFromExpressions(upper, lower);
+    enabled.value =
+      typeof importedEnabled === "boolean" ? importedEnabled : enabled.value;
     swapUpperLower.value =
       typeof importedSwap === "boolean" ? importedSwap : swapUpperLower.value;
-    buildGraphFromExpressions(parseExpression(upperRaw), parseExpression(lowerRaw));
     toast.success("Pipeline graph imported");
   } catch (error) {
-    toast.error(`Import failed: ${String(error)}`);
+    reportFailure("Import pipeline", error);
   } finally {
     if (input) {
       input.value = "";
@@ -2253,21 +3103,56 @@ const buildConfigPayload = (): Record<string, unknown> => ({
   lowerExpression: expressionFromSink("LOWER"),
 });
 
-const loadSelectedPreset = (): void => {
+const loadSelectedPreset = async (): Promise<void> => {
   if (!graph) {
     return;
   }
-  const preset =
+  let preset =
     selectedPresetId.value === "dotplot_overlay"
       ? buildDotplotOverlayPreset()
       : buildPrimaryOnlyPreset();
+  if (selectedPresetId.value.startsWith("moddotplot_")) {
+    try {
+      const status =
+        await props.mapManager?.networkManager.requestManager.getSecondarySourceStatus();
+      if (!status?.attached || status.sequenceAnalysis?.kind !== "moddotplot") {
+        toast(
+          "Attach a generated ModDotPlot identity overlay before using this preset."
+        );
+        return;
+      }
+      const primary = buildColorExpressionFromVisualizationOptions("PRIMARY");
+      const secondary = modDotPlotLowerExpression(
+        status.sequenceAnalysis.minimumIdentity,
+        status.sequenceAnalysis.scoreScale
+      );
+      const blend: PipelineExpression = {
+        type: "pixel_blend",
+        mode: "OVER",
+        top: secondary,
+        bottom: primary,
+        topOpacity: 0.65,
+        bottomOpacity: 1,
+      };
+      const overlay = selectedPresetId.value === "moddotplot_overlay";
+      preset = {
+        enabled: true,
+        swapUpperLower: false,
+        upperExpression: overlay ? blend : primary,
+        lowerExpression: overlay ? blend : secondary,
+      };
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+      return;
+    }
+  }
   enabled.value = preset.enabled;
   swapUpperLower.value = preset.swapUpperLower;
   buildGraphFromExpressions(preset.upperExpression, preset.lowerExpression);
   toast.success(
-    selectedPresetId.value === "dotplot_overlay"
-      ? "Dotplot overlay preset loaded"
-      : "Primary-only preset loaded"
+    `${
+      RENDERING_PRESETS.find((p) => p.id === selectedPresetId.value)?.label
+    } preset loaded`
   );
 };
 
@@ -2276,9 +3161,13 @@ const persistConfig = async (
   successMessage?: string
 ): Promise<void> => {
   const manager = ensureMapManager();
-  await manager.networkManager.requestManager.setRenderPipelineConfig(
-    buildConfigPayload()
+  const payload = buildConfigPayload();
+  await manager.networkManager.requestManager.setRenderPipelineConfig(payload);
+  lastServerSignature = expressionPairSignature(
+    parseExpression(payload.upperExpression),
+    parseExpression(payload.lowerExpression)
   );
+  rememberEditorState();
   if (reloadTiles) {
     await manager.reloadTilesFromBackend();
   }
@@ -2287,11 +3176,49 @@ const persistConfig = async (
   }
 };
 
+const GRAPH_VIEW_KEY = "hict.renderPipeline.viewport.v1";
+const restoreGraphViewport = (): void => {
+  if (!graphCanvas) return;
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(GRAPH_VIEW_KEY) ?? "null");
+    if (
+      saved &&
+      Number.isFinite(saved.scale) &&
+      saved.scale > 0 &&
+      Array.isArray(saved.offset) &&
+      saved.offset.length === 2 &&
+      saved.offset.every(Number.isFinite)
+    ) {
+      graphCanvas.ds.scale = saved.scale;
+      graphCanvas.ds.offset[0] = saved.offset[0];
+      graphCanvas.ds.offset[1] = saved.offset[1];
+    }
+  } catch {
+    /* Browser storage can be disabled. */
+  }
+};
+
 const destroyGraphRuntime = (): void => {
+  rememberEditorState();
+  if (graphCanvas) {
+    try {
+      sessionStorage.setItem(
+        GRAPH_VIEW_KEY,
+        JSON.stringify({
+          scale: graphCanvas.ds.scale,
+          offset: Array.from(graphCanvas.ds.offset),
+        })
+      );
+    } catch {
+      /* View persistence is optional when storage is unavailable. */
+    }
+  }
   cleanupColorPicker();
   cleanupContextMenus();
   resizeObserver?.disconnect();
   resizeObserver = null;
+  if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
+  resizeFrame = null;
   graphCanvas?.clear();
   graphCanvas = null;
   graph?.clear();
@@ -2302,6 +3229,14 @@ const destroyGraphRuntime = (): void => {
 
 const restoreGraphRuntime = async (): Promise<void> => {
   await nextTick();
+  if (graph && graphCanvas) {
+    fitGraphCanvas();
+    graphCanvas.startRendering();
+    if (pendingVisualizationSync.value) await loadConfig();
+    previewSnapshot.value = null;
+    pendingVisualizationSync.value = false;
+    return;
+  }
   initializeGraph();
   await refreshTrackOptions();
   if (previewSnapshot.value && !pendingVisualizationSync.value) {
@@ -2347,18 +3282,7 @@ const togglePreviewMode = (): void => {
   cleanupColorPicker();
   cleanupContextMenus();
   if (!previewMode.value) {
-    if (graph) {
-      previewSnapshot.value = {
-        enabled: enabled.value,
-        swapUpperLower: swapUpperLower.value,
-        upperExpression: expressionFromSink("UPPER"),
-        lowerExpression: expressionFromSink("LOWER"),
-      };
-    } else {
-      previewSnapshot.value = null;
-    }
-    previewMode.value = true;
-    destroyGraphRuntime();
+    void previewConfig();
     return;
   }
   previewMode.value = false;
@@ -2379,20 +3303,31 @@ const previewConfig = async (): Promise<void> => {
     };
     await persistConfig(true);
     previewMode.value = true;
-    destroyGraphRuntime();
+    graphCanvas?.stopRendering();
   } catch (error) {
-    toast.error(String(error));
+    reportFailure("Preview pipeline", error);
   } finally {
     previewing.value = false;
   }
 };
 
-const onVisualizationOptionsUpdated = (): void => {
+const onVisualizationOptionsUpdated = (event: Event): void => {
+  // Hydrating the sidebar does not change the graph and must not rebuild it.
+  const source = (event as CustomEvent<{ source?: string }>).detail?.source;
+  if (source === "server_fetch" || source === "pipeline_source_fetch") return;
   if (previewMode.value || loading.value || saving.value) {
     pendingVisualizationSync.value = true;
     return;
   }
   void loadConfig();
+};
+
+const onPipelineChanged = () => {
+  if (previewMode.value || loading.value || saving.value) {
+    pendingVisualizationSync.value = true;
+  } else {
+    void loadConfig();
+  }
 };
 
 const refreshTrackOptions = async (): Promise<void> => {
@@ -2418,14 +3353,37 @@ const loadConfig = async (): Promise<void> => {
   try {
     await refreshTrackOptions();
     const manager = ensureMapManager();
-    const response = await manager.networkManager.requestManager.getRenderPipelineConfig();
+    const response =
+      await manager.networkManager.requestManager.getRenderPipelineConfig();
     enabled.value = Boolean(response.enabled ?? false);
     swapUpperLower.value = Boolean(response.swapUpperLower ?? false);
-    const upperExpression = parseExpression(response.upperExpression ?? response.upper);
-    const lowerExpression = parseExpression(response.lowerExpression ?? response.lower);
-    buildGraphFromExpressions(upperExpression, lowerExpression);
+    const upperExpression = parseExpression(
+      response.upperExpression ?? response.upper
+    );
+    const lowerExpression = parseExpression(
+      response.lowerExpression ?? response.lower
+    );
+    lastServerSignature = expressionPairSignature(
+      upperExpression,
+      lowerExpression
+    );
+    let restored = false;
+    try {
+      const cached = sessionStorage.getItem(editorStateKey());
+      if (cached) {
+        restoreEditorState(
+          JSON.parse(cached),
+          upperExpression,
+          lowerExpression
+        );
+        restored = true;
+      }
+    } catch {
+      /* Stale editor state must never replace newer server expressions. */
+    }
+    if (!restored) buildGraphFromExpressions(upperExpression, lowerExpression);
   } catch (error) {
-    toast.error(String(error));
+    reportFailure("Load pipeline", error);
   } finally {
     loading.value = false;
     if (pendingVisualizationSync.value && !previewMode.value && !saving.value) {
@@ -2440,7 +3398,7 @@ const saveConfig = async (): Promise<void> => {
   try {
     await persistConfig(true, "Rendering pipeline updated");
   } catch (error) {
-    toast.error(String(error));
+    reportFailure("Save pipeline", error);
   } finally {
     saving.value = false;
   }
@@ -2450,7 +3408,14 @@ const resetConfig = async (): Promise<void> => {
   saving.value = true;
   try {
     const manager = ensureMapManager();
-    const response = await manager.networkManager.requestManager.resetRenderPipelineConfig();
+    const response =
+      await manager.networkManager.requestManager.resetRenderPipelineConfig();
+    lastServerSignature = "";
+    try {
+      sessionStorage.removeItem(editorStateKey());
+    } catch {
+      /* Optional browser storage. */
+    }
     enabled.value = Boolean(response.enabled ?? false);
     swapUpperLower.value = Boolean(response.swapUpperLower ?? false);
     buildGraphFromExpressions(
@@ -2460,15 +3425,37 @@ const resetConfig = async (): Promise<void> => {
     await manager.reloadTilesFromBackend();
     toast.success("Rendering pipeline reset");
   } catch (error) {
-    toast.error(String(error));
+    reportFailure("Reset pipeline", error);
   } finally {
     saving.value = false;
   }
 };
 
+const onHistogramRequested = (event: Event): void => {
+  const detail = (
+    event as CustomEvent<LGraphNode | { node: LGraphNode; outputSlot: number }>
+  ).detail;
+  const node = "node" in detail ? detail.node : detail;
+  const outputSlot = "node" in detail ? detail.outputSlot : 0;
+  if (node.graph !== graph) return;
+  try {
+    histogramExpression.value = expressionFromNode(
+      node,
+      new Set(),
+      outputSlot
+    ) as unknown as Record<string, unknown>;
+  } catch (error) {
+    toast.error(
+      error instanceof Error ? error.message : "Cannot inspect this signal."
+    );
+  }
+};
+
 onMounted(() => {
+  window.addEventListener("hict:pipeline-histogram", onHistogramRequested);
   initializeGraph();
   window.addEventListener("resize", fitGraphCanvas);
+  window.addEventListener("hict:render-pipeline-changed", onPipelineChanged);
   window.addEventListener(
     VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
     onVisualizationOptionsUpdated
@@ -2477,9 +3464,11 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("hict:pipeline-histogram", onHistogramRequested);
   previewMode.value = false;
   cleanupColorPicker();
   window.removeEventListener("resize", fitGraphCanvas);
+  window.removeEventListener("hict:render-pipeline-changed", onPipelineChanged);
   window.removeEventListener(
     VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
     onVisualizationOptionsUpdated
@@ -2487,6 +3476,9 @@ onBeforeUnmount(() => {
   restoreNodeTypeFilterOverrides();
   destroyGraphRuntime();
 });
+
+const modalFocusElement = ref<HTMLElement | null>(null);
+useModalFocus(modalFocusElement, () => !previewMode.value);
 </script>
 
 <style scoped>
@@ -2529,6 +3521,14 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
+.pipeline-root .modal.pipeline-preview {
+  pointer-events: none;
+}
+
+.pipeline-root .modal.pipeline-preview .modal-content {
+  pointer-events: auto;
+}
+
 .pipeline-root .modal.pipeline-preview .modal-content {
   height: auto;
 }
@@ -2546,7 +3546,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   min-height: 420px;
-  background: #111827;
+  background: #f1f5f9;
   overflow: hidden;
 }
 

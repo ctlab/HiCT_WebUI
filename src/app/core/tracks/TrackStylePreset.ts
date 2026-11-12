@@ -5,6 +5,7 @@ export type TrackStylePreset = {
   borderColor: string;
   fillColor: string;
   width: number;
+  borderOutline?: boolean;
   labelSize?: number;
   borderStyle: BorderStyle;
   namePlacement?: NamePlacement | keyof typeof NamePlacement;

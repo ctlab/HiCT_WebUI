@@ -20,11 +20,7 @@
  -->
 
 <template>
-  <div
-    ref="workspaceRoot"
-    :class="iwsClass"
-    :style="iwcStyle"
-  >
+  <div ref="workspaceRoot" :class="iwsClass" :style="iwcStyle">
     <div class="interactive-workspace_corner_track">
       <div
         v-if="visibleTrackCount > 0"
@@ -43,12 +39,51 @@
         ref="cornerMiniMapFallbackTarget"
         class="interactive-workspace_corner_minimap interactive-workspace_corner_minimap--compact"
       ></div>
+      <button
+        v-if="props.mapManager"
+        id="map-anchor-lock"
+        type="button"
+        class="map-anchor-lock"
+        :class="{ 'map-anchor-lock--on': mapAnchored }"
+        :aria-pressed="mapAnchored"
+        :aria-label="anchorLabel"
+        :title="anchorLabel"
+        @click="toggleMapAnchor"
+      >
+        <i :class="mapAnchored ? 'bi bi-lock-fill' : 'bi bi-unlock'"></i>
+      </button>
     </div>
-    <div class="interactive-workspace_horizontal_ruler" id="horizontal-ruler-div"></div>
+    <div class="interactive-workspace_horizontal_ruler">
+      <div
+        id="horizontal-ruler-div"
+        class="ruler-surface"
+        style="position: absolute"
+        :class="{
+          'ruler-surface--sequence-horizontal': horizontalSequencePresent,
+        }"
+      ></div>
+      <SequenceAxisTrack
+        :map-manager="props.mapManager"
+        axis="horizontal"
+        @presence="horizontalSequencePresent = $event"
+      />
+    </div>
     <div class="interactive-workspace_vertical_tracks">
       <VerticalIGVTrack :map-manager="props.mapManager"></VerticalIGVTrack>
     </div>
-    <div class="interactive-workspace_vertical_ruler" id="vertical-ruler-div"></div>
+    <div class="interactive-workspace_vertical_ruler">
+      <div
+        id="vertical-ruler-div"
+        class="ruler-surface"
+        style="position: absolute"
+        :class="{ 'ruler-surface--sequence-vertical': verticalSequencePresent }"
+      ></div>
+      <SequenceAxisTrack
+        :map-manager="props.mapManager"
+        axis="vertical"
+        @presence="verticalSequencePresent = $event"
+      />
+    </div>
     <div class="interactive-workspace_content">
       <ContactMap :map-manager="props.mapManager"></ContactMap>
     </div>
@@ -64,6 +99,14 @@
       @mousedown.prevent="startTrackPanelResize('vertical', $event)"
       title="Drag to resize vertical tracks panel"
     ></div>
+    <AxisContextMenu
+      v-if="rulerMenu"
+      :items="rulerMenu.items"
+      :title="rulerMenu.title"
+      :x="rulerMenu.x"
+      :y="rulerMenu.y"
+      @close="rulerMenu = null"
+    />
   </div>
 </template>
 
@@ -75,10 +118,43 @@ import {
 import HorizontalIGVTrack from "../tracks/HorizontalIGVTrack.vue";
 import ContactMap from "../../contactmap/ContactMap.vue";
 import VerticalIGVTrack from "../tracks/VerticalIGVTrack.vue";
+import SequenceAxisTrack from "../tracks/SequenceAxisTrack.vue";
+import AxisContextMenu from "../common/AxisContextMenu.vue";
+import {
+  copyText,
+  formatLocus,
+  type ContextMenuItem,
+} from "@/app/core/mapmanagers/contextMenuActions";
+import { sequenceStripSize } from "@/app/core/visualization/sequenceStrands";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 
 import { useStyleStore } from "@/app/stores/styleStore";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 import { storeToRefs } from "pinia";
+const uiSettingsForStrip = useUiSettingsStore();
+
+const mapAnchored = computed(() => uiSettingsForStrip.mapAnchorTopLeft);
+const anchorLabel = computed(() =>
+  mapAnchored.value
+    ? "Map is locked to the rulers: its top-left corner stays against them. Click to move the map freely."
+    : "Map moves freely. Click to lock its top-left corner against the rulers."
+);
+
+function toggleMapAnchor(): void {
+  uiSettingsForStrip.mapAnchorTopLeft = !uiSettingsForStrip.mapAnchorTopLeft;
+  const view = props.mapManager?.getView();
+  const center = view?.getCenter();
+  // Apply the new rule to the current position right away.
+  if (view && center) view.setCenter(view.getConstrainedCenter(center));
+  props.mapManager?.viewAndLayersManager.updateCurrentHiCViewState();
+}
 
 const stylesStore = useStyleStore();
 
@@ -105,16 +181,21 @@ const cornerMiniMapTarget = ref<HTMLElement | null>(null);
 const cornerMiniMapFallbackTarget = ref<HTMLElement | null>(null);
 
 const visibleTrackCount = ref(0);
+const horizontalSequencePresent = ref(false);
+const verticalSequencePresent = ref(false);
+watch([horizontalSequencePresent, verticalSequencePresent], async () => {
+  await nextTick();
+  props.mapManager?.scheduleWorkspaceLayoutRefresh();
+  props.mapManager?.viewAndLayersManager.scheduleRulerRender();
+});
 let unsubscribeTrackList: (() => void) | undefined;
 const horizontalTrackPanelSizePx = ref(140);
 const verticalTrackPanelSizePx = ref(140);
-let trackPanelResizeState:
-  | {
-      orientation: "horizontal" | "vertical";
-      startPointer: number;
-      startSize: number;
-    }
-  | null = null;
+let trackPanelResizeState: {
+  orientation: "horizontal" | "vertical";
+  startPointer: number;
+  startSize: number;
+} | null = null;
 
 const bindTrackVisibility = () => {
   unsubscribeTrackList?.();
@@ -123,9 +204,10 @@ const bindTrackVisibility = () => {
     return;
   }
   const syncVisibleCount = () => {
-    visibleTrackCount.value = props.mapManager
-      ?.linearTrackManager.getTracksSnapshot()
-      .filter((track) => track.visible).length ?? 0;
+    visibleTrackCount.value =
+      props.mapManager?.linearTrackManager
+        .getTracksSnapshot()
+        .filter((track) => track.visible).length ?? 0;
   };
   syncVisibleCount();
   unsubscribeTrackList = props.mapManager.linearTrackManager.subscribeTrackList(
@@ -147,16 +229,83 @@ const bindCornerMinimap = () => {
   props.mapManager.addOverviewMapTarget(target);
 };
 
-onMounted(() => {
-  bindTrackVisibility();
+const refreshWorkspaceAfterLayout = async () => {
+  await nextTick();
   bindCornerMinimap();
+  props.mapManager?.scheduleWorkspaceLayoutRefresh();
+};
+
+type RulerMenuDetail = {
+  clientX: number;
+  clientY: number;
+  bp: number;
+  direction: "horizontal" | "vertical";
+};
+const rulerMenu = ref<{
+  x: number;
+  y: number;
+  title: string;
+  items: ContextMenuItem[];
+} | null>(null);
+
+function setRulerMode(mode: "global" | "contig" | "scaffold"): void {
+  uiSettingsForStrip.rulerCoordinateMode = mode;
+  props.mapManager?.getLayersManager().scheduleRulerRender();
+}
+
+function onRulerContextMenu(event: Event): void {
+  const detail = (event as CustomEvent<RulerMenuDetail>).detail;
+  const manager = props.mapManager;
+  if (!detail || !manager) return;
+  const locus = manager
+    .getContigDimensionHolder()
+    .getContigLocusByBp(detail.bp);
+  const mode = uiSettingsForStrip.rulerCoordinateMode;
+  rulerMenu.value = {
+    x: detail.clientX,
+    y: detail.clientY,
+    title: `${
+      detail.direction === "horizontal" ? "Horizontal" : "Vertical"
+    } ruler`,
+    items: [
+      {
+        label: "Copy position",
+        run: () =>
+          void copyText(
+            formatLocus(locus.contigName, locus.inContigBp + 1),
+            "Position"
+          ),
+      },
+      {
+        label: "Ruler: Global",
+        disabled: mode === "global",
+        run: () => setRulerMode("global"),
+      },
+      {
+        label: "Ruler: In contig",
+        disabled: mode === "contig",
+        run: () => setRulerMode("contig"),
+      },
+      {
+        label: "Ruler: In scaffold",
+        disabled: mode === "scaffold",
+        run: () => setRulerMode("scaffold"),
+      },
+    ],
+  };
+}
+
+onMounted(() => {
+  window.addEventListener("hict:ruler-context-menu", onRulerContextMenu);
+  bindTrackVisibility();
+  void refreshWorkspaceAfterLayout();
 });
 
 watch(
   () => props.mapManager,
   () => {
     bindTrackVisibility();
-    bindCornerMinimap();
+    void refreshWorkspaceAfterLayout();
   }
 );
 
@@ -171,14 +320,14 @@ watch(visibleTrackCount, async () => {
       verticalTrackPanelSizePx.value = 140;
     }
   }
-  await nextTick();
-  bindCornerMinimap();
-  window.requestAnimationFrame(() => {
-    void props.mapManager?.linearTrackManager.render();
-  });
+  // The visible track count changes the workspace grid dimensions. OpenLayers,
+  // rulers and 1D canvases all cache viewport state, so refresh them after Vue
+  // has committed the new grid.
+  await refreshWorkspaceAfterLayout();
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("hict:ruler-context-menu", onRulerContextMenu);
   document.body.style.removeProperty("cursor");
   window.removeEventListener("mousemove", onTrackPanelResizeMove);
   window.removeEventListener("mouseup", stopTrackPanelResize);
@@ -235,8 +384,7 @@ const startTrackPanelResize = (
   }
   trackPanelResizeState = {
     orientation,
-    startPointer:
-      orientation === "horizontal" ? event.clientY : event.clientX,
+    startPointer: orientation === "horizontal" ? event.clientY : event.clientX,
     startSize:
       orientation === "horizontal"
         ? horizontalTrackPanelSizePx.value
@@ -254,7 +402,35 @@ const horizontalTrackPanelCssSize = computed(() =>
 const verticalTrackPanelCssSize = computed(() =>
   visibleTrackCount.value > 0 ? `${verticalTrackPanelSizePx.value}px` : "0px"
 );
-const rulerPanelCssSize = "44px";
+const sequenceStripPx = computed(() =>
+  sequenceStripSize(uiSettingsForStrip.sequenceShowReverseStrand)
+);
+const sequenceStripCss = computed(() => `${sequenceStripPx.value}px`);
+const horizontalRulerCssSize = computed(() =>
+  horizontalSequencePresent.value ? `${64 + sequenceStripPx.value}px` : "64px"
+);
+const verticalRulerCssSize = computed(() => {
+  const coordinates =
+    props.mapManager?.getContigDimensionHolder().prefix_sum_bp;
+  const maximum = coordinates?.[coordinates.length - 1] ?? 0;
+  if (!verticalSequencePresent.value) {
+    // Longest abbreviated label ("113.281M"), plus the "ctg+"/"scf+" prefix outside global mode,
+    // plus tick and padding. Reserved up front because labels are never shrunk below 10px.
+    const unit =
+      maximum >= 1e9 ? 1e9 : maximum >= 1e6 ? 1e6 : maximum >= 1e3 ? 1e3 : 1;
+    const digits = String(Math.max(1, Math.ceil(maximum / unit))).length;
+    const labelCharacters =
+      digits +
+      (unit > 1 ? 5 : 0) +
+      (uiSettingsForStrip.rulerCoordinateMode === "global" ? 0 : 4);
+    return `${Math.max(88, 40 + labelCharacters * 9)}px`;
+  }
+  // At base zoom labels use complete coordinates. Reserve space for those
+  // digits, the tick/outline, and the 32px FASTA strip instead of clipping them.
+  const labelCharacters = Math.ceil(maximum).toLocaleString().length;
+  const extra = sequenceStripPx.value - 32;
+  return `${Math.max(112 + extra, 58 + extra + labelCharacters * 9)}px`;
+});
 </script>
 
 <style scoped>
@@ -263,8 +439,12 @@ const rulerPanelCssSize = "44px";
   height: 100%;
   position: relative;
   display: grid;
-  grid-template-rows: v-bind(horizontalTrackPanelCssSize) v-bind(rulerPanelCssSize) 1fr;
-  grid-template-columns: v-bind(verticalTrackPanelCssSize) v-bind(rulerPanelCssSize) 1fr;
+  grid-template-rows:
+    v-bind(horizontalTrackPanelCssSize) v-bind(horizontalRulerCssSize)
+    1fr;
+  grid-template-columns:
+    v-bind(verticalTrackPanelCssSize) v-bind(verticalRulerCssSize)
+    1fr;
   grid-template-areas:
     "corner-track corner-tracks-ruler horizontal-tracks"
     "corner-ruler-tracks corner-ruler horizontal-ruler"
@@ -326,6 +506,7 @@ const rulerPanelCssSize = "44px";
 
 .interactive-workspace_corner_ruler {
   grid-area: corner-ruler;
+  position: relative;
   display: flex;
   align-items: stretch;
   justify-content: stretch;
@@ -338,16 +519,59 @@ const rulerPanelCssSize = "44px";
   padding: 1px;
 }
 
+.map-anchor-lock {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  z-index: 5;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  border: 1px solid var(--hict-surface-border, #94a3b8);
+  border-radius: 5px;
+  background: var(--hict-surface-bg, #ffffff);
+  color: var(--hict-surface-fg, #1f2937);
+  opacity: 0.92;
+}
+
+.map-anchor-lock--on {
+  background: #0d6efd;
+  border-color: #0d6efd;
+  color: #ffffff;
+}
+
+.map-anchor-lock:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
 .interactive-workspace_horizontal_tracks {
   grid-area: horizontal-tracks;
 }
 
 .interactive-workspace_horizontal_ruler {
   grid-area: horizontal-ruler;
+  position: relative;
   overflow: hidden;
   border-right: 1px solid black;
   border-bottom: 1px solid black;
   background: inherit;
+}
+
+.ruler-surface {
+  inset: 0;
+  overflow: hidden;
+}
+.ruler-surface--sequence-horizontal {
+  top: v-bind(sequenceStripCss);
+}
+.ruler-surface--sequence-vertical {
+  left: v-bind(sequenceStripCss);
 }
 
 .interactive-workspace_vertical_tracks {
@@ -356,6 +580,7 @@ const rulerPanelCssSize = "44px";
 
 .interactive-workspace_vertical_ruler {
   grid-area: vertical-ruler;
+  position: relative;
   overflow: hidden;
   border-right: 1px solid black;
   border-bottom: 1px solid black;

@@ -21,8 +21,15 @@
 
 import type { TrackStylePresetBundle } from "@/app/core/tracks/TrackStylePreset";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
-import type { SessionVisualizationPreset } from "@/app/stores/sessionStore";
+import type {
+  SessionVisualizationPreset,
+  VisualizationPresetAction,
+} from "@/app/stores/sessionStore";
 import VisualizationOptions from "./VisualizationOptions";
+import {
+  parseRenderPipelinePreset,
+  type RenderPipelinePreset,
+} from "./renderPipelinePreset";
 import Colormap from "./colormap/Colormap";
 import SimpleLinearGradient from "./colormap/SimpleLinearGradient";
 import { ColorTranslator } from "colortranslator";
@@ -37,6 +44,8 @@ export type VisualizationPresetRecord = {
     lowerSignalBound?: number;
     upperSignalBound?: number;
   };
+  action?: VisualizationPresetAction;
+  renderPipeline?: RenderPipelinePreset;
   origin: "builtin" | "session";
 };
 
@@ -56,6 +65,29 @@ const safeColor = (value: unknown, fallback: string): ColorTranslator => {
   }
 };
 
+export const parseVisualizationPresetAction = (
+  raw: unknown
+): VisualizationPresetAction | undefined => {
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+  if (
+    raw.type === "sequence-overlay" &&
+    (raw.mode === "overlay" || raw.mode === "below" || raw.mode === "above") &&
+    (raw.kind === "moddotplot" || raw.kind === "dotplot")
+  ) {
+    return { type: raw.type, mode: raw.mode, kind: raw.kind };
+  }
+  if (raw.type === "active-source-palette") {
+    return {
+      type: raw.type,
+      startColor: safeColor(raw.startColor, "#31369500").RGBA,
+      endColor: safeColor(raw.endColor, "#a50026").RGBA,
+    };
+  }
+  return undefined;
+};
+
 export const serializeVisualizationOptions = (
   options: VisualizationOptions
 ): Record<string, unknown> => {
@@ -70,6 +102,8 @@ export const serializeVisualizationOptions = (
       autoThresholdEnabled: options.autoThresholdEnabled ?? false,
       autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
       signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
+      coolerWeightsNaNPolicy:
+        options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
       colormap: {
         colormapType: cmap.colormapType,
         startColorRGBAString: cmap.startColorRGBA.RGBA,
@@ -88,6 +122,8 @@ export const serializeVisualizationOptions = (
     autoThresholdEnabled: options.autoThresholdEnabled ?? false,
     autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
     signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
+    coolerWeightsNaNPolicy:
+      options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
     colormap: {
       colormapType: options.colormap?.colormapType ?? "Unknown",
     },
@@ -124,11 +160,15 @@ export const deserializeVisualizationOptions = (
     raw.signalDisplayMode === "OBSERVED_OVER_EXPECTED"
       ? raw.signalDisplayMode
       : "OBSERVED";
+  const coolerWeightsNaNPolicy =
+    raw.coolerWeightsNaNPolicy === "DISABLE_WEIGHTS" ||
+    raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ZERO" ||
+    raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ONE"
+      ? raw.coolerWeightsNaNPolicy
+      : "REPLACE_NANS_WITH_ONE";
   const cmapRaw = isRecord(raw.colormap) ? raw.colormap : {};
   const cmapType =
-    typeof cmapRaw.colormapType === "string"
-      ? cmapRaw.colormapType
-      : "Unknown";
+    typeof cmapRaw.colormapType === "string" ? cmapRaw.colormapType : "Unknown";
   let cmap: Colormap;
   if (cmapType === "SimpleLinearGradient") {
     const startColor =
@@ -161,7 +201,8 @@ export const deserializeVisualizationOptions = (
     cmap,
     autoThresholdEnabled,
     autoThresholdQuantile,
-    signalDisplayMode
+    signalDisplayMode,
+    coolerWeightsNaNPolicy
   );
 };
 
@@ -192,6 +233,8 @@ const toPresetRecord = (
       lowerSignalBound?: number;
       upperSignalBound?: number;
     };
+    action?: unknown;
+    renderPipeline?: unknown;
   },
   optionId: number,
   origin: "builtin" | "session"
@@ -201,6 +244,8 @@ const toPresetRecord = (
   options: deserializeVisualizationOptions(option.options ?? {}),
   backgroundColor: option.backgroundColor ?? "rgba(255,255,255,1.0)",
   trackStyles: option.trackStyles,
+  action: parseVisualizationPresetAction(option.action),
+  renderPipeline: parseRenderPipelinePreset(option.renderPipeline),
   signalThresholds:
     option.signalThresholds ??
     getVisualizationSignalThresholds(
@@ -219,6 +264,7 @@ const extractBuiltinPresetRows = (): Array<{
     lowerSignalBound?: number;
     upperSignalBound?: number;
   };
+  action?: unknown;
 }> => {
   const data = isRecord(defaultOptions)
     ? ((defaultOptions as UnknownRecord).data as UnknownRecord | undefined)
@@ -229,8 +275,8 @@ const extractBuiltinPresetRows = (): Array<{
   const source = Array.isArray(data.savedVisualizationPresets)
     ? data.savedVisualizationPresets
     : Array.isArray(data.savedLocations)
-      ? data.savedLocations
-      : [];
+    ? data.savedLocations
+    : [];
   return source.filter(isRecord) as Array<{
     option_id?: number;
     name?: string;
@@ -241,13 +287,16 @@ const extractBuiltinPresetRows = (): Array<{
       lowerSignalBound?: number;
       upperSignalBound?: number;
     };
+    action?: unknown;
+    renderPipeline?: unknown;
   }>;
 };
 
-export const loadBuiltinVisualizationPresets = (): VisualizationPresetRecord[] =>
-  extractBuiltinPresetRows().map((option, index) =>
-    toPresetRecord(option, index, "builtin")
-  );
+export const loadBuiltinVisualizationPresets =
+  (): VisualizationPresetRecord[] =>
+    extractBuiltinPresetRows().map((option, index) =>
+      toPresetRecord(option, index, "builtin")
+    );
 
 export const mergeVisualizationPresets = (
   sessionPresets: SessionVisualizationPreset[]
@@ -262,6 +311,8 @@ export const mergeVisualizationPresets = (
         backgroundColor: preset.backgroundColor,
         trackStyles: preset.trackStyles as TrackStylePresetBundle | undefined,
         signalThresholds: preset.signalThresholds,
+        action: preset.action,
+        renderPipeline: preset.renderPipeline,
       },
       index,
       "session"

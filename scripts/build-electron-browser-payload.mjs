@@ -25,7 +25,18 @@ import { createHash } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
 import { spawnSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { chmod, cp } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, dirname, join, resolve, sep } from "node:path";
@@ -37,10 +48,18 @@ const repoDir = resolve(scriptDir, "..");
 
 const args = parseArgs(process.argv.slice(2));
 const platform = args.platform ?? detectPlatform();
-const outputDir = resolve(args.output ?? join(repoDir, "..", "HiCT_JVM", "browsers-dist", platform, "electron"));
+const outputDir = resolve(
+  args.output ??
+    join(repoDir, "..", "HiCT_JVM", "browsers-dist", platform, "electron")
+);
 const electronPackageDir = resolve(repoDir, "node_modules", "electron");
-const electronPackage = JSON.parse(readFileSync(resolve(electronPackageDir, "package.json"), "utf8"));
-const electronRuntimeExecutable = await ensureInstalledElectronExecutable(electronPackageDir, platform);
+const electronPackage = JSON.parse(
+  readFileSync(resolve(electronPackageDir, "package.json"), "utf8")
+);
+const electronRuntimeExecutable = await ensureInstalledElectronExecutable(
+  electronPackageDir,
+  platform
+);
 const electronDist = dirname(electronRuntimeExecutable);
 const electronVersion = String(electronPackage.version);
 
@@ -48,7 +67,9 @@ if (!["linux_x86_64", "windows_x86_64"].includes(platform)) {
   throw new Error(`Unsupported Electron browser payload platform: ${platform}`);
 }
 if (!existsSync(resolve(repoDir, "dist", "electron", "main", "main.js"))) {
-  throw new Error("Electron main process is not compiled. Run npm run electron:compile first.");
+  throw new Error(
+    "Electron main process is not compiled. Run npm run electron:compile first."
+  );
 }
 
 rmSync(outputDir, { recursive: true, force: true });
@@ -63,7 +84,8 @@ const executablePath = join(outputDir, command);
 await chmodExecutableIfPresent(executablePath);
 await flipSecurityFuses(executablePath);
 
-const launchArguments = platform === "linux_x86_64" ? ["--no-sandbox", "app"] : ["app"];
+const launchArguments =
+  platform === "linux_x86_64" ? ["--no-sandbox", "app"] : ["app"];
 const manifest = {
   name: `HiCT Electron ${electronVersion}`,
   engine: "electron-chromium",
@@ -71,16 +93,21 @@ const manifest = {
   priority: 50,
   command,
   arguments: launchArguments,
-  license: "Electron MIT; Chromium and bundled third-party components under their upstream licenses",
+  license:
+    "Electron MIT; Chromium and bundled third-party components under their upstream licenses",
   notices: [
     "electron/LICENSE",
     "electron/LICENSES.chromium.html",
-    "app/package.json"
+    "app/package.json",
   ],
   sizeBytes: directorySize(outputDir),
   sha256: sha256OfTree(outputDir),
 };
-writeFileSync(join(outputDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+writeFileSync(
+  join(outputDir, "manifest.json"),
+  `${JSON.stringify(manifest, null, 2)}\n`,
+  "utf8"
+);
 
 console.log(`Prepared HiCT Electron browser payload for ${platform}`);
 console.log(`  output: ${outputDir}`);
@@ -113,7 +140,9 @@ function detectPlatform() {
   if (process.platform === "linux") {
     return "linux_x86_64";
   }
-  throw new Error(`Unsupported platform for HiCT Electron browser payload: ${process.platform}`);
+  throw new Error(
+    `Unsupported platform for HiCT Electron browser payload: ${process.platform}`
+  );
 }
 
 async function copyElectronRuntime(source, target) {
@@ -139,19 +168,32 @@ async function copyElectronRuntime(source, target) {
 async function copyElectronApp(target) {
   mkdirSync(join(target, "main"), { recursive: true });
   mkdirSync(join(target, "preload"), { recursive: true });
-  await cp(resolve(repoDir, "dist", "electron", "main"), join(target, "main"), { recursive: true });
-  await cp(resolve(repoDir, "dist", "electron", "preload"), join(target, "preload"), { recursive: true });
+  await cp(resolve(repoDir, "dist", "electron", "main"), join(target, "main"), {
+    recursive: true,
+  });
+  await cp(
+    resolve(repoDir, "dist", "electron", "preload"),
+    join(target, "preload"),
+    { recursive: true }
+  );
   await cp(resolve(repoDir, "dist", "index.html"), join(target, "index.html"));
-  await cp(resolve(repoDir, "dist", "assets"), join(target, "assets"), { recursive: true });
+  await cp(resolve(repoDir, "dist", "assets"), join(target, "assets"), {
+    recursive: true,
+  });
 
   const appPackage = {
     name: "hict-electron-browser",
-    version: JSON.parse(readFileSync(resolve(repoDir, "package.json"), "utf8")).version,
+    version: JSON.parse(readFileSync(resolve(repoDir, "package.json"), "utf8"))
+      .version,
     private: true,
     main: "main/main.js",
     license: "MIT",
   };
-  writeFileSync(join(target, "package.json"), `${JSON.stringify(appPackage, null, 2)}\n`, "utf8");
+  writeFileSync(
+    join(target, "package.json"),
+    `${JSON.stringify(appPackage, null, 2)}\n`,
+    "utf8"
+  );
 }
 
 function resolveElectronCommand(payloadRoot, targetPlatform) {
@@ -170,14 +212,19 @@ function resolveElectronCommand(payloadRoot, targetPlatform) {
       `Electron runtime executable was not found in ${payloadRoot}.`,
       `Checked: ${candidates.join(", ")}`,
       `Installed Electron executable: ${electronRuntimeExecutable}`,
-      `Installed Electron runtime directory entries: ${describeDirectory(electronDist)}`,
+      `Installed Electron runtime directory entries: ${describeDirectory(
+        electronDist
+      )}`,
       `Payload entries: ${describeDirectory(payloadRoot)}`,
     ].join("\n")
   );
 }
 
 async function ensureInstalledElectronExecutable(packageDir, targetPlatform) {
-  const executable = resolveInstalledElectronExecutable(packageDir, targetPlatform);
+  const executable = resolveInstalledElectronExecutable(
+    packageDir,
+    targetPlatform
+  );
   if (executable) {
     return executable;
   }
@@ -186,24 +233,36 @@ async function ensureInstalledElectronExecutable(packageDir, targetPlatform) {
     [
       "Electron runtime executable was not found after npm install; attempting to repair Electron postinstall.",
       `Electron package directory entries: ${describeDirectory(packageDir)}`,
-      `Electron dist directory entries: ${describeDirectory(resolve(packageDir, "dist"))}`,
+      `Electron dist directory entries: ${describeDirectory(
+        resolve(packageDir, "dist")
+      )}`,
     ].join("\n")
   );
   const repairSucceeded = repairElectronInstall(packageDir, targetPlatform);
 
   if (repairSucceeded) {
-    const repairedExecutable = resolveInstalledElectronExecutable(packageDir, targetPlatform);
+    const repairedExecutable = resolveInstalledElectronExecutable(
+      packageDir,
+      targetPlatform
+    );
     if (repairedExecutable) {
       return repairedExecutable;
     }
   } else {
-    console.warn("Electron postinstall repair failed; continuing with direct Electron artifact download.");
+    console.warn(
+      "Electron postinstall repair failed; continuing with direct Electron artifact download."
+    );
   }
 
-  console.warn("Electron postinstall repair did not produce a runtime executable; forcing a fresh Electron artifact download.");
+  console.warn(
+    "Electron postinstall repair did not produce a runtime executable; forcing a fresh Electron artifact download."
+  );
   await downloadAndExtractElectronRuntime(packageDir, targetPlatform);
 
-  const downloadedExecutable = resolveInstalledElectronExecutable(packageDir, targetPlatform);
+  const downloadedExecutable = resolveInstalledElectronExecutable(
+    packageDir,
+    targetPlatform
+  );
   if (downloadedExecutable) {
     return downloadedExecutable;
   }
@@ -213,14 +272,17 @@ async function ensureInstalledElectronExecutable(packageDir, targetPlatform) {
       "Electron runtime executable was not found after npm install, postinstall repair, and direct artifact download.",
       `Checked package: ${packageDir}`,
       `Electron package directory entries: ${describeDirectory(packageDir)}`,
-      `Electron dist directory entries: ${describeDirectory(resolve(packageDir, "dist"))}`,
+      `Electron dist directory entries: ${describeDirectory(
+        resolve(packageDir, "dist")
+      )}`,
       "Ensure network access to Electron release artifacts and that no Electron skip/override environment variables are set.",
     ].join("\n")
   );
 }
 
 function resolveInstalledElectronExecutable(packageDir, targetPlatform) {
-  const expectedExecutable = targetPlatform === "windows_x86_64" ? "electron.exe" : "electron";
+  const expectedExecutable =
+    targetPlatform === "windows_x86_64" ? "electron.exe" : "electron";
   const candidates = [];
   const pathFile = resolve(packageDir, "path.txt");
   if (existsSync(pathFile)) {
@@ -258,7 +320,8 @@ function repairElectronInstall(packageDir, targetPlatform) {
   ]) {
     delete env[key];
   }
-  env.npm_config_platform = targetPlatform === "windows_x86_64" ? "win32" : "linux";
+  env.npm_config_platform =
+    targetPlatform === "windows_x86_64" ? "win32" : "linux";
   env.npm_config_arch = "x64";
   env.force_no_cache = "true";
   env.electron_config_cache = electronCacheRoot(targetPlatform);
@@ -269,11 +332,15 @@ function repairElectronInstall(packageDir, targetPlatform) {
     stdio: "inherit",
   });
   if (result.error) {
-    console.warn(`Electron postinstall repair could not start: ${result.error.message}`);
+    console.warn(
+      `Electron postinstall repair could not start: ${result.error.message}`
+    );
     return false;
   }
   if (result.status !== 0) {
-    console.warn(`Electron postinstall repair failed with exit code ${result.status}`);
+    console.warn(
+      `Electron postinstall repair failed with exit code ${result.status}`
+    );
     return false;
   }
   return true;
@@ -289,7 +356,11 @@ async function downloadAndExtractElectronRuntime(packageDir, targetPlatform) {
   const artifactName = electronArtifactName(targetPlatform);
   const artifactUrl = electronArtifactUrl(artifactName);
   const cacheRoot = electronCacheRoot(targetPlatform);
-  const cachedZipPath = findCachedElectronArtifact(cacheRoot, checksumsPath, artifactName);
+  const cachedZipPath = findCachedElectronArtifact(
+    cacheRoot,
+    checksumsPath,
+    artifactName
+  );
   const zipPath = cachedZipPath ?? resolve(cacheRoot, artifactName);
 
   rmSync(distPath, { recursive: true, force: true });
@@ -304,7 +375,12 @@ async function downloadAndExtractElectronRuntime(packageDir, targetPlatform) {
   }
   verifyElectronArtifactChecksum(zipPath, checksumsPath, artifactName);
 
-  await extractElectronRuntimeArtifact(packageRequire, zipPath, distPath, artifactName);
+  await extractElectronRuntimeArtifact(
+    packageRequire,
+    zipPath,
+    distPath,
+    artifactName
+  );
 
   if (existsSync(electronDtsInDist)) {
     rmSync(electronDtsInPackage, { force: true });
@@ -314,9 +390,16 @@ async function downloadAndExtractElectronRuntime(packageDir, targetPlatform) {
   writeFileSync(pathFile, electronPlatformPath(targetPlatform), "utf8");
 }
 
-async function extractElectronRuntimeArtifact(packageRequire, zipPath, distPath, artifactName) {
+async function extractElectronRuntimeArtifact(
+  packageRequire,
+  zipPath,
+  distPath,
+  artifactName
+) {
   if (extractZipWithJar(zipPath, distPath)) {
-    console.warn(`Extracted Electron runtime artifact ${artifactName} with JDK jar.`);
+    console.warn(
+      `Extracted Electron runtime artifact ${artifactName} with JDK jar.`
+    );
     return;
   }
 
@@ -325,11 +408,15 @@ async function extractElectronRuntimeArtifact(packageRequire, zipPath, distPath,
     () => extractZip(yauzl, zipPath, distPath),
     `extracting Electron runtime artifact ${artifactName}`
   );
-  console.warn(`Extracted ${extractedEntries} Electron runtime artifact entries with bundled yauzl.`);
+  console.warn(
+    `Extracted ${extractedEntries} Electron runtime artifact entries with bundled yauzl.`
+  );
 }
 
 function electronArtifactName(targetPlatform) {
-  return `electron-v${electronPackage.version}-${electronArtifactPlatform(targetPlatform)}-x64.zip`;
+  return `electron-v${electronPackage.version}-${electronArtifactPlatform(
+    targetPlatform
+  )}-x64.zip`;
 }
 
 function electronArtifactPlatform(targetPlatform) {
@@ -339,7 +426,9 @@ function electronArtifactPlatform(targetPlatform) {
   if (targetPlatform === "linux_x86_64") {
     return "linux";
   }
-  throw new Error(`Unsupported Electron platform for download: ${targetPlatform}`);
+  throw new Error(
+    `Unsupported Electron platform for download: ${targetPlatform}`
+  );
 }
 
 function electronArtifactUrl(artifactName) {
@@ -362,7 +451,10 @@ async function downloadFile(url, destination) {
 
   try {
     const response = await openDownloadResponse(url);
-    await pipeline(response, createWriteStream(tempDestination, { flags: "wx" }));
+    await pipeline(
+      response,
+      createWriteStream(tempDestination, { flags: "wx" })
+    );
     renameSync(tempDestination, destination);
   } catch (error) {
     rmSync(tempDestination, { force: true });
@@ -389,7 +481,11 @@ async function openDownloadResponse(url, redirectCount = 0) {
     );
     request.on("error", rejectPromise);
     request.setTimeout(120_000, () => {
-      request.destroy(new Error(`Timed out while downloading Electron runtime artifact: ${url}`));
+      request.destroy(
+        new Error(
+          `Timed out while downloading Electron runtime artifact: ${url}`
+        )
+      );
     });
   });
 
@@ -398,9 +494,14 @@ async function openDownloadResponse(url, redirectCount = 0) {
     response.resume();
     const location = response.headers.location;
     if (!location) {
-      throw new Error(`Electron download redirect did not include Location header: ${url}`);
+      throw new Error(
+        `Electron download redirect did not include Location header: ${url}`
+      );
     }
-    return openDownloadResponse(new URL(location, url).toString(), redirectCount + 1);
+    return openDownloadResponse(
+      new URL(location, url).toString(),
+      redirectCount + 1
+    );
   }
 
   if (statusCode < 200 || statusCode >= 300) {
@@ -442,9 +543,13 @@ function extractZipWithJar(zipPath, targetDir) {
       return true;
     }
     if (result.error) {
-      console.warn(`Could not start ${jarCommand} to extract Electron artifact: ${result.error.message}`);
+      console.warn(
+        `Could not start ${jarCommand} to extract Electron artifact: ${result.error.message}`
+      );
     } else {
-      console.warn(`${jarCommand} failed to extract Electron artifact with exit code ${result.status}`);
+      console.warn(
+        `${jarCommand} failed to extract Electron artifact with exit code ${result.status}`
+      );
     }
   }
   return false;
@@ -547,8 +652,13 @@ async function extractZipEntry(zipfile, entry, targetDir) {
 function resolveZipEntryPath(targetDir, entryName) {
   const targetRoot = resolve(targetDir);
   const targetPath = resolve(targetRoot, entryName);
-  if (targetPath !== targetRoot && !targetPath.startsWith(`${targetRoot}${sep}`)) {
-    throw new Error(`Electron artifact contains an out-of-bounds zip entry: ${entryName}`);
+  if (
+    targetPath !== targetRoot &&
+    !targetPath.startsWith(`${targetRoot}${sep}`)
+  ) {
+    throw new Error(
+      `Electron artifact contains an out-of-bounds zip entry: ${entryName}`
+    );
   }
   return targetPath;
 }
@@ -605,38 +715,57 @@ function findCachedElectronArtifact(cacheRoot, checksumsPath, artifactName) {
     return null;
   }
 
-  const candidates = listFiles(cacheRoot).filter((filePath) => basename(filePath) === artifactName);
+  const candidates = listFiles(cacheRoot).filter(
+    (filePath) => basename(filePath) === artifactName
+  );
   for (const candidate of candidates) {
     try {
-      verifyElectronArtifactChecksum(candidate, checksumsPath, artifactName, { removeOnMismatch: false });
+      verifyElectronArtifactChecksum(candidate, checksumsPath, artifactName, {
+        removeOnMismatch: false,
+      });
       return candidate;
     } catch (error) {
-      console.warn(`Ignoring cached Electron artifact ${candidate}: ${error.message}`);
+      console.warn(
+        `Ignoring cached Electron artifact ${candidate}: ${error.message}`
+      );
     }
   }
 
   return null;
 }
 
-function verifyElectronArtifactChecksum(zipPath, checksumsPath, artifactName, { removeOnMismatch = true } = {}) {
+function verifyElectronArtifactChecksum(
+  zipPath,
+  checksumsPath,
+  artifactName,
+  { removeOnMismatch = true } = {}
+) {
   if (!existsSync(checksumsPath)) {
-    console.warn(`Electron checksums file is missing; cannot verify ${artifactName}`);
+    console.warn(
+      `Electron checksums file is missing; cannot verify ${artifactName}`
+    );
     return;
   }
 
   const checksums = JSON.parse(readFileSync(checksumsPath, "utf8"));
   const expected = checksums[artifactName];
   if (!expected) {
-    console.warn(`Electron checksum is missing for ${artifactName}; cannot verify downloaded artifact.`);
+    console.warn(
+      `Electron checksum is missing for ${artifactName}; cannot verify downloaded artifact.`
+    );
     return;
   }
 
-  const actual = createHash("sha256").update(readFileSync(zipPath)).digest("hex");
+  const actual = createHash("sha256")
+    .update(readFileSync(zipPath))
+    .digest("hex");
   if (actual !== expected) {
     if (removeOnMismatch) {
       rmSync(zipPath, { force: true });
     }
-    throw new Error(`Electron artifact checksum mismatch for ${artifactName}: expected ${expected}, got ${actual}`);
+    throw new Error(
+      `Electron artifact checksum mismatch for ${artifactName}: expected ${expected}, got ${actual}`
+    );
   }
 }
 
@@ -646,7 +775,8 @@ function electronPlatformPath(targetPlatform) {
 
 function electronCacheRoot(targetPlatform) {
   const cacheRoot = resolve(
-    process.env.HICT_ELECTRON_CACHE_DIR ?? join(repoDir, "node_modules", ".cache", "hict-electron"),
+    process.env.HICT_ELECTRON_CACHE_DIR ??
+      join(repoDir, "node_modules", ".cache", "hict-electron"),
     targetPlatform
   );
   mkdirSync(cacheRoot, { recursive: true });
@@ -657,7 +787,11 @@ function shouldCopyElectronRuntimePath(path, keepLocales) {
   if (path.includes(`${sep}locales${sep}`)) {
     return keepLocales.has(basename(path));
   }
-  if (path.endsWith(".pdb") || path.endsWith(".dSYM") || path.endsWith(".debug")) {
+  if (
+    path.endsWith(".pdb") ||
+    path.endsWith(".dSYM") ||
+    path.endsWith(".debug")
+  ) {
     return false;
   }
   return true;
@@ -688,7 +822,9 @@ async function chmodExecutableIfPresent(path) {
 
 async function flipSecurityFuses(executablePath) {
   try {
-    const { flipFuses, FuseVersion, FuseV1Options } = await import("@electron/fuses");
+    const { flipFuses, FuseVersion, FuseV1Options } = await import(
+      "@electron/fuses"
+    );
     await flipFuses(executablePath, {
       version: FuseVersion.V1,
       [FuseV1Options.RunAsNode]: false,
@@ -698,7 +834,9 @@ async function flipSecurityFuses(executablePath) {
       [FuseV1Options.GrantFileProtocolExtraPrivileges]: false,
     });
   } catch (error) {
-    console.warn(`Could not flip Electron security fuses for ${executablePath}: ${error.message}`);
+    console.warn(
+      `Could not flip Electron security fuses for ${executablePath}: ${error.message}`
+    );
   }
 }
 

@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { dirname } from "node:path";
+import { createRequire } from "node:module";
+import assert from "node:assert/strict";
+import ts from "typescript";
 
 const projectRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const requestSource = readFileSync(
@@ -38,7 +42,9 @@ for (const mapping of requiredMappings) {
     failures.push(`Missing instanceof DTO mapping for ${mapping.className}`);
   }
   if (!requestDtoSource.includes(`case "${mapping.requestPath}"`)) {
-    failures.push(`Missing requestPath DTO fallback for ${mapping.requestPath}`);
+    failures.push(
+      `Missing requestPath DTO fallback for ${mapping.requestPath}`
+    );
   }
 }
 
@@ -57,4 +63,448 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("API DTO regression check passed.");
+// Execute the real DTO and its real dependencies, not a mirror converter.
+const modules = new Map();
+function loadTypeScript(filename) {
+  if (modules.has(filename)) return modules.get(filename).exports;
+  const module = { exports: {} };
+  modules.set(filename, module);
+  const source = readFileSync(filename, "utf8");
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+      esModuleInterop: true,
+    },
+    fileName: filename,
+  }).outputText;
+  const nativeRequire = createRequire(filename);
+  const require = (name) =>
+    name.startsWith(".")
+      ? loadTypeScript(resolve(dirname(filename), name + ".ts"))
+      : nativeRequire(name);
+  new Function("exports", "require", "module", compiled)(
+    module.exports,
+    require,
+    module
+  );
+  return module.exports;
+}
+const { ContigDescriptorDTO, AssemblyInfoDTO } = loadTypeScript(
+  resolve(projectRoot, "src/app/core/net/dto/dto.ts")
+);
+const descriptors = Array.from({ length: 4 }, (_, i) => ({
+  contigId: i,
+  contigName: "c" + i,
+  contigOriginalName: "source" + i,
+  contigOffsetInSource: i * 1000,
+  contigLengthBp: i * 1000,
+  contigLengthBins: { 100: String(i * 10), 250: i * 4, 1000: i },
+  contigPresenceAtResolution: { 100: i, 250: i, 1000: i },
+  contigDirection: i % 2,
+}));
+for (const [i, descriptor] of descriptors.entries()) {
+  const entity = new ContigDescriptorDTO(descriptor).toEntity();
+  assert.deepEqual(
+    [...entity.contigLengthBins],
+    [
+      [100, i * 10],
+      [250, i * 4],
+      [1000, i],
+    ]
+  );
+  assert.deepEqual(
+    [...entity.presenceAtResolution],
+    [
+      [100, i],
+      [250, i],
+      [1000, i],
+    ]
+  );
+  assert.equal(entity.direction, i % 2);
+  assert.equal(entity.contigSourceName, "source" + i);
+  assert.equal(entity.contigOffsetInSource, i * 1000);
+}
+const input = { contigDescriptors: descriptors, scaffoldDescriptors: [] };
+const first = new AssemblyInfoDTO(input).toEntity();
+first.contigDescriptors[0].contigLengthBins.set(100, 999);
+const next = new AssemblyInfoDTO(input).toEntity();
+assert.equal(next.contigDescriptors[0].contigLengthBins.get(100), 0);
+assert.notEqual(
+  first.contigDescriptors[0].contigLengthBins,
+  next.contigDescriptors[0].contigLengthBins
+);
+assert.deepEqual(
+  new AssemblyInfoDTO({
+    contigDescriptors: [],
+    scaffoldDescriptors: [],
+  }).toEntity(),
+  { contigDescriptors: [], scaffoldDescriptors: [] }
+);
+console.log(
+  "API DTO regression check passed (including real assembly response conversion)."
+);
+
+// The negotiated representation must produce exactly the same application state.
+const scaffoldDtos = [
+  {
+    scaffoldId: 2147483657,
+    scaffoldName: "alias α",
+    scaffoldOriginalName: "original",
+    spacerLength: 1000,
+    scaffoldBordersBP: { startBP: 123, endBP: 999 },
+  },
+  {
+    scaffoldId: 18,
+    scaffoldName: "unplaced",
+    scaffoldOriginalName: "unplaced",
+    spacerLength: 0,
+    scaffoldBordersBP: null,
+  },
+];
+const legacy = {
+  contigDescriptors: descriptors.map((d) => ({
+    ...d,
+    contigSourceName: 'source😀"',
+  })),
+  scaffoldDescriptors: scaffoldDtos,
+};
+const compact = {
+  format: "compact-v1",
+  resolutions: [100, 250, 1000],
+  contigs: legacy.contigDescriptors.map((d) => [
+    d.contigId,
+    d.contigName,
+    d.contigOriginalName,
+    d.contigSourceName,
+    d.contigOffsetInSource,
+    d.contigDirection,
+    d.contigLengthBp,
+    [100, 250, 1000].map((r) => Number(d.contigLengthBins[r])),
+    [100, 250, 1000].map((r) => d.contigPresenceAtResolution[r]),
+  ]),
+  scaffolds: scaffoldDtos.map((s) => [
+    s.scaffoldId,
+    s.scaffoldName,
+    s.scaffoldOriginalName,
+    s.spacerLength,
+    s.scaffoldBordersBP
+      ? [s.scaffoldBordersBP.startBP, s.scaffoldBordersBP.endBP]
+      : null,
+  ]),
+};
+assert.deepEqual(
+  new AssemblyInfoDTO(compact).toEntity(),
+  new AssemblyInfoDTO(legacy).toEntity()
+);
+const converted = new AssemblyInfoDTO(compact).toEntity();
+converted.contigDescriptors[0].contigLengthBins.set(100, 777);
+assert.deepEqual(
+  new AssemblyInfoDTO(compact).toEntity(),
+  new AssemblyInfoDTO(legacy).toEntity()
+);
+assert.deepEqual(
+  new AssemblyInfoDTO({
+    format: "compact-v1",
+    resolutions: [],
+    contigs: [],
+    scaffolds: [],
+  }).toEntity(),
+  { contigDescriptors: [], scaffoldDescriptors: [] }
+);
+for (const damage of [
+  (c) => {
+    c.format = "compact-v2";
+  },
+  (c) => {
+    c.resolutions[1] = c.resolutions[0];
+  },
+  (c) => {
+    c.contigs[0].pop();
+  },
+  (c) => {
+    c.contigs[0][7].pop();
+  },
+  (c) => {
+    c.contigs[0][8][0] = 99;
+  },
+  (c) => {
+    c.contigs[0][5] = 9;
+  },
+  (c) => {
+    c.scaffolds[0][4] = [1];
+  },
+]) {
+  const bad = structuredClone(compact);
+  damage(bad);
+  assert.throws(() => new AssemblyInfoDTO(bad).toEntity());
+}
+const { HiCTAPIRequestDTO } = loadTypeScript(
+  resolve(projectRoot, "src/app/core/net/dto/requestDTO.ts")
+);
+const requestClasses = loadTypeScript(
+  resolve(projectRoot, "src/app/core/net/api/request.ts")
+);
+for (const name of [
+  "ReverseSelectionRangeRequest",
+  "MoveSelectionRangeRequest",
+  "SplitContigRequest",
+  "GroupContigsIntoScaffoldRequest",
+  "UngroupContigsFromScaffoldRequest",
+  "MoveSelectionToDebrisRequest",
+]) {
+  const request = new requestClasses[name]({
+    startBP: 0,
+    endBP: 100,
+    targetStartBP: 200,
+    splitPx: 50,
+    bpResolution: 100,
+  });
+  assert.equal(
+    HiCTAPIRequestDTO.toDTOClass(request).toDTO().assemblyFormat,
+    "compact-v1",
+    name
+  );
+}
+console.log(
+  "Compact assembly contract, invalid payloads, independent maps and opt-in edit requests passed."
+);
+for (const policy of [
+  undefined,
+  "APPEND_UNPLACED",
+  "EXCLUDE",
+  "SCAFFOLDED_ONLY",
+]) {
+  const request = new requestClasses.LoadAGPRequest({
+    agpFilename: "layout.agp",
+    missingComponentsPolicy: policy,
+  });
+  const payload = HiCTAPIRequestDTO.toDTOClass(request).toDTO();
+  assert.equal(payload.agpFilename, "layout.agp");
+  assert.equal(payload.missingComponentsPolicy, policy);
+}
+for (const name of ["GetAGPForAssemblyRequest", "GetFastaForAssemblyRequest"]) {
+  assert.equal(
+    HiCTAPIRequestDTO.toDTOClass(new requestClasses[name]()).toDTO()
+      .preserveImportedGaps,
+    true
+  );
+}
+console.log(
+  "AGP omission choices and matching AGP/FASTA gap export requests passed."
+);
+
+for (const [name, options] of [
+  ["AssemblyHistoryRequest", { offset: 100, limit: 100 }],
+  [
+    "RestoreAssemblyHistoryRequest",
+    {
+      session: "session-id",
+      revision: 7,
+      action: "restore",
+      id: 3,
+      assemblyFormat: "compact-v1",
+    },
+  ],
+]) {
+  assert.deepEqual(
+    HiCTAPIRequestDTO.toDTOClass(new requestClasses[name](options)).toDTO(),
+    options
+  );
+}
+assert.deepEqual(
+  HiCTAPIRequestDTO.toDTOClass(
+    new requestClasses.UnscaffoldAllRequest()
+  ).toDTO(),
+  {}
+);
+console.log(
+  "Journal pagination, unscaffold-all and guarded restoration payloads passed."
+);
+
+// Execute the production HTTP adapter with controlled responses. A history-list
+// response must not authorize edits using coordinates from an older displayed map.
+const vm = await import("node:vm");
+const adapterSource = ts.transpileModule(
+  readFileSync(
+    resolve(projectRoot, "src/app/core/net/api/RequestManager.ts"),
+    "utf8"
+  ),
+  {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+      esModuleInterop: true,
+    },
+  }
+).outputText;
+let responseRevision = 2;
+let sentHeaders;
+let sentPayload;
+let requestsSent = 0;
+let serializationFailure = false;
+let pendingWorkspace;
+const notificationErrors = [];
+const adapterExports = {};
+vm.runInNewContext(adapterSource, {
+  exports: adapterExports,
+  console,
+  require: (name) => {
+    if (name.includes("backgroundResultDelivery"))
+      return loadTypeScript(
+        resolve(
+          projectRoot,
+          "src/app/core/sequence/backgroundResultDelivery.ts"
+        )
+      );
+    if (name === "vue") return { shallowReactive: (value) => value };
+    if (name === "axios")
+      return {
+        post: async (url, payload, config) => {
+          requestsSent++;
+          sentPayload = payload;
+          if (url.endsWith("/workspace/state"))
+            return new Promise((resolve, reject) => {
+              pendingWorkspace = { payload, resolve, reject };
+            });
+          sentHeaders = config.headers;
+          return {
+            data: {},
+            headers: {
+              "x-hict-history": JSON.stringify({
+                session: "s",
+                revision: responseRevision,
+                currentId: responseRevision,
+                position: responseRevision,
+                size: responseRevision + 1,
+                canUndo: true,
+                canRedo: false,
+              }),
+            },
+          };
+        },
+      };
+    if (name === "../dto/requestDTO")
+      return {
+        HiCTAPIRequestDTO: {
+          toDTOClass: (request) => {
+            if (serializationFailure) throw new Error("Serialization failed");
+            return { toDTO: () => request.options ?? {} };
+          },
+        },
+      };
+    if (name.includes("errorMessage"))
+      return { extractErrorMessage: (err) => err.message };
+    if (name.includes("errorToastStore"))
+      return {
+        useErrorToastStore: () => ({ requestErrorToastsEnabled: true }),
+      };
+    if (name === "vue-sonner")
+      return {
+        toast: { error: (message) => notificationErrors.push(message) },
+      };
+    return {};
+  },
+});
+const adapter = new adapterExports.RequestManager({
+  host: "http://example.test",
+});
+adapter.notifyInboundPayload = () => {};
+adapter.history.summary = { session: "s", revision: 1 };
+adapter.history.applied = { session: "s", revision: 1 };
+await adapter.sendRequest({ requestPath: "/assembly/history" });
+assert.equal(adapter.history.summary.revision, 2);
+assert.equal(
+  adapter.history.applied.revision,
+  1,
+  "Reading the journal must not advance the displayed-coordinate guard"
+);
+responseRevision = 3;
+await adapter.sendRequest({ requestPath: "/reverse_selection_range" });
+assert.equal(sentHeaders["X-HiCT-History-Revision"], "1");
+assert.equal(adapter.history.applied.revision, 3);
+assert.equal(adapter.history.busy, 0);
+console.log(
+  "History reads cannot authorize edits on stale displayed coordinates."
+);
+
+await adapter.querySequenceRegion(0, 60, undefined, {
+  includeGaps: true,
+  assemblyAnchorBp: 5000,
+});
+assert.equal(sentHeaders["X-HiCT-History-Revision"], "3");
+assert.equal(sentPayload.includeGaps, true);
+assert.equal(sentPayload.assemblyAnchorBp, 5000);
+adapter.sequenceViewReadOnly = true;
+const sentBefore = requestsSent;
+for (const requestPath of [
+  "/reverse_selection_range",
+  "/assembly/history/restore",
+])
+  await assert.rejects(
+    adapter.sendRequest({ requestPath }),
+    /Return to the contact map/
+  );
+assert.equal(
+  requestsSent,
+  sentBefore,
+  "Read-only sequence view cannot send mutations"
+);
+assert.equal(adapter.history.busy, 0);
+adapter.sequenceViewReadOnly = false;
+console.log(
+  "FASTA reads carry the displayed revision; sequence view prevents edits and history restoration."
+);
+
+serializationFailure = true;
+adapter.getAssemblyHistory = async () => {};
+await assert.rejects(
+  adapter.sendRequest({ requestPath: "/unscaffold_all" }),
+  /Serialization failed/
+);
+assert.equal(
+  adapter.history.busy,
+  0,
+  "Serialization failure must release the edit guard"
+);
+assert.equal(
+  notificationErrors.length,
+  0,
+  "The transport must leave user-facing reporting to the action"
+);
+console.log(
+  "Synchronous serialization failures release the edit guard and reject to the caller."
+);
+
+const originalVersion = { session: "workspace-a", revision: 0 };
+adapter.workspaceVersion = originalVersion;
+const save = adapter.saveWorkspaceState("same.hict.hdf5", { version: 1 });
+assert.equal(pendingWorkspace.payload.expectedVersion, originalVersion);
+pendingWorkspace.resolve({
+  data: { workspaceVersion: { session: "workspace-a", revision: 1 } },
+});
+await save;
+assert.equal(adapter.workspaceVersion.revision, 1);
+const delayed = adapter.saveWorkspaceState("same.hict.hdf5", { version: 1 });
+const attachedVersion = { session: "workspace-b", revision: 4 };
+adapter.workspaceVersion = attachedVersion;
+pendingWorkspace.resolve({
+  data: { workspaceVersion: { session: "workspace-a", revision: 2 } },
+});
+await delayed;
+assert.equal(
+  adapter.workspaceVersion,
+  attachedVersion,
+  "A late save cannot replace a newer Open/Attach token"
+);
+const rejected = adapter.saveWorkspaceState("same.hict.hdf5", { version: 1 });
+pendingWorkspace.reject(new Error("Workspace conflict"));
+await assert.rejects(rejected, /Workspace conflict/);
+assert.equal(
+  adapter.workspaceVersion,
+  attachedVersion,
+  "Rejected saves cannot advance the version"
+);
+console.log(
+  "Workspace autosaves preserve Open/Attach tokens across delayed responses and conflicts."
+);

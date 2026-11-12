@@ -21,6 +21,25 @@
 
 <template>
   <div class="map-shell">
+    <AssemblyContextMenu
+      v-if="props.mapManager"
+      :key="managerKey"
+      :map-manager="props.mapManager"
+    />
+    <div
+      v-if="props.mapManager?.viewAndLayersManager.overlayStatus.loading.value"
+      class="overlay-loading"
+      role="status"
+    >
+      Loading overlay…
+    </div>
+    <div
+      v-if="props.mapManager?.alignmentDetail?.state.message.value"
+      class="overlay-loading"
+      role="status"
+    >
+      {{ props.mapManager.alignmentDetail.state.message.value }}
+    </div>
     <div id="hic-contact-map" :style="mapContainerStyle" ref="mapTarget"></div>
     <div
       class="zoom-slider-overlay"
@@ -33,8 +52,9 @@
 
 <script setup lang="ts">
 import "ol/ol.css";
+import AssemblyContextMenu from "./AssemblyContextMenu.vue";
 import { useStyleStore } from "@/app/stores/styleStore";
-import { ref, computed, Ref, watch } from "vue";
+import { ref, computed, Ref, toRaw, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { usehtmlElementReferencesStore } from "@/app/stores/htmlElementReferencesStore";
 import ZoomSlider from "@/app/ui/components/toolbar/upper_blocks/ZoomSlider.vue";
@@ -57,7 +77,6 @@ watch(
 const mapContainerStyle = ref({
   width: "100%",
   height: "100%",
-  "padding-right": "15px",
 });
 
 const props = defineProps<{
@@ -66,9 +85,36 @@ const props = defineProps<{
 
 const uiSettingsStore = useUiSettingsStore();
 const { customZoomSliderEnabled } = storeToRefs(uiSettingsStore);
+
+// The context menu binds to its map's viewport once, when it is created. Replacing the manager
+// directly (open another map, restore a session) must therefore re-create it.
+const managerIds = new WeakMap<object, number>();
+let nextManagerId = 1;
+const managerKey = computed(() => {
+  const manager = props.mapManager ? toRaw(props.mapManager) : undefined;
+  if (!manager) return 0;
+  let id = managerIds.get(manager);
+  if (id === undefined) {
+    id = nextManagerId++;
+    managerIds.set(manager, id);
+  }
+  return id;
+});
 </script>
 
 <style scoped>
+.overlay-loading {
+  position: absolute;
+  z-index: 2;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.25rem;
+  color: var(--bs-body-color);
+  background: var(--bs-body-bg);
+  pointer-events: none;
+}
+
 .map-shell {
   position: relative;
   width: 100%;

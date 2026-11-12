@@ -1,0 +1,301 @@
+/** Bounds of a transformed map rectangle after clipping it to the viewport. */
+export function visibleMapBounds(
+  corners: number[][],
+  size: number[]
+): { left: number; top: number; width: number; height: number } | undefined {
+  if (
+    corners.length !== 4 ||
+    size.length !== 2 ||
+    !size.every((value) => Number.isFinite(value) && value > 0) ||
+    !corners.every(
+      (point) => point.length === 2 && point.every(Number.isFinite)
+    )
+  )
+    return undefined;
+  // Clip the convex quadrilateral, not its bounding box: a rotated map can be
+  // wholly outside a viewport even when their axis-aligned bounds overlap.
+  let polygon = corners;
+  for (const [axis, edge, direction] of [
+    [0, 0, 1],
+    [0, size[0], -1],
+    [1, 0, 1],
+    [1, size[1], -1],
+  ]) {
+    const clipped: number[][] = [];
+    for (let i = 0; i < polygon.length; i++) {
+      const start = polygon[i],
+        end = polygon[(i + 1) % polygon.length];
+      const startInside = direction * (start[axis] - edge) >= 0;
+      const endInside = direction * (end[axis] - edge) >= 0;
+      if (startInside !== endInside) {
+        const fraction = (edge - start[axis]) / (end[axis] - start[axis]);
+        const point = start.map(
+          (value, index) => value + fraction * (end[index] - value)
+        );
+        point[axis] = edge;
+        clipped.push(point);
+      }
+      if (endInside) clipped.push(end);
+    }
+    polygon = clipped;
+  }
+  if (!polygon.length) return undefined;
+  const left = Math.min(...polygon.map((point) => point[0]));
+  const top = Math.min(...polygon.map((point) => point[1]));
+  const width = Math.max(...polygon.map((point) => point[0])) - left;
+  const height = Math.max(...polygon.map((point) => point[1])) - top;
+  return width > 0 && height > 0 ? { left, top, width, height } : undefined;
+}
+
+/** Crop a captured map and its aligned rulers/tracks without rasterizing vectors. */
+export function cropSelectionScene(
+  scene: { svg: SVGSVGElement; canvas: HTMLCanvasElement },
+  crop: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    marginLeft: number;
+    marginTop: number;
+  }
+): { svg: SVGSVGElement; canvas: HTMLCanvasElement } {
+  const { left, top, width, height, marginLeft, marginTop } = crop;
+  if (
+    ![left, top, width, height, marginLeft, marginTop].every(Number.isFinite) ||
+    width <= 0 ||
+    height <= 0 ||
+    left < marginLeft ||
+    top < marginTop ||
+    marginLeft < 0 ||
+    marginTop < 0 ||
+    left + width > scene.canvas.width + 1 ||
+    top + height > scene.canvas.height + 1
+  )
+    throw new Error("Selected region is outside the rendered export scene");
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  // Match the raster canvas page size. Fractional SVG dimensions cause editors
+  // to round the page and rescale otherwise pixel-aligned heatmap images.
+  const pageWidth = Math.ceil(marginLeft + width);
+  const pageHeight = Math.ceil(marginTop + height);
+  svg.setAttribute("xmlns", ns);
+  svg.setAttribute("width", String(pageWidth));
+  svg.setAttribute("height", String(pageHeight));
+  svg.setAttribute("viewBox", `0 0 ${pageWidth} ${pageHeight}`);
+  const defs = document.createElementNS(ns, "defs");
+  const id = `hict-selection-${crypto.randomUUID()}`;
+  svg.append(defs);
+  let copyIndex = 0;
+  const canvas = document.createElement("canvas");
+  canvas.width = pageWidth;
+  canvas.height = pageHeight;
+  const context = canvas.getContext("2d")!;
+  for (const [sx, sy, w, h, dx, dy] of [
+    [0, 0, marginLeft, marginTop, 0, 0],
+    [left, 0, width, marginTop, marginLeft, 0],
+    [0, top, marginLeft, height, 0, marginTop],
+    [left, top, width, height, marginLeft, marginTop],
+  ]) {
+    if (w <= 0 || h <= 0) continue;
+    const clip = document.createElementNS(ns, "clipPath");
+    const clipId = `${id}-clip-${dx}-${dy}`;
+    clip.id = clipId;
+    clip.setAttribute("clipPathUnits", "userSpaceOnUse");
+    const rectangle = document.createElementNS(ns, "rect");
+    for (const [key, value] of Object.entries({
+      x: dx,
+      y: dy,
+      width: w,
+      height: h,
+    }))
+      rectangle.setAttribute(key, String(value));
+    clip.append(rectangle);
+    defs.append(clip);
+    const tile = document.createElementNS(ns, "g");
+    tile.setAttribute("clip-path", `url(#${clipId})`);
+    const shifted = document.createElementNS(ns, "g");
+    shifted.setAttribute("transform", `translate(${dx - sx} ${dy - sy})`);
+    // svg2pdf.js does not consistently transform referenced groups with nested
+    // clips. Explicit vector copies avoid that bug; each copy needs unique IDs.
+    const copy = document.createElementNS(ns, "g");
+    for (const child of Array.from(scene.svg.childNodes))
+      copy.append(child.cloneNode(true));
+    const ids = new Map<string, string>();
+    const prefix = `${id}-copy-${copyIndex++}-`;
+    for (const element of Array.from(copy.querySelectorAll("[id]"))) {
+      const old = element.id,
+        next = prefix + old;
+      ids.set(old, next);
+      element.id = next;
+    }
+    for (const element of [copy, ...Array.from(copy.querySelectorAll("*"))]) {
+      for (const attribute of Array.from(element.attributes)) {
+        let value = attribute.value.replace(/url\(#([^)]*)\)/g, (all, old) =>
+          ids.has(old) ? `url(#${ids.get(old)})` : all
+        );
+        if (
+          (attribute.name === "href" || attribute.name === "xlink:href") &&
+          value.startsWith("#") &&
+          ids.has(value.slice(1))
+        )
+          value = `#${ids.get(value.slice(1))}`;
+        element.setAttribute(attribute.name, value);
+      }
+    }
+    pruneSceneCopy(
+      copy,
+      { left: sx, top: sy, width: w, height: h },
+      copyIndex === 1
+    );
+    tile.setAttribute(
+      "data-hict-export-region",
+      dx === 0 && dy === 0
+        ? "corner"
+        : dy === 0
+        ? "top-axis"
+        : dx === 0
+        ? "left-axis"
+        : "map"
+    );
+    shifted.append(copy);
+    tile.append(shifted);
+    svg.append(tile);
+    context.drawImage(scene.canvas, sx, sy, w, h, dx, dy, w, h);
+  }
+  return { svg, canvas };
+}
+
+/**
+ * Each crop region holds an explicit copy of the scene (see cropSelectionScene). Without
+ * pruning, every region would carry the complete scene: editors such as Inkscape then show
+ * four stacked copies of the map, and selecting/deleting one removes an arbitrary part of
+ * it. Keep only positioned canvas layers (nested <svg x y width height>) that overlap the
+ * region, shrink full-scene background rectangles to the region, and keep metadata once.
+ */
+function pruneSceneCopy(
+  copy: SVGGElement,
+  region: { left: number; top: number; width: number; height: number },
+  keepMetadata: boolean
+): void {
+  const right = region.left + region.width,
+    bottom = region.top + region.height;
+  const elementsOf = (node: Node): Element[] =>
+    Array.from(node.childNodes ?? []).filter(
+      (child): child is Element => child.nodeType === 1
+    );
+  const containers = elementsOf(copy).flatMap((child) =>
+    child.localName === "g" ? elementsOf(child) : [child]
+  );
+  for (const element of containers) {
+    if (element.localName === "metadata") {
+      if (!keepMetadata) element.remove();
+      continue;
+    }
+    const read = (name: string) => Number(element.getAttribute(name));
+    const x = read("x") || 0,
+      y = read("y") || 0,
+      width = read("width"),
+      height = read("height");
+    if (!(width > 0) || !(height > 0)) continue;
+    if (element.localName === "svg") {
+      if (
+        x >= right ||
+        y >= bottom ||
+        x + width <= region.left ||
+        y + height <= region.top
+      )
+        element.remove();
+    } else if (element.localName === "rect" && x === 0 && y === 0) {
+      // Workspace background: draw it once per region instead of four full copies.
+      element.setAttribute("x", String(region.left));
+      element.setAttribute("y", String(region.top));
+      element.setAttribute("width", String(region.width));
+      element.setAttribute("height", String(region.height));
+    }
+  }
+}
+
+/** Include visible map captions outside the heatmap while leaving track cropping aligned. */
+export function includeMapCaptions(
+  svg: SVGSVGElement,
+  bounds: { left: number; top: number; width: number; height: number },
+  mapBox: { left: number; top: number; width: number; height: number }
+): typeof bounds {
+  const holder = document.createElement("div");
+  holder.style.cssText =
+    "position:fixed;left:0;top:0;visibility:hidden;pointer-events:none";
+  holder.append(svg);
+  document.body.append(holder);
+  let left = bounds.left,
+    top = bounds.top,
+    right = left + bounds.width,
+    bottom = top + bounds.height;
+  try {
+    const inverse = svg.getScreenCTM()?.inverse();
+    if (!inverse) return bounds;
+    for (const text of Array.from(
+      svg.querySelectorAll<SVGTextElement>("text")
+    )) {
+      if (!text.textContent?.trim()) continue;
+      const box = text.getBBox(),
+        matrix = text.getScreenCTM();
+      if (!matrix || !box.width || !box.height) continue;
+      const transform = inverse.multiply(matrix);
+      const points = [
+        [box.x, box.y],
+        [box.x + box.width, box.y],
+        [box.x, box.y + box.height],
+        [box.x + box.width, box.y + box.height],
+      ].map(([x, y]) => new DOMPoint(x, y).matrixTransform(transform));
+      const x0 = Math.min(...points.map((p) => p.x)),
+        x1 = Math.max(...points.map((p) => p.x)),
+        y0 = Math.min(...points.map((p) => p.y)),
+        y1 = Math.max(...points.map((p) => p.y));
+      if (!text.closest("[data-hict-map-content]")) {
+        // Aligned rulers/tracks can center a label on the final data tick.
+        // Retain its overhang instead of cutting it at the heatmap boundary.
+        // Test against the original crop, so unrelated ticks cannot grow it
+        // repeatedly all the way to the edge of the workspace.
+        if (
+          x1 <= mapBox.left &&
+          y0 < bounds.top + bounds.height &&
+          y1 > bounds.top
+        ) {
+          top = Math.min(top, Math.max(mapBox.top, y0 - 4));
+          bottom = Math.max(
+            bottom,
+            Math.min(mapBox.top + mapBox.height, y1 + 4)
+          );
+        }
+        if (
+          y1 <= mapBox.top &&
+          x0 < bounds.left + bounds.width &&
+          x1 > bounds.left
+        ) {
+          left = Math.min(left, Math.max(mapBox.left, x0 - 4));
+          right = Math.max(right, Math.min(mapBox.left + mapBox.width, x1 + 4));
+        }
+        continue;
+      }
+      const l = Math.max(mapBox.left, Math.min(...points.map((p) => p.x)) - 4),
+        t = Math.max(mapBox.top, Math.min(...points.map((p) => p.y)) - 4),
+        r = Math.min(
+          mapBox.left + mapBox.width,
+          Math.max(...points.map((p) => p.x)) + 4
+        ),
+        b = Math.min(
+          mapBox.top + mapBox.height,
+          Math.max(...points.map((p) => p.y)) + 4
+        );
+      if (r <= l || b <= t) continue;
+      left = Math.min(left, l);
+      top = Math.min(top, t);
+      right = Math.max(right, r);
+      bottom = Math.max(bottom, b);
+    }
+    return { left, top, width: right - left, height: bottom - top };
+  } finally {
+    svg.remove();
+    holder.remove();
+  }
+}

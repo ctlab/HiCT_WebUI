@@ -182,3 +182,23 @@ body {
   filter: var(--hict-surface-close-filter);
   opacity: 0.82;
 }
+
+/*
+ * Every dialog must fit the window on small laptop screens: keep the header
+ * and footer (Next / Apply / Cancel) visible and scroll the body instead.
+ * The rendering-pipeline editor manages its own full-window layout.
+ */
+.modal-dialog:not(.pipeline-dialog) > .modal-content {
+  max-height: calc(100vh - 2 * var(--bs-modal-margin, 0.5rem));
+  overflow: hidden;
+}
+
+.modal-dialog:not(.pipeline-dialog) > .modal-content > .modal-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.modal-dialog:not(.pipeline-dialog) > .modal-content > .modal-header,
+.modal-dialog:not(.pipeline-dialog) > .modal-content > .modal-footer {
+  flex-shrink: 0;
+}

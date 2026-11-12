@@ -1,3 +1,7 @@
+import {
+  BackgroundJobsRequest,
+  CancelBackgroundJobRequest,
+} from "../api/request";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -20,11 +24,25 @@
  */
 
 import {
+  AlignmentDetailRequest,
+  GetSessionSnapshotRequest,
+  RestoreSessionRequest,
   ListFilesRequest,
   ListFilesDetailedRequest,
   ListDirectoryRequest,
   OpenFileRequest,
   CloseFileRequest,
+  ListExamplesRequest,
+  StartExampleDownloadRequest,
+  ExampleDownloadStatusRequest,
+  CancelExampleDownloadRequest,
+  StartFastaOnlyRequest,
+  FastaOnlyStatusRequest,
+  CancelFastaOnlyRequest,
+  PrepareCoverageNormalizationRequest,
+  CoverageNormalizationStatusRequest,
+  CancelCoverageNormalizationRequest,
+  SelectNormalizationWeightsRequest,
   AttachSessionRequest,
   GetFastaForAssemblyRequest,
   type HiCTAPIRequest,
@@ -95,6 +113,12 @@ import {
 } from "../api/request";
 import { ColormapDTO, OutboundDTO, VisualizationOptionsDTO } from "./dto";
 
+import {
+  AssemblyHistoryRequest,
+  RestoreAssemblyHistoryRequest,
+} from "../api/request";
+import { SequenceAnalysisRequest } from "../api/SequenceAnalysisRequest";
+
 abstract class HiCTAPIRequestDTO<
   T extends HiCTAPIRequest
 > extends OutboundDTO<T> {
@@ -107,6 +131,23 @@ abstract class HiCTAPIRequestDTO<
 
   static toDTOClass(entity: HiCTAPIRequest) {
     switch (true) {
+      case entity instanceof BackgroundJobsRequest:
+        return { toDTO: () => ({}) };
+      case entity instanceof CancelBackgroundJobRequest:
+        return {
+          toDTO: () => ({ id: (entity as CancelBackgroundJobRequest).id }),
+        };
+      case entity instanceof AlignmentDetailRequest:
+        return { toDTO: () => (entity as AlignmentDetailRequest).options };
+      case entity instanceof SequenceAnalysisRequest:
+        return { toDTO: () => (entity as SequenceAnalysisRequest).options };
+      case entity instanceof AssemblyHistoryRequest:
+      case entity instanceof RestoreAssemblyHistoryRequest:
+        return {
+          toDTO: () =>
+            (entity as AssemblyHistoryRequest | RestoreAssemblyHistoryRequest)
+              .options,
+        };
       case entity instanceof GetCurrentSignalRangeRequest:
         return new GetCurrentSignalRangeRequestDTO(
           entity as GetCurrentSignalRangeRequest
@@ -194,7 +235,9 @@ abstract class HiCTAPIRequestDTO<
           entity as OpenCoolerWeightsTrackRequest
         );
       case entity instanceof ProbeTrackCompatibilityRequest:
-        return new ProbeTrackCompatibilityRequestDTO(entity as ProbeTrackCompatibilityRequest);
+        return new ProbeTrackCompatibilityRequestDTO(
+          entity as ProbeTrackCompatibilityRequest
+        );
       case entity instanceof ListTracksRequest:
         return new ListTracksRequestDTO(entity);
       case entity instanceof UpdateTrackRequest:
@@ -214,9 +257,13 @@ abstract class HiCTAPIRequestDTO<
           entity as GetTrackFeatureContextRequest
         );
       case entity instanceof StartTracksPrecomputeRequest:
-        return new StartTracksPrecomputeRequestDTO(entity as StartTracksPrecomputeRequest);
+        return new StartTracksPrecomputeRequestDTO(
+          entity as StartTracksPrecomputeRequest
+        );
       case entity instanceof GetTracksPrecomputeStatusRequest:
-        return new GetTracksPrecomputeStatusRequestDTO(entity as GetTracksPrecomputeStatusRequest);
+        return new GetTracksPrecomputeStatusRequestDTO(
+          entity as GetTracksPrecomputeStatusRequest
+        );
       case entity instanceof ProbeTrackPrecomputeCacheRequest:
         return new ProbeTrackPrecomputeCacheRequestDTO(
           entity as ProbeTrackPrecomputeCacheRequest
@@ -224,7 +271,9 @@ abstract class HiCTAPIRequestDTO<
       case entity instanceof ListConversionJobsRequest:
         return new ListConversionJobsRequestDTO(entity);
       case entity instanceof GetConversionJobRequest:
-        return new GetConversionJobRequestDTO(entity as GetConversionJobRequest);
+        return new GetConversionJobRequestDTO(
+          entity as GetConversionJobRequest
+        );
       case entity instanceof StopConversionJobRequest:
         return new StopConversionJobRequestDTO(
           entity as StopConversionJobRequest
@@ -236,7 +285,9 @@ abstract class HiCTAPIRequestDTO<
       case entity instanceof ExportNameMappingRequest:
         return new ExportNameMappingRequestDTO(entity);
       case entity instanceof ImportNameMappingRequest:
-        return new ImportNameMappingRequestDTO(entity as ImportNameMappingRequest);
+        return new ImportNameMappingRequestDTO(
+          entity as ImportNameMappingRequest
+        );
       case entity instanceof ReloadTilesRequest:
         return new ReloadTilesRequestDTO(entity);
       case entity instanceof ListFASTAFilesRequest:
@@ -261,6 +312,12 @@ abstract class HiCTAPIRequestDTO<
         return new CloseSecondarySourceRequestDTO(
           entity as CloseSecondarySourceRequest
         );
+      case entity instanceof RestoreSessionRequest:
+        return new RestoreSessionRequestDTO(entity as RestoreSessionRequest);
+      case entity instanceof GetSessionSnapshotRequest:
+        return new GetSessionSnapshotRequestDTO(
+          entity as GetSessionSnapshotRequest
+        );
       case entity instanceof GetSecondarySourceStatusRequest:
         return new GetSecondarySourceStatusRequestDTO(
           entity as GetSecondarySourceStatusRequest
@@ -280,11 +337,32 @@ abstract class HiCTAPIRequestDTO<
       case entity instanceof GetRenderPipelineRequest:
         return new GetRenderPipelineRequestDTO(entity);
       case entity instanceof SetRenderPipelineRequest:
-        return new SetRenderPipelineRequestDTO(entity as SetRenderPipelineRequest);
+        return new SetRenderPipelineRequestDTO(
+          entity as SetRenderPipelineRequest
+        );
       case entity instanceof ResetRenderPipelineRequest:
         return new ResetRenderPipelineRequestDTO(entity);
       case entity instanceof CloseFileRequest:
         return new CloseFileRequestDTO(entity as CloseFileRequest);
+      case entity instanceof ListExamplesRequest:
+      case entity instanceof ExampleDownloadStatusRequest:
+      case entity instanceof CancelExampleDownloadRequest:
+      case entity instanceof FastaOnlyStatusRequest:
+      case entity instanceof CancelFastaOnlyRequest:
+      case entity instanceof PrepareCoverageNormalizationRequest:
+      case entity instanceof CoverageNormalizationStatusRequest:
+      case entity instanceof CancelCoverageNormalizationRequest:
+        return new EmptyBodyRequestDTO(entity);
+      case entity instanceof StartExampleDownloadRequest:
+        return new StartExampleDownloadRequestDTO(
+          entity as StartExampleDownloadRequest
+        );
+      case entity instanceof StartFastaOnlyRequest:
+        return new StartFastaOnlyRequestDTO(entity as StartFastaOnlyRequest);
+      case entity instanceof SelectNormalizationWeightsRequest:
+        return new SelectNormalizationWeightsRequestDTO(
+          entity as SelectNormalizationWeightsRequest
+        );
       case entity instanceof AttachSessionRequest:
         return new AttachSessionRequestDTO(entity as AttachSessionRequest);
       case entity instanceof GetFastaForAssemblyRequest:
@@ -458,22 +536,34 @@ class ResetRenderPipelineRequestDTO extends HiCTAPIRequestDTO<ResetRenderPipelin
   }
 }
 
+function finiteNumberOr(value: unknown, fallback: number): number {
+  if (typeof value === "string" && value.trim() === "") {
+    return fallback;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
 class SetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<SetVisualizationOptionsRequest> {
   toDTO(): Record<string, unknown> {
+    const options = this.entity.options.options;
     return {
-      preLogBase: this.entity.options.options.preLogBase,
-      postLogBase: this.entity.options.options.postLogBase,
-      applyCoolerWeights: this.entity.options.options.applyCoolerWeights,
-      resolutionScaling: this.entity.options.options.resolutionScaling,
-      resolutionLinearScaling:
-        this.entity.options.options.resolutionLinearScaling,
-      autoThresholdEnabled: this.entity.options.options.autoThresholdEnabled,
-      autoThresholdQuantile: this.entity.options.options.autoThresholdQuantile,
-      signalDisplayMode: this.entity.options.options.signalDisplayMode,
+      preLogBase: finiteNumberOr(options.preLogBase, -1),
+      postLogBase: finiteNumberOr(options.postLogBase, -1),
+      applyCoolerWeights: options.applyCoolerWeights,
+      resolutionScaling: options.resolutionScaling,
+      resolutionLinearScaling: options.resolutionLinearScaling,
+      autoThresholdEnabled: options.autoThresholdEnabled,
+      autoThresholdQuantile: finiteNumberOr(
+        options.autoThresholdQuantile,
+        0.995
+      ),
+      signalDisplayMode: options.signalDisplayMode,
+      coolerWeightsNaNPolicy: options.coolerWeightsNaNPolicy,
       preserveRenderPipeline:
         this.entity.options.preserveRenderPipeline ?? false,
-      colormap: ColormapDTO.fromEntity(this.entity.options.options.colormap)
-        .json,
+      renderPipeline: this.entity.options.renderPipeline,
+      colormap: ColormapDTO.fromEntity(options.colormap).json,
     };
   }
 }
@@ -493,6 +583,7 @@ class SetViewportExpectedProfileRequestDTO extends HiCTAPIRequestDTO<SetViewport
 class ReverseSelectionRangeRequestDTO extends HiCTAPIRequestDTO<ReverseSelectionRangeRequest> {
   toDTO(): Record<string, unknown> {
     return {
+      assemblyFormat: "compact-v1",
       startBP: this.entity.options.startBP,
       endBP: this.entity.options.endBP,
     };
@@ -668,6 +759,7 @@ class ReloadTilesRequestDTO extends HiCTAPIRequestDTO<ReloadTilesRequest> {
 class MoveSelectionRangeRequestDTO extends HiCTAPIRequestDTO<MoveSelectionRangeRequest> {
   toDTO(): Record<string, unknown> {
     return {
+      assemblyFormat: "compact-v1",
       startBP: this.entity.options.startBP,
       endBP: this.entity.options.endBP,
       targetStartBP: this.entity.options.targetStartBP,
@@ -678,6 +770,7 @@ class MoveSelectionRangeRequestDTO extends HiCTAPIRequestDTO<MoveSelectionRangeR
 class SplitContigRequestDTO extends HiCTAPIRequestDTO<SplitContigRequest> {
   toDTO(): Record<string, unknown> {
     return {
+      assemblyFormat: "compact-v1",
       splitPx: this.entity.options.splitPx,
       bpResolution: this.entity.options.bpResolution,
     };
@@ -715,6 +808,7 @@ class LoadAGPRequestDTO extends HiCTAPIRequestDTO<LoadAGPRequest> {
     return {
       agpFilename: this.entity.options.agpFilename,
       source: this.entity.options.source,
+      missingComponentsPolicy: this.entity.options.missingComponentsPolicy,
     };
   }
 }
@@ -732,6 +826,7 @@ class ApplyJuiceboxAssemblyRequestDTO extends HiCTAPIRequestDTO<ApplyJuiceboxAss
 class GroupContigsIntoScaffoldRequestDTO extends HiCTAPIRequestDTO<GroupContigsIntoScaffoldRequest> {
   toDTO(): Record<string, unknown> {
     return {
+      assemblyFormat: "compact-v1",
       startBP: this.entity.options.startBP,
       endBP: this.entity.options.endBP,
       scaffoldName: this.entity.options.newScaffoldName,
@@ -767,6 +862,7 @@ class GetCurrentSignalRangeRequestDTO extends HiCTAPIRequestDTO<GetCurrentSignal
 class UngroupContigsFromScaffoldRequestDTO extends HiCTAPIRequestDTO<UngroupContigsFromScaffoldRequest> {
   toDTO(): Record<string, unknown> {
     return {
+      assemblyFormat: "compact-v1",
       startBP: this.entity.options.startBP,
       endBP: this.entity.options.endBP,
     };
@@ -776,6 +872,7 @@ class UngroupContigsFromScaffoldRequestDTO extends HiCTAPIRequestDTO<UngroupCont
 class MoveSelectionToDebrisRequestDTO extends HiCTAPIRequestDTO<MoveSelectionToDebrisRequest> {
   toDTO(): Record<string, unknown> {
     return {
+      assemblyFormat: "compact-v1",
       startBP: this.entity.options.startBP,
       endBP: this.entity.options.endBP,
     };
@@ -1012,6 +1109,34 @@ class ListAGPFilesRequestDTO extends HiCTAPIRequestDTO<ListAGPFilesRequest> {
   }
 }
 
+class EmptyBodyRequestDTO extends HiCTAPIRequestDTO<HiCTAPIRequest> {
+  toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class StartExampleDownloadRequestDTO extends HiCTAPIRequestDTO<StartExampleDownloadRequest> {
+  toDTO(): Record<string, unknown> {
+    return { exampleId: this.entity.options.exampleId };
+  }
+}
+
+class StartFastaOnlyRequestDTO extends HiCTAPIRequestDTO<StartFastaOnlyRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      fastaFilename: this.entity.options.fastaFilename,
+      splitAtN: this.entity.options.splitAtN,
+      minNRun: this.entity.options.minNRun,
+    };
+  }
+}
+
+class SelectNormalizationWeightsRequestDTO extends HiCTAPIRequestDTO<SelectNormalizationWeightsRequest> {
+  toDTO(): Record<string, unknown> {
+    return { mode: this.entity.options.mode };
+  }
+}
+
 class CloseFileRequestDTO extends HiCTAPIRequestDTO<CloseFileRequest> {
   toDTO(): Record<string, unknown> {
     return {};
@@ -1028,12 +1153,13 @@ class GetFastaForAssemblyRequestDTO extends HiCTAPIRequestDTO<GetFastaForAssembl
   toDTO(): Record<string, unknown> {
     return {
       source: this.entity.options.source,
+      preserveImportedGaps: true,
     };
   }
 }
 class GetAGPForAssemblyRequestDTO extends HiCTAPIRequestDTO<GetAGPForAssemblyRequest> {
   toDTO(): Record<string, unknown> {
-    return {};
+    return { preserveImportedGaps: true };
   }
 }
 
@@ -1106,3 +1232,20 @@ export {
   GetNativeProcessingStatusRequestDTO,
   SetNativeProcessingEnabledRequestDTO,
 };
+
+class RestoreSessionRequestDTO extends HiCTAPIRequestDTO<RestoreSessionRequest> {
+  toDTO(): Record<string, unknown> {
+    return this.entity.snapshot;
+  }
+}
+
+class GetSessionSnapshotRequestDTO extends HiCTAPIRequestDTO<GetSessionSnapshotRequest> {
+  toDTO(): Record<string, unknown> {
+    return {
+      verifyAssemblyRoundTrip: this.entity.verifyAssemblyRoundTrip,
+      fingerprintFiles: this.entity.fingerprintFiles,
+      verifyTrackDefinitions: this.entity.verifyTrackDefinitions,
+      fullFingerprints: this.entity.fullFingerprints,
+    };
+  }
+}

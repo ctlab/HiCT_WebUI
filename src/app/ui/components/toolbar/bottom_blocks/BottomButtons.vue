@@ -25,15 +25,13 @@
       class="btn btn-outline-primary"
       type="button"
       title="Notifications"
+      aria-label="Open notifications"
       @click="notificationStore.isOpen = true"
     >
-      <i class="bi bi-chevron-left"></i>
+      <i class="bi bi-bell"></i>
       <span v-if="notificationCount > 0" class="notification-badge">
         {{ notificationCount > 99 ? "99+" : notificationCount }}
       </span>
-    </button>
-    <button class="btn btn-outline-primary" type="button">
-      <i class="bi bi-terminal"></i>
     </button>
   </div>
 </template>

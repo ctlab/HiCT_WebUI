@@ -31,6 +31,68 @@ interface HiCTAPIRequest {
   requestPath: string;
 }
 
+export class BackgroundJobsRequest implements HiCTAPIRequest {
+  requestPath = "/jobs";
+}
+
+export class CancelBackgroundJobRequest implements HiCTAPIRequest {
+  requestPath = "/jobs/cancel";
+  constructor(public readonly id: string) {}
+}
+
+export type AlignmentDetailOptions =
+  | { jobId: string }
+  | {
+      rowStart: number;
+      rowEnd: number;
+      columnStart: number;
+      columnEnd: number;
+      includeGaps?: boolean;
+    };
+
+export class AlignmentDetailRequest implements HiCTAPIRequest {
+  requestPath = "/sequence/alignment_detail";
+  constructor(public readonly options: AlignmentDetailOptions) {}
+}
+
+export class GetSessionSnapshotRequest implements HiCTAPIRequest {
+  requestPath = "/session/snapshot";
+  constructor(
+    public readonly verifyAssemblyRoundTrip = false,
+    public readonly fingerprintFiles = false,
+    public readonly verifyTrackDefinitions = false,
+    public readonly fullFingerprints = false
+  ) {}
+}
+
+export class RestoreSessionRequest implements HiCTAPIRequest {
+  requestPath = "/session/restore";
+  constructor(public readonly snapshot: Record<string, unknown>) {}
+}
+
+export class UnscaffoldAllRequest implements HiCTAPIRequest {
+  requestPath = "/unscaffold_all";
+}
+
+export class AssemblyHistoryRequest implements HiCTAPIRequest {
+  requestPath = "/assembly/history";
+  constructor(
+    public readonly options: { offset?: number; limit?: number } = {}
+  ) {}
+}
+export class RestoreAssemblyHistoryRequest implements HiCTAPIRequest {
+  requestPath = "/assembly/history/restore";
+  constructor(
+    public readonly options: {
+      session: string;
+      revision: number;
+      action: "undo" | "redo" | "restore";
+      id?: number;
+      assemblyFormat: "compact-v1";
+    }
+  ) {}
+}
+
 class OpenFileRequest implements HiCTAPIRequest {
   requestPath = "/open";
 
@@ -109,6 +171,68 @@ class DropAllCachesRequest implements HiCTAPIRequest {
 
 class CloseFileRequest implements HiCTAPIRequest {
   requestPath = "/close";
+}
+
+/** Starts computing square-root coverage vectors for every open source. */
+class PrepareCoverageNormalizationRequest implements HiCTAPIRequest {
+  requestPath = "/normalization/coverage/prepare";
+}
+
+class CoverageNormalizationStatusRequest implements HiCTAPIRequest {
+  requestPath = "/normalization/coverage/status";
+}
+
+class CancelCoverageNormalizationRequest implements HiCTAPIRequest {
+  requestPath = "/normalization/coverage/cancel";
+}
+
+/** Chooses which per-bin weights tiles use when weights are applied. */
+class SelectNormalizationWeightsRequest implements HiCTAPIRequest {
+  requestPath = "/normalization/weights";
+
+  public constructor(
+    public readonly options: { readonly mode: "FILE" | "SQRT_COVERAGE" }
+  ) {}
+}
+
+/** Builds an assembly from a FASTA file alone. The server reads it in the background. */
+class StartFastaOnlyRequest implements HiCTAPIRequest {
+  requestPath = "/fasta_only/start";
+
+  public constructor(
+    public readonly options: {
+      readonly fastaFilename: string;
+      readonly splitAtN: boolean;
+      readonly minNRun: number;
+    }
+  ) {}
+}
+
+class FastaOnlyStatusRequest implements HiCTAPIRequest {
+  requestPath = "/fasta_only/status";
+}
+
+class CancelFastaOnlyRequest implements HiCTAPIRequest {
+  requestPath = "/fasta_only/cancel";
+}
+
+class ListExamplesRequest implements HiCTAPIRequest {
+  requestPath = "/examples/catalog";
+}
+
+/** The client names an example only. The server decides addresses, names and hashes. */
+class StartExampleDownloadRequest implements HiCTAPIRequest {
+  requestPath = "/examples/download/start";
+
+  public constructor(public readonly options: { readonly exampleId: string }) {}
+}
+
+class ExampleDownloadStatusRequest implements HiCTAPIRequest {
+  requestPath = "/examples/download/status";
+}
+
+class CancelExampleDownloadRequest implements HiCTAPIRequest {
+  requestPath = "/examples/download/cancel";
 }
 
 class AttachSessionRequest implements HiCTAPIRequest {
@@ -440,6 +564,10 @@ class LoadAGPRequest implements HiCTAPIRequest {
     public readonly options: {
       readonly agpFilename: string;
       readonly source?: "PRIMARY" | "SECONDARY";
+      readonly missingComponentsPolicy?:
+        | "APPEND_UNPLACED"
+        | "EXCLUDE"
+        | "SCAFFOLDED_ONLY";
     }
   ) {}
 }
@@ -458,7 +586,6 @@ class ApplyJuiceboxAssemblyRequest implements HiCTAPIRequest {
 
 class OpenProgressRequest implements HiCTAPIRequest {
   requestPath = "/open_progress";
-  public constructor() {}
 }
 
 class OpenSecondarySourceRequest implements HiCTAPIRequest {
@@ -519,9 +646,7 @@ class GetRenderPipelineRequest implements HiCTAPIRequest {
 class SetRenderPipelineRequest implements HiCTAPIRequest {
   requestPath = "/render_pipeline/set";
 
-  public constructor(
-    public readonly options: Record<string, unknown>
-  ) {}
+  public constructor(public readonly options: Record<string, unknown>) {}
 }
 
 class ResetRenderPipelineRequest implements HiCTAPIRequest {
@@ -541,6 +666,7 @@ class SetVisualizationOptionsRequest implements HiCTAPIRequest {
     public readonly options: {
       options: VisualizationOptions;
       preserveRenderPipeline?: boolean;
+      renderPipeline?: Record<string, unknown>;
     }
   ) {}
 }
@@ -729,6 +855,17 @@ export {
   type HiCTAPIRequest,
   AttachSessionRequest,
   CloseFileRequest,
+  ListExamplesRequest,
+  StartExampleDownloadRequest,
+  ExampleDownloadStatusRequest,
+  CancelExampleDownloadRequest,
+  StartFastaOnlyRequest,
+  FastaOnlyStatusRequest,
+  CancelFastaOnlyRequest,
+  PrepareCoverageNormalizationRequest,
+  CoverageNormalizationStatusRequest,
+  CancelCoverageNormalizationRequest,
+  SelectNormalizationWeightsRequest,
   ListCoolerFilesRequest,
   ListConvertibleMatrixFilesRequest,
   ResolveMatrixSourceRequest,

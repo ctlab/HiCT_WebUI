@@ -20,8 +20,11 @@
  -->
 
 <template>
-  <Toaster position="bottom-right" richColors closeButton />
-  <!-- <button @click="() => toast('My first toast')">Render a toast</button> -->
+  <AGPImportChoiceModal />
+  <div :class="{ 'modal-notifications': hasActiveModal() }">
+    <Toaster position="bottom-right" richColors closeButton />
+  </div>
+  <!-- <button @click="() => toast.message('My first toast')">Render a toast</button> -->
   <div class="main-ui-component">
     <div v-if="openProgressVisible">
       <div class="modal-backdrop fade show open-progress-backdrop"></div>
@@ -69,9 +72,134 @@
         </div>
       </div>
     </div>
+    <UnsavedEditsDialog
+      v-if="unsavedPrompt"
+      :action="unsavedPrompt.action"
+      :busy="unsavedPrompt.busy"
+      :error="unsavedPrompt.error"
+      @save="onUnsavedPromptSave"
+      @discard="finishUnsavedPrompt(true)"
+      @cancel="finishUnsavedPrompt(false)"
+    />
+    <div v-if="sessionSaveError">
+      <div class="modal-backdrop fade show"></div>
+      <div
+        ref="sessionSaveErrorDialog"
+        class="modal fade show"
+        style="display: block"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="session-save-error-title"
+        aria-describedby="session-save-error-message"
+      >
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 id="session-save-error-title" class="modal-title">
+                Session could not be saved
+              </h5>
+            </div>
+            <div id="session-save-error-message" class="modal-body">
+              {{ sessionSaveError }}
+            </div>
+            <div class="modal-footer">
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                @click="copyText(sessionSaveDiagnostics, 'Diagnostics')"
+              >
+                Copy diagnostics
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary"
+                @click="sessionSaveError = ''"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div v-if="coolerWeightsNaNPromptVisible">
+      <div class="modal-backdrop fade show cooler-weights-nan-backdrop"></div>
+      <div
+        class="modal fade show cooler-weights-nan-modal"
+        style="display: block"
+        tabindex="-1"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cooler-weights-nan-title"
+      >
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 id="cooler-weights-nan-title" class="modal-title">
+                Excluded bins in the weights from the file
+              </h5>
+              <button
+                type="button"
+                class="btn-close"
+                aria-label="Close"
+                @click="coolerWeightsNaNPromptVisible = false"
+              ></button>
+            </div>
+            <div class="modal-body">
+              <p>
+                The file's balancing excludes
+                {{ visualizationOptionsStore.coolerWeightsNaNCount }}
+                bin{{
+                  visualizationOptionsStore.coolerWeightsNaNCount === 1
+                    ? ""
+                    : "s"
+                }}. NaN weights normally mark bins excluded from Cooler
+                balancing (for example, low-coverage bins); they do not by
+                themselves mean balancing failed.
+              </p>
+              <p class="mb-0">
+                Weight 0 masks these bins. Weight 1 retains their unbalanced
+                signal, which can dominate balanced bins whose weights are much
+                smaller. Masking changes the display, not the stored contact
+                counts.
+              </p>
+            </div>
+            <div class="modal-footer cooler-weights-nan-actions">
+              <button
+                type="button"
+                class="btn btn-primary"
+                @click="chooseCoolerWeightsNaNPolicy('DISABLE_WEIGHTS', false)"
+              >
+                Do not use Cooler weights
+              </button>
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                @click="
+                  chooseCoolerWeightsNaNPolicy('REPLACE_NANS_WITH_ONE', true)
+                "
+              >
+                Replace NaNs with weight 1.0
+              </button>
+              <button
+                type="button"
+                class="btn btn-success"
+                @click="
+                  chooseCoolerWeightsNaNPolicy('REPLACE_NANS_WITH_ZERO', true)
+                "
+              >
+                Mask excluded bins (weight 0)
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <UpperFrame
+      ref="upperFrame"
       :networkManager="networkManager"
       :mapManager="mapManager"
+      @jobResult="openJobResult"
       @selected="onFileSelected"
       @closed="onClosed"
       @attached="onAttached"
@@ -80,18 +208,102 @@
       @agpLoaded="onAgpLoaded"
       @fastaLinked="onFastaLinked"
       @wizardRequested="wizardOpen = true"
+      @fastaOnlyRequested="fastaOnlyOpen = true"
+      @examplesRequested="examplesOpen = true"
     ></UpperFrame>
+    <ExamplesDialog
+      v-if="examplesOpen"
+      :requests="networkManager.requestManager"
+      @dismissed="examplesOpen = false"
+      @open="openExampleInWizard"
+    />
+    <FastaOnlyDialog
+      v-if="fastaOnlyOpen"
+      :requests="networkManager.requestManager"
+      @dismissed="fastaOnlyOpen = false"
+      @ready="openFastaOnly"
+    />
+    <div
+      v-if="workspaceConflict"
+      class="alert alert-warning workspace-conflict"
+      role="alert"
+    >
+      Workspace settings changed in another window. Attach again to restore the
+      latest saved view.
+    </div>
     <WorkspaceComponent
       :mapManager="mapManager"
       :filename="filename"
     ></WorkspaceComponent>
+    <div
+      v-if="sessionBusy"
+      class="session-busy"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+      {{ sessionBusy }}
+    </div>
+    <section
+      v-if="!mapManager && !openProgressVisible && !wizardOpen"
+      class="empty-workspace-prompt"
+      aria-labelledby="empty-workspace-title"
+    >
+      <h2 id="empty-workspace-title">No contact map open</h2>
+      <p>
+        Open a <code>.hict.hdf5</code>, <code>.mcool</code> or
+        <code>.hic</code> map from the server data folder, or reconnect to a map
+        that is already open on the server.
+      </p>
+      <div class="empty-workspace-actions">
+        <button
+          type="button"
+          class="btn btn-primary"
+          @click="upperFrame?.openFile()"
+        >
+          <i class="bi bi-folder2-open me-1" aria-hidden="true"></i>Open map…
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          @click="wizardOpen = true"
+        >
+          Open with options…
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          @click="examplesOpen = true"
+        >
+          Open example…
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          @click="fastaOnlyOpen = true"
+        >
+          Open FASTA only…
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          @click="onAttached"
+        >
+          <i class="bi bi-plug me-1"></i>Attach to open session
+        </button>
+      </div>
+    </section>
     <NotificationCenterModal></NotificationCenterModal>
     <FileWizardModal
       v-if="wizardOpen"
       :network-manager="networkManager"
       :map-manager="mapManager"
       :open-primary-dataset="openPrimaryDatasetFromWizard"
-      @dismissed="wizardOpen = false"
+      :prefill="wizardPrefill"
+      @dismissed="
+        wizardOpen = false;
+        wizardPrefill = undefined;
+      "
     />
     <div
       class="toast-container position-absolute top-0 end-0 p-3"
@@ -101,26 +313,70 @@
 </template>
 
 <script setup lang="ts">
+import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
+import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
+import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
+import { failureDetails, reportFailure } from "@/app/ui/reportFailure";
+import { rememberedExcludedBinsPolicy } from "@/app/core/visualization/excludedBinsMemory";
+import {
+  MAX_SESSION_BYTES,
+  createSessionEnvelope,
+  parseSessionDocument,
+} from "@/app/core/mapmanagers/SessionDocument";
+import type {
+  AttachedSession,
+  FastaOnlyStatus,
+  ExampleEntry,
+} from "@/app/core/net/api/RequestManager";
+import { pipelineTransferIssues } from "@/app/core/visualization/transferVisualization";
+import { prepareCoverage } from "@/app/core/visualization/coverageNormalization";
+import BenchmarkFeature from "ol/Feature";
+import {
+  captureWorkspace,
+  restoreWorkspace,
+  type WorkspaceState,
+} from "@/app/core/mapmanagers/WorkspaceState";
+import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
 import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
+import { ActiveTool } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
+import { showTranslocationStatus } from "@/app/core/mapmanagers/TranslocationStatusToast";
+import { useModalFocus } from "@/app/ui/modalFocus";
+import UnsavedEditsDialog from "@/app/ui/components/common/UnsavedEditsDialog.vue";
+import FastaOnlyDialog from "@/app/ui/components/common/FastaOnlyDialog.vue";
+import ExamplesDialog from "@/app/ui/components/common/ExamplesDialog.vue";
 import {
   ContactMapManager,
   // type ContactMapManagerOptions,
 } from "@/app/core/mapmanagers/ContactMapManager";
-import { onMounted, onUnmounted, ref, watch, type Ref } from "vue";
+import {
+  defineAsyncComponent,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+  type Ref,
+} from "vue";
 import { NetworkManager } from "@/app/core/net/NetworkManager";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { useStyleStore } from "@/app/stores/styleStore";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
-import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
+import VisualizationOptions, {
+  type CoolerWeightsNaNPolicy,
+} from "@/app/core/visualization/VisualizationOptions";
 import { ColorTranslator } from "colortranslator";
+import { waitForConversionJob } from "@/app/core/net/api/waitForConversionJob";
+import { StartConversionJobRequest } from "@/app/core/net/api/request";
 import { LoadAGPRequest } from "@/app/core/net/api/request";
 import { LinkFASTARequest } from "@/app/core/net/api/request";
+import AGPImportChoiceModal from "@/app/ui/components/upper_ribbon/AGPImportChoiceModal.vue";
 import NotificationCenterModal from "@/app/ui/components/notifications/NotificationCenterModal.vue";
-import FileWizardModal from "@/app/ui/components/upper_ribbon/FileWizardModal.vue";
+import type { WizardPrefill } from "@/app/ui/components/upper_ribbon/wizardPrefill";
 
 import WorkspaceComponent from "@/app/ui/components/workspace/WorkspaceComponent.vue";
 import { Toaster, toast } from "vue-sonner";
+import { hasActiveModal } from "@/app/ui/modalFocus";
 import { storeToRefs } from "pinia";
 import { usehtmlElementReferencesStore } from "../stores/htmlElementReferencesStore";
 import {
@@ -129,11 +385,16 @@ import {
   type SessionVisualizationPreset,
 } from "@/app/stores/sessionStore";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import { GetVisualizationOptionsRequest } from "@/app/core/net/api/request";
 import {
   dismissTopmostEscDialog,
   hasAnyOpenEscDialog,
   useEscDismissableDialog,
 } from "@/app/ui/escapeDialogRegistry";
+
+const FileWizardModal = defineAsyncComponent(
+  () => import("@/app/ui/components/upper_ribbon/FileWizardModal.vue")
+);
 
 // Reactively use these refs only inside component
 // Pass them to Map Manager on creation as values, not Refs as objects
@@ -149,10 +410,47 @@ const networkManager: NetworkManager = new NetworkManager(
   "http://localhost:5000/",
   undefined
 );
+// Opt-in automation access. Opening, editing and rendering use native handlers.
+if ((window as any).__HICT_BENCHMARK_ENABLED__) {
+  (window as any).__hictBenchmark = {
+    open: (name: string, host: string, fasta?: string) => {
+      networkManager.onHostChanged(host);
+      return openFileWithOptions(name, fasta);
+    },
+    manager: () => mapManager.value,
+    feature: (properties: Record<string, unknown>) =>
+      new BenchmarkFeature(properties),
+  };
+}
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const stylesStore = useStyleStore();
+const uiSettingsStore = useUiSettingsStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const sessionStore = useSessionStore();
+watch(fastaFilename, (v) => sessionStore.setLinkedFastaFilename(v ?? ""), {
+  immediate: true,
+});
+function fileBasename(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+// The tab title and the navbar chips follow whichever map is open.
+watch(
+  () => mapManager.value,
+  (manager) => {
+    const name = manager?.getOptions().filename ?? "";
+    sessionStore.setOpenMapFilename(name);
+    document.title = name ? `${fileBasename(name)} \u2013 HiCT` : "HiCT";
+    if (!manager) {
+      sessionStore.setSecondaryMapFilename("");
+      return;
+    }
+    // A newly opened primary map may or may not keep a secondary source.
+    void manager.networkManager.requestManager
+      .getSecondarySourceStatus()
+      .catch(() => undefined);
+  },
+  { immediate: true }
+);
 const matrixViewStore = useMatrixViewStore();
 
 const htmlElementReferencesStore = usehtmlElementReferencesStore();
@@ -163,12 +461,66 @@ const openProgressVisible = ref(false);
 const openProgressStage = ref("starting");
 const openProgressPct = ref(0);
 let openProgressInFlight = false;
+const upperFrame = ref<InstanceType<typeof UpperFrame> | null>(null);
 const wizardOpen = ref(false);
+const fastaOnlyOpen = ref(false);
+const examplesOpen = ref(false);
+const wizardPrefill = ref<WizardPrefill | undefined>(undefined);
+const coolerWeightsNaNPromptVisible = ref(false);
+let workspaceTimer: number | undefined;
+let workspaceSaveInFlight = false;
+let workspaceRestoring = false;
+const workspaceConflict = ref(false);
+let lastWorkspaceSnapshot = "";
+
+async function persistWorkspace(): Promise<void> {
+  const manager = mapManager.value;
+  if (
+    !manager ||
+    manager.isExporting ||
+    workspaceRestoring ||
+    workspaceConflict.value ||
+    openProgressVisible.value ||
+    workspaceSaveInFlight
+  )
+    return;
+  // Serializing the workspace costs time; the next tick after motion stops saves it.
+  const view = manager.getView();
+  if (view.getAnimating() || view.getInteracting()) return;
+  const state = captureWorkspace(manager);
+  const snapshot = JSON.stringify(state);
+  if (snapshot === lastWorkspaceSnapshot) return;
+  workspaceSaveInFlight = true;
+  try {
+    await networkManager.requestManager.saveWorkspaceState(
+      manager.getOptions().filename,
+      state
+    );
+    if (manager === mapManager.value) lastWorkspaceSnapshot = snapshot;
+  } catch (error) {
+    if (
+      manager === mapManager.value &&
+      (error as { response?: { status?: number } })?.response?.status === 409
+    ) {
+      workspaceConflict.value = true;
+    } else console.warn("Could not persist workspace for Attach", error);
+  } finally {
+    workspaceSaveInFlight = false;
+  }
+}
 
 useEscDismissableDialog({
   priority: 1050,
   isOpen: () => openProgressVisible.value,
   requestClose: closeOpenProgress,
+});
+
+useEscDismissableDialog({
+  priority: 1060,
+  isOpen: () => coolerWeightsNaNPromptVisible.value,
+  requestClose: () => {
+    coolerWeightsNaNPromptVisible.value = false;
+  },
 });
 
 function startOpenProgress() {
@@ -220,7 +572,24 @@ function handleGlobalEscape(event: KeyboardEvent): void {
     return;
   }
   if (!hasAnyOpenEscDialog()) {
-    mapManager.value?.eventManager.resetSelection();
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target.closest(
+        'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], .dropdown-menu.show, .dropdown-toggle[aria-expanded="true"]'
+      )
+    ) {
+      return;
+    }
+    const manager = mapManager.value;
+    // An armed tool is cancelled first, so a later double-click cannot split or move anything.
+    const tool = manager?.viewAndLayersManager.currentViewState.activeTool;
+    if (tool === ActiveTool.SCISSORS) manager?.deactivateScissors();
+    else if (tool === ActiveTool.TRANSLOCATION) {
+      manager?.deactivateTranslocation();
+      showTranslocationStatus(false);
+    }
+    manager?.eventManager.resetSelection();
     event.preventDefault();
     event.stopPropagation();
   }
@@ -240,6 +609,102 @@ function safeColorTranslator(
   }
 }
 
+/**
+ * Bins that the file's balancing excluded have NaN weights. Weights from the file are masked there
+ * without asking. A one-line note says how many bins are masked and offers Change. The choice is
+ * remembered per file, and Attach never asks.
+ */
+async function settleExcludedBins(carriedAppearance?: {
+  applyCoolerWeights?: boolean;
+}): Promise<void> {
+  const manager = mapManager.value;
+  if (!manager) {
+    return;
+  }
+  // Opening the next file keeps the current appearance, including its weight choice.
+  if (carriedAppearance) {
+    return;
+  }
+  // Coverage normalization is not the file's weights.
+  const normalization = await manager.networkManager.requestManager
+    .coverageNormalizationStatus()
+    .catch(() => null);
+  if (normalization?.mode === "SQRT_COVERAGE") {
+    return;
+  }
+  const options = await manager.networkManager.requestManager
+    .getVisualizationOptions(new GetVisualizationOptionsRequest({}))
+    .catch(() => null);
+  if (!options?.coolerWeightsHaveNaNs || manager !== mapManager.value) {
+    return;
+  }
+  const file = filename.value ?? "";
+  const remembered = rememberedExcludedBinsPolicy(file);
+  if (remembered) {
+    if (
+      remembered !== options.coolerWeightsNaNPolicy ||
+      options.applyCoolerWeights !== (remembered !== "DISABLE_WEIGHTS")
+    ) {
+      await applyExcludedBinsPolicy(
+        remembered,
+        remembered !== "DISABLE_WEIGHTS"
+      );
+    }
+    return;
+  }
+  // Weights are not applied, so there is nothing to mask.
+  if (!options.applyCoolerWeights) {
+    return;
+  }
+  await applyExcludedBinsPolicy("REPLACE_NANS_WITH_ZERO", true);
+  const count = options.coolerWeightsNaNCount;
+  toast.message(
+    `${count.toLocaleString()} excluded bin${count === 1 ? "" : "s"} masked.`,
+    {
+      duration: 15000,
+      style: { visibility: "var(--hict-guidance-visibility, visible)" },
+      action: {
+        label: "Change",
+        onClick: () => {
+          coolerWeightsNaNPromptVisible.value = true;
+        },
+      },
+    }
+  );
+}
+
+async function applyExcludedBinsPolicy(
+  policy: CoolerWeightsNaNPolicy,
+  keepWeights: boolean
+): Promise<void> {
+  const manager = mapManager.value;
+  if (!manager) {
+    return;
+  }
+  try {
+    await manager.visualizationManager.applyCoolerWeightsPolicy(
+      policy,
+      keepWeights
+    );
+    await manager.stabilizeInitialViewport({ fit: false });
+  } catch (error) {
+    const message =
+      (error as { response?: { data?: { error?: string } }; message?: string })
+        ?.response?.data?.error ??
+      (error as { message?: string })?.message ??
+      "Failed to apply the excluded-bins choice";
+    toast.error(message);
+  }
+}
+
+async function chooseCoolerWeightsNaNPolicy(
+  policy: CoolerWeightsNaNPolicy,
+  keepWeights: boolean
+): Promise<void> {
+  coolerWeightsNaNPromptVisible.value = false;
+  await applyExcludedBinsPolicy(policy, keepWeights);
+}
+
 function syncUiChromePalette(): void {
   const root = document.documentElement;
   root.style.setProperty("--hict-ui-bg", "rgba(243, 246, 250, 0.98)");
@@ -254,10 +719,7 @@ function syncUiChromePalette(): void {
   );
   root.style.setProperty("--hict-surface-fg", "rgba(18, 25, 35, 0.96)");
   root.style.setProperty("--hict-surface-muted", "rgba(73, 84, 99, 0.88)");
-  root.style.setProperty(
-    "--hict-surface-border",
-    "rgba(15, 23, 38, 0.18)"
-  );
+  root.style.setProperty("--hict-surface-border", "rgba(15, 23, 38, 0.18)");
   root.style.setProperty(
     "--hict-surface-shadow",
     "0 20px 55px rgba(15, 23, 38, 0.18)"
@@ -266,59 +728,101 @@ function syncUiChromePalette(): void {
 }
 
 function resetState() {
+  lastWorkspaceSnapshot = "";
+  workspaceConflict.value = false;
   mapManager.value?.dispose();
+  networkManager.mapManager = undefined;
   filename.value = "";
   fastaFilename.value = "";
+  sessionStore.setLastAgpFilename("");
   mapManager.value = undefined;
   matrixViewStore.reset();
 }
 
-function onClosed() {
-  networkManager.requestManager
-    .closeFile()
-    .catch(() => undefined)
-    .finally(() => resetState());
+async function onClosed() {
+  if (!(await confirmDiscardUnsavedEdits("close this map"))) return;
+  const manager = mapManager.value;
+  resetState();
+  void (
+    manager?.visualizationManager.waitForPendingOptionRequests() ??
+    Promise.resolve()
+  ).finally(() =>
+    networkManager.requestManager.closeFile().catch(() => undefined)
+  );
 }
 
-function onAttached() {
-  networkManager.requestManager
-    .attachSession()
-    .then(
-      ({
-        filename: attachedName,
-        fastaFilename: attachedFastaName,
-        response,
-      }) => {
-        if (!attachedName) {
-          toast.error("No active session to attach");
-          return;
-        }
-        mapManager.value?.dispose();
-        filename.value = attachedName;
-        fastaFilename.value = attachedFastaName ?? "";
-        const newManager = new ContactMapManager({
-          response,
-          filename: attachedName,
-          fastaFilename: attachedFastaName ?? "",
-          tileSize: tileSize.value,
-          contigBorderColor: contigBorderColor.value,
-          mapTargetSelector: "hic-contact-map",
-          networkManager: networkManager,
-          minimapTarget: miniMapTarget,
-        });
-        mapManager.value = newManager;
-        networkManager.mapManager = mapManager.value;
-        newManager.initializeMap();
-        toast.success("Attached to session " + attachedName);
-      }
-    )
-    .catch((err) => {
-      const message =
-        err?.response?.data?.error ??
-        err?.message ??
-        "Failed to attach session";
-      toast.error(message);
-    });
+/**
+ * Replaces the displayed map with the server's current session. Used by Attach and by
+ * session restore. `fresh` is for a session that is new to this window (restore): it
+ * clears per-file state and loads the restored rendering options into the sidebar.
+ */
+async function adoptSession(
+  attached: AttachedSession,
+  options: { fresh: boolean; workspaceState?: WorkspaceState }
+): Promise<ContactMapManager> {
+  const workspaceState = options.workspaceState ?? attached.workspaceState;
+  mapManager.value?.dispose();
+  filename.value = attached.filename;
+  fastaFilename.value = attached.fastaFilename ?? "";
+  if (options.fresh) {
+    lastWorkspaceSnapshot = "";
+    sessionStore.setLastAgpFilename("");
+  }
+  await ensureMapFonts();
+  const newManager = new ContactMapManager({
+    response: attached.response,
+    filename: attached.filename,
+    fastaFilename: attached.fastaFilename ?? "",
+    tileSize: tileSize.value,
+    contigBorderColor: contigBorderColor.value,
+    mapTargetSelector: "hic-contact-map",
+    networkManager: networkManager,
+    minimapTarget: miniMapTarget,
+  });
+  mapManager.value = newManager;
+  networkManager.mapManager = mapManager.value;
+  newManager.initializeMap();
+  const secondary =
+    await networkManager.requestManager.getSecondarySourceStatus();
+  newManager.viewAndLayersManager.setSecondaryResolutionModel(
+    secondary.attached ? secondary.compatibility : undefined
+  );
+  if (options.fresh)
+    await newManager.visualizationManager.fetchVisualizationOptions();
+  await newManager.stabilizeInitialViewport({ fit: !workspaceState });
+  await newManager.linearTrackManager.refreshTrackList();
+  restoreWorkspace(newManager, workspaceState);
+  lastWorkspaceSnapshot = options.fresh
+    ? ""
+    : JSON.stringify(captureWorkspace(newManager));
+  workspaceConflict.value = false;
+  return newManager;
+}
+
+async function onAttached() {
+  await persistWorkspace();
+  workspaceRestoring = true;
+  try {
+    const attached = await networkManager.requestManager.attachSession();
+    if (!attached.filename) {
+      toast.error("No active session to attach");
+      return;
+    }
+    await adoptSession(attached, { fresh: false });
+    toast.success("Attached to session " + attached.filename);
+  } catch (err) {
+    const failure = err as {
+      response?: { data?: { error?: string } };
+      message?: string;
+    };
+    toast.error(
+      failure?.response?.data?.error ??
+        failure?.message ??
+        "Failed to attach session"
+    );
+  } finally {
+    workspaceRestoring = false;
+  }
 }
 
 async function openFileWithOptions(
@@ -328,11 +832,30 @@ async function openFileWithOptions(
 ): Promise<void> {
   startOpenProgress();
   try {
+    // Keep appearance, never assembly coordinates/history, when switching files.
+    // The Wizard supplies its own explicit preset after opening.
+    const previous =
+      options?.applyDefaultPreset !== false ? mapManager.value : undefined;
+    await previous?.visualizationManager.waitForPendingOptionRequests();
+    const appearance = previous
+      ? visualizationOptionsStore.asVisualizationOptions()
+      : undefined;
+    const styles = previous?.viewAndLayersManager.getTrackStylePreset();
+    const pipeline = previous
+      ? await networkManager.requestManager.getRenderPipelineConfig()
+      : undefined;
     const openFileResponse = await networkManager.requestManager.openFile(
       fname,
       ffname
     );
+    lastWorkspaceSnapshot = "";
+    workspaceConflict.value = false;
+    sessionStore.setLastAgpFilename("");
+    matrixViewStore.reset();
+    filename.value = fname;
+    fastaFilename.value = ffname ?? "";
     mapManager.value?.dispose();
+    await ensureMapFonts();
     const newManager = new ContactMapManager({
       response: openFileResponse,
       filename: fname,
@@ -346,8 +869,37 @@ async function openFileWithOptions(
     mapManager.value = newManager;
     networkManager.mapManager = mapManager.value;
     newManager.initializeMap();
-    if (options?.applyDefaultPreset !== false) {
-      applyDefaultVisualizationPreset();
+    await newManager.stabilizeInitialViewport({ fit: true });
+    if (appearance) {
+      // Read the new map's weight diagnostics before restoring user choices.
+      await newManager.visualizationManager.fetchVisualizationOptions();
+      visualizationOptionsStore.setVisualizationOptions({
+        ...appearance,
+        coolerWeightsHaveNaNs: visualizationOptionsStore.coolerWeightsHaveNaNs,
+        coolerWeightsNaNCount: visualizationOptionsStore.coolerWeightsNaNCount,
+      });
+      await newManager.visualizationManager.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+      });
+      if (styles) newManager.viewAndLayersManager.applyTrackStylePreset(styles);
+      if (pipeline?.enabled) {
+        const issues = pipelineTransferIssues(pipeline);
+        if (issues.length === 0) {
+          await networkManager.requestManager.setRenderPipelineConfig(pipeline);
+        } else {
+          toast.message(
+            `Colors and thresholds retained. The custom pipeline needs ${issues.join(
+              " and "
+            )}; reattach them before reapplying it.`
+          );
+        }
+      }
+      await newManager.reloadTilesFromBackend();
+      await settleExcludedBins(appearance);
+    } else if (options?.applyDefaultPreset !== false) {
+      await applyDefaultVisualizationPreset();
+    } else {
+      await settleExcludedBins();
     }
     if (ffname && ffname.trim() !== "") {
       try {
@@ -355,7 +907,7 @@ async function openFileWithOptions(
           new LinkFASTARequest({ fastaFilename: ffname, allowMismatch: true })
         );
         linkResponse.warnings.forEach((warning) =>
-          toast(warning, {
+          toast.message(warning, {
             style: {
               "background-color": "lightyellow",
               color: "black",
@@ -372,17 +924,205 @@ async function openFileWithOptions(
   }
 }
 
+async function openJobResult(output: BackgroundJobOutput): Promise<void> {
+  try {
+    const requests = networkManager.requestManager;
+    if (output.action === "example") {
+      const catalog = await requests.listExamples();
+      const example = catalog.examples.find(
+        (item) => item.id === output.filename
+      );
+      if (!example) throw new Error("The example is no longer in the catalog");
+      await openExampleInWizard({ example, folder: `examples/${example.id}` });
+    } else if (output.action === "fasta_only") {
+      await openFastaOnly({
+        state: "READY",
+        outputFilename: output.filename,
+        fastaFilename: output.fastaFilename ?? null,
+        agpFilename: output.agpFilename ?? null,
+        warnings: [],
+        contigCount: 0,
+        totalBases: 0,
+        progress: 1,
+        message: "Finished",
+        error: null,
+        reused: true,
+      });
+    } else if (output.action === "open_map") {
+      if (await confirmDiscardUnsavedEdits("open this job result"))
+        await openFileWithOptions(
+          output.filename,
+          output.fastaFilename ?? undefined
+        );
+    } else {
+      const manager = mapManager.value;
+      if (!manager) throw new Error("Open the result's original map first");
+      if (
+        output.mapFilename &&
+        manager.getOptions().filename !== output.mapFilename
+      )
+        throw new Error(
+          `Open ${output.mapFilename} before displaying this result`
+        );
+      if (output.action === "open_tracks") {
+        const tracks = manager.linearTrackManager;
+        await tracks.refreshTrackList(false);
+        if (
+          !tracks
+            .getTracksSnapshot()
+            .some((track) => track.sourceFile === output.filename)
+        )
+          await tracks.openTrack(output.filename, "Sequence search", false);
+        const track = tracks
+          .getTracksSnapshot()
+          .find((item) => item.sourceFile === output.filename);
+        if (!track) throw new Error("The result track could not be opened");
+        if (!track.visible)
+          await tracks.updateTrack(track.trackId, { visible: true });
+        tracks.setTrackVisibleOnAxis(track.trackId, "horizontal", true);
+        tracks.setTrackVisibleOnAxis(track.trackId, "vertical", true);
+        manager.scheduleWorkspaceLayoutRefresh();
+      } else if (
+        output.action === "attach_identity" ||
+        output.action === "attach_dotplot"
+      ) {
+        const status = await requests.openSecondarySource(output.filename);
+        await displaySequenceOverlay(
+          manager,
+          output.displayMode === "overlay" || output.displayMode === "above"
+            ? output.displayMode
+            : "below",
+          output.action === "attach_identity" ? "moddotplot" : "dotplot",
+          status
+        );
+      }
+    }
+  } catch (failure) {
+    reportFailure("Open job result", failure);
+  }
+}
+
+/** Hands a downloaded example to the wizard with its files already chosen, by their recipe roles. */
+async function openExampleInWizard(payload: {
+  example: ExampleEntry;
+  folder: string;
+}): Promise<void> {
+  examplesOpen.value = false;
+  const { example, folder } = payload;
+  const nameOf = (fileId?: string) =>
+    fileId ? example.files.find((f) => f.id === fileId)?.filename : undefined;
+  const path = (fileId?: string) => {
+    const name = nameOf(fileId);
+    return name ? `${folder}/${name}` : undefined;
+  };
+  const recipe = example.openingRecipe;
+  const matrix = path(recipe.matrix);
+  const fasta = recipe.fastaPreparation
+    ? `${folder}/${recipe.fastaPreparation.filename}`
+    : path(recipe.fasta);
+  if (
+    recipe.quickStart &&
+    matrix &&
+    !recipe.agp &&
+    !recipe.assembly &&
+    !recipe.tracks?.length
+  ) {
+    const previousManager = mapManager.value;
+    toast.message(`Preparing ${example.title}`, {
+      description: "Follow progress in Jobs.",
+    });
+    try {
+      const requests = networkManager.requestManager;
+      const source = await requests.resolveMatrixSource(matrix);
+      let openedFilename = source.resolvedFilename;
+      if (
+        source.action !== "OPEN_DIRECT" &&
+        source.action !== "REUSE_CONVERTED"
+      ) {
+        const started = await requests.startConversionJob(
+          new StartConversionJobRequest({
+            filename: matrix,
+            direction: source.conversionDirection ?? undefined,
+            overwrite: true,
+          })
+        );
+        const finished = await waitForConversionJob(requests, started.jobId);
+        openedFilename = finished.outputFilename;
+      }
+      if (mapManager.value !== previousManager) {
+        toast.success("The example is ready. Open its result from Jobs.");
+        return;
+      }
+      if (await confirmDiscardUnsavedEdits("open this example"))
+        await openFileWithOptions(openedFilename, fasta);
+    } catch (failure) {
+      reportFailure("Open example", failure);
+    }
+    return;
+  }
+  if (!(await confirmDiscardUnsavedEdits("open this example"))) return;
+  wizardPrefill.value = {
+    matrix: path(example.openingRecipe.matrix),
+    fasta,
+    agp: path(example.openingRecipe.agp ?? example.openingRecipe.assembly),
+  };
+  wizardOpen.value = true;
+}
+
+/** Opens the assembly the server built from a FASTA alone, then applies its split layout. */
+async function openFastaOnly(result: FastaOnlyStatus): Promise<void> {
+  fastaOnlyOpen.value = false;
+  if (!result.outputFilename) return;
+  if (!(await confirmDiscardUnsavedEdits("open this FASTA"))) return;
+  try {
+    await openFileWithOptions(
+      result.outputFilename,
+      result.fastaFilename ?? undefined,
+      { applyDefaultPreset: false }
+    );
+    if (result.agpFilename) {
+      await networkManager.requestManager.loadAGP(
+        new LoadAGPRequest({
+          agpFilename: result.agpFilename,
+          missingComponentsPolicy: "EXCLUDE",
+        })
+      );
+    }
+    // The assembly as built from the FASTA is the starting point, not an edit.
+    networkManager.requestManager.markAssemblySaved();
+    const pieces = mapManager.value?.contigDimensionHolder.contig_count;
+    toast.success(
+      `Opened ${pieces ?? result.contigCount} contigs from ${
+        result.fastaFilename ?? "the FASTA"
+      }. There is no contact data.`,
+      { duration: 8000 }
+    );
+    if (result.warnings.length > 0)
+      toast.message(result.warnings[0], {
+        description: result.warnings.slice(1, 6).join("\n"),
+        duration: 20000,
+      });
+  } catch (failure) {
+    console.debug("Opening the FASTA-only assembly failed", failure);
+    toast.error(
+      (failure as Error)?.message ?? "The FASTA assembly could not be opened."
+    );
+  }
+}
+
 async function openPrimaryDatasetFromWizard(
   fname: string,
   ffname?: string,
   options?: { applyDefaultPreset?: boolean }
 ): Promise<void> {
+  if (!(await confirmDiscardUnsavedEdits("open another map")))
+    throw new Error(
+      "Opening was cancelled to keep your unsaved assembly edits. Save the session or discard the edits, then open again."
+    );
   await openFileWithOptions(fname, ffname, options);
 }
 
-function displayNewMap() {
-  const fname = filename.value;
-  const ffname = fastaFilename.value;
+function displayNewMap(fname: string, ffname?: string) {
   if (!fname) {
     const message =
       "Cannot open non-specified files: filename=" +
@@ -392,18 +1132,21 @@ function displayNewMap() {
     toast.error(message);
     throw new Error(message);
   }
-  openFileWithOptions(fname, ffname)
-    .then(() => {
-      toast.success("Opened file " + fname);
-    })
+  confirmDiscardUnsavedEdits("open another map")
+    .then((proceed) =>
+      proceed
+        ? openFileWithOptions(fname, ffname).then(() => {
+            toast.success("Opened file " + fname);
+          })
+        : undefined
+    )
     .catch((a) => {
-      console.log(a);
-      toast.error(a);
+      reportFailure("Open map", a);
       stopOpenProgress();
     });
 }
 
-function applyDefaultVisualizationPreset() {
+async function applyDefaultVisualizationPreset(): Promise<void> {
   const presets =
     (
       defaultOptions as unknown as {
@@ -420,6 +1163,13 @@ function applyDefaultVisualizationPreset() {
     ).data?.savedVisualizationPresets ??
     [];
   if (!presets || presets.length === 0) {
+    const manager = mapManager.value;
+    if (manager) {
+      await manager.visualizationManager.applyOpeningViewportQuantileThreshold();
+      await manager.reloadTilesFromBackend();
+      await manager.stabilizeInitialViewport({ fit: false });
+      await settleExcludedBins();
+    }
     return;
   }
   const first = presets[0] as Record<string, unknown>;
@@ -491,11 +1241,17 @@ function applyDefaultVisualizationPreset() {
       .getLayersManager()
       .applyTrackStylePreset(trackStyles as never);
   }
-  mapManager.value?.visualizationManager
-    .sendVisualizationOptionsToServer()
-    .then(() => {
-      mapManager.value?.reloadTiles();
-    });
+  const manager = mapManager.value;
+  if (!manager) {
+    return;
+  }
+  await manager.visualizationManager.sendVisualizationOptionsToServer({
+    skipAutoThresholdRefresh: true,
+  });
+  await manager.visualizationManager.applyOpeningViewportQuantileThreshold();
+  await manager.reloadTilesFromBackend();
+  await manager.stabilizeInitialViewport({ fit: false });
+  await settleExcludedBins();
 }
 
 function onAgpLoaded(filename: string): void {
@@ -507,77 +1263,144 @@ function onFastaLinked(filename: string): void {
   fastaFilename.value = filename;
 }
 
-function serializeCurrentVisualizationOptions(): Record<string, unknown> {
-  const options = visualizationOptionsStore.asVisualizationOptions();
-  const cmap = options.colormap;
-  if (cmap instanceof SimpleLinearGradient) {
-    return {
-      preLogBase: options.preLogBase,
-      postLogBase: options.postLogBase,
-      applyCoolerWeights: options.applyCoolerWeights ?? false,
-      resolutionScaling: options.resolutionScaling ?? false,
-      resolutionLinearScaling: options.resolutionLinearScaling ?? false,
-      autoThresholdEnabled: options.autoThresholdEnabled ?? false,
-      autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
-      signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
-      colormap: {
-        colormapType: cmap.colormapType,
-        startColorRGBAString: cmap.startColorRGBA.RGBA,
-        endColorRGBAString: cmap.endColorRGBA.RGBA,
-        minSignal: cmap.minSignal,
-        maxSignal: cmap.maxSignal,
-      },
-    };
-  }
-  return {
-    preLogBase: options.preLogBase,
-    postLogBase: options.postLogBase,
-    applyCoolerWeights: options.applyCoolerWeights ?? false,
-    resolutionScaling: options.resolutionScaling ?? false,
-    resolutionLinearScaling: options.resolutionLinearScaling ?? false,
-    autoThresholdEnabled: options.autoThresholdEnabled ?? false,
-    autoThresholdQuantile: options.autoThresholdQuantile ?? 0.995,
-    signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
-    colormap: {
-      colormapType: options.colormap?.colormapType ?? "Unknown",
-    },
-  };
+/** Asks, at most once at a time, before an action that would discard unsaved assembly edits. */
+const unsavedPrompt = ref<{
+  action: string;
+  busy: boolean;
+  error: string;
+  resolve: (proceed: boolean) => void;
+} | null>(null);
+
+useEscDismissableDialog({
+  priority: 1080,
+  isOpen: () => unsavedPrompt.value !== null && !unsavedPrompt.value.busy,
+  requestClose: () => finishUnsavedPrompt(false),
+});
+
+/** Resolves true when the action may go ahead: nothing to lose, edits saved, or discarding chosen. */
+function confirmDiscardUnsavedEdits(action: string): Promise<boolean> {
+  if (!networkManager.requestManager.hasUnsavedAssemblyEdits())
+    return Promise.resolve(true);
+  if (unsavedPrompt.value) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    unsavedPrompt.value = { action, busy: false, error: "", resolve };
+  });
 }
 
-function onSaveSession(): void {
-  if (!mapManager.value) {
-    toast.error("No open map to save session");
-    return;
+function finishUnsavedPrompt(proceed: boolean): void {
+  const prompt = unsavedPrompt.value;
+  if (!prompt || prompt.busy) return;
+  unsavedPrompt.value = null;
+  prompt.resolve(proceed);
+}
+
+async function onUnsavedPromptSave(): Promise<void> {
+  const prompt = unsavedPrompt.value;
+  if (!prompt || prompt.busy) return;
+  prompt.busy = true;
+  prompt.error = "";
+  const saved = await onSaveSession();
+  const current = unsavedPrompt.value;
+  if (!current) return;
+  current.busy = false;
+  if (saved) {
+    unsavedPrompt.value = null;
+    current.resolve(true);
+  } else {
+    // A failed save never continues: the edits are still in the map.
+    current.error = sessionSaveError.value;
   }
-  const view = mapManager.value.getView();
-  const session = {
-    version: 1,
-    filename: filename.value ?? "",
-    fastaFilename: fastaFilename.value ?? "",
-    agpFilename: lastAgpFilename.value ?? "",
-    visualizationOptions: serializeCurrentVisualizationOptions(),
-    backgroundColor: mapBackgroundColor.value?.RGBA ?? "rgba(255,255,255,1)",
-    trackStyles: mapManager.value.getLayersManager().getTrackStylePreset(),
-    savedLocations: sessionStore.savedLocations,
-    savedVisualizationPresets: sessionStore.savedVisualizationPresets,
-    view: {
-      center: view.getCenter(),
-      resolution: view.getResolution(),
-      rotation: view.getRotation(),
-      bpResolution:
-        mapManager.value.viewAndLayersManager.currentViewState
-          .resolutionDesciptor.bpResolution,
-    },
-  };
-  const blob = new Blob([JSON.stringify(session, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "hict_session.json";
-  a.click();
-  URL.revokeObjectURL(url);
+}
+
+function warnBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!networkManager.requestManager.hasUnsavedAssemblyEdits()) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+let sessionSaveInFlight = false;
+/** Text of the long-running session operation currently shown in the status pill. */
+const sessionBusy = ref("");
+const sessionSaveError = ref("");
+const sessionSaveDiagnostics = ref("");
+const sessionSaveErrorDialog = ref<HTMLElement | null>(null);
+useModalFocus(sessionSaveErrorDialog, () => !!sessionSaveError.value);
+useEscDismissableDialog({
+  priority: 1090,
+  isOpen: () => !!sessionSaveError.value,
+  requestClose: () => {
+    sessionSaveError.value = "";
+  },
+});
+
+/** Saves a v3 session: the edited assembly, tracks, scopes, processing graph and file identities. */
+async function onSaveSession(): Promise<boolean> {
+  const manager = mapManager.value;
+  if (!manager) {
+    toast.error("No open map to save session");
+    return false;
+  }
+  if (sessionSaveInFlight) return false;
+  sessionSaveInFlight = true;
+  sessionBusy.value =
+    "Saving session: checking the assembly and identifying files\u2026";
+  try {
+    await manager.visualizationManager.waitForPendingOptionRequests();
+    const snapshot = await networkManager.requestManager.getSessionSnapshot(
+      true,
+      true,
+      true
+    );
+    if (manager !== mapManager.value)
+      throw new Error("The open map changed while saving. Save again.");
+    // The journal state this file contains. Capture it before any later await.
+    const history = networkManager.requestManager.history.summary;
+    const savedState = history
+      ? { session: history.session, currentId: history.currentId }
+      : null;
+    const normalization = await networkManager.requestManager
+      .coverageNormalizationStatus()
+      .catch(() => undefined);
+    const envelope = createSessionEnvelope(snapshot, {
+      normalizationWeights: normalization?.mode,
+      workspace: captureWorkspace(manager) as unknown as Record<
+        string,
+        unknown
+      >,
+      savedLocations: JSON.parse(JSON.stringify(sessionStore.savedLocations)),
+      savedVisualizationPresets: JSON.parse(
+        JSON.stringify(sessionStore.savedVisualizationPresets)
+      ),
+    });
+    const text = JSON.stringify(envelope, null, 2);
+    if (new TextEncoder().encode(text).byteLength > MAX_SESSION_BYTES) {
+      throw new Error(
+        "This assembly is too large to store in a session file (limit 8 MiB). Export the assembly as AGP instead."
+      );
+    }
+    const url = URL.createObjectURL(
+      new Blob([text], { type: "application/json" })
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "hict_session.json";
+    a.click();
+    URL.revokeObjectURL(url);
+    networkManager.requestManager.markAssemblySaved(savedState);
+    toast.success(
+      "Session saved with the edited assembly, tracks, scopes and processing graph. Undo history is not saved.",
+      { duration: 6000 }
+    );
+    return true;
+  } catch (e) {
+    const failure = failureDetails("Save session", e);
+    sessionSaveError.value = failure.message;
+    sessionSaveDiagnostics.value = failure.diagnostics;
+    return false;
+  } finally {
+    sessionSaveInFlight = false;
+    sessionBusy.value = "";
+  }
 }
 
 async function resolveFilename(
@@ -598,10 +1421,192 @@ async function resolveFilename(
   return replacement;
 }
 
+function pathBasename(path: string): string {
+  const parts = path.split(/[\\/]/);
+  return parts[parts.length - 1] ?? path;
+}
+
+function isHiCTMapFilename(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower.endsWith(".hict.hdf5") || lower.endsWith(".hict");
+}
+
+function stripHiCTMapSuffix(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".hict.hdf5")) {
+    return name.slice(0, -".hict.hdf5".length);
+  }
+  if (lower.endsWith(".hict")) {
+    return name.slice(0, -".hict".length);
+  }
+  return name;
+}
+
+function sessionNameStem(sessionFileName: string): string {
+  return pathBasename(sessionFileName)
+    .replace(/\.json$/i, "")
+    .replace(/(?:^|[._-])hict(?:[._-])?session$/i, "")
+    .replace(/[._-]session$/i, "")
+    .toLowerCase();
+}
+
+function scoreSessionMapCandidate(candidate: string, stem: string): number {
+  if (!stem) return 0;
+  const candidateBase = stripHiCTMapSuffix(
+    pathBasename(candidate)
+  ).toLowerCase();
+  const candidatePath = candidate.toLowerCase();
+  if (candidateBase === stem) return 1000;
+  if (candidateBase.startsWith(stem)) return 800;
+  if (candidateBase.includes(stem)) return 700;
+  if (stem.includes(candidateBase)) return 650;
+  if (candidatePath.includes(`/${stem}/`)) return 500;
+  if (candidatePath.includes(stem)) return 300;
+  return 0;
+}
+
+async function resolveRequiredHiCTSessionFilename(
+  original: string,
+  list: string[],
+  sessionFileName: string
+): Promise<string | null> {
+  if (original && original.trim() !== "") {
+    return resolveFilename("HiCT", original, list);
+  }
+
+  const hictCandidates = list.filter(isHiCTMapFilename);
+  if (hictCandidates.length === 1) {
+    toast.message(
+      `Session did not record a HiCT map filename; using ${hictCandidates[0]}`
+    );
+    return hictCandidates[0];
+  }
+
+  const stem = sessionNameStem(sessionFileName);
+  const ranked = hictCandidates
+    .map((candidate) => ({
+      candidate,
+      score: scoreSessionMapCandidate(candidate, stem),
+    }))
+    .sort(
+      (a, b) => b.score - a.score || a.candidate.localeCompare(b.candidate)
+    );
+  const likely = ranked.filter((entry) => entry.score > 0);
+  const visibleCandidates = (likely.length > 0 ? likely : ranked)
+    .slice(0, 10)
+    .map((entry) => entry.candidate);
+  const defaultCandidate = visibleCandidates[0] ?? "";
+  const promptLines = [
+    "This session does not record the HiCT map filename.",
+    "Enter the relative .hict.hdf5 file path to open, or leave empty to cancel.",
+  ];
+  if (visibleCandidates.length > 0) {
+    promptLines.push("", "Likely candidates:");
+    visibleCandidates.forEach((candidate) => {
+      promptLines.push(`- ${candidate}`);
+    });
+  }
+  const replacement = window.prompt(promptLines.join("\n"), defaultCandidate);
+  if (!replacement) return null;
+  if (!list.includes(replacement)) {
+    toast.error(`HiCT file '${replacement}' not found`);
+    return null;
+  }
+  if (!isHiCTMapFilename(replacement)) {
+    toast.error(`'${replacement}' is not a HiCT map file`);
+    return null;
+  }
+  return replacement;
+}
+
+/** Opens a v3 session. The server prepares everything first, so a rejected file leaves the open map untouched. */
+/** The saved map used square-root coverage, which is computed from the matrix and not stored. */
+async function restoreCoverageNormalization(): Promise<void> {
+  const requests = networkManager.requestManager;
+  sessionBusy.value = "Restoring square-root coverage normalization\u2026";
+  const outcome = await prepareCoverage(requests, (status) => {
+    sessionBusy.value = `Restoring square-root coverage normalization: ${Math.round(
+      status.progress * 100
+    )}%`;
+  });
+  try {
+    if (!outcome.ok) throw new Error(outcome.message);
+    await requests.selectNormalizationWeights("SQRT_COVERAGE");
+    await mapManager.value?.reloadTilesFromBackend();
+  } catch (error) {
+    console.debug("Square-root coverage was not restored", error);
+    toast.message(
+      "The saved square-root coverage normalization could not be prepared, so the weights from the file are shown instead.",
+      { duration: 10000 }
+    );
+  }
+}
+
+async function restoreCompleteSession(
+  session: Record<string, unknown>
+): Promise<void> {
+  const snapshot = session["snapshot"] as Record<string, unknown>;
+  const client = session["client"] as {
+    workspace?: WorkspaceState | null;
+    savedLocations?: SessionSavedLocation[];
+    savedVisualizationPresets?: SessionVisualizationPreset[];
+    normalizationWeights?: "FILE" | "SQRT_COVERAGE";
+  };
+  sessionBusy.value =
+    "Restoring session: checking files and rebuilding the assembly\u2026";
+  workspaceRestoring = true;
+  try {
+    await mapManager.value?.visualizationManager.waitForPendingOptionRequests();
+    const restored = await networkManager.requestManager.restoreSession(
+      snapshot
+    );
+    await adoptSession(restored, {
+      fresh: true,
+      workspaceState: client.workspace ?? undefined,
+    });
+    sessionStore.setSavedLocations(client.savedLocations ?? []);
+    sessionStore.setSavedVisualizationPresets(
+      client.savedVisualizationPresets ?? []
+    );
+    if (client.normalizationWeights === "SQRT_COVERAGE")
+      await restoreCoverageNormalization();
+    toast.success(
+      "Session restored. Undo history starts from the restored assembly.",
+      { duration: 6000 }
+    );
+  } catch (e) {
+    console.debug("Session restore failed", e);
+    const failure = e as {
+      response?: { data?: { error?: string } };
+      message?: string;
+    };
+    toast.error(
+      failure?.response?.data?.error ??
+        failure?.message ??
+        "Session could not be restored",
+      { duration: 10000 }
+    );
+  } finally {
+    workspaceRestoring = false;
+    sessionBusy.value = "";
+  }
+}
+
 async function onOpenSession(file: File): Promise<void> {
   try {
-    const text = await file.text();
-    const session = JSON.parse(text) as Record<string, unknown>;
+    if (file.size > MAX_SESSION_BYTES) {
+      throw new Error("Invalid session file: exceeds the 8 MiB limit");
+    }
+    const session = parseSessionDocument(await file.text());
+    // The file is valid. Only now ask about edits that opening it would replace.
+    if (!(await confirmDiscardUnsavedEdits("open this session"))) return;
+    if (session.version === 3) {
+      await restoreCompleteSession(session);
+      return;
+    }
+    toast.message(
+      `Legacy session v${session.version} restores settings and referenced files. It does not contain the edited assembly, complete processing graph or undo history.`
+    );
     const sessionFilename = (session["filename"] as string) ?? "";
     const sessionFasta = (session["fastaFilename"] as string) ?? "";
     const sessionAgp = (session["agpFilename"] as string) ?? "";
@@ -610,10 +1615,10 @@ async function onOpenSession(file: File): Promise<void> {
     const fastaList = await networkManager.requestManager.listFASTAFiles();
     const agpList = await networkManager.requestManager.listAGPFiles();
 
-    const resolvedFile = await resolveFilename(
-      "HiCT",
+    const resolvedFile = await resolveRequiredHiCTSessionFilename(
       sessionFilename,
-      fileList
+      fileList,
+      file.name
     );
     if (resolvedFile === null) return;
 
@@ -663,8 +1668,25 @@ async function onOpenSession(file: File): Promise<void> {
       const signalDisplayMode =
         visRaw["signalDisplayMode"] === "EXPECTED" ||
         visRaw["signalDisplayMode"] === "OBSERVED_OVER_EXPECTED"
-          ? (visRaw["signalDisplayMode"] as "EXPECTED" | "OBSERVED_OVER_EXPECTED")
+          ? (visRaw["signalDisplayMode"] as
+              | "EXPECTED"
+              | "OBSERVED_OVER_EXPECTED")
           : "OBSERVED";
+      const coolerWeightsNaNPolicy =
+        visRaw["coolerWeightsNaNPolicy"] === "DISABLE_WEIGHTS" ||
+        visRaw["coolerWeightsNaNPolicy"] === "REPLACE_NANS_WITH_ZERO" ||
+        visRaw["coolerWeightsNaNPolicy"] === "REPLACE_NANS_WITH_ONE"
+          ? (visRaw["coolerWeightsNaNPolicy"] as CoolerWeightsNaNPolicy)
+          : "REPLACE_NANS_WITH_ONE";
+      const currentOptions = visualizationOptionsStore.asVisualizationOptions();
+      const coolerWeightsHaveNaNs =
+        typeof visRaw["coolerWeightsHaveNaNs"] === "boolean"
+          ? visRaw["coolerWeightsHaveNaNs"]
+          : currentOptions.coolerWeightsHaveNaNs ?? false;
+      const rawCoolerWeightsNaNCount = Number(visRaw["coolerWeightsNaNCount"]);
+      const coolerWeightsNaNCount = Number.isFinite(rawCoolerWeightsNaNCount)
+        ? Math.max(0, rawCoolerWeightsNaNCount)
+        : currentOptions.coolerWeightsNaNCount ?? 0;
       const cmapObj = new SimpleLinearGradient(
         safeColorTranslator(startColor, "rgba(0,255,0,0.0)"),
         safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
@@ -681,7 +1703,10 @@ async function onOpenSession(file: File): Promise<void> {
           cmapObj,
           autoThresholdEnabled,
           autoThresholdQuantile,
-          signalDisplayMode
+          signalDisplayMode,
+          coolerWeightsNaNPolicy,
+          coolerWeightsHaveNaNs,
+          coolerWeightsNaNCount
         )
       );
     }
@@ -699,6 +1724,13 @@ async function onOpenSession(file: File): Promise<void> {
         .getLayersManager()
         .applyTrackStylePreset(trackStyles as never);
     }
+
+    const axisTrackVisibility = session["axisTrackVisibility"] as
+      | { horizontalHidden?: string[]; verticalHidden?: string[] }
+      | undefined;
+    mapManager.value?.linearTrackManager.applyAxisTrackVisibilityState(
+      axisTrackVisibility
+    );
 
     const savedLocs = (session["savedLocations"] as unknown[]) ?? [];
     sessionStore.setSavedLocations(savedLocs as SessionSavedLocation[]);
@@ -726,9 +1758,16 @@ async function onOpenSession(file: File): Promise<void> {
 
     await mapManager.value?.visualizationManager.sendVisualizationOptionsToServer();
     mapManager.value?.reloadTiles();
+    networkManager.requestManager.markAssemblySaved();
     toast.success("Session restored");
   } catch (e) {
-    toast.error("Failed to open session");
+    console.error(e);
+    const message =
+      (e as { response?: { data?: { error?: string } } })?.response?.data
+        ?.error ??
+      (e as Error)?.message ??
+      "Failed to open session";
+    toast.error(message);
   }
 }
 
@@ -759,29 +1798,114 @@ watch(
   }
 );
 
+watch(
+  () =>
+    uiSettingsStore.inheritTrackBackgroundFromMap
+      ? mapBackgroundColor.value.RGB
+      : uiSettingsStore.trackBackgroundColor,
+  () => {
+    void mapManager.value?.linearTrackManager.render({ allowFetch: false });
+  }
+);
+
 onMounted(() => {
+  window.addEventListener("beforeunload", warnBeforeUnload);
   window.addEventListener("keydown", handleGlobalEscape, true);
   syncUiChromePalette();
+  workspaceTimer = window.setInterval(() => {
+    void persistWorkspace();
+  }, 1000);
 });
 
 onUnmounted(() => {
+  if (workspaceTimer !== undefined) window.clearInterval(workspaceTimer);
+  window.removeEventListener("beforeunload", warnBeforeUnload);
   window.removeEventListener("keydown", handleGlobalEscape, true);
   stopOpenProgress();
 });
 
 function onFileSelected(newFilename: string) {
+  if (newFilename === filename.value && newFilename) {
+    toast.message(
+      "This file is already open. Use File > Close, then open it again to reset the assembly."
+    );
+    return;
+  }
   if (newFilename !== filename.value) {
-    resetState();
-    filename.value = newFilename;
-    if (filename.value && filename.value !== "") {
-      displayNewMap();
+    if (newFilename.trim() !== "") {
+      // Keep the current manager and source names until the server accepts the replacement.
+      displayNewMap(newFilename);
     }
   }
 }
 </script>
 
 <style scoped>
+.modal-notifications {
+  --hict-guidance-visibility: hidden;
+}
+
+.modal-notifications :deep([data-sonner-toast][data-type="success"]) {
+  visibility: hidden;
+}
+
+.session-busy {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--hict-surface-border, #cbd5e1);
+  border-radius: 999px;
+  background: var(--hict-surface-bg, #ffffff);
+  color: var(--hict-surface-fg, #1f2937);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  font-size: 0.875rem;
+}
+
+.empty-workspace-prompt {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -40%);
+  z-index: 10;
+  width: min(460px, calc(100vw - 32px));
+  padding: 24px 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  color: #1f2937;
+  text-align: center;
+}
+
+.empty-workspace-prompt h2 {
+  margin-bottom: 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.empty-workspace-prompt p {
+  margin-bottom: 1rem;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.empty-workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 0.75rem;
+}
+
 .main-ui-component {
+  position: relative;
   width: 100%;
   height: 100vh;
   overflow: hidden;
@@ -791,6 +1915,13 @@ function onFileSelected(newFilename: string) {
 
 .open-progress-modal {
   z-index: 1055;
+}
+.workspace-conflict {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  border-radius: 0;
+  font-size: 14px;
 }
 .open-progress-backdrop {
   z-index: 1050;

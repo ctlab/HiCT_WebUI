@@ -24,8 +24,18 @@ import {
   SetVisualizationOptionsRequest,
 } from "../net/api/request";
 import { ContactMapManager } from "./ContactMapManager";
+import {
+  buildSignalInput,
+  flagsFromOptions,
+  parseCanonicalSignal,
+  type SignalProfile,
+} from "@/app/core/visualization/signalProfile";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
-import VisualizationOptions from "../visualization/VisualizationOptions";
+import { rememberExcludedBinsPolicy } from "../visualization/excludedBinsMemory";
+import VisualizationOptions, {
+  type CoolerWeightsNaNPolicy,
+  type SignalDisplayMode,
+} from "../visualization/VisualizationOptions";
 import SimpleLinearGradient from "../visualization/colormap/SimpleLinearGradient";
 import type { EventsKey } from "ol/events";
 import { unByKey } from "ol/Observable";
@@ -35,6 +45,8 @@ import {
 } from "../visualization/renderPipelineWizard";
 import { ColorTranslator } from "colortranslator";
 
+import { histogramQuantile } from "../visualization/tileSignalRange";
+
 type ViewportPixelBounds = {
   bpResolution: number;
   startRowPx: number;
@@ -43,23 +55,24 @@ type ViewportPixelBounds = {
   endColPx: number;
 };
 
-type PipelineSignalProfile = {
-  source: SourceName;
-  preLogBase: number | null;
-  postLogBase: number | null;
-  applyCoolerWeights: boolean;
-  resolutionScaling: boolean;
-  resolutionLinearScaling: boolean;
+type PipelineSignalProfile = SignalProfile & {
+  /**
+   * True when the signal subtree has exactly the canonical shape, so sidebar edits may rebuild it.
+   * False for a custom graph, which edits must leave untouched.
+   */
+  editableInput: boolean;
 };
 
 type ColormapTarget = {
+  id: string;
   node: Record<string, unknown>;
   profile: PipelineSignalProfile;
   minSignal: number;
   maxSignal: number;
 };
 
-const BUILTIN_COOLER_WEIGHTS_TRACK_ID = "__builtin_cooler_weights__";
+const OPENING_THRESHOLD_QUANTILE = 0.995;
+const OPENING_THRESHOLD_MAX_MAP_SIZE_PX = 2000;
 
 const clampQuantile = (value: number): number => {
   if (!Number.isFinite(value)) {
@@ -68,7 +81,55 @@ const clampQuantile = (value: number): number => {
   return Math.min(0.999999, Math.max(0.5, value));
 };
 
-const computeFiniteQuantile = (values: Float32Array, quantile: number): number | null => {
+const swapNumbers = (values: number[], left: number, right: number): void => {
+  if (left === right) {
+    return;
+  }
+  const tmp = values[left];
+  values[left] = values[right];
+  values[right] = tmp;
+};
+
+const selectNthNumber = (values: number[], index: number): number | null => {
+  if (values.length === 0) {
+    return null;
+  }
+  const target = Math.max(0, Math.min(values.length - 1, Math.trunc(index)));
+  let left = 0;
+  let right = values.length - 1;
+  while (left <= right) {
+    const pivot = values[Math.floor((left + right) / 2)];
+    let lower = left;
+    let cursor = left;
+    let upper = right;
+    while (cursor <= upper) {
+      const value = values[cursor];
+      if (value < pivot) {
+        swapNumbers(values, lower, cursor);
+        lower += 1;
+        cursor += 1;
+      } else if (value > pivot) {
+        swapNumbers(values, cursor, upper);
+        upper -= 1;
+      } else {
+        cursor += 1;
+      }
+    }
+    if (target < lower) {
+      right = lower - 1;
+    } else if (target > upper) {
+      left = upper + 1;
+    } else {
+      return values[target] ?? pivot;
+    }
+  }
+  return values[target] ?? null;
+};
+
+const computeFiniteQuantile = (
+  values: Float32Array,
+  quantile: number
+): number | null => {
   const filtered: number[] = [];
   for (const value of values) {
     if (Number.isFinite(value) && value > 0) {
@@ -78,12 +139,11 @@ const computeFiniteQuantile = (values: Float32Array, quantile: number): number |
   if (filtered.length === 0) {
     return null;
   }
-  filtered.sort((left, right) => left - right);
   const position = Math.min(
     filtered.length - 1,
     Math.max(0, Math.floor(clampQuantile(quantile) * (filtered.length - 1)))
   );
-  return filtered[position] ?? filtered[filtered.length - 1] ?? null;
+  return selectNthNumber(filtered, position);
 };
 
 const computeFinitePositiveMax = (values: Float32Array): number | null => {
@@ -109,8 +169,8 @@ const resolveSafeAutoUpperBound = (
     quantileValue != null && quantileValue > minSignal + minGap
       ? quantileValue
       : maxValue != null && maxValue > minSignal + minGap
-        ? maxValue
-        : null;
+      ? maxValue
+      : null;
   if (candidate == null || !Number.isFinite(candidate)) {
     return null;
   }
@@ -128,7 +188,10 @@ const toFiniteNumber = (value: unknown, fallback: number): number => {
   return Number.isFinite(numeric) ? numeric : fallback;
 };
 
-const safeColorTranslator = (value: unknown, fallback: string): ColorTranslator => {
+const safeColorTranslator = (
+  value: unknown,
+  fallback: string
+): ColorTranslator => {
   if (typeof value !== "string" || value.length > 128) {
     return new ColorTranslator(fallback, { legacyCSS: true });
   }
@@ -139,152 +202,61 @@ const safeColorTranslator = (value: unknown, fallback: string): ColorTranslator 
   }
 };
 
-const withAlphaZero = (value: unknown, fallback: string): string => {
-  if (typeof value === "string") {
-    const normalized = value.trim();
-    if (/^#[0-9a-f]{8}$/i.test(normalized)) {
-      return `${normalized.slice(0, 7)}00`;
-    }
-    if (/^#[0-9a-f]{6}$/i.test(normalized)) {
-      return `${normalized}00`;
-    }
-  }
-  try {
-    const translated = new ColorTranslator(String(value ?? fallback), {
-      legacyCSS: true,
-    });
-    return `${translated.HEXA.slice(0, 7)}00`;
-  } catch {
-    return fallback;
-  }
-};
-
-const normalizePositiveLogBase = (value: unknown): number | null => {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric <= 0 || Math.abs(numeric - 1) < 1e-9) {
-    return null;
-  }
-  return numeric;
-};
-
-const isDynamicFieldNode = (value: unknown, field: string): boolean =>
-  isRecord(value) &&
-  String(value.type ?? "").trim().toLowerCase() === "dynamic" &&
-  String(value.field ?? "").trim().toUpperCase() === field;
-
-const isCoolerWeightsTrackNode = (value: unknown, axis: "ROW" | "COL"): boolean =>
-  isRecord(value) &&
-  String(value.type ?? "").trim().toLowerCase() === "track1d" &&
-  String(value.trackId ?? "").trim() === BUILTIN_COOLER_WEIGHTS_TRACK_ID &&
-  String(value.axis ?? "").trim().toUpperCase() === axis;
-
-const isCoolerWeightsExpression = (value: unknown): boolean => {
-  if (!isRecord(value) || String(value.type ?? "").trim().toLowerCase() !== "binary") {
-    return false;
-  }
-  if (String(value.op ?? "").trim().toUpperCase() !== "MUL") {
-    return false;
-  }
-  const left = value.left;
-  const right = value.right;
-  return (
-    (isCoolerWeightsTrackNode(left, "ROW") && isCoolerWeightsTrackNode(right, "COL")) ||
-    (isCoolerWeightsTrackNode(left, "COL") && isCoolerWeightsTrackNode(right, "ROW"))
-  );
-};
-
 const extractPipelineSignalProfile = (
   expression: unknown
 ): PipelineSignalProfile | null => {
-  if (!isRecord(expression)) {
-    return null;
-  }
-  const type = String(expression.type ?? "").trim().toLowerCase();
-  if (type === "source") {
-    return {
-      source:
-        String(expression.source ?? "PRIMARY").trim().toUpperCase() === "SECONDARY"
-          ? "SECONDARY"
-          : "PRIMARY",
-      preLogBase: null,
-      postLogBase: null,
-      applyCoolerWeights: false,
-      resolutionScaling: false,
-      resolutionLinearScaling: false,
-    };
-  }
-  if (type === "log") {
-    const inputProfile = extractPipelineSignalProfile(expression.input);
-    const base = normalizePositiveLogBase(expression.base);
-    if (!inputProfile || base == null) {
-      return null;
-    }
-    if (inputProfile.preLogBase == null) {
-      return {
-        ...inputProfile,
-        preLogBase: base,
-      };
-    }
-    if (inputProfile.postLogBase == null) {
-      return {
-        ...inputProfile,
-        postLogBase: base,
-      };
-    }
-    return null;
-  }
-  if (type === "binary" && String(expression.op ?? "").trim().toUpperCase() === "MUL") {
-    const left = expression.left;
-    const right = expression.right;
-    const childProfile =
-      extractPipelineSignalProfile(left) ?? extractPipelineSignalProfile(right);
-    if (!childProfile) {
-      return null;
-    }
-    if (
-      isDynamicFieldNode(left, "RESOLUTION_SCALING_COEFF") ||
-      isDynamicFieldNode(right, "RESOLUTION_SCALING_COEFF")
-    ) {
-      return {
-        ...childProfile,
-        resolutionScaling: true,
-      };
-    }
-    if (
-      isDynamicFieldNode(left, "RESOLUTION_LINEAR_SCALING_COEFF") ||
-      isDynamicFieldNode(right, "RESOLUTION_LINEAR_SCALING_COEFF")
-    ) {
-      return {
-        ...childProfile,
-        resolutionLinearScaling: true,
-      };
-    }
-    if (isCoolerWeightsExpression(left) || isCoolerWeightsExpression(right)) {
-      return {
-        ...childProfile,
-        applyCoolerWeights: true,
-      };
-    }
-  }
-  return null;
+  const profile = parseCanonicalSignal(expression);
+  return profile ? { ...profile, editableInput: true } : null;
 };
 
 const collectColormapTargets = (
   expression: unknown,
-  output: ColormapTarget[]
+  output: ColormapTarget[],
+  path = "root"
 ): void => {
   if (!isRecord(expression)) {
     return;
   }
-  const type = String(expression.type ?? "").trim().toLowerCase();
+  const type = String(expression.type ?? "")
+    .trim()
+    .toLowerCase();
   if (type === "colormap") {
-    const profile = extractPipelineSignalProfile(expression.input);
+    let profile = extractPipelineSignalProfile(expression.input);
+    if (!profile) {
+      const sources = new Set<SourceName>();
+      const visit = (node: unknown): void => {
+        if (!isRecord(node)) return;
+        if (node.type === "source")
+          sources.add(node.source === "SECONDARY" ? "SECONDARY" : "PRIMARY");
+        Object.values(node).forEach(visit);
+      };
+      visit(expression.input);
+      if (sources.size === 1) {
+        const bare = extractPipelineSignalProfile({
+          type: "source",
+          source: [...sources][0],
+        });
+        // The graph is custom: the target can be selected for colors and range, never for signal edits.
+        profile = bare ? { ...bare, editableInput: false } : null;
+      }
+    }
     if (profile) {
       output.push({
+        id: path,
         node: expression,
         profile,
-        minSignal: toFiniteNumber(expression.minSignal, 0),
-        maxSignal: toFiniteNumber(expression.maxSignal, 1),
+        minSignal: toFiniteNumber(
+          isRecord(expression.min) && expression.min.type === "constant"
+            ? expression.min.value
+            : expression.minSignal,
+          0
+        ),
+        maxSignal: toFiniteNumber(
+          isRecord(expression.max) && expression.max.type === "constant"
+            ? expression.max.value
+            : expression.maxSignal,
+          1
+        ),
       });
     }
   }
@@ -300,75 +272,68 @@ const collectColormapTargets = (
     "alpha",
   ].forEach((key) => {
     if (key in expression) {
-      collectColormapTargets(expression[key], output);
+      collectColormapTargets(expression[key], output, `${path}.${key}`);
     }
   });
 };
 
-const collectTopLayerSources = (
-  expression: unknown,
-  output: Set<SourceName>
-): void => {
-  if (!isRecord(expression)) {
-    return;
-  }
-  if (String(expression.type ?? "").trim().toLowerCase() === "pixel_blend") {
-    const topTargets: ColormapTarget[] = [];
-    collectColormapTargets(expression.top, topTargets);
-    topTargets.forEach((target) => output.add(target.profile.source));
-  }
-  ["input", "left", "right", "top", "bottom", "c1", "c2", "c3", "alpha"].forEach(
-    (key) => {
-      if (key in expression) {
-        collectTopLayerSources(expression[key], output);
-      }
-    }
-  );
+export type VisualizationPipelineTarget = {
+  id: string;
+  source: SourceName;
+  /** Triangle the colormap feeds: `upperExpression` or `lowerExpression`. */
+  half: "upper" | "lower";
+  label: string;
+  mode: string;
+  displayUnit: "PERCENT" | null;
 };
 
-const cloneRecord = <T>(value: T): T =>
-  JSON.parse(JSON.stringify(value)) as T;
-
-const isTransparentMinimumColor = (color: unknown): boolean =>
-  typeof color === "string" &&
-  /^#[0-9a-f]{8}$/i.test(color.trim()) &&
-  color.trim().slice(7).toLowerCase() === "00";
-
-const preserveMinimumAlpha = (
-  nextColor: unknown,
-  previousColor: unknown
-): unknown => {
-  if (
-    typeof nextColor !== "string" ||
-    !/^#[0-9a-f]{8}$/i.test(nextColor.trim()) ||
-    !isTransparentMinimumColor(previousColor)
-  ) {
-    return nextColor;
-  }
-  return `${nextColor.trim().slice(0, 7)}00`;
+const collectConfigColormapTargets = (
+  config: Record<string, unknown>
+): ColormapTarget[] => {
+  const targets: ColormapTarget[] = [];
+  collectColormapTargets(config.upperExpression, targets, "upper");
+  collectColormapTargets(config.lowerExpression, targets, "lower");
+  return targets;
 };
+
+const cloneRecord = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 const replaceColormapNode = (
   target: ColormapTarget,
-  replacement: Record<string, unknown>
+  replacement: Record<string, unknown>,
+  signalInput?: Record<string, unknown>
 ): void => {
-  const previousStartColor = target.node.startColor;
+  // Signal edits (transform, scaling, weights) arrive as a rebuilt canonical input. A custom graph
+  // gets none, so its processing is never reconstructed by colour or contrast edits.
+  if (signalInput) target.node.input = signalInput;
+  const previousMode = String(target.node.mode ?? "LINEAR").toUpperCase();
   target.node.type = "colormap";
-  target.node.mode = replacement.mode ?? "LINEAR";
-  target.node.input = cloneRecord(replacement.input);
-  target.node.startColor = preserveMinimumAlpha(
-    replacement.startColor,
-    previousStartColor
-  );
+  target.node.mode =
+    previousMode === "MODDOTPLOT_IDENTITY"
+      ? "MODDOTPLOT_IDENTITY"
+      : replacement.mode ?? "LINEAR";
+  target.node.startColor = replacement.startColor;
   target.node.endColor = replacement.endColor;
   target.node.minSignal = replacement.minSignal;
   target.node.maxSignal = replacement.maxSignal;
+  for (const [key, value] of [
+    ["min", replacement.minSignal],
+    ["max", replacement.maxSignal],
+  ] as const) {
+    const previous = target.node[key];
+    target.node[key] = {
+      ...(isRecord(previous) ? previous : {}),
+      type: "constant",
+      value,
+      rangeSource: target.profile.source,
+      rangeOutput: key === "min" ? "selectedMin" : "selectedMax",
+    };
+  }
 };
 
 const visualizationOptionsFromTarget = (
   target: ColormapTarget,
-  currentOptions: VisualizationOptions,
-  forceTransparentMinimum = false
+  currentOptions: VisualizationOptions
 ): VisualizationOptions =>
   new VisualizationOptions(
     target.profile.preLogBase ?? -1,
@@ -377,66 +342,29 @@ const visualizationOptionsFromTarget = (
     target.profile.resolutionScaling,
     target.profile.resolutionLinearScaling,
     new SimpleLinearGradient(
-      safeColorTranslator(
-        forceTransparentMinimum
-          ? withAlphaZero(target.node.startColor, "#ffffff00")
-          : target.node.startColor,
-        "#ffffff00"
-      ),
+      safeColorTranslator(target.node.startColor, "#ffffff00"),
       safeColorTranslator(target.node.endColor, "#006000ff"),
       target.minSignal,
       target.maxSignal
     ),
     currentOptions.autoThresholdEnabled,
     currentOptions.autoThresholdQuantile,
-    currentOptions.signalDisplayMode
+    currentOptions.signalDisplayMode,
+    currentOptions.coolerWeightsNaNPolicy,
+    currentOptions.coolerWeightsHaveNaNs,
+    currentOptions.coolerWeightsNaNCount
   );
-
-const forceMinimumAlphaZero = (target: ColormapTarget): void => {
-  const color = target.node.startColor;
-  if (typeof color === "string" && /^#[0-9a-f]{8}$/i.test(color.trim())) {
-    target.node.startColor = `${color.trim().slice(0, 7)}00`;
-  }
-};
-
-const applyTopLayerTransparency = (
-  expression: unknown,
-  source: SourceName
-): void => {
-  if (!isRecord(expression)) {
-    return;
-  }
-  if (expression.type === "pixel_blend") {
-    const topTargets: ColormapTarget[] = [];
-    collectColormapTargets(expression.top, topTargets);
-    topTargets
-      .filter((target) => target.profile.source === source)
-      .forEach(forceMinimumAlphaZero);
-  }
-  [
-    "input",
-    "left",
-    "right",
-    "upper",
-    "lower",
-    "bottom",
-    "c1",
-    "c2",
-    "c3",
-    "alpha",
-  ].forEach((key) => {
-    if (key in expression) {
-      applyTopLayerTransparency(expression[key], source);
-    }
-  });
-};
 
 const swapPixelBlendLayers = (expression: unknown): boolean => {
   if (!isRecord(expression)) {
     return false;
   }
   let changed = false;
-  if (String(expression.type ?? "").trim().toLowerCase() === "pixel_blend") {
+  if (
+    String(expression.type ?? "")
+      .trim()
+      .toLowerCase() === "pixel_blend"
+  ) {
     const top = expression.top;
     expression.top = expression.bottom;
     expression.bottom = top;
@@ -445,13 +373,21 @@ const swapPixelBlendLayers = (expression: unknown): boolean => {
     expression.bottomOpacity = topOpacity;
     changed = true;
   }
-  ["input", "left", "right", "top", "bottom", "c1", "c2", "c3", "alpha"].forEach(
-    (key) => {
-      if (key in expression && swapPixelBlendLayers(expression[key])) {
-        changed = true;
-      }
+  [
+    "input",
+    "left",
+    "right",
+    "top",
+    "bottom",
+    "c1",
+    "c2",
+    "c3",
+    "alpha",
+  ].forEach((key) => {
+    if (key in expression && swapPixelBlendLayers(expression[key])) {
+      changed = true;
     }
-  );
+  });
   return changed;
 };
 
@@ -470,6 +406,7 @@ const transformSignalsForProfile = (
     if (!Number.isFinite(signal) || signal < 0) {
       signal = 0;
     }
+    signal /= profile.signalDivisor;
     if (preLogDivisor != null && preLogDivisor > 0) {
       signal = Math.log1p(signal) / preLogDivisor;
     }
@@ -497,6 +434,9 @@ class VisualizationManager {
   private readonly moveEndListener?: EventsKey;
   private expectedProfileSyncInFlight = false;
   private pendingExpectedProfileRefresh = false;
+  private readonly pendingOptionRequests = new Set<Promise<unknown>>();
+  private visualizationOptionsLoadGeneration = 0;
+  private observedDisplayOptions: VisualizationOptions | null = null;
 
   public constructor(public readonly mapManager: ContactMapManager) {
     this.moveEndListener = this.mapManager.getMap().on("moveend", () => {
@@ -510,83 +450,241 @@ class VisualizationManager {
     }
   }
 
+  public async waitForPendingOptionRequests(): Promise<void> {
+    while (this.pendingOptionRequests.size > 0) {
+      await Promise.allSettled([...this.pendingOptionRequests]);
+    }
+  }
+
+  private trackOptionRequest<T>(request: Promise<T>): Promise<T> {
+    this.pendingOptionRequests.add(request);
+    void request.then(
+      () => this.pendingOptionRequests.delete(request),
+      () => this.pendingOptionRequests.delete(request)
+    );
+    return request;
+  }
+
   public fetchVisualizationOptions(): Promise<VisualizationOptions> {
-    return this.mapManager.networkManager.requestManager
+    const loadGeneration = ++this.visualizationOptionsLoadGeneration;
+    if (this.mapManager.isDisposed) {
+      return Promise.resolve(
+        this.visualizationOptionsStore.asVisualizationOptions()
+      );
+    }
+    const request = this.mapManager.networkManager.requestManager
       .getVisualizationOptions(new GetVisualizationOptionsRequest({}))
       .then((options) => {
-        this.visualizationOptionsStore.setVisualizationOptions(options);
-        window.dispatchEvent(
-          new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
-            detail: { source: "server_fetch", options },
-          })
-        );
+        if (
+          !this.mapManager.isDisposed &&
+          loadGeneration === this.visualizationOptionsLoadGeneration
+        ) {
+          this.visualizationOptionsStore.setVisualizationOptions(options);
+          window.dispatchEvent(
+            new CustomEvent(
+              VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+              {
+                detail: { source: "server_fetch", options },
+              }
+            )
+          );
+        }
         return options;
       });
+    return this.trackOptionRequest(request);
   }
 
   public async loadVisualizationOptionsForSource(
-    source?: SourceName
+    source?: SourceName,
+    targetId?: string | null
   ): Promise<VisualizationOptions> {
-    if (!source) {
-      return this.fetchVisualizationOptions();
+    const loadGeneration = ++this.visualizationOptionsLoadGeneration;
+    if (this.mapManager.isDisposed) {
+      return this.visualizationOptionsStore.asVisualizationOptions();
+    }
+    if (
+      !source ||
+      (source === "PRIMARY" &&
+        this.visualizationOptionsStore.signalDisplayMode !== "OBSERVED")
+    ) {
+      const options =
+        await this.mapManager.networkManager.requestManager.getVisualizationOptions(
+          new GetVisualizationOptionsRequest({})
+        );
+      if (
+        !this.mapManager.isDisposed &&
+        loadGeneration === this.visualizationOptionsLoadGeneration
+      ) {
+        this.visualizationOptionsStore.setVisualizationOptions(options);
+        this.visualizationOptionsStore.signalEditable = true;
+        window.dispatchEvent(
+          new CustomEvent(
+            VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+            {
+              detail: { source: "server_fetch", options },
+            }
+          )
+        );
+      }
+      return loadGeneration === this.visualizationOptionsLoadGeneration
+        ? options
+        : this.visualizationOptionsStore.asVisualizationOptions();
     }
     const pipelineConfig = await this.getActiveRenderPipelineConfig();
-    if (!pipelineConfig) {
-      return this.fetchVisualizationOptions();
+    if (
+      this.mapManager.isDisposed ||
+      loadGeneration !== this.visualizationOptionsLoadGeneration
+    ) {
+      return this.visualizationOptionsStore.asVisualizationOptions();
     }
-    const targets: ColormapTarget[] = [];
-    collectColormapTargets(pipelineConfig.upperExpression, targets);
-    collectColormapTargets(pipelineConfig.lowerExpression, targets);
-    const topLayerSources = new Set<SourceName>();
-    collectTopLayerSources(pipelineConfig.upperExpression, topLayerSources);
-    collectTopLayerSources(pipelineConfig.lowerExpression, topLayerSources);
-    const target = targets.find((candidate) => candidate.profile.source === source);
+    if (!pipelineConfig) {
+      const options =
+        await this.mapManager.networkManager.requestManager.getVisualizationOptions(
+          new GetVisualizationOptionsRequest({})
+        );
+      if (
+        !this.mapManager.isDisposed &&
+        loadGeneration === this.visualizationOptionsLoadGeneration
+      ) {
+        this.visualizationOptionsStore.setVisualizationOptions(options);
+        this.visualizationOptionsStore.signalEditable = true;
+        window.dispatchEvent(
+          new CustomEvent(
+            VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+            {
+              detail: { source: "server_fetch", options },
+            }
+          )
+        );
+      }
+      return loadGeneration === this.visualizationOptionsLoadGeneration
+        ? options
+        : this.visualizationOptionsStore.asVisualizationOptions();
+    }
+    const targets = collectConfigColormapTargets(pipelineConfig);
+    const sourceTargets = targets.filter(
+      (candidate) => candidate.profile.source === source
+    );
+    const target =
+      sourceTargets.find((candidate) => candidate.id === targetId) ??
+      sourceTargets[0];
     if (!target) {
       return this.fetchVisualizationOptions();
     }
     const options = visualizationOptionsFromTarget(
       target,
-      this.visualizationOptionsStore.asVisualizationOptions(),
-      topLayerSources.has(source)
+      this.visualizationOptionsStore.asVisualizationOptions()
     );
-    this.visualizationOptionsStore.setVisualizationOptions(options);
-    window.dispatchEvent(
-      new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
-        detail: { source: "pipeline_source_fetch", options },
-      })
-    );
-    return options;
+    if (loadGeneration === this.visualizationOptionsLoadGeneration) {
+      this.visualizationOptionsStore.setVisualizationOptions(options);
+      this.visualizationOptionsStore.signalEditable =
+        target.profile.editableInput;
+      window.dispatchEvent(
+        new CustomEvent(
+          VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+          {
+            detail: { source: "pipeline_source_fetch", options },
+          }
+        )
+      );
+      return options;
+    }
+    return this.visualizationOptionsStore.asVisualizationOptions();
   }
 
-  private async getActiveRenderPipelineConfig(): Promise<Record<string, unknown> | null> {
-    const config =
-      await this.mapManager.networkManager.requestManager
-        .getRenderPipelineConfig()
-        .catch(() => null);
+  public async getVisualizationPipelineTargets(): Promise<
+    VisualizationPipelineTarget[]
+  > {
+    const config = await this.getActiveRenderPipelineConfig();
+    if (!config) return [];
+    const counts = new Map<SourceName, number>();
+    return collectConfigColormapTargets(config).map((target) => {
+      const index = (counts.get(target.profile.source) ?? 0) + 1;
+      counts.set(target.profile.source, index);
+      const half = target.id.startsWith("upper") ? "upper" : "lower";
+      const mode = String(target.node.mode ?? "LINEAR");
+      return {
+        id: target.id,
+        source: target.profile.source,
+        half,
+        label: `${half} ${
+          mode === "MODDOTPLOT_IDENTITY" ? "identity" : "colormap"
+        } ${index}`,
+        mode,
+        displayUnit:
+          mode === "MODDOTPLOT_IDENTITY" &&
+          target.profile.hasExplicitSignalDivisor
+            ? "PERCENT"
+            : null,
+      };
+    });
+  }
+
+  public async getSourceSignalExpression(
+    source: SourceName,
+    targetId?: string | null
+  ): Promise<Record<string, unknown>> {
+    const config = await this.getActiveRenderPipelineConfig();
+    if (!config)
+      return (
+        buildColorExpression(
+          source,
+          this.visualizationOptionsStore.asVisualizationOptions()
+        ) as unknown as Record<string, unknown>
+      ).input as Record<string, unknown>;
+    const targets = collectConfigColormapTargets(config).filter(
+      (target) => target.profile.source === source
+    );
+    const target =
+      targets.find((target) => target.id === targetId) ?? targets[0];
+    if (!target || !isRecord(target.node.input))
+      throw new Error(`No numeric colormap input is available for ${source}.`);
+    return cloneRecord(target.node.input);
+  }
+
+  private async getActiveRenderPipelineConfig(): Promise<Record<
+    string,
+    unknown
+  > | null> {
+    const config = await this.mapManager.networkManager.requestManager
+      .getRenderPipelineConfig()
+      .catch(() => null);
     return isRecord(config) && Boolean(config.enabled ?? false) ? config : null;
   }
 
   private updateRenderPipelineSource(
     config: Record<string, unknown>,
     source: SourceName,
-    options: VisualizationOptions
+    options: VisualizationOptions,
+    targetId?: string | null
   ): boolean {
-    const targets: ColormapTarget[] = [];
-    collectColormapTargets(config.upperExpression, targets);
-    collectColormapTargets(config.lowerExpression, targets);
-    const replacement = buildColorExpression(source, options) as unknown as Record<
-      string,
-      unknown
-    >;
+    const targets = collectConfigColormapTargets(config);
+    const replacement = buildColorExpression(
+      source,
+      options
+    ) as unknown as Record<string, unknown>;
     let changed = false;
     for (const target of targets) {
-      if (target.profile.source === source) {
-        replaceColormapNode(target, replacement);
+      if (
+        target.profile.source === source &&
+        (!targetId || target.id === targetId)
+      ) {
+        replaceColormapNode(
+          target,
+          replacement,
+          target.profile.editableInput
+            ? buildSignalInput(
+                target.profile.source,
+                flagsFromOptions(options),
+                target.profile.hasExplicitSignalDivisor
+                  ? { value: target.profile.signalDivisor }
+                  : null
+              )
+            : undefined
+        );
         changed = true;
       }
     }
-    applyTopLayerTransparency(config.upperExpression, source);
-    applyTopLayerTransparency(config.lowerExpression, source);
     return changed;
   }
 
@@ -600,13 +698,17 @@ class VisualizationManager {
     const resolutionIndex = Math.max(
       0,
       Math.trunc(
-        Number.isFinite(descriptor.imageSizeIndex) ? descriptor.imageSizeIndex : 0
+        Number.isFinite(descriptor.imageSizeIndex)
+          ? descriptor.imageSizeIndex
+          : 0
       )
     );
     if (resolutionIndex <= 1) {
       return { quadratic: 1, linear: 1 };
     }
-    const referenceResolution = Number(resolutions[1] ?? descriptor.bpResolution);
+    const referenceResolution = Number(
+      resolutions[1] ?? descriptor.bpResolution
+    );
     const currentResolution = Number(
       resolutions[resolutionIndex] ?? descriptor.bpResolution
     );
@@ -628,7 +730,9 @@ class VisualizationManager {
     };
   }
 
-  private resolveViewportPixelBounds(paddingPx = 0): ViewportPixelBounds | null {
+  private resolveViewportPixelBounds(
+    paddingPx = 0
+  ): ViewportPixelBounds | null {
     const size = this.mapManager.map.getSize();
     if (!size || size.length < 2 || size[0] <= 0 || size[1] <= 0) {
       return null;
@@ -643,7 +747,9 @@ class VisualizationManager {
       return null;
     }
     const rawMapSizePx = Number(
-      this.mapManager.viewAndLayersManager.imageSizes[descriptor.imageSizeIndex] ?? NaN
+      this.mapManager.viewAndLayersManager.imageSizes[
+        descriptor.imageSizeIndex
+      ] ?? NaN
     );
     if (!Number.isFinite(rawMapSizePx) || rawMapSizePx <= 0) {
       return null;
@@ -672,18 +778,24 @@ class VisualizationManager {
     );
     const endColPx = Math.min(
       mapSizePx,
-      Math.max(startColPx + 1, clampUpperBound(
-        Math.ceil((extent[2] ?? 0) / descriptor.pixelResolution) + pad
-      ))
+      Math.max(
+        startColPx + 1,
+        clampUpperBound(
+          Math.ceil((extent[2] ?? 0) / descriptor.pixelResolution) + pad
+        )
+      )
     );
     const startRowPx = clampLowerBound(
       Math.floor(-(extent[3] ?? 0) / descriptor.pixelResolution) - pad
     );
     const endRowPx = Math.min(
       mapSizePx,
-      Math.max(startRowPx + 1, clampUpperBound(
-        Math.ceil(-(extent[1] ?? 0) / descriptor.pixelResolution) + pad
-      ))
+      Math.max(
+        startRowPx + 1,
+        clampUpperBound(
+          Math.ceil(-(extent[1] ?? 0) / descriptor.pixelResolution) + pad
+        )
+      )
     );
     return {
       bpResolution: descriptor.bpResolution,
@@ -698,6 +810,54 @@ class VisualizationManager {
     return this.resolveViewportPixelBounds(
       Math.max(0, Math.round(this.mapManager.getOptions().tileSize || 0))
     );
+  }
+
+  private resolveOpeningFullMapPixelBounds(
+    maxMapSizePx = OPENING_THRESHOLD_MAX_MAP_SIZE_PX
+  ): ViewportPixelBounds | null {
+    const safeMaxMapSizePx = Math.max(1, Math.floor(maxMapSizePx));
+    const viewAndLayersManager = this.mapManager.viewAndLayersManager;
+    const candidates = viewAndLayersManager.resolutionTuples
+      .map((descriptor) => {
+        const rawMapSizePx = Number(
+          viewAndLayersManager.imageSizes[descriptor.imageSizeIndex] ?? NaN
+        );
+        const mapSizePx = Number.isFinite(rawMapSizePx)
+          ? Math.max(1, Math.round(rawMapSizePx))
+          : NaN;
+        return { descriptor, mapSizePx };
+      })
+      .filter(({ descriptor, mapSizePx }) => {
+        return (
+          Number.isFinite(descriptor.bpResolution) &&
+          Number.isFinite(descriptor.pixelResolution) &&
+          descriptor.bpResolution > 0 &&
+          descriptor.pixelResolution > 0 &&
+          Number.isFinite(mapSizePx) &&
+          mapSizePx > 0 &&
+          mapSizePx <= safeMaxMapSizePx
+        );
+      })
+      .sort((left, right) => {
+        const byPixelResolution =
+          right.descriptor.pixelResolution - left.descriptor.pixelResolution;
+        if (Math.abs(byPixelResolution) > 1e-9) {
+          return byPixelResolution;
+        }
+        return right.descriptor.bpResolution - left.descriptor.bpResolution;
+      });
+
+    const selected = candidates[0];
+    if (!selected) {
+      return null;
+    }
+    return {
+      bpResolution: selected.descriptor.bpResolution,
+      startRowPx: 0,
+      endRowPx: selected.mapSizePx,
+      startColPx: 0,
+      endColPx: selected.mapSizePx,
+    };
   }
 
   public async syncExpectedProfileToViewport(): Promise<boolean> {
@@ -753,12 +913,11 @@ class VisualizationManager {
     if (!bounds) {
       return null;
     }
-    const response = await this.mapManager.networkManager.requestManager.queryMatrixFloat32(
-      {
+    const response =
+      await this.mapManager.networkManager.requestManager.queryMatrixFloat32({
         ...bounds,
         signalMode: "TRADITIONAL_NORMALIZED",
-      }
-    );
+      });
     const nextUpperBound = resolveSafeAutoUpperBound(
       response.values,
       options.autoThresholdQuantile,
@@ -790,34 +949,69 @@ class VisualizationManager {
         ),
         options.autoThresholdEnabled,
         options.autoThresholdQuantile,
-        options.signalDisplayMode
+        options.signalDisplayMode,
+        options.coolerWeightsNaNPolicy,
+        options.coolerWeightsHaveNaNs,
+        options.coolerWeightsNaNCount
       )
     );
     return nextUpperBound;
   }
 
-  private async syncPipelineAutoThresholdToViewport(
+  private openingHistogramUpperBound(
+    source: SourceName,
+    expression: unknown,
+    quantile: number,
+    minSignal: number
+  ): number | null {
+    const range =
+      this.mapManager.viewAndLayersManager.loadedViewportSignalRange(
+        source,
+        expression
+      )?.processed;
+    const candidate =
+      histogramQuantile(range?.histogram, quantile, { includeZeros: true }) ??
+      histogramQuantile(range?.histogram, quantile);
+    const upper = Math.min(candidate ?? Infinity, range?.max ?? -Infinity);
+    return candidate != null && upper > minSignal ? upper : null;
+  }
+
+  private async syncPipelineAutoThresholdForBounds(
+    bounds: ViewportPixelBounds | null,
     config?: Record<string, unknown>,
-    sourceFilter?: SourceName
-  ): Promise<boolean> {
-    const options = this.visualizationOptionsStore.asVisualizationOptions();
-    if (!options.autoThresholdEnabled) {
-      return false;
+    sourceFilter?: SourceName,
+    targetId?: string | null,
+    behavior?: {
+      requireAutoThresholdEnabled?: boolean;
+      quantile?: number;
+      reloadTiles?: boolean;
+      useViewportHistogram?: boolean;
     }
-    const bounds = this.resolveViewportPixelBounds();
-    if (!bounds) {
+  ): Promise<boolean> {
+    const api = this.mapManager.networkManager.requestManager;
+    const revision = api.renderPipelineRevision;
+    const options = this.visualizationOptionsStore.asVisualizationOptions();
+    if (
+      (behavior?.requireAutoThresholdEnabled ?? true) &&
+      !options.autoThresholdEnabled
+    ) {
       return false;
     }
     const activeConfig = config ?? (await this.getActiveRenderPipelineConfig());
     if (!activeConfig) {
       return false;
     }
+    const originalConfig = JSON.stringify(activeConfig);
 
     const targets: ColormapTarget[] = [];
     collectColormapTargets(activeConfig.upperExpression, targets);
     collectColormapTargets(activeConfig.lowerExpression, targets);
     const filteredTargets = sourceFilter
-      ? targets.filter((target) => target.profile.source === sourceFilter)
+      ? targets.filter(
+          (target) =>
+            target.profile.source === sourceFilter &&
+            (!targetId || target.id === targetId)
+        )
       : targets;
     if (filteredTargets.length === 0) {
       return false;
@@ -829,23 +1023,34 @@ class VisualizationManager {
 
     for (const target of filteredTargets) {
       const cacheKey = JSON.stringify(target.profile);
-      let nextUpperBound = thresholdCache.get(cacheKey);
+      const quantile = behavior?.quantile ?? options.autoThresholdQuantile;
+      let nextUpperBound = behavior?.useViewportHistogram
+        ? this.openingHistogramUpperBound(
+            target.profile.source,
+            target.node.input,
+            quantile,
+            target.minSignal
+          ) ?? thresholdCache.get(cacheKey)
+        : thresholdCache.get(cacheKey);
       if (nextUpperBound === undefined) {
+        if (!bounds || !target.profile.editableInput) continue;
         const response =
-          await this.mapManager.networkManager.requestManager.queryMatrixFloat32({
-            ...bounds,
-            source: target.profile.source,
-            signalMode: target.profile.applyCoolerWeights
-              ? "COOLER_WEIGHTED"
-              : "RAW_COUNTS",
-          });
+          await this.mapManager.networkManager.requestManager.queryMatrixFloat32(
+            {
+              ...bounds,
+              source: target.profile.source,
+              signalMode: target.profile.applyCoolerWeights
+                ? "COOLER_WEIGHTED"
+                : "RAW_COUNTS",
+            }
+          );
         nextUpperBound = resolveSafeAutoUpperBound(
           transformSignalsForProfile(
             response.values,
             target.profile,
             scalingCoefficients
           ),
-          options.autoThresholdQuantile,
+          quantile,
           target.minSignal,
           target.maxSignal
         );
@@ -859,24 +1064,259 @@ class VisualizationManager {
         Math.abs(nextUpperBound - target.maxSignal) >= 1e-9
       ) {
         target.node.maxSignal = nextUpperBound;
+        // The range is also carried by a constant node, and that one is what a reader prefers.
+        if (isRecord(target.node.max) && target.node.max.type === "constant")
+          target.node.max.value = nextUpperBound;
         changed = true;
       }
     }
 
-    if (!changed) {
+    // Queries can finish after a newer explicit edit; never commit that obsolete snapshot.
+    const latestConfig = await this.getActiveRenderPipelineConfig();
+    if (
+      api.renderPipelineRevision !== revision ||
+      JSON.stringify(latestConfig) !== originalConfig
+    )
+      return false;
+    if (behavior?.useViewportHistogram) {
+      const target = collectConfigColormapTargets(activeConfig).find(
+        (item) => item.profile.source === "PRIMARY"
+      );
+      const current = target
+        ? visualizationOptionsFromTarget(target, options)
+        : options;
+      this.visualizationOptionsStore.setVisualizationOptions(
+        new VisualizationOptions(
+          current.preLogBase,
+          current.postLogBase,
+          current.applyCoolerWeights,
+          current.resolutionScaling,
+          current.resolutionLinearScaling,
+          current.colormap,
+          false,
+          behavior.quantile,
+          current.signalDisplayMode,
+          current.coolerWeightsNaNPolicy,
+          current.coolerWeightsHaveNaNs,
+          current.coolerWeightsNaNCount
+        )
+      );
+      await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        renderPipeline: activeConfig,
+      });
       return true;
     }
-
-    await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
-      activeConfig
-    );
-    await this.mapManager.reloadTilesFromBackend();
+    if (!changed) return true;
+    await api.setRenderPipelineConfig(activeConfig);
+    if (behavior?.reloadTiles !== false) {
+      await this.mapManager.reloadTilesFromBackend();
+    }
     return true;
+  }
+
+  private async syncPipelineAutoThresholdToViewport(
+    config?: Record<string, unknown>,
+    sourceFilter?: SourceName,
+    targetId?: string | null,
+    behavior?: {
+      requireAutoThresholdEnabled?: boolean;
+      quantile?: number;
+      reloadTiles?: boolean;
+      useViewportHistogram?: boolean;
+    }
+  ): Promise<boolean> {
+    const bounds = this.resolveViewportPixelBounds();
+    if (!bounds) {
+      return false;
+    }
+    return this.syncPipelineAutoThresholdForBounds(
+      bounds,
+      config,
+      sourceFilter,
+      targetId,
+      behavior
+    );
+  }
+
+  public async applyOpeningViewportQuantileThreshold(
+    quantile = OPENING_THRESHOLD_QUANTILE,
+    expectedPipelineRevision = this.mapManager.networkManager.requestManager
+      .renderPipelineRevision
+  ): Promise<number | null> {
+    const api = this.mapManager.networkManager.requestManager;
+    if (
+      api.renderPipelineRevision !== expectedPipelineRevision ||
+      this.mapManager.isDisposed
+    )
+      return null;
+    const optionsBeforeFit =
+      this.visualizationOptionsStore.asVisualizationOptions();
+    if (optionsBeforeFit.signalDisplayMode !== "OBSERVED") return null;
+    await this.mapManager.reloadTilesFromBackend();
+    const map = this.mapManager.getMap();
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        window.clearTimeout(timeout);
+        map.un("rendercomplete", done);
+        resolve();
+      };
+      const timeout = window.setTimeout(done, 3000);
+      map.once("rendercomplete", done);
+      map.renderSync();
+    });
+    const bounds = this.resolveOpeningFullMapPixelBounds();
+    const pipelineConfig = await this.getActiveRenderPipelineConfig();
+    if (
+      api.renderPipelineRevision !== expectedPipelineRevision ||
+      this.mapManager.isDisposed
+    )
+      return null;
+    if (pipelineConfig) {
+      await this.syncPipelineAutoThresholdForBounds(
+        bounds,
+        pipelineConfig,
+        undefined,
+        undefined,
+        {
+          requireAutoThresholdEnabled: false,
+          quantile,
+          reloadTiles: false,
+          useViewportHistogram: true,
+        }
+      );
+      return null;
+    }
+
+    const options = this.visualizationOptionsStore.asVisualizationOptions();
+    if (!(options.colormap instanceof SimpleLinearGradient)) {
+      return null;
+    }
+    let nextUpperBound = this.openingHistogramUpperBound(
+      "PRIMARY",
+      undefined,
+      quantile,
+      options.colormap.minSignal
+    );
+    if (nextUpperBound == null && bounds) {
+      const response = await api.queryMatrixFloat32({
+        ...bounds,
+        signalMode: "TRADITIONAL_NORMALIZED",
+      });
+      nextUpperBound = resolveSafeAutoUpperBound(
+        response.values,
+        quantile,
+        options.colormap.minSignal,
+        options.colormap.maxSignal
+      );
+    }
+    if (
+      api.renderPipelineRevision !== expectedPipelineRevision ||
+      this.mapManager.isDisposed
+    )
+      return null;
+    const updatedMaxSignal =
+      nextUpperBound != null &&
+      Number.isFinite(nextUpperBound) &&
+      nextUpperBound > options.colormap.minSignal
+        ? nextUpperBound
+        : options.colormap.maxSignal;
+    this.visualizationOptionsStore.setVisualizationOptions(
+      new VisualizationOptions(
+        options.preLogBase,
+        options.postLogBase,
+        options.applyCoolerWeights,
+        options.resolutionScaling,
+        options.resolutionLinearScaling,
+        new SimpleLinearGradient(
+          options.colormap.startColorRGBA,
+          options.colormap.endColorRGBA,
+          options.colormap.minSignal,
+          updatedMaxSignal
+        ),
+        false,
+        quantile,
+        options.signalDisplayMode,
+        options.coolerWeightsNaNPolicy,
+        options.coolerWeightsHaveNaNs,
+        options.coolerWeightsNaNCount
+      )
+    );
+    await this.sendVisualizationOptionsToServer({
+      skipAutoThresholdRefresh: true,
+    });
+    return updatedMaxSignal;
+  }
+
+  /** Display modes are primary-only views. Never rebuild the user's rendering graph. */
+  public async setSignalDisplayMode(mode: SignalDisplayMode): Promise<void> {
+    const api = this.mapManager.networkManager.requestManager;
+    const previous = await api.getVisualizationOptions(
+      new GetVisualizationOptionsRequest({})
+    );
+    const config = await api.getRenderPipelineConfig();
+    const primary = config.enabled
+      ? collectConfigColormapTargets(config).find(
+          (target) => target.profile.source === "PRIMARY"
+        )
+      : undefined;
+    const observed = primary
+      ? visualizationOptionsFromTarget(primary, previous)
+      : previous.signalDisplayMode === "OBSERVED"
+      ? previous
+      : this.observedDisplayOptions ?? previous;
+    if (previous.signalDisplayMode === "OBSERVED")
+      this.observedDisplayOptions = observed;
+    const colormap = observed.colormap;
+    const next = new VisualizationOptions(
+      observed.preLogBase,
+      observed.postLogBase,
+      observed.applyCoolerWeights,
+      observed.resolutionScaling,
+      observed.resolutionLinearScaling,
+      mode === "OBSERVED_OVER_EXPECTED" &&
+      colormap instanceof SimpleLinearGradient
+        ? new SimpleLinearGradient(
+            colormap.startColorRGBA,
+            colormap.endColorRGBA,
+            0.5,
+            2
+          )
+        : colormap,
+      previous.autoThresholdEnabled,
+      previous.autoThresholdQuantile,
+      mode,
+      previous.coolerWeightsNaNPolicy,
+      previous.coolerWeightsHaveNaNs,
+      previous.coolerWeightsNaNCount
+    );
+    try {
+      await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        preserveCustomPipeline: true,
+        visualizationOptions: next,
+      });
+    } catch (error) {
+      // Expected-profile refresh can fail after options were committed. Read back
+      // the committed mode rather than claiming the old view is still active.
+      await this.fetchVisualizationOptions().catch(() => {
+        this.visualizationOptionsStore.signalDisplayMode =
+          previous.signalDisplayMode;
+      });
+      window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
+      throw error;
+    }
+    // The shared sidebar may show SECONDARY. Hydrate that source again instead
+    // of leaving the temporary primary palette in its controls.
+    window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
+    await this.mapManager.reloadTilesFromBackend();
   }
 
   public async sendVisualizationOptionsToServer(options?: {
     skipAutoThresholdRefresh?: boolean;
     preserveCustomPipeline?: boolean;
+    renderPipeline?: Record<string, unknown>;
+    visualizationOptions?: VisualizationOptions;
   }): Promise<VisualizationOptions> {
     if (!options?.skipAutoThresholdRefresh) {
       await this.syncAutoThresholdToViewport().catch(() => null);
@@ -884,16 +1324,22 @@ class VisualizationManager {
     return this.mapManager.networkManager.requestManager
       .setVisualizationOptions(
         new SetVisualizationOptionsRequest({
-          options: this.visualizationOptionsStore.asVisualizationOptions(),
+          options:
+            options?.visualizationOptions ??
+            this.visualizationOptionsStore.asVisualizationOptions(),
           preserveRenderPipeline: options?.preserveCustomPipeline ?? false,
+          renderPipeline: options?.renderPipeline,
         })
       )
       .then((options) => {
         this.visualizationOptionsStore.setVisualizationOptions(options);
         window.dispatchEvent(
-          new CustomEvent(VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT, {
-            detail: { source: "server", options },
-          })
+          new CustomEvent(
+            VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+            {
+              detail: { source: "server", options },
+            }
+          )
         );
         return options;
       })
@@ -908,6 +1354,7 @@ class VisualizationManager {
   public async sendVisualizationOptionsAndReload(options?: {
     skipAutoThresholdRefresh?: boolean;
     preserveCustomPipeline?: boolean;
+    renderPipeline?: Record<string, unknown>;
   }): Promise<VisualizationOptions> {
     const result = await this.sendVisualizationOptionsToServer(options);
     this.mapManager.reloadTiles();
@@ -929,32 +1376,129 @@ class VisualizationManager {
   }
 
   public async applyVisualizationSettingsForSourceAndReload(
-    source: SourceName
+    source: SourceName,
+    targetId?: string | null
   ): Promise<VisualizationOptions> {
+    if (
+      source === "PRIMARY" &&
+      this.visualizationOptionsStore.signalDisplayMode !== "OBSERVED"
+    ) {
+      const result = await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        preserveCustomPipeline: true,
+      });
+      await this.mapManager.reloadTilesFromBackend();
+      return result;
+    }
     const pipelineConfig = await this.getActiveRenderPipelineConfig();
     if (!pipelineConfig) {
       return this.applyVisualizationSettingsAndReload();
     }
 
     const options = this.visualizationOptionsStore.asVisualizationOptions();
-    const changed = this.updateRenderPipelineSource(pipelineConfig, source, options);
+    const changed = this.updateRenderPipelineSource(
+      pipelineConfig,
+      source,
+      options,
+      targetId
+    );
     if (!changed) {
-      const hydrated = await this.loadVisualizationOptionsForSource(source);
+      const hydrated = await this.loadVisualizationOptionsForSource(
+        source,
+        targetId
+      );
       await this.mapManager.reloadTilesFromBackend();
       return hydrated;
     }
 
+    // Publish primary options and their graph in the existing atomic transaction.
+    if (source === "PRIMARY") {
+      await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        renderPipeline: pipelineConfig,
+      });
+    } else {
+      await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
+        pipelineConfig
+      );
+    }
+    const hydrated = await this.loadVisualizationOptionsForSource(
+      source,
+      targetId
+    );
+    await this.mapManager.reloadTilesFromBackend();
+    return hydrated;
+  }
+
+  /**
+   * Sets how weights from the file are used, rewrites the signal chain of an enabled pipeline from
+   * that choice, and fits the color range to the result. Options, pipeline and sidebar then agree,
+   * whichever choice was made.
+   */
+  public async applyCoolerWeightsPolicy(
+    policy: CoolerWeightsNaNPolicy,
+    keepWeights: boolean
+  ): Promise<void> {
+    this.visualizationOptionsStore.coolerWeightsNaNPolicy = policy;
+    this.visualizationOptionsStore.applyCoolerWeights = keepWeights;
+    rememberExcludedBinsPolicy(
+      this.mapManager.getOptions().filename,
+      keepWeights ? policy : "DISABLE_WEIGHTS"
+    );
+    const pipeline = await this.getActiveRenderPipelineConfig();
+    if (pipeline) {
+      this.updateRenderPipelineSource(
+        pipeline,
+        "PRIMARY",
+        this.visualizationOptionsStore.asVisualizationOptions()
+      );
+    }
+    await this.sendVisualizationOptionsToServer({
+      skipAutoThresholdRefresh: true,
+      renderPipeline: pipeline ?? undefined,
+    });
+    // Replacing NaNs with 1 mixes unweighted counts with balanced values. Fit below
+    // that high tail so the balanced part remains visible.
+    const quantile =
+      keepWeights && policy === "REPLACE_NANS_WITH_ONE"
+        ? 0.9
+        : OPENING_THRESHOLD_QUANTILE;
+    await this.applyOpeningViewportQuantileThreshold(quantile);
+    await this.mapManager.reloadTilesFromBackend();
+  }
+
+  /** Swaps the top/bottom layers of every pixel blend; false when no blend exists. */
+  public async swapRenderPipelineSourcesAndReload(): Promise<boolean> {
+    const pipelineConfig = await this.getActiveRenderPipelineConfig();
+    if (!pipelineConfig) {
+      return false;
+    }
+    const upperChanged = swapPixelBlendLayers(pipelineConfig.upperExpression);
+    const lowerChanged = swapPixelBlendLayers(pipelineConfig.lowerExpression);
+    if (!upperChanged && !lowerChanged) {
+      return false;
+    }
     await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
       pipelineConfig
     );
-    if (options.autoThresholdEnabled) {
-      await this.syncPipelineAutoThresholdToViewport(pipelineConfig, source).catch(
-        () => false
-      );
-    }
-    const hydrated = await this.loadVisualizationOptionsForSource(source);
     await this.mapManager.reloadTilesFromBackend();
-    return hydrated;
+    return true;
+  }
+
+  /** Exchanges the upper- and lower-triangle expressions. */
+  public async swapRenderPipelineHalvesAndReload(): Promise<boolean> {
+    const pipelineConfig = await this.getActiveRenderPipelineConfig();
+    if (!pipelineConfig) {
+      return false;
+    }
+    const upperExpression = pipelineConfig.upperExpression;
+    pipelineConfig.upperExpression = pipelineConfig.lowerExpression;
+    pipelineConfig.lowerExpression = upperExpression;
+    await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
+      pipelineConfig
+    );
+    await this.mapManager.reloadTilesFromBackend();
+    return true;
   }
 
   public async swapRenderPipelineLayersAndReload(): Promise<boolean> {

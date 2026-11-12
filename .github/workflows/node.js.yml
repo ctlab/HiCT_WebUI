@@ -26,13 +26,13 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v5
       - name: Setup Node.js
-        uses: actions/setup-node@master
+        uses: actions/setup-node@v5
         with:
-          node-version: 16
+          node-version: 22
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Build electron app (linux)
         run: export GH_TOKEN=${{ secrets.GITHUB_TOKEN }} && npm run ${{ matrix.npm-task }}
         if: runner.os == 'Linux'
@@ -40,7 +40,7 @@ jobs:
         run: powershell "[Environment]::SetEnvironmentVariable('GH_TOKEN','${{ secrets.GITHUB_TOKEN }}','User'); npm run ${{ matrix.npm-task }}"
         if: runner.os == 'Windows'
       - name: Publish build artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v6
         with:
           name: hict_trunk_build_${{ matrix.artifact-name }}
           path: |
@@ -54,11 +54,11 @@ jobs:
     needs: ["build"]
     steps:
       - name: Prepare linux release
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v6
         with:
           name: hict_trunk_build_linuxbuild
       - name: Prepare windows release
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v6
         with:
           name: hict_trunk_build_winbuild
       - name: List available files

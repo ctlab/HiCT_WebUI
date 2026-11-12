@@ -20,18 +20,22 @@
  -->
 
 <template>
-  <div class="track-manager-root">
+  <div ref="rootElement" class="track-manager-root">
     <div class="modal-backdrop fade show"></div>
     <div
       class="modal fade show"
       style="display: block"
       tabindex="-1"
       role="dialog"
+      aria-modal="true"
+      aria-labelledby="track-manager-title"
     >
       <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title">Tracks and layers</h5>
+            <h5 id="track-manager-title" class="modal-title">
+              Tracks and layers
+            </h5>
             <button class="btn-close" @click="$emit('dismissed')"></button>
           </div>
           <div class="modal-body">
@@ -46,10 +50,15 @@
                     <input
                       type="text"
                       class="form-control"
-                      :value="selectedFile || 'Select BED/VCF/GFF/GTF/BigWig/BAM file'"
+                      :value="
+                        selectedFile || 'Select BED/VCF/GFF/GTF/BigWig/BAM file'
+                      "
                       readonly
                     />
-                    <button class="btn btn-outline-secondary" @click="trackFileSelectorOpen = true">
+                    <button
+                      class="btn btn-outline-secondary"
+                      @click="trackFileSelectorOpen = true"
+                    >
                       Browse…
                     </button>
                   </div>
@@ -64,26 +73,46 @@
                   />
                 </div>
                 <div class="col-2 d-grid gap-2">
-                  <button class="btn btn-primary" @click="onAddTrack" :disabled="!selectedFile">
+                  <button
+                    class="btn btn-primary"
+                    @click="onAddTrack"
+                    :disabled="!selectedFile"
+                  >
                     Add file
                   </button>
                 </div>
               </div>
 
               <div class="alert alert-light border py-2 mb-3">
-                <strong class="small d-block mb-2">Show Cooler weights track</strong>
+                <strong class="small d-block mb-2"
+                  >Show Cooler weights track</strong
+                >
                 <div class="d-flex flex-wrap gap-3">
+                  <span
+                    v-if="coolerWeightsUpdating"
+                    class="small text-muted"
+                    role="status"
+                  >
+                    Updating weight tracks…
+                  </span>
                   <div class="form-check form-switch m-0">
                     <input
                       id="cooler-weights-primary"
                       class="form-check-input"
                       type="checkbox"
                       :checked="primaryCoolerWeightsVisible"
-                      :disabled="!props.mapManager"
-                      :title="props.mapManager ? 'Show or hide Cooler balancing weights for the primary source.' : 'Open a map first.'"
-                      @change="onTogglePrimaryCoolerWeights(($event.target as HTMLInputElement).checked)"
+                      :disabled="!props.mapManager || coolerWeightsUpdating"
+                      :title="
+                        props.mapManager
+                          ? 'Show or hide Cooler balancing weights for the primary source.'
+                          : 'Open a map first.'
+                      "
+                      @change="onTogglePrimaryCoolerWeights"
                     />
-                    <label class="form-check-label" for="cooler-weights-primary">
+                    <label
+                      class="form-check-label"
+                      for="cooler-weights-primary"
+                    >
                       Primary source
                     </label>
                   </div>
@@ -93,9 +122,15 @@
                       class="form-check-input"
                       type="checkbox"
                       :checked="secondaryCoolerWeightsVisible"
-                      :disabled="!secondaryStatus.attached"
-                      :title="secondaryStatus.attached ? 'Show or hide Cooler balancing weights for the secondary source.' : 'Attach a secondary source first.'"
-                      @change="onToggleSecondaryCoolerWeights(($event.target as HTMLInputElement).checked)"
+                      :disabled="
+                        !secondaryStatus.attached || coolerWeightsUpdating
+                      "
+                      :title="
+                        secondaryStatus.attached
+                          ? 'Show or hide Cooler balancing weights for the secondary source.'
+                          : 'Attach a secondary source first.'
+                      "
+                      @change="onToggleSecondaryCoolerWeights"
                     />
                     <label
                       class="form-check-label"
@@ -161,12 +196,26 @@
                       "
                     >
                       <option value="PRIMARY">Primary</option>
-                      <option value="SECONDARY" :disabled="!secondaryStatus.attached">
+                      <option
+                        value="SECONDARY"
+                        :disabled="!secondaryStatus.attached"
+                      >
                         Secondary
                       </option>
                     </select>
                   </div>
                 </div>
+                <p class="small mb-1 mt-2">
+                  Source changes start a new edit journal; earlier undo/redo
+                  states will no longer be available. When Secondary is the
+                  assembly source, replacing it also adopts the new source’s
+                  layout.
+                </p>
+                <p class="small mb-1">
+                  Generated dotplot scores move with their original sequence
+                  bins. Recompute after changing joins to refresh
+                  context-dependent scores.
+                </p>
                 <small class="text-muted d-block mt-1">
                   {{
                     secondaryStatus.attached
@@ -177,15 +226,29 @@
               </div>
 
               <div class="alert alert-secondary py-2">
-                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                <div
+                  class="d-flex align-items-center justify-content-between gap-2 mb-2"
+                >
                   <strong>1D track precompute</strong>
-                  <button class="btn btn-sm btn-outline-primary" @click="onStartPrecomputeAll">
+                  <button
+                    class="btn btn-sm btn-outline-primary"
+                    @click="onStartPrecomputeAll"
+                  >
                     Precompute all
                   </button>
                 </div>
-                <div v-if="precomputeStatus && precomputeStatus.tracks.length > 0" class="precompute-list">
-                  <div v-for="item in precomputeStatus.tracks" :key="item.trackId" class="precompute-item">
-                    <div class="d-flex justify-content-between align-items-center">
+                <div
+                  v-if="precomputeStatus && precomputeStatus.tracks.length > 0"
+                  class="precompute-list"
+                >
+                  <div
+                    v-for="item in precomputeStatus.tracks"
+                    :key="item.trackId"
+                    class="precompute-item"
+                  >
+                    <div
+                      class="d-flex justify-content-between align-items-center"
+                    >
                       <small>{{ item.trackName }}</small>
                       <small class="text-muted">
                         {{ item.status }} {{ Math.round(item.progress * 100) }}%
@@ -195,18 +258,29 @@
                       <div
                         class="progress-bar"
                         role="progressbar"
-                        :style="{ width: `${Math.max(0, Math.min(100, Math.round(item.progress * 100)))}%` }"
+                        :style="{
+                          width: `${Math.max(
+                            0,
+                            Math.min(100, Math.round(item.progress * 100))
+                          )}%`,
+                        }"
                       ></div>
                     </div>
-                    <small v-if="item.currentTask" class="text-muted">{{ item.currentTask }}</small>
-                    <small v-if="item.error" class="text-danger">{{ item.error }}</small>
+                    <small v-if="item.currentTask" class="text-muted">{{
+                      item.currentTask
+                    }}</small>
+                    <small v-if="item.error" class="text-danger">{{
+                      item.error
+                    }}</small>
                   </div>
                 </div>
                 <small v-else class="text-muted">No background jobs yet.</small>
               </div>
 
               <div class="alert alert-light border py-2">
-                <div class="d-flex align-items-center justify-content-between gap-2">
+                <div
+                  class="d-flex align-items-center justify-content-between gap-2"
+                >
                   <strong class="small">Track panel background</strong>
                   <div class="d-flex align-items-center gap-2">
                     <div class="form-check form-switch m-0">
@@ -216,7 +290,10 @@
                         class="form-check-input"
                         type="checkbox"
                       />
-                      <label class="form-check-label small" for="track-bg-inherit">
+                      <label
+                        class="form-check-label small"
+                        for="track-bg-inherit"
+                      >
                         Inherit from Hi-C map
                       </label>
                     </div>
@@ -225,7 +302,11 @@
                       class="form-control form-control-color"
                       :value="trackBackgroundHex"
                       :disabled="inheritTrackBackgroundFromMap"
-                      @change="onTrackBackgroundColorChanged(($event.target as HTMLInputElement).value)"
+                      @change="
+                        onTrackBackgroundColorChanged(
+                          ($event.target as HTMLInputElement).value
+                        )
+                      "
                     />
                   </div>
                 </div>
@@ -241,33 +322,127 @@
                     class="form-check-input"
                     type="checkbox"
                     :checked="track.visible"
-                    @change="onToggleVisible(track.trackId, ($event.target as HTMLInputElement).checked)"
+                    @change="
+                      onToggleVisible(
+                        track.trackId,
+                        ($event.target as HTMLInputElement).checked
+                      )
+                    "
                   />
+                  <div
+                    class="btn-group"
+                    role="group"
+                    aria-label="Track axis visibility"
+                  >
+                    <button
+                      type="button"
+                      class="btn btn-sm"
+                      :class="
+                        axisVisible(track.trackId, 'horizontal')
+                          ? 'btn-outline-primary'
+                          : 'btn-outline-secondary'
+                      "
+                      :title="`${
+                        axisVisible(track.trackId, 'horizontal')
+                          ? 'Hide'
+                          : 'Show'
+                      } ${track.name} horizontally`"
+                      :aria-label="`${
+                        axisVisible(track.trackId, 'horizontal')
+                          ? 'Hide'
+                          : 'Show'
+                      } ${track.name} horizontally`"
+                      @click="toggleAxis(track.trackId, 'horizontal')"
+                    >
+                      <i class="bi bi-arrows"></i>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-sm"
+                      :class="
+                        axisVisible(track.trackId, 'vertical')
+                          ? 'btn-outline-primary'
+                          : 'btn-outline-secondary'
+                      "
+                      :title="`${
+                        axisVisible(track.trackId, 'vertical') ? 'Hide' : 'Show'
+                      } ${track.name} vertically`"
+                      :aria-label="`${
+                        axisVisible(track.trackId, 'vertical') ? 'Hide' : 'Show'
+                      } ${track.name} vertically`"
+                      @click="toggleAxis(track.trackId, 'vertical')"
+                    >
+                      <i class="bi bi-arrows-vertical"></i>
+                    </button>
+                  </div>
                   <input
                     type="color"
                     class="form-control form-control-color"
                     :value="normalizeColor(track.color)"
-                    @change="onChangeColor(track.trackId, ($event.target as HTMLInputElement).value)"
+                    @change="
+                      onChangeColor(
+                        track.trackId,
+                        ($event.target as HTMLInputElement).value
+                      )
+                    "
                   />
                   <input
                     type="text"
                     class="form-control"
                     :value="track.name"
-                    @change="onRename(track.trackId, ($event.target as HTMLInputElement).value)"
+                    @change="
+                      onRename(
+                        track.trackId,
+                        ($event.target as HTMLInputElement).value
+                      )
+                    "
                   />
+                  <button
+                    v-if="
+                      props.mapManager?.linearTrackManager.getAnalysisWarning(
+                        track.trackId
+                      )
+                    "
+                    type="button"
+                    class="btn btn-sm btn-outline-warning"
+                    :title="
+                      props.mapManager?.linearTrackManager.getAnalysisWarning(
+                        track.trackId
+                      )
+                    "
+                    aria-label="New matches might have formed"
+                    @click="
+                      toast.message(
+                        props.mapManager?.linearTrackManager.getAnalysisWarning(
+                          track.trackId
+                        ) ?? '',
+                        { duration: 15000 }
+                      )
+                    "
+                  >
+                    ⚠
+                  </button>
                   <span class="badge text-bg-secondary">{{ track.type }}</span>
                   <select
                     v-if="track.type === 'BIGWIG'"
                     class="form-select form-select-sm track-mode-select"
                     :value="normalizeBigWigAggregation(track.aggregationMode)"
-                    @change="onChangeBigWigAggregation(track.trackId, ($event.target as HTMLSelectElement).value)"
+                    @change="
+                      onChangeBigWigAggregation(
+                        track.trackId,
+                        ($event.target as HTMLSelectElement).value
+                      )
+                    "
                   >
                     <option value="MAX">max</option>
                     <option value="MEAN">mean</option>
                     <option value="SUM">sum</option>
                   </select>
                   <div
-                    v-if="(track.renderStyle ?? 'SIGNAL').toUpperCase() !== 'FEATURE'"
+                    v-if="
+                      (track.renderStyle ?? 'SIGNAL').toUpperCase() !==
+                      'FEATURE'
+                    "
                     class="d-flex align-items-center gap-1 ms-1"
                   >
                     <div class="form-check form-switch m-0">
@@ -276,7 +451,12 @@
                         class="form-check-input"
                         type="checkbox"
                         :checked="track.logScale"
-                        @change="onChangeLogScale(track.trackId, ($event.target as HTMLInputElement).checked)"
+                        @change="
+                          onChangeLogScale(
+                            track.trackId,
+                            ($event.target as HTMLInputElement).checked
+                          )
+                        "
                       />
                       <label
                         class="form-check-label small"
@@ -290,9 +470,8 @@
                       type="number"
                       class="form-control form-control-sm track-log-base-input"
                       :value="getTrackLogBase(track.trackId)"
-                      min="1.000001"
-                      step="0.1"
-                      @change="onChangeLogBase(track.trackId, Number(($event.target as HTMLInputElement).value))"
+                      step="any"
+                      @change="onChangeLogBase(track.trackId, $event)"
                       title="Log base for log(1+x)"
                     />
                     <div class="form-check form-switch m-0 ms-2">
@@ -301,7 +480,12 @@
                         class="form-check-input"
                         type="checkbox"
                         :checked="track.rangeAuto"
-                        @change="onChangeRangeAuto(track.trackId, ($event.target as HTMLInputElement).checked)"
+                        @change="
+                          onChangeRangeAuto(
+                            track.trackId,
+                            ($event.target as HTMLInputElement).checked
+                          )
+                        "
                       />
                       <label
                         class="form-check-label small"
@@ -317,7 +501,13 @@
                       :disabled="track.rangeAuto"
                       step="any"
                       title="Signal range minimum"
-                      @change="onChangeRangeBound(track.trackId, 'rangeMin', Number(($event.target as HTMLInputElement).value))"
+                      @change="
+                        onChangeRangeBound(
+                          track.trackId,
+                          'rangeMin',
+                          Number(($event.target as HTMLInputElement).value)
+                        )
+                      "
                     />
                     <input
                       type="number"
@@ -326,19 +516,32 @@
                       :disabled="track.rangeAuto"
                       step="any"
                       title="Signal range maximum"
-                      @change="onChangeRangeBound(track.trackId, 'rangeMax', Number(($event.target as HTMLInputElement).value))"
+                      @change="
+                        onChangeRangeBound(
+                          track.trackId,
+                          'rangeMax',
+                          Number(($event.target as HTMLInputElement).value)
+                        )
+                      "
                     />
                   </div>
                   <select
                     v-if="track.type === 'BAM'"
                     class="form-select form-select-sm track-mode-select"
                     :value="normalizeBamMode(track.renderMode)"
-                    @change="onChangeBamMode(track.trackId, ($event.target as HTMLSelectElement).value)"
+                    @change="
+                      onChangeBamMode(
+                        track.trackId,
+                        ($event.target as HTMLSelectElement).value
+                      )
+                    "
                   >
                     <option value="COVERAGE">coverage</option>
                     <option value="READ_DENSITY">density</option>
                   </select>
-                  <small class="text-muted">{{ formatFeatureCount(track.featureCount) }}</small>
+                  <small class="text-muted">{{
+                    formatFeatureCount(track.featureCount)
+                  }}</small>
                   <button
                     class="btn btn-sm btn-outline-secondary"
                     :disabled="trackIndex === 0"
@@ -355,16 +558,23 @@
                   >
                     ↓
                   </button>
-                  <button class="btn btn-sm btn-outline-danger ms-auto" @click="onRemove(track.trackId)">
+                  <button
+                    class="btn btn-sm btn-outline-danger ms-auto"
+                    @click="onRemove(track.trackId)"
+                  >
                     Remove
                   </button>
                 </div>
-                <div v-if="tracks.length === 0" class="text-muted">No tracks loaded</div>
+                <div v-if="tracks.length === 0" class="text-muted">
+                  No tracks loaded
+                </div>
               </div>
             </template>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" @click="$emit('dismissed')">Close</button>
+            <button class="btn btn-secondary" @click="$emit('dismissed')">
+              Close
+            </button>
           </div>
         </div>
       </div>
@@ -395,19 +605,33 @@
     />
     <template v-if="pendingTrackProbe">
       <div class="modal-backdrop fade show track-compat-backdrop"></div>
-      <div class="modal fade show track-compat-modal" style="display: block" tabindex="-1" role="dialog">
+      <div
+        class="modal fade show track-compat-modal"
+        style="display: block"
+        tabindex="-1"
+        role="dialog"
+      >
         <div class="modal-dialog modal-lg modal-dialog-centered">
           <div class="modal-content">
             <div class="modal-header">
               <h5 class="modal-title">Track Compatibility Warning</h5>
-              <button class="btn-close" @click="pendingTrackProbe = null"></button>
+              <button
+                class="btn-close"
+                @click="pendingTrackProbe = null"
+              ></button>
             </div>
             <div class="modal-body">
               <p class="mb-2">{{ pendingTrackProbe.message }}</p>
               <ul class="small mb-2">
                 <li>Track names: {{ pendingTrackProbe.totalNames }}</li>
-                <li>Matched source names: {{ pendingTrackProbe.matchedSourceNames }}</li>
-                <li>Matched assembly names: {{ pendingTrackProbe.matchedAssemblyNames }}</li>
+                <li>
+                  Matched source names:
+                  {{ pendingTrackProbe.matchedSourceNames }}
+                </li>
+                <li>
+                  Matched assembly names:
+                  {{ pendingTrackProbe.matchedAssemblyNames }}
+                </li>
                 <li>Matched total: {{ pendingTrackProbe.matchedAnyNames }}</li>
               </ul>
               <div
@@ -415,12 +639,22 @@
                 class="alert alert-warning py-2 mb-0"
               >
                 Unknown names:
-                <code>{{ pendingTrackProbe.unknownNames.slice(0, 12).join(", ") }}</code>
+                <code>{{
+                  pendingTrackProbe.unknownNames.slice(0, 12).join(", ")
+                }}</code>
               </div>
             </div>
             <div class="modal-footer">
-              <button class="btn btn-secondary" @click="pendingTrackProbe = null">Cancel</button>
-              <button class="btn btn-primary" @click="onProceedTrackWithMismatch">
+              <button
+                class="btn btn-secondary"
+                @click="pendingTrackProbe = null"
+              >
+                Cancel
+              </button>
+              <button
+                class="btn btn-primary"
+                @click="onProceedTrackWithMismatch"
+              >
                 Ignore and Load
               </button>
             </div>
@@ -430,12 +664,22 @@
     </template>
     <template v-if="pendingSecondaryProbe">
       <div class="modal-backdrop fade show track-compat-backdrop"></div>
-      <div class="modal fade show track-compat-modal" style="display: block" tabindex="-1" role="dialog">
+      <div
+        class="modal fade show track-compat-modal"
+        style="display: block"
+        tabindex="-1"
+        role="dialog"
+      >
         <div class="modal-dialog modal-lg modal-dialog-centered">
           <div class="modal-content">
             <div class="modal-header">
-              <h5 class="modal-title">Secondary Source Compatibility Warning</h5>
-              <button class="btn-close" @click="pendingSecondaryProbe = null"></button>
+              <h5 class="modal-title">
+                Secondary Source Compatibility Warning
+              </h5>
+              <button
+                class="btn-close"
+                @click="pendingSecondaryProbe = null"
+              ></button>
             </div>
             <div class="modal-body">
               <p class="mb-2">
@@ -443,13 +687,30 @@
                 Smaller matrix regions will be padded with background color.
               </p>
               <ul class="small mb-2">
-                <li>Requested file: {{ pendingSecondaryProbe.requestedFilename || selectedSecondaryFile }}</li>
-                <li>Primary max bins: {{ pendingSecondaryProbe.compatibility?.primaryMaxBins ?? 0 }}</li>
-                <li>Secondary max bins: {{ pendingSecondaryProbe.compatibility?.secondaryMaxBins ?? 0 }}</li>
+                <li>
+                  Requested file:
+                  {{
+                    pendingSecondaryProbe.requestedFilename ||
+                    selectedSecondaryFile
+                  }}
+                </li>
+                <li>
+                  Primary max bins:
+                  {{ pendingSecondaryProbe.compatibility?.primaryMaxBins ?? 0 }}
+                </li>
+                <li>
+                  Secondary max bins:
+                  {{
+                    pendingSecondaryProbe.compatibility?.secondaryMaxBins ?? 0
+                  }}
+                </li>
                 <li>
                   Mismatched resolutions:
                   {{
-                    (pendingSecondaryProbe.compatibility?.mismatchedResolutionOrders ?? []).length
+                    (
+                      pendingSecondaryProbe.compatibility
+                        ?.mismatchedResolutionOrders ?? []
+                    ).length
                   }}
                 </li>
               </ul>
@@ -466,8 +727,16 @@
               </div>
             </div>
             <div class="modal-footer">
-              <button class="btn btn-secondary" @click="pendingSecondaryProbe = null">Cancel</button>
-              <button class="btn btn-primary" @click="onProceedSecondaryWithMismatch">
+              <button
+                class="btn btn-secondary"
+                @click="pendingSecondaryProbe = null"
+              >
+                Cancel
+              </button>
+              <button
+                class="btn btn-primary"
+                @click="onProceedSecondaryWithMismatch"
+              >
                 Continue and Attach
               </button>
             </div>
@@ -479,6 +748,8 @@
 </template>
 
 <script setup lang="ts">
+import { reportFailure } from "@/app/ui/reportFailure";
+import { useModalFocus } from "@/app/ui/modalFocus";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { AssemblyInfo } from "@/app/core/domain/AssemblyInfo";
 import type { SecondarySourceStatusResponse } from "@/app/core/net/api/RequestManager";
@@ -494,6 +765,9 @@ import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { storeToRefs } from "pinia";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
+
+const rootElement = ref<HTMLElement | null>(null);
+useModalFocus(rootElement);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -513,6 +787,7 @@ const selectedSecondaryFile = ref("");
 const pendingTrackProbe = ref<TrackCompatibilityReportResponse | null>(null);
 const pendingSecondaryProbe = ref<SecondarySourceStatusResponse | null>(null);
 const tracks = ref<TrackSummaryResponse[]>([]);
+const coolerWeightsUpdating = ref(false);
 const precomputeStatus = ref<TracksPrecomputeStatusResponse | null>(null);
 const secondaryStatus = ref<SecondarySourceStatusResponse>({
   attached: false,
@@ -603,14 +878,19 @@ const onTrackBackgroundColorChanged = (value: string): void => {
   trackBackgroundColor.value = value;
 };
 
-const trackBackgroundHex = computed(() => rgbaLikeToHex(trackBackgroundColor.value));
-const COOLER_WEIGHTS_PRIMARY_SOURCE_FILE = "__internal__/cooler_weights/PRIMARY";
-const COOLER_WEIGHTS_SECONDARY_SOURCE_FILE = "__internal__/cooler_weights/SECONDARY";
+const trackBackgroundHex = computed(() =>
+  rgbaLikeToHex(trackBackgroundColor.value)
+);
+const COOLER_WEIGHTS_PRIMARY_SOURCE_FILE =
+  "__internal__/cooler_weights/PRIMARY";
+const COOLER_WEIGHTS_SECONDARY_SOURCE_FILE =
+  "__internal__/cooler_weights/SECONDARY";
 const primaryCoolerWeightsTrackIds = computed(() =>
   tracks.value
-    .filter((track) =>
-      track.sourceFile === COOLER_WEIGHTS_PRIMARY_SOURCE_FILE ||
-      track.sourceFile === "__internal__/cooler_weights"
+    .filter(
+      (track) =>
+        track.sourceFile === COOLER_WEIGHTS_PRIMARY_SOURCE_FILE ||
+        track.sourceFile === "__internal__/cooler_weights"
     )
     .map((track) => track.trackId)
 );
@@ -619,7 +899,9 @@ const primaryCoolerWeightsVisible = computed(
 );
 const secondaryCoolerWeightsTrackIds = computed(() =>
   tracks.value
-    .filter((track) => track.sourceFile === COOLER_WEIGHTS_SECONDARY_SOURCE_FILE)
+    .filter(
+      (track) => track.sourceFile === COOLER_WEIGHTS_SECONDARY_SOURCE_FILE
+    )
     .map((track) => track.trackId)
 );
 const secondaryCoolerWeightsVisible = computed(
@@ -664,7 +946,7 @@ const refreshTracks = async () => {
   try {
     tracks.value = await props.mapManager.linearTrackManager.refreshTrackList();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("List tracks", err);
   }
 };
 
@@ -696,7 +978,9 @@ const refreshSecondaryStatus = async () => {
     secondaryStatus.value =
       await props.mapManager.networkManager.requestManager.getSecondarySourceStatus();
     props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
-      secondaryStatus.value.attached ? secondaryStatus.value.compatibility : undefined
+      secondaryStatus.value.attached
+        ? secondaryStatus.value.compatibility
+        : undefined
     );
     if (!secondaryStatus.value.attached) {
       selectedSecondaryFile.value = "";
@@ -711,15 +995,20 @@ const openTrackInternal = async () => {
     return;
   }
   try {
-    await props.mapManager.linearTrackManager.openTrack(
+    const warnings = await props.mapManager.linearTrackManager.openTrack(
       selectedFile.value,
       trackDisplayName.value.trim() || undefined
     );
+    if (warnings.length > 0)
+      toast.message(warnings[0], {
+        description: warnings.slice(1).join("\n"),
+        duration: 20000,
+      });
     trackDisplayName.value = "";
     await refreshTracks();
     await refreshPrecomputeStatus();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Add track", err);
   }
 };
 
@@ -728,23 +1017,27 @@ const onAddTrack = async () => {
     return;
   }
   try {
-    const probe = await props.mapManager.linearTrackManager.probeTrackCompatibility(
-      selectedFile.value
-    );
+    const probe =
+      await props.mapManager.linearTrackManager.probeTrackCompatibility(
+        selectedFile.value
+      );
     if (probe.status !== "ok") {
       pendingTrackProbe.value = probe;
       return;
     }
     await openTrackInternal();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Add track", err);
   }
 };
 
-const onTogglePrimaryCoolerWeights = async (visible: boolean) => {
-  if (!props.mapManager) {
+const onTogglePrimaryCoolerWeights = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const visible = input.checked;
+  if (!props.mapManager || coolerWeightsUpdating.value) {
     return;
   }
+  coolerWeightsUpdating.value = true;
   try {
     if (visible) {
       if (primaryCoolerWeightsTrackIds.value.length === 0) {
@@ -761,18 +1054,26 @@ const onTogglePrimaryCoolerWeights = async (visible: boolean) => {
     await refreshTracks();
     await refreshPrecomputeStatus();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Show primary weights", err);
+  } finally {
+    input.checked = primaryCoolerWeightsVisible.value;
+    coolerWeightsUpdating.value = false;
   }
 };
 
-const onToggleSecondaryCoolerWeights = async (visible: boolean) => {
-  if (!props.mapManager) {
+const onToggleSecondaryCoolerWeights = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const visible = input.checked;
+  if (!props.mapManager || coolerWeightsUpdating.value) {
     return;
   }
+  coolerWeightsUpdating.value = true;
   try {
     if (visible) {
       if (!secondaryStatus.value.attached) {
-        toast.error("Attach a secondary source before showing its Cooler weights.");
+        toast.error(
+          "Attach a secondary source before showing its Cooler weights."
+        );
         return;
       }
       if (secondaryCoolerWeightsTrackIds.value.length === 0) {
@@ -789,7 +1090,10 @@ const onToggleSecondaryCoolerWeights = async (visible: boolean) => {
     await refreshTracks();
     await refreshPrecomputeStatus();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Show secondary weights", err);
+  } finally {
+    input.checked = secondaryCoolerWeightsVisible.value;
+    coolerWeightsUpdating.value = false;
   }
 };
 
@@ -818,14 +1122,14 @@ const onSecondaryFileSelected = async (filename: string) => {
       if (resolution?.action === "REUSE_CONVERTED") {
         selectedSecondaryFile.value = resolution.resolvedFilename;
         secondaryFileSelectorOpen.value = false;
-        resolution.warnings.forEach((warning) => toast(warning));
+        resolution.warnings.forEach((warning) => toast.message(warning));
         return;
       }
       secondaryFileSelectorOpen.value = false;
       secondaryCoolerToConvert.value = filename;
       convertingSecondaryCooler.value = true;
       resolution?.warnings.forEach((warning) =>
-        toast(warning, {
+        toast.message(warning, {
           style: {
             "background-color": "lightyellow",
             color: "black",
@@ -833,7 +1137,7 @@ const onSecondaryFileSelected = async (filename: string) => {
         })
       );
     } catch (error) {
-      toast.error(String(error));
+      reportFailure("Choose secondary map", error);
       secondaryFileSelectorOpen.value = false;
     }
     return;
@@ -851,8 +1155,13 @@ const applyAssemblyInfo = (assemblyInfo: AssemblyInfo): void => {
   if (!props.mapManager) {
     return;
   }
-  props.mapManager.contigDimensionHolder.updateContigData(assemblyInfo.contigDescriptors);
-  props.mapManager.scaffoldHolder.updateScaffoldData(assemblyInfo.scaffoldDescriptors);
+  props.mapManager.contigDimensionHolder.updateContigData(
+    assemblyInfo.contigDescriptors
+  );
+  props.mapManager.scaffoldHolder.updateScaffoldData(
+    assemblyInfo.scaffoldDescriptors
+  );
+  props.mapManager.getLayersManager().reapplyAxisScopes();
   props.mapManager.reloadVisuals();
   props.mapManager.refreshOverviewMinimap();
   void props.mapManager.linearTrackManager.clearCachesAndRender();
@@ -877,11 +1186,12 @@ const onAttachSecondarySource = async () => {
     props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
       response.compatibility
     );
+    if (response.assemblyInfo) applyAssemblyInfo(response.assemblyInfo);
     await props.mapManager.reloadTilesFromBackend();
     await refreshSecondaryStatus();
     toast.success("Secondary source attached");
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Attach secondary map", err);
   }
 };
 
@@ -890,7 +1200,8 @@ const onProceedSecondaryWithMismatch = async () => {
     return;
   }
   const filenameToOpen =
-    pendingSecondaryProbe.value?.requestedFilename ?? selectedSecondaryFile.value;
+    pendingSecondaryProbe.value?.requestedFilename ??
+    selectedSecondaryFile.value;
   if (!filenameToOpen) {
     pendingSecondaryProbe.value = null;
     return;
@@ -905,12 +1216,15 @@ const onProceedSecondaryWithMismatch = async () => {
     props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
       secondaryStatus.value.compatibility
     );
+    if (secondaryStatus.value.assemblyInfo) {
+      applyAssemblyInfo(secondaryStatus.value.assemblyInfo);
+    }
     selectedSecondaryFile.value = filenameToOpen;
     await props.mapManager.reloadTilesFromBackend();
     await refreshSecondaryStatus();
     toast.success("Secondary source attached with compatibility warning");
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Attach secondary map", err);
   }
 };
 
@@ -921,7 +1235,9 @@ const onDetachSecondarySource = async () => {
   try {
     secondaryStatus.value =
       await props.mapManager.networkManager.requestManager.closeSecondarySource();
-    props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(undefined);
+    props.mapManager.viewAndLayersManager.setSecondaryResolutionModel(
+      undefined
+    );
     await props.mapManager.reloadTilesFromBackend();
     if (secondaryStatus.value.assemblySource === "PRIMARY") {
       const result =
@@ -933,7 +1249,7 @@ const onDetachSecondarySource = async () => {
     await refreshSecondaryStatus();
     toast.success("Secondary source detached");
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Detach secondary map", err);
   }
 };
 
@@ -951,7 +1267,7 @@ const onAssemblySourceChanged = async (
     secondaryStatus.value.assemblySource = result.assemblySource;
     applyAssemblyInfo(result.assemblyInfo);
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Change assembly source", err);
     await refreshSecondaryStatus();
   }
 };
@@ -964,8 +1280,29 @@ const onToggleVisible = async (trackId: string, visible: boolean) => {
     await props.mapManager.linearTrackManager.updateTrack(trackId, { visible });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Change track visibility", err);
   }
+};
+
+const axisVisible = (trackId: string, orientation: "horizontal" | "vertical") =>
+  props.mapManager?.linearTrackManager.isTrackVisibleOnAxis(
+    trackId,
+    orientation
+  ) ?? true;
+
+const toggleAxis = (
+  trackId: string,
+  orientation: "horizontal" | "vertical"
+) => {
+  if (!props.mapManager) return;
+  props.mapManager.linearTrackManager.setTrackVisibleOnAxis(
+    trackId,
+    orientation,
+    !props.mapManager.linearTrackManager.isTrackVisibleOnAxis(
+      trackId,
+      orientation
+    )
+  );
 };
 
 const onChangeColor = async (trackId: string, color: string) => {
@@ -976,7 +1313,7 @@ const onChangeColor = async (trackId: string, color: string) => {
     await props.mapManager.linearTrackManager.updateTrack(trackId, { color });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Change track color", err);
   }
 };
 
@@ -988,7 +1325,7 @@ const onRename = async (trackId: string, name: string) => {
     await props.mapManager.linearTrackManager.updateTrack(trackId, { name });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Rename track", err);
   }
 };
 
@@ -1000,7 +1337,7 @@ const onRemove = async (trackId: string) => {
     await props.mapManager.linearTrackManager.removeTrack(trackId);
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Remove track", err);
   }
 };
 
@@ -1009,10 +1346,13 @@ const onMoveTrack = async (trackId: string, targetIndex: number) => {
     return;
   }
   try {
-    await props.mapManager.linearTrackManager.reorderTrack(trackId, targetIndex);
+    await props.mapManager.linearTrackManager.reorderTrack(
+      trackId,
+      targetIndex
+    );
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Move track", err);
   }
 };
 
@@ -1026,7 +1366,7 @@ const onChangeBamMode = async (trackId: string, renderMode: string) => {
     });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Change track rendering", err);
   }
 };
 
@@ -1043,7 +1383,7 @@ const onChangeBigWigAggregation = async (
     });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Change track aggregation", err);
   }
 };
 
@@ -1057,7 +1397,7 @@ const onChangeLogScale = async (trackId: string, logScale: boolean) => {
     });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Change track scale", err);
   }
 };
 
@@ -1071,7 +1411,7 @@ const onChangeRangeAuto = async (trackId: string, rangeAuto: boolean) => {
     });
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Set track range", err);
   }
 };
 
@@ -1083,6 +1423,23 @@ const onChangeRangeBound = async (
   if (!props.mapManager || !Number.isFinite(value)) {
     return;
   }
+  const current = tracks.value.find((t) => t.trackId === trackId);
+  if (
+    current &&
+    (field === "rangeMin"
+      ? value >= current.rangeMax
+      : value <= current.rangeMin)
+  ) {
+    toast.message(
+      field === "rangeMin"
+        ? `The minimum must be below the maximum (${current.rangeMax}). Raise the maximum first.`
+        : `The maximum must be above the minimum (${current.rangeMin}). Lower the minimum first.`
+    );
+    // Show the range that is still in use rather than the rejected number.
+    tracks.value = tracks.value.slice();
+    await refreshTracks();
+    return;
+  }
   try {
     const options =
       field === "rangeMin"
@@ -1091,7 +1448,10 @@ const onChangeRangeBound = async (
     await props.mapManager.linearTrackManager.updateTrack(trackId, options);
     await refreshTracks();
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Set track range", err);
+    // Restore the displayed range after a failed update.
+    console.debug("Track range was not changed", err);
+    await refreshTracks();
   }
 };
 
@@ -1099,11 +1459,18 @@ const getTrackLogBase = (trackId: string): number => {
   return props.mapManager?.linearTrackManager.getTrackLogBase(trackId) ?? 10;
 };
 
-const onChangeLogBase = (trackId: string, value: number): void => {
+const onChangeLogBase = (trackId: string, event: Event): void => {
+  const input = event.target as HTMLInputElement;
   if (!props.mapManager) {
     return;
   }
-  props.mapManager.linearTrackManager.setTrackLogBase(trackId, value);
+  const manager = props.mapManager.linearTrackManager;
+  const result = manager.setTrackLogBase(trackId, Number(input.value));
+  if (!result.ok) {
+    toast.message(result.message);
+    // Show the base that is actually in use, not the rejected text.
+    input.value = String(manager.getTrackLogBase(trackId));
+  }
 };
 
 const onStartPrecomputeAll = async () => {
@@ -1111,12 +1478,13 @@ const onStartPrecomputeAll = async () => {
     return;
   }
   try {
-    precomputeStatus.value = await props.mapManager.linearTrackManager.startPrecompute(
-      undefined,
-      true
-    );
+    precomputeStatus.value =
+      await props.mapManager.linearTrackManager.startPrecompute(
+        undefined,
+        true
+      );
   } catch (err) {
-    toast.error(String(err));
+    reportFailure("Precompute tracks", err);
   }
 };
 

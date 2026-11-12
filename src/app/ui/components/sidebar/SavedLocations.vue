@@ -82,7 +82,11 @@
         </button>
         <label class="btn btn-outline-secondary">
           Import
-          <input type="file" accept="application/json" @change="importBookmarks" />
+          <input
+            type="file"
+            accept="application/json"
+            @change="importBookmarks"
+          />
         </label>
       </div>
     </div>
@@ -92,11 +96,13 @@
           v-if="loc"
           :map-manager="props.mapManager"
           :location_id="loc.location_id"
+          :name="loc.name"
           :center_point="loc.center_point"
           :resolution="loc.resolution"
           :rotation="loc.rotation"
           @goto="gotoSavedLocation"
           @remove="removeSavedLocation"
+          @rename="renameLocation"
         ></SavedLocationElement>
       </div>
     </div>
@@ -113,7 +119,7 @@
       </label>
     </div>
     <div
-      v-for="contig in contigList"
+      v-for="contig in visibleContigs"
       :key="contig.contigId"
       class="name-row"
     >
@@ -130,6 +136,7 @@
           class="btn btn-outline-success"
           type="button"
           title="Rename contig"
+          aria-label="Rename contig"
           v-if="contigDirty.has(contig.contigId)"
           @click="renameContig(contig.contigId)"
         >
@@ -139,6 +146,7 @@
           class="btn btn-outline-secondary"
           type="button"
           title="Reset contig name"
+          aria-label="Reset contig name"
           @click="resetContigName(contig.contigId)"
         >
           <i class="bi bi-arrow-counterclockwise"></i>
@@ -147,12 +155,26 @@
           class="btn btn-outline-primary"
           type="button"
           title="Go to contig"
+          aria-label="Go to contig"
           @click="goToContig(contig.contigId)"
         >
           <i class="bi bi-eye"></i>
         </button>
       </div>
       <div class="original-name">Original: {{ contig.contigOriginalName }}</div>
+    </div>
+    <div v-if="contigList.length > shownCount" class="show-more">
+      <span class="small text-muted"
+        >{{ shownCount.toLocaleString() }} of
+        {{ contigList.length.toLocaleString() }} shown</span
+      >
+      <button
+        type="button"
+        class="btn btn-outline-secondary btn-sm"
+        @click="showMore"
+      >
+        Show 500 more
+      </button>
     </div>
   </div>
 
@@ -167,7 +189,7 @@
       </label>
     </div>
     <div
-      v-for="scaffold in scaffoldList"
+      v-for="scaffold in visibleScaffolds"
       :key="scaffold.scaffoldId"
       class="name-row"
     >
@@ -184,6 +206,7 @@
           class="btn btn-outline-success"
           type="button"
           title="Rename scaffold"
+          aria-label="Rename scaffold"
           v-if="scaffoldDirty.has(scaffold.scaffoldId)"
           @click="renameScaffold(scaffold.scaffoldId)"
         >
@@ -193,6 +216,7 @@
           class="btn btn-outline-secondary"
           type="button"
           title="Reset scaffold name"
+          aria-label="Reset scaffold name"
           @click="resetScaffoldName(scaffold.scaffoldId)"
         >
           <i class="bi bi-arrow-counterclockwise"></i>
@@ -201,6 +225,7 @@
           class="btn btn-outline-primary"
           type="button"
           title="Go to scaffold"
+          aria-label="Go to scaffold"
           @click="goToScaffold(scaffold.scaffoldId)"
         >
           <i class="bi bi-eye"></i>
@@ -210,18 +235,35 @@
         Original: {{ scaffold.scaffoldOriginalName }}
       </div>
     </div>
+    <div v-if="scaffoldList.length > shownCount" class="show-more">
+      <span class="small text-muted"
+        >{{ shownCount.toLocaleString() }} of
+        {{ scaffoldList.length.toLocaleString() }} shown</span
+      >
+      <button
+        type="button"
+        class="btn btn-outline-secondary btn-sm"
+        @click="showMore"
+      >
+        Show 500 more
+      </button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import SavedLocationElement from "./SavedLocationElement.vue";
-import { Ref, ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { computed, Ref, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import { Coordinate } from "ol/coordinate";
 import { toast } from "vue-sonner";
 import type { ContigDescriptor } from "@/app/core/domain/ContigDescriptor";
 import type { ScaffoldDescriptor } from "@/app/core/domain/ScaffoldDescriptor";
-import { useSessionStore } from "@/app/stores/sessionStore";
+import {
+  useSessionStore,
+  type SessionSavedLocation,
+} from "@/app/stores/sessionStore";
+import { validateSessionLibraries } from "@/app/core/mapmanagers/SessionDocument";
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -235,6 +277,7 @@ const savedLocations: Ref<
     number,
     {
       location_id: number;
+      name?: string;
       center_point: Coordinate | undefined;
       resolution: number | undefined;
       rotation: number | undefined;
@@ -247,6 +290,18 @@ const sessionStore = useSessionStore();
 
 const contigList = ref<ContigDescriptor[]>([]);
 const scaffoldList = ref<ScaffoldDescriptor[]>([]);
+// A large assembly has tens of thousands of entries: render a window of them. Lookups use the full lists.
+const INITIAL_SHOWN = 300;
+const shownCount = ref(INITIAL_SHOWN);
+const visibleContigs = computed(() =>
+  contigList.value.slice(0, shownCount.value)
+);
+const visibleScaffolds = computed(() =>
+  scaffoldList.value.slice(0, shownCount.value)
+);
+function showMore(): void {
+  shownCount.value += 500;
+}
 const contigDraftNames = ref<Record<number, string>>({});
 const scaffoldDraftNames = ref<Record<number, string>>({});
 const contigDirty = ref<Set<number>>(new Set());
@@ -305,12 +360,16 @@ function setActiveTab(tab: "bookmarks" | "contigs" | "scaffolds"): void {
 }
 
 watch(activeTab, () => {
+  shownCount.value = INITIAL_SHOWN;
   refreshAssemblyLists();
 });
 
 onMounted(() => {
   refreshAssemblyLists();
-  syncSessionStore();
+  // The store is the source of truth: bookmarks can be added (toolbar button,
+  // restored session) while this panel is not mounted. Pushing the empty local
+  // list here would erase them.
+  loadFromSessionStore();
   // Poll for assembly changes triggered by backend ops (group/ungroup/move).
   // This keeps Contigs/Scaffolds tabs in sync without tab switches.
   refreshTimer = window.setInterval(() => {
@@ -333,6 +392,7 @@ function saveLocation() {
   if (props.mapManager && map && view) {
     savedLocations.value.set(locationCount.value, {
       location_id: locationCount.value,
+      name: `${locationCount.value} unnamed location`,
       center_point: view.getCenter(),
       resolution: view.getResolution(),
       rotation: view.getRotation(),
@@ -340,6 +400,13 @@ function saveLocation() {
     locationCount.value += 1;
     syncSessionStore();
   }
+}
+
+function renameLocation(location_id: number, name: string): void {
+  const location = savedLocations.value.get(location_id);
+  if (!location) return;
+  savedLocations.value.set(location_id, { ...location, name });
+  syncSessionStore();
 }
 
 function gotoSavedLocation(location_id: number) {
@@ -381,16 +448,13 @@ function importBookmarks(event: Event): void {
   }
   file.text().then((text) => {
     try {
-      const entries = JSON.parse(text) as {
-        location_id: number;
-        center_point: Coordinate;
-        resolution: number;
-        rotation: number;
-      }[];
+      const entries = JSON.parse(text) as SessionSavedLocation[];
+      validateSessionLibraries({ savedLocations: entries });
       savedLocations.value.clear();
       entries.forEach((entry, idx) => {
         savedLocations.value.set(idx, {
           location_id: idx,
+          name: entry.name,
           center_point: entry.center_point,
           resolution: entry.resolution,
           rotation: entry.rotation,
@@ -407,6 +471,7 @@ function importBookmarks(event: Event): void {
 function syncSessionStore() {
   const entries = Array.from(savedLocations.value.values()).map((loc, idx) => ({
     location_id: idx,
+    name: loc.name,
     center_point: (loc.center_point ?? [0, 0]) as [number, number],
     resolution: loc.resolution ?? 1,
     rotation: loc.rotation ?? 0,
@@ -420,6 +485,7 @@ function loadFromSessionStore() {
   entries.forEach((entry, idx) => {
     savedLocations.value.set(idx, {
       location_id: idx,
+      name: entry.name,
       center_point: entry.center_point,
       resolution: entry.resolution,
       rotation: entry.rotation,
@@ -433,6 +499,7 @@ watch(
   () => {
     const current = Array.from(savedLocations.value.values()).map((loc) => ({
       location_id: loc.location_id,
+      name: loc.name,
       center_point: loc.center_point,
       resolution: loc.resolution,
       rotation: loc.rotation,
@@ -462,6 +529,7 @@ function renameContig(contigId: number): void {
     .then((asm) => {
       map.contigDimensionHolder.updateContigData(asm.contigDescriptors);
       map.scaffoldHolder.updateScaffoldData(asm.scaffoldDescriptors);
+      map.getLayersManager().reapplyAxisScopes();
       contigDirty.value.delete(contigId);
       map.getLayersManager().reloadTracks();
       map.reloadTiles();
@@ -481,6 +549,7 @@ function renameScaffold(scaffoldId: number): void {
     .then((asm) => {
       map.contigDimensionHolder.updateContigData(asm.contigDescriptors);
       map.scaffoldHolder.updateScaffoldData(asm.scaffoldDescriptors);
+      map.getLayersManager().reapplyAxisScopes();
       scaffoldDirty.value.delete(scaffoldId);
       map.getLayersManager().reloadTracks();
       map.reloadTiles();
@@ -510,7 +579,6 @@ function goToContig(contigId: number): void {
   if (!map) return;
   const contig = contigList.value.find((c) => c.contigId === contigId);
   if (!contig) return;
-  const view = map.getView();
   const prefix = map.contigDimensionHolder.prefix_sum_bp;
   const ord = map.contigDimensionHolder.contigIdToOrd[contigId];
   if (ord === undefined || Number.isNaN(ord)) {
@@ -519,10 +587,7 @@ function goToContig(contigId: number): void {
   }
   const startBp = prefix[ord];
   const endBp = startBp + contig.contigLengthBp;
-  const midBp = (startBp + endBp) / 2;
-  const res = view.getResolution() ?? 1;
-  const midPx = midBp / res;
-  view.animate({ center: [midPx, -midPx] });
+  map.linearTrackManager.centerOnBpRange(startBp, endBp);
 }
 
 function goToScaffold(scaffoldId: number): void {
@@ -534,11 +599,7 @@ function goToScaffold(scaffoldId: number): void {
     toast.error("Scaffold has no borders in the current assembly");
     return;
   }
-  const view = map.getView();
-  const midBp = (borders.startBP + borders.endBP) / 2;
-  const res = view.getResolution() ?? 1;
-  const midPx = midBp / res;
-  view.animate({ center: [midPx, -midPx] });
+  map.linearTrackManager.centerOnBpRange(borders.startBP, borders.endBP);
 }
 
 function exportNames(): void {
@@ -579,6 +640,7 @@ function importNames(event: Event): void {
         .then((asm) => {
           map.contigDimensionHolder.updateContigData(asm.contigDescriptors);
           map.scaffoldHolder.updateScaffoldData(asm.scaffoldDescriptors);
+          map.getLayersManager().reapplyAxisScopes();
           map.reloadTiles();
           refreshAssemblyLists();
         })
@@ -649,6 +711,14 @@ function importNames(event: Event): void {
 
 .names-actions input[type="file"] {
   display: none;
+}
+
+.show-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
 }
 
 .list-panel {

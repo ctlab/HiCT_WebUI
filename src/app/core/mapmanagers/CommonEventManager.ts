@@ -1,3 +1,4 @@
+import { reportFailure } from "@/app/ui/reportFailure";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -43,17 +44,71 @@ import { ActiveTool } from "./HiCViewAndLayersManager";
 import { BorderStyle, NamePlacement } from "@/app/core/tracks/Track2DSymmetric";
 import { Coordinate } from "ol/coordinate";
 import { toast } from "vue-sonner";
+import { showTranslocationStatus } from "./TranslocationStatusToast";
 
 class CommonEventManager {
   public constructor(public readonly mapManager: ContactMapManager) {}
 
-  private applyAssemblyInfo(asmInfo: {
+  public applyAssemblyInfo(asmInfo: {
     contigDescriptors: ContigDescriptor[];
     scaffoldDescriptors: ScaffoldDescriptor[];
   }): void {
-    this.mapManager.contigDimensionHolder.updateContigData(asmInfo.contigDescriptors);
-    this.mapManager.scaffoldHolder.updateScaffoldData(asmInfo.scaffoldDescriptors);
+    this.mapManager.contigDimensionHolder.updateContigData(
+      asmInfo.contigDescriptors
+    );
+    this.mapManager.scaffoldHolder.updateScaffoldData(
+      asmInfo.scaffoldDescriptors
+    );
+    this.mapManager.viewAndLayersManager.reapplyAxisScopes();
     this.mapManager.refreshOverviewMinimap();
+  }
+
+  private getSelectedContigBpRange(actionLabel: string): {
+    startBP: number;
+    endBP: number;
+  } | null {
+    if (this.mapManager.networkManager.requestManager.sequenceViewReadOnly) {
+      toast("Return to the contact map before editing the assembly.");
+      return null;
+    }
+    const selectedArray =
+      this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
+        .getArray()
+        .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
+    if (selectedArray.length === 0) {
+      toast.error(`Select one or more contigs before ${actionLabel}.`);
+      return null;
+    }
+
+    const prefixSumBp = this.mapManager.contigDimensionHolder.prefix_sum_bp;
+    const idToOrder = this.mapManager.contigDimensionHolder.contigIdToOrd;
+    const lcd = selectedArray.reduce((accumulator, element) =>
+      idToOrder[accumulator.contigId] < idToOrder[element.contigId]
+        ? accumulator
+        : element
+    );
+    const rcd = selectedArray.reduce((accumulator, element) =>
+      idToOrder[accumulator.contigId] > idToOrder[element.contigId]
+        ? accumulator
+        : element
+    );
+    const [lord, rord] = [lcd, rcd].map((cd) => 1 + idToOrder[cd.contigId]);
+    const startBP = lord > 0 ? prefixSumBp[lord - 1] : 0;
+    const endBP = prefixSumBp[rord];
+
+    if (typeof startBP !== "number" || typeof endBP !== "number") {
+      toast.error(
+        "Selected contig range is no longer available in the current assembly."
+      );
+      console.log(
+        `Not ${actionLabel}: left border bp is`,
+        startBP,
+        " right border bp is ",
+        endBP
+      );
+      return null;
+    }
+    return { startBP, endBP };
   }
 
   public reloadTiles() {
@@ -128,6 +183,10 @@ class CommonEventManager {
         return NamePlacement.BOTTOM;
       case BorderStyle.TOP:
         return NamePlacement.TOP;
+      case BorderStyle.LEFT:
+        return NamePlacement.LEFT;
+      case BorderStyle.RIGHT:
+        return NamePlacement.RIGHT;
       case BorderStyle.NONE:
       default:
         return NamePlacement.HIDDEN;
@@ -136,7 +195,9 @@ class CommonEventManager {
 
   public onContigNamePlacementChanged(style: BorderStyle): void {
     const placement = this.toNamePlacement(style);
-    this.mapManager.viewAndLayersManager.onContigNamePlacementChanged(placement);
+    this.mapManager.viewAndLayersManager.onContigNamePlacementChanged(
+      placement
+    );
   }
 
   public onScaffoldNamePlacementChanged(style: BorderStyle): void {
@@ -175,7 +236,9 @@ class CommonEventManager {
   }
 
   public onContigLabelOutlineWidthChanged(width: number): void {
-    this.mapManager.viewAndLayersManager.onContigLabelOutlineWidthChanged(width);
+    this.mapManager.viewAndLayersManager.onContigLabelOutlineWidthChanged(
+      width
+    );
   }
 
   public onScaffoldLabelOutlineWidthChanged(width: number): void {
@@ -189,7 +252,9 @@ class CommonEventManager {
   }
 
   public onScaffoldExportEnabledChanged(enabled: boolean): void {
-    this.mapManager.viewAndLayersManager.onScaffoldExportEnabledChanged(enabled);
+    this.mapManager.viewAndLayersManager.onScaffoldExportEnabledChanged(
+      enabled
+    );
   }
 
   public onContigNamesExportEnabledChanged(enabled: boolean): void {
@@ -260,40 +325,9 @@ class CommonEventManager {
       ),
     ];
     */
-    const selectedArray =
-      this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
-        .getArray()
-        .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
-    const prefixSumBp = this.mapManager.contigDimensionHolder.prefix_sum_bp;
-    const idToOrder = this.mapManager.contigDimensionHolder.contigIdToOrd;
-    const [lcd, rcd] = [
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] < idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] > idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-    ];
-    const [lord, rord] = [lcd, rcd].map((cd) => 1 + idToOrder[cd.contigId]);
-
-    const [startBP, endBP] = [
-      lord > 0 ? prefixSumBp[lord - 1] : 0,
-      prefixSumBp[rord],
-    ];
-
-    if (startBP === undefined || endBP === undefined) {
-      console.log(
-        "Not grouping contigs into scaffold from selection: left border bp is",
-        startBP,
-        " right border bp is ",
-        endBP
-      );
-      return;
-    }
+    const range = this.getSelectedContigBpRange("grouping a scaffold");
+    if (!range) return;
+    const { startBP, endBP } = range;
     this.mapManager.networkManager.requestManager
       .groupContigsIntoScaffold(
         new GroupContigsIntoScaffoldRequest({
@@ -306,46 +340,18 @@ class CommonEventManager {
         void this.mapManager.linearTrackManager.clearCachesAndRender();
         this.resetSelection();
         this.reloadTracks();
-      });
+      })
+      .catch((error) =>
+        reportFailure("Group selection into a scaffold", error)
+      );
   }
 
   public onRemoveScaffoldClicked(): void {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
-    const selectedArray =
-      this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
-        .getArray()
-        .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
-    const prefixSumBp = this.mapManager.contigDimensionHolder.prefix_sum_bp;
-    const idToOrder = this.mapManager.contigDimensionHolder.contigIdToOrd;
-    const [lcd, rcd] = [
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] < idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] > idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-    ];
-    const [lord, rord] = [lcd, rcd].map((cd) => 1 + idToOrder[cd.contigId]);
-
-    const [startBP, endBP] = [
-      lord > 0 ? prefixSumBp[lord - 1] : 0,
-      prefixSumBp[rord],
-    ];
-
-    if (startBP === undefined || endBP === undefined) {
-      console.log(
-        "Not ungrouping contigs from selection: left border bp is",
-        startBP,
-        " right border bp is ",
-        endBP
-      );
-      return;
-    }
+    const range = this.getSelectedContigBpRange("ungrouping a scaffold");
+    if (!range) return;
+    const { startBP, endBP } = range;
     this.mapManager.networkManager.requestManager
       .ungroupContigsFromScaffold(
         new UngroupContigsFromScaffoldRequest({
@@ -358,51 +364,30 @@ class CommonEventManager {
         void this.mapManager.linearTrackManager.clearCachesAndRender();
         this.resetSelection();
         this.reloadTracks();
-      });
+      })
+      .catch((error) => reportFailure("Ungroup selection", error));
+  }
+
+  public async onUnscaffoldAllClicked(): Promise<void> {
+    const assembly =
+      await this.mapManager.networkManager.requestManager.unscaffoldAll();
+    this.applyAssemblyInfo(assembly);
+    this.resetSelection();
+    await this.mapManager.reloadVisuals();
   }
 
   public onMoveToDebrisClicked(): void {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
-    const selectedArray =
-      this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
-        .getArray()
-        .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
-    const prefixSumBp = this.mapManager.contigDimensionHolder.prefix_sum_bp;
-    const idToOrder = this.mapManager.contigDimensionHolder.contigIdToOrd;
-    const [lcd, rcd] = [
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] < idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] > idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-    ];
-    const [lord, rord] = [lcd, rcd].map((cd) => 1 + idToOrder[cd.contigId]);
-
-    const [startBP, endBP] = [
-      lord > 0 ? prefixSumBp[lord - 1] : 0,
-      prefixSumBp[rord],
-    ];
-
-    if (startBP === undefined || endBP === undefined) {
-      console.log(
-        "Not ungrouping contigs from selection: left border bp is",
-        startBP,
-        " right border bp is ",
-        endBP
-      );
+    const range = this.getSelectedContigBpRange("moving selection to debris");
+    if (!range) {
       return;
     }
     this.mapManager.networkManager.requestManager
       .moveSelectionToDebris(
         new MoveSelectionToDebrisRequest({
-          startBP: startBP,
-          endBP: endBP,
+          startBP: range.startBP,
+          endBP: range.endBP,
         })
       )
       .then((asmInfo) => {
@@ -410,104 +395,46 @@ class CommonEventManager {
         void this.mapManager.linearTrackManager.clearCachesAndRender();
         this.resetSelection();
         this.reloadTracks();
-      });
+      })
+      .catch((error) => reportFailure("Move selection to debris", error));
   }
 
   public onReverseSelectionClicked(): void {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
-    const selectedArray =
-      this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
-        .getArray()
-        .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
-    const prefixSumBp = this.mapManager.contigDimensionHolder.prefix_sum_bp;
-    const idToOrder = this.mapManager.contigDimensionHolder.contigIdToOrd;
-    const [lcd, rcd] = [
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] < idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-      selectedArray.reduce((accumulator, element) =>
-        idToOrder[accumulator.contigId] > idToOrder[element.contigId]
-          ? accumulator
-          : element
-      ),
-    ];
-    const [lord, rord] = [lcd, rcd].map((cd) => 1 + idToOrder[cd.contigId]);
-
-    const [startBP, endBP] = [
-      lord > 0 ? prefixSumBp[lord - 1] : 0,
-      prefixSumBp[rord],
-    ];
-    if (startBP === undefined || endBP === undefined) {
-      console.log(
-        "Not reversing selection: left border bp is",
-        startBP,
-        " right border bp is ",
-        endBP
-      );
+    const range = this.getSelectedContigBpRange("reversing a selection");
+    if (!range) {
       return;
     }
     this.mapManager.networkManager.requestManager
       .reverseSelectionRange(
         new ReverseSelectionRangeRequest({
-          startBP: startBP,
-          endBP: endBP,
+          startBP: range.startBP,
+          endBP: range.endBP,
         })
       )
       .then((asmInfo) => {
         this.applyAssemblyInfo(asmInfo);
         this.resetSelection();
         this.mapManager.reloadVisuals();
-      });
+      })
+      .catch((error) => reportFailure("Reverse selection", error));
   }
 
   public onMoveSelectionClicked(): void {
     const activeTool =
       this.mapManager.viewAndLayersManager.currentViewState.activeTool;
     if (activeTool === ActiveTool.TRANSLOCATION) {
-      toast.success("Translocation mode deactivated");
+      showTranslocationStatus(false);
       this.mapManager.deactivateTranslocation();
     } else {
-      toast.message(
-        "You've entered translocation mode. Click on arrow at the contig boxes to put selection before or after that arrow. Click again on translocation mode button to leave translocation mode.",
-        { duration: 10000 }
+      const range = this.getSelectedContigBpRange(
+        "entering translocation mode"
       );
-      const selectedArray =
-        this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
-          .getArray()
-          .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
-      const prefixSumBp = this.mapManager.contigDimensionHolder.prefix_sum_bp;
-      const idToOrder = this.mapManager.contigDimensionHolder.contigIdToOrd;
-      const [lcd, rcd] = [
-        selectedArray.reduce((accumulator, element) =>
-          idToOrder[accumulator.contigId] < idToOrder[element.contigId]
-            ? accumulator
-            : element
-        ),
-        selectedArray.reduce((accumulator, element) =>
-          idToOrder[accumulator.contigId] > idToOrder[element.contigId]
-            ? accumulator
-            : element
-        ),
-      ];
-      const [lord, rord] = [lcd, rcd].map((cd) => 1 + idToOrder[cd.contigId]);
-
-      const [startBP, endBP] = [
-        lord > 0 ? prefixSumBp[lord - 1] : 0,
-        prefixSumBp[rord],
-      ];
-
-      if (startBP === undefined || endBP === undefined) {
-        console.log(
-          "Not moving (start) selection: left border bp is",
-          startBP,
-          " right border bp is ",
-          endBP
-        );
+      if (!range) {
         return;
       }
+      showTranslocationStatus(true);
       this.mapManager.viewAndLayersManager.currentViewState.activeTool =
         ActiveTool.TRANSLOCATION;
       this.mapManager.viewAndLayersManager.selectionInteractions.contigSelectionInteraction.setActive(
@@ -527,15 +454,15 @@ class CommonEventManager {
       );
       this.mapManager.viewAndLayersManager.selectionInteractions.translocationArrowSelectionInteraction.set(
         "startBP",
-        startBP
+        range.startBP
       );
       this.mapManager.viewAndLayersManager.selectionInteractions.translocationArrowSelectionInteraction.set(
         "endBP",
-        endBP
+        range.endBP
       );
     }
 
-    this.mapManager.viewAndLayersManager.reloadTracks();
+    this.mapManager.viewAndLayersManager.refreshTranslocationArrows();
   }
 
   public onSplitContigClicked(): void {
@@ -647,6 +574,7 @@ class CommonEventManager {
       .then((asmInfo) => {
         this.applyAssemblyInfo(asmInfo);
       })
+      .catch((error) => reportFailure("Move selection", error))
       .finally(() => {
         this.onMoveSelectionClicked();
         this.resetSelection();
@@ -676,6 +604,7 @@ class CommonEventManager {
       .then((asmInfo) => {
         this.applyAssemblyInfo(asmInfo);
       })
+      .catch((error) => reportFailure("Split contig", error))
       .finally(() => {
         this.mapManager.deactivateScissors();
         this.mapManager.eventManager.resetSelection();
@@ -747,7 +676,8 @@ class CommonEventManager {
         link.href = window.URL.createObjectURL(blob);
         link.download = `selection_(${fromBpX}bp-${toBpX}bp).(${fromBpY}bp-${toBpY}bp).fasta`;
         link.click();
-      });
+      })
+      .catch((error) => reportFailure("Export FASTA for selection", error));
     return;
   }
 
