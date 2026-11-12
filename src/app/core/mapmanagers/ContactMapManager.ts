@@ -33,6 +33,7 @@ import { transform, transformExtent } from "ol/proj";
 import { getCenter, getHeight, getWidth, intersects } from "ol/extent";
 import { unByKey } from "ol/Observable";
 import type { EventsKey } from "ol/events";
+import { selectOverviewResolution } from "./resolutionModel";
 import ContigDimensionHolder from "./ContigDimensionHolder";
 import { ScaffoldHolder } from "./ScaffoldHolder";
 import { HiCViewAndLayersManager } from "./HiCViewAndLayersManager";
@@ -1839,20 +1840,31 @@ class ContactMapManager {
     this.scheduleMinimapViewportSync();
   }
 
+  /** Rebind after a coordinate-base change replaces the primary tile sources. */
+  public rebuildOverviewMinimap(): void {
+    const target = this.minimap?.getTargetElement();
+    if (target) this.addOverviewMapTarget(target);
+  }
+
   private createCoarsestMinimapLayer(): TileLayer<VersionedXYZContactMapSource> | null {
     if (this.viewAndLayersManager.resolutionTuples.length === 0) {
       return null;
     }
-    const coarsestDescriptor =
-      this.viewAndLayersManager.resolutionTuples.reduce(
-        (accumulator, descriptor) =>
-          descriptor.pixelResolution > accumulator.pixelResolution
-            ? descriptor
-            : accumulator
-      );
+    const resolution = selectOverviewResolution(
+      this.viewAndLayersManager.resolutionTuples.map((descriptor) => {
+        const prefix = this.contigDimensionHolder.prefix_sum_px.get(
+          descriptor.bpResolution
+        );
+        return {
+          bpResolution: descriptor.bpResolution,
+          visibleBins: prefix?.at(-1) ?? 0,
+        };
+      })
+    );
+    if (resolution === undefined) return null;
     const layer =
       this.viewAndLayersManager.layersHolder.bpResolutionToHiCDataLayer.get(
-        coarsestDescriptor.bpResolution
+        resolution
       );
     if (!(layer instanceof TileLayer)) {
       return null;

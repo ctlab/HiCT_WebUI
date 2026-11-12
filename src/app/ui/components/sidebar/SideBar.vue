@@ -144,6 +144,20 @@
             v-if="showLayerSelector"
             class="visualization-source-selector px-2 pt-2"
           >
+            <label v-if="secondaryAttached" class="small d-block mb-2">
+              Map layout
+              <select
+                class="form-select form-select-sm"
+                aria-label="Sequence overlay view"
+                :value="sequencePresentation"
+                :disabled="sequencePresentationPending"
+                @change="changeSequencePresentation"
+              >
+                <option value="overlay">Overlay</option>
+                <option value="below">Secondary below diagonal</option>
+                <option value="above">Secondary above diagonal</option>
+              </select>
+            </label>
             <div class="source-selection-label">Layer</div>
             <div v-if="hasTwoSources" class="visualization-source-row">
               <div
@@ -203,20 +217,6 @@
                 <i class="bi bi-shuffle"></i>
               </button>
             </div>
-            <label v-if="secondaryAttached" class="small d-block mt-2">
-              Map layout
-              <select
-                class="form-select form-select-sm"
-                aria-label="Sequence overlay view"
-                :value="sequencePresentation"
-                :disabled="sequencePresentationPending"
-                @change="changeSequencePresentation"
-              >
-                <option value="overlay">Overlay</option>
-                <option value="below">Secondary below diagonal</option>
-                <option value="above">Secondary above diagonal</option>
-              </select>
-            </label>
             <div
               class="visualization-half-row"
               :class="{ 'mt-2': hasTwoSources }"

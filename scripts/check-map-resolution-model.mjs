@@ -37,6 +37,7 @@ const {
   getResolutionDescriptorForViewResolution,
   getVectorResolutionTuples,
   selectNearestResolution,
+  selectOverviewResolution,
 } = sandbox.module.exports;
 
 function assertResolutionDescriptor(
@@ -395,3 +396,26 @@ assert.equal(
   7
 );
 assert.throws(() => selectNearestResolution([], 5), /No resolutions/);
+
+// Borrelia has empty coarse pyramid levels; keep enough bins to show useful detail.
+assert.equal(
+  selectOverviewResolution([
+    { bpResolution: 1000, visibleBins: 1461 },
+    { bpResolution: 10000, visibleBins: 162 },
+    { bpResolution: 100000, visibleBins: 10 },
+    { bpResolution: 1000000, visibleBins: 0 },
+  ]),
+  10000
+);
+assert.equal(
+  selectOverviewResolution([
+    { bpResolution: 1000, visibleBins: 12 },
+    { bpResolution: 2000, visibleBins: 0 },
+  ]),
+  1000
+);
+assert.equal(
+  selectOverviewResolution([{ bpResolution: 1000, visibleBins: 0 }]),
+  undefined
+);
+assert.equal(selectOverviewResolution([]), undefined);

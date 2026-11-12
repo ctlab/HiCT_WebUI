@@ -80,6 +80,7 @@ class VersionedXYZContactMapSource extends XYZ {
       const uiSettingsStore = useUiSettingsStore();
       if (
         uiSettingsStore.binaryTileTransportEnabled &&
+        useVisualizationOptionsStore().signalDisplayMode === "OBSERVED" &&
         this.sourceName === "PRIMARY" &&
         !this.layersManager.hasSecondarySource()
       ) {

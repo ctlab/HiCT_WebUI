@@ -1794,6 +1794,7 @@ class HiCViewAndLayersManager {
       }
     }
     this.updateProjectionAndViewExtent(previousBaseBp / this.coordinateBaseBp);
+    if (baseChanged) this.mapManager.rebuildOverviewMinimap();
     this.updateWheelZoomResolutionModel();
     this.updateCurrentHiCViewState();
     this.rebuildBuiltinVectorLayers();

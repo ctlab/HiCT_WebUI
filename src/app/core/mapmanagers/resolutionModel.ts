@@ -242,3 +242,22 @@ export function selectNearestResolution(
   }
   return sorted[sorted.length - 1];
 }
+
+/** Keep enough visible bins for a useful overview; tiny genomes can have empty coarse levels. */
+export function selectOverviewResolution(
+  levels: readonly { bpResolution: number; visibleBins: number }[],
+  minimumBins = 64
+): number | undefined {
+  const nonempty = levels.filter(
+    (level) => Number.isFinite(level.visibleBins) && level.visibleBins > 0
+  );
+  const detailed = nonempty.filter((level) => level.visibleBins >= minimumBins);
+  const candidates = detailed.length ? detailed : nonempty;
+  return candidates.reduce<number | undefined>(
+    (best, level) =>
+      best === undefined || level.bpResolution > best
+        ? level.bpResolution
+        : best,
+    undefined
+  );
+}
