@@ -22,7 +22,7 @@
 <template>
   <AGPImportChoiceModal />
   <div :class="{ 'modal-notifications': hasActiveModal() }">
-    <Toaster position="bottom-right" richColors closeButton />
+    <Toaster position="bottom-center" richColors closeButton />
   </div>
   <!-- <button @click="() => toast.message('My first toast')">Render a toast</button> -->
   <div class="main-ui-component">

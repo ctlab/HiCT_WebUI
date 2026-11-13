@@ -63,6 +63,9 @@ vm.runInNewContext(
 );
 const { Track2DSymmetric } = sandbox.exports;
 class Probe extends Track2DSymmetric {
+  paintNames(...args) {
+    return this.shouldPaintEntityNames(...args);
+  }
   range(...args) {
     return [...this.visibleContigOrderRange(...args)];
   }
@@ -154,3 +157,21 @@ assert.equal(identical.length, 1, "identical boxes keep exactly one");
 console.log(
   "Track labels: visible contig range and label collision filter passed."
 );
+
+// Whole-map name paint follows the median contig width, not a few
+// very large scaffolds. Rulers and entity lookup are independent of this gate.
+assert.equal(
+  probe.paintNames([0, 1, 2, 3, 10000], 1, viewport(0, -10000, 10000, 0)),
+  false
+);
+assert.equal(
+  probe.paintNames([0, 1, 2, 3, 10000], 10, viewport(0, -10000, 10000, 0)),
+  true
+);
+assert.equal(probe.paintNames([0, 0, 0, 4, 8], 1, viewport(0, -8, 8, 0)), true);
+assert.equal(
+  probe.paintNames([0, 1, 2, 3], 1),
+  true,
+  "exports retain their requested label layout"
+);
+assert.equal(probe.paintNames([0, 0, 0], 1, viewport(0, -8, 8, 0)), false);

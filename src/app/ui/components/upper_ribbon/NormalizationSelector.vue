@@ -155,7 +155,7 @@
     </p>
 
     <p
-      v-if="legacyPreLog || autoThresholdEnabled"
+      v-if="signalEditable && (legacyPreLog || autoThresholdEnabled)"
       id="legacy-signal-summary"
       class="small text-muted legacy-summary"
       role="status"
@@ -227,6 +227,7 @@
           by the resolution ratio, quadratic by its square.
         </p>
 
+        <slot name="excluded-bins" />
         <div class="d-flex gap-2 mt-1">
           <button
             type="button"
@@ -238,7 +239,7 @@
           <button
             type="button"
             class="btn btn-sm btn-outline-secondary"
-            title="Log10, no scaling, no weights. Colors and thresholds are kept."
+            title="Log2, no scaling, no weights. Colors and thresholds are kept."
             @click="resetAttributes"
           >
             Reset
@@ -326,26 +327,19 @@ const logEnabled = computed(
 );
 // The base to come back to when the transform is switched on again. Never 1 or invalid.
 const rememberedBase = ref(
-  isValidLogBase(Math.abs(postLogBase.value))
-    ? Math.abs(postLogBase.value)
-    : DEFAULT_BASE
+  isValidLogBase(postLogBase.value) ? postLogBase.value : DEFAULT_BASE
 );
 watch(
   () => postLogBase.value,
   (value) => {
     if (isValidLogBase(value) && value > 0) rememberedBase.value = value;
-    else if (isValidLogBase(Math.abs(value)))
-      rememberedBase.value = Math.abs(value);
   }
 );
-const logButtonLabel = computed(() => {
-  const base = rememberedBase.value;
-  return Math.abs(base - 2) < 1e-9
-    ? "Log2"
-    : Math.abs(base - 10) < 1e-9
-    ? "Log10"
-    : "Log";
-});
+const logButtonLabel = computed(() =>
+  logEnabled.value && Math.abs(rememberedBase.value - DEFAULT_BASE) >= 1e-9
+    ? "Log"
+    : "Log2"
+);
 function formatBase(base: number): string {
   return String(Number(base.toPrecision(10)));
 }
@@ -360,7 +354,8 @@ function setTransform(on: boolean): void {
   if (!signalEditable.value) return;
   baseError.value = "";
   // Off is a separate state: the remembered base is kept, never negated into something else.
-  postLogBase.value = on ? rememberedBase.value : -rememberedBase.value;
+  if (on) rememberedBase.value = DEFAULT_BASE;
+  postLogBase.value = on ? DEFAULT_BASE : -rememberedBase.value;
 }
 
 function commitBase(): void {
@@ -409,8 +404,8 @@ function stopAutoThreshold(): void {
 
 function resetAttributes(): void {
   preLogBase.value = -1;
-  rememberedBase.value = 10;
-  postLogBase.value = 10;
+  rememberedBase.value = DEFAULT_BASE;
+  postLogBase.value = DEFAULT_BASE;
   applyCoolerWeights.value = false;
   resolutionScaling.value = false;
   resolutionLinearScaling.value = false;

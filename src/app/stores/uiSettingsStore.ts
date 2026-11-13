@@ -83,7 +83,11 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
   );
   const inheritTrackBackgroundFromMap = ref(true);
   const trackBackgroundColor = ref("rgba(244,247,251,0.98)");
-  const osdOverlayVisible = ref(readStored("hict.ui.osd.visible", true));
+  const developerToolsEnabled = ref(
+    readStored("hict.ui.developerTools", false)
+  );
+  persistRef("hict.ui.developerTools", developerToolsEnabled);
+  const osdOverlayVisible = ref(readStored("hict.ui.osd.visible", false));
   const osdOverlayPosition = ref<"top-right" | "bottom-left">(
     readStored("hict.ui.osd.position", "top-right")
   );
@@ -138,6 +142,7 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
     fileSelectorMode,
     inheritTrackBackgroundFromMap,
     trackBackgroundColor,
+    developerToolsEnabled,
     osdOverlayVisible,
     osdOverlayPosition,
     osdOverlayFields,

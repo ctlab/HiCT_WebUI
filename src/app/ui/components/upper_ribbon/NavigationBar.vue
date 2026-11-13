@@ -64,7 +64,7 @@
                   href="#"
                   title="Make an assembly from a FASTA file with no contact data"
                   @click.prevent="emit('fastaOnlyRequested')"
-                  >Open FASTA only...</a
+                  >Open FASTA only…</a
                 >
               </li>
               <li>
@@ -167,7 +167,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onApplyJuiceboxAssembly"
-                  >Apply Juicebox assembly</a
+                  >Apply .assembly file…</a
                 >
               </li>
               <li><hr class="dropdown-divider" /></li>
@@ -215,7 +215,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onOpenTrackManager"
-                  >Tracks and layers...</a
+                  >Tracks and layers…</a
                 >
               </li>
               <li>
@@ -224,7 +224,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onOpenRenderingPipeline"
-                  >Rendering pipeline...</a
+                  >Rendering pipeline…</a
                 >
               </li>
               <li>
@@ -232,7 +232,7 @@
                   class="dropdown-item"
                   href="#"
                   @click.prevent="osdSettingsOpen = true"
-                  >OSD settings...</a
+                  >Info settings…</a
                 >
               </li>
               <li>
@@ -241,7 +241,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="openResolutionSettings"
-                  >Restrict Resolutions...</a
+                  >Restrict Resolutions…</a
                 >
               </li>
               <li>
@@ -319,7 +319,7 @@
             </ul>
           </li>
           <!-- Dev -->
-          <li class="nav-item dropdown">
+          <li v-if="developerToolsVisible" class="nav-item dropdown">
             <a
               aria-current="page"
               class="nav-link active dropdown-toggle"
@@ -449,7 +449,7 @@
                   href="#"
                   @click.prevent="onOpenServerStatistics"
                 >
-                  Runtime statistics...
+                  Runtime statistics…
                 </a>
               </li>
               <li>
@@ -458,7 +458,7 @@
                   href="#"
                   @click.prevent="onOpenWorkerDiagnostics"
                 >
-                  Worker diagnostics...
+                  Worker diagnostics…
                 </a>
               </li>
               <li><hr class="dropdown-divider" /></li>
@@ -471,28 +471,14 @@
                   Drop caches
                 </a>
               </li>
-              <li><hr class="dropdown-divider" /></li>
-              <li @click.stop>
-                <label class="form-label mb-1" for="api-gateway-input"
-                  >API gateway</label
+              <li>
+                <a
+                  id="reload-tiles-button"
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="onReloadTiles"
+                  >Reload tiles</a
                 >
-                <div id="connection-settings-input-group" class="input-group">
-                  <input
-                    id="api-gateway-input"
-                    class="form-control"
-                    placeholder="http://localhost:5000/"
-                    type="text"
-                    v-model="gatewayAddress"
-                  />
-                  <button
-                    class="btn btn-sm btn-outline-dark"
-                    id="set-gateway-btn"
-                    type="button"
-                    @click="onGatewayChanged"
-                  >
-                    Set API gateway
-                  </button>
-                </div>
               </li>
             </ul>
           </li>
@@ -516,7 +502,7 @@
               </li>
               <li>
                 <a class="dropdown-item" href="#" @click.prevent="onOpenApiDocs"
-                  >API docs...</a
+                  >API docs…</a
                 >
               </li>
               <li>
@@ -524,7 +510,15 @@
                   class="dropdown-item"
                   href="#"
                   @click.prevent="emit('examplesRequested')"
-                  >Examples...</a
+                  >Examples…</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="openConnection"
+                  >Connection…</a
                 >
               </li>
               <li>
@@ -575,8 +569,10 @@
             :title="
               linkedFastaFilename || 'No FASTA linked. Click to link one.'
             "
+            :aria-label="linkedFastaFilename ? 'Relink FASTA' : 'Link FASTA'"
             @click="onOpenFASTAFile"
           >
+            <i class="bi bi-link-45deg" aria-hidden="true"></i>
             FASTA:
             {{
               linkedFastaFilename
@@ -642,9 +638,9 @@
     @selected="onJuiceboxAssemblySelected"
     @dismissed="onJuiceboxAssemblyFileDismissed"
     :error-message="errorMessage"
-    :title="'Apply Juicebox assembly'"
+    :title="'Apply .assembly file'"
     :file-type="'.agp, .assembly'"
-    :note="'Select a Juicebox .assembly to convert it to AGP and apply it to the current map state. If you also have the original contig FASTA, selecting it will improve contig-border matching; otherwise the apply step will run in best-effort mode.'"
+    :note="'Select an .assembly file to convert it to AGP and apply it to the current map state. If you also have the original contig FASTA, selecting it will improve contig-border matching; otherwise the apply step will run in best-effort mode.'"
     :file-name-predicate="isAssemblyFilename"
   ></UniversalFileSelector>
   <UniversalFileSelector
@@ -738,7 +734,7 @@
       aria-modal="true"
     >
       <div class="settings-header">
-        <h2 id="juicebox-fasta-title">Apply Juicebox assembly</h2>
+        <h2 id="juicebox-fasta-title">Apply .assembly file…</h2>
         <button
           class="btn-close"
           type="button"
@@ -750,7 +746,7 @@
         <p>
           Link the original contig FASTA for exact contig matching? It is
           optional, but recommended when you have the FASTA used to build this
-          Juicebox assembly. Without it the assembly is applied in best-effort
+          .assembly layout. Without it the assembly is applied in best-effort
           mode.
         </p>
       </div>
@@ -792,7 +788,7 @@
       aria-label="On-screen display settings"
     >
       <div class="settings-header">
-        <h2>OSD settings</h2>
+        <h2>Info settings</h2>
         <button class="btn-close" @click="osdSettingsOpen = false"></button>
       </div>
       <div class="settings-body">
@@ -860,6 +856,49 @@
       </div>
     </div>
   </div>
+  <div
+    v-if="connectionOpen"
+    class="settings-backdrop"
+    @click.self="connectionOpen = false"
+  >
+    <form
+      ref="connectionElement"
+      class="settings-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Connection settings"
+      @submit.prevent="onGatewayChanged"
+    >
+      <div class="settings-header">
+        <h2>Connection</h2>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Close connection settings"
+          @click="connectionOpen = false"
+        ></button>
+      </div>
+      <div class="settings-body">
+        <label class="form-label" for="api-gateway-input">Server address</label>
+        <div id="connection-settings-input-group" class="input-group">
+          <input
+            id="api-gateway-input"
+            class="form-control"
+            type="url"
+            required
+            v-model="gatewayAddress"
+          />
+          <button
+            id="set-gateway-btn"
+            type="submit"
+            class="btn btn-outline-primary"
+          >
+            Connect
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
   <div v-if="aboutOpen" class="about-backdrop" @click.self="aboutOpen = false">
     <div
       ref="aboutElement"
@@ -906,6 +945,14 @@
           <div><strong>WebUI:</strong> {{ webuiVersion }}</div>
           <div><strong>Commit:</strong> {{ webuiCommit }}</div>
         </div>
+        <label class="form-check-label d-block mb-3">
+          <input
+            type="checkbox"
+            v-model="developerToolsEnabled"
+            class="form-check-input me-2"
+          />
+          Show developer tools
+        </label>
         <section class="how-to-cite">
           <h3>How to cite</h3>
           <p>
@@ -1034,7 +1081,7 @@
             class="spinner-border spinner-border-sm"
             aria-hidden="true"
           ></span>
-          <span>Loading changelog...</span>
+          <span>Loading changelog…</span>
         </div>
         <div
           v-else
@@ -1217,6 +1264,7 @@ const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
 const osdSettingsOpen = ref(false);
+const connectionOpen = ref(false);
 const resolutionSettingsOpen = ref(false);
 const aboutActiveTab = ref<"about" | "attribution" | "changelog">("about");
 const changelogText = ref("Changelog for this build was not detected");
@@ -1278,6 +1326,15 @@ const noContactData = computed(
 );
 
 const aboutElement = ref<HTMLElement | null>(null);
+const connectionElement = ref<HTMLElement | null>(null);
+useModalFocus(connectionElement, () => connectionOpen.value);
+useEscDismissableDialog({
+  priority: 1041,
+  isOpen: () => connectionOpen.value,
+  requestClose: () => {
+    connectionOpen.value = false;
+  },
+});
 const osdSettingsElement = ref<HTMLElement | null>(null);
 const resolutionSettingsElement = ref<HTMLElement | null>(null);
 const juiceboxFastaPromptElement = ref<HTMLElement | null>(null);
@@ -1350,7 +1407,13 @@ const errorToastStore = useErrorToastStore();
 const uiSettingsStore = useUiSettingsStore();
 const { requestErrorToastsEnabled, webuiErrorToastsEnabled } =
   storeToRefs(errorToastStore);
+const developerToolsVisible = computed(
+  () =>
+    uiSettingsStore.developerToolsEnabled ||
+    new URLSearchParams(window.location.search).get("dev") === "1"
+);
 const {
+  developerToolsEnabled,
   customZoomSliderEnabled,
   binaryTileTransportEnabled,
   osdOverlayVisible,
@@ -1865,8 +1928,22 @@ function onFASTAFileDismissed() {
   fastaLinkReport.value = null;
 }
 
-function onGatewayChanged() {
-  props.networkManager.onHostChanged(gatewayAddress.value);
+function openConnection(): void {
+  gatewayAddress.value = props.networkManager.host;
+  connectionOpen.value = true;
+}
+function onGatewayChanged(): void {
+  props.networkManager.onHostChanged(gatewayAddress.value.trim());
+  connectionOpen.value = false;
+  toast.success("Server connection updated");
+}
+async function onReloadTiles(): Promise<void> {
+  try {
+    await props.mapManager?.reloadTilesFromBackend();
+  } catch (error) {
+    toast.error("Tiles could not be reloaded");
+    console.debug("Reload tiles failed", error);
+  }
 }
 
 function onAGPFileDismissed() {
@@ -2026,7 +2103,7 @@ async function applyPendingJuiceboxAssembly(): Promise<void> {
   const fastaFilename = pendingJuiceboxAssemblyFastaFilename.value;
   if (!fastaFilename) {
     toast.message(
-      "No original FASTA selected. Applying the Juicebox assembly in best-effort mode; contig-border issues may remain.",
+      "No original FASTA selected. Applying the .assembly layout in best-effort mode; contig-border issues may remain.",
       {
         style: {
           "background-color": "lightyellow",
@@ -2050,7 +2127,7 @@ async function applyPendingJuiceboxAssembly(): Promise<void> {
   pendingJuiceboxAssemblyFastaFilename.value = "";
   openingJuiceboxAssemblyFile.value = false;
   openingJuiceboxAssemblyFastaFile.value = false;
-  toast.success("Juicebox assembly applied");
+  toast.success("Assembly layout applied");
 }
 
 function onJuiceboxAssemblySelected(filename: string): void {
