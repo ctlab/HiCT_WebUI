@@ -65,7 +65,7 @@ with sync_playwright() as pw:
  p.get_by_role('spinbutton',name='Slider maximum signal').fill('0.250397');p.get_by_role('spinbutton',name='Slider maximum signal').press('Tab');p.wait_for_timeout(700)
  p.locator('.range-details summary').click()
  lo=p.get_by_role('slider',name='Lower threshold',exact=True);hi=p.get_by_role('slider',name='Upper threshold',exact=True)
- a=lo.bounding_box();z=hi.bounding_box();check('Close threshold handles stay independently accessible',abs((a['y']+a['height']/2)-(z['y']+z['height']/2))>=18,{'lower':a,'upper':z})
+ a=lo.bounding_box();z=hi.bounding_box();check('Close threshold handles separate lower down and upper up',(a['y']+a['height']/2)-(z['y']+z['height']/2)>=18,{'lower':a,'upper':z})
  p.screenshot(path=str(out/'range-controls.png'))
  hi.focus();p.keyboard.press('ArrowRight');p.wait_for_timeout(500);check('Upper handle keyboard changes threshold',float(upper.input_value())>.003,upper.input_value())
  p.get_by_role('button',name='Focus range',exact=True).click();p.wait_for_timeout(100)
