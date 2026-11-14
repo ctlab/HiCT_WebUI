@@ -4,16 +4,23 @@ import VectorLayer from "ol/layer/Vector";
 import VectorSource from "ol/source/Vector";
 import { unByKey } from "ol/Observable";
 import type { EventsKey } from "ol/events";
-import { Circle, Fill, Stroke, Style } from "ol/style";
-import { markRaw, ref } from "vue";
+import { Icon, Stroke, Style } from "ol/style";
+import { markRaw, ref, watch } from "vue";
 import { sequenceLetterMinimumPixels } from "../visualization/sequenceLetterMetrics";
 import type { ContactMapManager } from "./ContactMapManager";
 import type { AlignmentDetailSegment } from "../net/api/RequestManager";
 import { SequenceAnalysisRequest } from "../net/api/SequenceAnalysisRequest";
 
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+import {
+  alignmentMarker,
+  alignmentMarkerSvg,
+} from "../visualization/alignmentMarkers";
+
 /** Bounded alignment geometry uses the same fractional assembly mapping as the FASTA axes. */
 export class AlignmentDetailLayer {
-  public readonly state = markRaw({ message: ref("") });
+  public readonly state = markRaw({ message: ref(""), visible: ref(false) });
+  private readonly settings = useUiSettingsStore();
   private readonly source = new VectorSource();
   private readonly layer = new VectorLayer({ source: this.source, zIndex: 90 });
   private readonly listeners: EventsKey[];
@@ -43,6 +50,15 @@ export class AlignmentDetailLayer {
       schedule();
     };
     this.unsubscribers = [
+      watch(
+        () => this.settings.automaticAlignmentEnabled,
+        (enabled) => {
+          window.clearTimeout(this.timer);
+          this.clear();
+          if (enabled) schedule();
+        },
+        { flush: "sync" }
+      ),
       manager.networkManager.requestManager.onSequenceChange(invalidate),
       manager.contigDimensionHolder.onChange(invalidate),
       manager.registerSequenceRenderer(() => this.refresh()),
@@ -60,6 +76,7 @@ export class AlignmentDetailLayer {
       ? (resolution * descriptor.bpResolution) / descriptor.pixelResolution
       : Infinity;
     if (
+      !this.settings.automaticAlignmentEnabled ||
       !api.hasLinkedFasta ||
       api.sequenceViewReadOnly ||
       1 / bpPerPixel <
@@ -118,7 +135,8 @@ export class AlignmentDetailLayer {
     const controller = new AbortController();
     this.controller = controller;
     this.source.clear();
-    this.state.message.value = "Calculating alignment detail…";
+    this.state.visible.value = true;
+    this.state.message.value = "Aligning visible FASTA regions…";
     const task = async () => {
       try {
         let response = await api.queryAlignmentDetail(
@@ -162,7 +180,10 @@ export class AlignmentDetailLayer {
         }
         const features = this.project(response.result.segments);
         this.source.addFeatures(features);
-        this.state.message.value = response.result.message ?? "";
+        this.state.message.value =
+          response.result.alignmentCount === 0
+            ? "No alignment reported for these visible regions. Short windows may yield no hit."
+            : "";
       } catch (error) {
         if (!controller.signal.aborted && generation === this.generation) {
           this.state.message.value =
@@ -190,24 +211,14 @@ export class AlignmentDetailLayer {
     for (const segment of segments) {
       const { rowStart, rowEnd, columnStart, columnEnd, operation, reverse } =
         segment;
-      const color =
-        operation === "MATCH"
-          ? reverse
-            ? "#7c3aed"
-            : "#047857"
-          : operation === "SUBSTITUTION"
-          ? "#c2410c"
-          : "#475569";
+      const marker = alignmentMarker(operation, reverse);
       const style = new Style({
-        stroke: new Stroke({
-          color,
-          width: 3,
-          lineDash: operation === "AMBIGUOUS" ? [3, 3] : undefined,
-        }),
-        image: new Circle({
-          radius: 3,
-          fill: new Fill({ color }),
-          stroke: new Stroke({ color: "#ffffff", width: 1 }),
+        stroke: new Stroke({ color: marker.color, width: 3 }),
+        image: new Icon({
+          src: `data:image/svg+xml,${encodeURIComponent(
+            alignmentMarkerSvg(marker)
+          )}`,
+          scale: 0.75,
         }),
       });
       if (operation === "INSERTION" || operation === "DELETION") {
@@ -256,6 +267,7 @@ export class AlignmentDetailLayer {
     this.requestKey = "";
     this.source.clear();
     this.state.message.value = "";
+    this.state.visible.value = false;
   }
 
   public dispose(): void {

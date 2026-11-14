@@ -33,13 +33,42 @@
     >
       Loading overlay…
     </div>
-    <div
-      v-if="props.mapManager?.alignmentDetail?.state.message.value"
-      class="overlay-loading"
-      role="status"
+    <aside
+      v-if="props.mapManager?.alignmentDetail?.state.visible.value"
+      class="alignment-legend"
+      aria-label="Automatic FASTA alignment legend"
     >
-      {{ props.mapManager.alignmentDetail.state.message.value }}
-    </div>
+      <strong>Automatic FASTA alignment</strong>
+      <p>Horizontal × vertical FASTA regions · updates with navigation</p>
+      <ul>
+        <li v-for="marker in alignmentMarkers" :key="marker.id">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              :d="marker.path"
+              :fill="marker.filled ? marker.color : 'none'"
+              stroke="white"
+              stroke-width="4"
+              stroke-linejoin="round"
+            />
+            <path
+              :d="marker.path"
+              :fill="marker.filled ? marker.color : 'none'"
+              :stroke="marker.color"
+              stroke-width="2"
+              stroke-linejoin="round"
+            />
+          </svg>
+          {{ marker.label }}
+        </li>
+      </ul>
+      <p
+        v-if="props.mapManager.alignmentDetail.state.message.value"
+        role="status"
+        class="alignment-status"
+      >
+        {{ props.mapManager.alignmentDetail.state.message.value }}
+      </p>
+    </aside>
     <div id="hic-contact-map" :style="mapContainerStyle" ref="mapTarget"></div>
     <div
       class="zoom-slider-overlay"
@@ -52,6 +81,7 @@
 
 <script setup lang="ts">
 import "ol/ol.css";
+import { alignmentMarkers } from "@/app/core/visualization/alignmentMarkers";
 import AssemblyContextMenu from "./AssemblyContextMenu.vue";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { ref, computed, Ref, toRaw, watch } from "vue";
@@ -103,6 +133,50 @@ const managerKey = computed(() => {
 </script>
 
 <style scoped>
+.alignment-legend {
+  position: absolute;
+  z-index: 10;
+  bottom: 0.75rem;
+  right: 0.75rem;
+  width: 20rem;
+  max-width: calc(100% - 1.5rem);
+  max-height: calc(100% - 1.5rem);
+  overflow: auto;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #ffffff80;
+  border-radius: 0.5rem;
+  background: rgba(15, 23, 42, 0.86);
+  color: white;
+  font-size: 0.75rem;
+  box-shadow: 0 2px 8px #0003;
+  pointer-events: none;
+}
+.alignment-legend p {
+  margin: 0.25rem 0 0;
+}
+.alignment-legend ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.2rem 0.6rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.alignment-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.alignment-legend svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+.alignment-status {
+  border-top: 1px solid #ffffff50;
+  padding-top: 0.35rem;
+}
+
 .overlay-loading {
   position: absolute;
   z-index: 2;

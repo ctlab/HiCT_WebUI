@@ -245,6 +245,37 @@
                 >
               </li>
               <li>
+                <button
+                  class="dropdown-item"
+                  role="menuitemcheckbox"
+                  :aria-checked="uiSettingsStore.automaticAlignmentEnabled"
+                  aria-describedby="automatic-alignment-description"
+                  @click="
+                    uiSettingsStore.automaticAlignmentEnabled =
+                      !uiSettingsStore.automaticAlignmentEnabled
+                  "
+                >
+                  <i
+                    class="bi me-1"
+                    :class="
+                      uiSettingsStore.automaticAlignmentEnabled
+                        ? 'bi-check-square'
+                        : 'bi-square'
+                    "
+                    aria-hidden="true"
+                  ></i>
+                  Automatically align visible FASTA
+                </button>
+                <small
+                  id="automatic-alignment-description"
+                  class="d-block px-3 pb-2 text-muted"
+                  style="max-width: 22rem; white-space: normal"
+                >
+                  At letter zoom, compares the horizontal and vertical FASTA
+                  regions. Updates as you pan or zoom.
+                </small>
+              </li>
+              <li>
                 <a
                   class="dropdown-item"
                   href="#"
