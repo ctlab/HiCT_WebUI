@@ -435,8 +435,6 @@ watch(
     toColor.value,
     lowerBound.value,
     upperBound.value,
-    signalMin.value,
-    signalMax.value,
   ],
   () => {
     if (syncingFromColormap.value) {
