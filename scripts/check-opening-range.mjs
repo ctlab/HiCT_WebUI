@@ -39,51 +39,42 @@ vm.runInNewContext(
   sandbox
 );
 const descriptor = { bpResolution: 250000 };
-let reloads = 0,
-  fits = 0;
+const listeners = new Map();
+const unexpected = () =>
+  assert.fail("Observed navigation must not reload or refit");
 const manager = new sandbox.exports.VisualizationManager({
-  getMap: () => ({ on: () => undefined }),
+  getMap: () => ({ on: (name, callback) => listeners.set(name, callback) }),
   viewAndLayersManager: {
     currentViewState: { resolutionDesciptor: descriptor },
   },
-  networkManager: { requestManager: { renderPipelineRevision: 1 } },
-  reloadTilesFromBackend: async () => {
-    reloads++;
-  },
+  networkManager: { requestManager: new Proxy({}, { get: () => unexpected }) },
+  reloadTilesFromBackend: unexpected,
+  reloadTiles: unexpected,
 });
-manager.getActiveRenderPipelineConfig = async () => ({
-  enabled: true,
-  upperExpression: { maxSignal: options.colormap.maxSignal },
-});
-manager.applyOpeningViewportQuantileThreshold = async (quantile) => {
-  fits++;
-  options.colormap.maxSignal /= 2;
-  await manager.rememberOpeningRange(quantile);
-};
-await manager.rememberOpeningRange(0.995);
-await manager.refreshOpeningRangeOnMoveEnd();
-assert.equal(fits, 0, "panning at the same level keeps contrast stable");
-descriptor.bpResolution = 50000;
-await manager.refreshOpeningRangeOnMoveEnd();
-assert.equal(fits, 1, "a finer level gets a fresh opening range");
-assert.equal(reloads, 1);
-options.signalDisplayMode = "OBSERVED_OVER_EXPECTED";
-descriptor.bpResolution = 10000;
-await manager.refreshOpeningRangeOnMoveEnd();
-assert.equal(fits, 1, "O/E retains its diverging range");
-options.signalDisplayMode = "OBSERVED";
-await manager.refreshOpeningRangeOnMoveEnd();
-assert.equal(fits, 2, "returning to Observed resumes the opening range");
+manager.applyOpeningViewportQuantileThreshold = unexpected;
+manager.getActiveRenderPipelineConfig = unexpected;
+const original = JSON.stringify(options);
+// Reproduce rapid wheel bursts across pyramid levels, panning and fit-to-map.
+for (const bp of [250000, 50000, 10000, 1000, 10000, 50000, 250000]) {
+  descriptor.bpResolution = bp;
+  for (let pan = 0; pan < 10; pan++) {
+    listeners.get("moveend")();
+    await Promise.resolve();
+  }
+  assert.equal(
+    JSON.stringify(options),
+    original,
+    "navigation preserves contrast"
+  );
+}
 options.colormap.maxSignal = 0.123;
-descriptor.bpResolution = 1000;
-await manager.refreshOpeningRangeOnMoveEnd();
-assert.equal(fits, 2, "an explicit upper threshold wins");
+listeners.get("moveend")();
+await Promise.resolve();
 assert.equal(
-  manager.openingRange,
-  null,
-  "manual settings relinquish automatic ownership"
+  options.colormap.maxSignal,
+  0.123,
+  "manual contrast is stable too"
 );
-descriptor.bpResolution = 500;
-await manager.refreshOpeningRangeOnMoveEnd();
-assert.equal(fits, 2, "later zooms cannot reactivate relinquished ownership");
-console.log("Opening range ownership checks passed");
+console.log(
+  "Opening contrast stays stable across wheel zoom and pan checks passed"
+);

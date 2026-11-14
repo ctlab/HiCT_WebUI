@@ -185,10 +185,10 @@ onBeforeUnmount(() => observer?.disconnect());
   background: var(--upper-color);
 }
 .handles-close .lower {
-  top: 12px;
+  top: 30px;
 }
 .handles-close .upper {
-  top: 30px;
+  top: 12px;
 }
 .range-handle:focus-visible {
   outline: 2px solid #2563eb;

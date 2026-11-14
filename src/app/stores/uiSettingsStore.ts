@@ -70,6 +70,10 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
     readStored("hict.sequence.showReverseStrand", false)
   );
   persistRef("hict.sequence.showReverseStrand", sequenceShowReverseStrand);
+  const automaticAlignmentEnabled = ref(
+    readStored("hict.sequence.automaticAlignment", true) === true
+  );
+  persistRef("hict.sequence.automaticAlignment", automaticAlignmentEnabled);
   /** Keep the map's top-left corner against the rulers. On by default. */
   const mapAnchorTopLeft = ref(readStored("hict.ui.mapAnchorTopLeft", true));
   persistRef("hict.ui.mapAnchorTopLeft", mapAnchorTopLeft);
@@ -130,6 +134,7 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
   persistRef("hict.ui.osd.fieldOrder", osdOverlayFieldOrder);
 
   return {
+    automaticAlignmentEnabled,
     sequenceGapLengthBp,
     sequenceForwardColor,
     sequenceShowReverseStrand,

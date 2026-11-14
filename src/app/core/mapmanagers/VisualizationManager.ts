@@ -437,66 +437,12 @@ class VisualizationManager {
   private readonly pendingOptionRequests = new Set<Promise<unknown>>();
   private visualizationOptionsLoadGeneration = 0;
   private observedDisplayOptions: VisualizationOptions | null = null;
-  // Only the range fitted by a new open follows pyramid levels. Explicit edits
-  // relinquish ownership, while Expected/O/E temporarily suspend it.
-  private openingRange: {
-    fingerprint: string;
-    bpResolution: number;
-    quantile: number;
-  } | null = null;
-  private openingRangeRefreshInFlight = false;
-
-  private async openingRangeFingerprint(): Promise<string> {
-    return JSON.stringify([
-      this.visualizationOptionsStore.asVisualizationOptions(),
-      await this.getActiveRenderPipelineConfig(),
-    ]);
-  }
-
-  private async rememberOpeningRange(quantile: number): Promise<void> {
-    this.openingRange = {
-      fingerprint: await this.openingRangeFingerprint(),
-      bpResolution:
-        this.mapManager.viewAndLayersManager.currentViewState
-          .resolutionDesciptor.bpResolution,
-      quantile,
-    };
-  }
-
-  public async refreshOpeningRangeOnMoveEnd(): Promise<void> {
-    const owned = this.openingRange;
-    if (
-      !owned ||
-      this.openingRangeRefreshInFlight ||
-      this.mapManager.isDisposed ||
-      this.visualizationOptionsStore.signalDisplayMode !== "OBSERVED"
-    )
-      return;
-    const bpResolution =
-      this.mapManager.viewAndLayersManager.currentViewState.resolutionDesciptor
-        .bpResolution;
-    if (bpResolution === owned.bpResolution) return;
-    this.openingRangeRefreshInFlight = true;
-    try {
-      if ((await this.openingRangeFingerprint()) !== owned.fingerprint) {
-        this.openingRange = null;
-        return;
-      }
-      await this.applyOpeningViewportQuantileThreshold(
-        owned.quantile,
-        this.mapManager.networkManager.requestManager.renderPipelineRevision,
-        true
-      );
-      await this.mapManager.reloadTilesFromBackend();
-    } finally {
-      this.openingRangeRefreshInFlight = false;
-    }
-  }
+  // Opening fits contrast once. Navigation may update the slider domain, but
+  // must not refit thresholds, publish a pipeline or invalidate decoded tiles.
 
   public constructor(public readonly mapManager: ContactMapManager) {
     this.moveEndListener = this.mapManager.getMap().on("moveend", () => {
       void this.refreshExpectedProfileOnMoveEnd();
-      void this.refreshOpeningRangeOnMoveEnd().catch(() => undefined);
     });
   }
 
@@ -953,7 +899,6 @@ class VisualizationManager {
       if (this.pendingExpectedProfileRefresh) {
         this.pendingExpectedProfileRefresh = false;
         void this.refreshExpectedProfileOnMoveEnd();
-        void this.refreshOpeningRangeOnMoveEnd().catch(() => undefined);
       }
     }
   }
@@ -1236,7 +1181,7 @@ class VisualizationManager {
     )
       return null;
     if (pipelineConfig) {
-      const fitted = await this.syncPipelineAutoThresholdForBounds(
+      await this.syncPipelineAutoThresholdForBounds(
         bounds,
         pipelineConfig,
         undefined,
@@ -1248,7 +1193,6 @@ class VisualizationManager {
           useViewportHistogram: true,
         }
       );
-      if (fitted) await this.rememberOpeningRange(quantile);
       return null;
     }
 
@@ -1315,7 +1259,6 @@ class VisualizationManager {
     await this.sendVisualizationOptionsToServer({
       skipAutoThresholdRefresh: true,
     });
-    await this.rememberOpeningRange(quantile);
     return updatedMaxSignal;
   }
 
