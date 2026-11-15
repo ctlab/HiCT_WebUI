@@ -175,3 +175,29 @@ assert.equal(
   "exports retain their requested label layout"
 );
 assert.equal(probe.paintNames([0, 0, 0], 1, viewport(0, -8, 8, 0)), false);
+// Small contigs outside the view do not hide the names of large visible ones.
+assert.equal(
+  probe.paintNames(
+    [0, 5000, 10000, 10001, 10002, 10003, 10004],
+    1,
+    viewport(0, -10000, 10000, 0)
+  ),
+  true
+);
+assert.equal(
+  probe.paintNames(
+    [0, 5000, 10000, 10001, 10002, 10003, 10004],
+    1,
+    viewport(0, -10004, 10004, 0)
+  ),
+  false
+);
+// The pan buffer around the screen does not count either.
+assert.equal(
+  probe.paintNames([0, 5000, 10000, 10001, 10002, 10003, 10004], 1, {
+    extent: [-10000, -20000, 20000, 10000],
+    visibleExtent: [0, -10000, 10000, 0],
+    resolution: 1,
+  }),
+  true
+);

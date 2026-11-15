@@ -1935,6 +1935,7 @@ class HiCViewAndLayersManager {
         extent[3] + marginY,
       ],
       resolution,
+      visibleExtent: extent,
     };
   }
 

@@ -47,6 +47,8 @@ export interface TrackViewport {
   /** Map coordinates, padded by the renderer's buffer and maximum stroke. */
   extent: number[];
   resolution: number;
+  /** Map coordinates actually on screen, without the pan buffer. */
+  visibleExtent?: number[];
 }
 
 /** A placed label with its screen-pixel box, used to drop labels that would overlap a larger one. */
@@ -282,6 +284,8 @@ abstract class Track2DSymmetric extends Track2D {
 
   /** Let ruler bands carry names at whole-map scales. Contigs collapsed at this
    * pyramid level count toward density. This linear median test avoids sorting.
+   * Only contigs on screen are counted, so small contigs elsewhere in the
+   * assembly or in the pan buffer do not hide the names of the visible ones.
    * Export calls without a viewport retain their explicit label layout. */
   protected shouldPaintEntityNames(
     prefixSum: readonly number[],
@@ -290,9 +294,13 @@ abstract class Track2DSymmetric extends Track2D {
   ): boolean {
     if (!viewport) return true;
     const minimumSpan = (3 * viewport.resolution) / scale;
+    const [xMin, yMin, xMax, yMax] = viewport.visibleExtent ?? viewport.extent;
+    const low = Math.max(xMin, -yMax) / scale;
+    const high = Math.min(xMax, -yMin) / scale;
     let visible = 0,
       readable = 0;
     for (let i = 1; i < prefixSum.length; i++) {
+      if (prefixSum[i] <= low || prefixSum[i - 1] >= high) continue;
       const span = prefixSum[i] - prefixSum[i - 1];
       visible++;
       if (span > 0 && span >= minimumSpan) readable++;
