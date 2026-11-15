@@ -33,7 +33,9 @@
       aria-describedby="fasta-only-intro"
       @keydown="trapTab"
     >
-      <div class="modal-dialog modal-dialog-centered">
+      <div
+        class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"
+      >
         <div class="modal-content">
           <div class="modal-header">
             <h5 id="fasta-only-title" class="modal-title">Open FASTA only</h5>
@@ -50,77 +52,65 @@
               sequence is one contig. Nothing is drawn as contacts, but you can
               move, reverse and group contigs, add tracks and export.
             </p>
-            <p v-if="loading" class="small" role="status">
-              Looking for FASTA files…
+            <UniversalFileSelector
+              v-if="!busy"
+              :network-manager="props.requests.networkManager"
+              :file-name-predicate="isFastaFilename"
+              title="Choose a FASTA file"
+              file-type="FASTA files"
+              note="Browse one folder at a time, or enter a relative folder or file path above."
+              embedded
+              require-selection
+              @selected="selectFasta"
+            />
+            <p class="small mt-2 mb-3" aria-live="polite">
+              <strong>FASTA file:</strong>
+              <span id="fasta-only-file" class="fasta-only-path ms-1">{{
+                selected || "Choose a FASTA file above."
+              }}</span>
             </p>
-            <p
-              v-else-if="files.length === 0"
-              id="fasta-only-empty"
-              class="small"
-            >
-              No FASTA files were found in the server data folder. Put a
-              <code>.fa</code>, <code>.fasta</code> or <code>.fa.gz</code> file
-              there and try again.
-            </p>
-            <template v-else>
-              <label for="fasta-only-file" class="form-label">FASTA file</label>
-              <select
-                id="fasta-only-file"
-                v-model="selected"
-                class="form-select mb-3"
+            <div class="form-check mb-2">
+              <input
+                id="fasta-only-split"
+                v-model="splitAtN"
+                class="form-check-input"
+                type="checkbox"
                 :disabled="busy"
+              />
+              <label class="form-check-label" for="fasta-only-split">
+                Split at runs of N
+              </label>
+            </div>
+            <div v-if="splitAtN" class="mb-2 ms-4">
+              <label for="fasta-only-min-n" class="form-label small mb-1">
+                Minimum consecutive N (bp)
+              </label>
+              <input
+                id="fasta-only-min-n"
+                v-model="minRunText"
+                class="form-control form-control-sm fasta-only-number"
+                type="text"
+                inputmode="numeric"
+                :disabled="busy"
+                :aria-invalid="runError ? 'true' : undefined"
+                :aria-describedby="
+                  runError ? 'fasta-only-run-error' : 'fasta-only-run-help'
+                "
+              />
+              <p
+                v-if="runError"
+                id="fasta-only-run-error"
+                class="small text-danger mb-0"
+                role="alert"
               >
-                <option v-for="name in files" :key="name" :value="name">
-                  {{ name }}
-                </option>
-              </select>
-              <div class="form-check mb-2">
-                <input
-                  id="fasta-only-split"
-                  v-model="splitAtN"
-                  class="form-check-input"
-                  type="checkbox"
-                  :disabled="busy"
-                />
-                <label class="form-check-label" for="fasta-only-split">
-                  Split at runs of N
-                </label>
-              </div>
-              <div v-if="splitAtN" class="mb-2 ms-4">
-                <label for="fasta-only-min-n" class="form-label small mb-1">
-                  Minimum consecutive N (bp)
-                </label>
-                <input
-                  id="fasta-only-min-n"
-                  v-model="minRunText"
-                  class="form-control form-control-sm fasta-only-number"
-                  type="text"
-                  inputmode="numeric"
-                  :disabled="busy"
-                  :aria-invalid="runError ? 'true' : undefined"
-                  :aria-describedby="
-                    runError ? 'fasta-only-run-error' : 'fasta-only-run-help'
-                  "
-                />
-                <p
-                  v-if="runError"
-                  id="fasta-only-run-error"
-                  class="small text-danger mb-0"
-                  role="alert"
-                >
-                  {{ runError }}
-                </p>
-                <p
-                  v-else
-                  id="fasta-only-run-help"
-                  class="small text-muted mb-0"
-                >
-                  Runs of N (either case) at least this long cut a sequence into
-                  pieces. The gap keeps its length and the pieces keep their
-                  original positions.
-                </p>
-              </div>
-            </template>
+                {{ runError }}
+              </p>
+              <p v-else id="fasta-only-run-help" class="small text-muted mb-0">
+                Runs of N (either case) at least this long cut a sequence into
+                pieces. The gap keeps its length and the pieces keep their
+                original positions.
+              </p>
+            </div>
             <div
               v-if="busy"
               id="fasta-only-progress"
@@ -174,11 +164,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import {
+  computed,
+  defineAsyncComponent,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+} from "vue";
 import type {
   FastaOnlyStatus,
   RequestManager,
 } from "@/app/core/net/api/RequestManager";
+const UniversalFileSelector = defineAsyncComponent(
+  () => import("@/app/ui/components/upper_ribbon/UniversalFileSelector.vue")
+);
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 
 const props = defineProps<{ requests: RequestManager }>();
@@ -190,8 +190,6 @@ const emit = defineEmits<{
 const MAX_RUN = 1_000_000;
 const dialog = ref<HTMLElement | null>(null);
 const startButton = ref<HTMLButtonElement | null>(null);
-const files = ref<string[]>([]);
-const loading = ref(true);
 const selected = ref("");
 const splitAtN = ref(false);
 const minRunText = ref("100");
@@ -274,9 +272,9 @@ useEscDismissableDialog({
 function focusable(): HTMLElement[] {
   return Array.from(
     dialog.value?.querySelectorAll<HTMLElement>(
-      "button:not([disabled]), select:not([disabled]), input:not([disabled])"
+      'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex="0"]'
     ) ?? []
-  );
+  ).filter((element) => element.getClientRects().length > 0);
 }
 
 /** Keeps Tab inside the dialog: the page behind it is not usable while it is open. */
@@ -303,19 +301,26 @@ function trapTab(event: KeyboardEvent): void {
   }
 }
 
+function isFastaFilename(name: string): boolean {
+  return /\.(?:fa|fasta|fna|fas)(?:\.gz)?$/i.test(name);
+}
+
+function selectFasta(name: string): void {
+  selected.value = isFastaFilename(name) ? name : "";
+  error.value =
+    name && !selected.value
+      ? "Choose a FASTA file (.fa, .fasta, .fna or .fas, optionally .gz)."
+      : "";
+}
+
 onMounted(async () => {
   opener = document.activeElement as HTMLElement | null;
-  try {
-    files.value = await props.requests.listFASTAFiles();
-    selected.value = files.value[0] ?? "";
-  } catch (failure) {
-    console.debug("Could not list FASTA files", failure);
-    error.value = "The list of FASTA files could not be loaded.";
-  } finally {
-    loading.value = false;
-  }
   await nextTick();
-  (document.getElementById("fasta-only-file") ?? startButton.value)?.focus();
+  (
+    dialog.value?.querySelector<HTMLInputElement>(
+      ".embedded-file-browser input"
+    ) ?? dialog.value
+  )?.focus();
 });
 
 onBeforeUnmount(() => {
@@ -331,6 +336,10 @@ onBeforeUnmount(() => {
 .fasta-only-modal {
   z-index: 2100;
 }
+.fasta-only-path {
+  overflow-wrap: anywhere;
+}
+
 .fasta-only-number {
   width: 9rem;
 }

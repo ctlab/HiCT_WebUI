@@ -21,18 +21,29 @@
 
 <template>
   <div class="file-selector-root">
-    <div class="modal-backdrop fade show" :style="backdropStyle"></div>
     <div
-      class="modal fade show"
+      v-if="!props.embedded"
+      class="modal-backdrop fade show"
+      :style="backdropStyle"
+    ></div>
+    <div
+      :class="props.embedded ? 'embedded-file-browser' : 'modal fade show'"
       tabindex="-1"
-      :style="modalStyle"
+      :style="props.embedded ? undefined : modalStyle"
       ref="modalFocusElement"
-      role="dialog"
-      aria-modal="true"
+      :role="props.embedded ? 'group' : 'dialog'"
+      :aria-modal="props.embedded ? undefined : true"
+      :aria-label="props.title ?? 'Select file'"
     >
-      <div class="modal-dialog modal-xl modal-dialog-centered">
-        <div class="modal-content">
-          <div class="modal-header">
+      <div
+        :class="
+          props.embedded
+            ? 'file-browser-layout'
+            : 'modal-dialog modal-xl modal-dialog-centered'
+        "
+      >
+        <div :class="props.embedded ? 'file-browser-content' : 'modal-content'">
+          <div v-if="!props.embedded" class="modal-header">
             <h5 class="modal-title">{{ props.title ?? "Select file" }}</h5>
             <button
               type="button"
@@ -40,7 +51,7 @@
               @click="onDismissClicked"
             ></button>
           </div>
-          <div class="modal-body">
+          <div :class="props.embedded ? 'file-browser-body' : 'modal-body'">
             <div
               v-if="props.errorMessage || errorMessage"
               class="alert alert-danger py-2"
@@ -160,7 +171,7 @@
                 :entries="filteredEntries"
                 :multi-select="props.multiSelect"
                 empty-message="No files or folders found for current filter"
-                scroll-height="58vh"
+                :scroll-height="props.embedded ? '34vh' : '58vh'"
                 @activate="onExplorerRowActivated"
               />
             </div>
@@ -203,7 +214,7 @@
               </div>
             </div>
           </div>
-          <div class="modal-footer">
+          <div v-if="!props.embedded" class="modal-footer">
             <div v-if="props.multiSelect" class="me-auto small text-muted">
               {{ selectedFilenames.length }} selected
             </div>
@@ -254,6 +265,7 @@ const emit = defineEmits<{
 
 const props = defineProps<{
   networkManager: NetworkManager;
+  embedded?: boolean;
   fileNamePredicate?: (name: string) => boolean;
   title?: string;
   fileType?: string;
@@ -301,7 +313,7 @@ const fileFilterHint = computed(() => {
 
 useEscDismissableDialog({
   priority: props.zIndex ?? 1055,
-  isOpen: () => true,
+  isOpen: () => !props.embedded,
   requestClose: () => {
     onDismissClicked();
   },
@@ -325,6 +337,17 @@ watch(selectorMode, (mode) => {
 
 watch(selectedFilename, (path) => {
   treeSelectionKeys.value = path ? { [fileSelectionKey(path)]: true } : {};
+  if (props.embedded) {
+    emit(
+      "selected",
+      path &&
+        allEntries.value.some(
+          (entry) => entry.path === path && entry.type === "file"
+        )
+        ? path
+        : ""
+    );
+  }
 });
 
 const filteredEntries = computed(() => {
@@ -756,10 +779,14 @@ onMounted(async () => {
 });
 
 const modalFocusElement = ref<HTMLElement | null>(null);
-useModalFocus(modalFocusElement);
+useModalFocus(modalFocusElement, () => !props.embedded);
 </script>
 
 <style scoped>
+.embedded-file-browser .tree-host {
+  max-height: 34vh;
+}
+
 .file-selector-root .modal {
   z-index: 1055;
 }
