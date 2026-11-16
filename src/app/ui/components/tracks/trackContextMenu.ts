@@ -8,7 +8,7 @@ import {
 
 export const OPEN_TRACK_MANAGER_EVENT = "hict:open-track-manager";
 
-/** `contig:1,000-1,500`, or `contigA:900-contigB:100` for a feature that spans a contig border. */
+/** `contig:1000-1500`, or `contigA:900-contigB:100` across a contig border. */
 function formatFeatureCoordinates(
   mapManager: ContactMapManager,
   startBp: number,
@@ -21,9 +21,7 @@ function formatFeatureCoordinates(
   const from = first.inContigBp + 1;
   const to = last.inContigBp + 1;
   if (first.contigId === last.contigId) {
-    return `${formatLocus(first.contigName, from)}-${to.toLocaleString(
-      "en-US"
-    )}`;
+    return `${formatLocus(first.contigName, from)}-${to}`;
   }
   return `${formatLocus(first.contigName, from)}-${formatLocus(
     last.contigName,
@@ -93,6 +91,29 @@ export function buildTrackContextMenu(
           ),
       }
     );
+    if (
+      mapManager.networkManager.requestManager.sourceCapabilities.PRIMARY
+        ?.sequenceScaleTiles === true
+    ) {
+      // Projected feature bounds are assembly BP, zero-based and half-open.
+      // These are the lower/higher display boundaries on either biological strand.
+      for (const [label, bp] of [
+        ["Cut at feature start", hit.startBp],
+        ["Cut at feature end", hit.endBp],
+      ] as const) {
+        const target = mapManager.eventManager.getExactCutTarget(bp);
+        items.push({
+          label,
+          disabled: !target,
+          title: target
+            ? "Cut at this assembly boundary, retaining all sequence and original contact bins. Start/end follow the displayed assembly coordinates on either strand."
+            : "Cuts are available inside editable contigs. Existing contig boundaries cannot be cut again.",
+          run: () => {
+            if (target) void mapManager.eventManager.cutAtExactTarget(target);
+          },
+        });
+      }
+    }
   }
   items.push(
     {

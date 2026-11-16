@@ -858,7 +858,13 @@ class LinearTrackManager {
 
   public centerOnFeature(entry: FeatureSearchEntry): void {
     this.setSelectedFeature(entry);
-    this.centerOnBpRange(entry.startBp, entry.endBp);
+    const view = this.mapManager.getView();
+    const midpoint = (entry.startBp + entry.endBp) / 2;
+    this.mapManager.getLayersManager().restoreViewPosition({
+      centerBp: [midpoint, midpoint],
+      resolution: view.getResolution(),
+      rotation: view.getRotation(),
+    });
   }
 
   /** Center the feature at measured, readable FASTA letter scale on both axes. */
@@ -871,17 +877,15 @@ class LinearTrackManager {
     const worldPerBase = finestPixel / finest;
     const resolution = worldPerBase / (sequenceLetterMinimumPixels() * 1.1);
     const midpoint = (entry.startBp + entry.endBp) / 2;
-    const coordinate =
-      this.mapManager
-        .getContigDimensionHolder()
-        .getFractionalPxOfBp(midpoint, finest) * finestPixel;
-    if (![resolution, coordinate].every(Number.isFinite) || resolution <= 0)
+    if (![resolution, midpoint].every(Number.isFinite) || resolution <= 0)
       return;
     this.setSelectedFeature(entry);
     const view = this.mapManager.getView();
-    view.cancelAnimations();
-    view.setResolution(resolution);
-    view.setCenter([coordinate, -coordinate]);
+    layers.restoreViewPosition({
+      centerBp: [midpoint, midpoint],
+      resolution,
+      rotation: view.getRotation(),
+    });
   }
 
   /** Finest bp resolution of the open map; map units are pixels at this resolution. */
@@ -934,22 +938,16 @@ class LinearTrackManager {
     const spanPxAtFinest = spanBp / Math.max(1, safeFinestBpResolution);
     const minViewResolution = view.getMinResolution() ?? 0;
     const desiredScaleFactor =
-      spanPxAtFinest > 0 ? Math.min(1, spanPxAtFinest / targetSpanPx) : 1;
+      spanPxAtFinest > 0 ? spanPxAtFinest / targetSpanPx : 1;
     const pixelResolution = Math.max(
       minViewResolution,
       finestPixelResolution * desiredScaleFactor
     );
     const midpointBp = (startBp + endBp) / 2;
-    const midpointPx = this.mapManager
-      .getContigDimensionHolder()
-      .getPxContainingBp(
-        Math.max(0, Math.round(midpointBp)),
-        safeFinestBpResolution
-      );
-    view.animate({
-      center: [midpointPx, -midpointPx],
+    this.mapManager.getLayersManager().restoreViewPosition({
+      centerBp: [midpointBp, midpointBp],
       resolution: pixelResolution,
-      duration: 220,
+      rotation: view.getRotation(),
     });
   }
 

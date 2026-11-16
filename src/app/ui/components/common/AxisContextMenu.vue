@@ -16,6 +16,7 @@
         type="button"
         role="menuitem"
         :disabled="item.disabled"
+        :title="item.title"
         @click="activate(item)"
       >
         {{ item.label }}

@@ -61,12 +61,12 @@ function load({ clipboard, secure = true, execCommand = () => true }) {
   return { ...sandbox.exports, toasts, copied, removed };
 }
 
-// formatLocus: thousands separators, no negative or fractional positions.
+// Copyable loci never contain locale grouping, negative or fractional positions.
 {
   const { formatLocus } = load({});
-  assert.equal(formatLocus("chr1", 12345), "chr1:12,345");
+  assert.equal(formatLocus("chr1", 12345), "chr1:12345");
   assert.equal(formatLocus("scaffold_7", 0), "scaffold_7:0");
-  assert.equal(formatLocus("ctg", 1234567.6), "ctg:1,234,568");
+  assert.equal(formatLocus("ctg", 1234567.6), "ctg:1234568");
   assert.equal(formatLocus("ctg", -5), "ctg:0");
   assert.equal(formatLocus("ctg", NaN), "ctg:0");
 }

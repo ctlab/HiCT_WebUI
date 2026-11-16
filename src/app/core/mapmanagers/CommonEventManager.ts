@@ -582,6 +582,88 @@ class CommonEventManager {
       });
   }
 
+  /** Snapshot both the oriented cut locus and its assembly revision for delayed menu actions. */
+  public getExactCutTarget(assemblyBp: number):
+    | {
+        assemblyBp: number;
+        contigId: number;
+        offsetBp: number;
+        session: string;
+        revision: number;
+      }
+    | undefined {
+    const api = this.mapManager.networkManager.requestManager;
+    const applied = api.history.applied;
+    const holder = this.mapManager.contigDimensionHolder;
+    if (
+      api.sourceCapabilities.PRIMARY?.sequenceScaleTiles !== true ||
+      api.sequenceViewReadOnly ||
+      api.history.busy ||
+      !applied ||
+      this.mapManager.isDisposed ||
+      this.mapManager.isExporting ||
+      !Number.isSafeInteger(assemblyBp) ||
+      assemblyBp <= 0 ||
+      assemblyBp >= holder.prefix_sum_bp[holder.contig_count]
+    )
+      return;
+    const locus = holder.getContigLocusByBp(assemblyBp);
+    const order = holder.contigIdToOrd[locus.contigId];
+    const descriptor = holder.contigDescriptors[order];
+    const offsetBp = assemblyBp - holder.prefix_sum_bp[order];
+    if (!descriptor || offsetBp <= 0 || offsetBp >= descriptor.contigLengthBp)
+      return;
+    return {
+      assemblyBp,
+      contigId: locus.contigId,
+      offsetBp,
+      session: applied.session,
+      revision: applied.revision,
+    };
+  }
+
+  public async cutAtExactTarget(
+    target: NonNullable<ReturnType<CommonEventManager["getExactCutTarget"]>>
+  ): Promise<boolean> {
+    const current = this.getExactCutTarget(target.assemblyBp);
+    if (
+      !current ||
+      current.session !== target.session ||
+      current.revision !== target.revision ||
+      current.contigId !== target.contigId ||
+      current.offsetBp !== target.offsetBp
+    ) {
+      toast("The assembly or editing state changed. Choose the cut again.");
+      return false;
+    }
+    let response;
+    try {
+      response =
+        await this.mapManager.networkManager.requestManager.splitContigAtBp(
+          target.contigId,
+          target.offsetBp
+        );
+    } catch {
+      // RequestManager reports rejected/conflicting requests. Keep the current assembly visible.
+      return false;
+    }
+    try {
+      if (this.mapManager.isDisposed) return false;
+      // A sequence-preserving cut changes native reference-bin widths, not BP
+      // positions. Preserve the locus currently in view while rebuilding them.
+      const layers = this.mapManager.viewAndLayersManager;
+      const position = layers.captureViewPosition();
+      this.applyAssemblyInfo(response);
+      this.resetSelection();
+      this.mapManager.reloadVisuals();
+      layers.restoreViewPosition(position);
+      return true;
+    } catch (failure) {
+      reportFailure("Refresh the cut assembly", failure);
+      return false;
+    }
+  }
+
   public onClickInScissorsMode(
     coordinate_px: Coordinate,
     bp_resolution: number
@@ -593,17 +675,13 @@ class CommonEventManager {
       const bp = Math.round(
         holder.getFractionalBpOfPx(coordinate_px[0], bp_resolution)
       );
-      const locus = holder.getContigLocusByBp(bp);
-      const order = holder.contigIdToOrd[locus.contigId];
-      const offset = bp - holder.prefix_sum_bp[order];
-      if (
-        offset <= 0 ||
-        offset >= holder.contigDescriptors[order].contigLengthBp
-      ) {
-        toast("Choose a base boundary inside a contig.");
+      const target = this.getExactCutTarget(bp);
+      if (!target) {
+        toast("Choose a base boundary inside an editable contig.");
         return;
       }
-      operation = api.splitContigAtBp(locus.contigId, offset);
+      void this.cutAtExactTarget(target);
+      return;
     } else {
       operation = api.splitContigAtPx(
         new SplitContigRequest({

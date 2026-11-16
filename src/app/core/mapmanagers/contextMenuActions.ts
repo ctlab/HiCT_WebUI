@@ -3,15 +3,16 @@ import { toast } from "vue-sonner";
 export interface ContextMenuItem {
   label: string;
   disabled?: boolean;
+  title?: string;
   run: () => void;
 }
 
-/** `name:12,345`, the form accepted by genome browsers (thousands separators allowed). */
+/** Copyable genome locus: ungrouped ASCII coordinates, independent of locale. */
 export function formatLocus(contigName: string, inContigBp: number): string {
   const position = Number.isFinite(inContigBp)
     ? Math.max(0, Math.round(inContigBp))
     : 0;
-  return `${contigName}:${position.toLocaleString("en-US")}`;
+  return `${contigName}:${position}`;
 }
 
 function copyWithTextarea(text: string): boolean {
