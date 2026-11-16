@@ -1899,6 +1899,7 @@ class RequestManager {
 
   public async querySignalStatistics(options: {
     bpResolution: number;
+    signalMode?: "PIPELINE_SIGNAL" | "TRADITIONAL_NORMALIZED";
     metadataOnly?: boolean;
     revision?: string;
     startRowPx?: number;

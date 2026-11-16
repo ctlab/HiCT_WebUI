@@ -215,6 +215,7 @@
           /></label>
         </div>
         <button
+          v-if="!primaryDerivedSignal"
           type="button"
           class="range-text-button"
           title="Use the exact minimum and maximum of the loaded tiles, including rare extreme pixels"
@@ -229,13 +230,27 @@
           v-if="!percentageSignalScale"
           type="button"
           class="range-text-button"
+          :disabled="rangeScanning"
           @click="fetchExactRange"
         >
           Scan whole map
         </button>
+        <button
+          v-if="rangeScanning"
+          type="button"
+          class="range-text-button"
+          @click="cancelExactRange"
+        >
+          Cancel scan
+        </button>
         <span v-if="!percentageSignalScale" class="range-help">
           · Reads all tiles; may take time.</span
         >
+        <p v-if="primaryDerivedSignal" class="range-help">
+          Whole-map Expected/O/E limits use a profile fitted across this
+          resolution, independently of the viewport profile. Scanning changes
+          slider limits only.
+        </p>
       </details>
       <p
         v-if="applyCoolerWeights && coolerWeightsHaveNaNs"
@@ -367,6 +382,11 @@ const props = defineProps<{
 }>();
 
 const activePaletteMode = ref("LINEAR");
+const primaryDerivedSignal = computed(
+  () =>
+    activeVisualizationSource.value === "PRIMARY" &&
+    visualizationOptionsStore.signalDisplayMode !== "OBSERVED"
+);
 const observedExpectedPalette = computed(
   () =>
     (activeVisualizationSource.value === "PRIMARY" &&
@@ -412,11 +432,12 @@ const percentageSignalScale: Ref<boolean> = ref(false);
 let registeredRangeMapManager: ContactMapManager | undefined;
 let optionsHydrationGeneration = 0;
 let rangeController: AbortController | undefined;
-let rangeRequestKey = "";
+let exactRangeResolution: number | undefined;
 let rangeTimer: number | undefined;
 let rangeGeneration = 0;
 let rangeProbe = 0;
 const rangeStatus = ref("Waiting for visible tile limits");
+const rangeScanning = ref(false);
 const activeRangeExpression = shallowRef<Record<string, unknown>>();
 const histogramContext = computed(() =>
   JSON.stringify([
@@ -510,6 +531,8 @@ function focusThresholds() {
   sliderUpperLimit.value = upperBound.value;
 }
 function useLoadedRange() {
+  exactRangeResolution = undefined;
+  fetchProcessedRange();
   sliderBoundsManual.value = false;
   sliderLowerLimit.value = signalMin.value;
   sliderUpperLimit.value =
@@ -686,7 +709,8 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
   ++rangeProbe;
   ++rangeGeneration;
   rangeController?.abort();
-  rangeRequestKey = "";
+  rangeScanning.value = false;
+  exactRangeResolution = undefined;
   rangeStatus.value = "Waiting for visible tile limits";
   activeRangeExpression.value = undefined;
   const generation = ++optionsHydrationGeneration;
@@ -707,8 +731,11 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
       sourceTargets.find(
         (target) => target.id === activeVisualizationTargetId.value
       ) ?? sourceTargets[0];
-    activePaletteMode.value = activeTarget?.mode ?? "LINEAR";
-    percentageSignalScale.value = activeTarget?.displayUnit === "PERCENT";
+    activePaletteMode.value = primaryDerivedSignal.value
+      ? "LINEAR"
+      : activeTarget?.mode ?? "LINEAR";
+    percentageSignalScale.value =
+      !primaryDerivedSignal.value && activeTarget?.displayUnit === "PERCENT";
     activeRangeExpression.value =
       await manager.visualizationManager.getSourceSignalExpression(
         activeVisualizationSource.value,
@@ -730,7 +757,7 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
       sliderUpperLimit.value = upperBound.value;
     }
     updateFromStore();
-    rangeRequestKey = "";
+    exactRangeResolution = undefined;
     void refreshProcessedRange();
   } catch {
     // Keep the current draft when a source/graph refresh is temporarily unavailable.
@@ -782,6 +809,18 @@ function refreshProcessedRange(): void {
 
 function fetchProcessedRange(): void {
   const manager = props.mapManager;
+  if (rangeScanning.value) return;
+  if (exactRangeResolution !== undefined) {
+    if (
+      exactRangeResolution ===
+      manager?.viewAndLayersManager.currentViewState.resolutionDesciptor
+        .bpResolution
+    )
+      return;
+    exactRangeResolution = undefined;
+    rangeStatus.value = "Resolution changed; scan again for exact limits";
+  }
+  if (primaryDerivedSignal.value) return;
   if (
     !manager ||
     manager.isDisposed ||
@@ -824,43 +863,65 @@ function fetchProcessedRange(): void {
   )}`;
 }
 
+function cancelExactRange(): void {
+  ++rangeProbe;
+  ++rangeGeneration;
+  rangeController?.abort();
+  rangeScanning.value = false;
+  exactRangeResolution = undefined;
+  rangeStatus.value = "Scan cancelled; previous bounds retained";
+}
+
+watch(histogramContext, () => {
+  exactRangeResolution = undefined;
+  if (rangeScanning.value) cancelExactRange();
+});
+
 async function fetchExactRange(): Promise<void> {
   const manager = props.mapManager;
-  const probe = ++rangeProbe;
-  if (!manager || manager.isDisposed || percentageSignalScale.value) {
-    ++rangeGeneration;
-    rangeController?.abort();
-    rangeRequestKey = "";
-    return;
-  }
-  let generation: number | undefined;
+  if (!manager || manager.isDisposed || percentageSignalScale.value) return;
+  const probe = ++rangeProbe,
+    generation = ++rangeGeneration;
+  rangeController?.abort();
+  const controller = new AbortController();
+  rangeController = controller;
+  rangeScanning.value = true;
+  rangeStatus.value = primaryDerivedSignal.value
+    ? "Preparing whole-map expected profile and exact limits…"
+    : "Preparing exact limits…";
   try {
+    await manager.visualizationManager.waitForPendingOptionRequests();
+    if (controller.signal.aborted || probe !== rangeProbe || manager.isDisposed)
+      return;
     const bpResolution =
       manager.viewAndLayersManager.currentViewState.resolutionDesciptor
         .bpResolution;
-    const expression =
-      await manager.visualizationManager.getSourceSignalExpression(
-        activeVisualizationSource.value,
-        activeVisualizationTargetId.value
-      );
+    const derived = primaryDerivedSignal.value;
+    const signalMode = derived ? "TRADITIONAL_NORMALIZED" : "PIPELINE_SIGNAL";
+    const expression = derived
+      ? undefined
+      : await manager.visualizationManager.getSourceSignalExpression(
+          activeVisualizationSource.value,
+          activeVisualizationTargetId.value
+        );
+    const displayMode = visualizationOptionsStore.signalDisplayMode;
     const api = manager.networkManager.requestManager;
     const snapshot = await api.querySignalStatistics({
       bpResolution,
+      signalMode,
       metadataOnly: true,
+      signal: controller.signal,
     });
-    if (probe !== rangeProbe || manager.isDisposed) return;
+    if (controller.signal.aborted || probe !== rangeProbe || manager.isDisposed)
+      return;
     const key = JSON.stringify([
       bpResolution,
+      signalMode,
       expression,
+      displayMode,
       snapshot.revision,
       snapshot.size,
     ]);
-    if (key === rangeRequestKey) return;
-    generation = ++rangeGeneration;
-    rangeController?.abort();
-    const controller = new AbortController();
-    rangeController = controller;
-    rangeRequestKey = key;
     const range =
       rangeCache.get(key) ??
       (await scanExactSignalRange(
@@ -874,7 +935,8 @@ async function fetchExactRange(): Promise<void> {
             controller.abort();
           return api.querySignalStatistics({
             bpResolution,
-            expression,
+            signalMode,
+            ...(expression ? { expression } : {}),
             revision: snapshot.revision,
             startRowPx,
             startColPx,
@@ -883,10 +945,11 @@ async function fetchExactRange(): Promise<void> {
         },
         controller.signal,
         (completed, total) => {
-          rangeStatus.value = `Exact limits: ${(
-            (100 * completed) /
-            total
-          ).toFixed(1)}% (${completed}/${total} blocks)`;
+          if (generation === rangeGeneration && !controller.signal.aborted)
+            rangeStatus.value = `Exact limits: ${(
+              (100 * completed) /
+              total
+            ).toFixed(1)}% (${completed}/${total} blocks)`;
         }
       ));
     if (controller.signal.aborted || generation !== rangeGeneration) return;
@@ -894,31 +957,34 @@ async function fetchExactRange(): Promise<void> {
     const oldestKey = rangeCache.keys().next().value;
     if (rangeCache.size > 8 && oldestKey !== undefined)
       rangeCache.delete(oldestKey);
+    exactRangeResolution = bpResolution;
     signalMin.value = range.min;
     signalMax.value = range.max > range.min ? range.max : range.min + 1;
-    if (!sliderBoundsManual.value) {
-      sliderLowerLimit.value = signalMin.value;
-      sliderUpperLimit.value = signalMax.value;
-    }
-    rangeStatus.value = `Exact limits: ${formatSignal(
-      range.min
-    )} - ${formatSignal(range.max)}`;
+    // Whole-map limits are an explicit user choice and must outlive viewport tile refreshes.
+    sliderBoundsManual.value = true;
+    sliderLowerLimit.value = signalMin.value;
+    sliderUpperLimit.value = signalMax.value;
+    rangeStatus.value = `Exact limits${
+      derived
+        ? " (whole-map " +
+          displayMode
+            .replace("OBSERVED_OVER_EXPECTED", "O/E")
+            .replace("EXPECTED", "Expected") +
+          ")"
+        : ""
+    }: ${formatSignal(range.min)} – ${formatSignal(range.max)} (${
+      range.count
+    } finite cells)`;
   } catch (error) {
-    if (
-      (generation === undefined
-        ? probe !== rangeProbe
-        : generation !== rangeGeneration) ||
-      manager.isDisposed
-    )
-      return;
-    rangeRequestKey = "";
-    rangeStatus.value = "Exact limits unavailable; previous bounds retained";
-    if (
-      (error as { response?: { status?: number } })?.response?.status === 409
-    ) {
-      rangeStatus.value = "Exact limits pending";
-      refreshProcessedRange();
-    }
+    if (generation !== rangeGeneration || manager.isDisposed) return;
+    exactRangeResolution = undefined;
+    rangeStatus.value = controller.signal.aborted
+      ? "Scan cancelled; previous bounds retained"
+      : "Exact limits unavailable; previous bounds retained";
+    if ((error as { response?: { status?: number } })?.response?.status === 409)
+      rangeStatus.value = "Map changed; scan again for exact limits";
+  } finally {
+    if (generation === rangeGeneration) rangeScanning.value = false;
   }
 }
 
