@@ -44,6 +44,7 @@
             <a
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
               href="#"
               >File</a
             >
@@ -147,6 +148,7 @@
             <a
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
               href="#"
               >Assembly</a
             >
@@ -208,12 +210,16 @@
               </li>
             </ul>
           </li>
-          <SelectionControls :map-manager="props.mapManager" />
+          <SelectionControls
+            :map-manager="props.mapManager"
+            :popper-config="navbarPopperConfig"
+          />
           <!-- View -->
           <li class="nav-item dropdown">
             <a
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
               href="#"
               >View</a
             >
@@ -314,6 +320,7 @@
             <a
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
               href="#"
               >Tools</a
             >
@@ -364,6 +371,7 @@
               aria-current="page"
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
               href="#"
               >Dev</a
             >
@@ -527,6 +535,7 @@
             <a
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
               href="#"
               >Help</a
             >
@@ -1468,6 +1477,14 @@ useEscDismissableDialog({
   requestClose: () => {
     cancelJuiceboxFlow();
   },
+});
+
+// Navbar dropdowns otherwise disable Popper positioning and can leave a narrow viewport.
+const navbarPopperConfig = JSON.stringify({
+  modifiers: [
+    { name: "applyStyles", enabled: true },
+    { name: "preventOverflow", options: { padding: 8 } },
+  ],
 });
 
 const props = defineProps<{
@@ -2423,6 +2440,52 @@ function onSelectionFASTARequest() {
   }
 }
 
+/* Let metadata use another row rather than push menus or Jobs outside the window. */
+.navbar-bar {
+  height: auto;
+  min-height: 56px;
+}
+.navbar-bar .container-fluid {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+#navbarSupportedContent {
+  min-width: 0;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+#navbarSupportedContent > .navbar-nav {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.navbar-bar .file-chips {
+  flex: 1 1 400px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.navbar-bar .file-chips [aria-label="Link FASTA"] {
+  flex: 0 0 auto;
+}
+.navbar-bar :deep(.jobs-button) {
+  align-self: flex-start;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .navbar-bar .file-chips {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .navbar-bar .file-chip {
+    width: 100%;
+    max-width: none;
+    text-align: left;
+  }
+}
+
 .navbar-bar :deep(.navbar-brand),
 .navbar-bar :deep(.nav-link),
 .navbar-bar :deep(.dropdown-item),
@@ -2435,6 +2498,8 @@ function onSelectionFASTARequest() {
 }
 
 .navbar-bar :deep(.dropdown-menu) {
+  max-height: min(70vh, 32rem);
+  overflow-y: auto;
   border-color: var(--hict-ui-border, rgba(15, 23, 38, 0.22));
 }
 
@@ -2455,6 +2520,8 @@ function onSelectionFASTARequest() {
 }
 
 .file-chip {
+  flex: 1 1 120px;
+  min-width: 0;
   max-width: 16rem;
   overflow: hidden;
   text-overflow: ellipsis;

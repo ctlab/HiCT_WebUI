@@ -577,6 +577,7 @@ function openRenderingPipeline(): void {
 
 <style scoped>
 .signal-processing {
+  min-width: 0;
   margin: 0.5rem 0 0.75rem;
   font-size: 0.875rem;
   display: flex;
@@ -586,6 +587,7 @@ function openRenderingPipeline(): void {
 
 .signal-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
@@ -637,6 +639,7 @@ function openRenderingPipeline(): void {
 
 .base-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
@@ -649,11 +652,15 @@ function openRenderingPipeline(): void {
 
 .scaling-select {
   width: 11rem;
+  flex: 1 1 11rem;
+  min-width: 0;
   max-width: 100%;
 }
 
 .normalization-select {
   width: 13rem;
+  flex: 1 1 13rem;
+  min-width: 0;
   max-width: 100%;
 }
 

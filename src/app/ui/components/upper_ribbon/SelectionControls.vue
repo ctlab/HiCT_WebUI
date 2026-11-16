@@ -4,6 +4,7 @@
       class="nav-link active dropdown-toggle selection-label"
       aria-label="Selection"
       data-bs-toggle="dropdown"
+      :data-bs-popper-config="popperConfig"
       href="#"
       :title="
         summary + ' · Shift-drag entities; Ctrl/Cmd-drag a region; Esc clears.'
@@ -86,7 +87,10 @@
 import { computed, ref } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import RegionSelectionDialog from "../common/RegionSelectionDialog.vue";
-const props = defineProps<{ mapManager?: ContactMapManager }>();
+const props = defineProps<{
+  mapManager?: ContactMapManager;
+  popperConfig?: string;
+}>();
 const coordinateOpen = ref(false);
 const state = computed(
   () => props.mapManager?.viewAndLayersManager.currentViewState

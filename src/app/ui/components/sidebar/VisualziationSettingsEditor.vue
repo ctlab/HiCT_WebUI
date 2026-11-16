@@ -430,12 +430,7 @@ watch(
 );
 
 watch(
-  () => [
-    fromColor.value,
-    toColor.value,
-    lowerBound.value,
-    upperBound.value,
-  ],
+  () => [fromColor.value, toColor.value, lowerBound.value, upperBound.value],
   () => {
     if (syncingFromColormap.value) {
       return;
@@ -942,6 +937,8 @@ function formatSignal(value: number): string {
 <style scoped>
 .threshold-compact-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 10px;
   padding: 14px 12px;
   background: var(--hict-surface-bg, #fff);
@@ -997,6 +994,7 @@ function formatSignal(value: number): string {
 }
 .range-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;

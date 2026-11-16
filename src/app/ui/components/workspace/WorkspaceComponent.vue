@@ -54,7 +54,7 @@ const props = defineProps<{
   .workspace-component {
     display: grid;
     grid-template-columns: 52px minmax(0, 1fr);
-    grid-template-rows: minmax(440px, 65vh) auto;
+    grid-template-rows: minmax(440px, 65vh) max-content;
     overflow: auto;
   }
   .workspace-component :deep(.sidebar) {
@@ -63,6 +63,11 @@ const props = defineProps<{
     min-width: 0;
     max-width: none;
     max-height: none;
+    min-height: 52px;
+  }
+  .workspace-component :deep(.sidebar-collapse-toggle i) {
+    display: inline-block;
+    transform: rotate(-90deg);
   }
 }
 </style>
