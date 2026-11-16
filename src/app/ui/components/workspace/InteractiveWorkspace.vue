@@ -90,12 +90,28 @@
     <div
       v-if="visibleTrackCount > 0"
       class="interactive-workspace_resize_handle interactive-workspace_resize_handle_horizontal"
+      role="separator"
+      tabindex="0"
+      aria-label="Horizontal tracks panel height"
+      aria-orientation="horizontal"
+      :aria-valuenow="horizontalTrackPanelSizePx"
+      :aria-valuemin="60"
+      :aria-valuemax="trackPanelMaximum"
+      @keydown="resizeTrackPanelByKey('horizontal', $event)"
       @mousedown.prevent="startTrackPanelResize('horizontal', $event)"
       title="Drag to resize horizontal tracks panel"
     ></div>
     <div
       v-if="visibleTrackCount > 0"
       class="interactive-workspace_resize_handle interactive-workspace_resize_handle_vertical"
+      role="separator"
+      tabindex="0"
+      aria-label="Vertical tracks panel width"
+      aria-orientation="vertical"
+      :aria-valuenow="verticalTrackPanelSizePx"
+      :aria-valuemin="60"
+      :aria-valuemax="trackPanelMaximum"
+      @keydown="resizeTrackPanelByKey('vertical', $event)"
       @mousedown.prevent="startTrackPanelResize('vertical', $event)"
       title="Drag to resize vertical tracks panel"
     ></div>
@@ -177,6 +193,8 @@ const props = defineProps<{
   filename?: string;
 }>();
 const workspaceRoot = ref<HTMLElement | null>(null);
+let workspaceResizeObserver: ResizeObserver | undefined;
+let workspaceResizeFrame: number | undefined;
 const cornerMiniMapTarget = ref<HTMLElement | null>(null);
 const cornerMiniMapFallbackTarget = ref<HTMLElement | null>(null);
 
@@ -189,6 +207,7 @@ watch([horizontalSequencePresent, verticalSequencePresent], async () => {
   props.mapManager?.viewAndLayersManager.scheduleRulerRender();
 });
 let unsubscribeTrackList: (() => void) | undefined;
+const trackPanelMaximum = ref(420);
 const horizontalTrackPanelSizePx = ref(140);
 const verticalTrackPanelSizePx = ref(140);
 let trackPanelResizeState: {
@@ -296,6 +315,29 @@ function onRulerContextMenu(event: Event): void {
 }
 
 onMounted(() => {
+  if (workspaceRoot.value) {
+    workspaceResizeObserver = new ResizeObserver(() => {
+      // Layout writes inside observer delivery can trigger a browser loop warning.
+      if (workspaceResizeFrame !== undefined) return;
+      workspaceResizeFrame = window.requestAnimationFrame(() => {
+        workspaceResizeFrame = undefined;
+        trackPanelMaximum.value = clampTrackPanelSize(420);
+        const horizontal = clampTrackPanelSize(
+          horizontalTrackPanelSizePx.value
+        );
+        const vertical = clampTrackPanelSize(verticalTrackPanelSizePx.value);
+        if (
+          horizontal === horizontalTrackPanelSizePx.value &&
+          vertical === verticalTrackPanelSizePx.value
+        )
+          return;
+        horizontalTrackPanelSizePx.value = horizontal;
+        verticalTrackPanelSizePx.value = vertical;
+        void refreshWorkspaceAfterLayout();
+      });
+    });
+    workspaceResizeObserver.observe(workspaceRoot.value);
+  }
   window.addEventListener("hict:ruler-context-menu", onRulerContextMenu);
   bindTrackVisibility();
   void refreshWorkspaceAfterLayout();
@@ -311,7 +353,7 @@ watch(
 
 watch(visibleTrackCount, async () => {
   if (visibleTrackCount.value <= 0) {
-    trackPanelResizeState = null;
+    stopTrackPanelResize();
   } else {
     if (horizontalTrackPanelSizePx.value < 60) {
       horizontalTrackPanelSizePx.value = 140;
@@ -327,10 +369,15 @@ watch(visibleTrackCount, async () => {
 });
 
 onBeforeUnmount(() => {
+  workspaceResizeObserver?.disconnect();
+  if (workspaceResizeFrame !== undefined)
+    window.cancelAnimationFrame(workspaceResizeFrame);
   window.removeEventListener("hict:ruler-context-menu", onRulerContextMenu);
   document.body.style.removeProperty("cursor");
   window.removeEventListener("mousemove", onTrackPanelResizeMove);
   window.removeEventListener("mouseup", stopTrackPanelResize);
+  window.removeEventListener("blur", stopTrackPanelResize);
+  trackPanelResizeState = null;
   unsubscribeTrackList?.();
   props.mapManager?.clearOverviewMapTarget();
 });
@@ -366,13 +413,36 @@ const onTrackPanelResizeMove = (event: MouseEvent): void => {
 };
 
 const stopTrackPanelResize = (): void => {
-  if (!trackPanelResizeState) {
-    return;
-  }
+  const wasResizing = trackPanelResizeState !== null;
   trackPanelResizeState = null;
   document.body.style.removeProperty("cursor");
   window.removeEventListener("mousemove", onTrackPanelResizeMove);
   window.removeEventListener("mouseup", stopTrackPanelResize);
+  window.removeEventListener("blur", stopTrackPanelResize);
+  // Commit the final grid size before updating the map, rulers and track canvases.
+  if (wasResizing) void refreshWorkspaceAfterLayout();
+};
+
+const resizeTrackPanelByKey = (
+  orientation: "horizontal" | "vertical",
+  event: KeyboardEvent
+): void => {
+  const smaller = orientation === "horizontal" ? "ArrowUp" : "ArrowLeft";
+  const larger = orientation === "horizontal" ? "ArrowDown" : "ArrowRight";
+  if (![smaller, larger, "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const size =
+    orientation === "horizontal"
+      ? horizontalTrackPanelSizePx
+      : verticalTrackPanelSizePx;
+  size.value = clampTrackPanelSize(
+    event.key === "Home"
+      ? 60
+      : event.key === "End"
+      ? 420
+      : size.value + (event.key === larger ? 10 : -10)
+  );
+  void refreshWorkspaceAfterLayout();
 };
 
 const startTrackPanelResize = (
@@ -394,6 +464,7 @@ const startTrackPanelResize = (
     orientation === "horizontal" ? "row-resize" : "col-resize";
   window.addEventListener("mousemove", onTrackPanelResizeMove);
   window.addEventListener("mouseup", stopTrackPanelResize);
+  window.addEventListener("blur", stopTrackPanelResize);
 };
 
 const horizontalTrackPanelCssSize = computed(() =>
@@ -589,6 +660,11 @@ const verticalRulerCssSize = computed(() => {
 
 .interactive-workspace_content {
   grid-area: content;
+}
+
+.interactive-workspace_resize_handle:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
 }
 
 .interactive-workspace_resize_handle {

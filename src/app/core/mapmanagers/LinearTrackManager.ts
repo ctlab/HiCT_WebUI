@@ -86,6 +86,8 @@ class LinearTrackManager {
   private horizontalResizeObserver: ResizeObserver | null = null;
   private verticalResizeObserver: ResizeObserver | null = null;
   private tracks: TrackSummaryResponse[] = [];
+  private trackListRequestId = 0;
+  private disposed = false;
   private readonly hiddenByAxis: Record<Orientation, Set<string>> = {
     horizontal: new Set<string>(),
     vertical: new Set<string>(),
@@ -165,6 +167,8 @@ class LinearTrackManager {
   }
 
   public dispose(): void {
+    this.disposed = true;
+    this.trackListRequestId++;
     if (this.moveEndListener) {
       unByKey(this.moveEndListener);
     }
@@ -299,8 +303,14 @@ class LinearTrackManager {
   public async refreshTrackList(
     waitForRender = true
   ): Promise<TrackSummaryResponse[]> {
-    this.tracks =
+    if (this.disposed) return this.tracks.slice();
+    const requestId = ++this.trackListRequestId;
+    const snapshot =
       await this.mapManager.networkManager.requestManager.listTracks();
+    // A late list response must not undo a newer edit or reset its local settings.
+    if (this.disposed || requestId !== this.trackListRequestId)
+      return this.tracks.slice();
+    this.tracks = snapshot;
     this.syncTrackRenderSettings();
     this.invalidateQueryCache();
     this.notifyTrackListChanged();

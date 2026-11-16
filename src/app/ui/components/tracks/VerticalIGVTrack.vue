@@ -491,7 +491,9 @@ onBeforeUnmount(() => {
   position: relative;
   width: 100%;
   height: 100%;
-  border: 1px solid black;
+  /* Draw the frame without shrinking/scaling the track's coordinate surface. */
+  outline: 1px solid black;
+  outline-offset: -1px;
   overflow: hidden;
   touch-action: none;
   cursor: grab;
