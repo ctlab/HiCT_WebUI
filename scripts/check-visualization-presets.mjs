@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -263,3 +264,21 @@ assert.equal(paletteMemory.recalledDisplayPalette('EXPECTED'),undefined);
 paletteMemory.rememberDisplayPalette('EXPECTED',{...palette,min:4,max:1});
 assert.equal(paletteMemory.recalledDisplayPalette('EXPECTED'),undefined);
 console.log('Derived-view palette persistence passed.');
+
+const oeExports = {};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(repoRoot,
+  "src/app/core/visualization/oePalette.ts"), "utf8"), {
+  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020},
+}).outputText,{exports:oeExports,require:createRequire(import.meta.url)});
+const {parseOePalette,OE_PALETTE_PRESETS,oePalettePresetId}=oeExports;
+for(const p of OE_PALETTE_PRESETS){
+ const palette=parseOePalette({...p,min:.25,max:4});
+ assert.equal(oePalettePresetId(palette.startColor.toUpperCase(),palette.endColor.toUpperCase()),p.id);
+}
+for(const invalid of [null,[],{min:0,max:2},{min:1,max:2},{min:.5,max:1},{min:.5,max:Infinity},{min:'0.5',max:2}])
+ assert.throws(()=>parseOePalette({...invalid,startColor:'#2166acff',endColor:'#b2182bff'}));
+assert.throws(()=>parseOePalette({min:.5,max:2,startColor:'invalid-color',endColor:'#b2182bff'}));
+const parsed=parseOePalette({min:.25,max:8,startColor:'#00ff0080',endColor:'#f0f'});
+assert.equal(parsed.startColor.toLowerCase(),'#00ff0080');assert.equal(parsed.endColor.toLowerCase(),'#ff00ffff');
+assert.equal(oePalettePresetId(parsed.startColor,parsed.endColor),'custom');
+console.log('O/E palette presets and bounds passed.');

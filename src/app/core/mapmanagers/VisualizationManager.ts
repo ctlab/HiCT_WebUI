@@ -46,6 +46,8 @@ import {
 import { ColorTranslator } from "colortranslator";
 
 import { histogramQuantile } from "../visualization/tileSignalRange";
+import { parseOePalette } from "../visualization/oePalette";
+import type { DisplayPalette } from "../visualization/displayPaletteMemory";
 import {
   recalledDisplayPalette,
   rememberDisplayPalette,
@@ -1270,6 +1272,52 @@ class VisualizationManager {
       skipAutoThresholdRefresh: true,
     });
     return updatedMaxSignal;
+  }
+
+  /** Publish the active primary O/E palette without replacing the Observed graph. */
+  public applyObservedExpectedPalette(
+    palette: DisplayPalette
+  ): Promise<VisualizationOptions> {
+    const parsed = parseOePalette(palette);
+    return this.trackOptionRequest(
+      (async () => {
+        const api = this.mapManager.networkManager.requestManager;
+        const current = await api.getVisualizationOptions(
+          new GetVisualizationOptionsRequest({})
+        );
+        if (this.mapManager.isDisposed)
+          throw new Error("The map was closed. Reopen the palette editor.");
+        if (current.signalDisplayMode !== "OBSERVED_OVER_EXPECTED")
+          throw new Error("Select Show O/E before editing its palette.");
+        const next = new VisualizationOptions(
+          current.preLogBase,
+          current.postLogBase,
+          current.applyCoolerWeights,
+          current.resolutionScaling,
+          current.resolutionLinearScaling,
+          new SimpleLinearGradient(
+            new ColorTranslator(parsed.startColor, { legacyCSS: true }),
+            new ColorTranslator(parsed.endColor, { legacyCSS: true }),
+            parsed.min,
+            parsed.max
+          ),
+          current.autoThresholdEnabled,
+          current.autoThresholdQuantile,
+          current.signalDisplayMode,
+          current.coolerWeightsNaNPolicy,
+          current.coolerWeightsHaveNaNs,
+          current.coolerWeightsNaNCount
+        );
+        const result = await this.sendVisualizationOptionsToServer({
+          skipAutoThresholdRefresh: true,
+          preserveCustomPipeline: true,
+          visualizationOptions: next,
+        });
+        window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
+        await this.mapManager.reloadTilesFromBackend();
+        return result;
+      })()
+    );
   }
 
   private rememberDerivedPalette(options: VisualizationOptions): void {

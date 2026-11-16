@@ -69,6 +69,23 @@
         </label>
       </div>
 
+      <label v-if="observedExpectedPalette" class="oe-palette-preset">
+        O/E palette
+        <select
+          class="form-select form-select-sm"
+          :value="oePalettePresetId(fromColor.HEXA, toColor.HEXA)"
+          @change="chooseOePalette(($event.target as HTMLSelectElement).value)"
+        >
+          <option
+            v-for="preset in OE_PALETTE_PRESETS"
+            :key="preset.id"
+            :value="preset.id"
+          >
+            {{ preset.label }}
+          </option>
+          <option value="custom" disabled>Custom colors</option>
+        </select>
+      </label>
       <SignalRangeControl
         :min="sliderPositionMin"
         :max="sliderPositionMax"
@@ -253,6 +270,10 @@
 import { computed, Ref, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import SignalRangeControl from "./SignalRangeControl.vue";
+import {
+  OE_PALETTE_PRESETS,
+  oePalettePresetId,
+} from "@/app/core/visualization/oePalette";
 import NormalizationSelector from "../upper_ribbon/NormalizationSelector.vue";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import { toast } from "vue-sonner";
@@ -299,6 +320,12 @@ const observedExpectedPalette = computed(
         "OBSERVED_OVER_EXPECTED") ||
     activePaletteMode.value === "OBSERVED_OVER_EXPECTED"
 );
+function chooseOePalette(id: string): void {
+  const preset = OE_PALETTE_PRESETS.find((p) => p.id === id);
+  if (!preset) return;
+  fromColor.value = new ColorTranslator(preset.startColor, { legacyCSS: true });
+  toColor.value = new ColorTranslator(preset.endColor, { legacyCSS: true });
+}
 const signalMin: Ref<number> = ref(0);
 const signalMax: Ref<number> = ref(1);
 const fromColor: Ref<ColorTranslator> = ref(
@@ -999,6 +1026,12 @@ function formatSignal(value: number): string {
 </script>
 
 <style scoped>
+.oe-palette-preset {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  min-width: 0;
+}
 .threshold-compact-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
