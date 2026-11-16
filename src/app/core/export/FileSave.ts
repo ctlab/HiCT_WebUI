@@ -16,15 +16,25 @@ export type FileSaveResult =
       status: "saved";
       filename: string;
       path?: string;
-      readFile: () => Promise<File>;
+      readFile?: () => Promise<File>;
     };
 export interface FileSaveDestination {
   write(blob: Blob): Promise<FileSaveResult>;
+  /** Native adapters may transfer the guarded request without sending file bytes through IPC. */
+  writeRequest?(
+    request: CoordinateDownloadRequest,
+    signal?: AbortSignal
+  ): Promise<FileSaveResult>;
   /** Present when this destination can consume bytes with bounded buffering. */
   writeStream?(
     stream: ReadableStream<Uint8Array>,
     signal?: AbortSignal
   ): Promise<FileSaveResult>;
+}
+export interface CoordinateDownloadRequest {
+  url: string;
+  body: string;
+  headers: Record<string, string>;
 }
 interface BrowserFileHandle {
   name: string;
@@ -61,6 +71,13 @@ export async function prepareFileSave(
         kind: FileSaveKind;
         bytes: Uint8Array;
       }) => Promise<{ saved: boolean; path?: string }>;
+      saveCoordinateExport?: (payload: {
+        filename: string;
+        kind: FileSaveKind;
+        operationId: string;
+        request: CoordinateDownloadRequest;
+      }) => Promise<{ saved: boolean; path?: string }>;
+      cancelCoordinateExport?: (operationId: string) => Promise<void>;
     };
     __TAURI__?: {
       core?: {
@@ -81,6 +98,50 @@ export async function prepareFileSave(
   if (typeof browser.hictDesktop?.saveExport === "function") {
     const save = browser.hictDesktop.saveExport.bind(browser.hictDesktop);
     return {
+      ...(browser.hictDesktop.saveCoordinateExport &&
+      browser.hictDesktop.cancelCoordinateExport
+        ? {
+            async writeRequest(
+              request: CoordinateDownloadRequest,
+              signal?: AbortSignal
+            ): Promise<FileSaveResult> {
+              signal?.throwIfAborted();
+              // getRandomValues is also available on trusted HTTP LAN origins.
+              const operationId = Array.from(
+                window.crypto.getRandomValues(new Uint8Array(16)),
+                (value) => value.toString(16).padStart(2, "0")
+              ).join("");
+              const desktop = browser.hictDesktop!;
+              const cancel = () => {
+                void desktop.cancelCoordinateExport!(operationId).catch(
+                  () => {}
+                );
+              };
+              signal?.addEventListener("abort", cancel, { once: true });
+              try {
+                const result = await desktop.saveCoordinateExport!({
+                  filename: name,
+                  kind,
+                  operationId,
+                  request,
+                });
+                if (result?.saved === false) return cancelledFileSave;
+                if (result?.saved !== true || !result.path)
+                  throw Error(
+                    "The desktop did not confirm that the file was saved."
+                  );
+                remember(result.path);
+                return {
+                  status: "saved",
+                  filename: basename(result.path),
+                  path: result.path,
+                };
+              } finally {
+                signal?.removeEventListener("abort", cancel);
+              }
+            },
+          }
+        : {}),
       async write(blob) {
         const result = await save({
           filename: name,

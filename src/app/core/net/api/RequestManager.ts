@@ -2059,19 +2059,17 @@ class RequestManager {
       });
   }
 
-  /** Streaming coordinate download; the caller owns cancellation and consumes the body once. */
-  public async openCoordinateDownload(
+  public coordinateDownloadRequest(
     request:
       | GetFastaForAssemblyRequest
       | GetFastaForSelectionRequest
       | GetAGPForAssemblyRequest,
-    version = this.history.applied,
-    signal?: AbortSignal
-  ): Promise<ReadableStream<Uint8Array>> {
+    version = this.history.applied
+  ): import("../../export/FileSave").CoordinateDownloadRequest {
     const host = this.networkManager.host.replace(/\/+$/, "");
     const path = request.requestPath.replace(/^\/+/, "");
-    const response = await fetch(`${host}/${path}`, {
-      method: "POST",
+    return {
+      url: `${host}/${path}`,
       headers: {
         "Content-Type": "application/json",
         Accept: "text/plain",
@@ -2083,6 +2081,23 @@ class RequestManager {
           : {}),
       },
       body: JSON.stringify(HiCTAPIRequestDTO.toDTOClass(request).toDTO()),
+    };
+  }
+
+  /** Streaming coordinate download; the caller owns cancellation and consumes the body once. */
+  public async openCoordinateDownload(
+    request:
+      | GetFastaForAssemblyRequest
+      | GetFastaForSelectionRequest
+      | GetAGPForAssemblyRequest,
+    version = this.history.applied,
+    signal?: AbortSignal
+  ): Promise<ReadableStream<Uint8Array>> {
+    const spec = this.coordinateDownloadRequest(request, version);
+    const response = await fetch(spec.url, {
+      method: "POST",
+      headers: spec.headers,
+      body: spec.body,
       signal,
     });
     if (!response.ok) {

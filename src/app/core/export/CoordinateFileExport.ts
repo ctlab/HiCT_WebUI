@@ -24,6 +24,11 @@ export async function writeCoordinateFile(
   const action = { label: "Cancel", onClick: () => controller.abort() };
   const transfer = async (): Promise<FileSaveResult> => {
     try {
+      if (destination.writeRequest)
+        return await destination.writeRequest(
+          api.coordinateDownloadRequest(request, version),
+          controller.signal
+        );
       if (destination.writeStream) {
         const stream = await api.openCoordinateDownload(
           request,

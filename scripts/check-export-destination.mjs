@@ -5,6 +5,7 @@ import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 import ts from "typescript";
+import { loadElectronSource } from "./load-electron-source.mjs";
 
 const require = createRequire(import.meta.url);
 const directory = await fs.mkdtemp(
@@ -59,7 +60,9 @@ const compiled = ts.transpileModule(
 ).outputText;
 vm.runInNewContext(compiled, {
   require: (name) =>
-    name === "electron"
+    name === "./CoordinateExports"
+      ? loadElectronSource("CoordinateExports")
+      : name === "electron"
       ? fakeElectron
       : name === "node:fs/promises"
       ? {

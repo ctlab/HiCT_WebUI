@@ -1409,21 +1409,23 @@ async function onSaveSession(): Promise<boolean> {
     sessionSaveNotice.value = newerEdits
       ? "The session was saved, but newer edits remain unsaved. Save again before continuing."
       : "";
+    const readSavedFile = result.readFile;
     toast.success(
       newerEdits
         ? sessionSaveNotice.value
         : `Session saved: ${result.filename}. Undo history is not saved.`,
       {
         duration: 8000,
-        action: {
-          label: "Open saved session",
-          onClick: () => {
-            void result
-              .readFile()
-              .then(onOpenSession)
-              .catch((error) => reportFailure("Open saved session", error));
-          },
-        },
+        action: readSavedFile
+          ? {
+              label: "Open saved session",
+              onClick: () => {
+                void readSavedFile()
+                  .then(onOpenSession)
+                  .catch((error) => reportFailure("Open saved session", error));
+              },
+            }
+          : undefined,
       }
     );
     return !newerEdits;

@@ -22,6 +22,21 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 
+async function invokeExport(channel: string, payload: unknown) {
+  try {
+    return await ipcRenderer.invoke(channel, payload);
+  } catch (failure) {
+    const detail = (failure as { message?: unknown })?.message;
+    const message = typeof detail === "string" ? detail : String(failure);
+    throw new Error(
+      message.replace(
+        /^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/,
+        ""
+      )
+    );
+  }
+}
+
 contextBridge.exposeInMainWorld("hictDesktop", {
   platform: "electron",
   electron: process.versions.electron,
@@ -31,5 +46,9 @@ contextBridge.exposeInMainWorld("hictDesktop", {
     filename: string;
     kind?: string;
     bytes: number[] | Uint8Array;
-  }) => ipcRenderer.invoke("hict:save-export", payload),
+  }) => invokeExport("hict:save-export", payload),
+  saveCoordinateExport: (payload: unknown) =>
+    invokeExport("hict:save-coordinate-export", payload),
+  cancelCoordinateExport: (operationId: string) =>
+    ipcRenderer.invoke("hict:cancel-coordinate-export", operationId),
 });

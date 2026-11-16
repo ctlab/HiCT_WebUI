@@ -39,6 +39,7 @@ import {
   open,
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { CoordinateExports } from "./CoordinateExports";
 import { isIP } from "node:net";
 import { join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -202,10 +203,100 @@ async function openExternalUrl(url: string): Promise<void> {
   }
 }
 
+async function chooseExportDestination(
+  sender: Electron.WebContents,
+  payload: { filename?: string; kind?: string }
+) {
+  const filename =
+    typeof payload.filename === "string" && payload.filename.trim().length > 0
+      ? payload.filename.trim()
+      : "hict-export.bin";
+  const parent = BrowserWindow.fromWebContents(sender);
+  let directory = process.env.HICT_EXPORT_DIR;
+  const kind = [
+    "session",
+    "fasta",
+    "agp",
+    "figure",
+    "bookmarks",
+    "preset",
+    "pipeline",
+    "other",
+  ].includes(payload.kind ?? "")
+    ? payload.kind
+    : "export";
+  const preferencePath = join(
+    app.getPath("userData"),
+    `last-${kind}-directory.txt`
+  );
+  try {
+    const saved = await readFile(preferencePath, "utf8");
+    if ((await stat(saved)).isDirectory()) directory = saved;
+  } catch {
+    /* First export, removed folder or unreadable preference: use default. */
+  }
+  const safeFilename = filename.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_");
+  const options = {
+    title: "Save HiCT export",
+    defaultPath: directory ? join(directory, safeFilename) : safeFilename,
+  };
+  const result = parent
+    ? await dialog.showSaveDialog(parent, options)
+    : await dialog.showSaveDialog(options);
+  if (result.canceled || !result.filePath) {
+    return undefined;
+  }
+  return { path: result.filePath, preferencePath };
+}
+
 function configureSecurity(baseUrl: URL): void {
   Menu.setApplicationMenu(null);
   ipcMain.handle("hict:quit", () => {
     app.quit();
+  });
+  const coordinateExports = new CoordinateExports(normalizeAllowedUrl);
+  let waitingForExports = false,
+    allowQuitOnce = false;
+  app.on("before-quit", (event) => {
+    if (allowQuitOnce) {
+      allowQuitOnce = false;
+      return;
+    }
+    const pending = coordinateExports.hasTransfers;
+    const cleanup = coordinateExports.shutdown();
+    if (!pending) return;
+    event.preventDefault();
+    if (!waitingForExports) {
+      waitingForExports = true;
+      void cleanup.finally(() => {
+        waitingForExports = false;
+        allowQuitOnce = true;
+        app.quit();
+      });
+    }
+  });
+  const watched = new WeakSet<Electron.WebContents>();
+  ipcMain.handle("hict:save-coordinate-export", (event, payload) => {
+    const owner = event.sender;
+    const ownerId = owner.id;
+    if (!watched.has(owner)) {
+      watched.add(owner);
+      owner.on("destroyed", () => coordinateExports.cancel(ownerId));
+      owner.on("render-process-gone", () => coordinateExports.cancel(ownerId));
+      owner.on(
+        "did-start-navigation",
+        (_event, _url, _inPlace, isMainFrame) => {
+          if (isMainFrame) coordinateExports.cancel(ownerId);
+        }
+      );
+    }
+    return coordinateExports.save(ownerId, payload, () =>
+      chooseExportDestination(owner, payload)
+    );
+  });
+  ipcMain.handle("hict:cancel-coordinate-export", (event, operationId) => {
+    if (typeof operationId === "string")
+      coordinateExports.cancel(event.sender.id, operationId);
   });
   ipcMain.handle(
     "hict:save-export",
@@ -217,46 +308,10 @@ function configureSecurity(baseUrl: URL): void {
         bytes?: number[] | Uint8Array | ArrayBuffer;
       }
     ): Promise<{ saved: boolean; path?: string }> => {
-      const filename =
-        typeof payload.filename === "string" &&
-        payload.filename.trim().length > 0
-          ? payload.filename.trim()
-          : "hict-export.bin";
-      const parent = BrowserWindow.fromWebContents(event.sender);
-      let directory = process.env.HICT_EXPORT_DIR;
-      const kind = [
-        "session",
-        "fasta",
-        "agp",
-        "figure",
-        "bookmarks",
-        "preset",
-        "pipeline",
-        "other",
-      ].includes(payload.kind ?? "")
-        ? payload.kind
-        : "export";
-      const preferencePath = join(
-        app.getPath("userData"),
-        `last-${kind}-directory.txt`
-      );
-      try {
-        const saved = await readFile(preferencePath, "utf8");
-        if ((await stat(saved)).isDirectory()) directory = saved;
-      } catch {
-        /* First export, removed folder or unreadable preference: use default. */
-      }
-      const safeFilename = filename.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_");
-      const options = {
-        title: "Save HiCT export",
-        defaultPath: directory ? join(directory, safeFilename) : safeFilename,
-      };
-      const result = parent
-        ? await dialog.showSaveDialog(parent, options)
-        : await dialog.showSaveDialog(options);
-      if (result.canceled || !result.filePath) {
-        return { saved: false };
-      }
+      const destination = await chooseExportDestination(event.sender, payload);
+      if (!destination) return { saved: false };
+      const result = { filePath: destination.path };
+      const preferencePath = destination.preferencePath;
       // Renderers send a structured-clone Uint8Array (fast for large PDFs/PNGs);
       // plain number arrays from older renderers remain accepted.
       const raw = payload.bytes;

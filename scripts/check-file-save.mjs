@@ -456,3 +456,126 @@ assert.equal(notifications.length, 4);
 console.log(
   "Coordinate export control: single promise notice, captured revision, cancellation and one recorded outcome per transfer passed."
 );
+
+browser.crypto = { getRandomValues: (bytes) => bytes.fill(42) };
+let nativePayload, cancelledId, resolveNative;
+browser.hictDesktop = {
+  saveExport: () =>
+    assert.fail("Coordinate exports must not use whole-file IPC"),
+  saveCoordinateExport: async (payload) => {
+    nativePayload = payload;
+    return new Promise((resolve) => {
+      resolveNative = resolve;
+    });
+  },
+  cancelCoordinateExport: async (id) => {
+    cancelledId = id;
+  },
+};
+const nativeDestination = await prepareFileSave("assembly.fasta", "fasta");
+const nativeRequest = {
+  url: "http://localhost:5000/get_fasta_for_assembly",
+  body: "{}",
+  headers: { "X-HiCT-History-Revision": "17" },
+};
+const nativeController = new AbortController();
+const nativePending = nativeDestination.writeRequest(
+  nativeRequest,
+  nativeController.signal
+);
+assert.equal(nativePayload.request, nativeRequest);
+assert.equal(nativePayload.operationId, "2a".repeat(16));
+assert.equal(nativePayload.kind, "fasta");
+assert.equal("bytes" in nativePayload, false);
+nativeController.abort();
+assert.equal(cancelledId, "2a".repeat(16));
+resolveNative({ saved: false });
+assert.equal((await nativePending).status, "cancelled");
+const successfulNative = nativeDestination.writeRequest(nativeRequest);
+resolveNative({ saved: true, path: "/chosen/assembly.fasta" });
+const nativeResult = await successfulNative;
+assert.equal(nativeResult.status, "saved");
+assert.equal(nativeResult.path, "/chosen/assembly.fasta");
+assert.equal(nativeResult.readFile, undefined);
+const aborted = new AbortController();
+aborted.abort();
+await assert.rejects(
+  nativeDestination.writeRequest(nativeRequest, aborted.signal),
+  /abort/i
+);
+const nativeNotices = notices.length;
+await coordinateExports.writeCoordinateFile(
+  {
+    writeRequest: async (spec, signal) => {
+      assert.equal(spec, nativeRequest);
+      assert.ok(signal instanceof AbortSignal);
+      return nativeResult;
+    },
+  },
+  {
+    coordinateDownloadRequest: (sent, displayed) => {
+      assert.equal(sent, request);
+      assert.equal(displayed, version);
+      return nativeRequest;
+    },
+    openCoordinateDownload: () =>
+      assert.fail("A native request must not fetch through the renderer"),
+  },
+  request,
+  version,
+  "Assembly FASTA"
+);
+assert.equal(notices.length, nativeNotices + 1);
+assert.equal(notifications.at(-1)[1], "Assembly FASTA saved: assembly.fasta");
+console.log(
+  "Native bridge: request-only payload, captured revision, owned cancellation, commit confirmation and buffered-adapter bypass passed."
+);
+
+let exposedBridge, bridgeFailure;
+const preloadSource = ts.transpileModule(
+  fs.readFileSync(
+    new URL("../src/electron/preload/preload.ts", import.meta.url),
+    "utf8"
+  ),
+  {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }
+).outputText;
+vm.runInNewContext(preloadSource, {
+  exports: {},
+  process: { versions: { electron: "test", chrome: "test" } },
+  require: () => ({
+    contextBridge: {
+      exposeInMainWorld: (_name, bridge) => {
+        exposedBridge = bridge;
+      },
+    },
+    ipcRenderer: {
+      invoke: async () => {
+        if (bridgeFailure) throw { message: bridgeFailure };
+        return { saved: false };
+      },
+    },
+  }),
+});
+assert.equal((await exposedBridge.saveCoordinateExport({})).saved, false);
+bridgeFailure =
+  "Error invoking remote method 'hict:save-coordinate-export': Error: Cannot save the export in this folder. Choose a writable folder.";
+await assert.rejects(
+  exposedBridge.saveCoordinateExport({}),
+  (error) =>
+    error.message ===
+    "Cannot save the export in this folder. Choose a writable folder."
+);
+bridgeFailure =
+  "Error invoking remote method 'hict:save-export': Error: disk unavailable";
+await assert.rejects(
+  exposedBridge.saveExport({}),
+  (error) => error.message === "disk unavailable"
+);
+console.log(
+  "Preload export errors retain the useful message without exposing IPC method names."
+);
