@@ -1600,7 +1600,7 @@ async function onOpenSession(file: File): Promise<void> {
     const session = parseSessionDocument(await file.text());
     // The file is valid. Only now ask about edits that opening it would replace.
     if (!(await confirmDiscardUnsavedEdits("open this session"))) return;
-    if (session.version === 3) {
+    if (session.version === 3 || session.version === 4) {
       await restoreCompleteSession(session);
       return;
     }

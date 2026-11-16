@@ -55,7 +55,7 @@ const reject = (document, field) =>
     () => parseSessionDocument(JSON.stringify(document)),
     new RegExp(field)
   );
-for (const version of [undefined, 0, 4, 999, "2", null])
+for (const version of [undefined, 0, 5, 999, "2", null])
   reject({ ...valid, version }, "version");
 for (const document of [null, [], "session"]) reject(document, "document");
 for (const center of [[], [1], [1, 2, 3], ["1", 2], [null, 2], {}])
@@ -185,6 +185,16 @@ const client = {
 const v3 = createSessionEnvelope(snapshot, client, "2026-11-10T00:00:00.000Z");
 assert.equal(v3.version, 3);
 assert.equal(v3.format, "hict-session");
+const v4 = createSessionEnvelope({ ...snapshot, snapshotVersion: 2 }, client);
+assert.equal(v4.version, 4);
+assert.equal(
+  parseSessionDocument(JSON.stringify(v4)).snapshot.snapshotVersion,
+  2
+);
+reject(
+  { ...v4, snapshot: { ...snapshot, snapshotVersion: 1 } },
+  "snapshotVersion"
+);
 const parsed = parseSessionDocument(JSON.stringify(v3));
 assert.equal(parsed.snapshot.primary.filename, "tiny.hict.hdf5");
 const namedClient = {

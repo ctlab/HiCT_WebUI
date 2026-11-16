@@ -944,7 +944,7 @@ class RequestManager {
     return status;
   }
 
-  /** Capture server state for a future v3 session without advancing displayed coordinates. */
+  /** Capture server state for a portable session without advancing displayed coordinates. */
   public async getSessionSnapshot(
     verifyAssemblyRoundTrip = false,
     fingerprintFiles = false,
@@ -964,7 +964,7 @@ class RequestManager {
       )
     );
     const snapshot = response.data as Record<string, unknown>;
-    if (snapshot.snapshotVersion !== 1)
+    if (snapshot.snapshotVersion !== 1 && snapshot.snapshotVersion !== 2)
       throw new Error("Unsupported server session snapshot version");
     if (verifyAssemblyRoundTrip && snapshot.assemblyVerified !== true)
       throw new Error("Server did not verify assembly reconstruction");

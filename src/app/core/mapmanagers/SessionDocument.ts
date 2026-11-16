@@ -264,7 +264,7 @@ export interface SessionClientState {
   normalizationWeights?: "FILE" | "SQRT_COVERAGE";
 }
 
-/** Builds the portable v3 document from a server snapshot and the client-only state. */
+/** Keep older server snapshots portable; exact-cut snapshots require envelope v4. */
 export function createSessionEnvelope(
   snapshot: RecordValue,
   client: SessionClientState,
@@ -272,7 +272,7 @@ export function createSessionEnvelope(
 ): RecordValue {
   return {
     format: SESSION_FORMAT,
-    version: 3,
+    version: snapshot.snapshotVersion === 2 ? 4 : 3,
     savedAt,
     snapshot,
     client: { ...client },
@@ -285,7 +285,7 @@ function envelope(session: RecordValue): void {
   if ("savedAt" in session && typeof session.savedAt !== "string")
     invalid("savedAt", "expected a string");
   const snapshot = record(session.snapshot, "snapshot");
-  if (snapshot.snapshotVersion !== 1)
+  if (snapshot.snapshotVersion !== (session.version === 4 ? 2 : 1))
     invalid("snapshot.snapshotVersion", "unsupported snapshot version");
   if (snapshot.filesFingerprinted !== true)
     invalid(
@@ -325,7 +325,7 @@ function envelope(session: RecordValue): void {
 }
 
 /**
- * Reject malformed documents before any network request or state change. Version 3
+ * Reject malformed documents before any network request or state change. Versions 3/4
  * checks its envelope here. The server validates the snapshot's resources in depth,
  * and does so before replacing anything.
  */
@@ -356,16 +356,16 @@ export function parseSessionDocument(text: string): RecordValue {
   }
   bounded(parsed, "document", 0);
   const session = record(parsed, "document");
-  if (session.version === 3) {
+  if (session.version === 3 || session.version === 4) {
     envelope(session);
     return session;
   }
   if (session.version !== 1 && session.version !== 2) {
     invalid(
       "version",
-      typeof session.version === "number" && session.version > 3
+      typeof session.version === "number" && session.version > 4
         ? "this session was saved by a newer HiCT. Update HiCT to open it"
-        : "supported versions are 1, 2 and 3"
+        : "supported versions are 1, 2, 3 and 4"
     );
   }
   for (const key of [
