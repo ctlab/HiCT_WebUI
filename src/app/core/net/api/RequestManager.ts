@@ -822,7 +822,8 @@ class RequestManager {
     const sequenceSnapshot =
       request.requestPath.startsWith("/sequence/") &&
       (request.requestPath.endsWith("/jobs") ||
-        request.requestPath === "/sequence/alignment_detail");
+        request.requestPath === "/sequence/alignment_detail" ||
+        request.requestPath === "/sequence/repeat_period");
     const historyHeaders =
       (mutation ||
         sequenceSnapshot ||

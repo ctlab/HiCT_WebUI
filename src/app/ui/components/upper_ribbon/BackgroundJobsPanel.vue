@@ -123,6 +123,7 @@ const labels: Record<string, string> = {
   moddotplot: "ModDotPlot",
   dotplot: "Sequence dotplot",
   alignment_detail: "Base alignment",
+  repeat_period: "Repeat measurement",
   track_precompute: "Track precompute",
   coverage: "Coverage",
   fasta_only: "FASTA assembly",

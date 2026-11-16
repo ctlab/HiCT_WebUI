@@ -3,7 +3,7 @@
     v-show="visible"
     ref="canvas"
     class="sequence-axis"
-    :class="[axis, { dragging }]"
+    :class="[axis, { dragging, selecting: selectOnDrag }]"
     :style="
       axis === 'horizontal'
         ? { height: `${stripSize}px` }
@@ -11,17 +11,32 @@
     "
     role="img"
     tabindex="0"
-    aria-label="FASTA track (forward strand, optionally reverse complement below). Drag to pan; scroll or double-click to zoom. Arrow keys pan; plus and minus zoom."
+    aria-label="FASTA track (forward strand, optionally reverse complement below). Ctrl/Command-drag to select and measure bases; plain drag pans. Scroll or double-click to zoom. Shift-arrow selects bases; arrow keys pan; plus and minus zoom."
     @pointerdown="startPan"
     @pointermove="pan"
     @pointerup="endPan"
-    @pointercancel="endPan"
+    @pointercancel="cancelGesture"
     @wheel.prevent="forwardNavigation"
     @dblclick.prevent="forwardNavigation"
     @keydown="navigateByKey"
     @mousemove="showBaseMetadata"
     @mouseleave="scheduleTooltipHide"
     @contextmenu.prevent="onContextMenu"
+  />
+  <div
+    v-if="visible && measurementBounds"
+    class="sequence-measurement-highlight"
+    :style="measurementBounds"
+    aria-hidden="true"
+    data-html2canvas-ignore="true"
+  ></div>
+  <SequenceMeasurementCard
+    v-if="measurement && mapManager"
+    :key="`${measurement.startBp}:${measurement.endBp}:${measurement.reverse}`"
+    :selection="measurement"
+    :map-manager="mapManager"
+    :supported="repeatSupported"
+    @clear="clearMeasurement"
   />
   <AxisContextMenu
     v-if="contextMenu"
@@ -71,6 +86,16 @@ import {
 } from "@/app/core/mapmanagers/contextMenuActions";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { SequenceAnalysisRequest } from "@/app/core/net/api/SequenceAnalysisRequest";
+import {
+  measureBases,
+  type SequenceMeasurement,
+} from "@/app/core/sequence/sequenceMeasurement";
+import SequenceMeasurementCard from "./SequenceMeasurementCard.vue";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
+const props = defineProps<{
+  mapManager?: ContactMapManager;
+  axis: "horizontal" | "vertical";
+}>();
 const settings = useUiSettingsStore();
 const stripSize = computed(() =>
   sequenceStripSize(settings.sequenceShowReverseStrand)
@@ -79,6 +104,81 @@ const hoverText = ref("");
 const hoverPoint = ref({ x: 0, y: 0 });
 const dragging = ref(false);
 let drag: { pointer: number; client: number; center: number } | undefined;
+let selectionDrag:
+  | {
+      pointer: number;
+      anchor: number;
+      reverse: boolean;
+      bases: typeof renderedBases;
+    }
+  | undefined;
+const selectOnDrag = ref(false),
+  repeatSupported = ref(false);
+const previewMeasurement = ref<SequenceMeasurement>();
+const measurement = computed(() => {
+  const selected =
+    props.mapManager?.viewAndLayersManager.currentViewState.sequenceMeasurement;
+  return selected?.axis === props.axis ? selected : undefined;
+});
+const measurementBounds = ref<Record<string, string>>();
+function clearMeasurement() {
+  if (props.mapManager)
+    props.mapManager.viewAndLayersManager.currentViewState.sequenceMeasurement =
+      undefined;
+  previewMeasurement.value = undefined;
+  updateMeasurementBounds();
+}
+function updateMeasurementBounds() {
+  const selected = previewMeasurement.value ?? measurement.value,
+    manager = props.mapManager;
+  measurementBounds.value = undefined;
+  if (!selected || !manager) return;
+  const row = strandRows(settings.sequenceShowReverseStrand).find(
+    (r) => r.strand === (selected.reverse ? "reverse" : "forward")
+  );
+  if (!row) return;
+  const horizontal = props.axis === "horizontal",
+    d = manager.viewAndLayersManager.currentViewState.resolutionDesciptor;
+  const points = [selected.startBp, selected.endBp].map((bp) => {
+    const p =
+      manager.contigDimensionHolder.getFractionalPxOfBp(bp, d.bpResolution) *
+      d.pixelResolution;
+    return manager
+      .getMap()
+      .getPixelFromCoordinate(horizontal ? [p, 0] : [0, -p])[
+      horizontal ? 0 : 1
+    ];
+  });
+  const length = manager.getMap().getSize()?.[horizontal ? 0 : 1] ?? 0;
+  const start = Math.max(0, points[0]),
+    end = Math.min(length, points[1]);
+  if (!(end > start)) return;
+  measurementBounds.value = {
+    left: `${horizontal ? start : row.start}px`,
+    top: `${horizontal ? row.start : start}px`,
+    width: `${horizontal ? end - start : row.end - row.start}px`,
+    height: `${horizontal ? row.end - row.start : end - start}px`,
+  };
+}
+watch(
+  [measurement, () => settings.sequenceShowReverseStrand],
+  updateMeasurementBounds
+);
+function cancelGesture() {
+  const pointer = selectionDrag?.pointer ?? drag?.pointer;
+  if (pointer !== undefined && canvas.value?.hasPointerCapture(pointer))
+    canvas.value.releasePointerCapture(pointer);
+  selectionDrag = undefined;
+  drag = undefined;
+  dragging.value = false;
+  previewMeasurement.value = undefined;
+  updateMeasurementBounds();
+}
+useEscDismissableDialog({
+  priority: 1000,
+  isOpen: () => !!selectionDrag,
+  requestClose: cancelGesture,
+});
 let tooltipHideTimer: number | undefined;
 let defaultGap: number | undefined;
 let disposed = false;
@@ -92,6 +192,35 @@ function scheduleTooltipHide() {
 function startPan(event: PointerEvent) {
   const manager = props.mapManager;
   if (!manager || manager.isExporting || event.button !== 0) return;
+  if (
+    selectOnDrag.value ||
+    ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey)
+  ) {
+    const located = locateBase(event);
+    if (!located?.base) return;
+    manager.viewAndLayersManager.currentViewState.sequenceMeasurement =
+      undefined;
+    selectionDrag = {
+      pointer: event.pointerId,
+      anchor: located.base.bp,
+      reverse: located.onReverse,
+      bases: renderedBases.slice(),
+    };
+    previewMeasurement.value = measureBases(
+      selectionDrag.bases,
+      located.base.bp,
+      located.base.bp,
+      props.axis,
+      located.onReverse
+    );
+    dragging.value = true;
+    clearBaseMetadata();
+    canvas.value?.setPointerCapture(event.pointerId);
+    canvas.value?.focus({ preventScroll: true });
+    updateMeasurementBounds();
+    event.preventDefault();
+    return;
+  }
   const center = manager.getView().getCenter();
   if (!center) return;
   const horizontal = props.axis === "horizontal";
@@ -108,6 +237,24 @@ function startPan(event: PointerEvent) {
 }
 function pan(event: PointerEvent) {
   const manager = props.mapManager;
+  if (
+    selectionDrag?.pointer === event.pointerId &&
+    manager &&
+    !manager.isExporting
+  ) {
+    const base = locateBase(event, true)?.base;
+    if (base)
+      previewMeasurement.value = measureBases(
+        selectionDrag.bases,
+        selectionDrag.anchor,
+        base.bp,
+        props.axis,
+        selectionDrag.reverse
+      );
+    updateMeasurementBounds();
+    event.preventDefault();
+    return;
+  }
   if (!manager || manager.isExporting || drag?.pointer !== event.pointerId)
     return;
   const view = manager.getView(),
@@ -121,6 +268,13 @@ function pan(event: PointerEvent) {
   event.preventDefault();
 }
 function endPan(event: PointerEvent) {
+  if (selectionDrag?.pointer === event.pointerId) {
+    if (props.mapManager && !props.mapManager.isExporting)
+      props.mapManager.viewAndLayersManager.currentViewState.sequenceMeasurement =
+        previewMeasurement.value;
+    cancelGesture();
+    return;
+  }
   if (event.pointerId !== drag?.pointer) return;
   if (canvas.value?.hasPointerCapture(event.pointerId))
     canvas.value.releasePointerCapture(event.pointerId);
@@ -131,6 +285,7 @@ function forwardNavigation(event: WheelEvent | MouseEvent) {
   const manager = props.mapManager,
     target = canvas.value;
   if (!manager || manager.isExporting || !target) return;
+  cancelGesture();
   clearBaseMetadata();
   const viewport = manager.getMap().getViewport(),
     mapRect = viewport.getBoundingClientRect(),
@@ -174,6 +329,31 @@ function navigateByKey(event: KeyboardEvent) {
       ? 1
       : 0;
   if (direction) {
+    if (event.shiftKey && renderedBases.length) {
+      const selected = measurement.value;
+      const anchor = selected
+        ? direction > 0
+          ? selected.startBp
+          : selected.endBp - 1
+        : renderedBases[0].bp;
+      const focus = selected
+        ? direction > 0
+          ? selected.endBp
+          : selected.startBp - 1
+        : anchor;
+      const next = measureBases(
+        renderedBases,
+        anchor,
+        focus,
+        props.axis,
+        selected?.reverse ?? false
+      );
+      if (next)
+        manager.viewAndLayersManager.currentViewState.sequenceMeasurement =
+          next;
+      event.preventDefault();
+      return;
+    }
     const view = manager.getView(),
       center = view.getCenter()?.slice();
     if (!center) return;
@@ -207,6 +387,7 @@ async function refreshGapSetting() {
     defaultGap = Number.isFinite(data.gapLengthBp)
       ? data.gapLengthBp
       : undefined;
+    repeatSupported.value = data.repeatPeriod === true;
     schedule();
   } catch {
     /* The actual FASTA request reports connection failures; do not duplicate notifications. */
@@ -218,10 +399,6 @@ watch(
   () => schedule()
 );
 
-const props = defineProps<{
-  mapManager?: ContactMapManager;
-  axis: "horizontal" | "vertical";
-}>();
 const emit = defineEmits<{ (event: "presence", value: boolean): void }>();
 const canvas = ref<HTMLCanvasElement>();
 const visible = ref(false);
@@ -252,7 +429,7 @@ function clearBaseMetadata() {
   cancelTooltipHide();
   hoverText.value = "";
 }
-function locateBase(event: MouseEvent) {
+function locateBase(event: MouseEvent, clamp = false) {
   const target = canvas.value;
   if (!target) return undefined;
   const box = target.getBoundingClientRect();
@@ -277,7 +454,18 @@ function locateBase(event: MouseEvent) {
     (b) => Math.abs(b.screen - position) <= 4
   );
   const base =
-    closest && Math.abs(closest.screen - position) <= 10 ? closest : undefined;
+    closest &&
+    (clamp ||
+      Math.abs(closest.screen - position) <=
+        Math.max(
+          10,
+          Math.abs(
+            (renderedBases[1]?.screen ?? closest.screen) -
+              renderedBases[0].screen
+          ) / 2
+        ))
+      ? closest
+      : undefined;
   return { boundary, base, onReverse };
 }
 function showBaseMetadata(event: MouseEvent) {
@@ -288,7 +476,10 @@ function showBaseMetadata(event: MouseEvent) {
   const { boundary, base, onReverse } = located;
   hoverPoint.value = { x: event.clientX, y: event.clientY };
   if (boundary) hoverText.value = boundary.label;
-  else if (base) hoverText.value = onReverse ? base.reverseLabel : base.label;
+  else if (base)
+    hoverText.value =
+      (onReverse ? base.reverseLabel : base.label) +
+      "\nCtrl/⌘-drag to select bases and measure a repeat period.";
   else clearBaseMetadata();
 }
 const contextMenu = ref<{
@@ -309,6 +500,12 @@ function onContextMenu(event: MouseEvent) {
     y: event.clientY,
     title: `FASTA · ${props.axis === "horizontal" ? "Columns" : "Rows"}`,
     items: [
+      {
+        label: selectOnDrag.value ? "Drag to pan" : "Drag to select bases",
+        run: () => {
+          selectOnDrag.value = !selectOnDrag.value;
+        },
+      },
       {
         label: "Copy position",
         disabled: !base,
@@ -358,6 +555,9 @@ function abortInFlight() {
  */
 function onSequenceInvalidated() {
   if (disposed) return;
+  cancelGesture();
+  clearMeasurement();
+  contextMenu.value = null;
   cached = undefined;
   abortInFlight();
   renderedBases = [];
@@ -395,6 +595,8 @@ function lettersFit(bpPerCssPixel: number): boolean {
 /** Many events (center, resolution, moveend) fire per frame: coalesce them into one render pass. */
 function schedule() {
   if (disposed || frame !== undefined || props.mapManager?.isExporting) return;
+  if (selectionDrag) cancelGesture();
+  updateMeasurementBounds();
   frame = window.requestAnimationFrame(() => {
     frame = undefined;
     renderScheduled();
@@ -732,6 +934,7 @@ async function render(id: number, allowFetch = true) {
     target.dataset.firstBp = renderedBases.length
       ? String(renderedBases[0].bp)
       : "";
+    updateMeasurementBounds();
   } catch (error) {
     if (id === generation) {
       setVisible(false);
@@ -748,10 +951,11 @@ async function render(id: number, allowFetch = true) {
 watch(
   () => props.mapManager,
   (manager) => {
-    drag = undefined;
+    cancelGesture();
     dragging.value = false;
     clearBaseMetadata();
     defaultGap = undefined;
+    repeatSupported.value = false;
     unregisterExportRenderer?.();
     unregisterExportRenderer = undefined;
     ++generation;
@@ -794,7 +998,7 @@ watch(
 onBeforeUnmount(() => {
   contextMenu.value = null;
   disposed = true;
-  drag = undefined;
+  cancelGesture();
   clearBaseMetadata();
   unregisterExportRenderer?.();
   ++generation;
@@ -831,6 +1035,9 @@ onBeforeUnmount(() => {
 .sequence-axis.dragging {
   cursor: grabbing;
 }
+.sequence-axis.selecting {
+  cursor: crosshair;
+}
 .sequence-axis:focus-visible {
   outline: 2px solid #2563eb;
   outline-offset: -2px;
@@ -838,5 +1045,13 @@ onBeforeUnmount(() => {
 .base-metadata {
   white-space: pre-line;
   margin-top: 4px;
+}
+.sequence-measurement-highlight {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  background: rgba(37, 99, 235, 0.16);
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
 }
 </style>

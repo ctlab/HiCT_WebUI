@@ -24,6 +24,7 @@ import { unByKey } from "ol/Observable";
 import { aggregateTileSignals } from "../visualization/tileSignalRange";
 import { Extent, Select, DragBox } from "ol/interaction";
 import { fromExtent } from "ol/geom/Polygon";
+import type { SequenceMeasurement } from "../sequence/sequenceMeasurement";
 import type { EventsKey } from "ol/events";
 import {
   validateRegion,
@@ -147,6 +148,7 @@ interface CurrentHiCViewState {
   selectedScaffoldIds: number[];
   hideScopedBorders: boolean;
   scopedAxes: boolean;
+  sequenceMeasurement?: SequenceMeasurement;
 }
 
 interface LayersHolder {
@@ -382,6 +384,7 @@ class HiCViewAndLayersManager {
   }
 
   public clearSelections(): void {
+    this.currentViewState.sequenceMeasurement = undefined;
     this.clearRegionSelection();
     this.clearEntitySelection();
   }

@@ -304,6 +304,19 @@ const { HiCTAPIRequestDTO } = loadTypeScript(
 const requestClasses = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/api/request.ts")
 );
+const { SequenceAnalysisRequest } = loadTypeScript(
+  resolve(projectRoot, "src/app/core/net/api/SequenceAnalysisRequest.ts")
+);
+for (const options of [
+  { startBp: 2_500_000_000, endBp: 2_500_000_012 },
+  { jobId: "repeat-1" },
+]) {
+  const request = new SequenceAnalysisRequest(
+    "/sequence/repeat_period",
+    options
+  );
+  assert.deepEqual(HiCTAPIRequestDTO.toDTOClass(request).toDTO(), options);
+}
 for (const approximateRebin of [undefined, false, true]) {
   const request = new requestClasses.StartConversionJobRequest({
     filename: "source.hict.hdf5",
@@ -553,6 +566,18 @@ assert.equal(
 );
 assert.equal(adapter.history.busy, 0);
 adapter.sequenceViewReadOnly = false;
+await adapter.sendRequest({
+  requestPath: "/sequence/repeat_period",
+  options: { startBp: 3, endBp: 15 },
+});
+assert.equal(
+  sentHeaders["X-HiCT-History-Session"],
+  adapter.history.applied.session
+);
+assert.equal(
+  sentHeaders["X-HiCT-History-Revision"],
+  String(adapter.history.applied.revision)
+);
 console.log(
   "FASTA reads carry the displayed revision; sequence view prevents edits and history restoration."
 );

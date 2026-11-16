@@ -21,7 +21,7 @@ export interface SequenceSearchSettings {
 
 export interface SequenceAnalysisJob {
   jobId: string;
-  kind: "search" | "dotplot" | "moddotplot" | "alignment_detail";
+  kind: "search" | "dotplot" | "moddotplot" | "alignment_detail" | "repeat_period";
   status:
     | "submitted"
     | "preparing"
@@ -49,7 +49,7 @@ export class SequenceAnalysisRequest {
     public readonly options: object = {}
   ) {
     if (
-      !/^\/sequence\/(settings|cleanup|(?:search|moddotplot|dotplot)\/jobs|jobs\/list|jobs\/[a-zA-Z0-9-]+\/stop)$/.test(
+      !/^\/sequence\/(settings|cleanup|repeat_period|(?:search|moddotplot|dotplot)\/jobs|jobs\/list|jobs\/[a-zA-Z0-9-]+\/stop)$/.test(
         requestPath
       )
     )
