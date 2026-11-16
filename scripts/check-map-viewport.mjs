@@ -72,6 +72,10 @@ const { CommonEventManager } = loadManager("CommonEventManager", {
 function fixture() {
   const manager = Object.create(HiCViewAndLayersManager.prototype);
   manager.currentLevels = {};
+  manager.sequenceCoordinates = false;
+  manager.sequenceScaleSupported = false;
+  manager.sequenceLayers = new Map();
+  manager.refreshNativeGeometry = () => {};
   manager.fullGlobalExtent = [0, -10000, 10000, 0];
   manager.activeAxisScopes = {
     row: { kind: "all", label: "All Rows" },

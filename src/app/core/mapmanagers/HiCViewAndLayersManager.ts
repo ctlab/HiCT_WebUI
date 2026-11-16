@@ -208,6 +208,350 @@ class HiCViewAndLayersManager {
   public readonly overlayStatus = markRaw({ loading: ref(false) });
   private wheelZoomInteraction?: ContigMouseWheelZoom;
   private coordinateBaseBp: number;
+  private readonly sequenceScaleSupported: boolean;
+  private sequenceCoordinates = false;
+  private changingDisplayGrid = false;
+  private readonly sequenceLayers = new Map<MatrixSourceName, Layer>();
+  private viewRestoreGeneration = 0;
+
+  public get isSequenceScale(): boolean {
+    return (
+      this.currentViewState?.resolutionDesciptor.displayGrid === "SEQUENCE_BP"
+    );
+  }
+
+  private wantsSequenceCoordinates(viewResolution: number): boolean {
+    return (
+      this.sequenceScaleSupported &&
+      Number.isFinite(viewResolution) &&
+      viewResolution > 0 &&
+      viewResolution <=
+        1 / this.coordinateBaseBp / (this.sequenceCoordinates ? 2 : 4)
+    );
+  }
+
+  public getDimensionHolderForDescriptor(
+    descriptor: LayerResolutionDescriptor
+  ) {
+    const holder = this.mapManager.contigDimensionHolder;
+    return descriptor.displayGrid === "SEQUENCE_BP"
+      ? holder.getSequenceCoordinates()
+      : holder.getNativeCoordinates();
+  }
+
+  public captureViewPosition() {
+    const descriptor = this.currentViewState.resolutionDesciptor,
+      holder = this.mapManager.contigDimensionHolder;
+    const center = this.view.getCenter();
+    const centerBp = center?.map((value, index) =>
+      holder.getFractionalBpOfPx(
+        (index === 0 ? value : -value) / descriptor.pixelResolution,
+        descriptor.bpResolution
+      )
+    ) as [number, number] | undefined;
+    return {
+      center: center ? [...center] : undefined,
+      centerBp,
+      resolution: this.view.getResolution(),
+      rotation: this.view.getRotation(),
+      displayGrid: descriptor.displayGrid ?? "NATIVE",
+      bpResolution: descriptor.bpResolution,
+    };
+  }
+
+  public restoreViewPosition(position: {
+    center?: number[];
+    centerBp?: number[];
+    resolution?: number;
+    rotation?: number;
+    displayGrid?: string;
+    bpResolution?: number;
+  }): void {
+    this.view.cancelAnimations();
+    if (Number.isFinite(position.resolution) && position.resolution! > 0) {
+      this.transitionDisplayGrid(position.resolution!);
+      this.view.setResolution(position.resolution);
+    }
+    this.updateCurrentHiCViewState();
+    const descriptor = this.currentViewState.resolutionDesciptor;
+    if (
+      position.centerBp?.length === 2 &&
+      position.centerBp.every(Number.isFinite)
+    ) {
+      const holder = this.mapManager.contigDimensionHolder;
+      const center = position.centerBp.map(
+        (bp) =>
+          holder.getFractionalPxOfBp(bp, descriptor.bpResolution) *
+          descriptor.pixelResolution
+      );
+      this.view.setCenter([center[0], -center[1]]);
+    } else if (
+      position.center?.length === 2 &&
+      position.center.every(Number.isFinite)
+    ) {
+      const native = this.getNativeResolutionDescriptor();
+      const stored =
+        position.displayGrid === "SEQUENCE_BP"
+          ? this.sequenceDescriptor(native)
+          : native;
+      this.view.setCenter(
+        this.reprojectPoint(position.center, stored, descriptor)
+      );
+    }
+    if (Number.isFinite(position.rotation))
+      this.view.setRotation(position.rotation!);
+    this.scheduleRulerRender();
+    // Entering letter scale changes the ruler strip size on the next Vue frame.
+    // Reapply the requested BP center after that layout, so an assembly-edge
+    // bookmark is not permanently clamped using the previous viewport size.
+    // Any intervening user input or another restore owns the view instead.
+    const generation = ++this.viewRestoreGeneration;
+    if (
+      position.centerBp?.length === 2 &&
+      position.centerBp.every(Number.isFinite)
+    ) {
+      const centerBp = [...position.centerBp];
+      const resolution = this.view.getResolution();
+      let interrupted = false;
+      const cancel = () => {
+        interrupted = true;
+      };
+      const events = ["pointerdown", "wheel", "keydown"] as const;
+      events.forEach((event) =>
+        window.addEventListener(event, cancel, { capture: true, once: true })
+      );
+      window.requestAnimationFrame(() =>
+        window.requestAnimationFrame(() => {
+          events.forEach((event) =>
+            window.removeEventListener(event, cancel, true)
+          );
+          if (
+            interrupted ||
+            this.mapManager.isDisposed ||
+            generation !== this.viewRestoreGeneration ||
+            resolution !== this.view.getResolution()
+          )
+            return;
+          this.mapManager.getMap().updateSize();
+          const current = this.currentViewState.resolutionDesciptor;
+          const holder = this.mapManager.contigDimensionHolder;
+          const center = centerBp.map(
+            (bp) =>
+              holder.getFractionalPxOfBp(bp, current.bpResolution) *
+              current.pixelResolution
+          );
+          this.view.setCenter([center[0], -center[1]]);
+          this.scheduleRulerRender();
+        })
+      );
+    }
+  }
+
+  public reprojectPoint(
+    point: number[],
+    from: LayerResolutionDescriptor,
+    to: LayerResolutionDescriptor
+  ): [number, number] {
+    const source = this.getDimensionHolderForDescriptor(from),
+      target = this.getDimensionHolderForDescriptor(to);
+    const sourceSize =
+      source.prefix_sum_px.get(from.bpResolution)?.[source.contig_count] ?? 0;
+    const targetSize =
+      target.prefix_sum_px.get(to.bpResolution)?.[target.contig_count] ?? 0;
+    const length = source.prefix_sum_bp[source.contig_count] ?? 0;
+    const values = [point[0], -point[1]].map((value) => {
+      const pixel = value / from.pixelResolution;
+      const bp =
+        pixel < 0
+          ? pixel * from.bpResolution
+          : pixel > sourceSize
+          ? length + (pixel - sourceSize) * from.bpResolution
+          : source.getFractionalBpOfPx(pixel, from.bpResolution);
+      const coordinate =
+        bp < 0
+          ? bp / to.bpResolution
+          : bp > length
+          ? targetSize + (bp - length) / to.bpResolution
+          : target.getFractionalPxOfBp(bp, to.bpResolution);
+      return coordinate * to.pixelResolution;
+    });
+    return [values[0], -values[1]];
+  }
+
+  private refreshNativeGeometry(): void {
+    const holder = this.mapManager.contigDimensionHolder.getNativeCoordinates();
+    const sizes = this.primaryResolutionSet.resolutions.map(
+      (res, index) =>
+        holder.prefix_sum_px.get(res)?.[holder.contig_count] ??
+        this.primaryResolutionSet.imageSizes[index]
+    );
+    if (
+      sizes.every(
+        (size, index) => size === this.primaryResolutionSet.imageSizes[index]
+      )
+    )
+      return;
+    this.removeSourceHiCDataLayers("PRIMARY");
+    this.primaryResolutionSet = this.buildResolutionDescriptorSet(
+      "PRIMARY",
+      this.primaryResolutionSet.resolutions,
+      sizes
+    );
+    this.applyPrimaryResolutionSet(this.primaryResolutionSet);
+    this.addSourceHiCDataLayers(this.primaryResolutionSet);
+    if (this.secondaryUsesPrimaryGrid) {
+      this.cancelOverlayTransition?.();
+      if (this.outgoingOverlay)
+        this.removeProjectedOverlay(this.outgoingOverlay);
+      if (this.activeOverlay) this.removeProjectedOverlay(this.activeOverlay);
+      this.outgoingOverlay = undefined;
+      this.activeOverlay = undefined;
+    }
+    this.updateProjectionAndViewExtent();
+    this.syncLayerVisibilityForCurrentResolution();
+    this.mapManager.rebuildOverviewMinimap();
+  }
+
+  public getNativeMatrixBounds(
+    extent: number[],
+    source: MatrixSourceName = "PRIMARY"
+  ) {
+    const display = this.currentViewState.resolutionDesciptor;
+    const native = this.getNativeResolutionDescriptor(source);
+    const holder = this.mapManager.contigDimensionHolder.getNativeCoordinates();
+    const totalBp = holder.prefix_sum_bp[holder.contig_count] ?? 0;
+    const bp = [extent[0], -extent[3], extent[2], -extent[1]].map((value) =>
+      Math.max(
+        0,
+        Math.min(
+          totalBp,
+          this.mapManager.contigDimensionHolder.getFractionalBpOfPx(
+            value / display.pixelResolution,
+            display.bpResolution
+          )
+        )
+      )
+    );
+    const start = (value: number) =>
+      holder.getBinContainingBp(
+        Math.floor(Math.min(value, Math.max(0, totalBp - 1))),
+        native.bpResolution
+      );
+    const end = (value: number) =>
+      value <= 0
+        ? 0
+        : holder.getBinContainingBp(
+            Math.ceil(Math.min(value, totalBp)) - 1,
+            native.bpResolution
+          ) + 1;
+    return {
+      bpResolution: native.bpResolution,
+      unit: "BINS" as const,
+      startRowPx: start(bp[1]),
+      endRowPx: end(bp[3]),
+      startColPx: start(bp[0]),
+      endColPx: end(bp[2]),
+    };
+  }
+
+  private sequenceDescriptor(
+    native: LayerResolutionDescriptor
+  ): LayerResolutionDescriptor {
+    return {
+      ...native,
+      bpResolution: 1,
+      pixelResolution: 1 / this.coordinateBaseBp,
+      displayGrid: "SEQUENCE_BP",
+      sourceBpResolution: native.bpResolution,
+    };
+  }
+
+  public normalizeSequenceZoomResolution(requested: number): number {
+    if (
+      !this.sequenceScaleSupported &&
+      !this.mapManager.networkManager.requestManager.hasLinkedFasta
+    )
+      return requested;
+    const model = this.getNavigationResolutionModel();
+    const index = model.resolutions.indexOf(Math.min(...model.resolutions));
+    return sequenceZoomResolution(
+      this.view.getResolution(),
+      requested,
+      model.pixelResolutionSet[index],
+      model.resolutions[index],
+      this.mapManager.getMap().getSize() ?? [1, 1]
+    );
+  }
+
+  /** Change coordinate bases atomically. Wheel/trackpad callers can preserve their exact pointer anchor. */
+  public transitionDisplayGrid(
+    resolution: number,
+    anchorBp?: number[],
+    anchorPixel?: number[]
+  ): boolean {
+    const next = this.wantsSequenceCoordinates(resolution);
+    if (next === this.sequenceCoordinates || this.changingDisplayGrid)
+      return false;
+    const previous = this.currentViewState.resolutionDesciptor;
+    const previousHolder = this.getDimensionHolderForDescriptor(previous);
+    const center = this.view.getCenter() ?? [0, 0];
+    const bp =
+      anchorBp ??
+      [center[0], -center[1]].map((value) =>
+        previousHolder.getFractionalBpOfPx(
+          value / previous.pixelResolution,
+          previous.bpResolution
+        )
+      );
+    const target = this.getNativeResolutionDescriptor("PRIMARY", resolution);
+    const descriptor = next ? this.sequenceDescriptor(target) : target;
+    const holder = this.getDimensionHolderForDescriptor(descriptor);
+    const point = bp.map(
+      (value) =>
+        holder.getFractionalPxOfBp(value, descriptor.bpResolution) *
+        descriptor.pixelResolution
+    );
+    const size = this.mapManager.getMap().getSize() ?? [0, 0];
+    const pixel = anchorPixel ?? [size[0] / 2, size[1] / 2];
+    const nextCenter: [number, number] = [
+      point[0] + (size[0] / 2 - pixel[0]) * resolution,
+      -point[1] - (size[1] / 2 - pixel[1]) * resolution,
+    ];
+    const selection = this.currentViewState.selectionBorders;
+    this.changingDisplayGrid = true;
+    try {
+      this.sequenceCoordinates = next;
+      this.mapManager.contigDimensionHolder.setSequenceCoordinates(next);
+      this.currentViewState.resolutionDesciptor = descriptor;
+      this.ensureSequenceLayers();
+      this.updateProjectionAndViewExtent(1, { center: nextCenter, resolution });
+      this.markBuiltinVectorLayersDirty();
+      this.vectorBuilt = undefined;
+      this.vectorExactKey = "";
+      if (selection.leftBP && selection.rightBP) {
+        const values = [...selection.leftBP, ...selection.rightBP].map(
+          (value) =>
+            this.mapManager.contigDimensionHolder.getFractionalPxOfBp(
+              value,
+              descriptor.bpResolution
+            ) * descriptor.pixelResolution
+        );
+        this.selectionInteractions.contigSelectExtent.setExtent([
+          values[0],
+          -values[3],
+          values[2],
+          -values[1],
+        ]);
+      }
+    } finally {
+      this.changingDisplayGrid = false;
+    }
+    this.updateCurrentHiCViewState();
+    void this.mapManager.linearTrackManager?.clearCachesAndRender();
+    this.scheduleRulerRender();
+    return true;
+  }
+
   private enabledBpResolutions?: Set<number>;
   /** Extent, zoom bucket and matrix resolution the border/label features were last built for. */
   private vectorBuilt?: {
@@ -294,6 +638,8 @@ class HiCViewAndLayersManager {
     public readonly useVectorImageLayer: boolean = false
   ) {
     this.mapManager = mapManager;
+    this.sequenceScaleSupported =
+      response.capabilities?.sequenceScaleTiles === true;
     this.tileSize = mapManager.getOptions().tileSize;
     const primaryResolutions = response.resolutions
       .map((value) => Number(value))
@@ -507,6 +853,13 @@ class HiCViewAndLayersManager {
     primarySet: SourceResolutionDescriptorSet,
     secondarySet?: SourceResolutionDescriptorSet
   ): number {
+    if (this.sequenceCoordinates) {
+      const holder = this.mapManager.contigDimensionHolder;
+      return Math.max(
+        1,
+        (holder.prefix_sum_bp[holder.contig_count] ?? 0) / this.coordinateBaseBp
+      );
+    }
     return calculateMaximumScaledImageSizeForSets(primarySet, secondarySet);
   }
 
@@ -591,10 +944,19 @@ class HiCViewAndLayersManager {
   }
 
   public getVectorResolutionTuples(): LayerResolutionDescriptor[] {
-    return getVectorResolutionTuplesForSets(
+    const native = getVectorResolutionTuplesForSets(
       this.primaryResolutionSet,
       this.secondaryResolutionSet
     );
+    if (
+      !this.sequenceScaleSupported ||
+      native.some((tuple) => tuple.bpResolution === 1)
+    )
+      return native;
+    const finest = native.reduce((best, tuple) =>
+      tuple.bpResolution < best.bpResolution ? tuple : best
+    );
+    return [...native, this.sequenceDescriptor(finest)];
   }
 
   private updateWheelZoomResolutionModel(): void {
@@ -697,6 +1059,7 @@ class HiCViewAndLayersManager {
     this.mapManager.getMap().changed();
   }
 
+  private zoomLimitUpdatePending = false;
   public updateZoomLimit(): void {
     const size = this.mapManager.getMap().getSize();
     if (!size || size[0] <= 0 || size[1] <= 0) return;
@@ -712,6 +1075,19 @@ class HiCViewAndLayersManager {
       this.view.getMaxResolution() === maxResolution
     )
       return;
+    // Updating OL constraints cancels animations. A FASTA strip can resize the
+    // viewport midway through a wheel zoom; finish that gesture before changing
+    // the zoom-out limit, preserving both its target and its pointer anchor.
+    if (this.view.getAnimating() || this.view.getInteracting()) {
+      if (!this.zoomLimitUpdatePending) {
+        this.zoomLimitUpdatePending = true;
+        this.mapManager.getMap().once("moveend", () => {
+          this.zoomLimitUpdatePending = false;
+          if (!this.mapManager.isDisposed) this.updateZoomLimit();
+        });
+      }
+      return;
+    }
     // Retain the View object, center and resolution when changing its limits.
     this.view.applyOptions_(
       this.view.getUpdatedOptions_(this.createViewOptions(extent))
@@ -947,6 +1323,10 @@ class HiCViewAndLayersManager {
       return current;
     }
     const candidates = this.getVectorResolutionTuples()
+      .filter(
+        (tuple) =>
+          this.sequenceCoordinates || tuple.displayGrid !== "SEQUENCE_BP"
+      )
       .slice()
       .sort((a, b) => a.bpResolution - b.bpResolution);
     return (
@@ -1074,7 +1454,10 @@ class HiCViewAndLayersManager {
     }
   }
 
-  private updateProjectionAndViewExtent(scalePreservedView = 1): void {
+  private updateProjectionAndViewExtent(
+    scalePreservedView = 1,
+    displayView?: { center: [number, number]; resolution: number }
+  ): void {
     const previousCenter = this.view.getCenter();
     const previousResolution = this.view.getResolution();
     const maximumScaledImageSize = this.calculateMaximumScaledImageSize(
@@ -1096,21 +1479,23 @@ class HiCViewAndLayersManager {
       ) ?? undefined;
     const activeExtent = this.getActiveMapExtent();
     const nextCenter =
-      previousCenter &&
+      displayView?.center ??
+      (previousCenter &&
       previousCenter.length >= 2 &&
       previousCenter.every((value) => Number.isFinite(value))
         ? ([
             previousCenter[0] * scalePreservedView,
             previousCenter[1] * scalePreservedView,
           ] as [number, number])
-        : ([activeExtent[0], activeExtent[3]] as [number, number]);
+        : ([activeExtent[0], activeExtent[3]] as [number, number]));
     const nextResolution =
-      previousResolution !== undefined && Number.isFinite(previousResolution)
+      displayView?.resolution ??
+      (previousResolution !== undefined && Number.isFinite(previousResolution)
         ? previousResolution * scalePreservedView
         : Math.max(
             ...this.getNavigationResolutionModel().pixelResolutionSet,
             1
-          );
+          ));
 
     const viewOptions = this.view.getUpdatedOptions_({
       ...this.createViewOptions(activeExtent),
@@ -1126,11 +1511,19 @@ class HiCViewAndLayersManager {
   private previousSequenceZoomResolution: number | undefined;
   private sequenceZoomPending = false;
   public async onViewResolutionChanged(): Promise<void> {
+    if (this.changingDisplayGrid) return;
     const requested = this.view.getResolution();
+    if (requested && !this.mapManager.isExporting)
+      this.transitionDisplayGrid(requested);
     if (
       requested &&
       !this.mapManager.isExporting &&
-      this.mapManager.networkManager.requestManager.hasLinkedFasta
+      // Wheel/trackpad already normalize their target with a BP pointer anchor.
+      // Rewriting an intermediate animation frame cancels that anchored zoom.
+      !this.view.getAnimating() &&
+      !this.view.getInteracting() &&
+      (this.sequenceScaleSupported ||
+        this.mapManager.networkManager.requestManager.hasLinkedFasta)
     ) {
       const model = this.getNavigationResolutionModel();
       const index = model.resolutions.indexOf(Math.min(...model.resolutions));
@@ -1645,6 +2038,17 @@ class HiCViewAndLayersManager {
     sourceName: MatrixSourceName,
     viewResolution: number
   ): LayerResolutionDescriptor {
+    const native = this.getNativeResolutionDescriptor(
+      sourceName,
+      viewResolution
+    );
+    return this.sequenceCoordinates ? this.sequenceDescriptor(native) : native;
+  }
+
+  public getNativeResolutionDescriptor(
+    sourceName: MatrixSourceName = "PRIMARY",
+    viewResolution = this.view.getResolution() ?? 0
+  ): LayerResolutionDescriptor {
     const set =
       sourceName === "SECONDARY"
         ? this.secondaryResolutionSet
@@ -1721,7 +2125,7 @@ class HiCViewAndLayersManager {
   ): LayerResolutionDescriptor {
     const descriptor =
       preferred ?? this.getFinestVisibleSourceResolutionDescriptor();
-    const holder = this.getDimensionHolderForSource(descriptor.sourceName);
+    const holder = this.getDimensionHolderForDescriptor(descriptor);
     if (
       Number.isFinite(descriptor.bpResolution) &&
       !holder.prefix_sum_px.has(descriptor.bpResolution)
@@ -1737,9 +2141,24 @@ class HiCViewAndLayersManager {
   public getGuidanceResolutionDescriptorForViewResolution(
     viewResolution: number
   ): LayerResolutionDescriptor {
-    return this.ensureGuidanceResolutionDescriptor(
-      this.getFinestVisibleSourceResolutionDescriptor(viewResolution)
+    const primary = this.getNativeResolutionDescriptor(
+      "PRIMARY",
+      viewResolution
     );
+    if (this.wantsSequenceCoordinates(viewResolution))
+      return this.ensureGuidanceResolutionDescriptor(
+        this.sequenceDescriptor(primary)
+      );
+    const secondary = this.secondaryResolutionSet
+      ? this.getNativeResolutionDescriptor("SECONDARY", viewResolution)
+      : undefined;
+    const native =
+      secondary &&
+      !this.secondaryUsesPrimaryGrid &&
+      secondary.pixelResolution < primary.pixelResolution
+        ? secondary
+        : primary;
+    return this.ensureGuidanceResolutionDescriptor(native);
   }
 
   public setSecondaryResolutionModel(
@@ -2346,8 +2765,9 @@ class HiCViewAndLayersManager {
 
   public getActiveHiCDataLayer(): Layer {
     const bpResolution = this.currentViewState.resolutionDesciptor.bpResolution;
-    const layer =
-      this.layersHolder.primaryBpResolutionToHiCDataLayer.get(bpResolution);
+    const layer = this.sequenceCoordinates
+      ? this.sequenceLayers.get("PRIMARY")
+      : this.layersHolder.primaryBpResolutionToHiCDataLayer.get(bpResolution);
     if (!layer) {
       throw new Error(
         `Unknown resolution ${bpResolution} for Hi-C data layers`
@@ -2384,6 +2804,7 @@ class HiCViewAndLayersManager {
   }
 
   public reloadTiles(version?: number): void {
+    this.refreshNativeGeometry();
     for (const layer of this.layersHolder.hicDataLayers) {
       const source = layer.getSource();
       if (source instanceof VersionedXYZContactMapSource) {
@@ -2656,6 +3077,7 @@ class HiCViewAndLayersManager {
   }
 
   private syncLayerVisibilityForCurrentResolution(): void {
+    this.ensureSequenceLayers();
     const visibleDescriptors = this.getVisibleSourceResolutionDescriptors();
     const activeResolution = visibleDescriptors.primary.bpResolution;
     if (!Number.isFinite(activeResolution)) {
@@ -2666,20 +3088,32 @@ class HiCViewAndLayersManager {
 
     for (const layer of this.layersHolder.primaryHiCDataLayers) {
       const layerResolution = Number(layer.get("bpResolution"));
-      layer.setVisible(layerResolution === activeResolution);
+      layer.setVisible(
+        layerResolution === activeResolution &&
+          !!layer.get("sequenceScale") === this.sequenceCoordinates
+      );
     }
     this.currentLevels.PRIMARY = visibleDescriptors.primary.bpResolution;
     this.currentLevels.SECONDARY = visibleDescriptors.secondary?.bpResolution;
-    if (visibleDescriptors.secondary && this.secondaryUsesPrimaryGrid) {
+    if (
+      visibleDescriptors.secondary &&
+      this.secondaryUsesPrimaryGrid &&
+      !this.sequenceCoordinates
+    ) {
       this.showProjectedOverlay(
         visibleDescriptors.primary,
         visibleDescriptors.secondary
       );
     } else {
+      this.activeOverlay?.setVisible(false);
+      this.outgoingOverlay?.setVisible(false);
       for (const layer of this.layersHolder.secondaryHiCDataLayers) {
         layer.setVisible(
           layer.get("bpResolution") ===
-            visibleDescriptors.secondary?.bpResolution
+            visibleDescriptors.secondary?.bpResolution &&
+            !!layer.get("sequenceScale") === this.sequenceCoordinates &&
+            layer !== this.activeOverlay &&
+            layer !== this.outgoingOverlay
         );
       }
     }
@@ -2708,6 +3142,91 @@ class HiCViewAndLayersManager {
     }
     this.applyLayerScopeExtent(this.activeAxisScopeExtent);
     this.refreshVisibleBuiltinVectorSources();
+  }
+
+  private ensureSequenceLayers(): void {
+    if (!this.sequenceScaleSupported || !this.mapManager.getMap()) return;
+    for (const source of ["PRIMARY", "SECONDARY"] as const) {
+      if (!this.sequenceCoordinates) continue;
+      if (source === "SECONDARY" && !this.secondaryResolutionSet) continue;
+      const collection =
+        source === "PRIMARY"
+          ? this.layersHolder.primaryHiCDataLayers
+          : this.layersHolder.secondaryHiCDataLayers;
+      const existing = this.sequenceLayers.get(source);
+      const native = this.getNativeResolutionDescriptor(source, 0);
+      if (
+        existing &&
+        existing.get("sourceBpResolution") === native.bpResolution &&
+        collection.includes(existing) &&
+        existing.get("sequenceLengthBp") ===
+          (this.mapManager.contigDimensionHolder.prefix_sum_bp[
+            this.mapManager.contigDimensionHolder.contig_count
+          ] ?? 0)
+      )
+        continue;
+      if (existing) {
+        this.mapManager.getMap().removeLayer(existing);
+        existing.getSource()?.dispose();
+        for (const layers of [collection, this.layersHolder.hicDataLayers]) {
+          const index = layers.indexOf(existing);
+          if (index >= 0) layers.splice(index, 1);
+        }
+      }
+      const holder = this.mapManager.contigDimensionHolder;
+      const size =
+        (holder.prefix_sum_bp[holder.contig_count] ?? 0) /
+        this.coordinateBaseBp;
+      const pixel = 1 / this.coordinateBaseBp;
+      const grid = new TileGrid({
+        extent: [0, -size, size, 0],
+        resolutions: [pixel],
+        tileSize: [this.tileSize, this.tileSize],
+      });
+      const tiles = new VersionedXYZContactMapSource(
+        this,
+        native.imageSizeIndex,
+        native.bpResolution,
+        source,
+        {
+          projection: this.pixelProjection,
+          tileGrid: grid,
+          interpolate: false,
+          cacheSize: 0,
+        },
+        undefined,
+        true
+      );
+      const layer = new TileLayer({
+        source: tiles,
+        visible: false,
+        zIndex:
+          this.layersZIndices.HIC_MAP_LAYER_Z_INDEX +
+          (source === "SECONDARY" ? 1 : 0),
+      });
+      layer.set("sourceName", source);
+      layer.set("bpResolution", 1);
+      layer.set("pixelResolution", pixel);
+      layer.set("sourceBpResolution", native.bpResolution);
+      layer.set("sequenceScale", true);
+      layer.set(
+        "sequenceLengthBp",
+        holder.prefix_sum_bp[holder.contig_count] ?? 0
+      );
+      this.sequenceLayers.set(source, layer);
+      collection.push(layer);
+      this.layersHolder.hicDataLayers.push(layer);
+      this.mapManager.getMap().addLayer(layer);
+    }
+    const map = this.layersHolder.bpResolutionToHiCDataLayer;
+    const active = this.sequenceCoordinates
+      ? this.sequenceLayers.get("PRIMARY")
+      : this.layersHolder.primaryHiCDataLayers.find(
+          (layer) =>
+            layer.get("bpResolution") === 1 && !layer.get("sequenceScale")
+        );
+    if (active) map.set(1, active);
+    else map.delete(1);
   }
 
   private showProjectedOverlay(

@@ -48,6 +48,7 @@ import { ColorTranslator } from "colortranslator";
 import { histogramQuantile } from "../visualization/tileSignalRange";
 
 type ViewportPixelBounds = {
+  unit?: "PIXELS" | "BINS";
   bpResolution: number;
   startRowPx: number;
   endRowPx: number;
@@ -741,6 +742,10 @@ class VisualizationManager {
     }
     const descriptor =
       this.mapManager.viewAndLayersManager.currentViewState.resolutionDesciptor;
+    if (descriptor.displayGrid === "SEQUENCE_BP")
+      return this.mapManager.viewAndLayersManager.getNativeMatrixBounds(
+        this.mapManager.getView().calculateExtent(size)
+      );
     if (
       !Number.isFinite(descriptor.bpResolution) ||
       !Number.isFinite(descriptor.pixelResolution) ||

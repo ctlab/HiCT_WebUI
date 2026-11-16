@@ -886,6 +886,7 @@ class LinearTrackManager {
 
   /** Finest bp resolution of the open map; map units are pixels at this resolution. */
   public getFinestBpResolution(): number {
+    if (this.mapManager.getLayersManager().isSequenceScale) return 1;
     const tuples = this.mapManager.getLayersManager().resolutionTuples;
     const finestBpResolution = tuples.reduce(
       (acc, tuple) => Math.min(acc, tuple.bpResolution),
@@ -2521,6 +2522,30 @@ class LinearTrackManager {
     response: TrackQueryResponse
   ): TrackQueryResponse {
     const holder = this.mapManager.getContigDimensionHolder();
+    if (this.mapManager.getLayersManager().isSequenceScale) {
+      return {
+        ...response,
+        samplingBpResolution: response.bpResolution,
+        bpResolution: 1,
+        startPx: response.startBp,
+        endPx: response.endBp,
+        tracks: response.tracks.map((track) => ({
+          ...track,
+          bins: track.bins.map((bin) => ({
+            ...bin,
+            startPx: bin.startBp,
+            endPx: bin.endBp,
+            thickStartPx: bin.thickStartBp,
+            thickEndPx: bin.thickEndBp,
+            blocks: bin.blocks.map((block) => ({
+              ...block,
+              startPx: block.startBp,
+              endPx: block.endBp,
+            })),
+          })),
+        })),
+      };
+    }
     const resolution = response.bpResolution;
     if (!(holder.contig_count > 0) || !(resolution > 0)) return response;
     const toPx = (bp: number, lo: number, hi: number): number => {

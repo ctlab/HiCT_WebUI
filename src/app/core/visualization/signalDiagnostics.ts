@@ -1,6 +1,7 @@
 import type { ContactMapManager } from "../mapmanagers/ContactMapManager";
 
 export type SignalBounds = {
+  unit?: "PIXELS" | "BINS";
   bpResolution: number;
   startRowPx: number;
   endRowPx: number;
@@ -99,6 +100,8 @@ export function diagnosticBounds(
     : manager.getView().calculateExtent(manager.getMap().getSize());
   if (!extent || !extent.every(Number.isFinite))
     throw new Error("Select a rectangle first.");
+  if (descriptor.displayGrid === "SEQUENCE_BP")
+    return layers.getNativeMatrixBounds(extent);
   const bounds = layers.getActiveMapPixelBounds(descriptor.bpResolution);
   const scale = descriptor.pixelResolution;
   const result = {

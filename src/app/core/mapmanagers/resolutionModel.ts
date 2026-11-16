@@ -11,6 +11,9 @@ export interface LayerResolutionDescriptor {
   pixelResolution: number;
   layerResolutionBorders: LayerResolutionBorders;
   imageSizeIndex: number;
+  displayGrid?: "SEQUENCE_BP";
+  /** Stored matrix level used to color a synthetic display grid. */
+  sourceBpResolution?: number;
 }
 
 export interface SourceResolutionDescriptorSet {

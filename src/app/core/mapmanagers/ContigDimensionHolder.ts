@@ -38,6 +38,58 @@ export default class ContigDimensionHolder {
   private readonly ensuredResolutions = new Set<number>();
   private readonly nativeResolutions = new Set<number>();
   private readonly changeListeners = new Set<() => void>();
+  private sourceDescriptors: ContigDescriptor[] = [];
+  private sequenceCoordinates = false;
+  private nativeCoordinates?: ContigDimensionHolder;
+  private sequencePreview?: ContigDimensionHolder;
+
+  public get usesSequenceCoordinates(): boolean {
+    return this.sequenceCoordinates;
+  }
+
+  /** Native matrix axes remain available when the display uses one coordinate per base. */
+  public getNativeCoordinates(): ContigDimensionHolder {
+    return this.nativeCoordinates ?? this;
+  }
+
+  /** Look-ahead zoom guidance must not mutate the current view before its coordinate transition. */
+  public getSequenceCoordinates(): ContigDimensionHolder {
+    if (this.sequenceCoordinates) return this;
+    if (!this.sequencePreview) {
+      this.sequencePreview = markRaw(
+        new ContigDimensionHolder(this.sourceDescriptors)
+      );
+      this.sequencePreview.setSequenceCoordinates(true);
+    }
+    return this.sequencePreview;
+  }
+
+  public setSequenceCoordinates(enabled: boolean): void {
+    if (enabled === this.sequenceCoordinates) return;
+    this.sequenceCoordinates = enabled;
+    this.updateContigData(this.sourceDescriptors);
+  }
+
+  private displayDescriptors(source: ContigDescriptor[]): ContigDescriptor[] {
+    return source.map((descriptor) => {
+      const bins = new Map(descriptor.contigLengthBins);
+      const presence = new Map(descriptor.presenceAtResolution);
+      const offsets = descriptor.contigBinOffsets
+        ? new Map(descriptor.contigBinOffsets)
+        : undefined;
+      if (this.sequenceCoordinates) {
+        bins.set(1, descriptor.contigLengthBp);
+        presence.set(1, ContigHideType.AUTO_SHOWN);
+        offsets?.set(1, 0);
+      }
+      return {
+        ...descriptor,
+        contigLengthBins: bins,
+        presenceAtResolution: presence,
+        contigBinOffsets: offsets,
+      };
+    });
+  }
 
   /** Called after every wholesale replacement of the contig snapshot (edits, undo, restore). */
   public onChange(listener: () => void): () => void {
@@ -51,7 +103,13 @@ export default class ContigDimensionHolder {
     }
   }
 
-  public updateContigData(contigDescriptors: ContigDescriptor[]): void {
+  public updateContigData(source: ContigDescriptor[]): void {
+    this.sourceDescriptors = markRaw(source);
+    this.sequencePreview = undefined;
+    this.nativeCoordinates = this.sequenceCoordinates
+      ? new ContigDimensionHolder(source)
+      : undefined;
+    const contigDescriptors = this.displayDescriptors(source);
     this.ensuredResolutions.clear();
     this.nativeResolutions.clear();
     // Assembly responses replace this snapshot as a whole. Vue observes the

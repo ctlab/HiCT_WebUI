@@ -56,7 +56,8 @@ class VersionedXYZContactMapSource extends XYZ {
     protected readonly bpResolution: number,
     protected readonly sourceName: MatrixSourceName = "PRIMARY",
     readonly xyzOptions?: XYZOptions,
-    private readonly grid?: { bpResolution: number; sampleFactor: number }
+    private readonly grid?: { bpResolution: number; sampleFactor: number },
+    private readonly sequenceScale = false
   ) {
     // Matrix tiles represent discrete coordinate versions. Cross-fading old
     // and edited matrices blends unrelated contacts and adds a 250 ms delay.
@@ -67,7 +68,8 @@ class VersionedXYZContactMapSource extends XYZ {
     const pixels =
       typeof tileSize === "number" ? tileSize ** 2 : tileSize[0] * tileSize[1];
     this.maximumTileImageLength = 1024 + Math.ceil((pixels * 4 * 1.02 * 4) / 3);
-    if (this.grid) this.tileCache.setSize(this.projectedCacheLimit(pixels));
+    if (this.grid || this.sequenceScale)
+      this.tileCache.setSize(this.projectedCacheLimit(pixels));
     this.setTileLoadFunction((tile, src) => {
       console.assert(tile instanceof ImageTile);
       const imageTile: ImageTile = tile as ImageTile;
@@ -79,6 +81,7 @@ class VersionedXYZContactMapSource extends XYZ {
         imageTile.getImage() as HTMLImageElement | HTMLVideoElement;
       const uiSettingsStore = useUiSettingsStore();
       if (
+        !this.sequenceScale &&
         uiSettingsStore.binaryTileTransportEnabled &&
         useVisualizationOptionsStore().signalDisplayMode === "OBSERVED" &&
         this.sourceName === "PRIMARY" &&
@@ -118,7 +121,7 @@ class VersionedXYZContactMapSource extends XYZ {
     tileCount: number,
     projection: Projection
   ): void {
-    if (!this.grid) {
+    if (!this.grid && !this.sequenceScale) {
       super.updateCacheSize(tileCount, projection);
       return;
     }
@@ -199,7 +202,8 @@ class VersionedXYZContactMapSource extends XYZ {
           xhr.status >= 200 &&
           xhr.status < 300 &&
           typeof data?.image === "string" &&
-          (!this.grid || data.image.length <= this.maximumTileImageLength)
+          (!(this.grid || this.sequenceScale) ||
+            data.image.length <= this.maximumTileImageLength)
         ) {
           image.src = data.image;
           // ImageTile's load/decode listener marks it ready. Receiving JSON is
@@ -563,6 +567,7 @@ class VersionedXYZContactMapSource extends XYZ {
         `&level=${1 + this.zoomLevel}` +
         `&bpResolution=${this.bpResolution}` +
         `&source=${this.sourceName}` +
+        (this.sequenceScale ? "&sequenceScale=true" : "") +
         (this.grid
           ? `&gridBpResolution=${this.grid.bpResolution}&gridSampleFactor=${this.grid.sampleFactor}`
           : "") +

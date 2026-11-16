@@ -1406,6 +1406,15 @@ class RequestManager {
     widthPx: number,
     bpResolution: number
   ): Promise<TrackQueryResponse> {
+    const layers = this.networkManager.mapManager?.viewAndLayersManager;
+    if (layers?.isSequenceScale && bpResolution === 1)
+      return this.queryTracks1DByUnits({
+        unit: "BP",
+        start: startPx,
+        end: endPx,
+        widthPx,
+        bpResolution: layers.getNativeResolutionDescriptor().bpResolution,
+      });
     return this.sendRequest(
       new QueryTracks1DRequest({
         unit: "PIXELS",
@@ -1429,6 +1438,17 @@ class RequestManager {
     },
     signal?: AbortSignal
   ): Promise<TrackQueryResponse> {
+    const layers = this.networkManager.mapManager?.viewAndLayersManager;
+    if (
+      layers?.isSequenceScale &&
+      options.bpResolution === 1 &&
+      options.unit !== "BINS"
+    )
+      options = {
+        ...options,
+        unit: "BP",
+        bpResolution: layers.getNativeResolutionDescriptor().bpResolution,
+      };
     const payload: {
       unit: "PIXELS" | "BINS" | "BP";
       widthPx: number;
@@ -1485,6 +1505,17 @@ class RequestManager {
     bpResolution: number;
     marginScreens?: number;
   }): Promise<TrackFeatureContextResponse> {
+    const layers = this.networkManager.mapManager?.viewAndLayersManager;
+    if (
+      layers?.isSequenceScale &&
+      options.bpResolution === 1 &&
+      options.unit !== "BINS"
+    )
+      options = {
+        ...options,
+        unit: "BP",
+        bpResolution: layers.getNativeResolutionDescriptor().bpResolution,
+      };
     const payload: {
       unit: "PIXELS" | "BINS" | "BP";
       widthPx: number;
@@ -1859,6 +1890,7 @@ class RequestManager {
 
   public async queryMatrixFloat32(options: {
     bpResolution: number;
+    unit?: "PIXELS" | "BINS";
     startRowPx: number;
     endRowPx: number;
     startColPx: number;
@@ -1880,12 +1912,21 @@ class RequestManager {
     const response = await axios.post(
       `${host}/matrix/query`,
       {
-        unit: "PIXELS",
+        unit: options.unit ?? "PIXELS",
         bpResolution: options.bpResolution,
-        startRowPx: options.startRowPx,
-        endRowPx: options.endRowPx,
-        startColPx: options.startColPx,
-        endColPx: options.endColPx,
+        ...(options.unit === "BINS"
+          ? {
+              startRowBin: options.startRowPx,
+              endRowBin: options.endRowPx,
+              startColBin: options.startColPx,
+              endColBin: options.endColPx,
+            }
+          : {
+              startRowPx: options.startRowPx,
+              endRowPx: options.endRowPx,
+              startColPx: options.startColPx,
+              endColPx: options.endColPx,
+            }),
         source: options.source ?? "PRIMARY",
         signalMode: options.signalMode ?? "TRADITIONAL_NORMALIZED",
         format: "BINARY_FLOAT32",
@@ -2130,6 +2171,7 @@ class RequestManager {
   }
 
   public async setViewportExpectedProfile(options: {
+    unit?: "PIXELS" | "BINS";
     bpResolution: number;
     startRowPx: number;
     endRowPx: number;

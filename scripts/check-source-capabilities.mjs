@@ -103,3 +103,22 @@ assert.equal(importedWeightsAvailability(undefined, 4), undefined);
 console.log(
   "Source capability parsing and resolution-specific availability passed"
 );
+
+assert.equal(
+  parseSourceCapabilities({ ...source, sequenceScaleTiles: true })
+    .sequenceScaleTiles,
+  true
+);
+assert.equal(
+  parseSourceCapabilities({ ...source, sequenceScaleTiles: false })
+    .sequenceScaleTiles,
+  false
+);
+for (const invalid of [0, 1, "true", null])
+  assert.equal(
+    parseSourceCapabilities({ ...source, sequenceScaleTiles: invalid }),
+    undefined
+  );
+console.log(
+  "Sequence-grid capability is additive, explicit and strictly typed."
+);

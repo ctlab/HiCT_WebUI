@@ -63,6 +63,27 @@ for (const center of [[], [1], [1, 2, 3], ["1", 2], [null, 2], {}])
 for (const resolution of [0, -1, "1", null])
   reject({ ...valid, view: { resolution } }, "view.resolution");
 reject({ ...valid, view: { rotation: "0" } }, "view.rotation");
+for (const centerBp of [[], [1], [1, 2, 3], ["1", 2], [null, 2], [-1, 2]])
+  reject({ ...valid, view: { centerBp } }, "view.centerBp");
+for (const displayGrid of ["BP", "", 1, null])
+  reject({ ...valid, view: { displayGrid } }, "view.displayGrid");
+const sequenceView = {
+  center: [39.9, -39.9],
+  centerBp: [3990, 3990],
+  resolution: 1 / 1200,
+  rotation: 0,
+  displayGrid: "SEQUENCE_BP",
+  bpResolution: 1,
+};
+assert.deepEqual(
+  JSON.parse(
+    JSON.stringify(
+      parseSessionDocument(JSON.stringify({ ...valid, view: sequenceView }))
+        .view
+    )
+  ),
+  sequenceView
+);
 reject({ ...valid, filename: 42 }, "filename");
 reject({ ...valid, visualizationOptions: [] }, "visualizationOptions");
 reject(
@@ -84,6 +105,17 @@ const bookmark = {
   resolution: 1,
   rotation: 0,
 };
+const sequenceBookmark = { ...bookmark, ...sequenceView };
+assert.equal(
+  parseSessionDocument(
+    JSON.stringify({ ...valid, savedLocations: [sequenceBookmark] })
+  ).savedLocations[0].centerBp[0],
+  3990
+);
+reject(
+  { ...valid, savedLocations: [{ ...sequenceBookmark, centerBp: [1, -2] }] },
+  "centerBp"
+);
 assert.equal(
   parseSessionDocument(JSON.stringify({ ...valid, savedLocations: [bookmark] }))
     .savedLocations[0].name,

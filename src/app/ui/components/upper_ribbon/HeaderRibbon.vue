@@ -186,6 +186,13 @@
           <option value="OBSERVED_OVER_EXPECTED">Show O/E</option>
         </select>
       </div>
+      <span
+        v-if="sequenceScaleStatus"
+        class="small text-dark bg-light rounded px-2 py-1 mb-3"
+        data-testid="sequence-scale-status"
+        title="Display coordinates follow individual bases. Matrix values retain their stored bin resolution."
+        >{{ sequenceScaleStatus }}</span
+      >
     </div>
     <div id="right-header-block" class="header-block">
       <div class="export-group">
@@ -344,6 +351,15 @@ const props = defineProps<{
 }>();
 
 useVisualizationOptionsSync(() => props.mapManager);
+const sequenceScaleStatus = computed(() => {
+  const descriptor =
+    props.mapManager?.viewAndLayersManager.currentViewState.resolutionDesciptor;
+  if (descriptor?.displayGrid !== "SEQUENCE_BP") return "";
+  return props.mapManager?.networkManager.requestManager.sourceCapabilities
+    .PRIMARY?.units === "SEQUENCE_ONLY"
+    ? "Base scale"
+    : `Base scale · ${descriptor.sourceBpResolution?.toLocaleString()} bp bins`;
+});
 
 const uiSettingsStore = useUiSettingsStore();
 const { osdOverlayVisible, rulerCoordinateMode } = storeToRefs(uiSettingsStore);

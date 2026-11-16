@@ -42,6 +42,7 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     this.layers = opt_options.layers;
     this.layersManager = opt_options.layersManager;
     this.isTrackPad = undefined;
+    this.anchorGeneration = 0;
   }
 
   setResolutionModel(resolutions, pixelResolutionSet, layers) {
@@ -80,9 +81,11 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
 
   getDimensionHolderForDescriptor(descriptor) {
     return (
+      this.layersManager?.getDimensionHolderForDescriptor?.(descriptor) ??
       this.layersManager?.getDimensionHolderForSource?.(
         descriptor.sourceName ?? "PRIMARY"
-      ) ?? this.dimension_holder
+      ) ??
+      this.dimension_holder
     );
   }
 
@@ -118,6 +121,8 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     // .sort((l1, l2) => l1.zIndex - l2.zIndex)[0];
 
     if (this.useAnchor_) {
+      this.anchorGeneration++;
+      this.lastMouseClient = [wheelEvent.clientX, wheelEvent.clientY];
       this.lastMouseCoord = mapBrowserEvent.coordinate;
       this.lastAnchor_ = mapBrowserEvent.coordinate;
       this.lastMousePixel = mapBrowserEvent.pixel;
@@ -127,7 +132,7 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
       ];
     }
 
-    if (hovered_layer) {
+    if (hovered_layer || this.layersManager) {
       try {
         const fallbackDescriptor =
           this.getLayerResolutionDescriptor(hovered_layer);
@@ -216,7 +221,22 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
         this.endInteraction_.bind(this),
         this.timeout_
       );
-      view.adjustZoom(-delta / this.deltaPerZoom_, this.lastAnchor_);
+      const proposed =
+        view.getResolution() /
+        Math.pow(view.getZoomFactor?.() ?? 2, -delta / this.deltaPerZoom_);
+      const target =
+        this.layersManager?.normalizeSequenceZoomResolution?.(proposed) ??
+        proposed;
+      if (
+        !this.layersManager?.transitionDisplayGrid?.(
+          target,
+          this.lastMouseBps ?? undefined,
+          this.lastMousePixel
+        )
+      ) {
+        view.adjustResolution(target / view.getResolution(), this.lastAnchor_);
+      }
+      this.preservePointerAfterLayout(map, view.getResolution());
       this.startTime_ = now;
       return false;
     }
@@ -260,7 +280,11 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     if (currentResolution === undefined) {
       return;
     }
-    const newResolution = currentResolution / Math.pow(zoomFactor, delta);
+    const proposedResolution = currentResolution / Math.pow(zoomFactor, delta);
+    const newResolution =
+      this.layersManager?.normalizeSequenceZoomResolution?.(
+        proposedResolution
+      ) ?? proposedResolution;
     if (newResolution === undefined) {
       return;
     }
@@ -272,6 +296,20 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
       maxResolution ?? newResolution
     );
 
+    if (
+      this.layersManager?.transitionDisplayGrid?.(
+        constrainedResolution,
+        this.lastMouseBps ?? undefined,
+        this.lastMousePixel
+      )
+    ) {
+      this.preservePointerAfterLayout(map, constrainedResolution);
+      this.mode_ = undefined;
+      this.totalDelta_ = 0;
+      this.startTime_ = undefined;
+      this.timeoutId_ = undefined;
+      return;
+    }
     let oldGuidanceDescriptor;
     let newGuidanceDescriptor;
     try {
@@ -310,15 +348,21 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
         finish_coordinate_on_map[1] *= -1;
         const dx_px = this.lastCenterPixel[0] - this.lastMousePixel[0];
         const dy_px = this.lastCenterPixel[1] - this.lastMousePixel[1];
-        view.animate({
-          // duration: 50,
-          duration: this.duration_,
-          resolution: constrainedResolution,
-          center: [
-            finish_coordinate_on_map[0] + dx_px * constrainedResolution,
-            finish_coordinate_on_map[1] - dy_px * constrainedResolution,
-          ],
-        });
+        view.animate(
+          {
+            // duration: 50,
+            duration: this.duration_,
+            resolution: constrainedResolution,
+            center: [
+              finish_coordinate_on_map[0] + dx_px * constrainedResolution,
+              finish_coordinate_on_map[1] - dy_px * constrainedResolution,
+            ],
+          },
+          (completed) => {
+            if (completed)
+              this.preservePointerAfterLayout(map, constrainedResolution);
+          }
+        );
       } else {
         view.animate({
           duration: this.duration_,
@@ -340,6 +384,53 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
     this.timeoutId_ = undefined;
     // this.lastMousePixel = null;
     // this.lastCenterPixel = null;
+  }
+
+  /** A newly visible FASTA strip moves the map beneath a stationary pointer. */
+  preservePointerAfterLayout(map, resolution) {
+    if (!this.lastMouseBps || !this.lastMouseClient) return;
+    const generation = this.anchorGeneration;
+    const bp = [...this.lastMouseBps],
+      client = [...this.lastMouseClient];
+    let interrupted = false;
+    const cancel = () => {
+      interrupted = true;
+    };
+    window.addEventListener("pointerdown", cancel, {
+      capture: true,
+      once: true,
+    });
+    window.requestAnimationFrame(() =>
+      window.requestAnimationFrame(() => {
+        window.removeEventListener("pointerdown", cancel, true);
+        const view = map.getView();
+        if (
+          interrupted ||
+          generation !== this.anchorGeneration ||
+          !map.getTargetElement() ||
+          !Number.isFinite(resolution) ||
+          Math.abs(view.getResolution() - resolution) > 1e-12
+        )
+          return;
+        map.updateSize();
+        const descriptor =
+          this.layersManager?.currentViewState?.resolutionDesciptor;
+        if (!descriptor) return;
+        const holder = this.getDimensionHolderForDescriptor(descriptor);
+        const point = bp.map(
+          (value) =>
+            this.fractionalPxOfBp(holder, value, descriptor.bpResolution) *
+            descriptor.pixelResolution
+        );
+        const rect = map.getViewport().getBoundingClientRect(),
+          size = map.getSize();
+        const pixel = [client[0] - rect.left, client[1] - rect.top];
+        view.setCenter([
+          point[0] + (size[0] / 2 - pixel[0]) * resolution,
+          -point[1] - (size[1] / 2 - pixel[1]) * resolution,
+        ]);
+      })
+    );
   }
 
   fractionalBpOfPx(holder, px, bpResolution) {

@@ -200,6 +200,15 @@ function view(value: unknown, path: string, bookmark = false): void {
       finite(coordinate, `${path}.${center}[${index}]`)
     );
   } else if (bookmark) invalid(`${path}.${center}`, "is required");
+  if ("centerBp" in item) {
+    if (!Array.isArray(item.centerBp) || item.centerBp.length !== 2)
+      invalid(`${path}.centerBp`, "expected exactly two coordinates");
+    (item.centerBp as unknown[]).forEach((value, index) =>
+      nonnegative(value, `${path}.centerBp[${index}]`)
+    );
+  }
+  if ("displayGrid" in item)
+    choice(item.displayGrid, `${path}.displayGrid`, ["NATIVE", "SEQUENCE_BP"]);
   for (const key of ["resolution", "bpResolution", "rotation"]) {
     if (key in item) finite(item[key], `${path}.${key}`, key !== "rotation");
     else if (bookmark && key !== "bpResolution") {

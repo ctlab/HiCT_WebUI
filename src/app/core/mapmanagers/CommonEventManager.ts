@@ -586,29 +586,40 @@ class CommonEventManager {
     coordinate_px: Coordinate,
     bp_resolution: number
   ): void {
-    console.log(
-      "Click in Scissors mode:",
-      "coordinate_px:",
-      coordinate_px,
-      "bp_resolution:",
-      bp_resolution
-    );
-
-    this.mapManager.networkManager.requestManager
-      .splitContigAtPx(
+    const api = this.mapManager.networkManager.requestManager;
+    let operation;
+    if (api.sourceCapabilities.PRIMARY?.sequenceScaleTiles === true) {
+      const holder = this.mapManager.contigDimensionHolder;
+      const bp = Math.round(
+        holder.getFractionalBpOfPx(coordinate_px[0], bp_resolution)
+      );
+      const locus = holder.getContigLocusByBp(bp);
+      const order = holder.contigIdToOrd[locus.contigId];
+      const offset = bp - holder.prefix_sum_bp[order];
+      if (
+        offset <= 0 ||
+        offset >= holder.contigDescriptors[order].contigLengthBp
+      ) {
+        toast("Choose a base boundary inside a contig.");
+        return;
+      }
+      operation = api.splitContigAtBp(locus.contigId, offset);
+    } else {
+      operation = api.splitContigAtPx(
         new SplitContigRequest({
           splitPx: coordinate_px[0],
           bpResolution: bp_resolution,
         })
-      )
-      .then((asmInfo) => {
-        this.applyAssemblyInfo(asmInfo);
-      })
-      .catch((error) => reportFailure("Split contig", error))
-      .finally(() => {
-        this.mapManager.deactivateScissors();
-        this.mapManager.eventManager.resetSelection();
+      );
+    }
+    void operation
+      .then((response) => {
+        this.applyAssemblyInfo(response);
+        this.resetSelection();
         this.mapManager.reloadVisuals();
+      })
+      .catch(() => {
+        /* RequestManager reports the recoverable error. Keep the cut tool available. */
       });
   }
 

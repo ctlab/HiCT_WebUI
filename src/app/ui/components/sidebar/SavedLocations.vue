@@ -279,6 +279,9 @@ const savedLocations: Ref<
       location_id: number;
       name?: string;
       center_point: Coordinate | undefined;
+      centerBp?: number[];
+      displayGrid?: string;
+      bpResolution?: number;
       resolution: number | undefined;
       rotation: number | undefined;
     }
@@ -390,10 +393,14 @@ function saveLocation() {
   const map = props.mapManager;
   const view = map?.getView();
   if (props.mapManager && map && view) {
+    const position = map.viewAndLayersManager.captureViewPosition();
     savedLocations.value.set(locationCount.value, {
       location_id: locationCount.value,
       name: `${locationCount.value} unnamed location`,
       center_point: view.getCenter(),
+      centerBp: position.centerBp,
+      displayGrid: position.displayGrid,
+      bpResolution: position.bpResolution,
       resolution: view.getResolution(),
       rotation: view.getRotation(),
     });
@@ -414,10 +421,9 @@ function gotoSavedLocation(location_id: number) {
   const view = map?.getView();
   const loc = savedLocations.value.get(location_id);
   if (loc && props.mapManager && map && view) {
-    view.animate({
+    map.viewAndLayersManager.restoreViewPosition({
+      ...loc,
       center: loc.center_point,
-      resolution: loc.resolution,
-      rotation: loc.rotation,
     });
   }
 }
@@ -456,6 +462,9 @@ function importBookmarks(event: Event): void {
           location_id: idx,
           name: entry.name,
           center_point: entry.center_point,
+          centerBp: entry.centerBp,
+          displayGrid: entry.displayGrid,
+          bpResolution: entry.bpResolution,
           resolution: entry.resolution,
           rotation: entry.rotation,
         });
@@ -473,6 +482,9 @@ function syncSessionStore() {
     location_id: idx,
     name: loc.name,
     center_point: (loc.center_point ?? [0, 0]) as [number, number],
+    centerBp: loc.centerBp,
+    displayGrid: loc.displayGrid,
+    bpResolution: loc.bpResolution,
     resolution: loc.resolution ?? 1,
     rotation: loc.rotation ?? 0,
   }));
@@ -487,6 +499,9 @@ function loadFromSessionStore() {
       location_id: idx,
       name: entry.name,
       center_point: entry.center_point,
+      centerBp: entry.centerBp,
+      displayGrid: entry.displayGrid,
+      bpResolution: entry.bpResolution,
       resolution: entry.resolution,
       rotation: entry.rotation,
     });
@@ -501,6 +516,9 @@ watch(
       location_id: loc.location_id,
       name: loc.name,
       center_point: loc.center_point,
+      centerBp: loc.centerBp,
+      displayGrid: loc.displayGrid,
+      bpResolution: loc.bpResolution,
       resolution: loc.resolution,
       rotation: loc.rotation,
     }));

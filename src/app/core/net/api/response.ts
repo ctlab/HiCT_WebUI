@@ -174,6 +174,7 @@ class TrackRenderResponse {
 }
 
 class TrackQueryResponse {
+  public readonly samplingBpResolution?: number;
   public constructor(
     public readonly startBp: number,
     public readonly endBp: number,

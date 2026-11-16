@@ -95,7 +95,9 @@ const result = shallowRef<SignalHistogram>(),
 const domainLabel = computed(
   () =>
     ({
-      matrix: "displayed matrix cells",
+      matrix: props.mapManager.viewAndLayersManager.isSequenceScale
+        ? "native matrix references"
+        : "displayed matrix cells",
       row: "row samples",
       column: "column samples",
       scalar: "scalar value",

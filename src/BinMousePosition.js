@@ -239,7 +239,14 @@ export default class BinMousePosition extends MousePosition {
             // html = html + "br/>";
 
             if (fixed_coordinates) {
-              appendLine("resolution", "Bin resolution: 1:" + bpResolution);
+              appendLine(
+                "resolution",
+                guidanceDescriptor.displayGrid === "SEQUENCE_BP"
+                  ? "Base scale; native bins: " +
+                      guidanceDescriptor.sourceBpResolution +
+                      " bp"
+                  : "Bin resolution: 1:" + bpResolution
+              );
               if (
                 Number.isFinite(hoveredBpResolution) &&
                 hoveredBpResolution !== bpResolution
@@ -260,10 +267,16 @@ export default class BinMousePosition extends MousePosition {
                   this.layersManager.getVisibleSourceResolutionDescriptors();
                 const details = [
                   visible.primary
-                    ? `Primary 1:${visible.primary.bpResolution}`
+                    ? `Primary 1:${
+                        visible.primary.sourceBpResolution ??
+                        visible.primary.bpResolution
+                      }`
                     : null,
                   visible.secondary
-                    ? `Secondary 1:${visible.secondary.bpResolution}`
+                    ? `Secondary 1:${
+                        visible.secondary.sourceBpResolution ??
+                        visible.secondary.bpResolution
+                      }`
                     : null,
                 ].filter(Boolean);
                 if (details.length > 0) {

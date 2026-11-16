@@ -104,6 +104,9 @@ const scissorsMode = computed(() => activeTool.value === ActiveTool.SCISSORS);
 const scissorsTitle = computed(() =>
   scissorsMode.value
     ? "Cancel splitting (Esc). Double-click a spot on the map to split there."
+    : props.mapManager?.networkManager.requestManager.sourceCapabilities.PRIMARY
+        ?.sequenceScaleTiles === true
+    ? "Split contig: double-click a base boundary on the map. All sequence and original contact bins are retained. Undo restores the join."
     : "Split contig: then double-click a spot on the map. The contig is cut there and the one finest-resolution bin at that spot is removed. Undo restores it."
 );
 const reverseSelectionButton = ref<HTMLElement | null>(null);

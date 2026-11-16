@@ -29,11 +29,14 @@ import Feature from "ol/Feature";
 import Polygon, { fromExtent } from "ol/geom/Polygon";
 import Stroke from "ol/style/Stroke";
 import Style from "ol/style/Style";
-import { transform, transformExtent } from "ol/proj";
+import { transform, transformExtent, Projection } from "ol/proj";
 import { getCenter, getHeight, getWidth, intersects } from "ol/extent";
 import { unByKey } from "ol/Observable";
 import type { EventsKey } from "ol/events";
-import { selectOverviewResolution } from "./resolutionModel";
+import {
+  selectOverviewResolution,
+  type LayerResolutionDescriptor,
+} from "./resolutionModel";
 import ContigDimensionHolder from "./ContigDimensionHolder";
 import { ScaffoldHolder } from "./ScaffoldHolder";
 import { HiCViewAndLayersManager } from "./HiCViewAndLayersManager";
@@ -68,6 +71,7 @@ class ContactMapManager {
   public readonly linearTrackManager: LinearTrackManager;
   public minimap: Map | null;
   private minimapViewportFeature: Feature<Polygon> | null;
+  private minimapResolutionDescriptor?: LayerResolutionDescriptor;
   private minimapResizeObserver: ResizeObserver | null;
   private minimapSyncListeners: EventsKey[];
   private minimapPointerCleanup: (() => void)[];
@@ -185,8 +189,16 @@ class ContactMapManager {
     this.applyMinimapBackground(resolvedTarget);
     const coarsestLayer = this.createCoarsestMinimapLayer();
     const source = coarsestLayer?.getSource();
-    const projection = source?.getProjection();
-    const projectionExtent = projection?.getExtent();
+    const sourceProjection = source?.getProjection();
+    const projectionExtent = source?.getTileGrid()?.getExtent();
+    const projection =
+      sourceProjection && projectionExtent
+        ? new Projection({
+            code: sourceProjection.getCode(),
+            units: "pixels",
+            extent: [...projectionExtent],
+          })
+        : undefined;
     if (!coarsestLayer || !source || !projection || !projectionExtent) {
       return;
     }
@@ -1852,9 +1864,9 @@ class ContactMapManager {
     }
     const resolution = selectOverviewResolution(
       this.viewAndLayersManager.resolutionTuples.map((descriptor) => {
-        const prefix = this.contigDimensionHolder.prefix_sum_px.get(
-          descriptor.bpResolution
-        );
+        const prefix = this.contigDimensionHolder
+          .getNativeCoordinates()
+          .prefix_sum_px.get(descriptor.bpResolution);
         return {
           bpResolution: descriptor.bpResolution,
           visibleBins: prefix?.at(-1) ?? 0,
@@ -1863,8 +1875,12 @@ class ContactMapManager {
     );
     if (resolution === undefined) return null;
     const layer =
-      this.viewAndLayersManager.layersHolder.bpResolutionToHiCDataLayer.get(
+      this.viewAndLayersManager.layersHolder.primaryBpResolutionToHiCDataLayer.get(
         resolution
+      );
+    this.minimapResolutionDescriptor =
+      this.viewAndLayersManager.resolutionTuples.find(
+        (tuple) => tuple.bpResolution === resolution
       );
     if (!(layer instanceof TileLayer)) {
       return null;
@@ -2048,11 +2064,16 @@ class ContactMapManager {
       )
     );
     const mainProjection = this.map.getView().getProjection();
-    const transformedCoordinate = transform(
-      clampedCoordinate,
-      minimapProjection,
-      mainProjection
-    ) as [number, number];
+    const transformedCoordinate = this.minimapResolutionDescriptor
+      ? this.viewAndLayersManager.reprojectPoint(
+          clampedCoordinate,
+          this.minimapResolutionDescriptor,
+          this.viewAndLayersManager.currentViewState.resolutionDesciptor
+        )
+      : (transform(clampedCoordinate, minimapProjection, mainProjection) as [
+          number,
+          number
+        ]);
     if (!transformedCoordinate.every((value) => Number.isFinite(value))) {
       return null;
     }
@@ -2120,11 +2141,25 @@ class ContactMapManager {
       return;
     }
     const mainExtent = mainView.calculateExtent(mainMapSize);
-    const transformedMainExtent = transformExtent(
-      mainExtent,
-      mainView.getProjection(),
-      minimapProjection
-    );
+    const transformedMainExtent = this.minimapResolutionDescriptor
+      ? (() => {
+          const a = this.viewAndLayersManager.reprojectPoint(
+            [mainExtent[0], mainExtent[1]],
+            this.viewAndLayersManager.currentViewState.resolutionDesciptor,
+            this.minimapResolutionDescriptor!
+          );
+          const b = this.viewAndLayersManager.reprojectPoint(
+            [mainExtent[2], mainExtent[3]],
+            this.viewAndLayersManager.currentViewState.resolutionDesciptor,
+            this.minimapResolutionDescriptor!
+          );
+          return [a[0], a[1], b[0], b[1]];
+        })()
+      : transformExtent(
+          mainExtent,
+          mainView.getProjection(),
+          minimapProjection
+        );
     if (!transformedMainExtent.every((value) => Number.isFinite(value))) {
       return;
     }
