@@ -177,7 +177,7 @@
         <select
           v-model="signalDisplayMode"
           class="form-select form-select-sm"
-          title="Expected and O/E use the standard renderer for the primary map, within scaffolds (or contigs when unscaffolded). The secondary overlay and observed rendering graph are preserved."
+          title="Expected and O/E use the standard renderer for the primary map, within scaffolds (or contigs when unscaffolded). The secondary overlay and observed rendering graph are preserved. After exact cuts, repeated bin pairs share one sample’s weight across their positions in the fitting window."
           :disabled="signalDisplayModePending"
           @change="onSignalDisplayModeChanged"
         >
