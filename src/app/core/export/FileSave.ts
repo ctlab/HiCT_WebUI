@@ -20,11 +20,16 @@ export type FileSaveResult =
     };
 export interface FileSaveDestination {
   write(blob: Blob): Promise<FileSaveResult>;
+  /** Present when this destination can consume bytes with bounded buffering. */
+  writeStream?(
+    stream: ReadableStream<Uint8Array>,
+    signal?: AbortSignal
+  ): Promise<FileSaveResult>;
 }
 interface BrowserFileHandle {
   name: string;
   createWritable(): Promise<{
-    write(blob: Blob): Promise<void>;
+    write(blob: Blob | Uint8Array): Promise<void>;
     close(): Promise<void>;
     abort?(): Promise<void>;
   }>;
@@ -133,6 +138,15 @@ export async function prepareFileSave(
         return undefined;
       throw failure; // A denied or failed picker must never silently download instead.
     }
+    const saved = (): FileSaveResult => {
+      lastHandles.set(kind, handle);
+      remember(handle.name);
+      return {
+        status: "saved",
+        filename: handle.name,
+        readFile: () => handle.getFile(),
+      };
+    };
     return {
       async write(blob) {
         const writer = await handle.createWritable();
@@ -147,13 +161,39 @@ export async function prepareFileSave(
           }
           throw failure;
         }
-        lastHandles.set(kind, handle);
-        remember(handle.name);
-        return {
-          status: "saved",
-          filename: handle.name,
-          readFile: () => handle.getFile(),
+        return saved();
+      },
+      async writeStream(stream, signal) {
+        const reader = stream.getReader();
+        const abort = () => {
+          void reader.cancel(signal?.reason).catch(() => {});
         };
+        signal?.addEventListener("abort", abort, { once: true });
+        let writer:
+          | Awaited<ReturnType<BrowserFileHandle["createWritable"]>>
+          | undefined;
+        try {
+          signal?.throwIfAborted();
+          writer = await handle.createWritable();
+          while (true) {
+            signal?.throwIfAborted();
+            const { done, value } = await reader.read();
+            signal?.throwIfAborted();
+            if (done) break;
+            // Await each disk write before pulling another network chunk.
+            await writer.write(value);
+          }
+          signal?.throwIfAborted();
+          await writer.close();
+          return saved();
+        } catch (failure) {
+          await reader.cancel(failure).catch(() => {});
+          await writer?.abort?.().catch(() => {});
+          throw failure;
+        } finally {
+          signal?.removeEventListener("abort", abort);
+          reader.releaseLock();
+        }
       },
     };
   }

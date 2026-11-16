@@ -459,11 +459,17 @@ let sentPayload;
 let requestsSent = 0;
 let serializationFailure = false;
 let pendingWorkspace;
+let fetched;
+let downloadResponse;
 const notificationErrors = [];
 const adapterExports = {};
 vm.runInNewContext(adapterSource, {
   exports: adapterExports,
   console,
+  fetch: async (url, options) => {
+    fetched = { url, options };
+    return downloadResponse;
+  },
   require: (name) => {
     if (name.includes("backgroundResultDelivery"))
       return loadTypeScript(
@@ -595,6 +601,58 @@ for (const [method, request] of [
   );
 }
 adapter.history.applied = capturedVersion;
+const body = new ReadableStream({
+  start(controller) {
+    controller.enqueue(new Uint8Array([65, 67]));
+    controller.close();
+  },
+});
+downloadResponse = new Response(body, {
+  headers: { "content-type": "text/plain; charset=utf-8" },
+});
+const controller = new AbortController();
+const streamed = await adapter.openCoordinateDownload(
+  new requestClasses.GetFastaForAssemblyRequest(),
+  capturedVersion,
+  controller.signal
+);
+assert.equal(streamed, body);
+assert.equal(fetched.url, "http://example.test/get_fasta_for_assembly");
+assert.equal(
+  fetched.options.headers["X-HiCT-History-Revision"],
+  String(capturedVersion.revision)
+);
+assert.equal(fetched.options.signal, controller.signal);
+assert.equal(fetched.options.method, "POST");
+assert.deepEqual(JSON.parse(fetched.options.body), {});
+assert.equal(await new Response(streamed).text(), "AC");
+let cancelled = 0;
+for (const [status, type, expected] of [
+  [409, "text/plain", /Refresh/],
+  [500, "text/plain", /HTTP 500/],
+  [200, "text/html", /did not return/],
+]) {
+  downloadResponse = new Response(
+    new ReadableStream({
+      cancel() {
+        cancelled++;
+      },
+    }),
+    { status, headers: { "content-type": type } }
+  );
+  await assert.rejects(
+    adapter.openCoordinateDownload(
+      new requestClasses.GetFastaForAssemblyRequest(),
+      capturedVersion
+    ),
+    expected
+  );
+}
+assert.equal(
+  cancelled,
+  3,
+  "Error responses must be cancelled without buffering their bodies"
+);
 await adapter.queryAlignmentDetail({ jobId: "bounded-alignment" });
 assert.equal(
   sentTimeout,

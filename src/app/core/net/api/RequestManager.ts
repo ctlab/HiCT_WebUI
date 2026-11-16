@@ -2059,6 +2059,57 @@ class RequestManager {
       });
   }
 
+  /** Streaming coordinate download; the caller owns cancellation and consumes the body once. */
+  public async openCoordinateDownload(
+    request:
+      | GetFastaForAssemblyRequest
+      | GetFastaForSelectionRequest
+      | GetAGPForAssemblyRequest,
+    version = this.history.applied,
+    signal?: AbortSignal
+  ): Promise<ReadableStream<Uint8Array>> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    const path = request.requestPath.replace(/^\/+/, "");
+    const response = await fetch(`${host}/${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/plain",
+        ...(version
+          ? {
+              "X-HiCT-History-Session": version.session,
+              "X-HiCT-History-Revision": String(version.revision),
+            }
+          : {}),
+      },
+      body: JSON.stringify(HiCTAPIRequestDTO.toDTOClass(request).toDTO()),
+      signal,
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(
+        response.status === 409
+          ? "The displayed assembly changed. Refresh the map and export again."
+          : `Export failed (HTTP ${response.status}). Check the linked files and retry.`
+      );
+    }
+    const type = response.headers
+      .get("content-type")
+      ?.split(";")[0]
+      .trim()
+      .toLowerCase();
+    if (
+      !response.body ||
+      (type !== "text/plain" && type !== "application/octet-stream")
+    ) {
+      await response.body?.cancel();
+      throw new Error(
+        "The server did not return an assembly file. No file was saved."
+      );
+    }
+    return response.body;
+  }
+
   public async getFASTAForAssembly(
     request: GetFastaForAssemblyRequest,
     version = this.history.applied

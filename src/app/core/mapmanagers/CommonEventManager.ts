@@ -1,6 +1,6 @@
 import { reportFailure } from "@/app/ui/reportFailure";
 import { prepareFileSave } from "../export/FileSave";
-import { notifyFileSave } from "@/app/ui/fileSaveNotice";
+import { writeCoordinateFile } from "../export/CoordinateFileExport";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -761,11 +761,11 @@ class CommonEventManager {
         "fasta"
       );
       if (!destination) return;
-      const data = await api.getFASTAForSelection(request, version);
-      notifyFileSave(
-        await destination.write(
-          new Blob([data as BlobPart], { type: "text/plain" })
-        ),
+      await writeCoordinateFile(
+        destination,
+        api,
+        request,
+        version,
         "Selection FASTA"
       );
     } catch (error) {

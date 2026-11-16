@@ -1262,7 +1262,7 @@ import {
   canPickSessionFile,
   pickSessionFile,
 } from "@/app/core/export/FileSave";
-import { notifyFileSave } from "@/app/ui/fileSaveNotice";
+import { writeCoordinateFile } from "@/app/core/export/CoordinateFileExport";
 import { AgpImportCancelledError } from "@/app/core/net/agpImportChoice";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { marked } from "marked";
@@ -2334,17 +2334,13 @@ async function exportAssemblyFile(kind: "fasta" | "agp") {
   try {
     const destination = await prepareFileSave(`assembly.${kind}`, kind);
     if (!destination) return;
-    const data =
+    await writeCoordinateFile(
+      destination,
+      api,
       kind === "fasta"
-        ? await api.getFASTAForAssembly(
-            new GetFastaForAssemblyRequest(),
-            version
-          )
-        : await api.getAGPForAssembly(new GetAGPForAssemblyRequest(), version);
-    notifyFileSave(
-      await destination.write(
-        new Blob([data as BlobPart], { type: "text/plain" })
-      ),
+        ? new GetFastaForAssemblyRequest()
+        : new GetAGPForAssemblyRequest(),
+      version,
       kind === "fasta" ? "Assembly FASTA" : "Assembly AGP"
     );
   } catch (error) {
