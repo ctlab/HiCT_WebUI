@@ -107,9 +107,28 @@
       id="normalization-help"
       class="small text-muted mb-0"
     >
-      Each bin is divided by the square root of its total contacts in the whole
-      map. Bins without contacts stay empty.
+      Total contacts means the sum of a bin’s row (or column) over the whole
+      map, counting its diagonal entry once. Use this normalization to reduce
+      uneven contact coverage.
     </p>
+    <details
+      v-if="choice === 'sqrt' && !preparing"
+      class="coverage-explanation small"
+    >
+      <summary>How coverage is calculated</summary>
+      <p class="mb-1 mt-2">
+        For raw contact M between bins i and j, with row sums r:
+        <span class="coverage-formula">M / √(rᵢ × rⱼ) × C</span>. C is one scale
+        factor per source and resolution that preserves the whole-map contact
+        total. That total counts off-diagonal entries in both symmetric halves
+        of the matrix.
+      </p>
+      <p class="mb-0">
+        Coverage includes contacts between contigs and stays fixed as you pan.
+        Bins without contacts have no coverage weight. Selected signal
+        transforms also contribute to the displayed values.
+      </p>
+    </details>
     <div
       v-if="preparing"
       id="normalization-progress"
@@ -583,6 +602,17 @@ function openRenderingPipeline(): void {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+.coverage-explanation {
+  color: var(--hict-ui-muted, #64748b);
+  overflow-wrap: anywhere;
+}
+.coverage-explanation summary {
+  cursor: pointer;
+}
+.coverage-formula {
+  white-space: nowrap;
 }
 
 .signal-row {
