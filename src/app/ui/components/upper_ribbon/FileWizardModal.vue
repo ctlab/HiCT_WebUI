@@ -1299,6 +1299,7 @@ import {
   nextTick,
   onBeforeUnmount,
   onMounted,
+  toRaw,
   reactive,
   ref,
   watch,
@@ -1481,6 +1482,7 @@ const primaryAgp = ref("");
 const secondaryAgp = ref("");
 const overlayAssemblySource = ref<OverlayAssemblySource>("PRIMARY");
 const selectedTracks = ref<SelectedTrack[]>([]);
+let disposed = false;
 const fixableIssuePolicy = reactive<Record<string, "ignore" | "discard">>({});
 const precomputeTracks = ref(true);
 const forceTrackPrecompute = ref(false);
@@ -2364,6 +2366,13 @@ const addTrack = async (filename: string): Promise<void> => {
   if (selectedTracks.value.some((track) => track.filename === filename)) {
     return;
   }
+  const entry: SelectedTrack = {
+    filename,
+    displayName: filename.split("/").pop() ?? filename,
+    compatibility: null,
+    precomputeProbe: null,
+  };
+  selectedTracks.value = [...selectedTracks.value, entry];
   const [compatibility, precomputeProbe] = await Promise.all([
     props.networkManager.requestManager
       .probeTrackCompatibility(filename)
@@ -2372,15 +2381,15 @@ const addTrack = async (filename: string): Promise<void> => {
       .probeTrackPrecomputeCache(filename)
       .catch(() => null),
   ]);
-  selectedTracks.value = [
-    ...selectedTracks.value,
-    {
-      filename,
-      displayName: filename.split("/").pop() ?? filename,
-      compatibility,
-      precomputeProbe,
-    },
-  ];
+  if (disposed) return;
+  // Removing a track while a probe is pending must not add it again.
+  const selected = selectedTracks.value.find(
+    (track) => track.filename === filename
+  );
+  if (selected && toRaw(selected) === entry) {
+    selected.compatibility = compatibility;
+    selected.precomputeProbe = precomputeProbe;
+  }
 };
 
 const addTracks = async (filenames: string[]): Promise<void> => {
@@ -2810,6 +2819,7 @@ const runWizard = async (): Promise<void> => {
             source: overlayAssemblySource.value,
           })
         );
+        sessionStore.setLastAgpFilename(authoritativeAgp);
       }
       runState.currentMessage = "Refreshing overlay resolution model";
       await refreshSecondaryResolutionModelFromBackend(mapManager);
@@ -2825,6 +2835,7 @@ const runWizard = async (): Promise<void> => {
           source: "PRIMARY",
         })
       );
+      sessionStore.setLastAgpFilename(primaryAgp.value);
     }
 
     runState.currentStepId = "finish";
@@ -2887,6 +2898,7 @@ onMounted(() => {
   const prefill = props.prefill;
   if (prefill?.fasta) primaryFasta.value = prefill.fasta;
   if (prefill?.agp) primaryAgp.value = prefill.agp;
+  for (const track of new Set(prefill?.tracks ?? [])) void addTrack(track);
   if (prefill?.matrix) {
     void resolveMatrixSource(prefill.matrix, "primary").catch((error) =>
       toast.error(String(error ?? "Failed to process the example's map"))
@@ -2905,6 +2917,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
   if (conversionLogRenderTimer !== null) {
     window.clearTimeout(conversionLogRenderTimer);
     conversionLogRenderTimer = null;

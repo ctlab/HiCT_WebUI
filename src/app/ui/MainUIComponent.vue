@@ -1107,6 +1107,14 @@ async function openExampleInWizard(payload: {
     return name ? `${folder}/${name}` : undefined;
   };
   const recipe = example.openingRecipe;
+  const availableTracks = (recipe.tracks ?? []).filter((id) => {
+    const file = example.files.find((candidate) => candidate.id === id);
+    return (
+      file?.required !== false ||
+      example.downloadedFiles === undefined ||
+      example.downloadedFiles.includes(file.filename)
+    );
+  });
   const matrix = path(recipe.matrix);
   const fasta = recipe.fastaPreparation
     ? `${folder}/${recipe.fastaPreparation.filename}`
@@ -1157,7 +1165,12 @@ async function openExampleInWizard(payload: {
     matrix: path(example.openingRecipe.matrix),
     fasta,
     agp: path(example.openingRecipe.agp ?? example.openingRecipe.assembly),
+    tracks: availableTracks.map(path).filter((name): name is string => !!name),
   };
+  if (availableTracks.length !== (recipe.tracks ?? []).length)
+    toast.message(
+      "Unavailable optional example tracks were left out of the wizard. Download warnings remain in Jobs."
+    );
   wizardOpen.value = true;
 }
 

@@ -4,4 +4,6 @@ export type WizardPrefill = {
   fasta?: string;
   /** An AGP or a Juicebox .assembly. */
   agp?: string;
+  /** Declared annotation tracks, in recipe order. */
+  tracks?: string[];
 };

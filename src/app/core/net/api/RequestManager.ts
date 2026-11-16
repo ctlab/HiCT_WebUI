@@ -448,6 +448,8 @@ export type ExampleEntry = {
   bundled: boolean;
   /** The manifest and every required file are on the server. */
   downloaded?: boolean;
+  /** Cached file names from the current manifest, including prepared references. */
+  downloadedFiles?: string[];
 };
 export type ExamplesCatalogResponse = {
   sections: {
