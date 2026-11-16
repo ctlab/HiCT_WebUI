@@ -2,7 +2,7 @@
   <div
     ref="rail"
     class="signal-range"
-    :class="{ 'handles-close': close }"
+    :class="{ 'handles-close': close, 'has-histogram': !!$slots.histogram }"
     :style="colors"
     role="group"
     aria-label="Signal thresholds"
@@ -38,6 +38,9 @@
       @pointerdown.stop="start($event, side)"
       @keydown="key($event, side)"
     ></button>
+    <div v-if="$slots.histogram" class="range-histogram" @pointerdown.stop>
+      <slot name="histogram" />
+    </div>
   </div>
 </template>
 <script setup lang="ts">
@@ -171,6 +174,15 @@ onBeforeUnmount(() => observer?.disconnect());
   height: 6px;
   border-radius: 4px;
   pointer-events: none;
+}
+.signal-range.has-histogram {
+  height: 122px;
+}
+.range-histogram {
+  position: absolute;
+  top: 42px;
+  left: 0;
+  right: 0;
 }
 .range-rail {
   left: 0;

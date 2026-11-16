@@ -301,3 +301,136 @@ await assert.rejects(
   /No finite/
 );
 console.log("Exact whole-resolution scan regressions passed.");
+
+const { viewportHistogramBins, histogramCurve, viewportLevels } = load(
+  "../src/app/core/visualization/viewportHistogram.ts"
+);
+const displayBins = viewportHistogramBins(
+  new Float32Array([-5, 0, 0, 1, 2, 3, 5, NaN]),
+  0,
+  3,
+  (x) => x,
+  3
+);
+assert.deepEqual([...displayBins.counts], [2, 1, 2]);
+assert.equal(displayBins.below, 1);
+assert.equal(displayBins.above, 1);
+assert.equal(displayBins.nonfinite, 1);
+assert.equal(displayBins.zeros, 2);
+const logBins = viewportHistogramBins(
+  new Float32Array([1, 10, 100, 1000]),
+  0,
+  3,
+  Math.log10,
+  3
+);
+assert.deepEqual([...logBins.counts], [1, 1, 2]);
+assert.throws(
+  () => viewportHistogramBins(new Float32Array(), 1, 1, (x) => x),
+  /axis/
+);
+const path = histogramCurve([0, 9, 0, 100, 1, 0]);
+assert.ok(path.startsWith("M "));
+assert.equal((path.match(/ C /g) || []).length, 5);
+assert.ok(!/NaN|Infinity/.test(path));
+assert.equal(histogramCurve([]), "");
+const levels = viewportLevels(
+  Float32Array.from({ length: 1001 }, (_, i) => i),
+  false
+);
+assert.equal(levels.lower, 5);
+assert.equal(levels.upper, 995);
+const flatLevels = viewportLevels(new Float32Array([37, 37, NaN]), false);
+assert.ok(flatLevels.lower < 37 && flatLevels.upper > 37);
+const ratioLevels = viewportLevels(new Float32Array([0, 0.5, 2, NaN]), true);
+assert.ok(ratioLevels.lower > 0 && ratioLevels.lower < 1);
+assert.equal(ratioLevels.upper, 2);
+assert.throws(() => viewportLevels(new Float32Array([NaN]), false), /finite/);
+console.log(
+  "Viewport bins, clipped samples, spline and exact-sample level checks passed."
+);
+let inFlight = 0,
+  peakInFlight = 0,
+  interactiveRequests = 0;
+const interactiveManager = {
+  networkManager: {
+    requestManager: {
+      queryMatrixFloat32: async (q) => {
+        interactiveRequests++;
+        inFlight++;
+        peakInFlight = Math.max(peakInFlight, inFlight);
+        await new Promise((resolve) => setImmediate(resolve));
+        inFlight--;
+        const rows = q.endRowPx - q.startRowPx,
+          cols = q.endColPx - q.startColPx;
+        assert.ok(rows <= 64 && cols <= 64);
+        return { rows, cols, values: new Float32Array(rows * cols).fill(3) };
+      },
+    },
+  },
+};
+const interactive = await querySignalHistogram(
+  interactiveManager,
+  { ...small, endRowPx: 10000, endColPx: 10000 },
+  { tileEdge: 64, concurrency: 4 }
+);
+assert.equal(interactiveRequests, 16);
+assert.equal(peakInFlight, 4);
+assert.equal(interactive.values.length, 65536);
+assert.equal(interactive.count, 65536);
+assert.equal(interactive.sampled, true);
+console.log(
+  "Interactive histogram request, memory and concurrency bounds passed."
+);
+const { histogramTileIndices } = load(
+  "../src/app/core/visualization/signalDiagnostics.ts"
+);
+const squareSamples = [...histogramTileIndices(16, 16)];
+assert.equal(squareSamples.length, 16);
+assert.equal(new Set(squareSamples.map((i) => Math.floor(i / 16))).size, 4);
+assert.equal(new Set(squareSamples.map((i) => i % 16)).size, 4);
+assert.equal(
+  squareSamples.filter((i) => Math.floor(i / 16) === i % 16).length,
+  4
+);
+for (const [rows, cols] of [
+  [1, 1000],
+  [1000, 1],
+  [3, 70],
+  [70, 3],
+  [37, 17],
+]) {
+  const sample = [...histogramTileIndices(rows, cols)];
+  assert.ok(sample.length <= 16);
+  assert.equal(new Set(sample).size, sample.length);
+  assert.ok(sample.every((i) => i >= 0 && i < rows * cols));
+}
+assert.deepEqual([...histogramTileIndices(2, 3)], [0, 1, 2, 3, 4, 5]);
+console.log(
+  "Two-dimensional sampling covers independent rows, columns and diagonal strata."
+);
+assert.equal(
+  ratioLevels.lower,
+  0.5,
+  "O/E level fitting excludes measured zero from the logarithmic lower bound"
+);
+for (const values of [
+  [0, 0],
+  [1, 1],
+  [2, 3],
+  [0.1, 0.2],
+]) {
+  const fitted = viewportLevels(new Float32Array(values), true);
+  assert.ok(fitted.lower > 0 && fitted.lower < 1 && fitted.upper > 1);
+  assert.ok(
+    fitted.lower >= 0.1,
+    "No machine-epsilon lower bound from measured zeros"
+  );
+}
+const emptyLevels = viewportLevels(new Float32Array([0, 0, 0]), false);
+assert.equal(emptyLevels.lower, 0);
+assert.equal(
+  emptyLevels.upper,
+  1,
+  "An empty viewport must keep zero at the lower endpoint color"
+);

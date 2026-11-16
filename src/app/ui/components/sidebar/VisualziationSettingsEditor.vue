@@ -99,7 +99,27 @@
         @adjustment-start="keepAdjustmentLimits"
         @lower="onLowerRangeInput"
         @upper="onUpperRangeInput"
-      />
+      >
+        <template #histogram>
+          <ViewportSignalHistogram
+            :manager="mapManager"
+            :source="activeVisualizationSource"
+            :expression="activeRangeExpression"
+            :derived="
+              activeVisualizationSource === 'PRIMARY' &&
+              visualizationOptionsStore.signalDisplayMode !== 'OBSERVED'
+            "
+            :oe="observedExpectedPalette"
+            :context="histogramContext"
+            :min="sliderPositionMin"
+            :max="sliderPositionMax"
+            :lower="lowerSliderValue"
+            :upper="upperSliderValue"
+            :position="toHistogramPosition"
+            @levels="fitViewportLevels"
+          />
+        </template>
+      </SignalRangeControl>
       <p v-if="observedExpectedPalette" class="range-help mb-0">
         O/E: lower color is depleted, white is 1, upper color is enriched.
         Limits must satisfy 0 &lt; lower &lt; 1 &lt; upper.
@@ -267,9 +287,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, Ref, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  Ref,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  watch,
+} from "vue";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import SignalRangeControl from "./SignalRangeControl.vue";
+import ViewportSignalHistogram from "./ViewportSignalHistogram.vue";
 import {
   OE_PALETTE_PRESETS,
   oePalettePresetId,
@@ -352,7 +381,28 @@ let rangeTimer: number | undefined;
 let rangeGeneration = 0;
 let rangeProbe = 0;
 const rangeStatus = ref("Waiting for visible tile limits");
-let activeRangeExpression: Record<string, unknown> | undefined;
+const activeRangeExpression = shallowRef<Record<string, unknown>>();
+const histogramContext = computed(() =>
+  JSON.stringify([
+    activeRangeExpression.value,
+    activeVisualizationSource.value,
+    activeVisualizationTargetId.value,
+    visualizationOptionsStore.signalDisplayMode,
+    preLogBase.value,
+    postLogBase.value,
+    applyCoolerWeights.value,
+    visualizationOptionsStore.resolutionScaling,
+    visualizationOptionsStore.resolutionLinearScaling,
+    coolerWeightsNaNPolicy.value,
+  ])
+);
+function fitViewportLevels(lower: number, upper: number): void {
+  lowerBound.value = lower;
+  upperBound.value = upper;
+  sliderBoundsManual.value = true;
+  sliderLowerLimit.value = lower;
+  sliderUpperLimit.value = upper;
+}
 let rangeDomainContext = "";
 let rangeMap: ContactMapManager | undefined;
 const onViewportRangeChanged = () => refreshProcessedRange();
@@ -594,7 +644,7 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
   rangeController?.abort();
   rangeRequestKey = "";
   rangeStatus.value = "Waiting for visible tile limits";
-  activeRangeExpression = undefined;
+  activeRangeExpression.value = undefined;
   const generation = ++optionsHydrationGeneration;
   liveApplyReady.value = false;
   percentageSignalScale.value = false;
@@ -620,7 +670,7 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
       ) ?? sourceTargets[0];
     activePaletteMode.value = activeTarget?.mode ?? "LINEAR";
     percentageSignalScale.value = activeTarget?.displayUnit === "PERCENT";
-    activeRangeExpression =
+    activeRangeExpression.value =
       await manager.visualizationManager.getSourceSignalExpression(
         activeVisualizationSource.value,
         activeVisualizationTargetId.value
@@ -703,12 +753,12 @@ function fetchProcessedRange(): void {
     !manager ||
     manager.isDisposed ||
     percentageSignalScale.value ||
-    !activeRangeExpression
+    !activeRangeExpression.value
   )
     return;
   const range = manager.viewAndLayersManager.loadedViewportSignalRange(
     activeVisualizationSource.value,
-    activeRangeExpression
+    activeRangeExpression.value
   );
   if (
     !range ||
@@ -969,6 +1019,12 @@ function onSliderLimitChanged(): void {
   if (!(sliderUpperLimit.value > sliderLowerLimit.value)) {
     sliderUpperLimit.value = sliderLowerLimit.value + 1;
   }
+}
+
+function toHistogramPosition(value: number): number {
+  if (value < sliderMin.value) return sliderPositionMin.value - 1;
+  if (value > sliderMax.value) return sliderPositionMax.value + 1;
+  return toSliderPosition(value);
 }
 
 function toSliderPosition(value: number): number {

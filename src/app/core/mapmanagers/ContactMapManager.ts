@@ -120,6 +120,9 @@ class ContactMapManager {
       new Map({
         layers: [],
         interactions: [],
+        // Share four image transfers with the minimap, leaving HTTP/1 connections
+        // available for interactive controls and viewport signal queries.
+        maxTilesLoading: 3,
       })
     );
 
@@ -238,6 +241,7 @@ class ContactMapManager {
     const minimap = markRaw(
       new Map({
         target: resolvedTarget,
+        maxTilesLoading: 1,
         controls: [],
         interactions: [],
         layers: [coarsestLayer, viewportLayer],
