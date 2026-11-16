@@ -101,6 +101,7 @@
 </template>
 
 <script setup lang="ts">
+import { saveFileWithNotice } from "@/app/ui/fileSaveNotice";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { Ref, ref, shallowRef, triggerRef, onMounted, watch } from "vue";
 import SavedVisualOptionsElement from "./SavedVisualOptionsElement.vue";
@@ -298,14 +299,14 @@ function exportOptions() {
 
   const blob = new Blob([data], { type: "application/json" });
 
-  const a = document.createElement("a");
-  a.download =
+  void saveFileWithNotice(
+    blob,
     "visualizationOptionsPresets." +
-    props.mapManager?.getOptions().filename +
-    ".hict.json";
-  a.href = URL.createObjectURL(blob);
-  a.click();
-  URL.revokeObjectURL(a.href);
+      props.mapManager?.getOptions().filename +
+      ".hict.json",
+    "preset",
+    "Visualization presets"
+  );
 }
 
 function syncSessionStore() {

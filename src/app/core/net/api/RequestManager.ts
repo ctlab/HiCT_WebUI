@@ -2060,9 +2060,18 @@ class RequestManager {
   }
 
   public async getFASTAForAssembly(
-    request: GetFastaForAssemblyRequest
+    request: GetFastaForAssemblyRequest,
+    version = this.history.applied
   ): Promise<unknown> {
-    return this.sendRequest(request, { responseType: "arraybuffer" })
+    return this.sendRequest(request, {
+      responseType: "arraybuffer",
+      headers: version
+        ? {
+            "X-HiCT-History-Session": version.session,
+            "X-HiCT-History-Revision": String(version.revision),
+          }
+        : {},
+    })
       .then((response) => response.data)
       .catch((err) => {
         throw new Error(
@@ -2072,9 +2081,18 @@ class RequestManager {
   }
 
   public async getAGPForAssembly(
-    request: GetAGPForAssemblyRequest
+    request: GetAGPForAssemblyRequest,
+    version = this.history.applied
   ): Promise<unknown> {
-    return this.sendRequest(request, { responseType: "arraybuffer" })
+    return this.sendRequest(request, {
+      responseType: "arraybuffer",
+      headers: version
+        ? {
+            "X-HiCT-History-Session": version.session,
+            "X-HiCT-History-Revision": String(version.revision),
+          }
+        : {},
+    })
       .then((response) => response.data)
       .catch((err) => {
         throw new Error(
@@ -2084,9 +2102,18 @@ class RequestManager {
   }
 
   public async getFASTAForSelection(
-    request: GetFastaForSelectionRequest
+    request: GetFastaForSelectionRequest,
+    version = this.history.applied
   ): Promise<unknown> {
-    return this.sendRequest(request, { responseType: "arraybuffer" })
+    return this.sendRequest(request, {
+      responseType: "arraybuffer",
+      headers: version
+        ? {
+            "X-HiCT-History-Session": version.session,
+            "X-HiCT-History-Revision": String(version.revision),
+          }
+        : {},
+    })
       .then((response) => response.data)
       .catch((err) => {
         throw new Error(

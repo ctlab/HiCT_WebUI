@@ -569,6 +569,32 @@ assert.equal(
 );
 assert.equal(adapter.history.busy, 0);
 adapter.sequenceViewReadOnly = false;
+const capturedVersion = { ...adapter.history.applied };
+adapter.history.applied = {
+  ...capturedVersion,
+  revision: capturedVersion.revision + 1,
+};
+for (const [method, request] of [
+  ["getFASTAForAssembly", new requestClasses.GetFastaForAssemblyRequest()],
+  ["getAGPForAssembly", new requestClasses.GetAGPForAssemblyRequest()],
+  [
+    "getFASTAForSelection",
+    new requestClasses.GetFastaForSelectionRequest({
+      fromBpX: 1,
+      toBpX: 2,
+      fromBpY: 3,
+      toBpY: 4,
+    }),
+  ],
+]) {
+  await adapter[method](request, capturedVersion);
+  assert.equal(
+    sentHeaders["X-HiCT-History-Revision"],
+    String(capturedVersion.revision),
+    "Coordinate downloads retain the revision captured before choosing a destination"
+  );
+}
+adapter.history.applied = capturedVersion;
 await adapter.queryAlignmentDetail({ jobId: "bounded-alignment" });
 assert.equal(
   sentTimeout,

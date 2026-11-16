@@ -288,6 +288,23 @@ const searchTerm = ref("");
 const showAllFiles = ref(false);
 const treeSelectionKeys = ref<Record<string, boolean>>({});
 const uiSettingsStore = useUiSettingsStore();
+const pickerKind = computed(() => {
+  const label = (props.fileType ?? props.title ?? "").toLowerCase();
+  if (/fasta|\.fa\b|\.fna|\.fas\b/.test(label)) return "fasta";
+  if (/\.agp|\.assembly/.test(label)) return "agp";
+  if (/\.hict|\.hic|\.cool|\.mcool/.test(label)) return "map";
+  if (/track|\.bed|\.gff|\.gtf|\.bam|\.vcf|\.bw|\.bigwig/.test(label))
+    return "track";
+  return "other";
+});
+function emitSelected(filename: string) {
+  uiSettingsStore.rememberFileSelection(
+    props.networkManager.host,
+    pickerKind.value,
+    filename
+  );
+  emit("selected", filename);
+}
 const { fileSelectorMode } = storeToRefs(uiSettingsStore);
 const selectorMode = ref<"explorer" | "tree">(fileSelectorMode.value);
 
@@ -484,7 +501,7 @@ const parentDirectoryEntry = (): FileEntryResponse => {
   };
 };
 
-const loadDirectory = async (directory: string): Promise<void> => {
+const loadDirectory = async (directory: string): Promise<boolean> => {
   const normalizedDirectory = normalizeRelativePath(directory);
   loading.value = true;
   errorMessage.value = "";
@@ -497,8 +514,10 @@ const loadDirectory = async (directory: string): Promise<void> => {
     allEntries.value = entries.slice();
     selectedFilename.value = null;
     treeSelectionKeys.value = {};
+    return true;
   } catch (error: unknown) {
     errorMessage.value = String(error);
+    return false;
   } finally {
     loading.value = false;
   }
@@ -519,7 +538,7 @@ const onPathGoClicked = async (): Promise<void> => {
   if (visibleEntry?.type === "file") {
     selectedFilename.value = visibleEntry.path;
     treeSelectionKeys.value = { [fileSelectionKey(visibleEntry.path)]: true };
-    emit("selected", visibleEntry.path);
+    emitSelected(visibleEntry.path);
     return;
   }
   if (visibleEntry?.type === "directory") {
@@ -535,7 +554,7 @@ const onPathGoClicked = async (): Promise<void> => {
     treeSelectionKeys.value = {
       [fileSelectionKey(currentFileCandidate.path)]: true,
     };
-    emit("selected", currentFileCandidate.path);
+    emitSelected(currentFileCandidate.path);
     return;
   }
 
@@ -638,6 +657,11 @@ const onSelectClicked = (): void => {
       errorMessage.value = "Please select at least one file";
       return;
     }
+    uiSettingsStore.rememberFileSelection(
+      props.networkManager.host,
+      pickerKind.value,
+      selected[selected.length - 1]
+    );
     emit("selectedMany", selected);
     return;
   }
@@ -660,7 +684,7 @@ const onSelectClicked = (): void => {
   }
   selectedFilename.value = selectedPath;
   treeSelectionKeys.value = { [fileSelectionKey(selectedPath)]: true };
-  emit("selected", selectedPath);
+  emitSelected(selectedPath);
 };
 
 const onExplorerRowActivated = (path: string): void => {
@@ -775,7 +799,24 @@ onMounted(async () => {
   if (props.multiSelect) {
     selectorMode.value = "explorer";
   }
-  void loadDirectory("");
+  const remembered = uiSettingsStore.rememberedFileSelection(
+    props.networkManager.host,
+    pickerKind.value
+  );
+  if (
+    !(await loadDirectory(remembered?.directory ?? "")) &&
+    remembered?.directory
+  )
+    await loadDirectory("");
+  if (
+    remembered &&
+    filteredEntries.value.some(
+      (e) => e.type === "file" && e.path === remembered.filename
+    )
+  ) {
+    selectedFilename.value = remembered.filename;
+    treeSelectionKeys.value = { [fileSelectionKey(remembered.filename)]: true };
+  }
 });
 
 const modalFocusElement = ref<HTMLElement | null>(null);

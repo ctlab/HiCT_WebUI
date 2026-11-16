@@ -84,6 +84,14 @@
                   >Attach</a
                 >
               </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="emit('examplesRequested')"
+                  >Open Examples…</a
+                >
+              </li>
               <li><hr class="dropdown-divider" /></li>
               <li>
                 <a
@@ -1243,12 +1251,18 @@
 </template>
 
 <script setup lang="ts">
-import SelectionControls from './SelectionControls.vue';
+import SelectionControls from "./SelectionControls.vue";
 import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
 /* global __HICT_WEBUI_BUILD_VERSION__, __HICT_WEBUI_BUILD_COMMIT__ */
 import BackgroundJobsPanel from "./BackgroundJobsPanel.vue";
 import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
 import { reportFailure } from "@/app/ui/reportFailure";
+import {
+  prepareFileSave,
+  canPickSessionFile,
+  pickSessionFile,
+} from "@/app/core/export/FileSave";
+import { notifyFileSave } from "@/app/ui/fileSaveNotice";
 import { AgpImportCancelledError } from "@/app/core/net/agpImportChoice";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { marked } from "marked";
@@ -1870,8 +1884,17 @@ function onSaveSessionClicked(): void {
 
 const sessionFileInput = ref<HTMLInputElement | null>(null);
 
-function onOpenSessionClicked(): void {
-  sessionFileInput.value?.click();
+async function onOpenSessionClicked(): Promise<void> {
+  if (!canPickSessionFile()) {
+    sessionFileInput.value?.click();
+    return;
+  }
+  try {
+    const file = await pickSessionFile();
+    if (file) emit("openSession", file);
+  } catch (error) {
+    reportFailure("Open session", error);
+  }
 }
 
 function onSessionFileSelected(event: Event): void {
@@ -2302,38 +2325,42 @@ function onAGPFileSelected() {
   openingAGPFile.value = false;
 }
 
+const assemblyExportBusy = ref(false);
+async function exportAssemblyFile(kind: "fasta" | "agp") {
+  if (!props.mapManager || assemblyExportBusy.value) return;
+  const api = props.networkManager.requestManager;
+  const version = api.history.applied ? { ...api.history.applied } : null;
+  assemblyExportBusy.value = true;
+  try {
+    const destination = await prepareFileSave(`assembly.${kind}`, kind);
+    if (!destination) return;
+    const data =
+      kind === "fasta"
+        ? await api.getFASTAForAssembly(
+            new GetFastaForAssemblyRequest(),
+            version
+          )
+        : await api.getAGPForAssembly(new GetAGPForAssemblyRequest(), version);
+    notifyFileSave(
+      await destination.write(
+        new Blob([data as BlobPart], { type: "text/plain" })
+      ),
+      kind === "fasta" ? "Assembly FASTA" : "Assembly AGP"
+    );
+  } catch (error) {
+    reportFailure(`Export assembly ${kind.toUpperCase()}`, error);
+  } finally {
+    assemblyExportBusy.value = false;
+  }
+}
 function onAssemblyFASTARequest() {
-  toast.message("Preparing export…");
-  props.networkManager.requestManager
-    .getFASTAForAssembly(new GetFastaForAssemblyRequest())
-    .then((data) => {
-      // eslint-disable-next-line
-      const blob = new Blob([data as BlobPart], { type: "text/plain" });
-      const link = document.createElement("a");
-      link.href = window.URL.createObjectURL(blob);
-      link.download = `assembly.fasta`;
-      link.click();
-    })
-    .catch((error) => reportFailure("Export assembly", error));
+  void exportAssemblyFile("fasta");
 }
-
-function onSelectionFASTARequest() {
-  props.mapManager?.eventManager.onExportFASTAForSelectionClicked();
-}
-
 function onAssemblyAGPRequest() {
-  toast.message("Preparing export…");
-  props.networkManager.requestManager
-    .getAGPForAssembly(new GetAGPForAssemblyRequest())
-    .then((data) => {
-      // eslint-disable-next-line
-      const blob = new Blob([data as BlobPart], { type: "text/plain" });
-      const link = document.createElement("a");
-      link.href = window.URL.createObjectURL(blob);
-      link.download = `assembly.agp`;
-      link.click();
-    })
-    .catch((error) => reportFailure("Export assembly", error));
+  void exportAssemblyFile("agp");
+}
+function onSelectionFASTARequest() {
+  void props.mapManager?.eventManager.onExportFASTAForSelectionClicked();
 }
 </script>
 

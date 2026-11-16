@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld("hictDesktop", {
   electron: process.versions.electron,
   chromium: process.versions.chrome,
   quit: () => ipcRenderer.invoke("hict:quit"),
-  saveExport: (payload: { filename: string; bytes: number[] | Uint8Array }) =>
-    ipcRenderer.invoke("hict:save-export", payload),
+  saveExport: (payload: {
+    filename: string;
+    kind?: string;
+    bytes: number[] | Uint8Array;
+  }) => ipcRenderer.invoke("hict:save-export", payload),
 });

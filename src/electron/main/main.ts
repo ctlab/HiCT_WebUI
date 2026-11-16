@@ -20,8 +20,25 @@
  SOFTWARE.
  */
 
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, session } from "electron";
-import { writeFile, readFile, stat, mkdir } from "node:fs/promises";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  shell,
+  session,
+} from "electron";
+import {
+  writeFile,
+  readFile,
+  stat,
+  mkdir,
+  rename,
+  rm,
+  open,
+} from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -29,24 +46,35 @@ import { pathToFileURL } from "node:url";
 const DEFAULT_HICT_URL = "http://127.0.0.1:8080/";
 const APP_NAME = "HiCT";
 
-function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
-  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
+function firstNonEmpty(
+  ...values: Array<string | undefined>
+): string | undefined {
+  return values
+    .find((value) => typeof value === "string" && value.trim().length > 0)
+    ?.trim();
 }
 
 function requestedUrl(): string {
   const cliUrl = process.argv
     .slice(2)
     .find((argument) => /^https?:\/\//i.test(argument));
-  return firstNonEmpty(cliUrl, process.env.HICT_ELECTRON_URL, DEFAULT_HICT_URL) ?? DEFAULT_HICT_URL;
+  return (
+    firstNonEmpty(cliUrl, process.env.HICT_ELECTRON_URL, DEFAULT_HICT_URL) ??
+    DEFAULT_HICT_URL
+  );
 }
 
 function normalizeAllowedUrl(rawUrl: string): URL {
   const url = new URL(rawUrl);
   if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error(`Unsupported URL protocol for HiCT Electron wrapper: ${url.protocol}`);
+    throw new Error(
+      `Unsupported URL protocol for HiCT Electron wrapper: ${url.protocol}`
+    );
   }
   if (!isLocalHost(url)) {
-    throw new Error(`HiCT Electron wrapper only opens local HiCT WebUI URLs, got: ${url.href}`);
+    throw new Error(
+      `HiCT Electron wrapper only opens local HiCT WebUI URLs, got: ${url.href}`
+    );
   }
   return url;
 }
@@ -56,12 +84,15 @@ function isLocalHost(url: URL): boolean {
   if (hostname === "localhost") {
     return true;
   }
-  const normalized = hostname.startsWith("[") && hostname.endsWith("]")
-    ? hostname.slice(1, -1)
-    : hostname;
+  const normalized =
+    hostname.startsWith("[") && hostname.endsWith("]")
+      ? hostname.slice(1, -1)
+      : hostname;
   const parsed = isIP(normalized);
   if (parsed === 4) {
-    const parts = normalized.split(".").map((part) => Number.parseInt(part, 10));
+    const parts = normalized
+      .split(".")
+      .map((part) => Number.parseInt(part, 10));
     const [first = -1, second = -1] = parts;
     return (
       first === 127 ||
@@ -147,7 +178,9 @@ function createWindow(baseUrl: URL): BrowserWindow {
   });
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
-    console.error(`HiCT renderer process exited: reason=${details.reason} exitCode=${details.exitCode}`);
+    console.error(
+      `HiCT renderer process exited: reason=${details.reason} exitCode=${details.exitCode}`
+    );
   });
 
   mainWindow.loadURL(baseUrl.href).catch((error) => {
@@ -178,19 +211,41 @@ function configureSecurity(baseUrl: URL): void {
     "hict:save-export",
     async (
       event,
-      payload: { filename?: string; bytes?: number[] | Uint8Array | ArrayBuffer }
+      payload: {
+        filename?: string;
+        kind?: string;
+        bytes?: number[] | Uint8Array | ArrayBuffer;
+      }
     ): Promise<{ saved: boolean; path?: string }> => {
       const filename =
-        typeof payload.filename === "string" && payload.filename.trim().length > 0
+        typeof payload.filename === "string" &&
+        payload.filename.trim().length > 0
           ? payload.filename.trim()
           : "hict-export.bin";
       const parent = BrowserWindow.fromWebContents(event.sender);
       let directory = process.env.HICT_EXPORT_DIR;
-      const preferencePath = join(app.getPath("userData"), "last-export-directory.txt");
+      const kind = [
+        "session",
+        "fasta",
+        "agp",
+        "figure",
+        "bookmarks",
+        "preset",
+        "pipeline",
+        "other",
+      ].includes(payload.kind ?? "")
+        ? payload.kind
+        : "export";
+      const preferencePath = join(
+        app.getPath("userData"),
+        `last-${kind}-directory.txt`
+      );
       try {
         const saved = await readFile(preferencePath, "utf8");
         if ((await stat(saved)).isDirectory()) directory = saved;
-      } catch { /* First export, removed folder or unreadable preference: use default. */ }
+      } catch {
+        /* First export, removed folder or unreadable preference: use default. */
+      }
       const safeFilename = filename.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_");
       const options = {
         title: "Save HiCT export",
@@ -210,29 +265,55 @@ function configureSecurity(baseUrl: URL): void {
         : Object.prototype.toString.call(raw) === "[object ArrayBuffer]"
         ? Buffer.from(raw as ArrayBuffer)
         : Buffer.from(Array.isArray(raw) ? raw : []);
-      await writeFile(result.filePath, data);
+      const temporary = join(
+        dirname(result.filePath),
+        `.hict-save-${randomUUID()}.tmp`
+      );
+      const mode = await stat(result.filePath)
+        .then((s) => s.mode & 0o777)
+        .catch(() => 0o600);
+      let created = false;
+      try {
+        const file = await open(temporary, "wx", mode);
+        created = true;
+        try {
+          await file.writeFile(data);
+          await file.sync();
+        } finally {
+          await file.close();
+        }
+        await rename(temporary, result.filePath);
+      } finally {
+        if (created) await rm(temporary, { force: true }).catch(() => {});
+      }
       // Only remember a successfully written export, never a cancelled/failed one.
       try {
         await mkdir(dirname(preferencePath), { recursive: true });
         await writeFile(preferencePath, dirname(result.filePath), "utf8");
       } catch (error) {
-        console.warn("Export saved, but its destination could not be remembered:", error);
+        console.warn(
+          "Export saved, but its destination could not be remembered:",
+          error
+        );
       }
       return { saved: true, path: result.filePath };
     }
   );
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
-    callback(false);
-  });
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents, _permission, callback) => {
+      callback(false);
+    }
+  );
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     if (!isAllowedHiCTUrl(details.url, baseUrl)) {
       callback({ responseHeaders: details.responseHeaders });
       return;
     }
     const httpOrigin = baseUrl.origin;
-    const cspHostname = baseUrl.hostname.includes(":") && !baseUrl.hostname.startsWith("[")
-      ? `[${baseUrl.hostname}]`
-      : baseUrl.hostname;
+    const cspHostname =
+      baseUrl.hostname.includes(":") && !baseUrl.hostname.startsWith("[")
+        ? `[${baseUrl.hostname}]`
+        : baseUrl.hostname;
     const httpSameHostAllPorts = `${baseUrl.protocol}//${cspHostname}:*`;
     const wsOrigin = httpOrigin.replace(/^http/i, "ws");
     const wsSameHostAllPorts = httpSameHostAllPorts.replace(/^http/i, "ws");
@@ -247,7 +328,7 @@ function configureSecurity(baseUrl: URL): void {
             // svg2pdf reads temporary in-memory PNG blobs through XHR. Keep
             // data: and external network origins excluded from connect-src.
             `connect-src 'self' blob: ${httpOrigin} ${httpSameHostAllPorts} ${wsOrigin} ${wsSameHostAllPorts} http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; ` +
-            "font-src 'self' data:;"
+            "font-src 'self' data:;",
         ],
       },
     });
@@ -266,25 +347,28 @@ if (process.platform === "win32") {
 
 let mainWindow: BrowserWindow | undefined;
 
-app.whenReady().then(async () => {
-  const baseUrl = normalizeAllowedUrl(requestedUrl());
-  if (process.env.HICT_RESET_WEBUI === "1") {
-    await session.defaultSession.clearStorageData();
-    await session.defaultSession.clearCache();
-    console.error("HICT_WEBUI_RESET_COMPLETE");
-  }
-  configureSecurity(baseUrl);
-  mainWindow = createWindow(baseUrl);
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = createWindow(baseUrl);
+app
+  .whenReady()
+  .then(async () => {
+    const baseUrl = normalizeAllowedUrl(requestedUrl());
+    if (process.env.HICT_RESET_WEBUI === "1") {
+      await session.defaultSession.clearStorageData();
+      await session.defaultSession.clearCache();
+      console.error("HICT_WEBUI_RESET_COMPLETE");
     }
+    configureSecurity(baseUrl);
+    mainWindow = createWindow(baseUrl);
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        mainWindow = createWindow(baseUrl);
+      }
+    });
+  })
+  .catch((error) => {
+    console.error("HiCT Electron wrapper failed to start:", error);
+    app.exit(1);
   });
-}).catch((error) => {
-  console.error("HiCT Electron wrapper failed to start:", error);
-  app.exit(1);
-});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

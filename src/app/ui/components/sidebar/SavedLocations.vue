@@ -252,6 +252,9 @@
 </template>
 
 <script setup lang="ts">
+import { prepareFileSave } from "@/app/core/export/FileSave";
+import { notifyFileSave } from "@/app/ui/fileSaveNotice";
+import { saveFileWithNotice } from "@/app/ui/fileSaveNotice";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import SavedLocationElement from "./SavedLocationElement.vue";
 import { computed, Ref, ref, watch, onMounted, onBeforeUnmount } from "vue";
@@ -438,12 +441,12 @@ function exportBookmarks(): void {
   const blob = new Blob([JSON.stringify(entries, null, 2)], {
     type: "application/json",
   });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "hict_bookmarks.json";
-  a.click();
-  URL.revokeObjectURL(url);
+  void saveFileWithNotice(
+    blob,
+    "hict_bookmarks.json",
+    "bookmarks",
+    "Bookmarks"
+  );
 }
 
 function importBookmarks(event: Event): void {
@@ -620,25 +623,26 @@ function goToScaffold(scaffoldId: number): void {
   map.linearTrackManager.centerOnBpRange(borders.startBP, borders.endBP);
 }
 
-function exportNames(): void {
+async function exportNames(): Promise<void> {
   const map = props.mapManager;
   if (!map) return;
-  map.networkManager.requestManager
-    .exportNameMapping()
-    .then((mapping) => {
-      const blob = new Blob([JSON.stringify(mapping, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "hict_names.json";
-      a.click();
-      URL.revokeObjectURL(url);
-    })
-    .catch((err) => {
-      toast.error(err?.message ?? "Failed to export names");
-    });
+  try {
+    const destination = await prepareFileSave("hict_names.json", "other");
+    if (!destination || map.isDisposed) return;
+    const mapping = await map.networkManager.requestManager.exportNameMapping();
+    notifyFileSave(
+      await destination.write(
+        new Blob([JSON.stringify(mapping, null, 2)], {
+          type: "application/json",
+        })
+      ),
+      "Names"
+    );
+  } catch (error) {
+    toast.error(
+      error instanceof Error ? error.message : "Failed to export names"
+    );
+  }
 }
 
 function importNames(event: Event): void {

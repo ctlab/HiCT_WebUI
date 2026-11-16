@@ -20,6 +20,11 @@
  */
 
 import { Map, View } from "ol";
+import {
+  prepareFileSave,
+  cancelledFileSave,
+  type FileSaveResult,
+} from "../export/FileSave";
 import { ZoomSlider } from "ol/control";
 import { DoubleClickZoom, DragPan } from "ol/interaction";
 import TileLayer from "ol/layer/Tile";
@@ -1429,7 +1434,12 @@ class ContactMapManager {
       scope?: "viewport" | "whole-map" | "selection";
       cropToMap?: boolean;
     }
-  ): Promise<void> {
+  ): Promise<FileSaveResult> {
+    const destination = await prepareFileSave(
+      `${this.options.filename}.svg`,
+      "figure"
+    );
+    if (!destination) return cancelledFileSave;
     const { svg } = await this.buildViewportExportSvg({
       ...options,
       progress: progressCallback,
@@ -1437,13 +1447,13 @@ class ContactMapManager {
     const { embedSvgFonts } = await import("../rendering/MapFonts");
     await embedSvgFonts(svg);
     progressCallback?.(0.9);
-    await this.saveExportBlob(
+    const result = await destination.write(
       new Blob([new XMLSerializer().serializeToString(svg)], {
         type: "image/svg+xml",
-      }),
-      `${this.options.filename}.svg`
+      })
     );
     progressCallback?.(1);
+    return result;
   }
 
   public async exportCurrentMapPng(
@@ -1455,7 +1465,12 @@ class ContactMapManager {
       scope?: "viewport" | "whole-map" | "selection";
       cropToMap?: boolean;
     }
-  ): Promise<void> {
+  ): Promise<FileSaveResult> {
+    const destination = await prepareFileSave(
+      `${this.options.filename}.png`,
+      "figure"
+    );
+    if (!destination) return cancelledFileSave;
     const { canvas } = await this.buildViewportExportSvg({
       ...options,
       progress: progressCallback,
@@ -1468,8 +1483,9 @@ class ContactMapManager {
       )
     );
     progressCallback?.(0.9);
-    await this.saveExportBlob(blob, `${this.options.filename}.png`);
+    const result = await destination.write(blob);
     progressCallback?.(1);
+    return result;
   }
 
   public async exportCurrentMapPdf(
@@ -1481,7 +1497,12 @@ class ContactMapManager {
       scope?: "viewport" | "whole-map" | "selection";
       cropToMap?: boolean;
     }
-  ): Promise<void> {
+  ): Promise<FileSaveResult> {
+    const destination = await prepareFileSave(
+      `${this.options.filename}.pdf`,
+      "figure"
+    );
+    if (!destination) return cancelledFileSave;
     const { svg } = await this.buildViewportExportSvg({
       ...options,
       progress: progressCallback,
@@ -1510,71 +1531,9 @@ class ContactMapManager {
     await this.waitForNextAnimationFrame();
     await renderSvgToPdf(pdf, svg, width, height);
     progressCallback?.(0.9);
-    await this.saveExportBlob(
-      pdf.output("blob"),
-      `${this.options.filename}.pdf`
-    );
+    const result = await destination.write(pdf.output("blob"));
     progressCallback?.(1);
-  }
-
-  private async saveExportBlob(blob: Blob, filename: string): Promise<void> {
-    const sanitizedFilename =
-      ContactMapManager.sanitizeDownloadFilename(filename);
-    const desktopBridge = (
-      window as unknown as {
-        hictDesktop?: {
-          saveExport?: (payload: {
-            filename: string;
-            bytes: number[] | Uint8Array;
-          }) => Promise<unknown> | unknown;
-        };
-      }
-    ).hictDesktop;
-    if (typeof desktopBridge?.saveExport === "function") {
-      // Structured clone transfers typed arrays efficiently; Array.from() would
-      // build a JS number per byte and stall large PDF/PNG exports.
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      await Promise.resolve(
-        desktopBridge.saveExport({ filename: sanitizedFilename, bytes })
-      );
-      return;
-    }
-
-    const tauriBridge = (
-      window as unknown as {
-        __TAURI__?: {
-          core?: {
-            invoke?: (
-              command: string,
-              args?: Record<string, unknown>
-            ) => Promise<unknown>;
-          };
-          invoke?: (
-            command: string,
-            args?: Record<string, unknown>
-          ) => Promise<unknown>;
-        };
-      }
-    ).__TAURI__;
-    const invoke = tauriBridge?.core?.invoke ?? tauriBridge?.invoke;
-    if (typeof invoke === "function") {
-      const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
-      await invoke("save_export", { filename: sanitizedFilename, bytes });
-      return;
-    }
-
-    const a = document.createElement("a");
-    a.download = sanitizedFilename;
-    a.href = URL.createObjectURL(blob);
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-
-  private static sanitizeDownloadFilename(filename: string): string {
-    // Control characters are exactly what a download file name must not contain.
-    // eslint-disable-next-line no-control-regex
-    const safe = filename.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim();
-    return safe.length > 0 ? safe : "hict-export.bin";
+    return result;
   }
 
   private exportTracksSvg(

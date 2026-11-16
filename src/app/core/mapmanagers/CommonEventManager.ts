@@ -1,4 +1,6 @@
 import { reportFailure } from "@/app/ui/reportFailure";
+import { prepareFileSave } from "../export/FileSave";
+import { notifyFileSave } from "@/app/ui/fileSaveNotice";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -705,7 +707,7 @@ class CommonEventManager {
       });
   }
 
-  public onExportFASTAForSelectionClicked(): void {
+  public async onExportFASTAForSelectionClicked(): Promise<void> {
     const matrixViewStore = useMatrixViewStore();
     this.mapManager.deactivateTranslocation();
     const [fromBp, toBp] = [
@@ -743,27 +745,32 @@ class CommonEventManager {
       return;
     }
 
-    this.mapManager.networkManager.requestManager
-      .getFASTAForSelection(
-        new GetFastaForSelectionRequest({
-          fromBpX: fromBpX,
-          fromBpY: fromBpY,
-          toBpX: toBpX,
-          toBpY: toBpY,
-          horizontalSource: matrixViewStore.horizontalFastaSource,
-          verticalSource: matrixViewStore.verticalFastaSource,
-        })
-      )
-      .then((data) => {
-        // eslint-disable-next-line
-        const blob = new Blob([data as BlobPart], { type: "text/plain" });
-        const link = document.createElement("a");
-        link.href = window.URL.createObjectURL(blob);
-        link.download = `selection_(${fromBpX}bp-${toBpX}bp).(${fromBpY}bp-${toBpY}bp).fasta`;
-        link.click();
-      })
-      .catch((error) => reportFailure("Export FASTA for selection", error));
-    return;
+    const api = this.mapManager.networkManager.requestManager;
+    const version = api.history.applied ? { ...api.history.applied } : null;
+    const request = new GetFastaForSelectionRequest({
+      fromBpX: fromBpX,
+      fromBpY: fromBpY,
+      toBpX: toBpX,
+      toBpY: toBpY,
+      horizontalSource: matrixViewStore.horizontalFastaSource,
+      verticalSource: matrixViewStore.verticalFastaSource,
+    });
+    try {
+      const destination = await prepareFileSave(
+        `selection_${fromBpX}-${toBpX}_${fromBpY}-${toBpY}.fasta`,
+        "fasta"
+      );
+      if (!destination) return;
+      const data = await api.getFASTAForSelection(request, version);
+      notifyFileSave(
+        await destination.write(
+          new Blob([data as BlobPart], { type: "text/plain" })
+        ),
+        "Selection FASTA"
+      );
+    } catch (error) {
+      reportFailure("Export FASTA for selection", error);
+    }
   }
 
   public resetSelection(): void {

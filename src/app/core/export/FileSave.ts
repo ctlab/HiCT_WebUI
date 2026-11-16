@@ -1,0 +1,220 @@
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+
+export type FileSaveKind =
+  | "session"
+  | "fasta"
+  | "agp"
+  | "figure"
+  | "bookmarks"
+  | "preset"
+  | "pipeline"
+  | "other";
+export type FileSaveResult =
+  | { status: "cancelled" }
+  | { status: "download-started"; filename: string }
+  | {
+      status: "saved";
+      filename: string;
+      path?: string;
+      readFile: () => Promise<File>;
+    };
+export interface FileSaveDestination {
+  write(blob: Blob): Promise<FileSaveResult>;
+}
+interface BrowserFileHandle {
+  name: string;
+  createWritable(): Promise<{
+    write(blob: Blob): Promise<void>;
+    close(): Promise<void>;
+    abort?(): Promise<void>;
+  }>;
+  getFile(): Promise<File>;
+}
+const lastHandles = new Map<FileSaveKind, BrowserFileHandle>();
+export const cancelledFileSave: FileSaveResult = { status: "cancelled" };
+export function sanitizeSaveFilename(filename: string): string {
+  // eslint-disable-next-line no-control-regex
+  return (
+    filename.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim() ||
+    "hict-export.bin"
+  );
+}
+function basename(path: string) {
+  return path.split(/[\\/]/).at(-1) || path;
+}
+
+/** Call directly from the click handler, before preparing data, to retain browser activation. */
+export async function prepareFileSave(
+  filename: string,
+  kind: FileSaveKind
+): Promise<FileSaveDestination | undefined> {
+  const name = sanitizeSaveFilename(filename);
+  const browser = window as unknown as {
+    hictDesktop?: {
+      saveExport?: (payload: {
+        filename: string;
+        kind: FileSaveKind;
+        bytes: Uint8Array;
+      }) => Promise<{ saved: boolean; path?: string }>;
+    };
+    __TAURI__?: {
+      core?: {
+        invoke?: (
+          command: string,
+          args: Record<string, unknown>
+        ) => Promise<unknown>;
+      };
+      invoke?: (
+        command: string,
+        args: Record<string, unknown>
+      ) => Promise<unknown>;
+    };
+    showSaveFilePicker?: (options: object) => Promise<BrowserFileHandle>;
+  };
+  const remember = (path: string) =>
+    useUiSettingsStore().rememberSavedFile(kind, path);
+  if (typeof browser.hictDesktop?.saveExport === "function") {
+    const save = browser.hictDesktop.saveExport.bind(browser.hictDesktop);
+    return {
+      async write(blob) {
+        const result = await save({
+          filename: name,
+          kind,
+          bytes: new Uint8Array(await blob.arrayBuffer()),
+        });
+        if (result?.saved === false) return cancelledFileSave;
+        if (result?.saved !== true)
+          throw Error("The desktop did not confirm that the file was saved.");
+        const savedName = result.path ? basename(result.path) : name;
+        remember(result.path ?? savedName);
+        return {
+          status: "saved",
+          filename: savedName,
+          path: result.path,
+          readFile: async () =>
+            new File([blob], savedName, { type: blob.type }),
+        };
+      },
+    };
+  }
+  const invoke = browser.__TAURI__?.core?.invoke ?? browser.__TAURI__?.invoke;
+  if (typeof invoke === "function")
+    return {
+      async write(blob) {
+        const result = await invoke("save_export", {
+          filename: name,
+          kind,
+          bytes: Array.from(new Uint8Array(await blob.arrayBuffer())),
+        });
+        if (result === null) return cancelledFileSave;
+        if (typeof result !== "string" || !result)
+          throw Error("The desktop did not confirm that the file was saved.");
+        const savedName = basename(result);
+        remember(result);
+        return {
+          status: "saved",
+          filename: savedName,
+          path: result,
+          readFile: async () =>
+            new File([blob], savedName, { type: blob.type }),
+        };
+      },
+    };
+  if (typeof browser.showSaveFilePicker === "function") {
+    let handle: BrowserFileHandle;
+    try {
+      handle = await browser.showSaveFilePicker({
+        id: `hict-${kind}`,
+        suggestedName: name,
+        ...(lastHandles.has(kind) ? { startIn: lastHandles.get(kind) } : {}),
+      });
+    } catch (failure) {
+      if ((failure as { name?: string })?.name === "AbortError")
+        return undefined;
+      throw failure; // A denied or failed picker must never silently download instead.
+    }
+    return {
+      async write(blob) {
+        const writer = await handle.createWritable();
+        try {
+          await writer.write(blob);
+          await writer.close();
+        } catch (failure) {
+          try {
+            await writer.abort?.();
+          } catch {
+            /* Preserve the write error. */
+          }
+          throw failure;
+        }
+        lastHandles.set(kind, handle);
+        remember(handle.name);
+        return {
+          status: "saved",
+          filename: handle.name,
+          readFile: () => handle.getFile(),
+        };
+      },
+    };
+  }
+  return {
+    async write(blob) {
+      const url = URL.createObjectURL(blob),
+        anchor = document.createElement("a");
+      try {
+        anchor.href = url;
+        anchor.download = name;
+        anchor.click();
+      } finally {
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      return { status: "download-started", filename: name };
+    },
+  };
+}
+
+export async function saveFileBlob(
+  blob: Blob,
+  filename: string,
+  kind: FileSaveKind
+): Promise<FileSaveResult> {
+  const destination = await prepareFileSave(filename, kind);
+  return destination ? destination.write(blob) : cancelledFileSave;
+}
+
+export function canPickSessionFile(): boolean {
+  const browser = window as unknown as {
+    showOpenFilePicker?: unknown;
+    hictDesktop?: unknown;
+    __TAURI__?: unknown;
+  };
+  return (
+    !browser.hictDesktop &&
+    !browser.__TAURI__ &&
+    typeof browser.showOpenFilePicker === "function"
+  );
+}
+export async function pickSessionFile(): Promise<File | undefined> {
+  const browser = window as unknown as {
+    showOpenFilePicker: (options: object) => Promise<BrowserFileHandle[]>;
+  };
+  try {
+    const [handle] = await browser.showOpenFilePicker({
+      id: "hict-session",
+      multiple: false,
+      types: [
+        {
+          description: "HiCT session",
+          accept: { "application/json": [".json"] },
+        },
+      ],
+      ...(lastHandles.has("session")
+        ? { startIn: lastHandles.get("session") }
+        : {}),
+    });
+    return handle?.getFile();
+  } catch (error) {
+    if ((error as { name?: string })?.name === "AbortError") return undefined;
+    throw error;
+  }
+}

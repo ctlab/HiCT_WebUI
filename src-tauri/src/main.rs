@@ -26,10 +26,15 @@ async fn save_export(
     window: tauri::WebviewWindow,
     filename: String,
     bytes: Vec<u8>,
+    kind: Option<String>,
 ) -> Result<Option<String>, String> {
     use tauri::Manager;
+    let category = match kind.as_deref() {
+        Some(value @ ("session" | "fasta" | "agp" | "figure" | "bookmarks" | "preset" | "pipeline" | "other")) => value,
+        _ => "export",
+    };
     let preference_path = window.app_handle().path().app_config_dir().ok()
-        .map(|path| path.join("last-export-directory.txt"));
+        .map(|path| path.join(format!("last-{category}-directory.txt")));
     let remembered = preference_path.as_ref()
         .and_then(|path| std::fs::read_to_string(path).ok())
         .filter(|path| std::path::Path::new(path).is_dir());
@@ -44,8 +49,9 @@ async fn save_export(
     let Some(file) = dialog.save_file().await else {
         return Ok(None);
     };
-    file.write(&bytes)
-        .await
+    let target = file.path().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || write_export_file(&target,&bytes)).await
+        .map_err(|error| format!("Failed to save export: {error}"))?
         .map_err(|error| format!("Failed to save export: {error}"))?;
     if let (Some(preference), Some(directory)) = (preference_path, file.path().parent()) {
         let remember = || -> std::io::Result<()> {
@@ -57,6 +63,44 @@ async fn save_export(
         }
     }
     Ok(Some(file.path().to_string_lossy().to_string()))
+}
+
+fn write_export_file(target: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let nonce=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let temporary=target.parent().ok_or_else(||std::io::Error::new(std::io::ErrorKind::Other,"Missing destination directory"))?
+        .join(format!(".hict-save-{}-{nonce}.tmp",std::process::id()));
+    let mut created=false;
+    let result=(|| {
+        let mut options=std::fs::OpenOptions::new();options.write(true).create_new(true);
+        #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+        let mut file=options.open(&temporary)?;created=true;
+        if let Ok(metadata)=std::fs::metadata(target) { file.set_permissions(metadata.permissions())?; }
+        file.write_all(bytes)?;file.sync_all()?;drop(file);
+        std::fs::rename(&temporary,target)
+    })();
+    if result.is_err() && created { let _=std::fs::remove_file(&temporary); }
+    result
+}
+
+#[cfg(test)]
+mod export_file_tests {
+    use super::write_export_file;
+    #[test]
+    fn staging_replaces_complete_files_and_preserves_existing_data_on_failure() {
+        let nonce=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir=std::env::temp_dir().join(format!("hict-native-save-test-{}-{nonce}",std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let target=dir.join("session.json");
+        write_export_file(&target,b"first").unwrap();
+        write_export_file(&target,b"second").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(),b"second");
+        let destination_directory=dir.join("existing-directory");std::fs::create_dir(&destination_directory).unwrap();
+        assert!(write_export_file(&destination_directory,b"invalid destination").is_err());
+        assert_eq!(std::fs::read(&target).unwrap(),b"second");
+        assert!(!std::fs::read_dir(&dir).unwrap().any(|entry|entry.unwrap().file_name().to_string_lossy().starts_with(".hict-save-")));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
 
 #[cfg(target_os = "linux")]

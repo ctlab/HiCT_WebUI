@@ -194,6 +194,7 @@
 </template>
 
 <script setup lang="ts">
+import { saveFileWithNotice } from "@/app/ui/fileSaveNotice";
 import { pipelineEditorStorageKey } from "@/app/core/visualization/renderPipelinePreset";
 import { reportFailure } from "@/app/ui/reportFailure";
 import { useModalFocus } from "@/app/ui/modalFocus";
@@ -3052,12 +3053,12 @@ const exportGraphToFile = (): void => {
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
     });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "hict_render_pipeline.json";
-    anchor.click();
-    URL.revokeObjectURL(url);
+    void saveFileWithNotice(
+      blob,
+      "hict_render_pipeline.json",
+      "pipeline",
+      "Pipeline"
+    );
   } catch (error) {
     reportFailure("Export pipeline", error);
   }

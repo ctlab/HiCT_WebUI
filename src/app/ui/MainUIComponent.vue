@@ -330,6 +330,8 @@ import type {
 } from "@/app/core/net/api/RequestManager";
 import { pipelineTransferIssues } from "@/app/core/visualization/transferVisualization";
 import { prepareCoverage } from "@/app/core/visualization/coverageNormalization";
+import { prepareFileSave } from "@/app/core/export/FileSave";
+import { notifyFileSave } from "@/app/ui/fileSaveNotice";
 import BenchmarkFeature from "ol/Feature";
 import {
   captureWorkspace,
@@ -1308,7 +1310,7 @@ async function onUnsavedPromptSave(): Promise<void> {
     current.resolve(true);
   } else {
     // A failed save never continues: the edits are still in the map.
-    current.error = sessionSaveError.value;
+    current.error = sessionSaveError.value || sessionSaveNotice.value;
   }
 }
 
@@ -1322,6 +1324,7 @@ let sessionSaveInFlight = false;
 /** Text of the long-running session operation currently shown in the status pill. */
 const sessionBusy = ref("");
 const sessionSaveError = ref("");
+const sessionSaveNotice = ref("");
 const sessionSaveDiagnostics = ref("");
 const sessionSaveErrorDialog = ref<HTMLElement | null>(null);
 useModalFocus(sessionSaveErrorDialog, () => !!sessionSaveError.value);
@@ -1333,7 +1336,7 @@ useEscDismissableDialog({
   },
 });
 
-/** Saves a v3 session: the edited assembly, tracks, scopes, processing graph and file identities. */
+/** Saves a portable session, marking only the captured assembly saved after a confirmed write. */
 async function onSaveSession(): Promise<boolean> {
   const manager = mapManager.value;
   if (!manager) {
@@ -1342,10 +1345,35 @@ async function onSaveSession(): Promise<boolean> {
   }
   if (sessionSaveInFlight) return false;
   sessionSaveInFlight = true;
+  sessionSaveError.value = "";
+  sessionSaveNotice.value = "";
   sessionBusy.value =
     "Saving session: checking the assembly and identifying files\u2026";
   try {
+    const destination = await prepareFileSave("hict_session.json", "session");
+    if (!destination) return false;
+    if (manager !== mapManager.value)
+      throw new Error(
+        "The open map changed while choosing a destination. Save again."
+      );
     await manager.visualizationManager.waitForPendingOptionRequests();
+    const normalization = await networkManager.requestManager
+      .coverageNormalizationStatus()
+      .catch(() => undefined);
+    const captured = networkManager.requestManager.history.applied;
+    const savedState = captured
+      ? { session: captured.session, currentId: captured.currentId }
+      : null;
+    const clientState = {
+      normalizationWeights: normalization?.mode,
+      workspace: JSON.parse(
+        JSON.stringify(captureWorkspace(manager))
+      ) as Record<string, unknown>,
+      savedLocations: JSON.parse(JSON.stringify(sessionStore.savedLocations)),
+      savedVisualizationPresets: JSON.parse(
+        JSON.stringify(sessionStore.savedVisualizationPresets)
+      ),
+    };
     const snapshot = await networkManager.requestManager.getSessionSnapshot(
       true,
       true,
@@ -1353,48 +1381,56 @@ async function onSaveSession(): Promise<boolean> {
     );
     if (manager !== mapManager.value)
       throw new Error("The open map changed while saving. Save again.");
-    // The journal state this file contains. Capture it before any later await.
-    const history = networkManager.requestManager.history.summary;
-    const savedState = history
-      ? { session: history.session, currentId: history.currentId }
-      : null;
-    const normalization = await networkManager.requestManager
-      .coverageNormalizationStatus()
-      .catch(() => undefined);
-    const envelope = createSessionEnvelope(snapshot, {
-      normalizationWeights: normalization?.mode,
-      workspace: captureWorkspace(manager) as unknown as Record<
-        string,
-        unknown
-      >,
-      savedLocations: JSON.parse(JSON.stringify(sessionStore.savedLocations)),
-      savedVisualizationPresets: JSON.parse(
-        JSON.stringify(sessionStore.savedVisualizationPresets)
-      ),
-    });
+    const envelope = createSessionEnvelope(snapshot, clientState);
     const text = JSON.stringify(envelope, null, 2);
     if (new TextEncoder().encode(text).byteLength > MAX_SESSION_BYTES) {
       throw new Error(
         "This assembly is too large to store in a session file (limit 8 MiB). Export the assembly as AGP instead."
       );
     }
-    const url = URL.createObjectURL(
+    const result = await destination.write(
       new Blob([text], { type: "application/json" })
     );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "hict_session.json";
-    a.click();
-    URL.revokeObjectURL(url);
+    if (result.status === "cancelled") return false;
+    if (result.status === "download-started") {
+      sessionSaveNotice.value =
+        "Download started. Your edits remain open and marked as unsaved. Check that the browser finished saving the file before discarding edits.";
+      notifyFileSave(result, "Session");
+      return false;
+    }
+    if (manager !== mapManager.value) {
+      toast.message(
+        `Session saved: ${result.filename}. The open map changed; its saved state was not changed.`
+      );
+      return false;
+    }
     networkManager.requestManager.markAssemblySaved(savedState);
+    const newerEdits = networkManager.requestManager.hasUnsavedAssemblyEdits();
+    sessionSaveNotice.value = newerEdits
+      ? "The session was saved, but newer edits remain unsaved. Save again before continuing."
+      : "";
     toast.success(
-      "Session saved with the edited assembly, tracks, scopes and processing graph. Undo history is not saved.",
-      { duration: 6000 }
+      newerEdits
+        ? sessionSaveNotice.value
+        : `Session saved: ${result.filename}. Undo history is not saved.`,
+      {
+        duration: 8000,
+        action: {
+          label: "Open saved session",
+          onClick: () => {
+            void result
+              .readFile()
+              .then(onOpenSession)
+              .catch((error) => reportFailure("Open saved session", error));
+          },
+        },
+      }
     );
-    return true;
+    return !newerEdits;
   } catch (e) {
     const failure = failureDetails("Save session", e);
-    sessionSaveError.value = failure.message;
+    if (unsavedPrompt.value) sessionSaveNotice.value = failure.message;
+    else sessionSaveError.value = failure.message;
     sessionSaveDiagnostics.value = failure.diagnostics;
     return false;
   } finally {

@@ -335,6 +335,7 @@
 
 <script setup lang="ts">
 import { reportFailure } from "@/app/ui/reportFailure";
+import { notifyFileSave } from "@/app/ui/fileSaveNotice";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { AxisScopeSelection } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
 import { useVisualizationOptionsSync } from "./useVisualizationOptionsSync";
@@ -764,13 +765,13 @@ async function runExport(type: "svg" | "png" | "pdf") {
     svgProgress.value = progress;
   };
   try {
-    if (type === "svg") {
-      await manager.exportCurrentMapSvg(onProgress, options);
-    } else if (type === "png") {
-      await manager.exportCurrentMapPng(onProgress, options);
-    } else {
-      await manager.exportCurrentMapPdf(onProgress, options);
-    }
+    const result =
+      type === "svg"
+        ? await manager.exportCurrentMapSvg(onProgress, options)
+        : type === "png"
+        ? await manager.exportCurrentMapPng(onProgress, options)
+        : await manager.exportCurrentMapPdf(onProgress, options);
+    notifyFileSave(result, `${type.toUpperCase()} export`);
   } catch (e) {
     reportFailure(`Export ${type.toUpperCase()}`, e);
   } finally {
