@@ -76,6 +76,8 @@ function fixture() {
   manager.sequenceScaleSupported = false;
   manager.sequenceLayers = new Map();
   manager.refreshNativeGeometry = () => {};
+  // This fixture verifies viewport preservation; selection has its own production-manager suite.
+  manager.clearSelections = () => {};
   manager.fullGlobalExtent = [0, -10000, 10000, 0];
   manager.activeAxisScopes = {
     row: { kind: "all", label: "All Rows" },

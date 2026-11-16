@@ -1233,6 +1233,7 @@ class ContactMapManager {
     try {
       options?.progress?.(0.05);
       interactions.forEach(([item]) => item.setActive(false));
+      this.viewAndLayersManager.setSelectionPresentationVisible(false);
       if (whole) {
         const extent = dataExtent;
         const scale =
@@ -1414,6 +1415,7 @@ class ContactMapManager {
         void this.linearTrackManager.render();
       }
       interactions.forEach(([item, active]) => item.setActive(active));
+      this.viewAndLayersManager.setSelectionPresentationVisible(true);
       this.exportInProgress = false;
     }
   }

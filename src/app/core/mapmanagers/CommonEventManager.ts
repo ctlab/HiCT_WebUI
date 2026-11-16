@@ -53,6 +53,7 @@ class CommonEventManager {
     contigDescriptors: ContigDescriptor[];
     scaffoldDescriptors: ScaffoldDescriptor[];
   }): void {
+    this.mapManager.viewAndLayersManager.clearSelections();
     this.mapManager.contigDimensionHolder.updateContigData(
       asmInfo.contigDescriptors
     );
@@ -71,6 +72,9 @@ class CommonEventManager {
       toast("Return to the contact map before editing the assembly.");
       return null;
     }
+    const entityRange =
+      this.mapManager.viewAndLayersManager.getSelectedEntityRange();
+    if (entityRange) return entityRange;
     const selectedArray =
       this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
         .getArray()
@@ -704,30 +708,23 @@ class CommonEventManager {
   public onExportFASTAForSelectionClicked(): void {
     const matrixViewStore = useMatrixViewStore();
     this.mapManager.deactivateTranslocation();
-    const [fromPx, toPx] = [
+    const [fromBp, toBp] = [
       this.mapManager.viewAndLayersManager.currentViewState.selectionBorders
-        .leftPx,
+        .leftBP,
       this.mapManager.viewAndLayersManager.currentViewState.selectionBorders
-        .rightPx,
+        .rightBP,
     ];
-    if (!fromPx || !toPx) {
+    if (!fromBp || !toBp) {
       const message =
-        "Cannot export FASTA for selection because there is no valid selection.";
+        "Select a region with Ctrl/Cmd-drag or Selection → Select region by coordinates.";
       console.warn(message, {
-        fromPx,
-        toPx,
+        fromBp,
+        toBp,
       });
       toast.error(message);
       return;
     }
-    const bpResolution =
-      this.mapManager.viewAndLayersManager.currentViewState.resolutionDesciptor
-        .bpResolution;
-    const [fromBpX, fromBpY, toBpX, toBpY] = [fromPx, toPx]
-      .flatMap((coords) => coords ?? [])
-      .map((px) =>
-        this.mapManager.contigDimensionHolder.getStartBpOfPx(px, bpResolution)
-      );
+    const [fromBpX, fromBpY, toBpX, toBpY] = [...fromBp, ...toBp];
     if (
       !Number.isFinite(fromBpX) ||
       !Number.isFinite(fromBpY) ||
@@ -745,7 +742,6 @@ class CommonEventManager {
       toast.error(message);
       return;
     }
-    console.log("Bps: ", fromBpX, fromBpY, toBpX, toBpY, " pxs ", fromPx, toPx);
 
     this.mapManager.networkManager.requestManager
       .getFASTAForSelection(
@@ -771,12 +767,7 @@ class CommonEventManager {
   }
 
   public resetSelection(): void {
-    const extentInteraction =
-      this.mapManager.viewAndLayersManager.selectionInteractions
-        .contigSelectExtent;
-    // @ts-expect-error "Extent should be reset"
-    extentInteraction.setExtent(undefined);
-    extentInteraction.changed();
+    this.mapManager.viewAndLayersManager.clearSelections();
   }
 }
 

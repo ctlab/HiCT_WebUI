@@ -200,6 +200,7 @@
               </li>
             </ul>
           </li>
+          <SelectionControls :map-manager="props.mapManager" />
           <!-- View -->
           <li class="nav-item dropdown">
             <a
@@ -1242,6 +1243,7 @@
 </template>
 
 <script setup lang="ts">
+import SelectionControls from './SelectionControls.vue';
 import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
 /* global __HICT_WEBUI_BUILD_VERSION__, __HICT_WEBUI_BUILD_COMMIT__ */
 import BackgroundJobsPanel from "./BackgroundJobsPanel.vue";
