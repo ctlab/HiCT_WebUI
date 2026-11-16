@@ -39,7 +39,9 @@
       aria-label="Automatic FASTA alignment legend"
     >
       <strong>Automatic FASTA alignment</strong>
-      <p>Horizontal × vertical FASTA regions · updates with navigation</p>
+      <p>
+        Local alignments between visible FASTA regions · updates with navigation.
+      </p>
       <ul>
         <li v-for="marker in alignmentMarkers" :key="marker.id">
           <svg viewBox="0 0 16 16" aria-hidden="true">

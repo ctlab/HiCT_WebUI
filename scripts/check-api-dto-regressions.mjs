@@ -454,6 +454,7 @@ const adapterSource = ts.transpileModule(
 ).outputText;
 let responseRevision = 2;
 let sentHeaders;
+let sentTimeout;
 let sentPayload;
 let requestsSent = 0;
 let serializationFailure = false;
@@ -472,11 +473,13 @@ vm.runInNewContext(adapterSource, {
         )
       );
     if (name === "vue") return { shallowReactive: (value) => value };
+    if (name === "./request") return requestClasses;
     if (name === "axios")
       return {
         post: async (url, payload, config) => {
           requestsSent++;
           sentPayload = payload;
+          sentTimeout = config?.timeout;
           if (url.endsWith("/workspace/state"))
             return new Promise((resolve, reject) => {
               pendingWorkspace = { payload, resolve, reject };
@@ -566,6 +569,12 @@ assert.equal(
 );
 assert.equal(adapter.history.busy, 0);
 adapter.sequenceViewReadOnly = false;
+await adapter.queryAlignmentDetail({ jobId: "bounded-alignment" });
+assert.equal(
+  sentTimeout,
+  15_000,
+  "Initial submissions must remain bounded while awaiting the cancellable job ID"
+);
 await adapter.sendRequest({
   requestPath: "/sequence/repeat_period",
   options: { startBp: 3, endBp: 15 },

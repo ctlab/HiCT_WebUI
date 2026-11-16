@@ -217,6 +217,20 @@ export type AlignmentDetailResponse = {
     coordinateSystem: "ASSEMBLY_BP" | "PADDED_SEQUENCE";
     segments: AlignmentDetailSegment[];
     alignmentCount: number;
+    method?: string;
+    aligner?: string;
+    alignerSha256?: string;
+    rowSha256?: string;
+    columnSha256?: string;
+    snapshot?: string;
+    profile?: {
+      name: string;
+      kmer: number;
+      window: number;
+      chainScore: number;
+      seeds: number;
+      alignmentScore: number;
+    };
     message?: string;
   };
 };
@@ -1834,7 +1848,10 @@ class RequestManager {
     signal?: AbortSignal
   ): Promise<AlignmentDetailResponse> {
     return (
-      await this.sendRequest(new AlignmentDetailRequest(options), { signal })
+      await this.sendRequest(new AlignmentDetailRequest(options), {
+        signal,
+        timeout: 15_000,
+      })
     ).data;
   }
 
