@@ -60,7 +60,8 @@
             <progress
               v-if="job.canCancel"
               :value="
-                job.details && !(Number(job.details.totalBytes) > 0)
+                job.kind === 'example_download' &&
+                !(Number(job.details?.totalBytes) > 0)
                   ? undefined
                   : job.progress ?? undefined
               "
@@ -96,7 +97,19 @@
                 </li>
               </ul>
             </div>
-            <div v-if="job.error" class="mb-2">
+            <p
+              v-if="
+                job.state === 'cancelled' &&
+                job.kind === 'conversion' &&
+                job.details?.exampleId
+              "
+              class="small"
+              role="status"
+            >
+              Conversion stopped. Incomplete output was removed; downloaded
+              example files are kept. You can retry from Examples.
+            </p>
+            <div v-if="job.error && job.state !== 'cancelled'" class="mb-2">
               <p class="text-danger" role="alert">{{ errorSummary(job) }}</p>
               <details>
                 <summary>Error details</summary>
