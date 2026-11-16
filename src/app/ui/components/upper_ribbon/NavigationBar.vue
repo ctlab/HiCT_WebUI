@@ -576,17 +576,33 @@
           <span
             v-if="openMapFilename"
             class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
-            :title="openMapFilename"
+            :title="
+              primaryApproximation
+                ? `${openMapFilename}\n${primaryApproximation.description}\nMethod: ${primaryApproximation.method}`
+                : openMapFilename
+            "
           >
-            {{ noContactData ? "Assembly" : "Hi-C" }}:
+            {{
+              primaryApproximation
+                ? "Estimated"
+                : noContactData
+                ? "Assembly"
+                : "Hi-C"
+            }}:
             {{ shortFileLabel(openMapFilename, MAP_CHIP_LIMIT) }}
           </span>
           <span
             v-if="secondaryMapFilename"
             class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
-            :title="secondaryMapFilename"
+            :title="
+              secondaryApproximation
+                ? `${secondaryMapFilename}\n${secondaryApproximation.description}\nMethod: ${secondaryApproximation.method}`
+                : secondaryMapFilename
+            "
           >
-            Secondary:
+            {{
+              secondaryApproximation ? "Secondary (estimated)" : "Secondary"
+            }}:
             {{ shortFileLabel(secondaryMapFilename, MAP_CHIP_LIMIT) }}
           </span>
           <button
@@ -1354,6 +1370,16 @@ const noContactData = computed(
   () =>
     props.mapManager?.networkManager.requestManager.sourceCapabilities.PRIMARY
       ?.contactDataState === "ABSENT"
+);
+const primaryApproximation = computed(
+  () =>
+    props.mapManager?.networkManager.requestManager.sourceCapabilities.PRIMARY
+      ?.approximation
+);
+const secondaryApproximation = computed(
+  () =>
+    props.mapManager?.networkManager.requestManager.sourceCapabilities.SECONDARY
+      ?.approximation
 );
 
 const aboutElement = ref<HTMLElement | null>(null);

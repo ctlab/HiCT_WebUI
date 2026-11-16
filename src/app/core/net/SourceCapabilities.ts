@@ -20,6 +20,13 @@ export type SourceCapabilities = {
   weightMetadataComplete: boolean;
   contactNormalization: CapabilityAvailability;
   importedWeights: CapabilityAvailability;
+  approximation?: {
+    schemaVersion: 1;
+    method: string;
+    resolutionPolicy: string;
+    description: string;
+    upstreamApproximate: boolean;
+  };
 };
 
 const units = new Set([
@@ -70,7 +77,14 @@ export function parseSourceCapabilities(
     ) ||
     typeof value.weightMetadataComplete !== "boolean" ||
     !availability(value.contactNormalization) ||
-    !availability(value.importedWeights)
+    !availability(value.importedWeights) ||
+    (value.approximation !== undefined &&
+      (!object(value.approximation) ||
+        value.approximation.schemaVersion !== 1 ||
+        typeof value.approximation.method !== "string" ||
+        typeof value.approximation.resolutionPolicy !== "string" ||
+        typeof value.approximation.description !== "string" ||
+        typeof value.approximation.upstreamApproximate !== "boolean"))
   )
     return undefined;
   return value as unknown as SourceCapabilities;

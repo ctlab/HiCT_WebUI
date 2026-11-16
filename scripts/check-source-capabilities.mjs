@@ -30,6 +30,29 @@ const source = {
   importedWeights: available,
 };
 assert.equal(parseSourceCapabilities(source), source);
+const estimated = {
+  ...source,
+  approximation: {
+    schemaVersion: 1,
+    method: "uniform-independent-endpoints-v1",
+    resolutionPolicy: "independent_stored_levels",
+    description: "Estimated values from sequence-overlap rebinning.",
+    upstreamApproximate: false,
+  },
+};
+assert.equal(parseSourceCapabilities(estimated), estimated);
+for (const approximation of [
+  null,
+  {},
+  { ...estimated.approximation, schemaVersion: 2 },
+  { ...estimated.approximation, method: 1 },
+  { ...estimated.approximation, upstreamApproximate: "true" },
+]) {
+  assert.equal(
+    parseSourceCapabilities({ ...source, approximation }),
+    undefined
+  );
+}
 assert.equal(importedWeightsAvailability(source, 4).state, "AVAILABLE");
 assert.equal(
   importedWeightsAvailability(source, 10).reasonCode,
