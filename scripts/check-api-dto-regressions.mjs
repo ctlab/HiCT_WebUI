@@ -98,6 +98,7 @@ const descriptors = Array.from({ length: 4 }, (_, i) => ({
   contigName: "c" + i,
   contigOriginalName: "source" + i,
   contigOffsetInSource: i * 1000,
+  contigBinOffsets: { 100: -25, 250: -125 },
   contigLengthBp: i * 1000,
   contigLengthBins: { 100: String(i * 10), 250: i * 4, 1000: i },
   contigPresenceAtResolution: { 100: i, 250: i, 1000: i },
@@ -124,6 +125,13 @@ for (const [i, descriptor] of descriptors.entries()) {
   assert.equal(entity.direction, i % 2);
   assert.equal(entity.contigSourceName, "source" + i);
   assert.equal(entity.contigOffsetInSource, i * 1000);
+  assert.deepEqual(
+    [...entity.contigBinOffsets],
+    [
+      [100, -25],
+      [250, -125],
+    ]
+  );
 }
 const input = { contigDescriptors: descriptors, scaffoldDescriptors: [] };
 const first = new AssemblyInfoDTO(input).toEntity();
@@ -171,6 +179,9 @@ const legacy = {
 };
 const compact = {
   format: "compact-v1",
+  contigBinOffsets: Object.fromEntries(
+    legacy.contigDescriptors.map((d) => [d.contigId, d.contigBinOffsets])
+  ),
   resolutions: [100, 250, 1000],
   contigs: legacy.contigDescriptors.map((d) => [
     d.contigId,
@@ -507,4 +518,29 @@ assert.equal(
 );
 console.log(
   "Workspace autosaves preserve Open/Attach tokens across delayed responses and conflicts."
+);
+
+for (const invalid of [null, [], { 100: NaN }, { 100: 0.5 }, { 0: 1 }]) {
+  assert.throws(
+    () =>
+      new ContigDescriptorDTO({
+        ...descriptors[0],
+        contigBinOffsets: invalid,
+      }).toEntity(),
+    /Invalid contig bin offset/
+  );
+}
+const oldDescriptor = { ...descriptors[0] };
+delete oldDescriptor.contigBinOffsets;
+assert.equal(
+  new ContigDescriptorDTO(oldDescriptor).toEntity().contigBinOffsets,
+  undefined
+);
+const mixed = new AssemblyInfoDTO({
+  ...compact,
+  contigBinOffsets: { 0: { 100: -25 } },
+}).toEntity();
+assert.deepEqual([...mixed.contigDescriptors[1].contigBinOffsets], []);
+console.log(
+  "Explicit bin geometry validates offsets and retains older-server compatibility."
 );

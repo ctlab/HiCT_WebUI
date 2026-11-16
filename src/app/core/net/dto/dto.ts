@@ -98,6 +98,26 @@ function resolutionMap<T>(
   return result;
 }
 
+function binOffsets(json: unknown): Map<number, number> | undefined {
+  if (json === undefined) return undefined;
+  if (json === null || typeof json !== "object" || Array.isArray(json)) {
+    throw new Error("Invalid contig bin offsets");
+  }
+  const result = new Map<number, number>();
+  for (const [key, offset] of Object.entries(json)) {
+    const resolution = Number(key);
+    if (
+      !Number.isSafeInteger(resolution) ||
+      resolution <= 0 ||
+      !Number.isSafeInteger(offset)
+    ) {
+      throw new Error("Invalid contig bin offset");
+    }
+    result.set(resolution, offset as number);
+  }
+  return result;
+}
+
 class ContigDescriptorDTO extends InboundDTO<ContigDescriptor> {
   public toEntity(): ContigDescriptor {
     return {
@@ -109,6 +129,7 @@ class ContigDescriptorDTO extends InboundDTO<ContigDescriptor> {
         (this.json.contigOriginalName as string),
       contigOffsetInSource: (this.json.contigOffsetInSource as number) ?? 0,
       contigLengthBp: this.json.contigLengthBp as number,
+      contigBinOffsets: binOffsets(this.json.contigBinOffsets),
       contigLengthBins: resolutionMap(
         this.json.contigLengthBins as Record<string, number>,
         Number
@@ -215,6 +236,14 @@ class AssemblyInfoDTO extends InboundDTO<AssemblyInfo> {
           direction: contigDirectionFromDTO(row[5]),
           contigLengthBp: row[6],
           contigLengthBins: lengths,
+          contigBinOffsets:
+            this.json.contigBinOffsets === undefined
+              ? undefined
+              : binOffsets(
+                  (this.json.contigBinOffsets as Record<string, unknown>)[
+                    String(row[0])
+                  ] ?? {}
+                ),
           presenceAtResolution: presence,
         };
       }

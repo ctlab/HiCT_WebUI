@@ -166,3 +166,42 @@ assert.deepEqual(
 console.log(
   "Ruler ticks preserve assembly coordinates across hidden spans, reversals, split components, scopes and one-bin contigs."
 );
+
+// Enumerate source-bin/base intersections independently of the mapping formula.
+for (const reversed of [false, true]) {
+  for (const anchor of [-999, -501, -1, 0]) {
+    const length = 2501;
+    const intervals = [];
+    for (let start = anchor; start < length; start += resolution) {
+      intervals.push([
+        Math.max(0, start),
+        Math.min(length, start + resolution),
+      ]);
+    }
+    if (reversed) intervals.reverse();
+    const d = makeContig(0, length, { reversed });
+    d.contigLengthBins.set(resolution, intervals.length);
+    d.contigBinOffsets = new Map([[resolution, anchor]]);
+    const clipped = new Holder([d]);
+    // The live renderer ensures native levels as well as synthetic levels.
+    clipped.ensureResolution(resolution);
+    intervals.forEach(([start, end], bin) => {
+      const expectedStart = reversed ? length - end : start;
+      const expectedEnd = reversed ? length - start : end;
+      assert.equal(clipped.getStartBpOfPx(bin, resolution), expectedStart);
+      assert.equal(clipped.getStartBpOfBin(bin, resolution), expectedStart);
+      for (let bp = expectedStart; bp < expectedEnd; bp++) {
+        assert.equal(clipped.getPxContainingBp(bp, resolution), bin);
+        assert.equal(clipped.getBinContainingBp(bp, resolution), bin);
+        const pixel = clipped.getFractionalPxOfBp(bp + 0.5, resolution);
+        assert.ok(
+          Math.abs(clipped.getFractionalBpOfPx(pixel, resolution) - bp - 0.5) <
+            1e-8
+        );
+      }
+    });
+  }
+}
+console.log(
+  "Partial source-bin intersections preserve exact forward/reverse base and fractional coordinates."
+);
