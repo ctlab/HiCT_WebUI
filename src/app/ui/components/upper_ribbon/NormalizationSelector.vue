@@ -307,8 +307,11 @@ const contactUnavailable = computed(
 const weightsAvailability = computed(() =>
   importedWeightsAvailability(
     capabilities.value,
-    props.mapManager?.viewAndLayersManager.currentViewState.resolutionDesciptor
-      .bpResolution
+    capabilities.value
+      ? props.mapManager?.viewAndLayersManager.getNativeResolutionDescriptor(
+          matrixViewStore.activeVisualizationSource
+        ).bpResolution
+      : undefined
   )
 );
 const weightsUnavailable = computed(

@@ -122,3 +122,14 @@ for (const invalid of [0, 1, "true", null])
 console.log(
   "Sequence-grid capability is additive, explicit and strictly typed."
 );
+for (const flag of [true, false])
+  assert.equal(
+    parseSourceCapabilities({ ...source, sequenceScaleTracks: flag })
+      .sequenceScaleTracks,
+    flag
+  );
+for (const invalid of [0, 1, "true", null])
+  assert.equal(
+    parseSourceCapabilities({ ...source, sequenceScaleTracks: invalid }),
+    undefined
+  );

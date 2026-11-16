@@ -98,6 +98,35 @@ function loadTypeScript(filename) {
 const { ContigDescriptorDTO, AssemblyInfoDTO } = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/dto/dto.ts")
 );
+const { TrackQueryResponseDTO } = loadTypeScript(
+  resolve(projectRoot, "src/app/core/net/dto/responseDTO.ts")
+);
+const baseQuery = new TrackQueryResponseDTO({
+  startBp: 3,
+  endBp: 6,
+  startPx: 3,
+  endPx: 6,
+  widthPx: 100,
+  bpResolution: 1,
+  displayGrid: "SEQUENCE_BP",
+  sourceBpResolution: 100,
+  tracks: [
+    {
+      trackId: "w",
+      name: "Weights",
+      type: "COOLER_WEIGHTS",
+      color: "#123456",
+      renderStyle: "SIGNAL",
+      bins: [],
+      maxValue: 2,
+      error: null,
+      samplingBpResolution: 200,
+    },
+  ],
+}).toEntity();
+assert.equal(baseQuery.displayGrid, "SEQUENCE_BP");
+assert.equal(baseQuery.sourceBpResolution, 100);
+assert.equal(baseQuery.tracks[0].samplingBpResolution, 200);
 const descriptors = Array.from({ length: 4 }, (_, i) => ({
   contigId: i,
   contigName: "c" + i,
@@ -371,6 +400,28 @@ assert.deepEqual(
 console.log(
   "Journal pagination, unscaffold-all and guarded restoration payloads passed."
 );
+for (const name of ["QueryTracks1DRequest", "GetTrackFeatureContextRequest"]) {
+  const options = {
+    unit: "BP",
+    startBP: 3,
+    endBP: 6,
+    widthPx: 100,
+    bpResolution: 100,
+    sequenceScale: true,
+  };
+  const dto = HiCTAPIRequestDTO.toDTOClass(
+    new requestClasses[name](options)
+  ).toDTO();
+  assert.equal(dto.sequenceScale, true);
+  assert.equal(dto.bpResolution, 100);
+  assert.equal(dto.startBP, 3);
+  assert.equal(
+    HiCTAPIRequestDTO.toDTOClass(
+      new requestClasses[name]({ ...options, sequenceScale: undefined })
+    ).toDTO().sequenceScale,
+    undefined
+  );
+}
 
 // Execute the production HTTP adapter with controlled responses. A history-list
 // response must not authorize edits using coordinates from an older displayed map.

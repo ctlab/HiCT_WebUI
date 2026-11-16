@@ -8,6 +8,8 @@ export type SourceCapabilities = {
   schemaVersion: 1;
   /** Server can render native source colors on an explicitly requested one-base grid. */
   sequenceScaleTiles?: boolean;
+  /** Track queries can use a uniform BP axis, including hidden/binless sequence. */
+  sequenceScaleTracks?: boolean;
   units:
     | "CONTACT_COUNT"
     | "ALIGNMENT_SAMPLE_COUNT"
@@ -80,6 +82,8 @@ export function parseSourceCapabilities(
     typeof value.weightMetadataComplete !== "boolean" ||
     (value.sequenceScaleTiles !== undefined &&
       typeof value.sequenceScaleTiles !== "boolean") ||
+    (value.sequenceScaleTracks !== undefined &&
+      typeof value.sequenceScaleTracks !== "boolean") ||
     !availability(value.contactNormalization) ||
     !availability(value.importedWeights) ||
     (value.approximation !== undefined &&

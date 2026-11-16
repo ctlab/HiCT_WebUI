@@ -788,6 +788,7 @@ class QueryTracks1DRequest implements HiCTAPIRequest {
       readonly startBP?: number;
       readonly endBP?: number;
       readonly unit?: "PIXELS" | "BINS" | "BP";
+      readonly sequenceScale?: boolean;
       readonly widthPx: number;
       readonly bpResolution: number;
     }
@@ -819,6 +820,7 @@ class GetTrackFeatureContextRequest implements HiCTAPIRequest {
       readonly startBP?: number;
       readonly endBP?: number;
       readonly unit?: "PIXELS" | "BINS" | "BP";
+      readonly sequenceScale?: boolean;
       readonly widthPx: number;
       readonly bpResolution: number;
       readonly marginScreens?: number;

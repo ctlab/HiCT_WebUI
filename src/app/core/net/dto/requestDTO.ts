@@ -1020,6 +1020,8 @@ class QueryTracks1DRequestDTO extends HiCTAPIRequestDTO<QueryTracks1DRequest> {
       widthPx: this.entity.options.widthPx,
       bpResolution: this.entity.options.bpResolution,
     };
+    if (this.entity.options.sequenceScale !== undefined)
+      dto.sequenceScale = this.entity.options.sequenceScale;
     if (this.entity.options.unit) {
       dto.unit = this.entity.options.unit;
     }
@@ -1063,6 +1065,8 @@ class GetTrackFeatureContextRequestDTO extends HiCTAPIRequestDTO<GetTrackFeature
       bpResolution: this.entity.options.bpResolution,
       marginScreens: this.entity.options.marginScreens,
     };
+    if (this.entity.options.sequenceScale !== undefined)
+      dto.sequenceScale = this.entity.options.sequenceScale;
     if (this.entity.options.unit) {
       dto.unit = this.entity.options.unit;
     }

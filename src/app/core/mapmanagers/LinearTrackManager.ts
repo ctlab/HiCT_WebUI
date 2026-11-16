@@ -778,6 +778,7 @@ class LinearTrackManager {
           trackId: track.trackId,
           trackName: track.name,
           trackType: track.type,
+          samplingBpResolution: track.samplingBpResolution,
           startBp: Math.min(bin.startBp, bin.endBp),
           endBp: Math.max(bin.startBp, bin.endBp),
           startPx: interval.startPx,
@@ -1285,7 +1286,8 @@ class LinearTrackManager {
     const responseTracks = (response.tracks ?? []).filter((track) =>
       this.isTrackVisibleOnAxis(track.trackId, visibilityOrientation)
     );
-    const tracks = responseTracks.length > 0 ? responseTracks : fallbackTracks;
+    const tracks: TrackRenderResponse[] =
+      responseTracks.length > 0 ? responseTracks : fallbackTracks;
     const featureHits: RenderedFeatureHit[] = [];
     if (publishState)
       this.lastRenderedSnapshot[orientation] = {
@@ -2521,6 +2523,7 @@ class LinearTrackManager {
   ): TrackQueryResponse {
     const holder = this.mapManager.getContigDimensionHolder();
     if (this.mapManager.getLayersManager().isSequenceScale) {
+      if (response.displayGrid === "SEQUENCE_BP") return response;
       return {
         ...response,
         samplingBpResolution: response.bpResolution,
@@ -3447,6 +3450,7 @@ type SignalHoverInfo = {
   trackId: string;
   trackName: string;
   trackType: string;
+  samplingBpResolution?: number;
   startBp: number;
   endBp: number;
   startPx: number;

@@ -1451,6 +1451,7 @@ class RequestManager {
       };
     const payload: {
       unit: "PIXELS" | "BINS" | "BP";
+      sequenceScale?: boolean;
       widthPx: number;
       bpResolution: number;
       startPx?: number;
@@ -1464,6 +1465,12 @@ class RequestManager {
       widthPx: options.widthPx,
       bpResolution: options.bpResolution,
     };
+    if (
+      layers?.isSequenceScale &&
+      options.unit === "BP" &&
+      this.sourceCapabilities.PRIMARY?.sequenceScaleTracks === true
+    )
+      payload.sequenceScale = true;
     if (options.unit === "PIXELS") {
       payload.startPx = options.start;
       payload.endPx = options.end;
@@ -1518,6 +1525,7 @@ class RequestManager {
       };
     const payload: {
       unit: "PIXELS" | "BINS" | "BP";
+      sequenceScale?: boolean;
       widthPx: number;
       bpResolution: number;
       marginScreens?: number;
@@ -1533,6 +1541,12 @@ class RequestManager {
       bpResolution: options.bpResolution,
       marginScreens: options.marginScreens,
     };
+    if (
+      layers?.isSequenceScale &&
+      options.unit === "BP" &&
+      this.sourceCapabilities.PRIMARY?.sequenceScaleTracks === true
+    )
+      payload.sequenceScale = true;
     if (options.unit === "PIXELS") {
       payload.startPx = options.start;
       payload.endPx = options.end;

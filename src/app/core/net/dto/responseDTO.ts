@@ -256,7 +256,8 @@ class TrackRenderResponseDTO extends InboundDTO<TrackRenderResponse> {
       this.json["maxValue"] as number,
       (this.json["error"] as string) ?? null,
       (this.json["statusMessage"] as string) ?? null,
-      (this.json["analysisWarning"] as string) ?? null
+      (this.json["analysisWarning"] as string) ?? null,
+      this.json["samplingBpResolution"] as number | undefined
     );
   }
 }
@@ -272,7 +273,9 @@ class TrackQueryResponseDTO extends InboundDTO<TrackQueryResponse> {
       (this.json["bpResolution"] as number) ?? 1,
       ((this.json["tracks"] as Record<string, unknown>[]) ?? []).map((track) =>
         new TrackRenderResponseDTO(track).toEntity()
-      )
+      ),
+      this.json["displayGrid"] as "SEQUENCE_BP" | undefined,
+      this.json["sourceBpResolution"] as number | undefined
     );
   }
 }
