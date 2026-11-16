@@ -167,3 +167,26 @@ assert.equal(
 console.log(
   "Explicit preset revisions discard older drafts and preserve later edits and server metadata."
 );
+const midpoint = load(new URL("colorMidpoint.ts", root));
+for (const fraction of [0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99]) {
+  const gamma = midpoint.gammaFromMidpoint(fraction);
+  assert.ok(Math.abs(midpoint.midpointFraction(gamma) - fraction) < 1e-12);
+  assert.ok(Math.abs(midpoint.colorFraction(fraction, gamma) - 0.5) < 1e-12);
+}
+assert.equal(midpoint.colorFraction(0.25, 0.5), 0.5);
+assert.equal(midpoint.colorFraction(0.5, 2), 0.25);
+assert.equal(midpoint.midpointFraction(1), 0.5);
+const gammaDrafts = new VisualizationDrafts();
+const oldGamma = gammaDrafts.note(primary, { gamma: 2 });
+gammaDrafts.note(primary, { gamma: 0.5 });
+gammaDrafts.acknowledge(primary, oldGamma);
+const gammaOptions = applyVisualizationDraft(base, gammaDrafts.read(primary));
+assert.equal(gammaOptions.colormap.gamma, 0.5);
+assert.equal(gammaOptions.colormap.minSignal, base.colormap.minSignal);
+assert.equal(gammaOptions.colormap.maxSignal, base.colormap.maxSignal);
+assert.equal(base.colormap.gamma, 1);
+for (const value of [0, -1, NaN, Infinity, 101])
+  assert.throws(() => midpoint.validateColorGamma(value));
+console.log(
+  "Color midpoints invert the transfer curve and preserve newer drafts, endpoints and signal settings."
+);

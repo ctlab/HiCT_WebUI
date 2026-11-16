@@ -362,6 +362,7 @@ type PipelineExpression =
       endColor: string;
       minSignal: number;
       maxSignal: number;
+      gamma?: number;
       min?: PipelineExpression;
       max?: PipelineExpression;
     }
@@ -748,6 +749,7 @@ const buildColorExpressionFromVisualizationOptions = (
     endColor?: string;
     minSignal?: number;
     maxSignal?: number;
+    gamma?: number;
   }
 ): PipelineExpression => {
   const gradient = getVisualizationGradient();
@@ -757,6 +759,9 @@ const buildColorExpressionFromVisualizationOptions = (
     type: "colormap",
     mode: "LINEAR",
     input: buildSignalExpressionFromVisualizationOptions(source, overrides),
+    ...((overrides?.gamma ?? gradient?.gamma ?? 1) !== 1
+      ? { gamma: overrides?.gamma ?? gradient?.gamma }
+      : {}),
     startColor: sanitizeColor(
       overrides?.startColor ?? gradient?.startColorRGBA?.HEXA,
       "#ffffff00"
@@ -1054,6 +1059,9 @@ const parseExpression = (raw: unknown): PipelineExpression => {
           ? node.mode
           : "LINEAR",
       input: parseExpression(node.input),
+      ...(node.gamma !== undefined && node.gamma !== 1
+        ? { gamma: Number(node.gamma) }
+        : {}),
       startColor: sanitizeColor(node.startColor, "#ffffff00"),
       endColor: sanitizeColor(node.endColor, "#006000ff"),
       minSignal: toFiniteNumber(node.minSignal ?? 0, 0),
@@ -1557,7 +1565,20 @@ const ensureNodeTypesRegistered = (): void => {
           this.properties.maxSignal = toFiniteNumber(value, 1);
         }
       );
-      this.size = [250, 300];
+      this.properties.gamma = 1;
+      this.addWidget(
+        "number",
+        "gamma (linear)",
+        1,
+        (value: unknown) => {
+          this.properties.gamma = Math.max(
+            0.05,
+            Math.min(100, toFiniteNumber(value, 1))
+          );
+        },
+        { min: 0.05, max: 100, step: 0.1, precision: 3 }
+      );
+      this.size = [250, 325];
     }
 
     onDrawForeground(context: CanvasRenderingContext2D): void {
@@ -1983,6 +2004,11 @@ const syncNodeWidgetsFromProperties = (node: LGraphNode): void => {
       node,
       "end hex",
       sanitizeColor(node.properties?.endColor, "#006000ff")
+    );
+    setWidgetValue(
+      node,
+      "gamma (linear)",
+      toFiniteNumber(node.properties?.gamma, 1)
     );
     setWidgetValue(node, "min", toFiniteNumber(node.properties?.minSignal, 0));
     setWidgetValue(node, "max", toFiniteNumber(node.properties?.maxSignal, 1));
@@ -2500,6 +2526,7 @@ const createNodeForExpression = (
         node.properties.endColor = expression.endColor;
         node.properties.minSignal = expression.minSignal;
         node.properties.maxSignal = expression.maxSignal;
+        node.properties.gamma = expression.gamma ?? 1;
       }
       break;
     case "rgb":
@@ -3020,6 +3047,9 @@ const expressionFromNode = (
           ? "OBSERVED_OVER_EXPECTED"
           : "LINEAR",
       input: input(0),
+      ...(node.properties?.gamma !== undefined && node.properties.gamma !== 1
+        ? { gamma: Number(node.properties.gamma) }
+        : {}),
       startColor: sanitizeColor(node.properties?.startColor, "#ffffff00"),
       endColor: sanitizeColor(node.properties?.endColor, "#006000ff"),
       minSignal:

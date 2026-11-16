@@ -96,9 +96,13 @@
         :lower-color="fromColor.RGBA"
         :upper-color="toColor.RGBA"
         :neutral="observedExpectedPalette ? toSliderPosition(1) : undefined"
+        :midpoint="midpointPosition"
+        :midpoint-text="formatSignal(midpointSignal) + ' signal; half color'"
+        :gradient="colorRailGradient"
         @adjustment-start="keepAdjustmentLimits"
         @lower="onLowerRangeInput"
         @upper="onUpperRangeInput"
+        @midpoint="onMidpointInput"
       >
         <template #histogram>
           <ViewportSignalHistogram
@@ -150,6 +154,15 @@
         Limits must satisfy 0 &lt; lower &lt; 1 &lt; upper.
       </p>
       <div class="range-actions">
+        <button
+          v-if="midpointPosition !== undefined && colorGamma !== 1"
+          type="button"
+          class="range-text-button"
+          @click="setColorGamma(1)"
+          title="Restore a linear color transition without changing thresholds"
+        >
+          Reset midpoint
+        </button>
         <div class="scale-group">
           <span id="slider-scale-label" class="scale-caption"
             >Slider scale</span
@@ -350,6 +363,11 @@ import { reportFailure } from "@/app/ui/reportFailure";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
+import {
+  midpointFraction,
+  gammaFromMidpoint,
+  colorFraction,
+} from "@/app/core/visualization/colorMidpoint";
 import { ColorTranslator } from "colortranslator";
 import type { CurrentSignalRangeResponse } from "@/app/core/net/api/response";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
@@ -515,6 +533,65 @@ const sliderPositionMin = computed(() => toSliderPosition(sliderMin.value));
 const sliderPositionMax = computed(() => toSliderPosition(sliderMax.value));
 const lowerSliderValue = computed(() => toSliderPosition(lowerBound.value));
 const upperSliderValue = computed(() => toSliderPosition(upperBound.value));
+const colorGamma = computed(() =>
+  colormap.value instanceof SimpleLinearGradient ? colormap.value.gamma : 1
+);
+const midpointSignal = computed(
+  () =>
+    lowerBound.value +
+    (upperBound.value - lowerBound.value) * midpointFraction(colorGamma.value)
+);
+const midpointPosition = computed(() =>
+  !observedExpectedPalette.value &&
+  !percentageSignalScale.value &&
+  upperBound.value > lowerBound.value
+    ? toSliderPosition(midpointSignal.value)
+    : undefined
+);
+function setColorGamma(gamma: number): void {
+  const current = colormap.value;
+  if (!(current instanceof SimpleLinearGradient)) return;
+  colormap.value = new SimpleLinearGradient(
+    current.startColorRGBA,
+    current.endColorRGBA,
+    current.minSignal,
+    current.maxSignal,
+    gamma
+  );
+  props.mapManager?.visualizationManager.noteVisualizationDraft({ gamma });
+}
+function onMidpointInput(position: number): void {
+  if (midpointPosition.value === undefined) return;
+  setColorGamma(
+    gammaFromMidpoint(
+      (fromSliderPosition(position) - lowerBound.value) /
+        (upperBound.value - lowerBound.value)
+    )
+  );
+}
+const colorRailGradient = computed(() => {
+  if (observedExpectedPalette.value || !(upperBound.value > lowerBound.value))
+    return undefined;
+  const start = fromColor.value,
+    end = toColor.value;
+  const stops = Array.from({ length: 33 }, (_, index) => {
+    const offset = index / 32;
+    const value = fromSliderPosition(
+      lowerSliderValue.value +
+        offset * (upperSliderValue.value - lowerSliderValue.value)
+    );
+    const mix = colorFraction(
+      (value - lowerBound.value) / (upperBound.value - lowerBound.value),
+      colorGamma.value
+    );
+    const channels = [start.R, start.G, start.B, start.A].map(
+      (value, index) =>
+        value + ([end.R, end.G, end.B, end.A][index] - value) * mix
+    );
+    return `rgba(${channels.join(",")}) ${offset * 100}%`;
+  });
+  return `linear-gradient(90deg, ${stops.join(",")})`;
+});
 // Capture both ends before either threshold changes. Otherwise an outlying selected
 // threshold can drag the computed domain along with it on every pointer move.
 function keepAdjustmentLimits() {
@@ -621,7 +698,8 @@ watch(
         fromColor.value,
         toColor.value,
         nextMin,
-        nextMax
+        nextMax,
+        existing instanceof SimpleLinearGradient ? existing.gamma : 1
       );
     }
     // console.log("UpperBound", upperBound.value);

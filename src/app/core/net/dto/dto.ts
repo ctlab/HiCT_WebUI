@@ -333,6 +333,7 @@ class SimpleLinearGradientDTO extends InboundDTO<SimpleLinearGradient> {
       endColorRGBAString: e.endColorRGBA.RGBA,
       minSignal: e.minSignal,
       maxSignal: e.maxSignal,
+      ...(e.gamma !== 1 ? { gamma: e.gamma } : {}),
     });
   }
 
@@ -355,7 +356,13 @@ class SimpleLinearGradientDTO extends InboundDTO<SimpleLinearGradient> {
       typeof maxSignalRaw === "number" && Number.isFinite(maxSignalRaw)
         ? maxSignalRaw
         : 1;
-    return new SimpleLinearGradient(start, end, minSignal, maxSignal);
+    return new SimpleLinearGradient(
+      start,
+      end,
+      minSignal,
+      maxSignal,
+      this.json["gamma"] === undefined ? 1 : Number(this.json["gamma"])
+    );
   }
 }
 

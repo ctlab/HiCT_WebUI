@@ -181,7 +181,8 @@ async function setOptionsPreset() {
             new ColorTranslator(props.action.startColor, { legacyCSS: true }),
             new ColorTranslator(props.action.endColor, { legacyCSS: true }),
             active?.minSignal ?? 0,
-            active?.maxSignal ?? 1
+            active?.maxSignal ?? 1,
+            active?.gamma ?? 1
           ),
           current.autoThresholdEnabled,
           current.autoThresholdQuantile,
@@ -242,7 +243,8 @@ async function setOptionsPreset() {
           cmap.startColorRGBA,
           cmap.endColorRGBA,
           lower,
-          typeof upper === "number" ? upper : cmap.maxSignal
+          typeof upper === "number" ? upper : cmap.maxSignal,
+          cmap.gamma
         );
       }
     }
@@ -253,9 +255,10 @@ async function setOptionsPreset() {
         .applyTrackStylePreset(props.trackStyles);
     }
     const source =
-      presentationMode.value === "single"
-        ? undefined
-        : activeVisualizationSource.value;
+      activeVisualizationSource.value === "SECONDARY" ||
+      presentationMode.value !== "single"
+        ? activeVisualizationSource.value
+        : undefined;
     const action = source
       ? props.mapManager?.visualizationManager.applyVisualizationSourcePreset(
           visualizationOptionsStore.asVisualizationOptions(),

@@ -23,6 +23,7 @@ export type VisualizationDraft = {
   maxSignal?: number;
   startColor?: string;
   endColor?: string;
+  gamma?: number;
 };
 export const visualizationContextKey = (context: VisualizationContext) =>
   JSON.stringify([
@@ -91,9 +92,13 @@ export function applyVisualizationDraft(
   displayMode: SignalDisplayMode = base.signalDisplayMode
 ): VisualizationOptions {
   const map = base.colormap;
-  const hasPalette = ["minSignal", "maxSignal", "startColor", "endColor"].some(
-    (key) => key in patch
-  );
+  const hasPalette = [
+    "minSignal",
+    "maxSignal",
+    "startColor",
+    "endColor",
+    "gamma",
+  ].some((key) => key in patch);
   const colormap =
     hasPalette && map instanceof SimpleLinearGradient
       ? new SimpleLinearGradient(
@@ -104,7 +109,8 @@ export function applyVisualizationDraft(
             ? new ColorTranslator(patch.endColor, { legacyCSS: true })
             : map.endColorRGBA,
           patch.minSignal ?? map.minSignal,
-          patch.maxSignal ?? map.maxSignal
+          patch.maxSignal ?? map.maxSignal,
+          patch.gamma ?? map.gamma
         )
       : map;
   return new VisualizationOptions(
@@ -146,6 +152,7 @@ export function visualizationOptionsDraft(
           maxSignal: gradient.maxSignal,
           startColor: gradient.startColorRGBA.HEXA,
           endColor: gradient.endColorRGBA.HEXA,
+          gamma: gradient.gamma,
         }
       : {}),
   };

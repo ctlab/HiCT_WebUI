@@ -4,6 +4,7 @@ export type DisplayPalette = {
   max: number;
   startColor: string;
   endColor: string;
+  gamma?: number;
 };
 type Mode = "EXPECTED" | "OBSERVED_OVER_EXPECTED";
 const key = "hict.display.palettes.v1";
@@ -15,6 +16,8 @@ function valid(value: unknown): value is DisplayPalette {
     Number.isFinite(p.min) &&
     Number.isFinite(p.max) &&
     p.max > p.min &&
+    (p.gamma === undefined ||
+      (Number.isFinite(p.gamma) && p.gamma >= 0.05 && p.gamma <= 100)) &&
     [p.startColor, p.endColor].every(
       (c) => typeof c === "string" && /^#[\da-f]{8}$/i.test(c)
     )

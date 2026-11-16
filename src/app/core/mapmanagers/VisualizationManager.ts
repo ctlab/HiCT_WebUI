@@ -343,6 +343,8 @@ const replaceColormapNode = (
     : replacement.mode ?? "LINEAR";
   target.node.startColor = replacement.startColor;
   target.node.endColor = replacement.endColor;
+  if (replacement.gamma === undefined) delete target.node.gamma;
+  else target.node.gamma = replacement.gamma;
   target.node.minSignal = replacement.minSignal;
   target.node.maxSignal = replacement.maxSignal;
   for (const [key, value] of [
@@ -374,7 +376,8 @@ const visualizationOptionsFromTarget = (
       safeColorTranslator(target.node.startColor, "#ffffff00"),
       safeColorTranslator(target.node.endColor, "#006000ff"),
       target.minSignal,
-      target.maxSignal
+      target.maxSignal,
+      Number(target.node.gamma ?? 1)
     ),
     currentOptions.autoThresholdEnabled,
     currentOptions.autoThresholdQuantile,
@@ -567,7 +570,7 @@ class VisualizationManager {
     const context = this.captureVisualizationContext();
     this.drafts.note(context, patch);
     if (
-      ["minSignal", "maxSignal", "startColor", "endColor"].some(
+      ["minSignal", "maxSignal", "startColor", "endColor", "gamma"].some(
         (field) => field in patch
       )
     )
@@ -1226,7 +1229,8 @@ class VisualizationManager {
           options.colormap.startColorRGBA,
           options.colormap.endColorRGBA,
           options.colormap.minSignal,
-          nextUpperBound
+          nextUpperBound,
+          options.colormap.gamma
         ),
         options.autoThresholdEnabled,
         options.autoThresholdQuantile,
@@ -1525,7 +1529,8 @@ class VisualizationManager {
           options.colormap.startColorRGBA,
           options.colormap.endColorRGBA,
           options.colormap.minSignal,
-          updatedMaxSignal
+          updatedMaxSignal,
+          options.colormap.gamma
         ),
         false,
         quantile,
@@ -1583,6 +1588,7 @@ class VisualizationManager {
       max: cmap.maxSignal,
       startColor: cmap.startColorRGBA.HEXA,
       endColor: cmap.endColorRGBA.HEXA,
+      ...(cmap.gamma !== 1 ? { gamma: cmap.gamma } : {}),
     });
   }
 
@@ -1623,7 +1629,8 @@ class VisualizationManager {
           new ColorTranslator(remembered.startColor, { legacyCSS: true }),
           new ColorTranslator(remembered.endColor, { legacyCSS: true }),
           remembered.min,
-          remembered.max
+          remembered.max,
+          remembered.gamma ?? 1
         )
       : mode === "OBSERVED_OVER_EXPECTED"
       ? new SimpleLinearGradient(

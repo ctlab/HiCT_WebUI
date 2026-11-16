@@ -1244,7 +1244,8 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
     safeColorTranslator(startColor, "rgba(0,255,0,0.0)"),
     safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
     minSignal,
-    maxSignal
+    maxSignal,
+    cmap["gamma"] === undefined ? 1 : Number(cmap["gamma"])
   );
   let finalCmap = cmapObj;
   if (
@@ -1257,7 +1258,8 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
       signalThresholds.lowerSignalBound,
       typeof signalThresholds.upperSignalBound === "number"
         ? signalThresholds.upperSignalBound
-        : cmapObj.maxSignal
+        : cmapObj.maxSignal,
+      cmapObj.gamma
     );
   }
   visualizationOptionsStore.setVisualizationOptions(
@@ -1772,7 +1774,8 @@ async function onOpenSession(file: File): Promise<void> {
         safeColorTranslator(startColor, "rgba(0,255,0,0.0)"),
         safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
         minSignal,
-        maxSignal
+        maxSignal,
+        cmap["gamma"] === undefined ? 1 : Number(cmap["gamma"])
       );
       visualizationOptionsStore.setVisualizationOptions(
         new VisualizationOptions(

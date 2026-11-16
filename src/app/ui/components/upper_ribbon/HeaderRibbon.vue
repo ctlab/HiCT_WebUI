@@ -744,6 +744,7 @@ function buildExportMetadata(): Record<string, unknown> {
               endColor: cmap.endColorRGBA?.RGBA,
               minSignal: cmap.minSignal,
               maxSignal: cmap.maxSignal,
+              ...(cmap.gamma !== 1 ? { gamma: cmap.gamma } : {}),
             }
           : { type: cmap?.colormapType ?? "Unknown" },
     },
