@@ -530,6 +530,17 @@ class SplitContigRequest implements HiCTAPIRequest {
   ) {}
 }
 
+class SplitContigAtBpRequest implements HiCTAPIRequest {
+  requestPath = "/split_contig_at_bp";
+  public constructor(
+    public readonly options: {
+      readonly contigId: number;
+      readonly offsetBp: number;
+      readonly expectedRevision: number;
+    }
+  ) {}
+}
+
 class GetFastaForSelectionRequest implements HiCTAPIRequest {
   requestPath = "/get_fasta_for_selection";
 
@@ -912,6 +923,7 @@ export {
   GetCurrentSignalRangeRequest,
   SaveFileRequest,
   SplitContigRequest,
+  SplitContigAtBpRequest,
   // TileLoadPOSTRequest,
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,

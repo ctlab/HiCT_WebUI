@@ -120,6 +120,11 @@ function binOffsets(json: unknown): Map<number, number> | undefined {
 
 class ContigDescriptorDTO extends InboundDTO<ContigDescriptor> {
   public toEntity(): ContigDescriptor {
+    if (
+      this.json.contigSharedBinSlice !== undefined &&
+      typeof this.json.contigSharedBinSlice !== "boolean"
+    )
+      throw new Error("Invalid contig shared-bin flag");
     return {
       contigId: this.json.contigId as number,
       contigName: this.json.contigName as string,
@@ -130,6 +135,7 @@ class ContigDescriptorDTO extends InboundDTO<ContigDescriptor> {
       contigOffsetInSource: (this.json.contigOffsetInSource as number) ?? 0,
       contigLengthBp: this.json.contigLengthBp as number,
       contigBinOffsets: binOffsets(this.json.contigBinOffsets),
+      contigSharedBinSlice: this.json.contigSharedBinSlice === true,
       contigLengthBins: resolutionMap(
         this.json.contigLengthBins as Record<string, number>,
         Number
@@ -186,6 +192,14 @@ class AssemblyInfoDTO extends InboundDTO<AssemblyInfo> {
   }
 
   private fromCompact(): AssemblyInfo {
+    const shared = this.json.sharedBinContigs ?? [];
+    if (
+      !Array.isArray(shared) ||
+      shared.some((id) => !Number.isSafeInteger(id) || id < 0) ||
+      new Set(shared).size !== shared.length
+    )
+      throw new Error("Invalid shared-bin contig IDs");
+    const sharedIds = new Set<number>(shared);
     const resolutions = this.json.resolutions;
     if (
       !Array.isArray(resolutions) ||
@@ -236,6 +250,7 @@ class AssemblyInfoDTO extends InboundDTO<AssemblyInfo> {
           direction: contigDirectionFromDTO(row[5]),
           contigLengthBp: row[6],
           contigLengthBins: lengths,
+          contigSharedBinSlice: sharedIds.has(row[0]),
           contigBinOffsets:
             this.json.contigBinOffsets === undefined
               ? undefined
@@ -248,6 +263,11 @@ class AssemblyInfoDTO extends InboundDTO<AssemblyInfo> {
         };
       }
     );
+    if (sharedIds.size > 0) {
+      const knownIds = new Set(contigDescriptors.map((d) => d.contigId));
+      if ([...sharedIds].some((id) => !knownIds.has(id)))
+        throw new Error("Unknown shared-bin contig ID");
+    }
     const scaffoldDescriptors = this.json.scaffolds.map(
       (row: unknown): ScaffoldDescriptor => {
         if (

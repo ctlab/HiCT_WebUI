@@ -83,6 +83,7 @@ import {
   UngroupContigsFromScaffoldRequest,
   type HiCTAPIRequest,
   SplitContigRequest,
+  SplitContigAtBpRequest,
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
@@ -319,6 +320,7 @@ const assemblyMutationPaths = new Set([
   "/reverse_selection_range",
   "/move_selection_range",
   "/split_contig_at_bin",
+  "/split_contig_at_bp",
   "/unscaffold_all",
   "/group_contigs_into_scaffold",
   "/ungroup_contigs_from_scaffold",
@@ -2084,6 +2086,27 @@ class RequestManager {
       .then((json) =>
         new AssemblyInfoDTO(this.normalizeAssemblyInfo(json)).toEntity()
       );
+  }
+
+  public async splitContigAtBp(
+    contigId: number,
+    offsetBp: number
+  ): Promise<AssemblyInfo> {
+    const summary = this.history.applied;
+    if (!summary)
+      throw new Error(
+        "Attach to the current assembly before cutting a contig."
+      );
+    const response = await this.sendRequest(
+      new SplitContigAtBpRequest({
+        contigId,
+        offsetBp,
+        expectedRevision: summary.revision,
+      })
+    );
+    return new AssemblyInfoDTO(
+      this.normalizeAssemblyInfo(response.data)
+    ).toEntity();
   }
 
   public async getVisualizationOptions(

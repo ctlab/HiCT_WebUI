@@ -18,6 +18,11 @@ const requestDtoSource = readFileSync(
 
 const requiredMappings = [
   {
+    className: "SplitContigAtBpRequest",
+    dtoName: "SplitContigAtBpRequestDTO",
+    requestPath: "/split_contig_at_bp",
+  },
+  {
     className: "ListConvertibleMatrixFilesRequest",
     dtoName: "ListConvertibleMatrixFilesRequestDTO",
     requestPath: "/list_convertible_matrices",
@@ -98,6 +103,7 @@ const descriptors = Array.from({ length: 4 }, (_, i) => ({
   contigName: "c" + i,
   contigOriginalName: "source" + i,
   contigOffsetInSource: i * 1000,
+  contigSharedBinSlice: i === 1,
   contigBinOffsets: { 100: -25, 250: -125 },
   contigLengthBp: i * 1000,
   contigLengthBins: { 100: String(i * 10), 250: i * 4, 1000: i },
@@ -179,6 +185,7 @@ const legacy = {
 };
 const compact = {
   format: "compact-v1",
+  sharedBinContigs: [1],
   contigBinOffsets: Object.fromEntries(
     legacy.contigDescriptors.map((d) => [d.contigId, d.contigBinOffsets])
   ),
@@ -224,6 +231,18 @@ assert.deepEqual(
   { contigDescriptors: [], scaffoldDescriptors: [] }
 );
 for (const damage of [
+  (c) => {
+    c.sharedBinContigs = [1, 1];
+  },
+  (c) => {
+    c.sharedBinContigs = [999999];
+  },
+  (c) => {
+    c.sharedBinContigs = [1.5];
+  },
+  (c) => {
+    c.sharedBinContigs = "1";
+  },
   (c) => {
     c.format = "compact-v2";
   },

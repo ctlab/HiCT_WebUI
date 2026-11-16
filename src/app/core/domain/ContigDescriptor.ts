@@ -32,6 +32,7 @@ interface ContigDescriptor {
   /** Source-forward first-bin origins relative to the fragment. Missing keys mean zero.
    * Undefined retains compatibility with servers predating explicit bin geometry. */
   contigBinOffsets?: Map<number, number>;
+  contigSharedBinSlice?: boolean;
   direction: ContigDirection;
   presenceAtResolution: Map<number, ContigHideType>;
 }

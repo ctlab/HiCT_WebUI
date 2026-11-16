@@ -106,6 +106,7 @@ import {
   ImportNameMappingRequest,
   ReloadTilesRequest,
   SplitContigRequest,
+  SplitContigAtBpRequest,
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
@@ -166,6 +167,8 @@ abstract class HiCTAPIRequestDTO<
         );
       case entity instanceof SplitContigRequest:
         return new SplitContigRequestDTO(entity as SplitContigRequest);
+      case entity instanceof SplitContigAtBpRequest:
+        return new SplitContigAtBpRequestDTO(entity as SplitContigAtBpRequest);
       case entity instanceof StartConversionJobRequest:
         return new StartConversionJobRequestDTO(
           entity as StartConversionJobRequest
@@ -396,6 +399,8 @@ abstract class HiCTAPIRequestDTO<
 
   private static toDTOByRequestPath(entity: HiCTAPIRequest) {
     switch (entity.requestPath) {
+      case "/split_contig_at_bp":
+        return new SplitContigAtBpRequestDTO(entity as SplitContigAtBpRequest);
       case "/tracks/open_cooler_weights":
         return new OpenCoolerWeightsTrackRequestDTO(
           entity as OpenCoolerWeightsTrackRequest
@@ -774,6 +779,12 @@ class SplitContigRequestDTO extends HiCTAPIRequestDTO<SplitContigRequest> {
       splitPx: this.entity.options.splitPx,
       bpResolution: this.entity.options.bpResolution,
     };
+  }
+}
+
+class SplitContigAtBpRequestDTO extends HiCTAPIRequestDTO<SplitContigAtBpRequest> {
+  toDTO(): Record<string, unknown> {
+    return { assemblyFormat: "compact-v1", ...this.entity.options };
   }
 }
 
@@ -1224,6 +1235,7 @@ export {
   ProbeTrackPrecomputeCacheRequestDTO,
   ListCoolerFilesRequestDTO,
   SplitContigRequestDTO,
+  SplitContigAtBpRequestDTO,
   MoveSelectionToDebrisRequestDTO,
   GetVisualizationOptionsRequestDTO,
   SetVisualizationOptionsRequestDTO,
