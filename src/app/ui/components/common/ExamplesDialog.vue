@@ -47,9 +47,16 @@
           </div>
           <div class="modal-body">
             <p v-if="loading" role="status">Loading the examples…</p>
-            <p v-else-if="loadError" class="text-danger" role="alert">
-              {{ loadError }}
-            </p>
+            <div v-else-if="loadError">
+              <p class="text-danger" role="alert">{{ loadError }}</p>
+              <button
+                type="button"
+                class="btn btn-outline-primary"
+                @click="loadCatalog"
+              >
+                Retry loading examples
+              </button>
+            </div>
             <template v-else-if="catalog">
               <div
                 v-if="catalog.problems.length"
@@ -214,6 +221,19 @@
                               of {{ formatBytes(active.totalBytes) }})
                             </span>
                             <button
+                              v-if="active.jobId"
+                              type="button"
+                              class="btn btn-sm btn-outline-primary"
+                              @click="
+                                emit('jobsRequested', {
+                                  jobId: active.jobId,
+                                  openWhenReady: false,
+                                })
+                              "
+                            >
+                              View in Jobs
+                            </button>
+                            <button
                               type="button"
                               class="btn btn-sm btn-outline-secondary example-cancel"
                               @click="cancel"
@@ -333,11 +353,16 @@ import type {
   RequestManager,
 } from "@/app/core/net/api/RequestManager";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
+import { useBackgroundJobsUiStore } from "@/app/stores/backgroundJobsUiStore";
 
 const props = defineProps<{ requests: RequestManager }>();
 const emit = defineEmits<{
   (e: "dismissed"): void;
   (e: "open", payload: { example: ExampleEntry; folder: string }): void;
+  (
+    e: "jobsRequested",
+    payload: { jobId: string; openWhenReady: boolean }
+  ): void;
 }>();
 
 const dialog = ref<HTMLElement | null>(null);
@@ -346,8 +371,13 @@ const loading = ref(true);
 const loadError = ref("");
 const active = ref<ExampleDownloadStatus | null>(null);
 const startingDownload = ref(false);
+const jobsUi = useBackgroundJobsUiStore();
+let resumeExampleId = jobsUi.exampleToResumeId;
+jobsUi.exampleToResumeId = null;
 let opener: HTMLElement | null = null;
 let disposed = false;
+let statusGeneration = 0,
+  catalogGeneration = 0;
 
 const groups = computed(() => {
   const data = catalog.value;
@@ -399,9 +429,12 @@ const busyElsewhere = (id: string) =>
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function follow(): Promise<void> {
-  while (!disposed) {
+  const generation = ++statusGeneration;
+  while (!disposed && generation === statusGeneration) {
     try {
-      active.value = await props.requests.exampleDownloadStatus();
+      const status = await props.requests.exampleDownloadStatus();
+      if (disposed || generation !== statusGeneration) return;
+      active.value = status;
     } catch (error) {
       console.debug("Download status unavailable", error);
       return;
@@ -425,6 +458,7 @@ async function download(
   openWhenReady = false
 ): Promise<void> {
   if (startingDownload.value) return;
+  ++statusGeneration;
   startingDownload.value = true;
   try {
     active.value = await props.requests.startExampleDownload(example.id);
@@ -448,6 +482,11 @@ async function download(
   } finally {
     startingDownload.value = false;
   }
+  if (disposed) return;
+  if (active.value?.jobId) {
+    emit("jobsRequested", { jobId: active.value.jobId, openWhenReady });
+    return;
+  }
   await follow();
   if (
     openWhenReady &&
@@ -460,7 +499,11 @@ async function download(
 
 async function cancel(): Promise<void> {
   try {
-    await props.requests.cancelExampleDownload();
+    if (active.value?.jobId)
+      await props.requests.cancelBackgroundJob(
+        `download/${active.value.jobId}`
+      );
+    else await props.requests.cancelExampleDownload();
   } catch (error) {
     console.debug("Cancel failed", error);
   }
@@ -506,26 +549,49 @@ function trapTab(event: KeyboardEvent): void {
   }
 }
 
-onMounted(async () => {
-  opener = document.activeElement as HTMLElement | null;
+async function loadCatalog(): Promise<void> {
+  const generation = ++catalogGeneration;
+  loading.value = true;
+  loadError.value = "";
   try {
-    catalog.value = await props.requests.listExamples();
+    const response = await props.requests.listExamples();
+    if (disposed || generation !== catalogGeneration) return;
+    catalog.value = response;
   } catch (error) {
+    if (disposed || generation !== catalogGeneration) return;
     console.debug("Could not load the examples", error);
     loadError.value = "The examples could not be loaded from the server.";
   } finally {
-    loading.value = false;
+    if (!disposed && generation === catalogGeneration) loading.value = false;
   }
+  if (disposed || generation !== catalogGeneration) return;
   await nextTick();
+  if (resumeExampleId) {
+    const card = Array.from(
+      dialog.value?.querySelectorAll<HTMLElement>("[data-example]") ?? []
+    ).find((card) => card.dataset.example === resumeExampleId);
+    const action = card?.querySelector<HTMLElement>("button:not([disabled])");
+    if (action) {
+      action.focus();
+      action.scrollIntoView({ block: "nearest" });
+      resumeExampleId = null;
+      return;
+    }
+  }
   dialog.value
     ?.querySelector<HTMLElement>("button.example-download, .btn-close")
     ?.focus();
-  // A download started earlier keeps running on the server; pick it up again.
+}
+onMounted(() => {
+  opener = document.activeElement as HTMLElement | null;
+  void loadCatalog();
   void follow();
 });
 
 onBeforeUnmount(() => {
   disposed = true;
+  ++statusGeneration;
+  ++catalogGeneration;
   if (opener && document.contains(opener)) opener.focus();
 });
 </script>

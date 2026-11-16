@@ -230,6 +230,7 @@
       :requests="networkManager.requestManager"
       @dismissed="examplesOpen = false"
       @open="openExampleInWizard"
+      @jobsRequested="showExampleJob"
     />
     <FastaOnlyDialog
       v-if="fastaOnlyOpen"
@@ -360,6 +361,7 @@ import { useModalFocus } from "@/app/ui/modalFocus";
 import UnsavedEditsDialog from "@/app/ui/components/common/UnsavedEditsDialog.vue";
 import FastaOnlyDialog from "@/app/ui/components/common/FastaOnlyDialog.vue";
 import ExamplesDialog from "@/app/ui/components/common/ExamplesDialog.vue";
+import { useBackgroundJobsUiStore } from "@/app/stores/backgroundJobsUiStore";
 import {
   ContactMapManager,
   // type ContactMapManagerOptions,
@@ -422,6 +424,9 @@ const fastaFilename: Ref<string | undefined> = ref("");
 const tileSize: Ref<number> = ref(256);
 const contigBorderColor: Ref<string> = ref("ffccee");
 const mapManager: Ref<ContactMapManager | undefined> = ref(undefined);
+watch(mapManager, () => {
+  useBackgroundJobsUiStore().autoOpenJobId = null;
+});
 const desktopRecovery = ref(false);
 const desktopReconnectBusy = ref(false);
 let desktopReconnectConsent = "";
@@ -961,6 +966,17 @@ async function openFileWithOptions(
   } finally {
     stopOpenProgress();
   }
+}
+
+function showExampleJob(payload: {
+  jobId: string;
+  openWhenReady: boolean;
+}): void {
+  examplesOpen.value = false;
+  useBackgroundJobsUiStore().open(
+    `download/${payload.jobId}`,
+    payload.openWhenReady
+  );
 }
 
 async function openJobResult(output: BackgroundJobOutput): Promise<void> {

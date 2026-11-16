@@ -25,6 +25,7 @@
       <BackgroundJobsPanel
         :requests="props.networkManager.requestManager"
         @open="emit('jobResult', $event)"
+        @examplesRequested="emit('examplesRequested')"
       />
       <!-- Logo -->
       <a class="navbar-brand hict-navbar-brand" href="#">

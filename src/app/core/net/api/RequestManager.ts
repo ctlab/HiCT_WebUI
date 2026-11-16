@@ -197,6 +197,14 @@ export interface BackgroundJob {
   message: string | null;
   error: string | null;
   outputs: BackgroundJobOutput[];
+  details?: {
+    title?: string;
+    completedBytes?: number;
+    totalBytes?: number;
+    currentFile?: string | null;
+    warnings?: string[];
+    exampleId?: string | null;
+  } | null;
 }
 
 export type AlignmentDetailSegment = {
@@ -452,6 +460,7 @@ export type ExamplesCatalogResponse = {
   problems: { source: string; pointer: string; message: string }[];
 };
 export type ExampleDownloadStatus = {
+  jobId?: string | null;
   state: "IDLE" | "RUNNING" | "READY" | "FAILED" | "CANCELLED";
   exampleId: string | null;
   progress: number;
