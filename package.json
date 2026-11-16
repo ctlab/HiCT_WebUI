@@ -60,7 +60,7 @@
     "toolcool-color-picker": "^1.0.15",
     "vanilla-picker": "^2.12.2",
     "vue": "3.5.45",
-    "vue-sonner": "^0.4.2"
+    "vue-sonner": "2.0.9"
   },
   "devDependencies": {
     "@electron/fuses": "^1.8.0",

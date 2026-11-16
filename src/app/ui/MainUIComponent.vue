@@ -373,6 +373,7 @@ import {
   ref,
   watch,
   type Ref,
+  type CSSProperties,
 } from "vue";
 import { NetworkManager } from "@/app/core/net/NetworkManager";
 import defaultOptions from "@/app/core/visualization/colormap/default_options.json";
@@ -425,6 +426,8 @@ const contigBorderColor: Ref<string> = ref("ffccee");
 const mapManager: Ref<ContactMapManager | undefined> = ref(undefined);
 watch(mapManager, () => {
   useBackgroundJobsUiStore().autoOpenJobId = null;
+  toast.dismiss("excluded-bins-current-map");
+  coolerWeightsNaNPromptVisible.value = false;
 });
 const desktopRecovery = ref(false);
 const desktopReconnectBusy = ref(false);
@@ -700,16 +703,22 @@ async function settleExcludedBins(carriedAppearance?: {
     return;
   }
   await applyExcludedBinsPolicy("REPLACE_NANS_WITH_ZERO", true);
+  if (manager !== mapManager.value) return;
   const count = options.coolerWeightsNaNCount;
   toast.message(
     `${count.toLocaleString()} excluded bin${count === 1 ? "" : "s"} masked.`,
     {
+      id: "excluded-bins-current-map",
       duration: 15000,
-      style: { visibility: "var(--hict-guidance-visibility, visible)" },
+      style: {
+        visibility:
+          "var(--hict-guidance-visibility, visible)" as CSSProperties["visibility"],
+      },
       action: {
         label: "Change",
         onClick: () => {
-          coolerWeightsNaNPromptVisible.value = true;
+          if (manager === mapManager.value)
+            coolerWeightsNaNPromptVisible.value = true;
         },
       },
     }
@@ -729,8 +738,10 @@ async function applyExcludedBinsPolicy(
       policy,
       keepWeights
     );
+    if (manager !== mapManager.value) return;
     await manager.stabilizeInitialViewport({ fit: false });
   } catch (error) {
+    if (manager !== mapManager.value) return;
     const message =
       (error as { response?: { data?: { error?: string } }; message?: string })
         ?.response?.data?.error ??
