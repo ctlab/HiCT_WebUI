@@ -47,6 +47,8 @@ export const useVisualizationOptionsStore = defineStore(
     const signalEditable = ref(true);
     const coolerWeightsHaveNaNs = ref(false);
     const coolerWeightsNaNCount = ref(0);
+    const pendingVisualizationMutations = ref(0);
+    const visualizationDraftState = ref<"scheduled" | "unapplied" | null>(null);
     const colormap: Ref<Colormap> = ref(
       new SimpleLinearGradient(
         new ColorTranslator("rgba(0,255,0,0.0)", { legacyCSS: true }),
@@ -101,6 +103,8 @@ export const useVisualizationOptionsStore = defineStore(
       coolerWeightsNaNPolicy,
       coolerWeightsHaveNaNs,
       coolerWeightsNaNCount,
+      pendingVisualizationMutations,
+      visualizationDraftState,
       signalEditable,
       colormap,
       asVisualizationOptions,

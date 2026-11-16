@@ -13,11 +13,32 @@ const store = {
   },
   asVisualizationOptions: () => structuredClone(options),
 };
+const draftSandbox = { exports: {}, require: () => ({}) };
+vm.runInNewContext(
+  ts.transpileModule(
+    fs.readFileSync(
+      new URL(
+        "../src/app/core/visualization/visualizationDrafts.ts",
+        import.meta.url
+      ),
+      "utf8"
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2020,
+      },
+    }
+  ).outputText,
+  draftSandbox
+);
 const sandbox = {
   exports: {},
   require: (name) =>
     name.includes("visualizationOptionsStore")
       ? { useVisualizationOptionsStore: () => store }
+      : name.includes("visualizationDrafts")
+      ? draftSandbox.exports
       : {},
 };
 vm.runInNewContext(

@@ -120,6 +120,7 @@
                     v-model="enabled"
                     class="form-check-input"
                     type="checkbox"
+                    :disabled="loading || saving"
                   />
                   <label class="form-check-label" for="pipeline-enabled"
                     >Enable custom pipeline</label
@@ -131,6 +132,7 @@
                     v-model="swapUpperLower"
                     class="form-check-input"
                     type="checkbox"
+                    :disabled="loading || saving"
                   />
                   <label class="form-check-label" for="pipeline-swap"
                     >Swap upper/lower diagonal branches</label
@@ -167,7 +169,12 @@
 
               <div class="pipeline-graph card mb-2">
                 <div class="card-body p-0">
-                  <div ref="graphHost" class="graph-host">
+                  <div
+                    ref="graphHost"
+                    class="graph-host"
+                    :inert="loading || saving || previewing"
+                    :aria-busy="loading || saving || previewing"
+                  >
                     <canvas ref="graphCanvasRef" class="graph-canvas"></canvas>
                   </div>
                 </div>
@@ -187,7 +194,7 @@
           <div v-show="!previewMode" class="modal-footer">
             <button
               class="btn btn-outline-danger me-auto"
-              :disabled="saving || oeBusy"
+              :disabled="saving || loading || oeBusy"
               @click="resetConfig"
             >
               Reset
@@ -218,7 +225,7 @@
             </button>
             <button
               class="btn btn-outline-primary"
-              :disabled="saving || previewing || oeBusy"
+              :disabled="saving || loading || previewing || oeBusy"
               @click="previewConfig"
             >
               <span
@@ -229,7 +236,7 @@
             </button>
             <button
               class="btn btn-primary"
-              :disabled="saving || oeBusy"
+              :disabled="saving || loading || previewing || oeBusy"
               @click="saveConfig"
             >
               <span
@@ -3561,8 +3568,10 @@ const loadConfig = async (): Promise<void> => {
   }
   loading.value = true;
   try {
-    await refreshTrackOptions();
     const manager = ensureMapManager();
+    await manager.visualizationManager.waitForPendingOptionRequests();
+    pendingVisualizationSync.value = false;
+    await refreshTrackOptions();
     const response =
       await manager.networkManager.requestManager.getRenderPipelineConfig();
     enabled.value = Boolean(response.enabled ?? false);

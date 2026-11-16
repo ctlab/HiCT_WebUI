@@ -192,7 +192,8 @@ async function setOptionsPreset() {
         )
       );
       try {
-        await props.mapManager.visualizationManager.applyVisualizationSettingsForSourceAndReload(
+        await props.mapManager.visualizationManager.applyVisualizationSourcePreset(
+          visualizationOptionsStore.asVisualizationOptions(),
           activeVisualizationSource.value,
           activeVisualizationTargetId.value
         );
@@ -211,11 +212,10 @@ async function setOptionsPreset() {
           lowerExpression: pipeline.lowerExpression,
         };
         const manager = props.mapManager;
-        await manager.visualizationManager.sendVisualizationOptionsToServer({
-          skipAutoThresholdRefresh: true,
-          visualizationOptions: props.visualizationOptions,
-          renderPipeline: config,
-        });
+        await manager.visualizationManager.applyVisualizationPreset(
+          props.visualizationOptions,
+          config
+        );
         stylesStore.setMapBackground(props.backgroundColor);
         if (props.trackStyles)
           manager.getLayersManager().applyTrackStylePreset(props.trackStyles);
@@ -257,14 +257,15 @@ async function setOptionsPreset() {
         ? undefined
         : activeVisualizationSource.value;
     const action = source
-      ? props.mapManager?.visualizationManager.applyVisualizationSettingsForSourceAndReload(
+      ? props.mapManager?.visualizationManager.applyVisualizationSourcePreset(
+          visualizationOptionsStore.asVisualizationOptions(),
           source,
           activeVisualizationTargetId.value
         )
       : props.mapManager
-      ? props.mapManager.visualizationManager
-          .sendVisualizationOptionsToServer()
-          .then(() => props.mapManager?.reloadTiles())
+      ? props.mapManager.visualizationManager.applyVisualizationPreset(
+          visualizationOptionsStore.asVisualizationOptions()
+        )
       : undefined;
     action?.catch((error) => {
       console.error("Failed to apply visualization preset", error);

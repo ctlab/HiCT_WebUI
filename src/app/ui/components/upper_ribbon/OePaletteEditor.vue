@@ -271,6 +271,7 @@ async function reload(): Promise<void> {
   hydrating = true;
   try {
     await publication.catch(() => undefined);
+    await manager.visualizationManager.waitForPendingOptionRequests();
     if (disposed || current !== generation || props.mapManager !== manager)
       return;
     const options =

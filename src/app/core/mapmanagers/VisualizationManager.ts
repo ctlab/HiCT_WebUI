@@ -31,6 +31,20 @@ import {
   type SignalProfile,
 } from "@/app/core/visualization/signalProfile";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
+import { reportFailure } from "@/app/ui/reportFailure";
+import {
+  diagnosticBounds,
+  querySignalHistogram,
+} from "../visualization/signalDiagnostics";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import {
+  VisualizationDrafts,
+  applyVisualizationDraft,
+  visualizationOptionsDraft,
+  visualizationContextKey,
+  type VisualizationContext,
+  type VisualizationDraft,
+} from "../visualization/visualizationDrafts";
 import { rememberExcludedBinsPolicy } from "../visualization/excludedBinsMemory";
 import VisualizationOptions, {
   type CoolerWeightsNaNPolicy,
@@ -135,7 +149,8 @@ const selectNthNumber = (values: number[], index: number): number | null => {
 
 const computeFiniteQuantile = (
   values: Float32Array,
-  quantile: number
+  quantile: number,
+  nearestRank = false
 ): number | null => {
   const filtered: number[] = [];
   for (const value of values) {
@@ -148,7 +163,12 @@ const computeFiniteQuantile = (
   }
   const position = Math.min(
     filtered.length - 1,
-    Math.max(0, Math.floor(clampQuantile(quantile) * (filtered.length - 1)))
+    Math.max(
+      0,
+      nearestRank
+        ? Math.ceil(clampQuantile(quantile) * filtered.length) - 1
+        : Math.floor(clampQuantile(quantile) * (filtered.length - 1))
+    )
   );
   return selectNthNumber(filtered, position);
 };
@@ -167,9 +187,10 @@ const resolveSafeAutoUpperBound = (
   values: Float32Array,
   quantile: number,
   minSignal: number,
-  currentMaxSignal: number
+  currentMaxSignal: number,
+  nearestRank = false
 ): number | null => {
-  const quantileValue = computeFiniteQuantile(values, quantile);
+  const quantileValue = computeFiniteQuantile(values, quantile, nearestRank);
   const maxValue = computeFinitePositiveMax(values);
   const minGap = Math.max(Math.abs(minSignal) * 1e-6, 1e-12);
   const candidate =
@@ -358,7 +379,11 @@ const visualizationOptionsFromTarget = (
     currentOptions.autoThresholdEnabled,
     currentOptions.autoThresholdQuantile,
     currentOptions.signalDisplayMode,
-    currentOptions.coolerWeightsNaNPolicy,
+    // An explicit weight product is enabled even when the other source uses no weights.
+    target.profile.applyCoolerWeights &&
+    currentOptions.coolerWeightsNaNPolicy === "DISABLE_WEIGHTS"
+      ? "REPLACE_NANS_WITH_ZERO"
+      : currentOptions.coolerWeightsNaNPolicy,
     currentOptions.coolerWeightsHaveNaNs,
     currentOptions.coolerWeightsNaNCount
   );
@@ -445,6 +470,20 @@ class VisualizationManager {
   private readonly pendingOptionRequests = new Set<Promise<unknown>>();
   private visualizationOptionsLoadGeneration = 0;
   private observedDisplayOptions: VisualizationOptions | null = null;
+  private readonly drafts = new VisualizationDrafts();
+  private readonly draftTimers = new Map<
+    string,
+    { context: VisualizationContext; timer: number }
+  >();
+  private mutationTail: Promise<unknown> = Promise.resolve();
+  private mutationContext: VisualizationContext | undefined;
+  private readonly latestApplications = new Map<string, number>();
+  private applicationSequence = 0;
+  private readonly normalizationFits = new Map<
+    string,
+    { revision: number; quantile: number }
+  >();
+
   // Opening fits contrast once. Navigation may update the slider domain, but
   // must not refit thresholds, publish a pipeline or invalidate decoded tiles.
 
@@ -455,13 +494,21 @@ class VisualizationManager {
   }
 
   public dispose(): void {
+    ++this.visualizationOptionsLoadGeneration;
+    this.latestApplications.clear();
+    this.normalizationFits.clear();
+    for (const { timer } of this.draftTimers.values())
+      window.clearTimeout(timer);
+    this.draftTimers.clear();
     if (this.moveEndListener) {
       unByKey(this.moveEndListener);
     }
   }
 
   public async waitForPendingOptionRequests(): Promise<void> {
-    while (this.pendingOptionRequests.size > 0) {
+    this.flushVisualizationDrafts();
+    while (this.pendingOptionRequests.size > 0 || this.draftTimers.size > 0) {
+      this.flushVisualizationDrafts();
       await Promise.allSettled([...this.pendingOptionRequests]);
     }
   }
@@ -475,7 +522,244 @@ class VisualizationManager {
     return request;
   }
 
+  public captureVisualizationContext(
+    source?: SourceName,
+    targetId?: string | null
+  ): VisualizationContext {
+    const view = useMatrixViewStore();
+    const resolvedSource = source ?? view.activeVisualizationSource;
+    const mode = this.visualizationOptionsStore.signalDisplayMode;
+    return {
+      source: resolvedSource,
+      targetId:
+        resolvedSource === "PRIMARY" && mode !== "OBSERVED"
+          ? null
+          : targetId === undefined
+          ? view.activeVisualizationTargetId
+          : targetId,
+      mode,
+    };
+  }
+
+  private refreshVisualizationDraftState(): void {
+    if (this.mapManager.isDisposed) return;
+    const context = this.captureVisualizationContext();
+    this.visualizationOptionsStore.visualizationDraftState = Object.keys(
+      this.drafts.read(context)
+    ).length
+      ? this.draftTimers.has(visualizationContextKey(context))
+        ? "scheduled"
+        : "unapplied"
+      : null;
+  }
+
+  private acknowledgeVisualizationDraft(
+    context: VisualizationContext,
+    revision: number,
+    fields?: readonly (keyof VisualizationDraft)[]
+  ): void {
+    this.drafts.acknowledge(context, revision, fields);
+    this.refreshVisualizationDraftState();
+  }
+
+  public noteVisualizationDraft(patch: VisualizationDraft, valid = true): void {
+    if (this.mapManager.isDisposed || !Object.keys(patch).length) return;
+    const context = this.captureVisualizationContext();
+    this.drafts.note(context, patch);
+    if (
+      ["minSignal", "maxSignal", "startColor", "endColor"].some(
+        (field) => field in patch
+      )
+    )
+      this.normalizationFits.delete(visualizationContextKey(context));
+    this.cancelDraftTimer(context);
+    if (!valid) {
+      this.refreshVisualizationDraftState();
+      return;
+    }
+    const key = visualizationContextKey(context);
+    const timer = window.setTimeout(() => {
+      this.draftTimers.delete(key);
+      void this.queueVisualizationApplication(context).catch(
+        (error) =>
+          !this.mapManager.isDisposed &&
+          reportFailure("Apply visualization settings", error)
+      );
+    }, 350);
+    this.draftTimers.set(key, { context, timer });
+    this.refreshVisualizationDraftState();
+  }
+
+  private cancelDraftTimer(context: VisualizationContext): void {
+    const key = visualizationContextKey(context),
+      pending = this.draftTimers.get(key);
+    if (pending) window.clearTimeout(pending.timer);
+    this.draftTimers.delete(key);
+  }
+
+  private flushVisualizationDrafts(): void {
+    for (const { context, timer } of Array.from(this.draftTimers.values())) {
+      window.clearTimeout(timer);
+      this.draftTimers.delete(visualizationContextKey(context));
+      void this.queueVisualizationApplication(context).catch(
+        (error) =>
+          !this.mapManager.isDisposed &&
+          reportFailure("Apply visualization settings", error)
+      );
+    }
+  }
+
+  private runVisualizationMutation<T>(
+    context: VisualizationContext,
+    work: () => Promise<T>
+  ): Promise<T> {
+    this.visualizationOptionsStore.pendingVisualizationMutations++;
+    const request = this.mutationTail
+      .catch(() => undefined)
+      .then(async () => {
+        if (this.mapManager.isDisposed)
+          throw new Error(
+            "The map was closed before the visualization change was applied."
+          );
+        ++this.visualizationOptionsLoadGeneration;
+        this.mutationContext = context;
+        try {
+          return await work();
+        } finally {
+          this.mutationContext = undefined;
+          ++this.visualizationOptionsLoadGeneration;
+          if (!this.mapManager.isDisposed) {
+            const active = this.captureVisualizationContext();
+            await this.loadVisualizationOptionsForSource(
+              active.source,
+              active.targetId
+            ).catch(() => undefined);
+          }
+        }
+      })
+      .finally(() => {
+        this.visualizationOptionsStore.pendingVisualizationMutations--;
+      });
+    this.mutationTail = request;
+    return this.trackOptionRequest(request);
+  }
+
+  private projectVisualizationOptions(
+    options: VisualizationOptions,
+    context = this.mutationContext ?? this.captureVisualizationContext()
+  ): VisualizationOptions {
+    if (this.mapManager.isDisposed) return options;
+    // Display mode belongs to the primary map even while the sidebar shows Secondary.
+    if (context.source === "PRIMARY")
+      this.visualizationOptionsStore.signalDisplayMode =
+        options.signalDisplayMode;
+    const projectedContext = {
+      ...context,
+      targetId:
+        context.source === "PRIMARY" && options.signalDisplayMode !== "OBSERVED"
+          ? null
+          : context.targetId,
+      mode: options.signalDisplayMode,
+    };
+    const visible = this.captureVisualizationContext();
+    if (
+      projectedContext.source !== visible.source ||
+      projectedContext.targetId !== visible.targetId ||
+      visualizationContextKey(projectedContext) !==
+        visualizationContextKey(visible)
+    )
+      return options;
+    const projected = applyVisualizationDraft(
+      options,
+      this.drafts.read(projectedContext)
+    );
+    this.visualizationOptionsStore.setVisualizationOptions(projected);
+    this.refreshVisualizationDraftState();
+    return projected;
+  }
+
+  private async freshVisualizationOptions(
+    context: VisualizationContext
+  ): Promise<VisualizationOptions> {
+    const api = this.mapManager.networkManager.requestManager;
+    const primary = await api.getVisualizationOptions(
+      new GetVisualizationOptionsRequest({})
+    );
+    if (
+      context.source === "PRIMARY" &&
+      primary.signalDisplayMode !== "OBSERVED"
+    )
+      return primary;
+    const config = await this.getActiveRenderPipelineConfig();
+    if (!config) {
+      if (context.source === "SECONDARY")
+        throw new Error("The Secondary colormap is no longer available.");
+      return primary;
+    }
+    const targets = collectConfigColormapTargets(config).filter(
+      (target) => target.profile.source === context.source
+    );
+    const target = context.targetId
+      ? targets.find((target) => target.id === context.targetId)
+      : targets[0];
+    if (!target)
+      throw new Error(
+        "The selected colormap changed. Select it again before applying edits."
+      );
+    return visualizationOptionsFromTarget(target, primary);
+  }
+
+  private queueVisualizationApplication(
+    context: VisualizationContext,
+    fallback?: VisualizationOptions
+  ): Promise<VisualizationOptions> {
+    this.cancelDraftTimer(context);
+    const patch = this.drafts.read(context),
+      revision = this.drafts.revision(context);
+    if (!fallback && !Object.keys(patch).length)
+      return Promise.resolve(
+        this.visualizationOptionsStore.asVisualizationOptions()
+      );
+    const key = visualizationContextKey(context),
+      ticket = ++this.applicationSequence;
+    this.latestApplications.set(key, ticket);
+    return this.runVisualizationMutation(context, async () => {
+      const fresh = await this.freshVisualizationOptions(context);
+      if (this.latestApplications.get(key) !== ticket) return fresh;
+      if (
+        context.source === "PRIMARY" &&
+        fresh.signalDisplayMode !== context.mode
+      )
+        throw new Error(
+          "The display mode changed. Reopen the color controls before applying edits."
+        );
+      const options = Object.keys(patch).length
+        ? applyVisualizationDraft(fresh, patch)
+        : fallback!;
+      if (!this.validVisualizationRange(options, context)) {
+        if (!fallback) return fresh;
+        throw new Error(
+          "Enter a finite range with Lower below Upper. O/E limits must surround 1."
+        );
+      }
+      const result = await this.applyVisualizationSnapshot(context, options);
+      const fit = this.normalizationFits.get(key);
+      if (fit && this.drafts.revision(context) === revision) {
+        await this.fitVisualizationContext(context, fit.quantile, revision);
+        if (this.normalizationFits.get(key)?.revision === fit.revision)
+          this.normalizationFits.delete(key);
+      }
+      this.acknowledgeVisualizationDraft(context, revision);
+      return result;
+    });
+  }
+
   public fetchVisualizationOptions(): Promise<VisualizationOptions> {
+    const context = this.captureVisualizationContext();
+    if (context.source === "SECONDARY")
+      return this.trackOptionRequest(
+        this.loadVisualizationOptionsForSource(context.source, context.targetId)
+      );
     const loadGeneration = ++this.visualizationOptionsLoadGeneration;
     if (this.mapManager.isDisposed) {
       return Promise.resolve(
@@ -489,7 +773,7 @@ class VisualizationManager {
           !this.mapManager.isDisposed &&
           loadGeneration === this.visualizationOptionsLoadGeneration
         ) {
-          this.visualizationOptionsStore.setVisualizationOptions(options);
+          this.projectVisualizationOptions(options);
           window.dispatchEvent(
             new CustomEvent(
               VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
@@ -508,98 +792,82 @@ class VisualizationManager {
     source?: SourceName,
     targetId?: string | null
   ): Promise<VisualizationOptions> {
-    const loadGeneration = ++this.visualizationOptionsLoadGeneration;
-    if (this.mapManager.isDisposed) {
+    const captured = this.captureVisualizationContext(source, targetId);
+    this.refreshVisualizationDraftState();
+    const generation = ++this.visualizationOptionsLoadGeneration;
+    if (this.mapManager.isDisposed)
       return this.visualizationOptionsStore.asVisualizationOptions();
-    }
-    if (
-      !source ||
-      (source === "PRIMARY" &&
-        this.visualizationOptionsStore.signalDisplayMode !== "OBSERVED")
-    ) {
-      const options =
-        await this.mapManager.networkManager.requestManager.getVisualizationOptions(
-          new GetVisualizationOptionsRequest({})
-        );
-      if (
-        !this.mapManager.isDisposed &&
-        loadGeneration === this.visualizationOptionsLoadGeneration
-      ) {
-        this.visualizationOptionsStore.setVisualizationOptions(options);
-        this.visualizationOptionsStore.signalEditable = true;
-        window.dispatchEvent(
-          new CustomEvent(
-            VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
-            {
-              detail: { source: "server_fetch", options },
-            }
-          )
-        );
-      }
-      return loadGeneration === this.visualizationOptionsLoadGeneration
-        ? options
-        : this.visualizationOptionsStore.asVisualizationOptions();
-    }
-    const pipelineConfig = await this.getActiveRenderPipelineConfig();
+    const primary =
+      await this.mapManager.networkManager.requestManager.getVisualizationOptions(
+        new GetVisualizationOptionsRequest({})
+      );
     if (
       this.mapManager.isDisposed ||
-      loadGeneration !== this.visualizationOptionsLoadGeneration
-    ) {
+      generation !== this.visualizationOptionsLoadGeneration
+    )
       return this.visualizationOptionsStore.asVisualizationOptions();
-    }
-    if (!pipelineConfig) {
-      const options =
-        await this.mapManager.networkManager.requestManager.getVisualizationOptions(
-          new GetVisualizationOptionsRequest({})
-        );
+    const context: VisualizationContext = {
+      ...captured,
+      targetId:
+        captured.source === "PRIMARY" &&
+        primary.signalDisplayMode !== "OBSERVED"
+          ? null
+          : captured.targetId,
+      mode: primary.signalDisplayMode,
+    };
+    let options = primary,
+      editable = true,
+      origin = "server_fetch";
+    if (
+      source &&
+      !(source === "PRIMARY" && primary.signalDisplayMode !== "OBSERVED")
+    ) {
+      const config = await this.getActiveRenderPipelineConfig();
       if (
-        !this.mapManager.isDisposed &&
-        loadGeneration === this.visualizationOptionsLoadGeneration
-      ) {
-        this.visualizationOptionsStore.setVisualizationOptions(options);
-        this.visualizationOptionsStore.signalEditable = true;
-        window.dispatchEvent(
-          new CustomEvent(
-            VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
-            {
-              detail: { source: "server_fetch", options },
-            }
+        this.mapManager.isDisposed ||
+        generation !== this.visualizationOptionsLoadGeneration
+      )
+        return this.visualizationOptionsStore.asVisualizationOptions();
+      const targets = config
+        ? collectConfigColormapTargets(config).filter(
+            (target) => target.profile.source === source
           )
+        : [];
+      const target =
+        targets.find((target) => target.id === context.targetId) ?? targets[0];
+      if (target) {
+        options = visualizationOptionsFromTarget(target, primary);
+        editable = target.profile.editableInput;
+        origin = "pipeline_source_fetch";
+      } else if (source === "SECONDARY") {
+        if (this.captureVisualizationContext().source === "SECONDARY")
+          this.visualizationOptionsStore.signalEditable = false;
+        throw new Error(
+          "No active Secondary colormap is available. Enable its rendering graph first."
         );
       }
-      return loadGeneration === this.visualizationOptionsLoadGeneration
-        ? options
-        : this.visualizationOptionsStore.asVisualizationOptions();
     }
-    const targets = collectConfigColormapTargets(pipelineConfig);
-    const sourceTargets = targets.filter(
-      (candidate) => candidate.profile.source === source
+    if (
+      this.mapManager.isDisposed ||
+      generation !== this.visualizationOptionsLoadGeneration
+    )
+      return this.visualizationOptionsStore.asVisualizationOptions();
+    // The header's optimistic mode is not evidence that a mode request committed.
+    this.visualizationOptionsStore.signalDisplayMode =
+      primary.signalDisplayMode;
+    this.projectVisualizationOptions(options, context);
+    if (
+      visualizationContextKey(context) ===
+      visualizationContextKey(this.captureVisualizationContext())
+    )
+      this.visualizationOptionsStore.signalEditable = editable;
+    window.dispatchEvent(
+      new CustomEvent(
+        VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
+        { detail: { source: origin, context, options } }
+      )
     );
-    const target =
-      sourceTargets.find((candidate) => candidate.id === targetId) ??
-      sourceTargets[0];
-    if (!target) {
-      return this.fetchVisualizationOptions();
-    }
-    const options = visualizationOptionsFromTarget(
-      target,
-      this.visualizationOptionsStore.asVisualizationOptions()
-    );
-    if (loadGeneration === this.visualizationOptionsLoadGeneration) {
-      this.visualizationOptionsStore.setVisualizationOptions(options);
-      this.visualizationOptionsStore.signalEditable =
-        target.profile.editableInput;
-      window.dispatchEvent(
-        new CustomEvent(
-          VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
-          {
-            detail: { source: "pipeline_source_fetch", options },
-          }
-        )
-      );
-      return options;
-    }
-    return this.visualizationOptionsStore.asVisualizationOptions();
+    return options;
   }
 
   public async getVisualizationPipelineTargets(): Promise<
@@ -656,9 +924,8 @@ class VisualizationManager {
     string,
     unknown
   > | null> {
-    const config = await this.mapManager.networkManager.requestManager
-      .getRenderPipelineConfig()
-      .catch(() => null);
+    const config =
+      await this.mapManager.networkManager.requestManager.getRenderPipelineConfig();
     return isRecord(config) && Boolean(config.enabled ?? false) ? config : null;
   }
 
@@ -948,7 +1215,7 @@ class VisualizationManager {
     if (Math.abs(nextUpperBound - options.colormap.maxSignal) < 1e-9) {
       return nextUpperBound;
     }
-    this.visualizationOptionsStore.setVisualizationOptions(
+    this.projectVisualizationOptions(
       new VisualizationOptions(
         options.preLogBase,
         options.postLogBase,
@@ -1102,7 +1369,7 @@ class VisualizationManager {
       const current = target
         ? visualizationOptionsFromTarget(target, options)
         : options;
-      this.visualizationOptionsStore.setVisualizationOptions(
+      this.projectVisualizationOptions(
         new VisualizationOptions(
           current.preLogBase,
           current.postLogBase,
@@ -1247,7 +1514,7 @@ class VisualizationManager {
       nextUpperBound > options.colormap.minSignal
         ? nextUpperBound
         : options.colormap.maxSignal;
-    this.visualizationOptionsStore.setVisualizationOptions(
+    this.projectVisualizationOptions(
       new VisualizationOptions(
         options.preLogBase,
         options.postLogBase,
@@ -1279,45 +1546,29 @@ class VisualizationManager {
     palette: DisplayPalette
   ): Promise<VisualizationOptions> {
     const parsed = parseOePalette(palette);
-    return this.trackOptionRequest(
-      (async () => {
-        const api = this.mapManager.networkManager.requestManager;
-        const current = await api.getVisualizationOptions(
-          new GetVisualizationOptionsRequest({})
-        );
-        if (this.mapManager.isDisposed)
-          throw new Error("The map was closed. Reopen the palette editor.");
-        if (current.signalDisplayMode !== "OBSERVED_OVER_EXPECTED")
-          throw new Error("Select Show O/E before editing its palette.");
-        const next = new VisualizationOptions(
-          current.preLogBase,
-          current.postLogBase,
-          current.applyCoolerWeights,
-          current.resolutionScaling,
-          current.resolutionLinearScaling,
-          new SimpleLinearGradient(
-            new ColorTranslator(parsed.startColor, { legacyCSS: true }),
-            new ColorTranslator(parsed.endColor, { legacyCSS: true }),
-            parsed.min,
-            parsed.max
-          ),
-          current.autoThresholdEnabled,
-          current.autoThresholdQuantile,
-          current.signalDisplayMode,
-          current.coolerWeightsNaNPolicy,
-          current.coolerWeightsHaveNaNs,
-          current.coolerWeightsNaNCount
-        );
-        const result = await this.sendVisualizationOptionsToServer({
-          skipAutoThresholdRefresh: true,
-          preserveCustomPipeline: true,
-          visualizationOptions: next,
-        });
-        window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
-        await this.mapManager.reloadTilesFromBackend();
-        return result;
-      })()
-    );
+    // An inactive editor must not leave a draft that unexpectedly appears on a later mode change.
+    if (
+      this.visualizationOptionsStore.signalDisplayMode !==
+      "OBSERVED_OVER_EXPECTED"
+    )
+      return Promise.reject(
+        new Error("Select Show O/E before editing its palette.")
+      );
+    const context: VisualizationContext = {
+      source: "PRIMARY",
+      targetId: null,
+      mode: "OBSERVED_OVER_EXPECTED",
+    };
+    this.drafts.note(context, {
+      minSignal: parsed.min,
+      maxSignal: parsed.max,
+      startColor: parsed.startColor,
+      endColor: parsed.endColor,
+    });
+    return this.queueVisualizationApplication(context).then((result) => {
+      window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
+      return result;
+    });
   }
 
   private rememberDerivedPalette(options: VisualizationOptions): void {
@@ -1336,7 +1587,17 @@ class VisualizationManager {
   }
 
   /** Display modes are primary-only views. Never rebuild the user's rendering graph. */
-  public async setSignalDisplayMode(mode: SignalDisplayMode): Promise<void> {
+  public setSignalDisplayMode(mode: SignalDisplayMode): Promise<void> {
+    this.flushVisualizationDrafts();
+    return this.runVisualizationMutation(
+      { source: "PRIMARY", targetId: null, mode },
+      () => this.setSignalDisplayModeNow(mode)
+    );
+  }
+
+  private async setSignalDisplayModeNow(
+    mode: SignalDisplayMode
+  ): Promise<void> {
     const api = this.mapManager.networkManager.requestManager;
     const previous = await api.getVisualizationOptions(
       new GetVisualizationOptionsRequest({})
@@ -1429,7 +1690,7 @@ class VisualizationManager {
       )
       .then((options) => {
         this.rememberDerivedPalette(options);
-        this.visualizationOptionsStore.setVisualizationOptions(options);
+        this.projectVisualizationOptions(options);
         window.dispatchEvent(
           new CustomEvent(
             VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
@@ -1458,73 +1719,163 @@ class VisualizationManager {
     return result;
   }
 
-  public async applyVisualizationSettingsAndReload(): Promise<VisualizationOptions> {
-    if (!this.visualizationOptionsStore.autoThresholdEnabled) {
-      return this.sendVisualizationOptionsAndReload();
-    }
-    const pipelineConfig = await this.getActiveRenderPipelineConfig();
-    const preserveCustomPipeline = pipelineConfig != null;
-    const result = await this.sendVisualizationOptionsToServer({
-      skipAutoThresholdRefresh: true,
-      preserveCustomPipeline,
-    });
-    await this.refreshAutoThresholdAndReload();
-    return result;
+  public applyVisualizationSettingsAndReload(): Promise<VisualizationOptions> {
+    return this.applyVisualizationSettingsForSourceAndReload("PRIMARY", null);
   }
 
-  public async applyVisualizationSettingsForSourceAndReload(
+  public applyVisualizationSettingsForSourceAndReload(
     source: SourceName,
     targetId?: string | null
   ): Promise<VisualizationOptions> {
+    return this.queueVisualizationApplication(
+      this.captureVisualizationContext(source, targetId ?? null),
+      this.visualizationOptionsStore.asVisualizationOptions()
+    );
+  }
+
+  public applyVisualizationPreset(
+    options: VisualizationOptions,
+    pipeline?: Record<string, unknown>
+  ): Promise<VisualizationOptions> {
+    this.flushVisualizationDrafts();
+    const context: VisualizationContext = {
+      source: "PRIMARY",
+      targetId: null,
+      mode: options.signalDisplayMode,
+    };
+    const snapshot = applyVisualizationDraft(options, {});
+    const config = pipeline ? cloneRecord(pipeline) : undefined;
+    const revision = this.drafts.note(
+      context,
+      visualizationOptionsDraft(snapshot)
+    );
+    this.drafts.discardBefore(revision);
+    this.normalizationFits.clear();
+    this.refreshVisualizationDraftState();
+    return this.runVisualizationMutation(context, async () => {
+      if (!this.validVisualizationRange(snapshot, context))
+        throw new Error("This preset has an invalid color range.");
+      const previous =
+        await this.mapManager.networkManager.requestManager.getVisualizationOptions(
+          new GetVisualizationOptionsRequest({})
+        );
+      if (
+        previous.signalDisplayMode === "OBSERVED" &&
+        snapshot.signalDisplayMode !== "OBSERVED"
+      )
+        this.observedDisplayOptions = previous;
+      const result = await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        visualizationOptions: snapshot,
+        renderPipeline: config,
+      });
+      this.acknowledgeVisualizationDraft(context, revision);
+      await this.mapManager.reloadTilesFromBackend();
+      return result;
+    });
+  }
+
+  public applyVisualizationSourcePreset(
+    options: VisualizationOptions,
+    source: SourceName,
+    targetId?: string | null
+  ): Promise<VisualizationOptions> {
+    this.flushVisualizationDrafts();
+    const context = this.captureVisualizationContext(source, targetId ?? null);
+    if (source === "PRIMARY") context.mode = options.signalDisplayMode;
+    const patch = visualizationOptionsDraft(options);
+    const revision = this.drafts.note(context, patch);
+    this.normalizationFits.delete(visualizationContextKey(context));
+    this.refreshVisualizationDraftState();
+    return this.runVisualizationMutation(context, async () => {
+      const fresh = await this.freshVisualizationOptions(context);
+      const next = applyVisualizationDraft(
+        fresh,
+        patch,
+        source === "PRIMARY"
+          ? options.signalDisplayMode
+          : fresh.signalDisplayMode
+      );
+      const result = await this.applyVisualizationSnapshot(context, next);
+      this.acknowledgeVisualizationDraft(context, revision);
+      return result;
+    });
+  }
+
+  private validVisualizationRange(
+    options: VisualizationOptions,
+    context: VisualizationContext
+  ): boolean {
+    const palette = options.colormap;
+    return (
+      !(palette instanceof SimpleLinearGradient) ||
+      (Number.isFinite(palette.minSignal) &&
+        Number.isFinite(palette.maxSignal) &&
+        palette.maxSignal > palette.minSignal &&
+        (context.source !== "PRIMARY" ||
+          context.mode !== "OBSERVED_OVER_EXPECTED" ||
+          (palette.minSignal > 0 &&
+            palette.minSignal < 1 &&
+            palette.maxSignal > 1)))
+    );
+  }
+
+  private async applyVisualizationSnapshot(
+    context: VisualizationContext,
+    options: VisualizationOptions
+  ): Promise<VisualizationOptions> {
+    if (this.mapManager.isDisposed)
+      throw new Error(
+        "The map was closed before the visualization change was applied."
+      );
+    if (!this.validVisualizationRange(options, context))
+      throw new Error(
+        "The color range is invalid. Correct Lower and Upper before applying changes."
+      );
     if (
-      source === "PRIMARY" &&
-      this.visualizationOptionsStore.signalDisplayMode !== "OBSERVED"
+      context.source === "PRIMARY" &&
+      options.signalDisplayMode !== "OBSERVED"
     ) {
       const result = await this.sendVisualizationOptionsToServer({
         skipAutoThresholdRefresh: true,
         preserveCustomPipeline: true,
+        visualizationOptions: options,
       });
       await this.mapManager.reloadTilesFromBackend();
       return result;
     }
-    const pipelineConfig = await this.getActiveRenderPipelineConfig();
-    if (!pipelineConfig) {
-      return this.applyVisualizationSettingsAndReload();
-    }
-
-    const options = this.visualizationOptionsStore.asVisualizationOptions();
-    const changed = this.updateRenderPipelineSource(
-      pipelineConfig,
-      source,
-      options,
-      targetId
-    );
-    if (!changed) {
-      const hydrated = await this.loadVisualizationOptionsForSource(
-        source,
-        targetId
-      );
+    const config = await this.getActiveRenderPipelineConfig();
+    if (!config) {
+      if (context.source === "SECONDARY")
+        throw new Error("The Secondary colormap is no longer available.");
+      const result = await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        visualizationOptions: options,
+      });
       await this.mapManager.reloadTilesFromBackend();
-      return hydrated;
+      return result;
     }
-
-    // Publish primary options and their graph in the existing atomic transaction.
-    if (source === "PRIMARY") {
+    if (
+      !this.updateRenderPipelineSource(
+        config,
+        context.source,
+        options,
+        context.targetId
+      )
+    )
+      throw new Error("The selected colormap is no longer editable.");
+    if (context.source === "PRIMARY")
       await this.sendVisualizationOptionsToServer({
         skipAutoThresholdRefresh: true,
-        renderPipeline: pipelineConfig,
+        renderPipeline: config,
+        visualizationOptions: options,
       });
-    } else {
+    else
       await this.mapManager.networkManager.requestManager.setRenderPipelineConfig(
-        pipelineConfig
+        config
       );
-    }
-    const hydrated = await this.loadVisualizationOptionsForSource(
-      source,
-      targetId
-    );
     await this.mapManager.reloadTilesFromBackend();
-    return hydrated;
+    return options;
   }
 
   /**
@@ -1532,36 +1883,119 @@ class VisualizationManager {
    * that choice, and fits the color range to the result. Options, pipeline and sidebar then agree,
    * whichever choice was made.
    */
-  public async applyCoolerWeightsPolicy(
+  public applyCoolerWeightsPolicy(
     policy: CoolerWeightsNaNPolicy,
-    keepWeights: boolean
+    keepWeights: boolean,
+    context = this.captureVisualizationContext()
   ): Promise<void> {
-    this.visualizationOptionsStore.coolerWeightsNaNPolicy = policy;
-    this.visualizationOptionsStore.applyCoolerWeights = keepWeights;
-    rememberExcludedBinsPolicy(
-      this.mapManager.getOptions().filename,
-      keepWeights ? policy : "DISABLE_WEIGHTS"
-    );
-    const pipeline = await this.getActiveRenderPipelineConfig();
-    if (pipeline) {
-      this.updateRenderPipelineSource(
-        pipeline,
-        "PRIMARY",
-        this.visualizationOptionsStore.asVisualizationOptions()
-      );
-    }
-    await this.sendVisualizationOptionsToServer({
-      skipAutoThresholdRefresh: true,
-      renderPipeline: pipeline ?? undefined,
+    this.cancelDraftTimer(context);
+    const revision = this.drafts.note(context, {
+      coolerWeightsNaNPolicy: policy,
+      applyCoolerWeights: keepWeights,
     });
-    // Replacing NaNs with 1 mixes unweighted counts with balanced values. Fit below
-    // that high tail so the balanced part remains visible.
-    const quantile =
-      keepWeights && policy === "REPLACE_NANS_WITH_ONE"
-        ? 0.9
-        : OPENING_THRESHOLD_QUANTILE;
-    await this.applyOpeningViewportQuantileThreshold(quantile);
-    await this.mapManager.reloadTilesFromBackend();
+    const patch = this.drafts.read(context);
+    const key = visualizationContextKey(context);
+    const fit = {
+      revision,
+      quantile:
+        keepWeights && policy === "REPLACE_NANS_WITH_ONE"
+          ? 0.9
+          : OPENING_THRESHOLD_QUANTILE,
+    };
+    this.normalizationFits.set(key, fit);
+    this.projectVisualizationOptions(
+      applyVisualizationDraft(
+        this.visualizationOptionsStore.asVisualizationOptions(),
+        patch
+      ),
+      context
+    );
+    return this.runVisualizationMutation(context, async () => {
+      try {
+        const current = await this.freshVisualizationOptions(context);
+        const options = applyVisualizationDraft(current, patch);
+        await this.applyVisualizationSnapshot(context, options);
+        if (context.source === "PRIMARY")
+          rememberExcludedBinsPolicy(
+            this.mapManager.getOptions().filename,
+            keepWeights ? policy : "DISABLE_WEIGHTS"
+          );
+        // An explicit edit made after normalization began owns its range and transform.
+        if (
+          this.normalizationFits.get(key)?.revision === fit.revision &&
+          this.drafts.revision(context) === revision
+        ) {
+          await this.fitVisualizationContext(context, fit.quantile, revision);
+          if (this.normalizationFits.get(key)?.revision === fit.revision)
+            this.normalizationFits.delete(key);
+        }
+        this.acknowledgeVisualizationDraft(context, revision);
+      } catch (error) {
+        if (this.normalizationFits.get(key)?.revision === fit.revision)
+          this.normalizationFits.delete(key);
+        this.acknowledgeVisualizationDraft(context, revision, [
+          "coolerWeightsNaNPolicy",
+          "applyCoolerWeights",
+        ]);
+        throw error;
+      }
+    });
+  }
+
+  private async fitVisualizationContext(
+    context: VisualizationContext,
+    quantile: number,
+    revision: number
+  ): Promise<void> {
+    const options = await this.freshVisualizationOptions(context);
+    if (
+      context.source === "PRIMARY" &&
+      options.signalDisplayMode !== "OBSERVED"
+    )
+      return;
+    const config = await this.getActiveRenderPipelineConfig();
+    const targets = config
+      ? collectConfigColormapTargets(config).filter(
+          (target) => target.profile.source === context.source
+        )
+      : [];
+    const target = context.targetId
+      ? targets.find((target) => target.id === context.targetId)
+      : targets[0];
+    const expression =
+      target && isRecord(target.node.input)
+        ? cloneRecord(target.node.input)
+        : undefined;
+    if (!(options.colormap instanceof SimpleLinearGradient)) return;
+    const sample = await querySignalHistogram(
+      this.mapManager,
+      diagnosticBounds(this.mapManager),
+      {
+        source: expression ? "PRIMARY" : context.source,
+        signalMode: expression ? "PIPELINE_SIGNAL" : "TRADITIONAL_NORMALIZED",
+        expression,
+        domain: "matrix",
+        tileEdge: 64,
+        concurrency: 4,
+      }
+    );
+    const next = resolveSafeAutoUpperBound(
+      sample.values,
+      quantile,
+      options.colormap.minSignal,
+      options.colormap.maxSignal,
+      true // Match the nearest-rank convention of loaded-tile histograms.
+    );
+    if (
+      this.mapManager.isDisposed ||
+      this.drafts.revision(context) !== revision ||
+      next == null
+    )
+      return;
+    await this.applyVisualizationSnapshot(
+      context,
+      applyVisualizationDraft(options, { maxSignal: next })
+    );
   }
 
   /** Swaps the top/bottom layers of every pixel blend; false when no blend exists. */

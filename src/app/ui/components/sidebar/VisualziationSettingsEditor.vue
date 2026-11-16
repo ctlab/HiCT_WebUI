@@ -120,6 +120,31 @@
           />
         </template>
       </SignalRangeControl>
+      <p
+        v-if="visualizationOptionsStore.pendingVisualizationMutations"
+        class="range-help mb-0"
+        role="status"
+      >
+        Applying visualization changes…
+      </p>
+      <p
+        v-else-if="visualizationOptionsStore.visualizationDraftState"
+        class="range-help mb-0"
+        role="status"
+      >
+        {{
+          visualizationOptionsStore.visualizationDraftState === "scheduled"
+            ? "Preview pending…"
+            : "Changes pending. Apply to retry."
+        }}
+      </p>
+      <p
+        v-if="rangeValidationError"
+        class="small text-danger mb-0"
+        role="alert"
+      >
+        {{ rangeValidationError }}
+      </p>
       <p v-if="observedExpectedPalette" class="range-help mb-0">
         O/E: lower color is depleted, white is 1, upper color is enriched.
         Limits must satisfy 0 &lt; lower &lt; 1 &lt; upper.
@@ -365,6 +390,18 @@ const toColor = ref(
 ) as Ref<ColorTranslator>;
 const lowerBound: Ref<number> = ref(signalMin.value);
 const upperBound: Ref<number> = ref(signalMax.value);
+const rangeValidationError = computed(() => {
+  if (!Number.isFinite(lowerBound.value) || !Number.isFinite(upperBound.value))
+    return "Enter finite lower and upper thresholds.";
+  if (!(upperBound.value > lowerBound.value))
+    return "Lower must be below Upper. The last applied range is unchanged.";
+  if (
+    observedExpectedPalette.value &&
+    !(lowerBound.value > 0 && lowerBound.value < 1 && upperBound.value > 1)
+  )
+    return "O/E limits must satisfy 0 < lower < 1 < upper.";
+  return "";
+});
 const sliderLowerLimit: Ref<number> = ref(0);
 const sliderUpperLimit: Ref<number> = ref(1);
 const sliderBoundsManual: Ref<boolean> = ref(false);
@@ -373,7 +410,6 @@ const syncingFromColormap: Ref<boolean> = ref(false);
 const liveApplyReady: Ref<boolean> = ref(false);
 const percentageSignalScale: Ref<boolean> = ref(false);
 let registeredRangeMapManager: ContactMapManager | undefined;
-let liveApplyTimer: number | undefined;
 let optionsHydrationGeneration = 0;
 let rangeController: AbortController | undefined;
 let rangeRequestKey = "";
@@ -408,7 +444,6 @@ let rangeMap: ContactMapManager | undefined;
 const onViewportRangeChanged = () => refreshProcessedRange();
 const rangeCache = new Map<string, ExactRange>();
 const LOG_SLIDER_FLOOR_FRACTION = 1e-10;
-const LIVE_APPLY_DELAY_MS = 350;
 
 const fromColorFn: Ref<() => ColorTranslator> = ref(
   () => fromColor.value
@@ -577,8 +612,21 @@ watch(
     lowerBound.value,
     upperBound.value,
   ],
-  () => {
-    scheduleLiveApply();
+  (next, previous) => {
+    if (syncingFromColormap.value) return;
+    const patch: import("@/app/core/visualization/visualizationDrafts").VisualizationDraft =
+      {};
+    if (next[0] !== previous[0]) patch.startColor = fromColor.value.HEXA;
+    if (next[1] !== previous[1]) patch.endColor = toColor.value.HEXA;
+    if (next[2] !== previous[2]) patch.minSignal = lowerBound.value;
+    if (next[3] !== previous[3]) patch.maxSignal = upperBound.value;
+    const valid =
+      Number.isFinite(lowerBound.value) &&
+      Number.isFinite(upperBound.value) &&
+      upperBound.value > lowerBound.value &&
+      (!observedExpectedPalette.value ||
+        (lowerBound.value > 0 && lowerBound.value < 1 && upperBound.value > 1));
+    props.mapManager?.visualizationManager.noteVisualizationDraft(patch, valid);
   }
 );
 
@@ -622,10 +670,6 @@ onBeforeUnmount(() => {
   ++rangeProbe;
   window.clearTimeout(rangeTimer);
   rangeController?.abort();
-  if (liveApplyTimer !== undefined) {
-    window.clearTimeout(liveApplyTimer);
-    liveApplyTimer = undefined;
-  }
 });
 
 function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
@@ -646,12 +690,7 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
   rangeStatus.value = "Waiting for visible tile limits";
   activeRangeExpression.value = undefined;
   const generation = ++optionsHydrationGeneration;
-  liveApplyReady.value = false;
   percentageSignalScale.value = false;
-  if (liveApplyTimer !== undefined) {
-    window.clearTimeout(liveApplyTimer);
-    liveApplyTimer = undefined;
-  }
   try {
     await manager.visualizationManager.loadVisualizationOptionsForSource(
       activeSourceForOptions(),
@@ -693,14 +732,8 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
     updateFromStore();
     rangeRequestKey = "";
     void refreshProcessedRange();
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
-    if (generation === optionsHydrationGeneration && !manager.isDisposed) {
-      liveApplyReady.value = true;
-    }
   } catch {
-    if (generation === optionsHydrationGeneration) {
-      liveApplyReady.value = true;
-    }
+    // Keep the current draft when a source/graph refresh is temporarily unavailable.
   }
 }
 
@@ -922,10 +955,6 @@ function updateFromStore() {
 }
 
 function applySettings() {
-  if (liveApplyTimer !== undefined) {
-    window.clearTimeout(liveApplyTimer);
-    liveApplyTimer = undefined;
-  }
   if (!(upperBound.value > lowerBound.value)) {
     toast.error(
       "Signal range must be positive: lower threshold must be below upper threshold."
@@ -966,19 +995,6 @@ function onCoolerWeightsNaNPolicyChanged(): void {
     .catch((error) => {
       reportFailure("Apply Cooler weight policy", error);
     });
-}
-
-function scheduleLiveApply(): void {
-  if (!liveApplyReady.value || syncingFromColormap.value) {
-    return;
-  }
-  if (liveApplyTimer !== undefined) {
-    window.clearTimeout(liveApplyTimer);
-  }
-  liveApplyTimer = window.setTimeout(() => {
-    liveApplyTimer = undefined;
-    applySettings();
-  }, LIVE_APPLY_DELAY_MS);
 }
 
 function onLowerRangeInput(value: number): void {
