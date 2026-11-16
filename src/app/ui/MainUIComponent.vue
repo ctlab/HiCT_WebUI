@@ -211,6 +211,20 @@
       @fastaOnlyRequested="fastaOnlyOpen = true"
       @examplesRequested="examplesOpen = true"
     ></UpperFrame>
+    <div v-if="desktopRecovery" class="desktop-recovery" role="status">
+      <span
+        >The HiCT web page is unavailable. Reconnect when the server is
+        ready.</span
+      >
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-primary"
+        :disabled="desktopReconnectBusy"
+        @click="reconnectDesktop"
+      >
+        {{ desktopReconnectBusy ? "Reconnecting…" : "Reconnect" }}
+      </button>
+    </div>
     <ExamplesDialog
       v-if="examplesOpen"
       :requests="networkManager.requestManager"
@@ -408,6 +422,29 @@ const fastaFilename: Ref<string | undefined> = ref("");
 const tileSize: Ref<number> = ref(256);
 const contigBorderColor: Ref<string> = ref("ffccee");
 const mapManager: Ref<ContactMapManager | undefined> = ref(undefined);
+const desktopRecovery = ref(false);
+const desktopReconnectBusy = ref(false);
+let desktopReconnectConsent = "";
+async function reconnectDesktop(): Promise<void> {
+  if (desktopReconnectBusy.value) return;
+  desktopReconnectBusy.value = true;
+  try {
+    if (!(await confirmDiscardUnsavedEdits("reconnect to the HiCT web page"))) {
+      desktopReconnectBusy.value = false;
+      return;
+    }
+    const applied = networkManager.requestManager.history.applied;
+    desktopReconnectConsent = applied
+      ? `${applied.session}:${applied.currentId}`
+      : "";
+    await (window as any).hictDesktop.reconnect();
+  } catch (error) {
+    reportFailure("Reconnect to HiCT", error);
+  } finally {
+    desktopReconnectBusy.value = false;
+    desktopReconnectConsent = "";
+  }
+}
 const networkManager: NetworkManager = new NetworkManager(
   "http://localhost:5000/",
   undefined
@@ -1316,6 +1353,12 @@ async function onUnsavedPromptSave(): Promise<void> {
 
 function warnBeforeUnload(event: BeforeUnloadEvent): void {
   if (!networkManager.requestManager.hasUnsavedAssemblyEdits()) return;
+  const applied = networkManager.requestManager.history.applied;
+  if (
+    applied &&
+    desktopReconnectConsent === `${applied.session}:${applied.currentId}`
+  )
+    return;
   event.preventDefault();
   event.returnValue = "";
 }
@@ -1847,6 +1890,17 @@ watch(
 );
 
 onMounted(() => {
+  const desktop = (window as any).hictDesktop;
+  if (typeof desktop?.recoveryStatus === "function") {
+    void desktop
+      .recoveryStatus()
+      .then((active: boolean) => {
+        desktopRecovery.value = active === true;
+      })
+      .catch((error: unknown) =>
+        console.warn("Cannot read desktop recovery status", error)
+      );
+  }
   window.addEventListener("beforeunload", warnBeforeUnload);
   window.addEventListener("keydown", handleGlobalEscape, true);
   syncUiChromePalette();
@@ -1959,6 +2013,18 @@ function onFileSelected(newFilename: string) {
   margin: 0;
   padding: 0.5rem 1rem;
   border-radius: 0;
+  font-size: 14px;
+}
+.desktop-recovery {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
   font-size: 14px;
 }
 .open-progress-backdrop {

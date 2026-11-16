@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld("hictDesktop", {
   electron: process.versions.electron,
   chromium: process.versions.chrome,
   quit: () => ipcRenderer.invoke("hict:quit"),
+  recoveryStatus: () => ipcRenderer.invoke("hict:recovery-status"),
+  reconnect: () => ipcRenderer.invoke("hict:reconnect"),
   saveExport: (payload: {
     filename: string;
     kind?: string;

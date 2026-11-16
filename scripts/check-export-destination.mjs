@@ -60,8 +60,8 @@ const compiled = ts.transpileModule(
 ).outputText;
 vm.runInNewContext(compiled, {
   require: (name) =>
-    name === "./CoordinateExports"
-      ? loadElectronSource("CoordinateExports")
+    name === "./CoordinateExports" || name === "./BundledUi"
+      ? loadElectronSource(name.slice(2))
       : name === "electron"
       ? fakeElectron
       : name === "node:fs/promises"
@@ -73,6 +73,7 @@ vm.runInNewContext(compiled, {
           },
         }
       : require(name),
+  __dirname: directory,
   exports: {},
   process: { platform: "linux", env: {} },
   Buffer,

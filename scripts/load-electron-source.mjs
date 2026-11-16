@@ -16,7 +16,17 @@ export function loadElectronSource(name) {
         target: ts.ScriptTarget.ES2022,
       },
     }).outputText,
-    { exports, require, Buffer, URL, AbortController, fetch, console }
+    {
+      exports,
+      require,
+      Buffer,
+      URL,
+      AbortController,
+      fetch,
+      Headers,
+      Response,
+      console,
+    }
   );
   return exports;
 }

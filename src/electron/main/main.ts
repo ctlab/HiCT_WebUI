@@ -28,6 +28,7 @@ import {
   Menu,
   shell,
   session,
+  net,
 } from "electron";
 import {
   writeFile,
@@ -40,9 +41,9 @@ import {
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { CoordinateExports } from "./CoordinateExports";
+import { BundledUiServer } from "./BundledUi";
 import { isIP } from "node:net";
 import { join, dirname } from "node:path";
-import { pathToFileURL } from "node:url";
 
 const DEFAULT_HICT_URL = "http://127.0.0.1:8080/";
 const APP_NAME = "HiCT";
@@ -126,24 +127,74 @@ function isAllowedHiCTUrl(rawUrl: string, baseUrl: URL): boolean {
   }
 }
 
-function isFallbackFileUrl(rawUrl: string): boolean {
-  try {
-    const url = new URL(rawUrl);
-    return url.protocol === "file:" && rawUrl.startsWith(fallbackFileUrl());
-  } catch (_error) {
-    return false;
-  }
-}
-
 function preloadPath(): string {
   return join(__dirname, "..", "preload", "preload.js");
 }
 
-function fallbackFileUrl(): string {
-  return pathToFileURL(join(__dirname, "..", "..", "index.html")).toString();
+const pageLoads = new WeakMap<Electron.WebContents, Promise<boolean>>();
+function loadApplication(
+  window: BrowserWindow,
+  baseUrl: URL,
+  bundled: BundledUiServer
+): Promise<boolean> {
+  if (window.isDestroyed()) return Promise.resolve(false);
+  const contents = window.webContents;
+  const previous = pageLoads.get(contents);
+  if (previous) return previous;
+  const operation = Promise.resolve().then(async () => {
+    let status = 0;
+    const navigation = (_event: unknown, _url: string, code: number) => {
+      status = code;
+    };
+    contents.on("did-navigate", navigation);
+    try {
+      // Revalidate the entry page so an offline restart cannot hide recovery
+      // behind a previously cached successful HTTP response.
+      await window.loadURL(baseUrl.href, {
+        extraHeaders: "Cache-Control: no-cache\nPragma: no-cache\n",
+      });
+      if (status >= 400) throw new Error(`HiCT page returned HTTP ${status}.`);
+      return true;
+    } catch (error) {
+      if (window.isDestroyed()) return false;
+      if (
+        (error as { code?: string })?.code === "ERR_ABORTED" &&
+        bundled.isPageUrl(contents.getURL())
+      )
+        return false;
+      console.warn(
+        `Cannot open ${baseUrl.href}; using the bundled interface:`,
+        error
+      );
+      try {
+        status = 0;
+        await window.loadURL(await bundled.url());
+        if (status >= 400)
+          throw new Error("The bundled HiCT interface could not be loaded.");
+      } catch (fallbackError) {
+        console.error("Cannot open the bundled HiCT interface:", fallbackError);
+        try {
+          dialog.showErrorBox(
+            "HiCT interface unavailable",
+            "The bundled interface could not be opened. Check the installation and restart HiCT."
+          );
+        } catch (dialogError) {
+          console.error("Cannot show the interface error:", dialogError);
+        } finally {
+          if (!window.isDestroyed()) window.close();
+        }
+      }
+      return false;
+    } finally {
+      contents.removeListener("did-navigate", navigation);
+      pageLoads.delete(contents);
+    }
+  });
+  pageLoads.set(contents, operation);
+  return operation;
 }
 
-function createWindow(baseUrl: URL): BrowserWindow {
+function createWindow(baseUrl: URL, bundled: BundledUiServer): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1480,
     height: 980,
@@ -171,7 +222,7 @@ function createWindow(baseUrl: URL): BrowserWindow {
   });
 
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (isAllowedHiCTUrl(url, baseUrl) || isFallbackFileUrl(url)) {
+    if (isAllowedHiCTUrl(url, baseUrl) || bundled.isPageUrl(url)) {
       return;
     }
     event.preventDefault();
@@ -184,10 +235,7 @@ function createWindow(baseUrl: URL): BrowserWindow {
     );
   });
 
-  mainWindow.loadURL(baseUrl.href).catch((error) => {
-    console.error(`Failed to load ${baseUrl.href}:`, error);
-    void mainWindow.loadURL(fallbackFileUrl());
-  });
+  void loadApplication(mainWindow, baseUrl, bundled);
 
   return mainWindow;
 }
@@ -249,10 +297,47 @@ async function chooseExportDestination(
   return { path: result.filePath, preferencePath };
 }
 
-function configureSecurity(baseUrl: URL): void {
+function contentSecurityPolicy(baseUrl: URL): string {
+  const httpOrigin = baseUrl.origin;
+  const cspHostname =
+    baseUrl.hostname.includes(":") && !baseUrl.hostname.startsWith("[")
+      ? `[${baseUrl.hostname}]`
+      : baseUrl.hostname;
+  const httpSameHostAllPorts = `${baseUrl.protocol}//${cspHostname}:*`;
+  const wsOrigin = httpOrigin.replace(/^http/i, "ws");
+  const wsSameHostAllPorts = httpSameHostAllPorts.replace(/^http/i, "ws");
+  return (
+    `default-src 'self' ${httpOrigin} ${httpSameHostAllPorts} http://127.0.0.1:* http://localhost:* data: blob:; ` +
+    "script-src 'self' 'unsafe-eval' 'unsafe-inline'; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    `img-src 'self' data: blob: ${httpOrigin} ${httpSameHostAllPorts} http://127.0.0.1:* http://localhost:*; ` +
+    // svg2pdf reads temporary in-memory PNG blobs through XHR. Keep
+    // data: and external network origins excluded from connect-src.
+    `connect-src 'self' blob: ${httpOrigin} ${httpSameHostAllPorts} ${wsOrigin} ${wsSameHostAllPorts} http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; ` +
+    "font-src 'self' data:;"
+  );
+}
+
+function configureSecurity(baseUrl: URL): BundledUiServer {
+  const bundled = new BundledUiServer(
+    __dirname,
+    join(app.getPath("userData"), "recovery-port"),
+    contentSecurityPolicy(baseUrl),
+    (url) => net.fetch(url)
+  );
+  app.on("will-quit", () => bundled.close());
+  ipcMain.handle("hict:recovery-status", (event) =>
+    bundled.isPageUrl(event.sender.getURL())
+  );
   Menu.setApplicationMenu(null);
   ipcMain.handle("hict:quit", () => {
     app.quit();
+  });
+  ipcMain.handle("hict:reconnect", async (event) => {
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    if (!owner || !bundled.isPageUrl(event.sender.getURL()))
+      return { connected: false };
+    return { connected: await loadApplication(owner, baseUrl, bundled) };
   });
   const coordinateExports = new CoordinateExports(normalizeAllowedUrl);
   let waitingForExports = false,
@@ -364,30 +449,14 @@ function configureSecurity(baseUrl: URL): void {
       callback({ responseHeaders: details.responseHeaders });
       return;
     }
-    const httpOrigin = baseUrl.origin;
-    const cspHostname =
-      baseUrl.hostname.includes(":") && !baseUrl.hostname.startsWith("[")
-        ? `[${baseUrl.hostname}]`
-        : baseUrl.hostname;
-    const httpSameHostAllPorts = `${baseUrl.protocol}//${cspHostname}:*`;
-    const wsOrigin = httpOrigin.replace(/^http/i, "ws");
-    const wsSameHostAllPorts = httpSameHostAllPorts.replace(/^http/i, "ws");
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        "Content-Security-Policy": [
-          `default-src 'self' ${httpOrigin} ${httpSameHostAllPorts} http://127.0.0.1:* http://localhost:* data: blob:; ` +
-            "script-src 'self' 'unsafe-eval' 'unsafe-inline'; " +
-            "style-src 'self' 'unsafe-inline'; " +
-            `img-src 'self' data: blob: ${httpOrigin} ${httpSameHostAllPorts} http://127.0.0.1:* http://localhost:*; ` +
-            // svg2pdf reads temporary in-memory PNG blobs through XHR. Keep
-            // data: and external network origins excluded from connect-src.
-            `connect-src 'self' blob: ${httpOrigin} ${httpSameHostAllPorts} ${wsOrigin} ${wsSameHostAllPorts} http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; ` +
-            "font-src 'self' data:;",
-        ],
+        "Content-Security-Policy": [contentSecurityPolicy(baseUrl)],
       },
     });
   });
+  return bundled;
 }
 
 app.commandLine.appendSwitch("no-first-run");
@@ -411,12 +480,12 @@ app
       await session.defaultSession.clearCache();
       console.error("HICT_WEBUI_RESET_COMPLETE");
     }
-    configureSecurity(baseUrl);
-    mainWindow = createWindow(baseUrl);
+    const bundled = configureSecurity(baseUrl);
+    mainWindow = createWindow(baseUrl, bundled);
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        mainWindow = createWindow(baseUrl);
+        mainWindow = createWindow(baseUrl, bundled);
       }
     });
   })
