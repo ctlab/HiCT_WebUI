@@ -328,7 +328,7 @@
 </template>
 
 <script setup lang="ts">
-import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
+import type { JobOpenRequest } from "@/app/stores/backgroundJobsUiStore";
 import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
 import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
 import { failureDetails, reportFailure } from "@/app/ui/reportFailure";
@@ -979,15 +979,41 @@ function showExampleJob(payload: {
   );
 }
 
-async function openJobResult(output: BackgroundJobOutput): Promise<void> {
+async function openJobResult({
+  output,
+  verifiedExample,
+}: JobOpenRequest): Promise<void> {
   try {
     const requests = networkManager.requestManager;
     if (output.action === "example") {
+      if (!verifiedExample) {
+        const currentMap = mapManager.value;
+        const ui = useBackgroundJobsUiStore();
+        const request = ui.focusRequest;
+        const status = await requests.startExampleDownload(output.filename);
+        if (mapManager.value !== currentMap || ui.focusRequest !== request)
+          return;
+        if (!status.jobId)
+          throw new Error("The server cannot verify this example through Jobs");
+        showExampleJob({ jobId: status.jobId, openWhenReady: true });
+        return;
+      }
+      const currentMap = mapManager.value;
+      const request = useBackgroundJobsUiStore().focusRequest;
       const catalog = await requests.listExamples();
+      if (
+        mapManager.value !== currentMap ||
+        useBackgroundJobsUiStore().focusRequest !== request
+      )
+        return;
       const example = catalog.examples.find(
         (item) => item.id === output.filename
       );
       if (!example) throw new Error("The example is no longer in the catalog");
+      if (!example.downloaded)
+        throw new Error(
+          "The example files or catalog changed. Open Examples to verify them again."
+        );
       await openExampleInWizard({ example, folder: `examples/${example.id}` });
     } else if (output.action === "fasta_only") {
       await openFastaOnly({

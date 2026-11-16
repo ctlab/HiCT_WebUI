@@ -1265,7 +1265,7 @@ import SelectionControls from "./SelectionControls.vue";
 import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
 /* global __HICT_WEBUI_BUILD_VERSION__, __HICT_WEBUI_BUILD_COMMIT__ */
 import BackgroundJobsPanel from "./BackgroundJobsPanel.vue";
-import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
+import type { JobOpenRequest } from "@/app/stores/backgroundJobsUiStore";
 import { reportFailure } from "@/app/ui/reportFailure";
 import {
   prepareFileSave,
@@ -1427,7 +1427,7 @@ useModalFocus(resolutionSettingsElement, () => resolutionSettingsOpen.value);
 useModalFocus(juiceboxFastaPromptElement, () => juiceboxFastaPromptOpen.value);
 
 const emit = defineEmits<{
-  (e: "jobResult", output: BackgroundJobOutput): void;
+  (e: "jobResult", request: JobOpenRequest): void;
   (e: "selected", filename: string): void;
   (e: "closed"): void;
   (e: "attached"): void;

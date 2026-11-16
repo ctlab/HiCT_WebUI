@@ -167,11 +167,12 @@ import type {
 import { useModalFocus } from "@/app/ui/modalFocus";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
+import type { JobOpenRequest } from "@/app/stores/backgroundJobsUiStore";
 import { reportFailure } from "@/app/ui/reportFailure";
 
 const props = defineProps<{ requests: RequestManager }>();
 const emit = defineEmits<{
-  (event: "open", output: BackgroundJobOutput): void;
+  (event: "open", request: JobOpenRequest): void;
   (event: "examplesRequested"): void;
 }>();
 const ui = useBackgroundJobsUiStore();
@@ -243,7 +244,7 @@ async function refresh(): Promise<void> {
         : undefined;
     const output = ready?.outputs.find((output) => output.action === "example");
     if (output) {
-      open(output);
+      open(output, true);
       return;
     }
     await nextTick();
@@ -279,9 +280,9 @@ async function cancel(job: BackgroundJob): Promise<void> {
     reportFailure("Cancel job", failure);
   }
 }
-function open(output: BackgroundJobOutput): void {
+function open(output: BackgroundJobOutput, verifiedExample = false): void {
   ui.dismiss();
-  emit("open", output);
+  emit("open", { output, verifiedExample });
 }
 onMounted(refresh);
 watch(

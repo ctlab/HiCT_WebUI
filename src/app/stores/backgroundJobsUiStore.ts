@@ -1,5 +1,11 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
+import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
+
+export interface JobOpenRequest {
+  output: BackgroundJobOutput;
+  verifiedExample: boolean;
+}
 
 /** Presentation and explicit opening intent, never ownership of the server job. */
 export const useBackgroundJobsUiStore = defineStore("backgroundJobsUi", () => {

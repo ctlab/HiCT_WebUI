@@ -260,13 +260,16 @@
                               </span>
                             </template>
                             <template v-else>
-                              Downloaded earlier and ready to open.
+                              Cached files will be verified before opening.
                             </template>
                           </p>
                           <button
                             type="button"
                             class="btn btn-primary btn-sm example-open"
-                            @click="openExample(example)"
+                            :disabled="
+                              startingDownload || busyElsewhere(example.id)
+                            "
+                            @click="download(example, true)"
                           >
                             {{
                               example.openingRecipe.quickStart
