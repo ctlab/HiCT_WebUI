@@ -170,6 +170,7 @@ import VisualizationOptions from "../../visualization/VisualizationOptions";
 import { extractErrorMessage } from "./errorMessage";
 
 export interface BackgroundJobOutput {
+  displayName?: string;
   displayMode?: "overlay" | "below" | "above" | "none" | null;
   mapFilename?: string | null;
   filename: string;

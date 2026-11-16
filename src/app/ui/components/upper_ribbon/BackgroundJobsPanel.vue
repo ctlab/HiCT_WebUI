@@ -79,7 +79,9 @@
                   >
                     Open result
                   </button>
-                  <small class="job-path">{{ output.filename }}</small>
+                  <small class="job-path">{{
+                    output.displayName || output.filename
+                  }}</small>
                 </template>
               </template>
             </div>

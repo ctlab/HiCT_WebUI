@@ -275,6 +275,26 @@ const { HiCTAPIRequestDTO } = loadTypeScript(
 const requestClasses = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/api/request.ts")
 );
+for (const approximateRebin of [undefined, false, true]) {
+  const request = new requestClasses.StartConversionJobRequest({
+    filename: "source.hict.hdf5",
+    approximateRebin,
+  });
+  assert.equal(
+    HiCTAPIRequestDTO.toDTOClass(request).toDTO().approximateRebin,
+    approximateRebin
+  );
+  const batch = new requestClasses.StartBatchConversionJobsRequest({
+    files: ["source.hict.hdf5"],
+    parallelJobs: 1,
+    parallelism: 1,
+    approximateRebin,
+  });
+  assert.equal(
+    HiCTAPIRequestDTO.toDTOClass(batch).toDTO().approximateRebin,
+    approximateRebin
+  );
+}
 for (const name of [
   "ReverseSelectionRangeRequest",
   "MoveSelectionRangeRequest",

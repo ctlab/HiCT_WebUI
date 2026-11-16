@@ -321,6 +321,7 @@ class StartConversionJobRequest implements HiCTAPIRequest {
       readonly filename: string;
       readonly assemblyFilename?: string;
       readonly useCurrentAssembly?: boolean;
+      readonly approximateRebin?: boolean;
       readonly direction?: string;
       readonly outputFilename?: string;
       readonly overwrite?: boolean;
@@ -351,6 +352,7 @@ class StartBatchConversionJobsRequest implements HiCTAPIRequest {
       readonly files: string[];
       readonly assemblyFilename?: string;
       readonly assemblyFilenameByFile?: Record<string, string>;
+      readonly approximateRebin?: boolean;
       readonly parallelJobs: number;
       readonly parallelism: number;
       readonly overwrite?: boolean;
