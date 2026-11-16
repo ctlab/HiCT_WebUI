@@ -111,7 +111,7 @@ vm.runInContext(
   ).outputText,
   contrastContext
 );
-for (const mode of ["LINEAR", "MODDOTPLOT_IDENTITY"]) {
+for (const mode of ["LINEAR", "MODDOTPLOT_IDENTITY", "OBSERVED_OVER_EXPECTED"]) {
   const input = {
     type: "binary",
     op: "DIV",
@@ -236,3 +236,30 @@ assert.equal(
 console.log(
   "Visualization transfer preserves portable expressions and identifies stale map inputs."
 );
+
+// Derived-view palettes survive a fresh module/browser realm and restricted storage.
+const paletteCode = ts.transpileModule(fs.readFileSync(path.join(repoRoot,
+  "src/app/core/visualization/displayPaletteMemory.ts"), "utf8"), {
+  compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
+}).outputText;
+const loadPalettes = storage => {
+  const exports = {};
+  vm.runInNewContext(paletteCode, {exports, localStorage: storage});
+  return exports;
+};
+const storedPalettes = new Map();
+const storage = {getItem: k => storedPalettes.get(k), setItem: (k,v) => storedPalettes.set(k,v)};
+const palette = {min:0.25,max:4,startColor:'#12345680',endColor:'#abcdefee'};
+let paletteMemory = loadPalettes(storage);
+paletteMemory.rememberDisplayPalette('OBSERVED_OVER_EXPECTED', palette);
+assert.deepEqual(JSON.parse(JSON.stringify(loadPalettes(storage).recalledDisplayPalette('OBSERVED_OVER_EXPECTED'))), palette);
+const deniedStorage = {getItem: k => storedPalettes.get(k),setItem: () => {throw Error('denied');}};
+paletteMemory = loadPalettes(deniedStorage);
+const newer = {...palette,max:8};
+paletteMemory.rememberDisplayPalette('OBSERVED_OVER_EXPECTED',newer);
+assert.equal(paletteMemory.recalledDisplayPalette('OBSERVED_OVER_EXPECTED').max,8,'old disk value cannot defeat the new in-memory preference');
+paletteMemory = loadPalettes({getItem: () => '{broken'});
+assert.equal(paletteMemory.recalledDisplayPalette('EXPECTED'),undefined);
+paletteMemory.rememberDisplayPalette('EXPECTED',{...palette,min:4,max:1});
+assert.equal(paletteMemory.recalledDisplayPalette('EXPECTED'),undefined);
+console.log('Derived-view palette persistence passed.');

@@ -46,6 +46,10 @@ import {
 import { ColorTranslator } from "colortranslator";
 
 import { histogramQuantile } from "../visualization/tileSignalRange";
+import {
+  recalledDisplayPalette,
+  rememberDisplayPalette,
+} from "../visualization/displayPaletteMemory";
 
 type ViewportPixelBounds = {
   unit?: "PIXELS" | "BINS";
@@ -309,10 +313,11 @@ const replaceColormapNode = (
   if (signalInput) target.node.input = signalInput;
   const previousMode = String(target.node.mode ?? "LINEAR").toUpperCase();
   target.node.type = "colormap";
-  target.node.mode =
-    previousMode === "MODDOTPLOT_IDENTITY"
-      ? "MODDOTPLOT_IDENTITY"
-      : replacement.mode ?? "LINEAR";
+  target.node.mode = ["MODDOTPLOT_IDENTITY", "OBSERVED_OVER_EXPECTED"].includes(
+    previousMode
+  )
+    ? previousMode
+    : replacement.mode ?? "LINEAR";
   target.node.startColor = replacement.startColor;
   target.node.endColor = replacement.endColor;
   target.node.minSignal = replacement.minSignal;
@@ -1267,6 +1272,21 @@ class VisualizationManager {
     return updatedMaxSignal;
   }
 
+  private rememberDerivedPalette(options: VisualizationOptions): void {
+    const cmap = options.colormap;
+    if (
+      options.signalDisplayMode === "OBSERVED" ||
+      !(cmap instanceof SimpleLinearGradient)
+    )
+      return;
+    rememberDisplayPalette(options.signalDisplayMode, {
+      min: cmap.minSignal,
+      max: cmap.maxSignal,
+      startColor: cmap.startColorRGBA.HEXA,
+      endColor: cmap.endColorRGBA.HEXA,
+    });
+  }
+
   /** Display modes are primary-only views. Never rebuild the user's rendering graph. */
   public async setSignalDisplayMode(mode: SignalDisplayMode): Promise<void> {
     const api = this.mapManager.networkManager.requestManager;
@@ -1286,22 +1306,31 @@ class VisualizationManager {
       : this.observedDisplayOptions ?? previous;
     if (previous.signalDisplayMode === "OBSERVED")
       this.observedDisplayOptions = observed;
-    const colormap = observed.colormap;
+    this.rememberDerivedPalette(previous);
+    const remembered =
+      mode === "OBSERVED" ? undefined : recalledDisplayPalette(mode);
+    const colormap = remembered
+      ? new SimpleLinearGradient(
+          new ColorTranslator(remembered.startColor, { legacyCSS: true }),
+          new ColorTranslator(remembered.endColor, { legacyCSS: true }),
+          remembered.min,
+          remembered.max
+        )
+      : mode === "OBSERVED_OVER_EXPECTED"
+      ? new SimpleLinearGradient(
+          new ColorTranslator("#2166acff", { legacyCSS: true }),
+          new ColorTranslator("#b2182bff", { legacyCSS: true }),
+          0.5,
+          2
+        )
+      : observed.colormap;
     const next = new VisualizationOptions(
       observed.preLogBase,
       observed.postLogBase,
       observed.applyCoolerWeights,
       observed.resolutionScaling,
       observed.resolutionLinearScaling,
-      mode === "OBSERVED_OVER_EXPECTED" &&
-      colormap instanceof SimpleLinearGradient
-        ? new SimpleLinearGradient(
-            colormap.startColorRGBA,
-            colormap.endColorRGBA,
-            0.5,
-            2
-          )
-        : colormap,
+      colormap,
       previous.autoThresholdEnabled,
       previous.autoThresholdQuantile,
       mode,
@@ -1351,6 +1380,7 @@ class VisualizationManager {
         })
       )
       .then((options) => {
+        this.rememberDerivedPalette(options);
         this.visualizationOptionsStore.setVisualizationOptions(options);
         window.dispatchEvent(
           new CustomEvent(

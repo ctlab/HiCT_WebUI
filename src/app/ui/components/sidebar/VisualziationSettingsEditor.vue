@@ -78,9 +78,15 @@
         :upper-text="formatSignal(upperBound)"
         :lower-color="fromColor.RGBA"
         :upper-color="toColor.RGBA"
+        :neutral="observedExpectedPalette ? toSliderPosition(1) : undefined"
+        @adjustment-start="keepAdjustmentLimits"
         @lower="onLowerRangeInput"
         @upper="onUpperRangeInput"
       />
+      <p v-if="observedExpectedPalette" class="range-help mb-0">
+        O/E: lower color is depleted, white is 1, upper color is enriched.
+        Limits must satisfy 0 &lt; lower &lt; 1 &lt; upper.
+      </p>
       <div class="range-actions">
         <div class="scale-group">
           <span id="slider-scale-label" class="scale-caption"
@@ -285,6 +291,14 @@ const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
 
+const activePaletteMode = ref("LINEAR");
+const observedExpectedPalette = computed(
+  () =>
+    (activeVisualizationSource.value === "PRIMARY" &&
+      visualizationOptionsStore.signalDisplayMode ===
+        "OBSERVED_OVER_EXPECTED") ||
+    activePaletteMode.value === "OBSERVED_OVER_EXPECTED"
+);
 const signalMin: Ref<number> = ref(0);
 const signalMax: Ref<number> = ref(1);
 const fromColor: Ref<ColorTranslator> = ref(
@@ -312,6 +326,7 @@ let rangeGeneration = 0;
 let rangeProbe = 0;
 const rangeStatus = ref("Waiting for visible tile limits");
 let activeRangeExpression: Record<string, unknown> | undefined;
+let rangeDomainContext = "";
 let rangeMap: ContactMapManager | undefined;
 const onViewportRangeChanged = () => refreshProcessedRange();
 const rangeCache = new Map<string, ExactRange>();
@@ -367,6 +382,15 @@ const sliderPositionMin = computed(() => toSliderPosition(sliderMin.value));
 const sliderPositionMax = computed(() => toSliderPosition(sliderMax.value));
 const lowerSliderValue = computed(() => toSliderPosition(lowerBound.value));
 const upperSliderValue = computed(() => toSliderPosition(upperBound.value));
+// Capture both ends before either threshold changes. Otherwise an outlying selected
+// threshold can drag the computed domain along with it on every pointer move.
+function keepAdjustmentLimits() {
+  const min = sliderMin.value,
+    max = sliderMax.value;
+  sliderBoundsManual.value = true;
+  sliderLowerLimit.value = min;
+  sliderUpperLimit.value = max;
+}
 function focusThresholds() {
   if (!(upperBound.value > lowerBound.value)) return;
   sliderBoundsManual.value = true;
@@ -389,9 +413,13 @@ watch(
   },
   () => {
     if (colormap.value instanceof SimpleLinearGradient) {
-      syncingFromColormap.value = true;
-      // console.log("Colormap type changed and simple linear gradient, was: ", fromColor.value, toColor.value);
       const cmap = colormap.value as SimpleLinearGradient;
+      if (
+        fromColor.value?.RGBA === cmap.startColorRGBA?.RGBA &&
+        toColor.value?.RGBA === cmap.endColorRGBA?.RGBA
+      )
+        return;
+      syncingFromColormap.value = true;
       if (fromColor.value?.RGBA !== cmap.startColorRGBA?.RGBA) {
         fromColor.value = cmap.startColorRGBA;
       }
@@ -413,8 +441,13 @@ watch(
   () => colormap.value,
   () => {
     if (colormap.value instanceof SimpleLinearGradient) {
-      syncingFromColormap.value = true;
       const cmap = colormap.value as SimpleLinearGradient;
+      if (
+        lowerBound.value === cmap.minSignal &&
+        upperBound.value === cmap.maxSignal
+      )
+        return;
+      syncingFromColormap.value = true;
       if (lowerBound.value !== cmap.minSignal) {
         lowerBound.value = cmap.minSignal;
       }
@@ -558,6 +591,7 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
       sourceTargets.find(
         (target) => target.id === activeVisualizationTargetId.value
       ) ?? sourceTargets[0];
+    activePaletteMode.value = activeTarget?.mode ?? "LINEAR";
     percentageSignalScale.value = activeTarget?.displayUnit === "PERCENT";
     activeRangeExpression =
       await manager.visualizationManager.getSourceSignalExpression(
@@ -565,6 +599,20 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
         activeVisualizationTargetId.value
       );
     if (generation !== optionsHydrationGeneration || manager.isDisposed) return;
+    const domainContext = JSON.stringify([
+      activeVisualizationSource.value,
+      activeVisualizationTargetId.value,
+      activeVisualizationSource.value === "PRIMARY"
+        ? visualizationOptionsStore.signalDisplayMode
+        : "OBSERVED",
+      activeTarget?.mode ?? "LINEAR",
+    ]);
+    if (domainContext !== rangeDomainContext) {
+      rangeDomainContext = domainContext;
+      sliderBoundsManual.value = false;
+      sliderLowerLimit.value = lowerBound.value;
+      sliderUpperLimit.value = upperBound.value;
+    }
     updateFromStore();
     rangeRequestKey = "";
     void refreshProcessedRange();
@@ -807,6 +855,15 @@ function applySettings() {
     );
     return;
   }
+  if (
+    observedExpectedPalette.value &&
+    !(lowerBound.value > 0 && lowerBound.value < 1 && upperBound.value > 1)
+  ) {
+    toast.error(
+      "O/E limits must straddle neutral 1: choose 0 < lower < 1 < upper."
+    );
+    return;
+  }
   const source = activeVisualizationSource.value;
   const action = source
     ? props.mapManager?.visualizationManager.applyVisualizationSettingsForSourceAndReload(
@@ -857,7 +914,12 @@ function onLowerRangeInput(value: number): void {
     Math.abs(sliderMin.value) * Number.EPSILON,
     Math.abs(sliderMax.value) * Number.EPSILON
   );
-  lowerBound.value = Math.min(actual, upperBound.value - minGap);
+  lowerBound.value = observedExpectedPalette.value
+    ? Math.max(
+        Number.EPSILON,
+        Math.min(actual, 1 - Math.max(Number.EPSILON, minGap))
+      )
+    : Math.min(actual, upperBound.value - minGap);
 }
 
 function onUpperRangeInput(value: number): void {
@@ -870,7 +932,9 @@ function onUpperRangeInput(value: number): void {
     Math.abs(sliderMin.value) * Number.EPSILON,
     Math.abs(sliderMax.value) * Number.EPSILON
   );
-  upperBound.value = Math.max(actual, lowerBound.value + minGap);
+  upperBound.value = observedExpectedPalette.value
+    ? Math.max(actual, 1 + Math.max(Number.EPSILON, minGap))
+    : Math.max(actual, lowerBound.value + minGap);
 }
 
 function onSliderLimitChanged(): void {

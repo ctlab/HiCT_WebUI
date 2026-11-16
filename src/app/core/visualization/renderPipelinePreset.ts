@@ -189,7 +189,7 @@ export function parseRenderPipelinePreset(
     if (type === "colormap") {
       if (
         raw.mode !== undefined &&
-        !["LINEAR", "MODDOTPLOT_IDENTITY"].includes(
+        !["LINEAR", "MODDOTPLOT_IDENTITY", "OBSERVED_OVER_EXPECTED"].includes(
           String(raw.mode).toUpperCase()
         )
       )

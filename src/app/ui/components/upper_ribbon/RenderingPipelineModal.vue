@@ -51,10 +51,10 @@
           </div>
           <div v-show="!previewMode" class="modal-body">
             <div class="alert alert-warning py-2 mb-3">
-              Normalization dropdown updates this pipeline, but pipeline edits
-              are not fully back-synced to checkbox controls. Expected and O/E
-              views fall back to the standard renderer because custom pipelines
-              operate on per-pixel signals.
+              This graph controls the Observed view. Expected and O/E keep their
+              own primary-map processing and palette. Use the O/E palette in a
+              Colormap node for a signal that already represents contact ratios;
+              its neutral value is 1.
             </div>
             <div class="d-flex gap-3 align-items-center mb-3">
               <div class="form-check">
@@ -283,7 +283,7 @@ type PipelineExpression =
     }
   | {
       type: "colormap";
-      mode: "LINEAR" | "MODDOTPLOT_IDENTITY";
+      mode: "LINEAR" | "MODDOTPLOT_IDENTITY" | "OBSERVED_OVER_EXPECTED";
       input: PipelineExpression;
       startColor: string;
       endColor: string;
@@ -912,7 +912,10 @@ const parseExpression = (raw: unknown): PipelineExpression => {
     return {
       type: "colormap",
       mode:
-        node.mode === "MODDOTPLOT_IDENTITY" ? "MODDOTPLOT_IDENTITY" : "LINEAR",
+        node.mode === "MODDOTPLOT_IDENTITY" ||
+        node.mode === "OBSERVED_OVER_EXPECTED"
+          ? node.mode
+          : "LINEAR",
       input: parseExpression(node.input),
       startColor: sanitizeColor(node.startColor, "#ffffff00"),
       endColor: sanitizeColor(node.endColor, "#006000ff"),
@@ -1331,7 +1334,7 @@ const ensureNodeTypesRegistered = (): void => {
   class ColormapNode extends LGraphNode {
     constructor() {
       super();
-      this.title = "Linear Colormap";
+      this.title = "Colormap";
       this.addInput("signal", "number");
       this.addInput("minSignal", "number");
       this.addInput("maxSignal", "number");
@@ -1343,6 +1346,24 @@ const ensureNodeTypesRegistered = (): void => {
         minSignal: 0,
         maxSignal: 1,
       };
+      this.addWidget(
+        "combo",
+        "palette",
+        "Linear",
+        (value: string) => {
+          this.properties.mode =
+            value === "O/E (neutral 1)" ? "OBSERVED_OVER_EXPECTED" : "LINEAR";
+          if (this.properties.mode === "OBSERVED_OVER_EXPECTED") {
+            this.properties.startColor = "#2166acff";
+            this.properties.endColor = "#b2182bff";
+            this.properties.minSignal = 0.5;
+            this.properties.maxSignal = 2;
+          }
+          syncNodeWidgetsFromProperties(this);
+          graphCanvas?.draw(true, true);
+        },
+        { values: ["Linear", "O/E (neutral 1)"] }
+      );
       this.addWidget("button", "pick start", "", () => {
         openColorPickerInput(
           sanitizeColor(this.properties.startColor, "#ffffff00"),
@@ -1809,6 +1830,13 @@ const syncNodeWidgetsFromProperties = (node: LGraphNode): void => {
     return;
   }
   if (node.type === COLORMAP_NODE_TYPE) {
+    setWidgetValue(
+      node,
+      "palette",
+      node.properties?.mode === "OBSERVED_OVER_EXPECTED"
+        ? "O/E (neutral 1)"
+        : "Linear"
+    );
     setWidgetValue(
       node,
       "start hex",
@@ -2847,6 +2875,8 @@ const expressionFromNode = (
       mode:
         node.type === MODDOTPLOT_COLORMAP_NODE_TYPE
           ? "MODDOTPLOT_IDENTITY"
+          : node.properties?.mode === "OBSERVED_OVER_EXPECTED"
+          ? "OBSERVED_OVER_EXPECTED"
           : "LINEAR",
       input: input(0),
       startColor: sanitizeColor(node.properties?.startColor, "#ffffff00"),

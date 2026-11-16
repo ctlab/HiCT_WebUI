@@ -53,8 +53,12 @@ const props = defineProps<{
   upperText: string;
   lowerColor: string;
   upperColor: string;
+  neutral?: number;
 }>();
-const emit = defineEmits<{ (event: "lower" | "upper", value: number): void }>();
+const emit = defineEmits<{
+  (event: "lower" | "upper", value: number): void;
+  (event: "adjustment-start"): void;
+}>();
 const rail = ref<HTMLElement>();
 const width = ref(300);
 let observer: ResizeObserver | undefined;
@@ -69,6 +73,16 @@ const close = computed(
 const colors = computed(() => ({
   "--lower-color": props.lowerColor,
   "--upper-color": props.upperColor,
+  "--range-gradient":
+    props.neutral != null && props.upper > props.lower
+      ? `linear-gradient(90deg, ${props.lowerColor}, white ${Math.max(
+          0,
+          Math.min(
+            100,
+            (100 * (props.neutral - props.lower)) / (props.upper - props.lower)
+          )
+        )}%, ${props.upperColor})`
+      : `linear-gradient(90deg, ${props.lowerColor}, ${props.upperColor})`,
 }));
 function change(side: Side, value: number) {
   if (Number.isFinite(value))
@@ -87,6 +101,7 @@ function at(event: PointerEvent) {
 }
 function start(event: PointerEvent, side?: Side) {
   if (event.button !== 0 || !rail.value || !(props.max > props.min)) return;
+  emit("adjustment-start");
   const value = at(event);
   side ??=
     Math.abs(value - props.lower) < Math.abs(value - props.upper)
@@ -128,6 +143,7 @@ function key(event: KeyboardEvent, side: Side) {
     End: props.max,
   };
   if (event.key in values) {
+    emit("adjustment-start");
     change(side, values[event.key]);
     event.preventDefault();
   }
@@ -163,7 +179,7 @@ onBeforeUnmount(() => observer?.disconnect());
   border: 1px solid #cbd5e1;
 }
 .range-fill {
-  background: linear-gradient(90deg, var(--lower-color), var(--upper-color));
+  background: var(--range-gradient);
   border: 1px solid #94a3b8;
 }
 .range-handle {
