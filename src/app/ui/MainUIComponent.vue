@@ -384,7 +384,6 @@ import VisualizationOptions, {
   type CoolerWeightsNaNPolicy,
 } from "@/app/core/visualization/VisualizationOptions";
 import { ColorTranslator } from "colortranslator";
-import { waitForConversionJob } from "@/app/core/net/api/waitForConversionJob";
 import { StartConversionJobRequest } from "@/app/core/net/api/request";
 import { LoadAGPRequest } from "@/app/core/net/api/request";
 import { LinkFASTARequest } from "@/app/core/net/api/request";
@@ -1109,13 +1108,15 @@ async function openExampleInWizard(payload: {
     !recipe.tracks?.length
   ) {
     const previousManager = mapManager.value;
-    toast.message(`Preparing ${example.title}`, {
-      description: "Follow progress in Jobs.",
-    });
+    const request = useBackgroundJobsUiStore().focusRequest;
+    const intentCurrent = () =>
+      mapManager.value === previousManager &&
+      useBackgroundJobsUiStore().focusRequest === request;
     try {
       const requests = networkManager.requestManager;
       const source = await requests.resolveMatrixSource(matrix);
-      let openedFilename = source.resolvedFilename;
+      if (!intentCurrent()) return;
+      const openedFilename = source.resolvedFilename;
       if (
         source.action !== "OPEN_DIRECT" &&
         source.action !== "REUSE_CONVERTED"
@@ -1123,17 +1124,16 @@ async function openExampleInWizard(payload: {
         const started = await requests.startConversionJob(
           new StartConversionJobRequest({
             filename: matrix,
+            exampleId: example.id,
             direction: source.conversionDirection ?? undefined,
             overwrite: true,
           })
         );
-        const finished = await waitForConversionJob(requests, started.jobId);
-        openedFilename = finished.outputFilename;
-      }
-      if (mapManager.value !== previousManager) {
-        toast.success("The example is ready. Open its result from Jobs.");
+        if (intentCurrent())
+          useBackgroundJobsUiStore().open(`conversion/${started.jobId}`, true);
         return;
       }
+      if (!intentCurrent()) return;
       if (await confirmDiscardUnsavedEdits("open this example"))
         await openFileWithOptions(openedFilename, fasta);
     } catch (failure) {

@@ -598,6 +598,7 @@ class StartConversionJobRequestDTO extends HiCTAPIRequestDTO<StartConversionJobR
   toDTO(): Record<string, unknown> {
     return {
       filename: this.entity.options.filename,
+      exampleId: this.entity.options.exampleId,
       assemblyFilename: this.entity.options.assemblyFilename,
       useCurrentAssembly: this.entity.options.useCurrentAssembly,
       approximateRebin: this.entity.options.approximateRebin,

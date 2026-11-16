@@ -28,8 +28,14 @@
         </header>
         <div class="modal-body">
           <p v-if="ui.autoOpenJobId" class="small" role="status">
-            This example will open when ready. Close Jobs to keep working; the
-            download will continue.
+            <template v-if="ui.autoOpenJobId.startsWith('conversion/')">
+              The converted example will open when ready. Close Jobs to keep
+              working; conversion will continue.
+            </template>
+            <template v-else>
+              This example will open when ready. Close Jobs to keep working; the
+              download will continue.
+            </template>
           </p>
           <p v-if="statusError" role="alert">{{ statusError }}</p>
           <p v-else-if="jobs.length === 0">No jobs in this server session.</p>
@@ -90,13 +96,17 @@
                 </li>
               </ul>
             </div>
-            <p v-if="job.error" class="text-danger job-error">
-              {{ job.error }}
-            </p>
+            <div v-if="job.error" class="mb-2">
+              <p class="text-danger" role="alert">{{ errorSummary(job) }}</p>
+              <details>
+                <summary>Error details</summary>
+                <pre class="job-error small mt-2">{{ job.error }}</pre>
+              </details>
+            </div>
             <div class="d-flex gap-2 flex-wrap">
               <button
                 v-if="
-                  job.kind === 'example_download' &&
+                  (job.kind === 'example_download' || job.details?.exampleId) &&
                   (job.state === 'failed' || job.state === 'cancelled')
                 "
                 type="button"
@@ -107,7 +117,11 @@
                   emit('examplesRequested');
                 "
               >
-                Open Examples to resume
+                {{
+                  job.kind === "conversion"
+                    ? "Open Examples to retry"
+                    : "Open Examples to resume"
+                }}
               </button>
               <button
                 v-if="job.canCancel"
@@ -180,6 +194,18 @@ const { show } = storeToRefs(ui);
 const dialog = ref<HTMLElement | null>(null);
 const jobs = ref<BackgroundJob[]>([]);
 const statusError = ref("");
+function errorSummary(job: BackgroundJob): string {
+  const message = job.error?.trim() ?? "";
+  if (
+    message.length <= 200 &&
+    !/[\r\n]/.test(message) &&
+    !message.startsWith("External command failed")
+  )
+    return message;
+  return job.kind === "conversion"
+    ? "Conversion could not finish."
+    : "This job could not finish.";
+}
 const cancelling = ref(new Set<string>());
 const activeCount = computed(
   () => jobs.value.filter((job) => job.canCancel).length

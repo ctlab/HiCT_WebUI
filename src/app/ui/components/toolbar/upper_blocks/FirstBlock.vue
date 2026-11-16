@@ -122,10 +122,6 @@ watch(
         ?.getSize()
         ?.reduce((a, b) => Math.min(a, b));
       PRECISION_THRESHOLD_PX.value = Math.min(100, (mapMinSize ?? 1000) / 10);
-      toast.message(
-        "Sensitivity threshold for slide to diagonal is set to " +
-          PRECISION_THRESHOLD_PX.value
-      );
     }
   }
 );

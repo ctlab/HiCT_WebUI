@@ -317,6 +317,16 @@ for (const options of [
   );
   assert.deepEqual(HiCTAPIRequestDTO.toDTOClass(request).toDTO(), options);
 }
+for (const exampleId of [undefined, "jobs-convert-auto"]) {
+  const request = new requestClasses.StartConversionJobRequest({
+    filename: "examples/jobs-convert-auto/example.mcool",
+    exampleId,
+  });
+  assert.equal(
+    HiCTAPIRequestDTO.toDTOClass(request).toDTO().exampleId,
+    exampleId
+  );
+}
 for (const approximateRebin of [undefined, false, true]) {
   const request = new requestClasses.StartConversionJobRequest({
     filename: "source.hict.hdf5",
