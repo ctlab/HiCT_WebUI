@@ -32,3 +32,10 @@ jobs:
 
       - name: Build and run regression contracts
         run: npm run build
+
+      - name: Check native save ownership and filesystem cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup run stable node scripts/check-tauri-export.mjs
