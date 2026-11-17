@@ -103,10 +103,23 @@
             {{ printDimensions.widthMm }} ×
             {{ printDimensions.heightMm.toFixed(1) }} mm ·
             {{ Math.round(printDimensions.effectiveRasterDpi) }} dpi from
-            captured pixels. SVG/PDF labels remain vector. Check readability at
-            print size.
+            captured pixels. SVG/PDF labels remain vector.
           </p>
         </div>
+        <p
+          v-if="printTextPoints !== null"
+          class="small text-muted"
+          role="status"
+        >
+          Smallest vector text: {{ printTextPoints.toFixed(1) }} pt at this
+          width.
+          <template v-if="printTextPoints < 6">
+            For larger text, capture a smaller area or use a vertical
+            comparison.
+          </template>
+          Inspect the exported figure at print size, including any text inside
+          images.
+        </p>
         <p v-if="outdated" class="alert alert-info" role="status">
           Options changed. Refresh the capture to apply them. The current
           preview remains unchanged.
@@ -318,6 +331,10 @@ import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager
 import type { FrozenFigure } from "@/app/core/export/FrozenFigure";
 import { figurePrintDimensions } from "@/app/core/export/FigurePrintSize";
 import {
+  smallestFigureTextPx,
+  printedTextPoints,
+} from "@/app/core/export/FigurePrintReadability";
+import {
   createFigureSnapshot,
   MAX_FIGURE_SNAPSHOTS,
   type FigureSnapshot,
@@ -353,6 +370,16 @@ const displayed = computed(
   () => comparison.value ?? viewingSnapshot.value?.figure ?? figure.value
 );
 const printWidth = ref<0 | 86 | 178>(0);
+const smallestTextPx = ref<number | null>(null);
+const printTextPoints = computed(() =>
+  smallestTextPx.value !== null && displayed.value && printWidth.value
+    ? printedTextPoints(
+        smallestTextPx.value,
+        displayed.value.width,
+        printWidth.value
+      )
+    : null
+);
 const printDimensions = computed(() =>
   displayed.value && printWidth.value
     ? figurePrintDimensions(displayed.value.width, displayed.value.height, {
@@ -391,8 +418,16 @@ function releasePreview() {
 }
 function updatePreview() {
   releasePreview();
+  smallestTextPx.value = null;
   if (displayed.value)
     previewUrl.value = URL.createObjectURL(displayed.value.png);
+  if (displayed.value) {
+    try {
+      smallestTextPx.value = smallestFigureTextPx(displayed.value);
+    } catch {
+      /* Preview/export remain available if text cannot be measured. */
+    }
+  }
 }
 function clearComparison() {
   comparisonController?.abort();
