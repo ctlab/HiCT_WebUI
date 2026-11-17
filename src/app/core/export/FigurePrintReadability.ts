@@ -23,6 +23,7 @@ export function smallestFigureTextPx(figure: FrozenFigure): number | null {
   document.body.appendChild(host);
   let smallest = Infinity;
   try {
+    const rootTransform = svg.getScreenCTM()?.inverse();
     for (const text of Array.from(
       svg.querySelectorAll<SVGTextContentElement>("text, tspan")
     )) {
@@ -34,7 +35,11 @@ export function smallestFigureTextPx(figure: FrozenFigure): number | null {
       )
         continue;
       const style = getComputedStyle(text),
-        matrix = text.getCTM();
+        screenTransform = text.getScreenCTM(),
+        matrix =
+          rootTransform && screenTransform
+            ? rootTransform.multiply(screenTransform)
+            : null;
       if (
         !matrix ||
         style.display === "none" ||
