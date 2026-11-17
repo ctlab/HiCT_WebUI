@@ -3363,6 +3363,14 @@ class HiCViewAndLayersManager {
         visibleDescriptors.primary,
         visibleDescriptors.secondary
       );
+      // Changing from a native/sequence grid can leave its secondary layer
+      // visible. Only the projected pair belongs in this coordinate grid;
+      // otherwise the hidden-underneath native image also queues every tile.
+      for (const layer of this.layersHolder.secondaryHiCDataLayers) {
+        layer.setVisible(
+          layer === this.activeOverlay || layer === this.outgoingOverlay
+        );
+      }
     } else {
       this.activeOverlay?.setVisible(false);
       this.outgoingOverlay?.setVisible(false);

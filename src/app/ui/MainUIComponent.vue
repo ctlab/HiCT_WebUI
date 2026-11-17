@@ -76,6 +76,9 @@
       v-if="unsavedPrompt"
       :action="unsavedPrompt.action"
       :busy="unsavedPrompt.busy"
+      :assembly-changes="
+        networkManager.requestManager.hasUnsavedAssemblyEdits()
+      "
       :error="unsavedPrompt.error"
       @save="onUnsavedPromptSave"
       @discard="finishUnsavedPrompt(true)"
@@ -360,6 +363,10 @@ import {
   restoreWorkspace,
   type WorkspaceState,
 } from "@/app/core/mapmanagers/WorkspaceState";
+import {
+  restoreFigureSnapshots,
+  type FigureSnapshot,
+} from "@/app/core/export/FigureSnapshotDocument";
 import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
 import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
 import { ActiveTool } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
@@ -453,7 +460,9 @@ async function reconnectDesktop(): Promise<void> {
     }
     const applied = networkManager.requestManager.history.applied;
     desktopReconnectConsent = applied
-      ? `${applied.session}:${applied.currentId}`
+      ? `${applied.session}:${applied.currentId}:${
+          mapManager.value?.figureSnapshots.revision ?? 0
+        }`
       : "";
     await (window as any).hictDesktop.reconnect();
   } catch (error) {
@@ -826,6 +835,9 @@ async function adoptSession(
   attached: AttachedSession,
   options: { fresh: boolean; workspaceState?: WorkspaceState }
 ): Promise<ContactMapManager> {
+  const previousSnapshots = !options.fresh
+    ? mapManager.value?.figureSnapshots
+    : undefined;
   const workspaceState = options.workspaceState ?? attached.workspaceState;
   mapManager.value?.dispose();
   filename.value = attached.filename;
@@ -845,6 +857,7 @@ async function adoptSession(
     networkManager: networkManager,
     minimapTarget: miniMapTarget,
   });
+  if (previousSnapshots) newManager.figureSnapshots.copyFrom(previousSnapshots);
   mapManager.value = newManager;
   networkManager.mapManager = mapManager.value;
   newManager.initializeMap();
@@ -1399,9 +1412,14 @@ useEscDismissableDialog({
 });
 
 /** Resolves true when the action may go ahead: nothing to lose, edits saved, or discarding chosen. */
+function hasUnsavedSessionChanges(): boolean {
+  return (
+    networkManager.requestManager.hasUnsavedAssemblyEdits() ||
+    !!mapManager.value?.figureSnapshots.dirty
+  );
+}
 function confirmDiscardUnsavedEdits(action: string): Promise<boolean> {
-  if (!networkManager.requestManager.hasUnsavedAssemblyEdits())
-    return Promise.resolve(true);
+  if (!hasUnsavedSessionChanges()) return Promise.resolve(true);
   if (unsavedPrompt.value) return Promise.resolve(false);
   return new Promise((resolve) => {
     unsavedPrompt.value = { action, busy: false, error: "", resolve };
@@ -1434,11 +1452,14 @@ async function onUnsavedPromptSave(): Promise<void> {
 }
 
 function warnBeforeUnload(event: BeforeUnloadEvent): void {
-  if (!networkManager.requestManager.hasUnsavedAssemblyEdits()) return;
+  if (!hasUnsavedSessionChanges()) return;
   const applied = networkManager.requestManager.history.applied;
   if (
     applied &&
-    desktopReconnectConsent === `${applied.session}:${applied.currentId}`
+    desktopReconnectConsent ===
+      `${applied.session}:${applied.currentId}:${
+        mapManager.value?.figureSnapshots.revision ?? 0
+      }`
   )
     return;
   event.preventDefault();
@@ -1446,6 +1467,7 @@ function warnBeforeUnload(event: BeforeUnloadEvent): void {
 }
 
 let sessionSaveInFlight = false;
+let sessionOpenInFlight = false;
 /** Text of the long-running session operation currently shown in the status pill. */
 const sessionBusy = ref("");
 const sessionSaveError = ref("");
@@ -1469,6 +1491,10 @@ async function onSaveSession(): Promise<boolean> {
     return false;
   }
   if (sessionSaveInFlight) return false;
+  if (sessionOpenInFlight && !unsavedPrompt.value) {
+    toast.message("Wait for the session to finish opening.");
+    return false;
+  }
   sessionSaveInFlight = true;
   sessionSaveError.value = "";
   sessionSaveNotice.value = "";
@@ -1489,7 +1515,9 @@ async function onSaveSession(): Promise<boolean> {
     const savedState = captured
       ? { session: captured.session, currentId: captured.currentId }
       : null;
+    const savedSnapshotRevision = manager.figureSnapshots.revision;
     const clientState = {
+      figureSnapshots: manager.figureSnapshots.documents(),
       normalizationWeights: normalization?.mode,
       workspace: JSON.parse(
         JSON.stringify(captureWorkspace(manager))
@@ -1510,7 +1538,7 @@ async function onSaveSession(): Promise<boolean> {
     const text = JSON.stringify(envelope, null, 2);
     if (new TextEncoder().encode(text).byteLength > MAX_SESSION_BYTES) {
       throw new Error(
-        "This assembly is too large to store in a session file (limit 8 MiB). Export the assembly as AGP instead."
+        "This session exceeds the 32 MiB limit. Remove figure snapshots, capture a smaller area, or export the assembly as AGP."
       );
     }
     const result = await destination.write(
@@ -1530,7 +1558,8 @@ async function onSaveSession(): Promise<boolean> {
       return false;
     }
     networkManager.requestManager.markAssemblySaved(savedState);
-    const newerEdits = networkManager.requestManager.hasUnsavedAssemblyEdits();
+    manager.figureSnapshots.markSaved(savedSnapshotRevision);
+    const newerEdits = hasUnsavedSessionChanges();
     sessionSaveNotice.value = newerEdits
       ? "The session was saved, but newer edits remain unsaved. Save again before continuing."
       : "";
@@ -1706,7 +1735,8 @@ async function restoreCoverageNormalization(): Promise<void> {
 }
 
 async function restoreCompleteSession(
-  session: Record<string, unknown>
+  session: Record<string, unknown>,
+  preparedSnapshots: readonly FigureSnapshot[] = []
 ): Promise<void> {
   const snapshot = session["snapshot"] as Record<string, unknown>;
   const client = session["client"] as {
@@ -1727,6 +1757,7 @@ async function restoreCompleteSession(
       fresh: true,
       workspaceState: client.workspace ?? undefined,
     });
+    mapManager.value?.figureSnapshots.restore(preparedSnapshots);
     sessionStore.setSavedLocations(client.savedLocations ?? []);
     sessionStore.setSavedVisualizationPresets(
       client.savedVisualizationPresets ?? []
@@ -1756,15 +1787,40 @@ async function restoreCompleteSession(
 }
 
 async function onOpenSession(file: File): Promise<void> {
+  if (sessionOpenInFlight || sessionSaveInFlight) {
+    toast.message("Wait for the current session operation to finish.");
+    return;
+  }
+  sessionOpenInFlight = true;
+  const previousManager = mapManager.value;
   try {
     if (file.size > MAX_SESSION_BYTES) {
-      throw new Error("Invalid session file: exceeds the 8 MiB limit");
+      throw new Error("Invalid session file: exceeds the 32 MiB limit");
     }
     const session = parseSessionDocument(await file.text());
+    sessionBusy.value = "Checking saved figure snapshots…";
+    let preparedSnapshots: FigureSnapshot[];
+    try {
+      preparedSnapshots = await restoreFigureSnapshots(
+        (session.client as Record<string, unknown> | undefined)?.figureSnapshots
+      );
+    } finally {
+      sessionBusy.value = "";
+    }
+    if (mapManager.value !== previousManager) {
+      toast.message(
+        "The open map changed while checking the session. Open the session again to continue."
+      );
+      return;
+    }
     // The file is valid. Only now ask about edits that opening it would replace.
     if (!(await confirmDiscardUnsavedEdits("open this session"))) return;
-    if (session.version === 3 || session.version === 4) {
-      await restoreCompleteSession(session);
+    if (
+      session.version === 3 ||
+      session.version === 4 ||
+      session.version === 5
+    ) {
+      await restoreCompleteSession(session, preparedSnapshots);
       return;
     }
     toast.message(
@@ -1925,13 +1981,15 @@ async function onOpenSession(file: File): Promise<void> {
     networkManager.requestManager.markAssemblySaved();
     toast.success("Session restored");
   } catch (e) {
-    console.error(e);
+    console.debug("Session preflight or restore failed", e);
     const message =
       (e as { response?: { data?: { error?: string } } })?.response?.data
         ?.error ??
       (e as Error)?.message ??
       "Failed to open session";
     toast.error(message);
+  } finally {
+    sessionOpenInFlight = false;
   }
 }
 

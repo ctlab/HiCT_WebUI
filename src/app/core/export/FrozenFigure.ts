@@ -45,7 +45,7 @@ export async function freezeFigureScene(
   });
 }
 
-/** Only receives scenes captured by HiCT, never arbitrary imported SVG documents. */
+/** Only receives HiCT captures or snapshots rebuilt through the strict scene validator. */
 export async function encodeFrozenFigure(
   figure: FrozenFigure,
   format: "png" | "svg" | "pdf",

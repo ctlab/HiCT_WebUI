@@ -1,8 +1,12 @@
+import {
+  validateFigureSnapshotDocuments,
+  type FigureSnapshotDocument,
+} from "../export/FigureSnapshotDocument";
 import { ColorTranslator } from "colortranslator";
 import { parseRenderPipelinePreset } from "@/app/core/visualization/renderPipelinePreset";
 
 /** Validation shared by session import and its regression tests. */
-export const MAX_SESSION_BYTES = 8 * 1024 * 1024;
+export const MAX_SESSION_BYTES = 32 * 1024 * 1024;
 const MAX_DEPTH = 160;
 // Matches the server budget for multi-source, multi-resolution assembly descriptors.
 export const MAX_SESSION_VALUES = 1_000_000;
@@ -267,6 +271,7 @@ export const SESSION_FORMAT = "hict-session";
 export interface SessionClientState {
   /** Fresh capture of view, scopes, styles and track visibility. */
   workspace?: Record<string, unknown>;
+  figureSnapshots?: FigureSnapshotDocument[];
   savedLocations: unknown[];
   savedVisualizationPresets: unknown[];
   /** Weights the map used when the session was saved. Absent in older sessions (file weights). */
@@ -281,7 +286,11 @@ export function createSessionEnvelope(
 ): RecordValue {
   return {
     format: SESSION_FORMAT,
-    version: snapshot.snapshotVersion === 2 ? 4 : 3,
+    version: client.figureSnapshots?.length
+      ? 5
+      : snapshot.snapshotVersion === 2
+      ? 4
+      : 3,
     savedAt,
     snapshot,
     client: { ...client },
@@ -294,7 +303,11 @@ function envelope(session: RecordValue): void {
   if ("savedAt" in session && typeof session.savedAt !== "string")
     invalid("savedAt", "expected a string");
   const snapshot = record(session.snapshot, "snapshot");
-  if (snapshot.snapshotVersion !== (session.version === 4 ? 2 : 1))
+  if (
+    session.version === 5
+      ? ![1, 2].includes(snapshot.snapshotVersion as number)
+      : snapshot.snapshotVersion !== (session.version === 4 ? 2 : 1)
+  )
     invalid("snapshot.snapshotVersion", "unsupported snapshot version");
   if (snapshot.filesFingerprinted !== true)
     invalid(
@@ -316,6 +329,8 @@ function envelope(session: RecordValue): void {
     invalid("snapshot.tracks", "expected an array");
   record(snapshot.renderPipeline, "snapshot.renderPipeline");
   const client = record(session.client, "client");
+  if ("figureSnapshots" in client)
+    validateFigureSnapshotDocuments(client.figureSnapshots);
   if ("normalizationWeights" in client)
     choice(client.normalizationWeights, "client.normalizationWeights", [
       "FILE",
@@ -340,7 +355,7 @@ function envelope(session: RecordValue): void {
  */
 export function parseSessionDocument(text: string): RecordValue {
   if (new TextEncoder().encode(text).byteLength > MAX_SESSION_BYTES) {
-    invalid("file", "exceeds the 8 MiB limit");
+    invalid("file", "exceeds the 32 MiB limit");
   }
   let parsed: unknown;
   try {
@@ -365,16 +380,16 @@ export function parseSessionDocument(text: string): RecordValue {
   }
   bounded(parsed, "document", 0);
   const session = record(parsed, "document");
-  if (session.version === 3 || session.version === 4) {
+  if (session.version === 3 || session.version === 4 || session.version === 5) {
     envelope(session);
     return session;
   }
   if (session.version !== 1 && session.version !== 2) {
     invalid(
       "version",
-      typeof session.version === "number" && session.version > 4
+      typeof session.version === "number" && session.version > 5
         ? "this session was saved by a newer HiCT. Update HiCT to open it"
-        : "supported versions are 1, 2, 3 and 4"
+        : "supported versions are 1, 2, 3, 4 and 5"
     );
   }
   for (const key of [

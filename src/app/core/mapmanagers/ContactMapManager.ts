@@ -1,3 +1,4 @@
+import { FigureSnapshotLibrary } from "../export/FigureSnapshotLibrary";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -77,6 +78,7 @@ class ContactMapManager {
   }
   public readonly map: Map;
   public readonly contigDimensionHolder: ContigDimensionHolder;
+  public readonly figureSnapshots = markRaw(new FigureSnapshotLibrary());
   public readonly scaffoldHolder: ScaffoldHolder;
   public readonly viewAndLayersManager: HiCViewAndLayersManager;
   public readonly networkManager: NetworkManager;

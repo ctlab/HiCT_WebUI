@@ -5,7 +5,7 @@ for (let index = 0; index < crcTable.length; index++) {
     value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
   crcTable[index] = value;
 }
-function crc32(bytes: Uint8Array): number {
+export function crc32(bytes: Uint8Array): number {
   let value = 0xffffffff;
   for (const byte of bytes)
     value = crcTable[(value ^ byte) & 255] ^ (value >>> 8);

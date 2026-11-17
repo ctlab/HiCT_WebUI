@@ -25,7 +25,7 @@
               v-model="scope"
               class="form-select form-select-sm"
               aria-label="Export area"
-              :disabled="capturing"
+              :disabled="busy"
             >
               <option value="viewport">Viewport</option>
               <option value="whole-map">Whole map</option>
@@ -37,7 +37,7 @@
               v-model="crop"
               type="checkbox"
               aria-label="Crop export to map"
-              :disabled="capturing"
+              :disabled="busy"
             />
             Crop to map</label
           >
@@ -46,7 +46,7 @@
               v-model="rulers"
               type="checkbox"
               aria-label="Include rulers and FASTA"
-              :disabled="capturing"
+              :disabled="busy"
             />
             Rulers and FASTA</label
           >
@@ -55,14 +55,14 @@
               v-model="tracks"
               type="checkbox"
               aria-label="Include 1D tracks"
-              :disabled="capturing"
+              :disabled="busy"
             />
             1D tracks</label
           >
           <button
             class="btn btn-outline-primary btn-sm"
             type="button"
-            :disabled="capturing || !!saving"
+            :disabled="busy"
             @click="capture"
           >
             {{
@@ -89,6 +89,139 @@
           Options changed. Refresh the capture to apply them. The current
           preview remains unchanged.
         </p>
+        <div v-if="figure" class="snapshot-save-row">
+          <label
+            >Snapshot name
+            <input
+              v-model="snapshotName"
+              class="form-control form-control-sm"
+              aria-label="Snapshot name"
+              maxlength="100"
+              :disabled="busy"
+              placeholder="Before cut"
+            />
+          </label>
+          <button
+            class="btn btn-outline-secondary btn-sm"
+            :disabled="
+              busy ||
+              outdated ||
+              comparisonOutdated ||
+              snapshots.length >= MAX_FIGURE_SNAPSHOTS
+            "
+            @click="saveSnapshot"
+          >
+            {{ storing ? "Saving snapshot…" : "Save snapshot" }}
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm"
+            :aria-expanded="showSnapshots"
+            @click="showSnapshots = !showSnapshots"
+          >
+            Snapshots ({{ snapshots.length }})
+          </button>
+        </div>
+        <p
+          v-if="snapshots.length >= MAX_FIGURE_SNAPSHOTS"
+          class="small text-muted"
+          role="status"
+        >
+          Eight snapshots stored. Remove one to save another.
+        </p>
+        <section
+          v-if="showSnapshots"
+          class="snapshot-library"
+          aria-label="Saved figure snapshots"
+        >
+          <p class="small text-muted">
+            Included when you save the session. Comparing uses the captured
+            scenes and their own regions and rendering settings.
+          </p>
+          <p v-if="!snapshots.length" class="small">
+            No snapshots yet. Name the current capture and save a snapshot.
+          </p>
+          <ul v-else class="list-unstyled snapshot-list">
+            <li v-for="snapshot in snapshots" :key="snapshot.document.id">
+              <span>
+                <button
+                  class="btn btn-link p-0 snapshot-name"
+                  :aria-label="`View snapshot ${snapshot.document.name}`"
+                  :disabled="busy"
+                  @click="viewSnapshot(snapshot)"
+                >
+                  {{ snapshot.document.name }}
+                </button>
+                <small>{{
+                  new Date(snapshot.document.capturedAt).toLocaleString()
+                }}</small></span
+              >
+              <button
+                class="btn btn-outline-primary btn-sm"
+                :disabled="busy || outdated"
+                @click="compareSnapshot(snapshot)"
+              >
+                Compare to snapshot
+              </button>
+              <button
+                class="btn btn-outline-danger btn-sm"
+                :aria-label="`Remove snapshot ${snapshot.document.name}`"
+                :disabled="busy"
+                @click="removeSnapshot(snapshot.document.id)"
+              >
+                Remove
+              </button>
+            </li>
+          </ul>
+          <div v-if="selectedSnapshot" class="snapshot-comparison-controls">
+            <label
+              >Current panel label<input
+                v-model="currentLabel"
+                class="form-control form-control-sm"
+                aria-label="Current panel label"
+                maxlength="100"
+                :disabled="busy"
+            /></label>
+            <label
+              >Layout<select
+                v-model="layout"
+                class="form-select form-select-sm"
+                aria-label="Comparison layout"
+                :disabled="busy"
+              >
+                <option value="horizontal">Side by side</option>
+                <option value="vertical">Above and below</option>
+              </select></label
+            >
+            <button
+              class="btn btn-outline-primary btn-sm"
+              :disabled="busy || outdated"
+              @click="updateComparison"
+            >
+              {{ comparing ? "Composing…" : "Update comparison" }}
+            </button>
+            <button
+              class="btn btn-outline-secondary btn-sm"
+              :disabled="busy"
+              @click="clearComparison"
+            >
+              Current capture
+            </button>
+          </div>
+          <p v-if="comparisonOutdated" role="status" class="small text-muted">
+            Comparison settings changed. Update the comparison before saving.
+          </p>
+        </section>
+        <p v-if="notice" role="status" class="small text-success">
+          {{ notice }}
+          <button
+            v-if="removedSnapshot"
+            class="btn btn-link btn-sm"
+            :disabled="busy"
+            @click="undoRemove"
+          >
+            Undo remove
+          </button>
+        </p>
         <div
           class="figure-export-preview"
           tabindex="0"
@@ -99,10 +232,23 @@
             Capture a preview to inspect the figure before saving it.
           </p>
         </div>
-        <p v-if="figure" class="small mt-2 mb-0">
-          {{ figure.width.toLocaleString() }} ×
-          {{ figure.height.toLocaleString() }} pixels · captured
-          {{ new Date(figure.capturedAt).toLocaleString() }}. All formats use
+        <p v-if="viewingSnapshot" class="small mt-2" role="status">
+          Saved snapshot: {{ viewingSnapshot.document.name }}
+          <button
+            class="btn btn-link btn-sm"
+            :disabled="busy"
+            @click="clearComparison"
+          >
+            Current capture
+          </button>
+        </p>
+        <p v-if="comparison" class="small mt-2 mb-0" role="status">
+          Comparison: {{ comparisonLabel }}
+        </p>
+        <p v-if="displayed" class="small mt-2 mb-0">
+          {{ displayed.width.toLocaleString() }} ×
+          {{ displayed.height.toLocaleString() }} pixels · captured
+          {{ new Date(displayed.capturedAt).toLocaleString() }}. All formats use
           this same capture.
         </p>
       </div>
@@ -117,7 +263,9 @@
             :key="format"
             class="btn btn-outline-primary"
             type="button"
-            :disabled="!figure || capturing || !!saving || outdated"
+            :disabled="
+              !displayed || busy || !!saving || outdated || comparisonOutdated
+            "
             @click="save(format)"
           >
             {{ saving === format ? "Saving…" : format.toUpperCase() }}
@@ -146,6 +294,15 @@ import {
 } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { FrozenFigure } from "@/app/core/export/FrozenFigure";
+import {
+  createFigureSnapshot,
+  MAX_FIGURE_SNAPSHOTS,
+  type FigureSnapshot,
+} from "@/app/core/export/FigureSnapshotDocument";
+import {
+  compareCapturedFigures,
+  type FigureComparisonLayout,
+} from "@/app/core/export/FigureComparison";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
@@ -167,35 +324,205 @@ const sequenceOnly = computed(
   () => props.mapManager.networkManager.requestManager.sequenceViewReadOnly
 );
 const figure = shallowRef<FrozenFigure | null>(null);
+const comparison = shallowRef<FrozenFigure | null>(null);
+const viewingSnapshot = shallowRef<FigureSnapshot | null>(null);
+const displayed = computed(
+  () => comparison.value ?? viewingSnapshot.value?.figure ?? figure.value
+);
+const snapshots = computed(() => props.mapManager.figureSnapshots.snapshots);
+const snapshotName = ref("");
+const showSnapshots = ref(false),
+  storing = ref(false),
+  comparing = ref(false),
+  notice = ref("");
+const selectedSnapshot = ref("");
+const removedSnapshot = shallowRef<FigureSnapshot | null>(null);
+const currentLabel = ref("Current capture");
+const layout = ref<FigureComparisonLayout>("horizontal");
+const comparisonOutdated = ref(false);
+const comparisonLabel = ref("");
 const previewUrl = ref("");
 const capturing = ref(false),
   progress = ref(0),
   error = ref("");
 const saving = ref<"svg" | "png" | "pdf" | null>(null);
+const busy = computed(
+  () => capturing.value || comparing.value || storing.value || !!saving.value
+);
 const outdated = ref(false);
 let disposed = false,
   generation = 0;
 let controller: AbortController | undefined;
+let comparisonController: AbortController | undefined;
 function releasePreview() {
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
   previewUrl.value = "";
 }
+function updatePreview() {
+  releasePreview();
+  if (displayed.value)
+    previewUrl.value = URL.createObjectURL(displayed.value.png);
+}
+function clearComparison() {
+  comparisonController?.abort();
+  comparison.value = null;
+  viewingSnapshot.value = null;
+  selectedSnapshot.value = "";
+  comparisonOutdated.value = false;
+  updatePreview();
+}
+function viewSnapshot(snapshot: FigureSnapshot) {
+  if (busy.value) return;
+  clearComparison();
+  viewingSnapshot.value = snapshot;
+  error.value = "";
+  notice.value = "";
+  updatePreview();
+}
+watch([currentLabel, layout], () => {
+  if (comparison.value) comparisonOutdated.value = true;
+});
+async function saveSnapshot() {
+  const source = displayed.value,
+    current = generation,
+    manager = props.mapManager;
+  if (
+    !source ||
+    capturing.value ||
+    storing.value ||
+    comparing.value ||
+    !!saving.value ||
+    outdated.value ||
+    comparisonOutdated.value
+  )
+    return;
+  storing.value = true;
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  );
+  if (disposed || current !== generation) return;
+  error.value = "";
+  notice.value = "";
+  try {
+    const snapshot = await createFigureSnapshot(
+      source,
+      snapshotName.value || `Snapshot ${snapshots.value.length + 1}`
+    );
+    if (disposed || current !== generation || manager !== props.mapManager)
+      return;
+    manager.figureSnapshots.add(snapshot);
+    snapshotName.value = "";
+    notice.value = `Snapshot “${snapshot.document.name}” added. Save the session to keep it.`;
+  } catch (failure) {
+    if (!disposed) error.value = extractErrorMessage(failure);
+  } finally {
+    if (!disposed) storing.value = false;
+  }
+}
+function removeSnapshot(id: string) {
+  removedSnapshot.value =
+    snapshots.value.find((item) => item.document.id === id) ?? null;
+  props.mapManager.figureSnapshots.remove(id);
+  if (
+    selectedSnapshot.value === id ||
+    viewingSnapshot.value?.document.id === id
+  )
+    clearComparison();
+  notice.value = "Snapshot removed. Save the session to keep this change.";
+}
+function undoRemove() {
+  if (!removedSnapshot.value) return;
+  try {
+    props.mapManager.figureSnapshots.add(removedSnapshot.value);
+    removedSnapshot.value = null;
+    notice.value = "Snapshot restored. Save the session to keep it.";
+  } catch (failure) {
+    error.value = extractErrorMessage(failure);
+  }
+}
+async function compareSnapshot(snapshot: FigureSnapshot) {
+  const source = figure.value,
+    manager = props.mapManager;
+  if (
+    !source ||
+    capturing.value ||
+    comparing.value ||
+    storing.value ||
+    !!saving.value ||
+    outdated.value
+  )
+    return;
+  const current = ++generation;
+  comparisonController?.abort();
+  comparisonController = new AbortController();
+  viewingSnapshot.value = null;
+  comparing.value = true;
+  comparisonOutdated.value = true;
+  error.value = "";
+  notice.value = "";
+  selectedSnapshot.value = snapshot.document.id;
+  try {
+    const result = await compareCapturedFigures(
+      [
+        {
+          figure: snapshot.figure,
+          label: snapshot.document.name,
+          snapshotId: snapshot.document.id,
+        },
+        {
+          figure: source,
+          label: currentLabel.value.trim() || "Current capture",
+        },
+      ],
+      layout.value,
+      comparisonController.signal
+    );
+    if (disposed || current !== generation || manager !== props.mapManager)
+      return;
+    comparison.value = result;
+    comparisonLabel.value = `${snapshot.document.name} / ${
+      currentLabel.value.trim() || "Current capture"
+    }`;
+    comparisonOutdated.value = false;
+    updatePreview();
+  } catch (failure) {
+    if (!disposed) error.value = extractErrorMessage(failure);
+  } finally {
+    if (!disposed) comparing.value = false;
+  }
+}
+function updateComparison() {
+  const snapshot = snapshots.value.find(
+    (item) => item.document.id === selectedSnapshot.value
+  );
+  if (snapshot) void compareSnapshot(snapshot);
+}
 watch([scope, crop, rulers, tracks], () => {
   if (figure.value) outdated.value = true;
+  clearComparison();
 });
 watch(
   () => props.mapManager,
   () => {
     controller?.abort();
+    comparisonController?.abort();
+    comparing.value = false;
+    storing.value = false;
     generation++;
     releasePreview();
     figure.value = null;
+    comparison.value = null;
+    viewingSnapshot.value = null;
+    selectedSnapshot.value = "";
+    comparisonOutdated.value = false;
     capturing.value = false;
     outdated.value = false;
   }
 );
 async function capture() {
-  if (capturing.value || saving.value) return;
+  if (capturing.value || saving.value || comparing.value || storing.value)
+    return;
+  clearComparison();
   const current = ++generation,
     manager = props.mapManager;
   controller = new AbortController();
@@ -219,9 +546,8 @@ async function capture() {
       }
     );
     if (disposed || current !== generation || signal.aborted) return;
-    releasePreview();
     figure.value = result;
-    previewUrl.value = URL.createObjectURL(result.png);
+    updatePreview();
     outdated.value = false;
   } catch (failure) {
     if (!disposed && current === generation && !signal.aborted)
@@ -231,8 +557,17 @@ async function capture() {
   }
 }
 async function save(format: "svg" | "png" | "pdf") {
-  const captured = figure.value;
-  if (!captured || capturing.value || saving.value || outdated.value) return;
+  const captured = displayed.value;
+  if (
+    !captured ||
+    capturing.value ||
+    comparing.value ||
+    storing.value ||
+    saving.value ||
+    outdated.value ||
+    comparisonOutdated.value
+  )
+    return;
   saving.value = format;
   error.value = "";
   try {
@@ -264,11 +599,63 @@ onBeforeUnmount(() => {
   disposed = true;
   generation++;
   controller?.abort();
+  comparisonController?.abort();
   releasePreview();
 });
 </script>
 
 <style scoped>
+.snapshot-save-row,
+.snapshot-comparison-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.snapshot-save-row label,
+.snapshot-comparison-controls label {
+  font-size: 0.8rem;
+}
+.snapshot-library {
+  border: 1px solid #cbd2db;
+  border-radius: 0.4rem;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.snapshot-list {
+  max-height: 11rem;
+  overflow: auto;
+}
+.snapshot-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+.snapshot-list li span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.snapshot-name {
+  font-weight: 600;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.snapshot-list small {
+  display: block;
+  color: #52606d;
+}
+@media (max-width: 700px) {
+  .snapshot-list li {
+    flex-wrap: wrap;
+  }
+  .snapshot-list li span {
+    flex-basis: 100%;
+  }
+}
+
 .figure-export-backdrop {
   position: fixed;
   inset: 0;

@@ -55,7 +55,7 @@ const reject = (document, field) =>
     () => parseSessionDocument(JSON.stringify(document)),
     new RegExp(field)
   );
-for (const version of [undefined, 0, 5, 999, "2", null])
+for (const version of [undefined, 0, 6, 999, "2", null])
   reject({ ...valid, version }, "version");
 for (const document of [null, [], "session"]) reject(document, "document");
 for (const center of [[], [1], [1, 2, 3], ["1", 2], [null, 2], {}])
@@ -143,7 +143,7 @@ assert.throws(
 assert.throws(() => parseSessionDocument("{"), /valid JSON/);
 assert.throws(
   () => parseSessionDocument(" ".repeat(MAX_SESSION_BYTES + 1)),
-  /8 MiB/
+  /32 MiB/
 );
 let nested = {};
 for (let i = 0; i < 170; i++) nested = { child: nested };
@@ -421,4 +421,59 @@ assert.equal(
 );
 console.log(
   "Multi-resolution primary/secondary session descriptor budget passed."
+);
+
+const { crc32 } = nodeRequire("node:zlib");
+const snapshotSvg =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" viewBox="0 0 1 1"><metadata>{"format":"hict-figure","version":1}</metadata></svg>';
+const figureRecord = {
+  version: 1,
+  id: "figure-1",
+  name: "Before cut",
+  capturedAt: "2026-11-17T03:00:00.000Z",
+  width: 1,
+  height: 1,
+  svg: snapshotSvg,
+  png: "data:image/png;base64,AA==",
+  sceneCrc32: crc32(Buffer.from(snapshotSvg)).toString(16).padStart(8, "0"),
+};
+const figureClient = { ...v3.client, figureSnapshots: [figureRecord] };
+const figures = createSessionEnvelope(v3.snapshot, figureClient);
+assert.equal(figures.version, 5);
+assert.equal(
+  parseSessionDocument(JSON.stringify(figures)).client.figureSnapshots[0].name,
+  "Before cut"
+);
+for (const patch of [
+  { version: 2 },
+  { name: "" },
+  { id: "../escape" },
+  { width: 0 },
+  { height: Infinity },
+  { svg: snapshotSvg + " " },
+  { sceneCrc32: "00000000" },
+  { capturedAt: "not-a-time" },
+])
+  assert.throws(
+    () =>
+      parseSessionDocument(
+        JSON.stringify({
+          ...figures,
+          client: {
+            ...figureClient,
+            figureSnapshots: [{ ...figureRecord, ...patch }],
+          },
+        })
+      ),
+    /snapshot|finite/
+  );
+reject(
+  {
+    ...figures,
+    client: { ...figureClient, figureSnapshots: [figureRecord, figureRecord] },
+  },
+  "duplicate ID"
+);
+console.log(
+  "Figure session v5 preserves captured documents and rejects malformed or duplicate snapshots before restore."
 );
