@@ -355,6 +355,7 @@
                         <select
                           v-if="track.type === 'BIGWIG'"
                           :aria-label="`Aggregation for ${track.name}`"
+                          title="Maximum, mean over covered positions, or mean with gaps treated as zero."
                           class="form-select form-select-sm track-mode-select"
                           :value="
                             normalizeBigWigAggregation(track.aggregationMode)
@@ -366,9 +367,9 @@
                             )
                           "
                         >
-                          <option value="MAX">max</option>
-                          <option value="MEAN">mean</option>
-                          <option value="SUM">sum</option>
+                          <option value="MAX">Maximum</option>
+                          <option value="MEAN">Mean (covered span)</option>
+                          <option value="SUM">Mean (gaps as zero)</option>
                         </select>
                         <div
                           v-if="
@@ -464,6 +465,7 @@
                         <select
                           v-if="track.type === 'BAM'"
                           :aria-label="`Rendering for ${track.name}`"
+                          title="Aligned-base depth excludes skipped and deleted bases. Read centers count one source midpoint per mapped alignment."
                           class="form-select form-select-sm track-mode-select"
                           :value="normalizeBamMode(track.renderMode)"
                           @change="
@@ -473,8 +475,8 @@
                             )
                           "
                         >
-                          <option value="COVERAGE">coverage</option>
-                          <option value="READ_DENSITY">density</option>
+                          <option value="COVERAGE">Aligned-base depth</option>
+                          <option value="READ_DENSITY">Read centers</option>
                         </select>
                       </div>
                     </details>
@@ -1811,7 +1813,8 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
 }
 .track-mode-select {
-  max-width: 7rem;
+  width: 12.5rem;
+  max-width: 100%;
 }
 
 .track-log-base-input {
