@@ -69,6 +69,7 @@ export interface FigureCaptureOptions {
   cropToMap?: boolean;
   includeRulers?: boolean;
   includeTracks?: boolean;
+  fitSmallWholeMap?: boolean;
   signal?: AbortSignal;
 }
 
@@ -1659,6 +1660,12 @@ class ContactMapManager {
         },
         capturedAt,
         scope: options.scope ?? "viewport",
+        wholeMapSizing:
+          options.scope === "whole-map"
+            ? options.fitSmallWholeMap === false
+              ? "NATIVE_GRID"
+              : "FIT_WINDOW"
+            : null,
         cropToMap: options.cropToMap !== false,
         composition: {
           map: true,
@@ -1699,7 +1706,7 @@ class ContactMapManager {
     options.signal?.throwIfAborted();
     const scene = await this.buildViewportExportSvg({
       ...options,
-      fitSmallWholeMap: true,
+      fitSmallWholeMap: options.fitSmallWholeMap !== false,
       metadata,
       progress: (value) => progress?.(0.1 + value * 0.65),
     });

@@ -32,6 +32,18 @@
               <option value="selection">Selected rectangle</option>
             </select>
           </label>
+          <label
+            v-if="!sequenceOnly && scope === 'whole-map'"
+            class="form-check-label"
+          >
+            <input
+              v-model="expandWholeMap"
+              type="checkbox"
+              :disabled="busy"
+              aria-label="Expand small whole maps to fit window"
+            />
+            Expand small maps to fit window
+          </label>
           <label v-if="!sequenceOnly" class="form-check-label"
             ><input
               v-model="crop"
@@ -358,6 +370,7 @@ const formats = ["svg", "png", "pdf"] as const;
 const dialog = ref<HTMLElement | null>(null);
 const scope = ref<"viewport" | "whole-map" | "selection">("viewport");
 const crop = ref(true),
+  expandWholeMap = ref(true),
   rulers = ref(true),
   tracks = ref(true);
 const sequenceOnly = computed(
@@ -563,7 +576,7 @@ function updateComparison() {
   );
   if (snapshot) void compareSnapshot(snapshot);
 }
-watch([scope, crop, rulers, tracks], () => {
+watch([scope, crop, rulers, tracks, expandWholeMap], () => {
   if (figure.value) outdated.value = true;
   clearComparison();
 });
@@ -603,6 +616,7 @@ async function capture() {
         cropToMap: crop.value,
         includeRulers: rulers.value,
         includeTracks: tracks.value,
+        fitSmallWholeMap: expandWholeMap.value,
         metadata: props.metadata,
         backgroundColor: useStyleStore().mapBackgroundColor.RGBA,
         signal,
