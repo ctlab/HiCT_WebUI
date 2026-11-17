@@ -47,8 +47,13 @@ vm.runInNewContext(
     }),
   }
 );
-const { prepareFileSave, saveFileBlob, pickSessionFile, canPickSessionFile } =
-  exports;
+const {
+  prepareFileSave,
+  saveFileBlob,
+  pickSessionFile,
+  canPickSessionFile,
+  pickFigureFile,
+} = exports;
 const data = new Blob(["ACTG"], { type: "text/plain" });
 let content,
   aborts = 0,
@@ -124,10 +129,25 @@ browser.showOpenFilePicker = async (options) => {
 };
 assert.equal(canPickSessionFile(), true);
 assert.equal(await (await pickSessionFile()).text(), "ACTG");
+let figurePicks = 0;
+browser.showOpenFilePicker = async (options) => {
+  assert.equal(options.id, "hict-figure");
+  assert.equal(options.multiple, false);
+  assert.equal(options.startIn, figurePicks++ ? handle : undefined);
+  assert.equal(options.types[0].accept["image/svg+xml"][0], ".svg");
+  return [handle];
+};
+assert.equal(await (await pickFigureFile()).text(), "ACTG");
+assert.equal(await (await pickFigureFile()).text(), "ACTG");
 browser.showOpenFilePicker = async () => {
   throw Object.assign(Error("cancel"), { name: "AbortError" });
 };
 assert.equal(await pickSessionFile(), undefined);
+assert.equal(await pickFigureFile(), undefined);
+browser.showOpenFilePicker = async () => {
+  throw Error("read denied");
+};
+await assert.rejects(pickFigureFile(), /read denied/);
 browser.hictDesktop = {
   saveExport: async (payload) => {
     assert.equal(payload.kind, "agp");

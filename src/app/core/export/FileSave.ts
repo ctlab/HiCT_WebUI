@@ -283,7 +283,7 @@ export async function saveFileBlob(
   return destination ? destination.write(blob) : cancelledFileSave;
 }
 
-export function canPickSessionFile(): boolean {
+export function canPickLocalFile(): boolean {
   const browser = window as unknown as {
     showOpenFilePicker?: unknown;
     hictDesktop?: unknown;
@@ -295,6 +295,7 @@ export function canPickSessionFile(): boolean {
     typeof browser.showOpenFilePicker === "function"
   );
 }
+export const canPickSessionFile = canPickLocalFile;
 export async function pickSessionFile(): Promise<File | undefined> {
   const browser = window as unknown as {
     showOpenFilePicker: (options: object) => Promise<BrowserFileHandle[]>;
@@ -314,6 +315,35 @@ export async function pickSessionFile(): Promise<File | undefined> {
         : {}),
     });
     return handle?.getFile();
+  } catch (error) {
+    if ((error as { name?: string })?.name === "AbortError") return undefined;
+    throw error;
+  }
+}
+
+/** Uses the figure destination handle as the starting folder when the browser supports it. */
+export async function pickFigureFile(): Promise<File | undefined> {
+  const browser = window as unknown as {
+    showOpenFilePicker: (options: object) => Promise<BrowserFileHandle[]>;
+  };
+  try {
+    const [handle] = await browser.showOpenFilePicker({
+      id: "hict-figure",
+      multiple: false,
+      types: [
+        {
+          description: "Exported figure",
+          accept: { "image/png": [".png"], "image/svg+xml": [".svg"] },
+        },
+      ],
+      ...(lastHandles.has("figure")
+        ? { startIn: lastHandles.get("figure") }
+        : {}),
+    });
+    if (!handle) return undefined;
+    const file = await handle.getFile();
+    lastHandles.set("figure", handle);
+    return file;
   } catch (error) {
     if ((error as { name?: string })?.name === "AbortError") return undefined;
     throw error;

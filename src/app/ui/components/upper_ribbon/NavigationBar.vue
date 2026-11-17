@@ -124,6 +124,14 @@
                 <a
                   class="dropdown-item"
                   href="#"
+                  @click.prevent="exportedFigureOpen = true"
+                  >Open exported figure…</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
                   @click.prevent="onConvertCoolersClicked"
                   >Convert matrices</a
                 >
@@ -747,6 +755,10 @@
     :initial-source-filename="currentPrimaryHictFilename"
     @dismissed="exportingMatrix = false"
   />
+  <ExportedFigureModal
+    v-if="exportedFigureOpen"
+    @dismissed="exportedFigureOpen = false"
+  />
   <DotplotGenerator
     v-if="generatingDotplots"
     :network-manager="networkManager"
@@ -1342,6 +1354,7 @@ const openingJuiceboxAssemblyFile = ref(false);
 const openingJuiceboxAssemblyFastaFile = ref(false);
 const convertingCoolers = ref(false);
 const exportingMatrix = ref(false);
+const exportedFigureOpen = ref(false);
 const generatingDotplots = ref(false);
 const sequenceSearchOpen = ref(false);
 const sequenceSearchRemote = ref(false);
@@ -1394,6 +1407,9 @@ const CoolerConverter = defineAsyncComponent(
 );
 const MatrixExportModal = defineAsyncComponent(
   () => import("./MatrixExportModal.vue")
+);
+const ExportedFigureModal = defineAsyncComponent(
+  () => import("./ExportedFigureModal.vue")
 );
 const ModDotPlotModal = defineAsyncComponent(
   () => import("./ModDotPlotModal.vue")
