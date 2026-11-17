@@ -246,7 +246,16 @@ mod tests {
                         .to_string_lossy()
                         .starts_with(".hict-save-")
                 })
-                .map(|entry| entry.metadata().unwrap().len())
+                // Windows directory enumeration can report the old size while
+                // the writer is open. Query a live handle to observe writes;
+                // otherwise this test waits for a close it deliberately stalls.
+                .map(|entry| {
+                    std::fs::File::open(entry.path())
+                        .unwrap()
+                        .metadata()
+                        .unwrap()
+                        .len()
+                })
                 .sum()
         }
         fn assert_clean(&self) {
