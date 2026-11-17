@@ -57,6 +57,17 @@ import { VersionedXYZContactMapSource } from "../VersionedXYZSource";
 import { AlignmentDetailLayer } from "./AlignmentDetailLayer";
 import { LinearTrackManager } from "./LinearTrackManager";
 import { useStyleStore } from "@/app/stores/styleStore";
+import type { FrozenFigure } from "../export/FrozenFigure";
+
+export interface FigureCaptureOptions {
+  backgroundColor?: string;
+  metadata?: Record<string, unknown>;
+  scope?: "viewport" | "whole-map" | "selection";
+  cropToMap?: boolean;
+  includeRulers?: boolean;
+  includeTracks?: boolean;
+  signal?: AbortSignal;
+}
 
 class ContactMapManager {
   private disposed = false;
@@ -1181,6 +1192,10 @@ class ContactMapManager {
     includeWorkspaceComposite?: boolean;
     scope?: "viewport" | "whole-map" | "selection";
     cropToMap?: boolean;
+    includeRulers?: boolean;
+    includeTracks?: boolean;
+    signal?: AbortSignal;
+    fitSmallWholeMap?: boolean;
     progress?: (value: number) => void;
   }): Promise<{ svg: SVGSVGElement; canvas: HTMLCanvasElement }> {
     if (this.exportInProgress) throw new Error("An export is already running.");
@@ -1223,6 +1238,9 @@ class ContactMapManager {
       throw new Error("Select a nonempty rectangle before exporting.");
     const history = this.networkManager.requestManager.history.applied;
     const workspaceStyle = workspace.getAttribute("style");
+    const customComposition =
+      options?.includeRulers === false || options?.includeTracks === false;
+    const hiddenPanels: [HTMLElement, string][] = [];
     const descriptor =
       this.viewAndLayersManager.currentViewState.resolutionDesciptor;
     const pixels = this.viewAndLayersManager.getActiveMapPixelBounds(
@@ -1243,6 +1261,70 @@ class ContactMapManager {
       options?.progress?.(0.05);
       interactions.forEach(([item]) => item.setActive(false));
       this.viewAndLayersManager.setSelectionPresentationVisible(false);
+      if (customComposition) {
+        const style = getComputedStyle(workspace);
+        const columns = style.gridTemplateColumns
+          .split(/\s+/)
+          .map(Number.parseFloat);
+        const rows = style.gridTemplateRows.split(/\s+/).map(Number.parseFloat);
+        if (
+          columns.length !== 3 ||
+          rows.length !== 3 ||
+          [...columns, ...rows].some((value) => !Number.isFinite(value))
+        )
+          throw Error(
+            "The workspace layout is not ready for figure composition."
+          );
+        const keepTracks = options?.includeTracks !== false,
+          keepRulers = options?.includeRulers !== false;
+        const bounds = workspace.getBoundingClientRect();
+        const width =
+          bounds.width -
+          (keepTracks ? 0 : columns[0]) -
+          (keepRulers ? 0 : columns[1]);
+        const height =
+          bounds.height -
+          (keepTracks ? 0 : rows[0]) -
+          (keepRulers ? 0 : rows[1]);
+        Object.assign(workspace.style, {
+          gridTemplateColumns: `${keepTracks ? columns[0] : 0}px ${
+            keepRulers ? columns[1] : 0
+          }px minmax(0, 1fr)`,
+          gridTemplateRows: `${keepTracks ? rows[0] : 0}px ${
+            keepRulers ? rows[1] : 0
+          }px minmax(0, 1fr)`,
+          width: `${width}px`,
+          height: `${height}px`,
+          minWidth: `${width}px`,
+          minHeight: `${height}px`,
+          maxWidth: "none",
+          maxHeight: "none",
+          flexShrink: "0",
+        });
+        const selectors = [
+          ...(!keepTracks
+            ? [
+                ".interactive-workspace_horizontal_tracks",
+                ".interactive-workspace_vertical_tracks",
+              ]
+            : []),
+          ...(!keepRulers
+            ? [
+                ".interactive-workspace_horizontal_ruler",
+                ".interactive-workspace_vertical_ruler",
+              ]
+            : []),
+        ];
+        for (const selector of selectors)
+          for (const panel of Array.from(
+            workspace.querySelectorAll<HTMLElement>(selector)
+          )) {
+            hiddenPanels.push([panel, panel.style.visibility]);
+            panel.style.visibility = "hidden";
+          }
+        await this.waitForNextAnimationFrame();
+        this.map.updateSize();
+      }
       if (whole) {
         const extent = dataExtent;
         const scale =
@@ -1265,8 +1347,21 @@ class ContactMapManager {
             )
           )
         );
-        const width = Math.ceil((extent[2] - extent[0]) / scale) + 2 * padding;
-        const height = Math.ceil((extent[3] - extent[1]) / scale) + 2 * padding;
+        const renderScale = options?.fitSmallWholeMap
+          ? Math.min(
+              scale,
+              Math.max(
+                (extent[2] - extent[0]) /
+                  Math.max(1, mapRect.width - 2 * padding),
+                (extent[3] - extent[1]) /
+                  Math.max(1, mapRect.height - 2 * padding)
+              )
+            )
+          : scale;
+        const width =
+          Math.ceil((extent[2] - extent[0]) / renderScale) + 2 * padding;
+        const height =
+          Math.ceil((extent[3] - extent[1]) / renderScale) + 2 * padding;
         const totalWidth = width + mapRect.left - sceneRect.left;
         const totalHeight = height + mapRect.top - sceneRect.top;
         if (
@@ -1284,7 +1379,7 @@ class ContactMapManager {
         workspace.style.minWidth = `${totalWidth}px`;
         workspace.style.minHeight = `${totalHeight}px`;
         workspace.style.flexShrink = "0";
-        this.viewAndLayersManager.setExportMaxResolution(scale);
+        this.viewAndLayersManager.setExportMaxResolution(renderScale);
         await this.waitForNextAnimationFrame();
         this.map.updateSize();
         this.viewAndLayersManager.updateZoomLimit();
@@ -1293,7 +1388,7 @@ class ContactMapManager {
           (extent[0] + extent[2]) / 2,
           (extent[1] + extent[3]) / 2,
         ]);
-        view.setResolution(scale);
+        view.setResolution(renderScale);
         this.viewAndLayersManager.updateCurrentHiCViewState();
       }
       if (selection) {
@@ -1319,22 +1414,39 @@ class ContactMapManager {
       await this.renderSequenceTracks();
       options?.progress?.(0.2);
       await new Promise<void>((resolve, reject) => {
+        const abort = () => {
+          window.clearTimeout(timer);
+          this.map.un("rendercomplete", done);
+          reject(
+            options?.signal?.reason ??
+              new DOMException("Figure capture cancelled", "AbortError")
+          );
+        };
         const done = () => {
           window.clearTimeout(timer);
+          options?.signal?.removeEventListener("abort", abort);
           resolve();
         };
         const timer = window.setTimeout(() => {
           this.map.un("rendercomplete", done);
+          options?.signal?.removeEventListener("abort", abort);
           reject(
             new Error(
               "The map did not finish rendering for export. Retry after loading completes."
             )
           );
         }, 60000);
+        if (options?.signal?.aborted) {
+          abort();
+          return;
+        }
+        options?.signal?.addEventListener("abort", abort, { once: true });
         this.map.once("rendercomplete", done);
         this.map.renderSync();
       });
       options?.progress?.(0.4);
+      const viewportBounds = this.map.getViewport().getBoundingClientRect();
+      const workspaceBounds = workspace.getBoundingClientRect();
       const { captureCanvasScene } = await import("../export/CanvasScene");
       const svg = await captureCanvasScene(
         workspace,
@@ -1347,7 +1459,26 @@ class ContactMapManager {
           await this.waitForNextAnimationFrame();
           await this.waitForNextAnimationFrame();
         },
-        options?.metadata,
+        options?.metadata
+          ? {
+              ...options.metadata,
+              renderedGrid: JSON.parse(
+                JSON.stringify(
+                  this.viewAndLayersManager.currentViewState.resolutionDesciptor
+                )
+              ),
+              renderedView: {
+                mapViewportSize: this.map.getSize()?.slice(),
+                mapOffset: [
+                  viewportBounds.left - workspaceBounds.left,
+                  viewportBounds.top - workspaceBounds.top,
+                ],
+                center: view.getCenter()?.slice(),
+                resolution: view.getResolution(),
+                rotation: view.getRotation(),
+              },
+            }
+          : undefined,
         {
           mapRoot: this.map.getViewport(),
           excludedRoots: this.minimap ? [this.minimap.getTargetElement()] : [],
@@ -1407,15 +1538,17 @@ class ContactMapManager {
       }
       return svg;
     } finally {
-      if (whole) {
+      if (whole || customComposition) {
         this.viewAndLayersManager.setExportMaxResolution(undefined);
         if (workspaceStyle === null) workspace.removeAttribute("style");
         else workspace.setAttribute("style", workspaceStyle);
         this.map.updateSize();
         this.viewAndLayersManager.updateZoomLimit();
       }
+      for (const [panel, visibility] of hiddenPanels)
+        panel.style.visibility = visibility;
       this.linearTrackManager.exportLabelBounds = undefined;
-      if ((whole || selection) && !this.disposed) {
+      if ((whole || selection || customComposition) && !this.disposed) {
         view.setCenter(center);
         view.setResolution(resolution);
         view.setRotation(rotation);
@@ -1427,6 +1560,131 @@ class ContactMapManager {
       this.viewAndLayersManager.setSelectionPresentationVisible(true);
       this.exportInProgress = false;
     }
+  }
+
+  /** Capture once so preview and subsequent formats keep the same assembly and pixels. */
+  public async captureCurrentFigure(
+    options: FigureCaptureOptions = {},
+    progress?: (fraction: number) => void
+  ): Promise<FrozenFigure> {
+    options.signal?.throwIfAborted();
+    if (this.disposed || this.exportInProgress)
+      throw Error(
+        "Wait for the current export to finish before capturing a figure."
+      );
+    await this.visualizationManager.waitForPendingOptionRequests();
+    const api = this.networkManager.requestManager;
+    const captured = api.history.applied;
+    const { compactFigureProvenance } = await import(
+      "../export/FigureProvenance"
+    );
+    progress?.(0.02);
+    const provenance = compactFigureProvenance(
+      await api.getSessionSnapshot(true, true, true)
+    );
+    options.signal?.throwIfAborted();
+    if (this.disposed || api.history.applied !== captured)
+      throw Error(
+        "The assembly changed while preparing the figure. Capture it again."
+      );
+    const capturedAt = new Date().toISOString();
+    const { captureWorkspace } = await import("./WorkspaceState");
+    const presentation = captureWorkspace(this);
+    const descriptor =
+      this.viewAndLayersManager.currentViewState.resolutionDesciptor;
+    const metadata = JSON.parse(
+      JSON.stringify({
+        ...options.metadata,
+        format: "hict-figure",
+        version: 1,
+        application: {
+          webuiVersion: __HICT_WEBUI_BUILD_VERSION__,
+          webuiCommit: __HICT_WEBUI_BUILD_COMMIT__,
+          backend: await api.getBackendVersion(),
+        },
+        capturedAt,
+        scope: options.scope ?? "viewport",
+        cropToMap: options.cropToMap !== false,
+        composition: {
+          map: true,
+          rulers: options.includeRulers !== false,
+          tracks: options.includeTracks !== false,
+        },
+        history: captured
+          ? {
+              session: captured.session,
+              revision: captured.revision,
+              currentId: captured.currentId,
+            }
+          : null,
+        inputGrid: descriptor,
+        axisScopes: this.viewAndLayersManager.getAxisScopes(),
+        selectedRegion:
+          options.scope === "selection"
+            ? {
+                coordinateSystem: "ZERO_BASED_HALF_OPEN",
+                bounds:
+                  this.viewAndLayersManager.getRegionBounds() ??
+                  this.viewAndLayersManager.regionFromExtent(
+                    this.viewAndLayersManager.selectionInteractions.contigSelectExtent.getExtent() ??
+                      []
+                  ),
+              }
+            : null,
+        inputView: {
+          center: this.map.getView().getCenter(),
+          resolution: this.map.getView().getResolution(),
+          rotation: this.map.getView().getRotation(),
+        },
+        provenance,
+        presentation,
+      })
+    ) as Record<string, unknown>;
+    await this.reloadTilesFromBackend();
+    options.signal?.throwIfAborted();
+    const scene = await this.buildViewportExportSvg({
+      ...options,
+      fitSmallWholeMap: true,
+      metadata,
+      progress: (value) => progress?.(0.1 + value * 0.65),
+    });
+    options.signal?.throwIfAborted();
+    const after = compactFigureProvenance(
+      await api.getSessionSnapshot(true, true, true)
+    );
+    options.signal?.throwIfAborted();
+    if (
+      this.disposed ||
+      api.history.applied !== captured ||
+      JSON.stringify(after) !== JSON.stringify(provenance) ||
+      JSON.stringify(captureWorkspace(this)) !== JSON.stringify(presentation)
+    )
+      throw Error(
+        "The assembly, sources or visualization changed during capture. Capture the updated figure again."
+      );
+    progress?.(0.85);
+    const { freezeFigureScene } = await import("../export/FrozenFigure");
+    const figure = await freezeFigureScene(scene, capturedAt);
+    options.signal?.throwIfAborted();
+    progress?.(1);
+    return figure;
+  }
+
+  /** Save the already captured figure, without reading or changing the current map. */
+  public async saveCapturedFigure(
+    figure: FrozenFigure,
+    format: "png" | "svg" | "pdf",
+    filename = `hict-figure.${format}`,
+    progress?: (fraction: number) => void
+  ): Promise<FileSaveResult> {
+    const destination = await prepareFileSave(filename, "figure");
+    if (!destination) return cancelledFileSave;
+    const { encodeFrozenFigure } = await import("../export/FrozenFigure");
+    const result = await destination.write(
+      await encodeFrozenFigure(figure, format, progress)
+    );
+    progress?.(1);
+    return result;
   }
 
   public async exportCurrentMapSvg(

@@ -317,10 +317,12 @@ function onRulerContextMenu(event: Event): void {
 onMounted(() => {
   if (workspaceRoot.value) {
     workspaceResizeObserver = new ResizeObserver(() => {
+      if (props.mapManager?.isExporting) return;
       // Layout writes inside observer delivery can trigger a browser loop warning.
       if (workspaceResizeFrame !== undefined) return;
       workspaceResizeFrame = window.requestAnimationFrame(() => {
         workspaceResizeFrame = undefined;
+        if (props.mapManager?.isExporting) return;
         trackPanelMaximum.value = clampTrackPanelSize(420);
         const horizontal = clampTrackPanelSize(
           horizontalTrackPanelSizePx.value

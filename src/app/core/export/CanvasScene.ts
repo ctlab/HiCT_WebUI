@@ -302,6 +302,11 @@ class Scene {
         break;
       case "fillText":
       case "strokeText": {
+        if (
+          ![n[1], n[2]].every(Number.isFinite) ||
+          (n[3] !== undefined && (!Number.isFinite(n[3]) || n[3] <= 0))
+        )
+          break;
         this.vectorPaint = true;
         const text = String(args[0]),
           measured = c.measureText(text),
