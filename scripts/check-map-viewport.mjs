@@ -620,3 +620,66 @@ async function checkSequenceExportLifecycle() {
   );
 }
 await checkSequenceExportLifecycle();
+
+// Use real OpenLayers sources: unchanged borders retain their index/listeners
+// while viewport labels change, and hidden scopes remove only their borders.
+{
+  const { manager } = fixture();
+  manager.currentViewState = { hideScopedBorders: false };
+  const source = new VectorSource();
+  const layer = new VectorLayer({ source });
+  layer.set("bpResolution", 1);
+  const border = new Feature({
+    geometry: new Point([0, 0]),
+    trackType: "contigBorders",
+  });
+  const oldLabel = new Feature({
+    geometry: new Point([1, 1]),
+    trackType: "contigNames",
+  });
+  const newLabel = new Feature({
+    geometry: new Point([2, 2]),
+    trackType: "contigNames",
+  });
+  let added = [],
+    removed = [],
+    clears = 0;
+  source.on("addfeature", (event) => added.push(event.feature));
+  source.on("removefeature", (event) => removed.push(event.feature));
+  source.on("clear", () => clears++);
+  const refresh = (features) =>
+    manager.refreshVectorLayerFromFeatures(layer, new Map([[1, features]]), {
+      force: true,
+    });
+  refresh([border, oldLabel]);
+  added = [];
+  refresh([border, newLabel]);
+  assert.deepEqual(removed, [oldLabel]);
+  assert.deepEqual(added, [newLabel]);
+  assert.equal(clears, 0);
+  assert.ok(source.hasFeature(border));
+  added = [];
+  removed = [];
+  refresh([border, newLabel]);
+  assert.equal(added.length + removed.length + clears, 0);
+  manager.currentViewState.hideScopedBorders = true;
+  manager.activeAxisScopes = {
+    row: { kind: "contig" },
+    column: { kind: "contig" },
+  };
+  refresh([border, newLabel]);
+  assert.deepEqual(removed, [border]);
+  assert.ok(source.hasFeature(newLabel));
+  const replacement = new Feature({
+    geometry: new Point([5, 5]),
+    trackType: "contigNames",
+  });
+  refresh([replacement]);
+  assert.equal(clears, 1, "wholesale replacement keeps the fast clear path");
+  assert.deepEqual(source.getFeatures(), [replacement]);
+  layer.dispose();
+  source.dispose();
+}
+console.log(
+  "Vector source refresh preserves unchanged border identities and replaces viewport labels and scopes."
+);

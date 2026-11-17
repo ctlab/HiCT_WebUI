@@ -632,6 +632,66 @@ class BasePairsTrack2DSymmetric extends Track2DSymmetric {
 }
 
 abstract class WithRing extends Track2DSymmetric {
+  private borderCache = markRaw(
+    new Map<
+      object,
+      { from: number; to: number; name: string; feature: Feature<Geometry> }
+    >()
+  );
+  private borderCacheContext?: {
+    prefix: readonly number[];
+    scale: number;
+    style: StyleLike;
+    shape: BorderStyle;
+  };
+
+  /** Geometry is unchanged by pan/zoom within one native/display resolution.
+   * Keep at most one resolution and 8192 borders per track. Labels still use
+   * the current viewport, and exports always construct independent features. */
+  protected reuseBorder(
+    descriptor: object,
+    prefix: readonly number[],
+    scale: number,
+    from: number,
+    to: number,
+    name: string,
+    viewport: TrackViewport | undefined,
+    create: () => Feature<Geometry>
+  ): Feature<Geometry> {
+    if (!viewport) return create();
+    const context = this.borderCacheContext;
+    if (
+      !context ||
+      context.prefix !== prefix ||
+      context.scale !== scale ||
+      context.style !== this.style ||
+      context.shape !== this.borderStyle
+    ) {
+      this.borderCache.clear();
+      this.borderCacheContext = markRaw({
+        prefix,
+        scale,
+        style: this.style,
+        shape: this.borderStyle,
+      });
+    }
+    const cached = this.borderCache.get(descriptor);
+    if (
+      cached &&
+      cached.from === from &&
+      cached.to === to &&
+      cached.name === name
+    )
+      return cached.feature;
+    const feature = create();
+    if (this.borderCache.size >= 8192 && !this.borderCache.has(descriptor)) {
+      const oldest = this.borderCache.keys().next().value;
+      if (oldest !== undefined) this.borderCache.delete(oldest);
+    }
+    this.borderCache.set(descriptor, { from, to, name, feature });
+    return feature;
+  }
+
   protected borderStyle: BorderStyle = BorderStyle.FULL;
   public override setStyleType(style: BorderStyle): void {
     this.borderStyle = style;
@@ -791,23 +851,36 @@ class ContigBordersTrack2D extends WithRing {
                 viewport
               )
             ) {
-              const contig_bounding_box = this.drawPolygon(
-                [fromPx, -fromPx],
-                [fromPx, -toPx],
-                [toPx, -toPx],
-                [toPx, -fromPx],
-                pixelResolution
-              );
+              const polygonFeature = this.reuseBorder(
+                cd,
+                prefixSum,
+                pixelResolution,
+                fromPx,
+                toPx,
+                cd.contigName,
+                viewport,
+                () => {
+                  const contig_bounding_box = this.drawPolygon(
+                    [fromPx, -fromPx],
+                    [fromPx, -toPx],
+                    [toPx, -toPx],
+                    [toPx, -fromPx],
+                    pixelResolution
+                  );
 
-              const polygonFeature = new Feature({
-                name: `ContigBorder-${cd.contigName}-bp${resolution}`,
-                geometry: contig_bounding_box,
-              });
-              polygonFeature.setStyle(this.style);
-              polygonFeature.set("trackType", "contigBorders");
-              polygonFeature.set("bpResolution", resolution);
-              polygonFeature.set("pixelResolution", pixelResolution);
-              polygonFeature.set("contigDescriptor", cd);
+                  const polygonFeature = new Feature({
+                    name: `ContigBorder-${cd.contigName}-bp${resolution}`,
+                    geometry: contig_bounding_box,
+                  });
+                  polygonFeature.setStyle(this.style);
+                  polygonFeature.set("trackType", "contigBorders");
+                  polygonFeature.set("bpResolution", resolution);
+                  polygonFeature.set("pixelResolution", pixelResolution);
+                  polygonFeature.set("contigDescriptor", cd);
+
+                  return polygonFeature;
+                }
+              );
 
               this.features.get(resolution)?.push(polygonFeature);
             }
@@ -929,6 +1002,11 @@ class ScaffoldBordersTrack2D extends WithRing {
           return;
         }
         resolutions.forEach((bpResolution) => {
+          const prefixSum = holder.prefix_sum_px.get(bpResolution);
+          if (!prefixSum)
+            throw new Error(
+              `Can't get prefix sum for resolution ${bpResolution}`
+            );
           const [startBP, endBP] = [borders.startBP, borders.endBP];
 
           const [fromPx, toPx] = [startBP, endBP].map((bp) =>
@@ -972,23 +1050,36 @@ class ScaffoldBordersTrack2D extends WithRing {
           if (
             this.spanIntersectsViewport(fromPx, toPx, pixelResolution, viewport)
           ) {
-            const scaffold_bounding_box = this.drawPolygon(
-              [fromPx, -fromPx],
-              [fromPx, -toPx],
-              [toPx, -toPx],
-              [toPx, -fromPx],
-              pixelResolution
-            );
+            const polygonFeature = this.reuseBorder(
+              scaffoldDescriptor,
+              prefixSum,
+              pixelResolution,
+              fromPx,
+              toPx,
+              scaffoldDescriptor.scaffoldName,
+              viewport,
+              () => {
+                const scaffold_bounding_box = this.drawPolygon(
+                  [fromPx, -fromPx],
+                  [fromPx, -toPx],
+                  [toPx, -toPx],
+                  [toPx, -fromPx],
+                  pixelResolution
+                );
 
-            const polygonFeature = new Feature({
-              name: `ScaffoldBorder-${scaffoldDescriptor.scaffoldName}-bp${bpResolution}`,
-              geometry: scaffold_bounding_box,
-            });
-            polygonFeature.setStyle(this.style);
-            polygonFeature.set("trackType", "scaffoldBorders");
-            polygonFeature.set("bpResolution", bpResolution);
-            polygonFeature.set("pixelResolution", pixelResolution);
-            polygonFeature.set("scaffolDescriptor", scaffoldDescriptor);
+                const polygonFeature = new Feature({
+                  name: `ScaffoldBorder-${scaffoldDescriptor.scaffoldName}-bp${bpResolution}`,
+                  geometry: scaffold_bounding_box,
+                });
+                polygonFeature.setStyle(this.style);
+                polygonFeature.set("trackType", "scaffoldBorders");
+                polygonFeature.set("bpResolution", bpResolution);
+                polygonFeature.set("pixelResolution", pixelResolution);
+                polygonFeature.set("scaffolDescriptor", scaffoldDescriptor);
+
+                return polygonFeature;
+              }
+            );
 
             this.features.get(bpResolution)?.push(polygonFeature);
           }

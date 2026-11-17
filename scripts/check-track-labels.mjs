@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import ts from "typescript";
 import vm from "node:vm";
+import { reactive, markRaw, toRaw } from "vue";
 
 // The production module with OpenLayers/Vue replaced by inert stubs: only the pure geometry of the
 // visible-contig search and the label collision filter is exercised here.
@@ -20,7 +21,7 @@ class Text extends Stub {
 }
 class Track2D {}
 const modules = {
-  vue: { markRaw: (v) => v, toRaw: (v) => v },
+  vue: { markRaw, toRaw },
   "ol/extent": {
     boundingExtent: () => [],
     intersects: (a, b) =>
@@ -200,4 +201,94 @@ assert.equal(
     resolution: 1,
   }),
   true
+);
+
+// Reusing borders must never retain geometry/styles from a different assembly
+// snapshot, display grid or explicit border style. Exports stay independent.
+const border = reactive(
+  new sandbox.exports.ContigBordersTrack2D({
+    getContigDimensionHolder: () => ({}),
+  })
+);
+const descriptor = {};
+let prefixIdentity = [0, 100];
+let scale = 1,
+  from = 0,
+  to = 100,
+  name = "contig";
+let created = 0;
+const create = () => ({ serial: ++created });
+const reuse = (vp = viewport(0, -100, 100, 0)) =>
+  border.reuseBorder(
+    descriptor,
+    prefixIdentity,
+    scale,
+    from,
+    to,
+    name,
+    vp,
+    create
+  );
+let previous = reuse();
+assert.equal(reuse(), previous);
+assert.equal(
+  reuse(viewport(1, -90, 90, -1, 2)),
+  previous,
+  "pan/zoom reuses geometry"
+);
+for (const change of [
+  () => {
+    prefixIdentity = [...prefixIdentity];
+  },
+  () => {
+    scale = 2;
+  },
+  () => {
+    from = 10;
+  },
+  () => {
+    to = 90;
+  },
+  () => {
+    name = "renamed";
+  },
+  () => {
+    border.style = {};
+  },
+  () => {
+    border.setStyleType(sandbox.exports.BorderStyle.TOP);
+  },
+]) {
+  change();
+  const next = reuse();
+  assert.notEqual(next, previous);
+  assert.equal(reuse(), next);
+  previous = next;
+}
+assert.notEqual(
+  border.reuseBorder({}, prefixIdentity, scale, from, to, name, {}, create),
+  previous,
+  "new descriptor identity"
+);
+assert.notEqual(
+  border.reuseBorder(
+    descriptor,
+    prefixIdentity,
+    scale,
+    from,
+    to,
+    name,
+    undefined,
+    create
+  ),
+  previous,
+  "export is independent"
+);
+assert.equal(reuse(), previous, "export does not replace the live cache");
+for (let i = 0; i < 9000; i++)
+  border.reuseBorder({}, prefixIdentity, scale, from, to, name, {}, create);
+assert.equal(border.borderCache.size, 8192);
+assert.notEqual(reuse(), previous, "evicted borders are reconstructed");
+console.log(
+  "Border reuse preserves snapshot, grid, style, rename and export isolation with bounded storage."
 );

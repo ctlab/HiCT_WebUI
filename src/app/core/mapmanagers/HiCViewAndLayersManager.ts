@@ -3101,7 +3101,6 @@ class HiCViewAndLayersManager {
       return;
     }
 
-    source.clear(true);
     const bpResolution = Number(layer.get("bpResolution"));
     const features = featuresByResolution.get(bpResolution);
     if (!features) {
@@ -3113,17 +3112,23 @@ class HiCViewAndLayersManager {
       this.currentViewState.hideScopedBorders &&
       this.activeAxisScopes.row.kind !== "all" &&
       this.activeAxisScopes.column.kind !== "all";
-    source.addFeatures(
-      hideBorders
-        ? features.filter(
-            (feature) =>
-              !["contigBorders", "scaffoldBorders"].includes(
-                String(feature.get("trackType"))
-              )
-          )
-        : features
-    );
-    source.changed();
+    const wanted = hideBorders
+      ? features.filter(
+          (feature) =>
+            !["contigBorders", "scaffoldBorders"].includes(
+              String(feature.get("trackType"))
+            )
+        )
+      : features;
+    // Preserve unchanged border instances and their spatial index/listeners.
+    // Labels are still replaced when their viewport layout changes.
+    const desired = new Set(wanted);
+    const current = source.getFeatures();
+    const removed = current.filter((feature) => !desired.has(feature));
+    if (removed.length === current.length && removed.length) source.clear(true);
+    else if (removed.length) source.removeFeatures(removed);
+    const added = wanted.filter((feature) => !source.hasFeature(feature));
+    if (added.length) source.addFeatures(added);
     layer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, false);
     layer.changed();
   }
