@@ -85,6 +85,28 @@
           Capturing figure · {{ Math.round(progress * 100) }}%
         </p>
         <p v-if="error" class="text-danger" role="alert">{{ error }}</p>
+        <div v-if="displayed" class="figure-export-options">
+          <label
+            >Print size
+            <select
+              v-model="printWidth"
+              class="form-select form-select-sm"
+              aria-label="Figure print size"
+              :disabled="busy"
+            >
+              <option :value="0">Captured size</option>
+              <option :value="86">Single column · 86 mm</option>
+              <option :value="178">Double column · 178 mm</option>
+            </select>
+          </label>
+          <p v-if="printDimensions" class="small text-muted mb-0" role="status">
+            {{ printDimensions.widthMm }} ×
+            {{ printDimensions.heightMm.toFixed(1) }} mm ·
+            {{ Math.round(printDimensions.effectiveRasterDpi) }} dpi from
+            captured pixels. SVG/PDF labels remain vector. Check readability at
+            print size.
+          </p>
+        </div>
         <p v-if="outdated" class="alert alert-info" role="status">
           Options changed. Refresh the capture to apply them. The current
           preview remains unchanged.
@@ -294,6 +316,7 @@ import {
 } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { FrozenFigure } from "@/app/core/export/FrozenFigure";
+import { figurePrintDimensions } from "@/app/core/export/FigurePrintSize";
 import {
   createFigureSnapshot,
   MAX_FIGURE_SNAPSHOTS,
@@ -328,6 +351,14 @@ const comparison = shallowRef<FrozenFigure | null>(null);
 const viewingSnapshot = shallowRef<FigureSnapshot | null>(null);
 const displayed = computed(
   () => comparison.value ?? viewingSnapshot.value?.figure ?? figure.value
+);
+const printWidth = ref<0 | 86 | 178>(0);
+const printDimensions = computed(() =>
+  displayed.value && printWidth.value
+    ? figurePrintDimensions(displayed.value.width, displayed.value.height, {
+        widthMm: printWidth.value,
+      })
+    : null
 );
 const snapshots = computed(() => props.mapManager.figureSnapshots.snapshots);
 const snapshotName = ref("");
@@ -577,7 +608,8 @@ async function save(format: "svg" | "png" | "pdf") {
       undefined,
       (value) => {
         progress.value = value;
-      }
+      },
+      printWidth.value ? { widthMm: printWidth.value } : undefined
     );
     notifyFileSave(result, `${format.toUpperCase()} export`);
   } catch (failure) {

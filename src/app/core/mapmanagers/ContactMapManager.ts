@@ -1,4 +1,5 @@
 import { FigureSnapshotLibrary } from "../export/FigureSnapshotLibrary";
+import type { FigurePrintOptions } from "../export/FigurePrintSize";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -1726,13 +1727,14 @@ class ContactMapManager {
     figure: FrozenFigure,
     format: "png" | "svg" | "pdf",
     filename = `hict-figure.${format}`,
-    progress?: (fraction: number) => void
+    progress?: (fraction: number) => void,
+    printOptions?: FigurePrintOptions
   ): Promise<FileSaveResult> {
     const destination = await prepareFileSave(filename, "figure");
     if (!destination) return cancelledFileSave;
     const { encodeFrozenFigure } = await import("../export/FrozenFigure");
     const result = await destination.write(
-      await encodeFrozenFigure(figure, format, progress)
+      await encodeFrozenFigure(figure, format, progress, printOptions)
     );
     progress?.(1);
     return result;
