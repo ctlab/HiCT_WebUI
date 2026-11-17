@@ -331,9 +331,23 @@
                 <button
                   class="dropdown-item"
                   :disabled="!props.mapManager"
-                  @click="sequenceSearchOpen = true"
+                  @click="
+                    sequenceSearchRemote = false;
+                    sequenceSearchOpen = true;
+                  "
                 >
                   Find sequences in linked FASTA…
+                </button>
+              </li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  @click="
+                    sequenceSearchRemote = true;
+                    sequenceSearchOpen = true;
+                  "
+                >
+                  Search NCBI databases…
                 </button>
               </li>
               <li><hr class="dropdown-divider" /></li>
@@ -755,10 +769,15 @@
     @link-fasta="startLinkFastaForTool('moddotplot')"
   />
   <SequenceSearchModal
-    v-if="sequenceSearchOpen && props.mapManager"
+    v-if="sequenceSearchOpen && (props.mapManager || sequenceSearchRemote)"
     :map-manager="props.mapManager"
+    :requests="props.networkManager.requestManager"
+    :initial-remote="sequenceSearchRemote"
     @dismissed="sequenceSearchOpen = false"
-    @link-fasta="startLinkFastaForTool('search')"
+    @link-fasta="
+      sequenceSearchRemote = false;
+      startLinkFastaForTool('search');
+    "
   />
   <TrackManager
     v-if="trackManagerOpen"
@@ -1325,6 +1344,7 @@ const convertingCoolers = ref(false);
 const exportingMatrix = ref(false);
 const generatingDotplots = ref(false);
 const sequenceSearchOpen = ref(false);
+const sequenceSearchRemote = ref(false);
 const modDotPlotOpen = ref(false);
 const assemblyDotPlotOpen = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);

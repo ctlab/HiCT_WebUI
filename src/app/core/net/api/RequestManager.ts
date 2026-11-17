@@ -165,6 +165,7 @@ import {
   WorkerSchedulerDiagnosticsResponse,
 } from "./response";
 import { toast } from "vue-sonner";
+import { SequenceAnalysisRequest } from "./SequenceAnalysisRequest";
 import { useSessionStore } from "@/app/stores/sessionStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 import { extractErrorMessage } from "./errorMessage";
@@ -178,6 +179,7 @@ export interface BackgroundJobOutput {
     | "open_map"
     | "download"
     | "open_tracks"
+    | "open_blast_results"
     | "attach_identity"
     | "attach_dotplot"
     | "fasta_only"
@@ -845,6 +847,12 @@ class RequestManager {
       !this.hasUnsavedAssemblyEdits();
     const summary = this.history.applied;
     const sequenceSnapshot =
+      !(
+        request instanceof SequenceAnalysisRequest &&
+        request.options &&
+        "searchTarget" in request.options &&
+        request.options.searchTarget === "NCBI_REMOTE"
+      ) &&
       request.requestPath.startsWith("/sequence/") &&
       (request.requestPath.endsWith("/jobs") ||
         request.requestPath === "/sequence/alignment_detail" ||

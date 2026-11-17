@@ -208,6 +208,8 @@ const dialog = ref<HTMLElement | null>(null);
 const jobs = ref<BackgroundJob[]>([]);
 const statusError = ref("");
 function errorSummary(job: BackgroundJob): string {
+  if (job.kind === "remote_blast")
+    return "NCBI search could not finish. Check Error details and submit a new search when ready.";
   const message = job.error?.trim() ?? "";
   if (
     message.length <= 200 &&
@@ -227,6 +229,7 @@ const labels: Record<string, string> = {
   conversion: "Conversion",
   legacy_dotplot: "Alignment dotplot",
   search: "Sequence search",
+  remote_blast: "Remote BLAST",
   moddotplot: "ModDotPlot",
   dotplot: "Sequence dotplot",
   alignment_detail: "Base alignment",

@@ -225,6 +225,13 @@
         {{ desktopReconnectBusy ? "Reconnecting…" : "Reconnect" }}
       </button>
     </div>
+    <RemoteBlastResultsModal
+      v-if="remoteBlastResults.jobId"
+      :key="remoteBlastResults.jobId"
+      :requests="networkManager.requestManager"
+      :job-id="remoteBlastResults.jobId"
+      @dismissed="remoteBlastResults.dismiss()"
+    />
     <ExamplesDialog
       v-if="examplesOpen"
       :requests="networkManager.requestManager"
@@ -403,6 +410,7 @@ import {
   type SessionVisualizationPreset,
 } from "@/app/stores/sessionStore";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import { useRemoteBlastResultsStore } from "@/app/stores/remoteBlastResultsStore";
 import { GetVisualizationOptionsRequest } from "@/app/core/net/api/request";
 import {
   dismissTopmostEscDialog,
@@ -412,6 +420,9 @@ import {
 
 const FileWizardModal = defineAsyncComponent(
   () => import("@/app/ui/components/upper_ribbon/FileWizardModal.vue")
+);
+const RemoteBlastResultsModal = defineAsyncComponent(
+  () => import("@/app/ui/components/upper_ribbon/RemoteBlastResultsModal.vue")
 );
 
 // Reactively use these refs only inside component
@@ -473,6 +484,7 @@ const stylesStore = useStyleStore();
 const uiSettingsStore = useUiSettingsStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const sessionStore = useSessionStore();
+const remoteBlastResults = useRemoteBlastResultsStore();
 watch(fastaFilename, (v) => sessionStore.setLinkedFastaFilename(v ?? ""), {
   immediate: true,
 });
@@ -995,7 +1007,9 @@ async function openJobResult({
 }: JobOpenRequest): Promise<void> {
   try {
     const requests = networkManager.requestManager;
-    if (output.action === "example") {
+    if (output.action === "open_blast_results") {
+      remoteBlastResults.open(output.filename);
+    } else if (output.action === "example") {
       if (!verifiedExample) {
         const currentMap = mapManager.value;
         const ui = useBackgroundJobsUiStore();

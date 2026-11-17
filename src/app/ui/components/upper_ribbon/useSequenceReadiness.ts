@@ -52,9 +52,26 @@ export function useSequenceReadiness(manager: {
           "This tool is unavailable. Install a complete HiCT portable package, or rebuild with ./gradlew natives shadowJar.")
     );
   }
+  function toolReason(name: string) {
+    return checking.value
+      ? "Checking the search tool…"
+      : error.value ||
+          (available(name)
+            ? ""
+            : tools.value[name]?.reason ??
+              "This search tool is unavailable in this installation.");
+  }
   onMounted(refresh);
   const needsFasta = computed(
     () => !checking.value && !error.value && mapOpen.value && !fastaLinked.value
   );
-  return { checking, prerequisite, needsFasta, available, reason, refresh };
+  return {
+    checking,
+    prerequisite,
+    needsFasta,
+    available,
+    reason,
+    toolReason,
+    refresh,
+  };
 }

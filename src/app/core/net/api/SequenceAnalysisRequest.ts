@@ -1,6 +1,10 @@
 export interface SequenceSearchSettings {
   queries: string;
-  scope: "assembly" | "selection";
+  scope: "assembly" | "selection" | "database";
+  searchTarget?: "LOCAL_ASSEMBLY" | "NCBI_REMOTE";
+  remoteConsent?: boolean;
+  remoteDatabase?: "nt" | "refseq_rna" | "16S_ribosomal_RNA";
+  remoteTimeoutMinutes?: number;
   mode: "exact" | "substitutions" | "blast";
   evalue?: number;
   identity?: number;
@@ -21,7 +25,15 @@ export interface SequenceSearchSettings {
 
 export interface SequenceAnalysisJob {
   jobId: string;
-  kind: "search" | "dotplot" | "moddotplot" | "alignment_detail" | "repeat_period";
+  kind:
+    | "search"
+    | "remote_blast"
+    | "dotplot"
+    | "moddotplot"
+    | "alignment_detail"
+    | "repeat_period";
+  searchTarget?: "LOCAL_ASSEMBLY" | "NCBI_REMOTE";
+  remoteDatabase?: string;
   status:
     | "submitted"
     | "preparing"
@@ -34,11 +46,11 @@ export interface SequenceAnalysisJob {
   logs: string[];
   hits: number;
   fragments: number;
-  snapshot: string;
+  snapshot: string | null;
   sequenceLength: number;
   mapFilename: string;
-  requestedThreads?: number;
-  effectiveThreads?: number;
+  requestedThreads?: number | null;
+  effectiveThreads?: number | null;
   threadMode?: string;
 }
 
@@ -49,7 +61,7 @@ export class SequenceAnalysisRequest {
     public readonly options: object = {}
   ) {
     if (
-      !/^\/sequence\/(settings|cleanup|repeat_period|(?:search|moddotplot|dotplot)\/jobs|jobs\/list|jobs\/[a-zA-Z0-9-]+\/stop)$/.test(
+      !/^\/sequence\/(settings|cleanup|repeat_period|remote_blast\/result|(?:search|moddotplot|dotplot)\/jobs|jobs\/list|jobs\/[a-zA-Z0-9-]+\/stop)$/.test(
         requestPath
       )
     )

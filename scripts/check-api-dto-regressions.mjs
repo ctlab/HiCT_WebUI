@@ -490,6 +490,8 @@ vm.runInNewContext(adapterSource, {
       );
     if (name === "vue") return { shallowReactive: (value) => value };
     if (name === "./request") return requestClasses;
+    if (name === "./SequenceAnalysisRequest")
+      return { SequenceAnalysisRequest };
     if (name === "axios")
       return {
         post: async (url, payload, config) => {
@@ -568,6 +570,26 @@ await adapter.querySequenceRegion(0, 60, undefined, {
 assert.equal(sentHeaders["X-HiCT-History-Revision"], "3");
 assert.equal(sentPayload.includeGaps, true);
 assert.equal(sentPayload.assemblyAnchorBp, 5000);
+await adapter.sendRequest(
+  new SequenceAnalysisRequest("/sequence/search/jobs", {
+    searchTarget: "NCBI_REMOTE",
+  })
+);
+assert.equal(
+  sentHeaders["X-HiCT-History-Revision"],
+  undefined,
+  "External query submission must not depend on the displayed assembly revision"
+);
+await adapter.sendRequest(
+  new SequenceAnalysisRequest("/sequence/search/jobs", {
+    searchTarget: "LOCAL_ASSEMBLY",
+  })
+);
+assert.equal(
+  sentHeaders["X-HiCT-History-Revision"],
+  "3",
+  "Local sequence searches retain their captured assembly guard"
+);
 adapter.sequenceViewReadOnly = true;
 const sentBefore = requestsSent;
 for (const requestPath of [
