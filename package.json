@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run build:web && npm run electron:compile",
-    "build:web": "run-p type-check test:api-dto test:map-resolution test:map-viewport test:feature-packing test:visualization-presets test:signal-diagnostics build-only",
+    "build:web": "run-p type-check test:api-dto test:map-resolution test:map-viewport test:feature-packing test:visualization-presets test:signal-diagnostics test:native-dependencies build-only",
+    "test:native-dependencies": "node scripts/check-native-dependency-patches.mjs",
     "test:signal-diagnostics": "node scripts/check-tile-signal-range.mjs && node scripts/check-signal-diagnostics.mjs && node scripts/check-tile-lifecycle.mjs && node scripts/check-pipeline-editor-state.mjs && node scripts/check-alignment-runs.mjs && node scripts/check-alignment-detail.mjs",
     "test:api-dto": "node scripts/check-sonner-visibility.mjs && node scripts/check-api-dto-regressions.mjs && node scripts/check-file-save.mjs && node scripts/check-source-capabilities.mjs && node scripts/check-session-documents.mjs && node scripts/check-background-result-delivery.mjs && node scripts/check-remote-blast-report.mjs",
     "test:map-resolution": "node scripts/check-map-resolution-model.mjs && node scripts/check-sequence-zoom.mjs && node scripts/check-sequence-measurement.mjs",

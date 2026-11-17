@@ -1,6 +1,29 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::Arc;
+
+#[cfg(all(test, target_os = "linux"))]
+mod dependency_regressions {
+    use webkit2gtk::glib::{variant::ToVariant, Variant};
+
+    #[test]
+    fn glib_variant_string_iteration_preserves_values_in_release_builds() {
+        let labels = ["ctg-A", "ctg-B", "ctg-C", "ctg-D", "ctg-E", "ctg-F"];
+        let variant =
+            Variant::array_from_iter::<String>(labels.iter().map(|label| label.to_variant()));
+        assert_eq!(
+            variant.array_iter_str().unwrap().collect::<Vec<_>>(),
+            labels
+        );
+        assert_eq!(variant.array_iter_str().unwrap().last(), Some("ctg-F"));
+        let mut iter = variant.array_iter_str().unwrap();
+        assert_eq!(iter.nth(1), Some("ctg-B"));
+        assert_eq!(iter.next_back(), Some("ctg-F"));
+        assert_eq!(iter.next(), Some("ctg-C"));
+        assert_eq!(iter.nth_back(1), Some("ctg-D"));
+        assert_eq!(iter.next(), None);
+    }
+}
 use std::{env, net::IpAddr, process};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use url::Url;

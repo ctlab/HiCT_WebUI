@@ -1,3 +1,9 @@
 # Handle line endings automatically for files detected as text 
 # and leave all files detected as binary untouched.
 * text=false
+
+# Preserve exact upstream dependency/archive bytes on every checkout.
+src-tauri/vendor/** -text
+src-tauri/vendor/glib-0.18.5/** linguist-vendored
+# Retain the pinned upstream license's terminal blank line byte-for-byte.
+src-tauri/vendor/glib-0.18.5/LICENSE whitespace=-blank-at-eof
