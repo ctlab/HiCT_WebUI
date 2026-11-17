@@ -760,6 +760,9 @@ class RulerControl extends Control {
         if (horizontal)
           context.fillRect(band.start, offset, Math.max(1, width - 1), 12);
         else context.fillRect(offset, band.start, 12, Math.max(1, width - 1));
+        // No nonnegative text width can fit inside the required padding.
+        // Dense assemblies have thousands of these bands on every frame.
+        if (width < 6) continue;
         const label = band.count > 1 ? `${band.count} contigs` : band.label;
         if (width < context.measureText(label).width + 6) continue;
         context.globalAlpha = 1;

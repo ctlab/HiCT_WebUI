@@ -205,3 +205,40 @@ for (const reversed of [false, true]) {
 console.log(
   "Partial source-bin intersections preserve exact forward/reverse base and fractional coordinates."
 );
+
+// Sub-padding bands retain their rectangles but need no expensive text shaping.
+const bandControl = Object.create(RulerControl.prototype);
+bandControl.direction = "horizontal";
+bandControl.canvas = { width: 100, height: 70 };
+bandControl.getRulerStrokeColors = () => ({ mainStroke: "black" });
+bandControl.setFillStrokeContrastColors = () => {};
+const measured = [],
+  rectangles = [],
+  labels = [];
+const context = new Proxy(
+  {
+    measureText: (label) => {
+      measured.push(label);
+      return { width: 8 };
+    },
+    fillRect: (...args) => rectangles.push(args),
+    fillText: (label) => labels.push(label),
+  },
+  { get: (target, key) => target[key] ?? (() => {}) }
+);
+bandControl.drawEntityBands(context, {
+  contigs: [
+    { start: 0, end: 0.1, label: "tiny", count: 1 },
+    { start: 1, end: 6.99, label: "narrow", count: 1 },
+    { start: 7, end: 13, label: "boundary", count: 1 },
+    { start: 14, end: 30, label: "fits", count: 1 },
+  ],
+  scaffolds: [],
+  breaks: [],
+});
+assert.equal(rectangles.length, 4);
+assert.deepEqual(measured, ["boundary", "fits"]);
+assert.deepEqual(labels, ["fits"]);
+console.log(
+  "Dense ruler bands skip impossible labels while preserving geometry and fit boundaries."
+);
