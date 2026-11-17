@@ -43,6 +43,7 @@ const PROJECTED_TILE_CACHE_BYTES = 48 * 1024 * 1024;
 class VersionedXYZContactMapSource extends XYZ {
   protected sourceVersion: number;
   private tileGeneration = 0;
+  private readonly figureTileContexts = new WeakMap<object, string>();
   private tileRequestEpoch = 0;
   private readonly activeTileRequests = new Set<XMLHttpRequest>();
   private pendingSignalRanges?: CurrentSignalRangeResponse;
@@ -70,7 +71,13 @@ class VersionedXYZContactMapSource extends XYZ {
     this.maximumTileImageLength = 1024 + Math.ceil((pixels * 4 * 1.02 * 4) / 3);
     if (this.grid || this.sequenceScale)
       this.tileCache.setSize(this.projectedCacheLimit(pixels));
+    this.on("tileloaderror", ({ tile }) => this.failFigureTile(tile));
     this.setTileLoadFunction((tile, src) => {
+      const captureId = new URL(src, window.location.href).searchParams.get(
+        "renderCapture"
+      );
+      if (captureId) this.figureTileContexts.set(tile, captureId);
+      else this.figureTileContexts.delete(tile);
       console.assert(tile instanceof ImageTile);
       const imageTile: ImageTile = tile as ImageTile;
       if (this.loadsPaused) {
@@ -81,6 +88,7 @@ class VersionedXYZContactMapSource extends XYZ {
         imageTile.getImage() as HTMLImageElement | HTMLVideoElement;
       const uiSettingsStore = useUiSettingsStore();
       if (
+        !this.layersManager.figureRenderCaptureId &&
         !this.sequenceScale &&
         uiSettingsStore.binaryTileTransportEnabled &&
         useVisualizationOptionsStore().signalDisplayMode === "OBSERVED" &&
@@ -168,6 +176,16 @@ class VersionedXYZContactMapSource extends XYZ {
     return values;
   }
 
+  private failFigureTile(tile: object): void {
+    const id = this.figureTileContexts.get(tile);
+    if (id && id === this.layersManager.figureRenderCaptureId) {
+      const error = (this.layersManager.figureRenderCaptureError ??= new Error(
+        "A map tile failed during figure capture. Retry after loading completes."
+      ));
+      this.layersManager.figureRenderCaptureFailed?.(error);
+    }
+  }
+
   private loadPngTile(
     tile: ImageTile,
     image: HTMLImageElement | HTMLVideoElement,
@@ -195,6 +213,7 @@ class VersionedXYZContactMapSource extends XYZ {
           data?.cancelled === true ||
           xhr.getResponseHeader("x-hict-cancelled") === "true"
         ) {
+          this.failFigureTile(tile);
           tile.setState(TileState.EMPTY);
           return;
         }
@@ -214,6 +233,7 @@ class VersionedXYZContactMapSource extends XYZ {
             new CurrentSignalRangeResponseDTO(data.ranges).toEntity()
           );
         } else {
+          this.failFigureTile(tile);
           // @ts-expect-error If tile was loaded successfully at least once, last response is saved
           if (tile.lastResponse) {
             // @ts-expect-error If tile was loaded successfully at least once, last response is saved
@@ -226,6 +246,7 @@ class VersionedXYZContactMapSource extends XYZ {
     );
     xhr.addEventListener("error", () =>
       settle(() => {
+        this.failFigureTile(tile);
         // @ts-expect-error If tile was loaded successfully at least once, last response is saved
         if (tile.lastResponse) {
           // @ts-expect-error If tile was loaded successfully at least once, last response is saved
@@ -236,7 +257,10 @@ class VersionedXYZContactMapSource extends XYZ {
       })
     );
     xhr.addEventListener("abort", () =>
-      settle(() => tile.setState(TileState.EMPTY))
+      settle(() => {
+        this.failFigureTile(tile);
+        tile.setState(TileState.EMPTY);
+      })
     );
     xhr.open("GET", src);
     this.activeTileRequests.add(xhr);
@@ -555,6 +579,7 @@ class VersionedXYZContactMapSource extends XYZ {
   }
 
   protected create_tile_url_function() {
+    const captureId = this.layersManager.figureRenderCaptureId;
     return (coord_zxy: number[]) => {
       const col = coord_zxy[1];
       const row = coord_zxy[2];
@@ -567,6 +592,7 @@ class VersionedXYZContactMapSource extends XYZ {
         `&level=${1 + this.zoomLevel}` +
         `&bpResolution=${this.bpResolution}` +
         `&source=${this.sourceName}` +
+        (captureId ? `&renderCapture=${encodeURIComponent(captureId)}` : "") +
         (this.sequenceScale ? "&sequenceScale=true" : "") +
         (this.grid
           ? `&gridBpResolution=${this.grid.bpResolution}&gridSampleFactor=${this.grid.sampleFactor}`

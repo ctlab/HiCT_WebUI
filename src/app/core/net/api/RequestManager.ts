@@ -2315,6 +2315,35 @@ class RequestManager {
     return new VisualizationOptionsDTO(response.data).toEntity();
   }
 
+  public async createRenderCapture(bounds: {
+    unit?: "PIXELS" | "BINS";
+    bpResolution: number;
+    startRowPx: number;
+    endRowPx: number;
+    startColPx: number;
+    endColPx: number;
+  }): Promise<{ id: string; [key: string]: unknown }> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    // Keep the response observable on cancellation so its context can be released.
+    return (await axios.post(`${host}/visualization/captures`, bounds)).data;
+  }
+
+  public async validateRenderCapture(id: string): Promise<void> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    await axios.post(
+      `${host}/visualization/captures/${encodeURIComponent(id)}/validate`,
+      {}
+    );
+  }
+
+  public async releaseRenderCapture(id: string): Promise<void> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    await axios.post(
+      `${host}/visualization/captures/${encodeURIComponent(id)}/release`,
+      {}
+    );
+  }
+
   public async setViewportExpectedProfile(options: {
     unit?: "PIXELS" | "BINS";
     bpResolution: number;

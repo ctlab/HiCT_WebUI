@@ -1090,7 +1090,7 @@ class VisualizationManager {
     };
   }
 
-  private resolveExpectedProfileBounds(): ViewportPixelBounds | null {
+  public resolveExpectedProfileBounds(): ViewportPixelBounds | null {
     return this.resolveViewportPixelBounds(
       Math.max(0, Math.round(this.mapManager.getOptions().tileSize || 0))
     );
@@ -1160,6 +1160,7 @@ class VisualizationManager {
   }
 
   private async refreshExpectedProfileOnMoveEnd(): Promise<void> {
+    if (this.mapManager.isExporting) return;
     const options = this.visualizationOptionsStore.asVisualizationOptions();
     if (options.signalDisplayMode === "OBSERVED") {
       return;
@@ -1171,7 +1172,7 @@ class VisualizationManager {
     this.expectedProfileSyncInFlight = true;
     try {
       const updated = await this.syncExpectedProfileToViewport();
-      if (updated) {
+      if (updated && !this.mapManager.isExporting) {
         this.mapManager.reloadTiles();
       }
     } catch {

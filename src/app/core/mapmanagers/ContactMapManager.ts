@@ -1256,10 +1256,20 @@ class ContactMapManager {
       .getInteractions()
       .getArray()
       .map((item) => [item, item.getActive()] as const);
+    const overviewLayers =
+      this.minimap
+        ?.getLayers()
+        .getArray()
+        .map((layer) => [layer, layer.getVisible()] as const) ?? [];
+    let renderCapture: { id: string; [key: string]: unknown } | undefined;
     this.exportInProgress = true;
     try {
       options?.progress?.(0.05);
       interactions.forEach(([item]) => item.setActive(false));
+      this.viewAndLayersManager.settleProjectedOverlayForFigure();
+      // The overview shares a coarser source with the map but is excluded from
+      // figure content. Suspend it so it cannot request another capture grid.
+      overviewLayers.forEach(([layer]) => layer.setVisible(false));
       this.viewAndLayersManager.setSelectionPresentationVisible(false);
       if (customComposition) {
         const style = getComputedStyle(workspace);
@@ -1412,32 +1422,54 @@ class ContactMapManager {
       await document.fonts.ready;
       await this.linearTrackManager.render({ allowFetch: true });
       await this.renderSequenceTracks();
+      options?.signal?.throwIfAborted();
+      const fitBounds =
+        this.visualizationManager.resolveExpectedProfileBounds();
+      if (!fitBounds)
+        throw new Error(
+          "The map fitting grid is not ready. Retry after loading completes."
+        );
+      renderCapture =
+        await this.networkManager.requestManager.createRenderCapture(fitBounds);
+      options?.signal?.throwIfAborted();
+      if (this.disposed)
+        throw new Error("The map was closed during figure capture.");
+      this.viewAndLayersManager.figureRenderCaptureError = undefined;
+      this.viewAndLayersManager.figureRenderCaptureId = renderCapture.id;
+      // A backend reload changes its generation and would invalidate this context.
+      this.reloadTiles();
       options?.progress?.(0.2);
       await new Promise<void>((resolve, reject) => {
-        const abort = () => {
+        const finish = (error?: unknown) => {
           window.clearTimeout(timer);
           this.map.un("rendercomplete", done);
-          reject(
+          options?.signal?.removeEventListener("abort", abort);
+          this.viewAndLayersManager.figureRenderCaptureFailed = undefined;
+          if (error) reject(error);
+          else resolve();
+        };
+        const abort = () =>
+          finish(
             options?.signal?.reason ??
               new DOMException("Figure capture cancelled", "AbortError")
           );
-        };
-        const done = () => {
-          window.clearTimeout(timer);
-          options?.signal?.removeEventListener("abort", abort);
-          resolve();
-        };
-        const timer = window.setTimeout(() => {
-          this.map.un("rendercomplete", done);
-          options?.signal?.removeEventListener("abort", abort);
-          reject(
-            new Error(
-              "The map did not finish rendering for export. Retry after loading completes."
-            )
-          );
-        }, 60000);
+        const done = () => finish();
+        const timer = window.setTimeout(
+          () =>
+            finish(
+              new Error(
+                "The map did not finish rendering for export. Retry after loading completes."
+              )
+            ),
+          60000
+        );
+        this.viewAndLayersManager.figureRenderCaptureFailed = finish;
         if (options?.signal?.aborted) {
           abort();
+          return;
+        }
+        if (this.viewAndLayersManager.figureRenderCaptureError) {
+          finish(this.viewAndLayersManager.figureRenderCaptureError);
           return;
         }
         options?.signal?.addEventListener("abort", abort, { once: true });
@@ -1462,6 +1494,7 @@ class ContactMapManager {
         options?.metadata
           ? {
               ...options.metadata,
+              renderCapture,
               renderedGrid: JSON.parse(
                 JSON.stringify(
                   this.viewAndLayersManager.currentViewState.resolutionDesciptor
@@ -1488,6 +1521,12 @@ class ContactMapManager {
         "../export/SvgCompatibility"
       );
       prepareSvgForEditors(svg.svg);
+      if (this.viewAndLayersManager.figureRenderCaptureError)
+        throw this.viewAndLayersManager.figureRenderCaptureError;
+      await this.networkManager.requestManager.validateRenderCapture(
+        renderCapture.id
+      );
+      options?.signal?.throwIfAborted();
       options?.progress?.(0.65);
       if (history !== this.networkManager.requestManager.history.applied)
         throw new Error(
@@ -1538,6 +1577,15 @@ class ContactMapManager {
       }
       return svg;
     } finally {
+      if (renderCapture) {
+        this.viewAndLayersManager.figureRenderCaptureId = undefined;
+        this.viewAndLayersManager.figureRenderCaptureError = undefined;
+        if (!this.disposed) this.reloadTiles();
+        // TTL is a backstop when the server or network disappears during cleanup.
+        void this.networkManager.requestManager
+          .releaseRenderCapture(renderCapture.id)
+          .catch(() => undefined);
+      }
       if (whole || customComposition) {
         this.viewAndLayersManager.setExportMaxResolution(undefined);
         if (workspaceStyle === null) workspace.removeAttribute("style");
@@ -1556,6 +1604,7 @@ class ContactMapManager {
         this.viewAndLayersManager.scheduleRulerRender();
         void this.linearTrackManager.render();
       }
+      overviewLayers.forEach(([layer, visible]) => layer.setVisible(visible));
       interactions.forEach(([item, active]) => item.setActive(active));
       this.viewAndLayersManager.setSelectionPresentationVisible(true);
       this.exportInProgress = false;

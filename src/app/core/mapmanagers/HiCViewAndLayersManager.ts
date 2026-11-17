@@ -178,6 +178,10 @@ interface Track2DHolder {
 }
 
 class HiCViewAndLayersManager {
+  /** Server-owned immutable rendering inputs for the current figure only. */
+  public figureRenderCaptureId: string | undefined;
+  public figureRenderCaptureError: Error | undefined;
+  public figureRenderCaptureFailed: ((error: Error) => void) | undefined;
   private static styleLoadSerial = 0;
   /**
    * `revision` changes on every style edit. `loaded` changes only when a manager is created or a whole
@@ -3484,6 +3488,15 @@ class HiCViewAndLayersManager {
     else map.delete(1);
   }
 
+  /** Figures must render a complete current overlay, without waiting on an outgoing cross-fade. */
+  public settleProjectedOverlayForFigure(): void {
+    this.cancelOverlayTransition?.();
+    if (this.outgoingOverlay) this.removeProjectedOverlay(this.outgoingOverlay);
+    this.outgoingOverlay = undefined;
+    this.activeOverlay?.setOpacity(1);
+    this.overlayStatus.loading.value = false;
+  }
+
   private showProjectedOverlay(
     primary: LayerResolutionDescriptor,
     secondary: LayerResolutionDescriptor
@@ -3497,6 +3510,16 @@ class HiCViewAndLayersManager {
     const sampleFactor =
       oversampling > 1 ? 2 ** Math.floor(Math.log2(oversampling)) : 1;
     const key = `${primary.bpResolution}/${secondary.bpResolution}/${sampleFactor}`;
+    if (this.mapManager.isExporting) {
+      this.settleProjectedOverlayForFigure();
+      if (
+        this.activeOverlay?.get("projectionKey") !== key &&
+        this.activeOverlay
+      ) {
+        this.removeProjectedOverlay(this.activeOverlay);
+        this.activeOverlay = undefined;
+      }
+    }
     if (this.activeOverlay?.get("projectionKey") === key) return;
 
     const map = this.mapManager.getMap();
@@ -3548,6 +3571,10 @@ class HiCViewAndLayersManager {
     this.layersHolder.hicDataLayers.push(layer);
     this.overlayStatus.loading.value = true;
     map.addLayer(layer);
+    if (this.mapManager.isExporting) {
+      this.overlayStatus.loading.value = false;
+      return;
+    }
 
     const finish = () => {
       this.cancelOverlayTransition?.();

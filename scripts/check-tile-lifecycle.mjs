@@ -59,6 +59,7 @@ for (const method of ["loadPngTile", "loadBinarySignalTile"]) {
     Object.assign(source, {
       tileRequestEpoch: 0,
       activeTileRequests: new Set(),
+      figureTileContexts: new WeakMap(),
       layersManager: {
         mapManager: { networkManager: { host: "http://localhost" } },
       },
@@ -100,6 +101,7 @@ for (const method of ["loadPngTile", "loadBinarySignalTile"]) {
       Object.assign(source, {
         tileRequestEpoch: 0,
         activeTileRequests: new Set(),
+        figureTileContexts: new WeakMap(),
         layersManager: {
           mapManager: { networkManager: { host: "http://localhost" } },
         },
@@ -147,3 +149,30 @@ for (const method of ["loadPngTile", "loadBinarySignalTile"]) {
   }
 }
 console.log("PNG and binary tile abort lifecycle regressions passed.");
+
+for (const stale of [false, true]) {
+  const source = Object.create(Source.prototype);
+  let failures = 0;
+  const tile = { setState() {} };
+  Object.assign(source, {
+    tileRequestEpoch: 0,
+    activeTileRequests: new Set(),
+    figureTileContexts: new WeakMap([[tile, "captured-context"]]),
+    layersManager: {
+      figureRenderCaptureId: stale ? "next-context" : "captured-context",
+      figureRenderCaptureFailed: () => failures++,
+    },
+  });
+  source.loadPngTile(tile, {}, "http://localhost/get_tile");
+  const request = [...source.activeTileRequests][0];
+  request.listeners.error();
+  assert.equal(
+    failures,
+    stale ? 0 : 1,
+    "Only the active capture may fail on its tile error"
+  );
+  assert.equal(!!source.layersManager.figureRenderCaptureError, !stale);
+}
+console.log(
+  "Captured tile failures reject the active figure and ignore obsolete contexts."
+);
