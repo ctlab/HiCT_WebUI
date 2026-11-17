@@ -565,9 +565,12 @@ mod tests {
         let dir = Directory::new();
         let state = ExportStreams::default();
         let target = dir.0.join("directory");
-        std::fs::create_dir(&target).unwrap();
         let id = state.begin("main".into(), target.clone(), None).unwrap();
         state.write("main", &id, 0, b"data").unwrap();
+        // Create the obstruction after opening a valid file destination.
+        // Windows rejects copying a directory's permissions onto a file, so
+        // starting with a directory never exercised the intended rename failure.
+        std::fs::create_dir(&target).unwrap();
         assert!(state.finish("main", &id).is_err());
         assert!(target.is_dir());
         dir.assert_no_staging();
