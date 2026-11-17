@@ -1,5 +1,6 @@
 import { FigureSnapshotLibrary } from "../export/FigureSnapshotLibrary";
 import type { FigurePrintOptions } from "../export/FigurePrintSize";
+import { watchMapRenderCompletion } from "./mapRenderCompletion";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -73,6 +74,7 @@ export interface FigureCaptureOptions {
 
 class ContactMapManager {
   private disposed = false;
+  private readonly stopCompletionWatch: () => void;
 
   public get isDisposed(): boolean {
     return this.disposed;
@@ -139,6 +141,7 @@ class ContactMapManager {
         maxTilesLoading: 3,
       })
     );
+    this.stopCompletionWatch = watchMapRenderCompletion(this.map);
 
     this.visualizationManager = new VisualizationManager(this);
     this.visualizationManager.fetchVisualizationOptions();
@@ -2032,6 +2035,7 @@ class ContactMapManager {
   public dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.stopCompletionWatch();
     this.alignmentDetail?.dispose();
     this.alignmentDetail = undefined;
     this.sequenceRenderers.clear();

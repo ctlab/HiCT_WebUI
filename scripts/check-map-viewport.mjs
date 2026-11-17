@@ -510,6 +510,8 @@ checkViewport().catch((error) => {
 const { ContactMapManager } = loadManager("ContactMapManager");
 const closedMap = Object.create(ContactMapManager.prototype);
 closedMap.disposed = false;
+let completionStops = 0;
+closedMap.stopCompletionWatch = () => completionStops++;
 closedMap.sequenceRenderers = new Set();
 const releaseSequenceRenderer = closedMap.registerSequenceRenderer(
   async () => {}
@@ -538,6 +540,11 @@ closedMap.refreshWorkspaceLayout();
 closedMap.scheduleWorkspaceLayoutRefresh();
 closedMap.reloadVisuals();
 closedMap.dispose();
+assert.equal(
+  completionStops,
+  1,
+  "Dispose releases the map completion watcher once"
+);
 console.log("Disposed map rejects pending layout and visual updates.");
 
 const minimapManager = Object.create(ContactMapManager.prototype);
