@@ -24,11 +24,31 @@ import {
   NormalizationSettings,
 } from "@/app/ui/components/ComponentCommon";
 import assert from "assert";
+import type { SequenceSearchSettings } from "./SequenceAnalysisRequest";
 import { ImageTile, Tile } from "ol";
 import { VisualizationOptionsDTO } from "../dto/dto";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 interface HiCTAPIRequest {
   requestPath: string;
+}
+
+export type RemoteBlastRetrievalSettings = SequenceSearchSettings & {
+  remoteRequestId: string;
+  searchTarget: "NCBI_REMOTE";
+  mode: "blast";
+  scope: "database";
+};
+
+/** Distinct from submission so an older server cannot upload a recovery query. */
+export class RemoteBlastRetrievalRequest implements HiCTAPIRequest {
+  readonly requestPath = "/sequence/remote_blast/retrieve";
+  readonly options: RemoteBlastRetrievalSettings;
+  constructor(options: RemoteBlastRetrievalSettings) {
+    const rid = options.remoteRequestId.trim().toUpperCase();
+    if (!/^[A-Z0-9]{8,64}$/.test(rid))
+      throw new Error("Enter a valid NCBI request ID (RID).");
+    this.options = { ...options, remoteRequestId: rid };
+  }
 }
 
 export class BackgroundJobsRequest implements HiCTAPIRequest {

@@ -17,10 +17,30 @@ export interface RemoteBlastHit {
   bitscore: number;
   strand: "+" | "-";
 }
+export interface RemoteQueryVerification {
+  queryId: string;
+  providerQueryTitle: string;
+  alignedBasesVerified: number;
+  queryLength: number;
+  scope: "FULL_QUERY" | "ALIGNED_BASES_ONLY" | "LABEL_AND_LENGTH_ONLY";
+}
+export function describeRemoteVerification(
+  value: RemoteQueryVerification
+): string {
+  if (value.scope === "FULL_QUERY")
+    return "All query bases matched returned alignments.";
+  if (value.scope === "LABEL_AND_LENGTH_ONLY")
+    return "No alignment bases were returned; only the query label and length could be checked.";
+  return `${value.alignedBasesVerified} of ${value.queryLength} query bases matched returned alignments; the remaining bases could not be checked.`;
+}
 export interface RemoteBlastReport {
   format: "hict-remote-blast";
   version: 1;
   provider: string;
+  retrievedRequestId?: string;
+  submissionPerformed?: boolean;
+  queryVerification?: RemoteQueryVerification[];
+  filterScope?: string;
   database: string;
   remoteDatabaseName?: string;
   startedAt: string;
@@ -42,9 +62,9 @@ export function ncbiAccessionUrl(accession: string): string | null {
 
 /** Validate the server/report boundary before rendering external scientific coordinates. */
 export function parseRemoteBlastReport(value: unknown): RemoteBlastReport {
-  const fail = (): never => {
+  function fail(): never {
     throw new Error("The server returned an invalid external BLAST report.");
-  };
+  }
   if (!value || typeof value !== "object") fail();
   const report = value as RemoteBlastReport;
   if (
@@ -81,6 +101,41 @@ export function parseRemoteBlastReport(value: unknown): RemoteBlastReport {
     )
       fail();
     lengths.set(query.id, query.length);
+  }
+  if (report.retrievedRequestId !== undefined) {
+    const verification = report.queryVerification;
+    if (!Array.isArray(verification)) fail();
+    if (
+      !/^[A-Z0-9]{8,64}$/.test(report.retrievedRequestId) ||
+      report.submissionPerformed !== false ||
+      typeof report.filterScope !== "string" ||
+      report.filterScope.length > 2048 ||
+      verification.length !== report.queries.length
+    )
+      fail();
+    const verified = new Set<string>();
+    for (const value of verification) {
+      if (
+        !value ||
+        typeof value.queryId !== "string" ||
+        verified.has(value.queryId) ||
+        lengths.get(value.queryId) !== value.queryLength ||
+        !Number.isSafeInteger(value.alignedBasesVerified) ||
+        value.alignedBasesVerified < 0 ||
+        value.alignedBasesVerified > value.queryLength ||
+        typeof value.providerQueryTitle !== "string" ||
+        !value.providerQueryTitle ||
+        value.providerQueryTitle.length > 4096 ||
+        value.scope !==
+          (value.alignedBasesVerified === value.queryLength
+            ? "FULL_QUERY"
+            : value.alignedBasesVerified === 0
+            ? "LABEL_AND_LENGTH_ONLY"
+            : "ALIGNED_BASES_ONLY")
+      )
+        fail();
+      verified.add(value.queryId);
+    }
   }
   for (const hit of report.hits) {
     if (

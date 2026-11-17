@@ -11,6 +11,7 @@ export function useSequenceReadiness(manager: {
   const mapOpen = ref(false),
     fastaLinked = ref(false);
   const tools = ref<Record<string, Tool>>({});
+  const ridRetrieval = ref(false);
   async function refresh() {
     checking.value = true;
     error.value = "";
@@ -18,6 +19,7 @@ export function useSequenceReadiness(manager: {
       const { data } = await manager.sendRequest(
         new SequenceAnalysisRequest("/sequence/settings", { checkTools: true })
       );
+      ridRetrieval.value = data.remoteBlastRidRetrieval === true;
       mapOpen.value = data.mapOpen === true;
       fastaLinked.value = data.fastaLinked === true;
       tools.value = data.tools ?? {};
@@ -61,6 +63,14 @@ export function useSequenceReadiness(manager: {
             : tools.value[name]?.reason ??
               "This search tool is unavailable in this installation.");
   }
+  function retrievalReason() {
+    return checking.value
+      ? "Checking NCBI retrieval support…"
+      : error.value ||
+          (ridRetrieval.value
+            ? ""
+            : "This server does not support NCBI request recovery. Update the server and WebUI together.");
+  }
   onMounted(refresh);
   const needsFasta = computed(
     () => !checking.value && !error.value && mapOpen.value && !fastaLinked.value
@@ -72,6 +82,7 @@ export function useSequenceReadiness(manager: {
     available,
     reason,
     toolReason,
+    retrievalReason,
     refresh,
   };
 }

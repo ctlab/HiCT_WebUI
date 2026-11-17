@@ -28,8 +28,14 @@
         <template v-if="report && !loading">
           <p>
             <strong>{{ report.database }}</strong> ·
-            {{ report.hitCount.toLocaleString() }} alignment rows · completed
+            {{ report.hitCount.toLocaleString() }} alignment rows ·
+            {{ report.retrievedRequestId ? "retrieved" : "completed" }}
             {{ new Date(report.completedAt).toLocaleString() }}
+          </p>
+          <p v-if="report.retrievedRequestId" class="small">
+            Recovered NCBI request <code>{{ report.retrievedRequestId }}</code
+            >. HiCT downloaded existing results without submitting the pasted
+            queries.
           </p>
           <p class="small">
             Coordinates refer to external database subjects (1-based,
@@ -45,6 +51,15 @@
             <p v-if="report.remoteDatabaseName">
               Service database: {{ report.remoteDatabaseName }}
             </p>
+            <p v-if="report.filterScope">{{ report.filterScope }}</p>
+            <ul v-if="report.queryVerification">
+              <li
+                v-for="value in report.queryVerification"
+                :key="value.queryId"
+              >
+                {{ value.queryId }}: {{ describeRemoteVerification(value) }}
+              </li>
+            </ul>
             <ul>
               <li v-for="query in report.queries" :key="query.id">
                 {{ query.id }} · {{ query.length.toLocaleString() }} bases ·
@@ -242,6 +257,7 @@ import type { RequestManager } from "@/app/core/net/api/RequestManager";
 import { SequenceAnalysisRequest } from "@/app/core/net/api/SequenceAnalysisRequest";
 import {
   parseRemoteBlastReport,
+  describeRemoteVerification,
   ncbiAccessionUrl,
   type RemoteBlastReport,
 } from "@/app/core/sequence/RemoteBlastReport";

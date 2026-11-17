@@ -1,5 +1,6 @@
 import {
   BackgroundJobsRequest,
+  RemoteBlastRetrievalRequest,
   CancelBackgroundJobRequest,
 } from "../api/request";
 /*
@@ -140,6 +141,10 @@ abstract class HiCTAPIRequestDTO<
         };
       case entity instanceof AlignmentDetailRequest:
         return { toDTO: () => (entity as AlignmentDetailRequest).options };
+      case entity instanceof RemoteBlastRetrievalRequest:
+        return new RemoteBlastRetrievalRequestDTO(
+          entity as RemoteBlastRetrievalRequest
+        );
       case entity instanceof SequenceAnalysisRequest:
         return { toDTO: () => (entity as SequenceAnalysisRequest).options };
       case entity instanceof AssemblyHistoryRequest:
@@ -399,6 +404,10 @@ abstract class HiCTAPIRequestDTO<
 
   private static toDTOByRequestPath(entity: HiCTAPIRequest) {
     switch (entity.requestPath) {
+      case "/sequence/remote_blast/retrieve":
+        return new RemoteBlastRetrievalRequestDTO(
+          entity as RemoteBlastRetrievalRequest
+        );
       case "/split_contig_at_bp":
         return new SplitContigAtBpRequestDTO(entity as SplitContigAtBpRequest);
       case "/tracks/open_cooler_weights":
@@ -1266,5 +1275,12 @@ class GetSessionSnapshotRequestDTO extends HiCTAPIRequestDTO<GetSessionSnapshotR
       verifyTrackDefinitions: this.entity.verifyTrackDefinitions,
       fullFingerprints: this.entity.fullFingerprints,
     };
+  }
+}
+
+export class RemoteBlastRetrievalRequestDTO {
+  constructor(private readonly entity: RemoteBlastRetrievalRequest) {}
+  toDTO(): object {
+    return this.entity.options;
   }
 }

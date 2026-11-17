@@ -1,5 +1,10 @@
 import { BackgroundResultDelivery } from "../../sequence/backgroundResultDelivery";
-import { BackgroundJobsRequest, CancelBackgroundJobRequest } from "./request";
+import {
+  BackgroundJobsRequest,
+  CancelBackgroundJobRequest,
+  RemoteBlastRetrievalRequest,
+  type RemoteBlastRetrievalSettings,
+} from "./request";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -821,6 +826,12 @@ class RequestManager {
       })),
       nativeProcessing: this.parseNativeProcessingStatus(nativeProcessingRaw),
     };
+  }
+
+  public async retrieveRemoteBlast(
+    settings: RemoteBlastRetrievalSettings
+  ): Promise<AxiosResponse> {
+    return this.sendRequest(new RemoteBlastRetrievalRequest(settings));
   }
 
   public async sendRequest(

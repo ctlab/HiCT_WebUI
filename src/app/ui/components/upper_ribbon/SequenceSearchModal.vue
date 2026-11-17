@@ -27,7 +27,12 @@
         <div class="modal-body">
           <details class="small mb-3">
             <summary>How this works</summary>
-            <p v-if="isRemote" class="mt-2">
+            <p v-if="isRetrieval" class="mt-2">
+              Only the existing RID is sent to NCBI. Pasted queries are checked
+              on the HiCT server against returned labels, lengths and available
+              aligned bases. Results keep external database coordinates.
+            </p>
+            <p v-else-if="isRemote" class="mt-2">
               Only the pasted query sequences and generated query IDs are sent
               to NCBI. Results use external database coordinates. Your linked
               FASTA and assembly are not uploaded.
@@ -233,12 +238,46 @@
                       class="form-control"
                     />
                   </div>
-                  <div class="col-12 alert alert-warning mb-0">
-                    <p>
+                  <div class="col-12">
+                    <details :open="recoverExisting" @toggle="toggleRecovery">
+                      <summary>Recover an existing NCBI request</summary>
+                      <label for="blast-remote-rid" class="form-label mt-2"
+                        >NCBI request ID (RID)</label
+                      >
+                      <input
+                        id="blast-remote-rid"
+                        v-model="remoteRequestId"
+                        class="form-control"
+                        maxlength="64"
+                        pattern="[A-Za-z0-9]{8,64}"
+                        autocomplete="off"
+                        spellcheck="false"
+                        :disabled="busy || !recoverExisting"
+                        :required="recoverExisting"
+                      />
+                      <p class="small mt-2 mb-0">
+                        Paste the original queries and FASTA headers above. HiCT
+                        downloads the completed request and checks its labels,
+                        lengths and available aligned bases. Identity, e-value,
+                        per-HSP coverage and target limits filter the downloaded
+                        alignments.
+                      </p>
+                    </details>
+                  </div>
+                  <div
+                    class="col-12 alert mb-0"
+                    :class="isRetrieval ? 'alert-info' : 'alert-warning'"
+                  >
+                    <p v-if="!isRetrieval">
                       NCBI remote sends these queries over the network. Use it
                       only for sequences you may share with NCBI. Cancel stops
                       HiCT waiting; a submitted search may continue at NCBI. No
                       automatic resubmission is made.
+                    </p>
+                    <p v-else>
+                      HiCT sends only the RID to NCBI. Pasted sequences are
+                      checked on the HiCT server. Recovery never submits a new
+                      search.
                     </p>
                     <div class="form-check">
                       <input
@@ -248,8 +287,14 @@
                         class="form-check-input"
                         required
                       />
-                      <label for="blast-remote-consent" class="form-check-label"
-                        >I agree to send these query sequences to NCBI.</label
+                      <label
+                        for="blast-remote-consent"
+                        class="form-check-label"
+                        >{{
+                          isRetrieval
+                            ? "Allow download of this request. I confirm it belongs to the queries above."
+                            : "I agree to send these query sequences to NCBI."
+                        }}</label
                       >
                     </div>
                     <small
@@ -455,7 +500,7 @@
               (isRemote && !remoteConsent)
             "
           >
-            Find sequences
+            {{ isRetrieval ? "Retrieve NCBI results" : "Find sequences" }}
           </button>
         </footer>
       </form>
@@ -520,11 +565,22 @@ const searchTarget = ref<"LOCAL_ASSEMBLY" | "NCBI_REMOTE">(
   props.initialRemote ? "NCBI_REMOTE" : "LOCAL_ASSEMBLY"
 );
 const remoteDatabase = ref<"nt" | "refseq_rna" | "16S_ribosomal_RNA">("nt");
+const recoverExisting = ref(false),
+  remoteRequestId = ref("");
+function toggleRecovery(event: Event) {
+  const details = event.currentTarget as HTMLDetailsElement;
+  if (busy.value) {
+    details.open = recoverExisting.value;
+    return;
+  }
+  recoverExisting.value = details.open;
+}
 const remoteTimeoutMinutes = ref(10),
   remoteConsent = ref(false);
 const isRemote = computed(
   () => mode.value === "blast" && searchTarget.value === "NCBI_REMOTE"
 );
+const isRetrieval = computed(() => isRemote.value && recoverExisting.value);
 const remoteEvalue = ref(1e-5),
   remoteMaxTargets = ref(50);
 const evalue = ref(10),
@@ -545,10 +601,13 @@ const blastMaxTargets = computed({
     else maxTargets.value = value;
   },
 });
-watch([mode, searchTarget, remoteDatabase], () => {
-  remoteConsent.value = false;
-  if (mode.value !== "blast") searchTarget.value = "LOCAL_ASSEMBLY";
-});
+watch(
+  [mode, searchTarget, remoteDatabase, recoverExisting, remoteRequestId],
+  () => {
+    remoteConsent.value = false;
+    if (mode.value !== "blast") searchTarget.value = "LOCAL_ASSEMBLY";
+  }
+);
 const uiSettings = useUiSettingsStore();
 const forwardColor = ref(uiSettings.sequenceForwardColor),
   reverseColor = ref(uiSettings.sequenceReverseColor);
@@ -560,7 +619,12 @@ const blastAvailable = computed(() => readiness.available("blastn"));
 const blastUnavailableReason = computed(() => readiness.reason("blastn"));
 const unavailableReason = computed(() =>
   isRemote.value
-    ? readiness.toolReason("blastn")
+    ? isRetrieval.value
+      ? readiness.retrievalReason() ||
+        (!/^[A-Za-z0-9]{8,64}$/.test(remoteRequestId.value.trim())
+          ? "Enter a valid NCBI request ID (RID)."
+          : "")
+      : readiness.toolReason("blastn")
     : readiness.reason(mode.value === "blast" ? "blastn" : "seqkit")
 );
 const submitting = ref(false),
@@ -631,6 +695,8 @@ async function start() {
   tracksBeforeDelivery = undefined;
   job.value = null;
   sourceSession = manager.history.applied?.session;
+  const retrievalAtSubmit = isRetrieval.value;
+  const ridAtSubmit = remoteRequestId.value.trim().toUpperCase();
   const settings: SequenceSearchSettings = {
     gapLengthBp: uiSettings.sequenceGapLengthBp,
     queries: queries.value,
@@ -669,14 +735,24 @@ async function start() {
   uiSettings.sequenceReverseColor = reverseColor.value;
   try {
     job.value = (
-      await manager.sendRequest(
-        new SequenceAnalysisRequest("/sequence/search/jobs", settings)
-      )
+      await (retrievalAtSubmit
+        ? manager.retrieveRemoteBlast({
+            ...settings,
+            mode: "blast",
+            scope: "database",
+            searchTarget: "NCBI_REMOTE",
+            remoteRequestId: ridAtSubmit,
+          })
+        : manager.sendRequest(
+            new SequenceAnalysisRequest("/sequence/search/jobs", settings)
+          ))
     ).data;
     if (disposed) deferResult();
     notifications.add(
       "info",
-      isRemote.value
+      retrievalAtSubmit
+        ? `NCBI request recovery started (${ridAtSubmit}). Progress and results are available in Jobs.`
+        : isRemote.value
         ? `NCBI remote BLAST submitted (${remoteDatabase.value}). Progress and results are available in Jobs.`
         : `Sequence search submitted (${scope.value}, ${
             bothStrands.value ? "both strands" : "forward strand"

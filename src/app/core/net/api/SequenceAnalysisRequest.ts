@@ -34,6 +34,7 @@ export interface SequenceAnalysisJob {
     | "repeat_period";
   searchTarget?: "LOCAL_ASSEMBLY" | "NCBI_REMOTE";
   remoteDatabase?: string;
+  remoteRequestId?: string | null;
   status:
     | "submitted"
     | "preparing"

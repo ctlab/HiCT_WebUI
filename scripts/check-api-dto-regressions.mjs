@@ -18,6 +18,11 @@ const requestDtoSource = readFileSync(
 
 const requiredMappings = [
   {
+    className: "RemoteBlastRetrievalRequest",
+    dtoName: "RemoteBlastRetrievalRequestDTO",
+    requestPath: "/sequence/remote_blast/retrieve",
+  },
+  {
     className: "SplitContigAtBpRequest",
     dtoName: "SplitContigAtBpRequestDTO",
     requestPath: "/split_contig_at_bp",
@@ -783,4 +788,54 @@ const mixed = new AssemblyInfoDTO({
 assert.deepEqual([...mixed.contigDescriptors[1].contigBinOffsets], []);
 console.log(
   "Explicit bin geometry validates offsets and retains older-server compatibility."
+);
+
+const retrievalRequests = loadTypeScript(
+  resolve(projectRoot, "src/app/core/net/api/request.ts")
+);
+const retrievalDtos = loadTypeScript(
+  resolve(projectRoot, "src/app/core/net/dto/requestDTO.ts")
+);
+const recoverySettings = {
+  queries: "ACGT",
+  remoteRequestId: " fr9p7tgf016 ",
+  searchTarget: "NCBI_REMOTE",
+  remoteConsent: true,
+  remoteDatabase: "nt",
+  mode: "blast",
+  scope: "database",
+  bothStrands: true,
+  degenerate: false,
+  mismatches: 0,
+  threads: -1,
+};
+const recoveryRequest = new retrievalRequests.RemoteBlastRetrievalRequest(
+  recoverySettings
+);
+assert.equal(recoveryRequest.requestPath, "/sequence/remote_blast/retrieve");
+assert.notEqual(recoveryRequest.requestPath, "/sequence/search/jobs");
+assert.equal(recoveryRequest.options.remoteRequestId, "FR9P7TGF016");
+assert.equal(recoveryRequest.options.queries, "ACGT");
+assert.deepEqual(
+  retrievalDtos.HiCTAPIRequestDTO.toDTOClass(recoveryRequest).toDTO(),
+  recoveryRequest.options
+);
+assert.deepEqual(
+  retrievalDtos.HiCTAPIRequestDTO.toDTOClass({
+    requestPath: recoveryRequest.requestPath,
+    options: recoveryRequest.options,
+  }).toDTO(),
+  recoveryRequest.options
+);
+
+assert.throws(
+  () =>
+    new retrievalRequests.RemoteBlastRetrievalRequest({
+      ...recoverySettings,
+      remoteRequestId: "RID&CMD=Put",
+    }),
+  /valid NCBI request/
+);
+console.log(
+  "RID recovery uses a distinct download-only route and preserves pasted queries for local verification."
 );

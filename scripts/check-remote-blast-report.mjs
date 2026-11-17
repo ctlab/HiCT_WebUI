@@ -130,3 +130,65 @@ assert.equal(
 console.log(
   "External BLAST reports preserve subject coordinates and literal text, validate scientific fields, and link only safe NCBI accessions."
 );
+
+const recovered = {
+  ...structuredClone(report),
+  retrievedRequestId: "FR9P7TGF016",
+  submissionPerformed: false,
+  filterScope: "Local filters",
+  queryVerification: report.queries.map((q) => ({
+    queryId: q.id,
+    providerQueryTitle: q.id,
+    queryLength: q.length,
+    alignedBasesVerified: q.length,
+    scope: "FULL_QUERY",
+  })),
+};
+assert.equal(
+  parseRemoteBlastReport(recovered).retrievedRequestId,
+  "FR9P7TGF016"
+);
+for (const edit of [
+  (r) => {
+    r.submissionPerformed = true;
+  },
+  (r) => {
+    r.retrievedRequestId = "bad&CMD=Put";
+  },
+  (r) => {
+    r.queryVerification[0].alignedBasesVerified = 0;
+  },
+  (r) => {
+    r.queryVerification[0].queryId = "unknown";
+  },
+]) {
+  const invalid = structuredClone(recovered);
+  edit(invalid);
+  assert.throws(
+    () => parseRemoteBlastReport(invalid),
+    /invalid external BLAST report/
+  );
+}
+assert.match(
+  exports.describeRemoteVerification(recovered.queryVerification[0]),
+  /All query bases/
+);
+assert.match(
+  exports.describeRemoteVerification({
+    ...recovered.queryVerification[0],
+    scope: "ALIGNED_BASES_ONLY",
+    alignedBasesVerified: 1,
+  }),
+  /remaining bases could not be checked/
+);
+assert.match(
+  exports.describeRemoteVerification({
+    ...recovered.queryVerification[0],
+    scope: "LABEL_AND_LENGTH_ONLY",
+    alignedBasesVerified: 0,
+  }),
+  /only the query label and length/
+);
+console.log(
+  "Recovered request identity and full/partial/no-alignment verification remain explicit and validated."
+);
