@@ -1457,9 +1457,10 @@ class LinearTrackManager {
           }
           if (renderStyle === "SIGNAL") {
             const normalizedValue = scaleTransform.normalize(bin.value ?? 0);
-            const barHeight = (laneInnerEnd - laneInnerStart) * normalizedValue;
-            const y = laneInnerEnd - barHeight;
-            ctx.fillRect(x0, y, x1 - x0, Math.max(1, barHeight));
+            const baseline = scaleTransform.normalize(0);
+            const y = laneInnerEnd - crossSpan * Math.max(baseline, normalizedValue);
+            const barHeight = crossSpan * Math.abs(normalizedValue - baseline);
+            if (barHeight > 0) ctx.fillRect(x0, y, x1 - x0, Math.max(1, barHeight));
           } else {
             if (!this.isFeatureDensityBin(bin))
               featureHits.push({
@@ -1505,9 +1506,10 @@ class LinearTrackManager {
           }
           if (renderStyle === "SIGNAL") {
             const normalizedValue = scaleTransform.normalize(bin.value ?? 0);
-            const barWidth = (laneInnerEnd - laneInnerStart) * normalizedValue;
-            const x = laneInnerEnd - Math.max(1, barWidth);
-            ctx.fillRect(x, y0, Math.max(1, barWidth), y1 - y0);
+            const baseline = scaleTransform.normalize(0);
+            const x = laneInnerEnd - crossSpan * Math.max(baseline, normalizedValue);
+            const barWidth = crossSpan * Math.abs(normalizedValue - baseline);
+            if (barWidth > 0) ctx.fillRect(x, y0, Math.max(1, barWidth), y1 - y0);
           } else {
             if (!this.isFeatureDensityBin(bin))
               featureHits.push({
@@ -1531,6 +1533,20 @@ class LinearTrackManager {
             );
           }
         }
+      }
+      if (renderStyle === "SIGNAL" && signalRange.min < 0 && signalRange.max > 0) {
+        const zero = laneInnerEnd - crossSpan * scaleTransform.normalize(0);
+        ctx.strokeStyle = textPalette.axisStroke;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (orientation === "horizontal") {
+          ctx.moveTo(0, zero);
+          ctx.lineTo(canvas.width, zero);
+        } else {
+          ctx.moveTo(zero, 0);
+          ctx.lineTo(zero, canvas.height);
+        }
+        ctx.stroke();
       }
       if (densityDifference && summaryLane >= 0) {
         const summaryStart =
@@ -2482,12 +2498,13 @@ class LinearTrackManager {
     };
   }
 
-  private getVisibleSignalMax(
+  private getVisibleSignalRange(
     bins: TrackBinResponse[],
     viewport: ViewportGeometry,
     bpResolution: number
-  ): number {
-    let maxValue = 0;
+  ): { min: number; max: number } {
+    let min = 0;
+    let max = 0;
     for (const bin of bins) {
       const interval = this.resolveBinIntervalPx(bin, bpResolution);
       if (!interval.visible) {
@@ -2499,12 +2516,11 @@ class LinearTrackManager {
       ) {
         continue;
       }
-      const value = Number.isFinite(bin.value) ? Math.max(0, bin.value) : 0;
-      if (value > maxValue) {
-        maxValue = value;
-      }
+      const value = Number.isFinite(bin.value) ? bin.value : 0;
+      min = Math.min(min, value);
+      max = Math.max(max, value);
     }
-    return maxValue;
+    return { min, max };
   }
 
   private resolveSignalRange(
@@ -2522,10 +2538,7 @@ class LinearTrackManager {
     ) {
       return { min: trackSummary.rangeMin, max: trackSummary.rangeMax };
     }
-    return {
-      min: 0,
-      max: this.getVisibleSignalMax(bins, viewport, bpResolution),
-    };
+    return this.getVisibleSignalRange(bins, viewport, bpResolution);
   }
 
   /** The server reports feature extents in whole map pixels (bins), so an 11 bp
@@ -2720,6 +2733,17 @@ class LinearTrackManager {
     }
     const safeBase = Number.isFinite(logBase) && logBase > 1 ? logBase : 10;
     const logDenominator = Math.log(safeBase);
+    if (safeMin < 0) {
+      // Symmetric log1p preserves sign and a meaningful zero for signed signals.
+      const transform = (value: number) => Math.sign(value) * Math.log1p(Math.abs(value)) / logDenominator;
+      const lo = transform(safeMin), hi = transform(safeMax);
+      return {
+        logScale: true, minValue: safeMin, maxValue: safeMax, logBase: safeBase,
+        display: (value: number) => Number.isFinite(value) ? value : 0,
+        normalize: (value: number) => Math.max(0, Math.min(1,
+          (transform(Number.isFinite(value) ? value : 0) - lo) / (hi - lo))),
+      };
+    }
     const toLog = (value: number): number =>
       Math.log1p(Math.max(0, value - safeMin)) / logDenominator;
     const maxLog = toLog(safeMax);
@@ -2974,11 +2998,11 @@ class LinearTrackManager {
     if (!Number.isFinite(maxValue) || maxValue <= minValue) {
       return [minValue];
     }
-    if (!scale.logScale) {
+    if (!scale.logScale || minValue < 0) {
       const step = this.niceStep(
         (maxValue - minValue) / Math.max(1, maxTickCount - 1)
       );
-      const ticks: number[] = [minValue];
+      const ticks: number[] = minValue < 0 && maxValue >= 0 ? [minValue, 0] : [minValue];
       for (let value = minValue + step; value < maxValue; value += step) {
         ticks.push(value);
       }

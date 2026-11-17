@@ -383,6 +383,7 @@
                               :id="`track-log-scale-${track.trackId}`"
                               class="form-check-input"
                               type="checkbox"
+                              title="Logarithmic scale; signed signals use symmetric log1p around zero."
                               :checked="track.logScale"
                               @change="
                                 onChangeLogScale(
