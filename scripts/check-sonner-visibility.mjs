@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { effectScope, ref, watchEffect } from "vue";
 import {
@@ -11,6 +12,7 @@ const entry = new URL(
   "../node_modules/vue-sonner/lib/index.js",
   import.meta.url
 );
+const entryPath = realpathSync(fileURLToPath(entry));
 const original = readFileSync(entry, "utf8");
 const fixed = fixSonnerVisibilityHook(original);
 function exercise(code, repeats) {
@@ -67,7 +69,7 @@ assert.throws(
   /Recheck/
 );
 const plugins = sonnerVisibilityPlugins();
-assert.equal(plugins.vite.transform(original, entry.pathname).code, fixed);
+assert.equal(plugins.vite.transform(original, entryPath).code, fixed);
 assert.equal(plugins.vite.transform(original, "/some/other/module.js"), null);
 let load;
 plugins.esbuild.setup({
@@ -75,7 +77,7 @@ plugins.esbuild.setup({
     load = callback;
   },
 });
-assert.equal(load({ path: entry.pathname }).contents, fixed);
+assert.equal(load({ path: entryPath }).contents, fixed);
 console.log(
   "Published notification hook leaks 100 listeners; fixed production/dev transforms release all and preserve visibility updates."
 );
