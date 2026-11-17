@@ -1272,6 +1272,7 @@ class LinearTrackManager {
       return [];
     }
     ctx.textBaseline = "top";
+    ctx.textAlign = "left";
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = this.resolveTrackBackgroundColor();
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1569,6 +1570,10 @@ class LinearTrackManager {
       }
       ctx.fillStyle = textPalette.primary;
       ctx.font = "bold 11px HiCT Sans";
+      // Plot/scale renderers may change text alignment. Titles always start at
+      // their inset, including after rotation on the vertical axis.
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
       if (orientation === "horizontal") {
         this.drawOutlinedText(
           ctx,
@@ -2759,31 +2764,39 @@ class LinearTrackManager {
     ctx.fillStyle = textPalette.axis;
     ctx.strokeStyle = textPalette.axisStroke;
     ctx.font = "9px HiCT Mono";
+    const widestLabel = Math.max(
+      ...ticks.map(
+        (tick) =>
+          ctx.measureText(this.formatScaleValue(scale.display(tick))).width
+      )
+    );
     let lastLabelCoord = Number.NEGATIVE_INFINITY;
     const minLabelSpacing = 14;
     if (orientation === "horizontal") {
-      ctx.textAlign = "left";
+      ctx.textAlign = "right";
       const right = canvasWidth * (this.exportLabelBounds?.right ?? 1);
-      const tickX0 = right - 22;
-      const tickX1 = right - 15;
-      const labelX = right - 13;
+      const left = canvasWidth * (this.exportLabelBounds?.left ?? 0);
+      if (right - left < widestLabel + 18) return;
+      const labelX = right - 4;
+      const tickX1 = labelX - widestLabel - 4;
+      const tickX0 = tickX1 - 7;
       for (const tick of ticks) {
         const normalized = scale.normalize(tick);
         const y = laneInnerEnd - normalized * axisSpan;
-        const iy = Math.max(laneStart + 4, Math.min(laneEnd - 12, y));
-        if (Math.abs(iy - lastLabelCoord) < minLabelSpacing) {
+        const labelY = Math.max(laneStart + 2, Math.min(laneEnd - 12, y - 5));
+        if (Math.abs(y - lastLabelCoord) < minLabelSpacing) {
           continue;
         }
-        lastLabelCoord = iy;
+        lastLabelCoord = y;
         ctx.beginPath();
-        ctx.moveTo(tickX0, iy + 3.5);
-        ctx.lineTo(tickX1, iy + 3.5);
+        ctx.moveTo(tickX0, y);
+        ctx.lineTo(tickX1, y);
         ctx.stroke();
         this.drawOutlinedText(
           ctx,
           this.formatScaleValue(scale.display(tick)),
           labelX,
-          iy - 2,
+          labelY,
           textPalette
         );
       }
@@ -2802,26 +2815,31 @@ class LinearTrackManager {
       ctx.textAlign = "left";
       return;
     }
-    const labelAxisY = Math.max(1, laneStart + 2);
-    const markY0 = labelAxisY + 16;
+    const labelAxisY = canvasHeight * (this.exportLabelBounds?.top ?? 0) + 2;
+    const bottom = canvasHeight * (this.exportLabelBounds?.bottom ?? 1);
+    if (bottom - labelAxisY < widestLabel + 13) return;
+    const markY0 = labelAxisY + widestLabel + 5;
     const markY1 = markY0 + 6;
     ctx.textAlign = "center";
     for (const tick of ticks) {
       const normalized = scale.normalize(tick);
       const x = laneInnerEnd - normalized * axisSpan;
-      const ix = Math.max(laneStart + 3, Math.min(laneEnd - 14, x));
+      const ix = Math.max(laneInnerStart, Math.min(laneInnerEnd, x));
       if (Math.abs(ix - lastLabelCoord) < minLabelSpacing) {
         continue;
       }
       lastLabelCoord = ix;
       ctx.beginPath();
-      ctx.moveTo(ix + 3.5, markY0);
-      ctx.lineTo(ix + 3.5, markY1);
+      ctx.moveTo(ix, markY0);
+      ctx.lineTo(ix, markY1);
       ctx.stroke();
       ctx.save();
-      ctx.translate(ix + 9, labelAxisY + 1);
+      ctx.translate(
+        Math.max(laneStart + 2, Math.min(laneEnd - 12, ix - 4)),
+        labelAxisY + 1
+      );
       ctx.rotate(-Math.PI / 2);
-      ctx.textAlign = "left";
+      ctx.textAlign = "right";
       this.drawOutlinedText(
         ctx,
         this.formatScaleValue(scale.display(tick)),
