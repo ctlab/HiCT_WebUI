@@ -100,6 +100,18 @@ ensureTauriConventionalIcons();
 validateTauriIconConfig(platform);
 validateTauriCapabilities();
 if (!args.skipBuild) {
+  run(process.execPath, [join(scriptDir, "check-tauri-export.mjs")], repoDir);
+  run(
+    "cargo",
+    [
+      "test",
+      "--release",
+      "--locked",
+      "--manifest-path",
+      resolve(tauriDir, "Cargo.toml"),
+    ],
+    repoDir
+  );
   run(
     "cargo",
     [
@@ -174,13 +186,15 @@ const manifest = {
         "libwebkit2gtk-4.1.so.0",
         "libjavascriptcoregtk-4.1.so.0",
         "libgtk-3.so.0",
+        "libssl.so.3",
+        "libcrypto.so.3",
       ],
       installHints: {
         "Debian/Ubuntu":
-          "sudo apt-get install libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 libgtk-3-0",
-        "Fedora/RHEL": "sudo dnf install webkit2gtk4.1 gtk3",
-        "Arch Linux": "sudo pacman -S webkit2gtk-4.1 gtk3",
-        openSUSE: "sudo zypper install libwebkit2gtk-4_1-0 gtk3",
+          "sudo apt-get install libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 libgtk-3-0 libssl3",
+        "Fedora/RHEL": "sudo dnf install webkit2gtk4.1 gtk3 openssl-libs",
+        "Arch Linux": "sudo pacman -S webkit2gtk-4.1 gtk3 openssl",
+        openSUSE: "sudo zypper install libwebkit2gtk-4_1-0 gtk3 libopenssl3",
       },
     },
     windows: {

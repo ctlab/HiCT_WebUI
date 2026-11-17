@@ -599,3 +599,415 @@ await assert.rejects(
 console.log(
   "Preload export errors retain the useful message without exposing IPC method names."
 );
+
+// The streaming protocol is advertised by the native wrapper before page scripts.
+delete browser.hictDesktop;
+browser.__HICT_TAURI_EXPORT_STREAM_VERSION__ = 1;
+const tauriCalls = [];
+let tauriSelection = ["transfer-1", "/chosen/assembly.fa"],
+  tauriFailure,
+  tauriCommit = "/chosen/assembly.fa",
+  tauriHook,
+  tauriSequence = 0;
+const tauriWritten = [];
+browser.__TAURI__ = {
+  core: {
+    invoke: async (command, payload, options) => {
+      let args = payload;
+      if (command === "write_export_chunk") {
+        assert.ok(
+          payload instanceof Uint8Array,
+          "File bytes must use raw binary IPC"
+        );
+        assert.equal(payload.byteOffset, 0);
+        assert.equal(payload.buffer.byteLength, payload.byteLength);
+        args = {
+          id: options.headers["x-hict-export-id"],
+          sequence: Number(options.headers["x-hict-export-sequence"]),
+          bytes: payload,
+        };
+      }
+      tauriCalls.push({ command, ...args });
+      if (tauriHook) await tauriHook(command, args);
+      if (tauriFailure === command) throw Error(`native ${command} failed`);
+      if (command === "begin_export_stream") return tauriSelection;
+      if (command === "write_export_chunk") {
+        assert.equal(args.id, "transfer-1");
+        assert.equal(args.sequence, tauriSequence++);
+        assert.ok(args.bytes.length <= 65_536);
+        tauriWritten.push(...args.bytes);
+      }
+      if (
+        command === "finish_export_stream" ||
+        command === "download_export_request"
+      )
+        return tauriCommit;
+      assert.notEqual(
+        command,
+        "save_export",
+        "Streaming must bypass whole-file IPC"
+      );
+      return null;
+    },
+  },
+};
+const resetTauriStream = () => {
+  tauriCalls.length = 0;
+  tauriWritten.length = 0;
+  tauriSequence = 0;
+  tauriSelection = ["transfer-1", "/chosen/assembly.fa"];
+  tauriCommit = "/chosen/assembly.fa";
+  tauriFailure = tauriHook = undefined;
+};
+const tauriPayload = Uint8Array.from(
+  { length: 196_625 },
+  (_, index) => index % 251
+);
+const tauriSource = (payload = tauriPayload, cancel = () => {}) =>
+  new ReadableStream({
+    start(controller) {
+      controller.enqueue(payload);
+      controller.close();
+    },
+    cancel,
+  });
+const tauriDestination = await prepareFileSave("../assembly.fa", "fasta");
+let tauriSaved = await tauriDestination.writeStream(tauriSource());
+assert.equal(tauriSaved.status, "saved");
+assert.equal(tauriSaved.path, "/chosen/assembly.fa");
+assert.equal(tauriCalls[0].filename, ".._assembly.fa");
+assert.equal(tauriCalls[0].kind, "fasta");
+assert.equal(tauriSequence, 4);
+assert.deepEqual(Uint8Array.from(tauriWritten), tauriPayload);
+assert.equal(tauriCalls.at(-1).command, "finish_export_stream");
+assert.equal(remembered.at(-1)[1], "/chosen/assembly.fa");
+
+resetTauriStream();
+let tauriPulls = 0,
+  tauriRelease,
+  tauriReached;
+const tauriBlocked = new Promise((resolve) => {
+  tauriReached = resolve;
+});
+tauriHook = async (command) => {
+  if (command === "write_export_chunk" && tauriSequence === 0) {
+    await new Promise((resolve) => {
+      tauriRelease = resolve;
+      tauriReached();
+    });
+  }
+};
+const tauriBackpressure = (
+  await prepareFileSave("ordered.fa", "fasta")
+).writeStream(
+  new ReadableStream(
+    {
+      pull(controller) {
+        tauriPulls++;
+        if (tauriPulls <= 3) controller.enqueue(new Uint8Array([tauriPulls]));
+        else controller.close();
+      },
+    },
+    { highWaterMark: 0 }
+  )
+);
+await tauriBlocked;
+assert.equal(
+  tauriPulls,
+  1,
+  "Do not pull another source chunk while a disk write is pending"
+);
+assert.equal(
+  tauriCalls.filter((call) => call.command === "write_export_chunk").length,
+  1
+);
+tauriRelease();
+assert.equal((await tauriBackpressure).status, "saved");
+assert.deepEqual(tauriWritten, [1, 2, 3]);
+
+resetTauriStream();
+const tauriBlob = new Blob([tauriPayload], { type: "text/plain" });
+Object.defineProperty(tauriBlob, "arrayBuffer", {
+  value: () => {
+    throw Error("Whole-Blob buffering is forbidden");
+  },
+});
+tauriSaved = await (await prepareFileSave("blob.fa", "fasta")).write(tauriBlob);
+assert.equal(tauriSaved.status, "saved");
+assert.deepEqual(Uint8Array.from(tauriWritten), tauriPayload);
+assert.equal((await tauriSaved.readFile()).size, tauriPayload.length);
+
+for (const failure of [
+  "begin_export_stream",
+  "write_export_chunk",
+  "finish_export_stream",
+]) {
+  resetTauriStream();
+  tauriFailure = failure;
+  const rememberedBefore = remembered.length;
+  await assert.rejects(
+    (await prepareFileSave("failed.fa", "fasta")).writeStream(tauriSource()),
+    new RegExp(`native ${failure} failed`)
+  );
+  assert.equal(remembered.length, rememberedBefore);
+  assert.equal(
+    tauriCalls.some((call) => call.command === "abort_export_stream"),
+    failure !== "begin_export_stream"
+  );
+}
+
+resetTauriStream();
+let tauriCancelled = 0;
+tauriSelection = null;
+const beforeTauriCancel = remembered.length;
+tauriSaved = await (
+  await prepareFileSave("cancel.fa", "fasta")
+).writeStream(
+  new ReadableStream(
+    {
+      cancel() {
+        tauriCancelled++;
+      },
+    },
+    { highWaterMark: 0 }
+  )
+);
+assert.equal(tauriSaved.status, "cancelled");
+assert.equal(tauriCancelled, 1);
+assert.equal(remembered.length, beforeTauriCancel);
+assert.deepEqual(
+  tauriCalls.map((call) => call.command),
+  ["begin_export_stream"]
+);
+
+for (const at of ["before", "chooser", "write"]) {
+  resetTauriStream();
+  const cancellation = new AbortController();
+  if (at === "before") cancellation.abort();
+  tauriHook = async (command) => {
+    if (
+      (at === "chooser" && command === "begin_export_stream") ||
+      (at === "write" && command === "write_export_chunk")
+    )
+      cancellation.abort();
+  };
+  const beforeAbort = remembered.length;
+  await assert.rejects(
+    (
+      await prepareFileSave("abort.fa", "fasta")
+    ).writeStream(tauriSource(), cancellation.signal),
+    { name: "AbortError" }
+  );
+  assert.equal(remembered.length, beforeAbort);
+  assert.equal(
+    tauriCalls.some((call) => call.command === "finish_export_stream"),
+    false
+  );
+  assert.equal(
+    tauriCalls.some((call) => call.command === "abort_export_stream"),
+    at !== "before"
+  );
+}
+
+resetTauriStream();
+await assert.rejects(
+  (
+    await prepareFileSave("read-error.fa", "fasta")
+  ).writeStream(
+    new ReadableStream({
+      start(controller) {
+        controller.error(Error("source disconnected"));
+      },
+    })
+  ),
+  /source disconnected/
+);
+assert.equal(tauriCalls.at(-1).command, "abort_export_stream");
+
+resetTauriStream();
+let waitingTauriRead;
+const tauriReadStarted = new Promise((resolve) => {
+  waitingTauriRead = resolve;
+});
+const waitingTauriSource = new ReadableStream(
+  {
+    pull() {
+      waitingTauriRead();
+    },
+  },
+  { highWaterMark: 0 }
+);
+const waitingTauriAbort = new AbortController();
+const waitingTauriTransfer = (
+  await prepareFileSave("waiting.fa", "fasta")
+).writeStream(waitingTauriSource, waitingTauriAbort.signal);
+await tauriReadStarted;
+waitingTauriAbort.abort();
+await assert.rejects(waitingTauriTransfer, { name: "AbortError" });
+assert.equal(waitingTauriSource.locked, false);
+assert.equal(tauriCalls.at(-1).command, "abort_export_stream");
+
+resetTauriStream();
+tauriFailure = "abort_export_stream";
+tauriHook = async (command) => {
+  if (command === "write_export_chunk") throw Error("primary disk error");
+};
+await assert.rejects(
+  (
+    await prepareFileSave("cleanup-error.fa", "fasta")
+  ).writeStream(tauriSource()),
+  /primary disk error/
+);
+
+resetTauriStream();
+tauriSelection = ["transfer-1", null];
+await assert.rejects(
+  (await prepareFileSave("invalid.fa", "fasta")).writeStream(tauriSource()),
+  /did not confirm an export destination/
+);
+assert.equal(tauriCalls.at(-1).command, "abort_export_stream");
+
+resetTauriStream();
+tauriCommit = "/unexpected/other.fa";
+const beforeWrongPath = remembered.length;
+await assert.rejects(
+  (await prepareFileSave("wrong-path.fa", "fasta")).writeStream(tauriSource()),
+  /did not confirm that the file was saved/
+);
+assert.equal(remembered.length, beforeWrongPath);
+assert.equal(tauriCalls.at(-1).command, "abort_export_stream");
+
+resetTauriStream();
+tauriSaved = await (
+  await prepareFileSave("empty.fa", "fasta")
+).write(new Blob([]));
+assert.equal(tauriSaved.status, "saved");
+assert.equal(tauriWritten.length, 0);
+assert.deepEqual(
+  tauriCalls.map((call) => call.command),
+  ["begin_export_stream", "finish_export_stream"]
+);
+
+resetTauriStream();
+const tauriRequest = Object.freeze({
+  url: "http://127.0.0.1:5000/get_fasta_for_selection",
+  body: '{"x0Bp":7,"x1Bp":31,"snapshot":"fixed"}',
+  headers: Object.freeze({
+    "X-HiCT-History-Session": "fixed",
+    "X-HiCT-History-Revision": "17",
+  }),
+});
+const tauriRequestResult = await (
+  await prepareFileSave("coordinates.fa", "fasta")
+).writeRequest(tauriRequest);
+assert.equal(tauriRequestResult.status, "saved");
+assert.deepEqual(
+  tauriCalls.map((call) => call.command),
+  ["begin_export_stream", "download_export_request"]
+);
+assert.equal(tauriCalls[1].request, tauriRequest);
+assert.equal(
+  tauriWritten.length,
+  0,
+  "Coordinate bytes must not cross the WebView"
+);
+
+resetTauriStream();
+tauriSelection = null;
+assert.equal(
+  (
+    await (
+      await prepareFileSave("cancel.fa", "fasta")
+    ).writeRequest(tauriRequest)
+  ).status,
+  "cancelled"
+);
+assert.deepEqual(
+  tauriCalls.map((call) => call.command),
+  ["begin_export_stream"],
+  "Choose before connecting to the server"
+);
+
+for (const at of ["before", "chooser"]) {
+  resetTauriStream();
+  const control = new AbortController();
+  if (at === "before") control.abort();
+  tauriHook = async (command) => {
+    if (command === "begin_export_stream") control.abort();
+  };
+  assert.equal(
+    (
+      await (
+        await prepareFileSave("abort.fa", "fasta")
+      ).writeRequest(tauriRequest, control.signal)
+    ).status,
+    "cancelled"
+  );
+  assert.equal(
+    tauriCalls.some((call) => call.command === "download_export_request"),
+    false
+  );
+  assert.equal(
+    tauriCalls.some((call) => call.command === "abort_export_stream"),
+    at === "chooser"
+  );
+}
+
+resetTauriStream();
+const nativeDownloadAbort = new AbortController();
+let tauriDownloadReady, tauriDownloadReject;
+const tauriDownloadStarted = new Promise((resolve) => {
+  tauriDownloadReady = resolve;
+});
+tauriHook = async (command) => {
+  if (command === "download_export_request")
+    await new Promise((_resolve, reject) => {
+      tauriDownloadReject = reject;
+      tauriDownloadReady();
+    });
+  if (command === "abort_export_stream")
+    tauriDownloadReject?.(Error("Native download cancelled"));
+};
+const nativePendingDownload = (
+  await prepareFileSave("pending.fa", "fasta")
+).writeRequest(tauriRequest, nativeDownloadAbort.signal);
+await tauriDownloadStarted;
+nativeDownloadAbort.abort();
+assert.equal((await nativePendingDownload).status, "cancelled");
+assert.equal(
+  tauriCalls.filter((call) => call.command === "download_export_request")
+    .length,
+  1
+);
+assert.ok(
+  tauriCalls.some(
+    (call) => call.command === "abort_export_stream" && call.id === "transfer-1"
+  )
+);
+
+resetTauriStream();
+tauriFailure = "download_export_request";
+const beforeNativeDownloadFailure = remembered.length;
+await assert.rejects(
+  (await prepareFileSave("failed.fa", "fasta")).writeRequest(tauriRequest),
+  /native download_export_request failed/
+);
+assert.equal(remembered.length, beforeNativeDownloadFailure);
+assert.equal(tauriCalls.at(-1).command, "abort_export_stream");
+
+resetTauriStream();
+tauriCommit = "/wrong/target.fa";
+await assert.rejects(
+  (await prepareFileSave("wrong.fa", "fasta")).writeRequest(tauriRequest),
+  /did not confirm that the file was saved/
+);
+assert.equal(tauriCalls.at(-1).command, "abort_export_stream");
+console.log(
+  "Tauri coordinate requests: chooser precedes HTTP, exact captured metadata, no WebView file bytes, owned cancellation, failures and commit confirmation passed."
+);
+
+delete browser.__HICT_TAURI_EXPORT_STREAM_VERSION__;
+delete browser.__TAURI__;
+console.log(
+  "Tauri streaming: bounded ordered IPC, disk backpressure, Blob bypass, cancellation, source/native failures, exact commit paths and empty files passed."
+);

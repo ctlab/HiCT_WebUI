@@ -45,11 +45,20 @@ interface BrowserFileHandle {
   }>;
   getFile(): Promise<File>;
 }
+type NativeFileInvoke = (
+  command: string,
+  args: Record<string, unknown> | Uint8Array,
+  options?: { headers: Record<string, string> }
+) => Promise<unknown>;
+// Cleanup is best effort and must preserve the original transfer error.
+function ignoreCleanupFailure(): void {
+  /* The caller reports the original outcome. */
+}
 const lastHandles = new Map<FileSaveKind, BrowserFileHandle>();
 export const cancelledFileSave: FileSaveResult = { status: "cancelled" };
 export function sanitizeSaveFilename(filename: string): string {
-  // eslint-disable-next-line no-control-regex
   return (
+    // eslint-disable-next-line no-control-regex -- Replace characters forbidden in file names.
     filename.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim() ||
     "hict-export.bin"
   );
@@ -81,16 +90,11 @@ export async function prepareFileSave(
     };
     __TAURI__?: {
       core?: {
-        invoke?: (
-          command: string,
-          args: Record<string, unknown>
-        ) => Promise<unknown>;
+        invoke?: NativeFileInvoke;
       };
-      invoke?: (
-        command: string,
-        args: Record<string, unknown>
-      ) => Promise<unknown>;
+      invoke?: NativeFileInvoke;
     };
+    __HICT_TAURI_EXPORT_STREAM_VERSION__?: number;
     showSaveFilePicker?: (options: object) => Promise<BrowserFileHandle>;
   };
   const remember = (path: string) =>
@@ -114,7 +118,7 @@ export async function prepareFileSave(
               const desktop = browser.hictDesktop!;
               const cancel = () => {
                 void desktop.cancelCoordinateExport!(operationId).catch(
-                  () => {}
+                  ignoreCleanupFailure
                 );
               };
               signal?.addEventListener("abort", cancel, { once: true });
@@ -164,6 +168,147 @@ export async function prepareFileSave(
     };
   }
   const invoke = browser.__TAURI__?.core?.invoke ?? browser.__TAURI__?.invoke;
+  if (
+    typeof invoke === "function" &&
+    browser.__HICT_TAURI_EXPORT_STREAM_VERSION__ === 1
+  ) {
+    const writeStream = async (
+      stream: ReadableStream<Uint8Array>,
+      signal?: AbortSignal
+    ): Promise<FileSaveResult> => {
+      const reader = stream.getReader();
+      let id: string | undefined;
+      let committed = false;
+      const abort = () => {
+        void reader.cancel(signal?.reason).catch(ignoreCleanupFailure);
+      };
+      signal?.addEventListener("abort", abort, { once: true });
+      try {
+        signal?.throwIfAborted();
+        const selected = await invoke("begin_export_stream", {
+          filename: name,
+          kind,
+        });
+        if (selected === null) {
+          await reader.cancel();
+          return cancelledFileSave;
+        }
+        if (Array.isArray(selected) && typeof selected[0] === "string")
+          id = selected[0];
+        if (
+          !id ||
+          !Array.isArray(selected) ||
+          typeof selected[1] !== "string" ||
+          !selected[1]
+        )
+          throw Error("The desktop did not confirm an export destination.");
+        const path = selected[1];
+        let sequence = 0;
+        for (;;) {
+          signal?.throwIfAborted();
+          const { done, value } = await reader.read();
+          signal?.throwIfAborted();
+          if (done) break;
+          for (let offset = 0; offset < value.length; offset += 65_536) {
+            signal?.throwIfAborted();
+            // Give IPC its own bounded buffer, then await the native disk write.
+            await invoke(
+              "write_export_chunk",
+              value.slice(offset, offset + 65_536),
+              {
+                headers: {
+                  "x-hict-export-id": id,
+                  "x-hict-export-sequence": String(sequence++),
+                },
+              }
+            );
+          }
+        }
+        signal?.throwIfAborted();
+        const result = await invoke("finish_export_stream", { id });
+        if (result !== path)
+          throw Error("The desktop did not confirm that the file was saved.");
+        committed = true;
+        remember(path);
+        return { status: "saved", filename: basename(path), path };
+      } catch (failure) {
+        await reader.cancel(failure).catch(ignoreCleanupFailure);
+        throw failure;
+      } finally {
+        signal?.removeEventListener("abort", abort);
+        reader.releaseLock();
+        if (id && !committed)
+          await invoke("abort_export_stream", { id }).catch(
+            ignoreCleanupFailure
+          );
+      }
+    };
+    return {
+      writeStream,
+      async writeRequest(request, signal) {
+        let id: string | undefined;
+        let committed = false;
+        const abort = () => {
+          if (id)
+            void invoke("abort_export_stream", { id }).catch(
+              ignoreCleanupFailure
+            );
+        };
+        signal?.addEventListener("abort", abort, { once: true });
+        try {
+          signal?.throwIfAborted();
+          // Choose before connecting. WebKit can buffer an unread HTTP body.
+          const selected = await invoke("begin_export_stream", {
+            filename: name,
+            kind,
+          });
+          if (selected === null) return cancelledFileSave;
+          if (Array.isArray(selected) && typeof selected[0] === "string")
+            id = selected[0];
+          if (
+            !id ||
+            !Array.isArray(selected) ||
+            typeof selected[1] !== "string" ||
+            !selected[1]
+          )
+            throw Error("The desktop did not confirm an export destination.");
+          const path = selected[1];
+          signal?.throwIfAborted();
+          const result = await invoke("download_export_request", {
+            id,
+            request,
+          });
+          if (result !== path)
+            throw Error("The desktop did not confirm that the file was saved.");
+          committed = true;
+          remember(path);
+          return { status: "saved", filename: basename(path), path };
+        } catch (failure) {
+          if (signal?.aborted) return cancelledFileSave;
+          throw failure;
+        } finally {
+          signal?.removeEventListener("abort", abort);
+          if (id && !committed)
+            await invoke("abort_export_stream", { id }).catch(
+              ignoreCleanupFailure
+            );
+        }
+      },
+      async write(blob) {
+        // Node's ambient Blob type differs from the WebView's WHATWG stream.
+        const result = await writeStream(
+          blob.stream() as unknown as ReadableStream<Uint8Array>
+        );
+        return result.status === "saved"
+          ? {
+              ...result,
+              readFile: async () =>
+                new File([blob], result.filename, { type: blob.type }),
+            }
+          : result;
+      },
+    };
+  }
   if (typeof invoke === "function")
     return {
       async write(blob) {
@@ -227,7 +372,7 @@ export async function prepareFileSave(
       async writeStream(stream, signal) {
         const reader = stream.getReader();
         const abort = () => {
-          void reader.cancel(signal?.reason).catch(() => {});
+          void reader.cancel(signal?.reason).catch(ignoreCleanupFailure);
         };
         signal?.addEventListener("abort", abort, { once: true });
         let writer:
@@ -236,7 +381,7 @@ export async function prepareFileSave(
         try {
           signal?.throwIfAborted();
           writer = await handle.createWritable();
-          while (true) {
+          for (;;) {
             signal?.throwIfAborted();
             const { done, value } = await reader.read();
             signal?.throwIfAborted();
@@ -248,8 +393,8 @@ export async function prepareFileSave(
           await writer.close();
           return saved();
         } catch (failure) {
-          await reader.cancel(failure).catch(() => {});
-          await writer?.abort?.().catch(() => {});
+          await reader.cancel(failure).catch(ignoreCleanupFailure);
+          await writer?.abort?.().catch(ignoreCleanupFailure);
           throw failure;
         } finally {
           signal?.removeEventListener("abort", abort);
