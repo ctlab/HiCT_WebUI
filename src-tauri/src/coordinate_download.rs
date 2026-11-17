@@ -1,19 +1,10 @@
 //! Coordinate downloads never carry sequence bytes through the WebView.
-use crate::export_stream::{ExportStreams, MAX_CHUNK_BYTES};
+use crate::export_stream::{ExportCancellation, ExportStreams, MAX_CHUNK_BYTES};
 use reqwest::header::{
     HeaderMap, HeaderValue, ACCEPT, ACCEPT_ENCODING, CONTENT_ENCODING, CONTENT_TYPE,
 };
 use serde::Deserialize;
-use std::{
-    collections::HashMap,
-    future::Future,
-    io,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::{collections::HashMap, future::Future, io, sync::Arc, time::Duration};
 use url::Url;
 
 #[derive(Deserialize)]
@@ -73,10 +64,13 @@ fn validate(request: &CoordinateRequest) -> Result<(Url, HeaderMap), String> {
     Ok((url, headers))
 }
 
-async fn cancellable<F: Future>(cancelled: &AtomicBool, future: F) -> Result<F::Output, String> {
+async fn cancellable<F: Future>(
+    cancelled: &ExportCancellation,
+    future: F,
+) -> Result<F::Output, String> {
     let mut future = Box::pin(future);
     loop {
-        if cancelled.load(Ordering::Acquire) {
+        if cancelled.is_cancelled() {
             return Err("Export cancelled.".into());
         }
         match tokio::time::timeout(Duration::from_millis(100), future.as_mut()).await {
@@ -182,7 +176,7 @@ async fn transfer(
             .checked_add(chunk.len() as u64)
             .ok_or("The export is too large.")?;
         for bytes in chunk.chunks(MAX_CHUNK_BYTES) {
-            if cancelled.load(Ordering::Acquire) {
+            if cancelled.is_cancelled() {
                 return Err("Export cancelled.".into());
             }
             let state = streams.clone();
@@ -201,7 +195,7 @@ async fn transfer(
     if expected_bytes.is_some_and(|length| length != received) {
         return Err("The export response was incomplete. No file was saved.".into());
     }
-    if cancelled.load(Ordering::Acquire) {
+    if cancelled.is_cancelled() {
         return Err("Export cancelled.".into());
     }
     let window = owner.to_owned();
@@ -223,7 +217,10 @@ mod tests {
         io::{Read, Write},
         net::{TcpListener, TcpStream},
         path::PathBuf,
-        sync::{atomic::AtomicU64, Mutex},
+        sync::{
+            atomic::{AtomicU64, Ordering},
+            Mutex,
+        },
         thread,
         time::Instant,
     };
@@ -454,7 +451,9 @@ mod tests {
     }
     #[test]
     fn cancellation_interrupts_waiting_headers_and_stalled_bodies() {
-        for body_started in [false, true] {
+        for (body_started, navigation) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
             let dir = Directory::new();
             let (state, id, target) = start_file(&dir);
             let (server, url) = listener();
@@ -484,7 +483,13 @@ mod tests {
                     thread::sleep(Duration::from_millis(10));
                 }
             }
-            state.abort("main", &id).unwrap();
+            if navigation {
+                // Cancellation must reach a stalled HTTP read before the disk
+                // cleanup worker has acquired the pending-files lock.
+                state.navigation_started("main");
+            } else {
+                state.abort("main", &id).unwrap();
+            }
             let result = tauri::async_runtime::block_on(async {
                 tokio::time::timeout(Duration::from_secs(2), task)
                     .await
@@ -512,10 +517,7 @@ mod tests {
         ))
         .is_err());
         assert!(server.accept().is_err());
-        assert!(!state
-            .cancellation("main", &id)
-            .unwrap()
-            .load(Ordering::Acquire));
+        assert!(!state.cancellation("main", &id).unwrap().is_cancelled());
         state.abort("main", &id).unwrap();
         assert_eq!(std::fs::read(target).unwrap(), b"previous file");
         dir.assert_clean();

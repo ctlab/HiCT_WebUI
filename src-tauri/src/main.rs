@@ -11,6 +11,28 @@ use export_stream::ExportStreams;
 
 const DEFAULT_HICT_URL: &str = "http://127.0.0.1:8080/";
 
+#[cfg(unix)]
+fn install_shutdown_signals(app: &tauri::AppHandle) -> std::io::Result<()> {
+    use tokio::signal::unix::{signal, SignalKind};
+    // Register inside the runtime before opening the window. Launcher Stop
+    // sends SIGTERM; route it through the same awaited cleanup as File -> Quit.
+    let signals = tauri::async_runtime::block_on(async {
+        [SignalKind::terminate(), SignalKind::interrupt()]
+            .into_iter()
+            .map(signal)
+            .collect::<std::io::Result<Vec<_>>>()
+    })?;
+    for mut stream in signals {
+        let handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            if stream.recv().await.is_some() {
+                handle.exit(0);
+            }
+        });
+    }
+    Ok(())
+}
+
 fn finish_browser_reset(window: &tauri::WebviewWindow, url: Url) {
     use tauri::Manager;
     if let Err(error) = window.navigate(url) {
@@ -37,22 +59,32 @@ async fn quit_app(
 #[tauri::command]
 async fn save_export(
     window: tauri::WebviewWindow,
+    streams: tauri::State<'_, Arc<ExportStreams>>,
     filename: String,
     bytes: Vec<u8>,
     kind: Option<String>,
 ) -> Result<Option<String>, String> {
+    let state = streams.inner().clone();
+    let owner = window.label().to_owned();
+    let generation = state.current_generation(&owner);
+    // A page replacement aborts Tauri's IPC fetch and can replay the command
+    // through postMessage while the original native dialog is still pending.
+    let _chooser = state
+        .claim_chooser(&owner)
+        .map_err(|error| error.to_string())?;
     let Some((target, preference_path)) =
         choose_export_path(&window, &filename, kind.as_deref()).await
     else {
         return Ok(None);
     };
-    let saved_target = target.clone();
-    tauri::async_runtime::spawn_blocking(move || write_export_file(&target, &bytes))
-        .await
-        .map_err(|error| format!("Failed to save export: {error}"))?
-        .map_err(|error| format!("Failed to save export: {error}"))?;
-    remember_export_directory(preference_path, &saved_target);
-    Ok(Some(saved_target.to_string_lossy().to_string()))
+    let committed = tauri::async_runtime::spawn_blocking(move || {
+        state.save_legacy_export(owner, target, preference_path, generation, &bytes)
+    })
+    .await
+    .map_err(|error| format!("Failed to save export: {error}"))?
+    .map_err(|error| format!("Failed to save export: {error}"))?;
+    remember_export_directory(committed.preference, &committed.target);
+    Ok(Some(committed.target.to_string_lossy().to_string()))
 }
 
 async fn choose_export_path(
@@ -118,15 +150,21 @@ async fn begin_export_stream(
 ) -> Result<Option<(String, String)>, String> {
     let state = streams.inner().clone();
     let owner = window.label().to_owned();
+    let generation = state.current_generation(&owner);
+    let _chooser = state
+        .claim_chooser(&owner)
+        .map_err(|error| error.to_string())?;
     let Some((target, preference)) = choose_export_path(&window, &filename, kind.as_deref()).await
     else {
         return Ok(None);
     };
     let path = target.to_string_lossy().to_string();
-    let id = tauri::async_runtime::spawn_blocking(move || state.begin(owner, target, preference))
-        .await
-        .map_err(|error| format!("Failed to start export: {error}"))?
-        .map_err(|error| format!("Failed to start export: {error}"))?;
+    let id = tauri::async_runtime::spawn_blocking(move || {
+        state.begin_for_generation(owner, target, preference, generation)
+    })
+    .await
+    .map_err(|error| format!("Failed to start export: {error}"))?
+    .map_err(|error| format!("Failed to start export: {error}"))?;
     Ok(Some((id, path)))
 }
 
@@ -217,74 +255,6 @@ async fn download_export_request(
         eprintln!("Export saved, but its destination could not be remembered: {error}");
     }
     Ok(path)
-}
-
-fn write_export_file(target: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let temporary = target
-        .parent()
-        .ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::Other, "Missing destination directory")
-        })?
-        .join(format!(".hict-save-{}-{nonce}.tmp", std::process::id()));
-    let mut created = false;
-    let result = (|| {
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(&temporary)?;
-        created = true;
-        if let Ok(metadata) = std::fs::metadata(target) {
-            file.set_permissions(metadata.permissions())?;
-        }
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        drop(file);
-        std::fs::rename(&temporary, target)
-    })();
-    if result.is_err() && created {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    result
-}
-
-#[cfg(test)]
-mod export_file_tests {
-    use super::write_export_file;
-    #[test]
-    fn staging_replaces_complete_files_and_preserves_existing_data_on_failure() {
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "hict-native-save-test-{}-{nonce}",
-            std::process::id()
-        ));
-        std::fs::create_dir(&dir).unwrap();
-        let target = dir.join("session.json");
-        write_export_file(&target, b"first").unwrap();
-        write_export_file(&target, b"second").unwrap();
-        assert_eq!(std::fs::read(&target).unwrap(), b"second");
-        let destination_directory = dir.join("existing-directory");
-        std::fs::create_dir(&destination_directory).unwrap();
-        assert!(write_export_file(&destination_directory, b"invalid destination").is_err());
-        assert_eq!(std::fs::read(&target).unwrap(), b"second");
-        assert!(!std::fs::read_dir(&dir).unwrap().any(|entry| entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .starts_with(".hict-save-")));
-        std::fs::remove_dir_all(dir).unwrap();
-    }
 }
 
 #[cfg(target_os = "linux")]
@@ -486,6 +456,10 @@ fn main() {
             }
         })
         .setup(move |app| {
+            use tauri::Manager;
+            #[cfg(unix)]
+            install_shutdown_signals(app.handle())?;
+            let navigation_state = app.state::<Arc<ExportStreams>>().inner().clone();
             let reset = env::var("HICT_RESET_WEBUI").as_deref() == Ok("1");
             let initial_url = if reset {
                 "about:blank".parse()?
@@ -493,6 +467,14 @@ fn main() {
                 webui_url.clone()
             };
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(initial_url))
+                .on_navigation(move |_| {
+                    let previous = navigation_state.navigation_started("main");
+                    let state = navigation_state.clone();
+                    let _ = tauri::async_runtime::spawn_blocking(move || {
+                        state.abort_generation("main", &previous)
+                    });
+                    true
+                })
                 .initialization_script("Object.defineProperty(window, '__HICT_TAURI_EXPORT_STREAM_VERSION__', { value: 1 });")
                 .title("HiCT")
                 .inner_size(1480.0, 980.0)
