@@ -4,7 +4,12 @@ import ts from "typescript";
 import vm from "node:vm";
 
 // Loads the production module with the browser pieces it touches replaced by recording stubs.
-function load({ clipboard, secure = true, execCommand = () => true }) {
+function load({
+  clipboard,
+  ClipboardItem,
+  secure = true,
+  execCommand = () => true,
+}) {
   const toasts = [];
   const copied = [];
   const removed = [];
@@ -37,6 +42,7 @@ function load({ clipboard, secure = true, execCommand = () => true }) {
       };
     },
     navigator: { clipboard },
+    ClipboardItem,
     window: { isSecureContext: secure },
     document,
   };
@@ -59,6 +65,63 @@ function load({ clipboard, secure = true, execCommand = () => true }) {
     sandbox
   );
   return { ...sandbox.exports, toasts, copied, removed };
+}
+
+{
+  const written = [];
+  const { copySelectionCoordinates } = load({
+    clipboard: { writeText: async (text) => written.push(text) },
+  });
+  const layers = {
+    getRegionBounds: () => ({
+      rowStart: 1000,
+      rowEnd: 5500,
+      columnStart: 0,
+      columnEnd: 1,
+    }),
+    getSelectedEntityRange: () => ({ startBP: 10000, endBP: 20000 }),
+  };
+  copySelectionCoordinates({ viewAndLayersManager: layers });
+  layers.getRegionBounds = () => undefined;
+  copySelectionCoordinates({ viewAndLayersManager: layers });
+  assert.deepEqual(written, [
+    "Assembly coordinates (bp, 1-based inclusive)\nRows\t1001\t5500\nColumns\t1\t1",
+    "Assembly coordinates (bp, 1-based inclusive)\n10001\t20000",
+  ]);
+}
+
+{
+  let finishRender;
+  const png = new Promise((resolve) => {
+    finishRender = resolve;
+  });
+  let startedWrite = false;
+  const written = [];
+  const { copySelectionPng, toasts } = load({
+    ClipboardItem: class {
+      constructor(data) {
+        this.data = data;
+      }
+    },
+    clipboard: {
+      write: async ([item]) => {
+        startedWrite = true;
+        written.push(await item.data["image/png"]);
+      },
+    },
+  });
+  const pendingCopy = copySelectionPng({
+    renderCurrentMapPng: (options) => {
+      assert.equal(options.scope, "selection");
+      return png;
+    },
+  });
+  assert.equal(startedWrite, true, "start writing during the click handler");
+  const blob = new Blob(["png"], { type: "image/png" });
+  finishRender(blob);
+  await pendingCopy;
+  assert.deepEqual(written, [blob]);
+  assert.deepEqual(toasts, [["success", "Selection copied as PNG"]]);
 }
 
 // Copyable loci never contain locale grouping, negative or fractional positions.

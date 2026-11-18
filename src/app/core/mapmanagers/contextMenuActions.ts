@@ -1,4 +1,5 @@
 import { toast } from "vue-sonner";
+import type { ContactMapManager } from "./ContactMapManager";
 
 export interface ContextMenuItem {
   label: string;
@@ -62,4 +63,46 @@ export async function copyText(text: string, label: string): Promise<boolean> {
     `Could not copy ${label.toLowerCase()}. Select and copy it manually.`
   );
   return false;
+}
+
+export function copySelectionCoordinates(manager: ContactMapManager): void {
+  const layers = manager.viewAndLayersManager;
+  const region = layers.getRegionBounds();
+  if (region) {
+    void copyText(
+      `Assembly coordinates (bp, 1-based inclusive)\nRows\t${region.rowStart + 1}\t${region.rowEnd}\nColumns\t${region.columnStart + 1}\t${region.columnEnd}`,
+      "Selection coordinates"
+    );
+    return;
+  }
+  const range = layers.getSelectedEntityRange();
+  if (range) {
+    void copyText(
+      `Assembly coordinates (bp, 1-based inclusive)\n${range.startBP + 1}\t${range.endBP}`,
+      "Selection coordinates"
+    );
+  }
+}
+
+export async function copySelectionPng(manager: ContactMapManager): Promise<void> {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+    toast.error("Image clipboard is unavailable. Use Export selection as PNG.");
+    return;
+  }
+  const png = manager.renderCurrentMapPng({ scope: "selection" });
+  try {
+    // Start the write in the click handler while rendering resolves the PNG.
+    const write = navigator.clipboard.write([
+      new ClipboardItem({ "image/png": png }),
+    ]);
+    await Promise.all([png, write]);
+    toast.success("Selection copied as PNG");
+  } catch {
+    try {
+      await png;
+      toast.error("Could not write to the clipboard. Use Export selection as PNG.");
+    } catch (error) {
+      toast.error(`Could not render the selected region: ${String(error)}`);
+    }
+  }
 }

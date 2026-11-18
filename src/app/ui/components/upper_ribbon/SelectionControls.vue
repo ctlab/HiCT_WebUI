@@ -49,6 +49,25 @@
       <li>
         <button
           class="dropdown-item"
+          :disabled="!region && !count"
+          @click="copyCoordinates"
+        >
+          Copy selection coordinates
+        </button>
+      </li>
+      <li>
+        <button
+          class="dropdown-item"
+          :disabled="!region"
+          title="Select a region with Ctrl-drag or ⌘-drag to copy its image"
+          @click="copyPng"
+        >
+          Copy selection as PNG
+        </button>
+      </li>
+      <li>
+        <button
+          class="dropdown-item"
           :disabled="!mapManager"
           @click="mapManager?.viewAndLayersManager.clearSelections()"
         >
@@ -86,6 +105,10 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import {
+  copySelectionCoordinates,
+  copySelectionPng,
+} from "@/app/core/mapmanagers/contextMenuActions";
 import RegionSelectionDialog from "../common/RegionSelectionDialog.vue";
 const props = defineProps<{
   mapManager?: ContactMapManager;
@@ -121,6 +144,12 @@ const label = computed(() => {
     : "Selection";
 });
 const bothScoped = computed(() => state.value?.scopedAxes ?? false);
+function copyCoordinates() {
+  if (props.mapManager) copySelectionCoordinates(props.mapManager);
+}
+function copyPng() {
+  if (props.mapManager) void copySelectionPng(props.mapManager);
+}
 </script>
 <style scoped>
 :global(.hict-entity-drag) {

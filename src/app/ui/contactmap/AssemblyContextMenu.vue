@@ -33,6 +33,12 @@
           Rename…
         </button>
         <template v-if="item.kind === 'selection'">
+          <button role="menuitem" @click="copyCoordinates">
+            Copy selection coordinates
+          </button>
+          <button role="menuitem" @click="copyPng">
+            Copy selection as PNG
+          </button>
           <button
             role="menuitem"
             @click="
@@ -204,6 +210,8 @@ import { unByKey } from "ol/Observable";
 import type { EventsKey } from "ol/events";
 import AxisContextMenu from "@/app/ui/components/common/AxisContextMenu.vue";
 import {
+  copySelectionCoordinates,
+  copySelectionPng,
   copyText,
   formatLocus,
   type ContextMenuItem,
@@ -466,6 +474,14 @@ function openAnalysis(kind: "moddotplot" | "dotplot" | "search") {
 function exportFasta() {
   items.value = [];
   props.mapManager.eventManager.onExportFASTAForSelectionClicked();
+}
+function copyCoordinates() {
+  items.value = [];
+  copySelectionCoordinates(props.mapManager);
+}
+function copyPng() {
+  items.value = [];
+  void copySelectionPng(props.mapManager);
 }
 async function exportSelection(format: "PNG" | "SVG" | "PDF") {
   items.value = [];

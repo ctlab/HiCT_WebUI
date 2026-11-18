@@ -1796,21 +1796,27 @@ class ContactMapManager {
       "figure"
     );
     if (!destination) return cancelledFileSave;
-    const { canvas } = await this.buildViewportExportSvg({
+    const blob = await this.renderCurrentMapPng({
       ...options,
       progress: progressCallback,
     });
-    const blob = await new Promise<Blob>((resolve, reject) =>
+    progressCallback?.(0.9);
+    const result = await destination.write(blob);
+    progressCallback?.(1);
+    return result;
+  }
+
+  public async renderCurrentMapPng(
+    options?: Parameters<ContactMapManager["buildViewportExportSvg"]>[0]
+  ): Promise<Blob> {
+    const { canvas } = await this.buildViewportExportSvg(options);
+    return new Promise<Blob>((resolve, reject) =>
       canvas.toBlob(
         (value) =>
           value ? resolve(value) : reject(new Error("PNG encoding failed.")),
         "image/png"
       )
     );
-    progressCallback?.(0.9);
-    const result = await destination.write(blob);
-    progressCallback?.(1);
-    return result;
   }
 
   public async exportCurrentMapPdf(

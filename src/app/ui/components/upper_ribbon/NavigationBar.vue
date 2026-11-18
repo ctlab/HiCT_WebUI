@@ -22,11 +22,6 @@
 <template>
   <nav class="navbar-bar navbar navbar-expand">
     <div class="container-fluid">
-      <BackgroundJobsPanel
-        :requests="props.networkManager.requestManager"
-        @open="emit('jobResult', $event)"
-        @examplesRequested="emit('examplesRequested')"
-      />
       <!-- Logo -->
       <a class="navbar-brand hict-navbar-brand" href="#">
         <img
@@ -610,12 +605,9 @@
             </ul>
           </li>
         </ul>
-        <div
-          v-if="props.mapManager"
-          class="file-chips ms-auto d-flex align-items-center gap-2"
-        >
+        <div class="file-chips ms-auto d-flex align-items-center gap-2">
           <span
-            v-if="openMapFilename"
+            v-if="props.mapManager && openMapFilename"
             class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
             :title="
               primaryApproximation
@@ -633,7 +625,7 @@
             {{ shortFileLabel(openMapFilename, MAP_CHIP_LIMIT) }}
           </span>
           <span
-            v-if="secondaryMapFilename"
+            v-if="props.mapManager && secondaryMapFilename"
             class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
             :title="
               secondaryApproximation
@@ -647,6 +639,7 @@
             {{ shortFileLabel(secondaryMapFilename, MAP_CHIP_LIMIT) }}
           </span>
           <button
+            v-if="props.mapManager"
             type="button"
             class="btn btn-sm file-chip"
             :class="
@@ -669,6 +662,7 @@
             }}
           </button>
           <button
+            v-if="props.mapManager"
             type="button"
             class="btn btn-sm file-chip btn-outline-secondary"
             :title="lastAgpFilename || 'No AGP loaded. Click to load one.'"
@@ -677,6 +671,11 @@
             AGP:
             {{ lastAgpFilename ? shortFileLabel(lastAgpFilename) : "none" }}
           </button>
+          <BackgroundJobsPanel
+            :requests="props.networkManager.requestManager"
+            @open="emit('jobResult', $event)"
+            @examplesRequested="emit('examplesRequested')"
+          />
         </div>
       </div>
     </div>
@@ -2429,10 +2428,6 @@ function onSelectionFASTARequest() {
   .navbar-bar .nav-link {
     padding: 0.25rem 0.5rem;
   }
-  .navbar-bar .file-chips {
-    flex-wrap: wrap;
-    margin-left: 0 !important;
-  }
 }
 
 .navbar-bar {
@@ -2499,27 +2494,17 @@ function onSelectionFASTARequest() {
   flex-wrap: wrap;
 }
 .navbar-bar .file-chips {
-  flex: 1 1 400px;
   min-width: 0;
+  max-width: 100%;
   flex-wrap: wrap;
-}
-.navbar-bar .file-chips [aria-label="Link FASTA"] {
-  flex: 0 0 auto;
+  justify-content: flex-end;
 }
 .navbar-bar :deep(.jobs-button) {
-  align-self: flex-start;
-  margin-top: 4px;
   flex-shrink: 0;
 }
 @media (max-width: 700px) {
   .navbar-bar .file-chips {
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .navbar-bar .file-chip {
-    width: 100%;
-    max-width: none;
-    text-align: left;
+    flex-wrap: nowrap;
   }
 }
 
@@ -2557,7 +2542,7 @@ function onSelectionFASTARequest() {
 }
 
 .file-chip {
-  flex: 1 1 120px;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 16rem;
   overflow: hidden;
