@@ -958,13 +958,17 @@ async function openFileWithOptions(
         : newManager.visualizationManager.resolveOpeningVisualizationOptions(
             appearance
           );
-      visualizationOptionsStore.setVisualizationOptions({
+      const openingOptionsWithDiagnostics = {
         ...openingOptions,
         coolerWeightsHaveNaNs: visualizationOptionsStore.coolerWeightsHaveNaNs,
         coolerWeightsNaNCount: visualizationOptionsStore.coolerWeightsNaNCount,
-      });
+      };
+      visualizationOptionsStore.setVisualizationOptions(
+        openingOptionsWithDiagnostics
+      );
       await newManager.visualizationManager.sendVisualizationOptionsToServer({
         skipAutoThresholdRefresh: true,
+        visualizationOptions: openingOptionsWithDiagnostics,
       });
       if (styles) newManager.viewAndLayersManager.applyTrackStylePreset(styles);
       if (pipeline?.enabled) {
@@ -1366,7 +1370,7 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
   }
   const manager = mapManager.value;
   if (!manager) return;
-  visualizationOptionsStore.setVisualizationOptions(
+  const openingOptions =
     manager.visualizationManager.resolveOpeningVisualizationOptions(
       new VisualizationOptions(
         preLogBase,
@@ -1379,8 +1383,8 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
         autoThresholdQuantile,
         signalDisplayMode
       )
-    )
-  );
+    );
+  visualizationOptionsStore.setVisualizationOptions(openingOptions);
   const bg = (first["backgroundColor"] as string) ?? "rgba(255,255,255,1)";
   stylesStore.setMapBackground(safeColorTranslator(bg, "rgba(255,255,255,1)"));
   if (trackStyles && mapManager.value) {
@@ -1390,6 +1394,7 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
   }
   await manager.visualizationManager.sendVisualizationOptionsToServer({
     skipAutoThresholdRefresh: true,
+    visualizationOptions: openingOptions,
   });
   await manager.visualizationManager.applyOpeningViewportQuantileThreshold();
   await manager.reloadTilesFromBackend();

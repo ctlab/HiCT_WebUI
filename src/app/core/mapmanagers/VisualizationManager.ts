@@ -1702,6 +1702,7 @@ class VisualizationManager {
     if (!options?.skipAutoThresholdRefresh) {
       await this.syncAutoThresholdToViewport().catch(() => null);
     }
+    ++this.visualizationOptionsLoadGeneration;
     return this.mapManager.networkManager.requestManager
       .setVisualizationOptions(
         new SetVisualizationOptionsRequest({
@@ -1713,6 +1714,8 @@ class VisualizationManager {
         })
       )
       .then((options) => {
+        // A sidebar read started before this commit can still return afterward.
+        ++this.visualizationOptionsLoadGeneration;
         this.rememberDerivedPalette(options);
         this.projectVisualizationOptions(options);
         window.dispatchEvent(
