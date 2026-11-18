@@ -52,12 +52,8 @@
                 class="form-select form-select-sm mb-2"
                 @change="changeConvention"
               >
-                <option value="one-based">
-                  1-based, inclusive (genome-browser coordinates)
-                </option>
-                <option value="zero-based">
-                  0-based, end excluded (BED coordinates)
-                </option>
+                <option value="one-based">1-based, inclusive</option>
+                <option value="zero-based">0-based, end excluded</option>
               </select>
             </div>
           </div>
