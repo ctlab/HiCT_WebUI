@@ -1755,6 +1755,10 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.nav-tabs .nav-link:not(.active) {
+  color: var(--hict-surface-fg, #212529);
+}
+
 .modal-dialog {
   max-width: min(900px, calc(100vw - 2rem));
   margin-left: auto;
