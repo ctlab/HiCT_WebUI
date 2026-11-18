@@ -43,6 +43,7 @@
             <button
               type="button"
               class="btn-close"
+              aria-label="Close dialog"
               :disabled="runState.running"
               @click="emit('dismissed')"
             ></button>

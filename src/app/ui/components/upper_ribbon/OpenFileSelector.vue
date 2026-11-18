@@ -37,6 +37,7 @@
           <button
             type="button"
             class="btn-close"
+            aria-label="Close dialog"
             @click="onDismissClicked"
           ></button>
         </div>

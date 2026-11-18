@@ -19,6 +19,7 @@
             <button
               type="button"
               class="btn-close"
+              aria-label="Close dialog"
               @click="notificationStore.isOpen = false"
             ></button>
           </div>

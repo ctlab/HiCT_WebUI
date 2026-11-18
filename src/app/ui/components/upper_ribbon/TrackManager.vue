@@ -781,7 +781,9 @@
             <div class="modal-header">
               <h5 class="modal-title">Track Compatibility Warning</h5>
               <button
+                type="button"
                 class="btn-close"
+                aria-label="Close dialog"
                 @click="pendingTrackProbe = null"
               ></button>
             </div>
@@ -842,7 +844,9 @@
                 Secondary Source Compatibility Warning
               </h5>
               <button
+                type="button"
                 class="btn-close"
+                aria-label="Close dialog"
                 @click="pendingSecondaryProbe = null"
               ></button>
             </div>

@@ -885,7 +885,12 @@
     >
       <div class="settings-header">
         <h2>Info settings</h2>
-        <button class="btn-close" @click="osdSettingsOpen = false"></button>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Close dialog"
+          @click="osdSettingsOpen = false"
+        ></button>
       </div>
       <div class="settings-body">
         <div class="form-check form-switch mb-3">
@@ -1005,7 +1010,12 @@
     >
       <div class="about-header">
         <h2>HiCT</h2>
-        <button class="btn-close" @click="aboutOpen = false"></button>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Close dialog"
+          @click="aboutOpen = false"
+        ></button>
       </div>
       <div class="about-tabs" role="tablist" aria-label="About HiCT">
         <button
@@ -1202,7 +1212,9 @@
       <div class="settings-header">
         <h2 id="resolution-settings-title">Restrict Resolutions</h2>
         <button
+          type="button"
           class="btn-close"
+          aria-label="Close dialog"
           @click="resolutionSettingsOpen = false"
         ></button>
       </div>
