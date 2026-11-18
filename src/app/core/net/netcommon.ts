@@ -25,6 +25,7 @@ import type { SourceCapabilities } from "./SourceCapabilities";
 
 interface OpenFileResponse {
   capabilities?: SourceCapabilities;
+  usableCoolerWeights?: boolean;
   status: string;
   dtype: string;
   resolutions: number[];

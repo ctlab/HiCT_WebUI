@@ -688,6 +688,7 @@ async function settleExcludedBins(carriedAppearance?: {
   if (!manager) {
     return;
   }
+  if (manager.getOptions().response.usableCoolerWeights === false) return;
   // Opening the next file keeps the current appearance, including its weight choice.
   if (carriedAppearance) {
     return;
@@ -952,8 +953,13 @@ async function openFileWithOptions(
     if (appearance) {
       // Read the new map's weight diagnostics before restoring user choices.
       await newManager.visualizationManager.fetchVisualizationOptions();
+      const openingOptions = pipeline?.enabled
+        ? appearance
+        : newManager.visualizationManager.resolveOpeningVisualizationOptions(
+            appearance
+          );
       visualizationOptionsStore.setVisualizationOptions({
-        ...appearance,
+        ...openingOptions,
         coolerWeightsHaveNaNs: visualizationOptionsStore.coolerWeightsHaveNaNs,
         coolerWeightsNaNCount: visualizationOptionsStore.coolerWeightsNaNCount,
       });
@@ -972,6 +978,9 @@ async function openFileWithOptions(
             )}; reattach them before reapplying it.`
           );
         }
+      }
+      if (openingOptions !== appearance) {
+        await newManager.visualizationManager.applyOpeningViewportQuantileThreshold();
       }
       await newManager.reloadTilesFromBackend();
       await settleExcludedBins(appearance);
@@ -1355,17 +1364,21 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
       cmapObj.gamma
     );
   }
+  const manager = mapManager.value;
+  if (!manager) return;
   visualizationOptionsStore.setVisualizationOptions(
-    new VisualizationOptions(
-      preLogBase,
-      postLogBase,
-      applyCoolerWeights,
-      resolutionScaling,
-      resolutionLinearScaling,
-      finalCmap,
-      autoThresholdEnabled,
-      autoThresholdQuantile,
-      signalDisplayMode
+    manager.visualizationManager.resolveOpeningVisualizationOptions(
+      new VisualizationOptions(
+        preLogBase,
+        postLogBase,
+        applyCoolerWeights,
+        resolutionScaling,
+        resolutionLinearScaling,
+        finalCmap,
+        autoThresholdEnabled,
+        autoThresholdQuantile,
+        signalDisplayMode
+      )
     )
   );
   const bg = (first["backgroundColor"] as string) ?? "rgba(255,255,255,1)";
@@ -1374,10 +1387,6 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
     mapManager.value
       .getLayersManager()
       .applyTrackStylePreset(trackStyles as never);
-  }
-  const manager = mapManager.value;
-  if (!manager) {
-    return;
   }
   await manager.visualizationManager.sendVisualizationOptionsToServer({
     skipAutoThresholdRefresh: true,

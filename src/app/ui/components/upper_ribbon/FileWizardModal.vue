@@ -2760,9 +2760,11 @@ const runWizard = async (): Promise<void> => {
       { legacyCSS: true }
     );
     styleStore.setMapBackground(backgroundColor);
-    visualizationOptionsStore.setVisualizationOptions(
-      primaryPresetRecord.options
-    );
+    const primaryOptions =
+      mapManager.visualizationManager.resolveOpeningVisualizationOptions(
+        primaryPresetRecord.options
+      );
+    visualizationOptionsStore.setVisualizationOptions(primaryOptions);
     applyWizardPresentationState();
     await nextTick();
     await mapManager.visualizationManager.sendVisualizationOptionsToServer({
@@ -2771,13 +2773,13 @@ const runWizard = async (): Promise<void> => {
 
     if (
       viewMode.value === "single" &&
-      primaryPresetRecord.options.signalDisplayMode !== "OBSERVED"
+      primaryOptions.signalDisplayMode !== "OBSERVED"
     ) {
       await props.networkManager.requestManager.resetRenderPipelineConfig();
     } else {
       const pipelineConfig = buildWizardRenderPipelineConfig({
         viewMode: viewMode.value,
-        primaryOptions: primaryPresetRecord.options,
+        primaryOptions,
         secondaryOptions: secondaryPresetRecord?.options,
         blendMode: blendMode.value,
         topOpacity: topOpacity.value,

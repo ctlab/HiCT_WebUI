@@ -32,6 +32,7 @@ import {
 } from "@/app/core/visualization/signalProfile";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { reportFailure } from "@/app/ui/reportFailure";
+import { toast } from "vue-sonner";
 import {
   diagnosticBounds,
   querySignalHistogram,
@@ -1675,6 +1676,21 @@ class VisualizationManager {
     // of leaving the temporary primary palette in its controls.
     window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
     await this.mapManager.reloadTilesFromBackend();
+  }
+
+  public resolveOpeningVisualizationOptions(
+    options: VisualizationOptions
+  ): VisualizationOptions {
+    if (
+      !options.applyCoolerWeights ||
+      this.mapManager.getOptions().response.usableCoolerWeights !== false
+    )
+      return options;
+    toast.message(
+      "This file has no usable Cooler weights. HiCT opened the map without file weights.",
+      { id: "unusable-cooler-weights" }
+    );
+    return { ...options, applyCoolerWeights: false };
   }
 
   public async sendVisualizationOptionsToServer(options?: {

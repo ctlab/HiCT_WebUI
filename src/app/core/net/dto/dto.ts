@@ -303,6 +303,10 @@ class OpenFileResponseDTO extends InboundDTO<OpenFileResponse> {
     return {
       status: this.json.status as string,
       capabilities: parseSourceCapabilities(this.json.capabilities),
+      usableCoolerWeights:
+        typeof this.json.usableCoolerWeights === "boolean"
+          ? this.json.usableCoolerWeights
+          : undefined,
       dtype: this.json.dtype as string,
       resolutions: this.json.resolutions as number[],
       pixelResolutions: this.json.pixelResolutions as number[],
