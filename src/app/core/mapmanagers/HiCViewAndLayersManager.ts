@@ -387,8 +387,12 @@ class HiCViewAndLayersManager {
     this.entityHighlightLayer?.getSource()?.clear(true);
   }
 
+  public setSequenceMeasurement(measurement?: SequenceMeasurement): void {
+    this.currentViewState.sequenceMeasurement = measurement;
+  }
+
   public clearSelections(): void {
-    this.currentViewState.sequenceMeasurement = undefined;
+    this.setSequenceMeasurement();
     this.clearRegionSelection();
     this.clearEntitySelection();
   }

@@ -122,9 +122,7 @@ const measurement = computed(() => {
 });
 const measurementBounds = ref<Record<string, string>>();
 function clearMeasurement() {
-  if (props.mapManager)
-    props.mapManager.viewAndLayersManager.currentViewState.sequenceMeasurement =
-      undefined;
+  props.mapManager?.viewAndLayersManager.setSequenceMeasurement();
   previewMeasurement.value = undefined;
   updateMeasurementBounds();
 }
@@ -198,8 +196,7 @@ function startPan(event: PointerEvent) {
   ) {
     const located = locateBase(event);
     if (!located?.base) return;
-    manager.viewAndLayersManager.currentViewState.sequenceMeasurement =
-      undefined;
+    manager.viewAndLayersManager.setSequenceMeasurement();
     selectionDrag = {
       pointer: event.pointerId,
       anchor: located.base.bp,
@@ -270,8 +267,9 @@ function pan(event: PointerEvent) {
 function endPan(event: PointerEvent) {
   if (selectionDrag?.pointer === event.pointerId) {
     if (props.mapManager && !props.mapManager.isExporting)
-      props.mapManager.viewAndLayersManager.currentViewState.sequenceMeasurement =
-        previewMeasurement.value;
+      props.mapManager.viewAndLayersManager.setSequenceMeasurement(
+        previewMeasurement.value
+      );
     cancelGesture();
     return;
   }
@@ -348,9 +346,7 @@ function navigateByKey(event: KeyboardEvent) {
         props.axis,
         selected?.reverse ?? false
       );
-      if (next)
-        manager.viewAndLayersManager.currentViewState.sequenceMeasurement =
-          next;
+      if (next) manager.viewAndLayersManager.setSequenceMeasurement(next);
       event.preventDefault();
       return;
     }

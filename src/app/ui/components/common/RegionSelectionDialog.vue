@@ -128,7 +128,7 @@ useEscDismissableDialog({
   isOpen: () => true,
   requestClose: () => emit("dismissed"),
 });
-const layers = props.mapManager.viewAndLayersManager;
+const layers = computed(() => props.mapManager.viewAndLayersManager);
 const convention = ref<CoordinateConvention>("one-based");
 const error = ref("");
 const fields = ref<Record<keyof RegionBounds, string>>({
@@ -148,9 +148,10 @@ const axes = [
 ] as const;
 function contextKey() {
   const h = props.mapManager.networkManager.requestManager.history.applied;
-  return `${h?.session}:${h?.revision}:${layers.axisScopeRevision}`;
+  return `${h?.session}:${h?.revision}:${layers.value.axisScopeRevision}`;
 }
 const openedContext = contextKey();
+const openedLayers = layers.value;
 function contigs() {
   const h = props.mapManager.contigDimensionHolder;
   return h.contigDescriptors.map((d, i) => ({
@@ -174,24 +175,24 @@ function fill(bounds: RegionBounds) {
 }
 function useViewport() {
   fill(
-    layers.regionFromExtent(
+    layers.value.regionFromExtent(
       props.mapManager
         .getView()
         .calculateExtent(props.mapManager.getMap().getSize())
-    ) ?? layers.getRegionDomain()
+    ) ?? layers.value.getRegionDomain()
   );
 }
 fill(
-  layers.getRegionBounds() ??
-    layers.regionFromExtent(
+  layers.value.getRegionBounds() ??
+    layers.value.regionFromExtent(
       props.mapManager
         .getView()
         .calculateExtent(props.mapManager.getMap().getSize())
     ) ??
-    layers.getRegionDomain()
+    layers.value.getRegionDomain()
 );
 const domainLabel = computed(() => {
-  const d = layers.getRegionDomain(),
+  const d = layers.value.getRegionDomain(),
     shift = convention.value === "one-based" ? 1 : 0;
   return `Current scope: rows ${d.rowStart + shift}–${d.rowEnd}, columns ${
     d.columnStart + shift
@@ -204,7 +205,7 @@ function changeConvention(event: Event) {
       fields.value,
       convention.value,
       contigs(),
-      layers.getRegionDomain()
+      layers.value.getRegionDomain()
     );
     convention.value = select.value as CoordinateConvention;
     fill(parsed);
@@ -215,16 +216,16 @@ function changeConvention(event: Event) {
 }
 function apply() {
   try {
-    if (contextKey() !== openedContext)
+    if (layers.value !== openedLayers || contextKey() !== openedContext)
       throw Error(
         "The assembly or scopes changed. Reopen this dialog before selecting coordinates."
       );
-    layers.setRegionBounds(
+    layers.value.setRegionBounds(
       parseRegion(
         fields.value,
         convention.value,
         contigs(),
-        layers.getRegionDomain()
+        layers.value.getRegionDomain()
       )
     );
     emit("dismissed");

@@ -85,7 +85,7 @@ ihdr[9] = 6;
 const rows = Buffer.alloc(128 * (1 + 256 * 4), 0);
 for (let y = 0; y < 128; y++) {
   for (let x = 0; x < 256; x++) {
-    let i = y * (1 + 256 * 4) + 1 + x * 4;
+    const i = y * (1 + 256 * 4) + 1 + x * 4;
     rows[i] = 255;
     rows[i + 3] = 255;
   }

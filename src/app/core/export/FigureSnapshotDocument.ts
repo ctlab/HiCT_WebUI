@@ -61,7 +61,7 @@ export function validateFigureSnapshotDocuments(
       typeof item.name !== "string" ||
       !item.name.trim() ||
       item.name.length > 100 ||
-      /[\u0000-\u001f]/.test(item.name)
+      [...item.name].some((character) => character.charCodeAt(0) < 32)
     )
       fail("a name of 1–100 printable characters is required");
     if (

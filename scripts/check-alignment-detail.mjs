@@ -113,9 +113,9 @@ const finished = {
     ],
   },
 };
-let requests = 0,
-  stops = [],
-  query = async () => finished;
+const stops = [];
+let requests = 0;
+let query = async () => finished;
 const api = {
   hasLinkedFasta: true,
   history: { applied: 0 },
