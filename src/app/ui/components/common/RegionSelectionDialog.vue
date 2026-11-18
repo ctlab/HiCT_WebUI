@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div class="region-selection-backdrop" @click.self="$emit('dismissed')">
+    <div class="region-selection-backdrop" @click.self="dismiss">
       <section
         ref="dialog"
         class="region-selection-dialog"
@@ -18,7 +18,8 @@
               type="button"
               class="btn-close"
               aria-label="Close"
-              @click="$emit('dismissed')"
+              :disabled="cutPending"
+              @click="dismiss"
             ></button>
           </div>
           <p class="small">
@@ -98,13 +99,52 @@
             <button
               type="button"
               class="btn btn-outline-secondary"
-              @click="$emit('dismissed')"
+              :disabled="cutPending"
+              @click="dismiss"
             >
               Cancel
             </button>
-            <button type="submit" class="btn btn-primary">Select region</button>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              :disabled="cutPending"
+            >
+              Select region
+            </button>
           </div>
         </form>
+        <details v-if="canCut" class="mt-3 pt-2 border-top">
+          <summary>Cut at a coordinate</summary>
+          <form class="mt-2" @submit.prevent="cutAtCoordinate">
+            <label for="exact-cut-position" class="form-label">
+              Cut after position
+            </label>
+            <input
+              id="exact-cut-position"
+              v-model="cutPosition"
+              class="form-control"
+              aria-describedby="exact-cut-help"
+              autocomplete="off"
+              :disabled="cutPending"
+              @input="cutError = ''"
+              required
+            />
+            <p id="exact-cut-help" class="form-text">
+              Enter a 1-based assembly position or current-contig:position. The
+              cut keeps all bases and can be undone.
+            </p>
+            <p v-if="cutError" role="alert" class="text-danger small">
+              {{ cutError }}
+            </p>
+            <button
+              type="submit"
+              class="btn btn-outline-primary"
+              :disabled="cutPending"
+            >
+              {{ cutPending ? "Cutting…" : "Cut contig" }}
+            </button>
+          </form>
+        </details>
       </section>
     </div>
   </Teleport>
@@ -113,6 +153,7 @@
 import { computed, ref } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import {
+  parseBoundary,
   parseRegion,
   type RegionBounds,
   type CoordinateConvention,
@@ -122,13 +163,26 @@ import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 const props = defineProps<{ mapManager: ContactMapManager }>();
 const emit = defineEmits<{ (e: "dismissed"): void }>();
 const dialog = ref<HTMLElement | null>(null);
+const cutPosition = ref("");
+const cutPending = ref(false);
+const cutError = ref("");
 useModalFocus(dialog);
 useEscDismissableDialog({
   priority: 1050,
   isOpen: () => true,
-  requestClose: () => emit("dismissed"),
+  requestClose: dismiss,
 });
+function dismiss() {
+  if (!cutPending.value) emit("dismissed");
+}
 const layers = computed(() => props.mapManager.viewAndLayersManager);
+const canCut = computed(() => {
+  const api = props.mapManager.networkManager.requestManager;
+  return (
+    api.sourceCapabilities.PRIMARY?.sequenceScaleTiles === true &&
+    !api.sequenceViewReadOnly
+  );
+});
 const convention = ref<CoordinateConvention>("one-based");
 const error = ref("");
 const fields = ref<Record<keyof RegionBounds, string>>({
@@ -215,6 +269,7 @@ function changeConvention(event: Event) {
   }
 }
 function apply() {
+  if (cutPending.value) return;
   try {
     if (layers.value !== openedLayers || contextKey() !== openedContext)
       throw Error(
@@ -231,6 +286,28 @@ function apply() {
     emit("dismissed");
   } catch (failure) {
     error.value = (failure as Error).message;
+  }
+}
+
+async function cutAtCoordinate() {
+  if (cutPending.value) return;
+  cutError.value = "";
+  try {
+    if (layers.value !== openedLayers || contextKey() !== openedContext)
+      throw Error(
+        "The assembly or scopes changed. Reopen this dialog before cutting."
+      );
+    const bp = parseBoundary(cutPosition.value, true, "one-based", contigs());
+    const eventManager = props.mapManager.eventManager;
+    const target = eventManager.getExactCutTarget(bp);
+    if (!target)
+      throw Error("Choose a base boundary inside an editable contig.");
+    cutPending.value = true;
+    if (await eventManager.cutAtExactTarget(target)) emit("dismissed");
+  } catch (failure) {
+    cutError.value = (failure as Error).message;
+  } finally {
+    cutPending.value = false;
   }
 }
 </script>
