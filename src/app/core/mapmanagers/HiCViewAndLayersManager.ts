@@ -3519,13 +3519,24 @@ class HiCViewAndLayersManager {
     secondary: LayerResolutionDescriptor
   ): void {
     const target = this.view.getResolution() ?? primary.pixelResolution;
+    const nativeRatio = primary.bpResolution / secondary.bpResolution;
+    const maximumFactor = Math.min(65_536, primary.bpResolution);
     const oversampling = Math.min(
-      64,
-      primary.bpResolution / secondary.bpResolution,
+      maximumFactor,
+      nativeRatio,
       primary.pixelResolution / target
     );
     const sampleFactor =
-      oversampling > 1 ? 2 ** Math.floor(Math.log2(oversampling)) : 1;
+      nativeRatio > 1 && target <= secondary.pixelResolution
+        ? Math.min(
+            maximumFactor,
+            Number.isInteger(nativeRatio)
+              ? nativeRatio
+              : Math.ceil(2 * nativeRatio)
+          )
+        : oversampling > 1
+        ? 2 ** Math.floor(Math.log2(oversampling))
+        : 1;
     const key = `${primary.bpResolution}/${secondary.bpResolution}/${sampleFactor}`;
     if (this.mapManager.isExporting) {
       this.settleProjectedOverlayForFigure();

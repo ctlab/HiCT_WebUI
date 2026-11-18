@@ -92,7 +92,29 @@
               }}
               are included.
             </p>
-            <label class="form-label">Window sizes / map resolutions</label>
+            <label for="sequence-overlay-resolutions" class="form-label">
+              {{
+                alignment
+                  ? "Dotplot resolutions (bp/bin)"
+                  : "ModDotPlot window sizes (bp)"
+              }}
+            </label>
+            <input
+              id="sequence-overlay-resolutions"
+              v-model="resolutionList"
+              type="text"
+              class="form-control"
+              :class="{ 'is-invalid': resolutionError }"
+              :aria-invalid="!!resolutionError"
+              aria-describedby="sequence-overlay-resolution-help"
+            />
+            <p id="sequence-overlay-resolution-help" class="form-text">
+              Enter sizes separated by commas or spaces, for example 50, 250,
+              1000. The checkboxes change only their own sizes.
+            </p>
+            <p v-if="resolutionError" class="small text-danger" role="alert">
+              {{ resolutionError }}
+            </p>
             <div class="resolution-options mb-3">
               <label
                 v-for="resolution in availableResolutions"
@@ -100,10 +122,11 @@
                 class="form-check"
               >
                 <input
-                  v-model="resolutions"
                   class="form-check-input"
                   type="checkbox"
                   :value="resolution"
+                  :checked="resolutions.includes(resolution)"
+                  @change="toggleResolution(resolution, $event)"
                 />
                 {{ resolution.toLocaleString() }} bp
               </label>
@@ -420,7 +443,12 @@
           <button
             type="submit"
             class="btn btn-primary"
-            :disabled="busy || !!unavailableReason || !resolutions.length"
+            :disabled="
+              busy ||
+              !!unavailableReason ||
+              !!resolutionError ||
+              !resolutions.length
+            "
           >
             {{ title }}
           </button>
@@ -509,13 +537,39 @@ const selection =
         columnEnd: Math.max(borders.leftBP[0], borders.rightBP[0]),
       }
     : null;
-const availableResolutions = [...view.resolutions].sort((a, b) => a - b);
-const resolutions = ref(
-  defaultSequenceResolutions(
-    availableResolutions,
-    view.currentViewState.resolutionDesciptor.bpResolution
-  )
+const availableResolutions = [...new Set([50, ...view.resolutions])].sort(
+  (a, b) => a - b
 );
+const resolutionList = ref(
+  defaultSequenceResolutions(
+    view.resolutions,
+    view.currentViewState.resolutionDesciptor.bpResolution
+  ).join(", ")
+);
+const resolutionTokens = computed(() =>
+  resolutionList.value.split(/[,\s]+/).filter(Boolean)
+);
+function asResolution(token: string): number {
+  const value = Number(token);
+  return /^\d+$/.test(token) && Number.isSafeInteger(value) && value > 0
+    ? value
+    : NaN;
+}
+const resolutions = computed(() =>
+  [
+    ...new Set(
+      resolutionTokens.value.map(asResolution).filter(Number.isFinite)
+    ),
+  ].sort((a, b) => a - b)
+);
+function toggleResolution(resolution: number, event: Event): void {
+  const checked = (event.target as HTMLInputElement).checked;
+  const tokens = resolutionTokens.value.filter(
+    (token) => asResolution(token) !== resolution
+  );
+  if (checked) tokens.push(String(resolution));
+  resolutionList.value = tokens.join(", ");
+}
 const scope = ref(
   props.initialSelection && selection ? "selection" : "assembly"
 );
@@ -523,6 +577,17 @@ const identity = ref(80),
   k = ref(21),
   sketchSize = ref(1000),
   delta = ref(0.5);
+const resolutionError = computed(() => {
+  if (
+    resolutionTokens.value.some(
+      (token) => !Number.isFinite(asResolution(token))
+    )
+  )
+    return "Use positive whole numbers in base pairs.";
+  if (!alignment && resolutions.value.some((value) => value < k.value))
+    return "Each ModDotPlot window must be at least as long as its k-mer size.";
+  return "";
+});
 const uiSettings = useUiSettingsStore();
 const threads = ref(uiSettings.modDotPlotThreads);
 const saveReusable = ref(false),
@@ -584,7 +649,13 @@ onBeforeUnmount(() => {
   deferResult();
 });
 async function start() {
-  if (busy.value || unavailableReason.value) return;
+  if (
+    busy.value ||
+    unavailableReason.value ||
+    resolutionError.value ||
+    !resolutions.value.length
+  )
+    return;
   submitting.value = true;
   error.value = "";
   pendingCompatibility.value = null;
