@@ -1,5 +1,14 @@
 import { toast } from "vue-sonner";
 import type { ContactMapManager } from "./ContactMapManager";
+import {
+  formatBoundary,
+  getCoordinateReferences,
+  type CoordinateConvention,
+  type CoordinateFrame,
+  type RegionBounds,
+} from "./regionSelection";
+
+const assemblyReferences = { contigs: [], scaffolds: [] };
 
 export interface ContextMenuItem {
   label: string;
@@ -65,26 +74,74 @@ export async function copyText(text: string, label: string): Promise<boolean> {
   return false;
 }
 
-export function copySelectionCoordinates(manager: ContactMapManager): void {
+export function copySelectionCoordinates(
+  manager: ContactMapManager,
+  frame: CoordinateFrame = "assembly"
+): void {
   const layers = manager.viewAndLayersManager;
   const region = layers.getRegionBounds();
   if (region) {
-    void copyText(
-      `Assembly coordinates (bp, 1-based inclusive)\nRows\t${region.rowStart + 1}\t${region.rowEnd}\nColumns\t${region.columnStart + 1}\t${region.columnEnd}`,
-      "Selection coordinates"
-    );
+    void copyRegionCoordinates(manager, region, frame, "one-based");
     return;
   }
   const range = layers.getSelectedEntityRange();
-  if (range) {
-    void copyText(
-      `Assembly coordinates (bp, 1-based inclusive)\n${range.startBP + 1}\t${range.endBP}`,
-      "Selection coordinates"
-    );
-  }
+  if (!range) return;
+  const references =
+    frame === "assembly"
+      ? assemblyReferences
+      : getCoordinateReferences(manager);
+  const start = formatBoundary(
+    range.startBP,
+    false,
+    "one-based",
+    references,
+    frame
+  );
+  const end = formatBoundary(range.endBP, true, "one-based", references, frame);
+  void copyText(
+    `${coordinateHeading(frame, "one-based")}\n${start}\t${end}`,
+    "Selection coordinates"
+  );
 }
 
-export async function copySelectionPng(manager: ContactMapManager): Promise<void> {
+function coordinateHeading(
+  frame: CoordinateFrame,
+  convention: CoordinateConvention
+): string {
+  const name = frame[0].toUpperCase() + frame.slice(1);
+  const indexing =
+    convention === "one-based" ? "1-based inclusive" : "0-based, end excluded";
+  return `${name} coordinates (bp, ${indexing})`;
+}
+
+export function copyRegionCoordinates(
+  manager: ContactMapManager,
+  region: RegionBounds,
+  frame: CoordinateFrame,
+  convention: CoordinateConvention
+): Promise<boolean> {
+  const references =
+    frame === "assembly"
+      ? assemblyReferences
+      : getCoordinateReferences(manager);
+  const interval = (start: number, end: number) =>
+    [
+      formatBoundary(start, false, convention, references, frame),
+      formatBoundary(end, true, convention, references, frame),
+    ].join("\t");
+  return copyText(
+    [
+      coordinateHeading(frame, convention),
+      `Rows\t${interval(region.rowStart, region.rowEnd)}`,
+      `Columns\t${interval(region.columnStart, region.columnEnd)}`,
+    ].join("\n"),
+    "Selection coordinates"
+  );
+}
+
+export async function copySelectionPng(
+  manager: ContactMapManager
+): Promise<void> {
   if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
     toast.error("Image clipboard is unavailable. Use Export selection as PNG.");
     return;
@@ -100,7 +157,9 @@ export async function copySelectionPng(manager: ContactMapManager): Promise<void
   } catch {
     try {
       await png;
-      toast.error("Could not write to the clipboard. Use Export selection as PNG.");
+      toast.error(
+        "Could not write to the clipboard. Use Export selection as PNG."
+      );
     } catch (error) {
       toast.error(`Could not render the selected region: ${String(error)}`);
     }

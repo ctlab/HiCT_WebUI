@@ -33,8 +33,14 @@
           Rename…
         </button>
         <template v-if="item.kind === 'selection'">
-          <button role="menuitem" @click="copyCoordinates">
+          <button role="menuitem" @click="copyCoordinates('assembly')">
             Copy selection coordinates
+          </button>
+          <button role="menuitem" @click="copyCoordinates('scaffold')">
+            Copy scaffold coordinates
+          </button>
+          <button role="menuitem" @click="copyCoordinates('contig')">
+            Copy contig coordinates
           </button>
           <button role="menuitem" @click="copyPng">
             Copy selection as PNG
@@ -199,6 +205,7 @@ import {
   watch,
 } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import type { CoordinateFrame } from "@/app/core/mapmanagers/regionSelection";
 import {
   ReverseSelectionRangeRequest,
   UngroupContigsFromScaffoldRequest,
@@ -475,9 +482,9 @@ function exportFasta() {
   items.value = [];
   props.mapManager.eventManager.onExportFASTAForSelectionClicked();
 }
-function copyCoordinates() {
+function copyCoordinates(frame: CoordinateFrame) {
   items.value = [];
-  copySelectionCoordinates(props.mapManager);
+  copySelectionCoordinates(props.mapManager, frame);
 }
 function copyPng() {
   items.value = [];

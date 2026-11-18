@@ -26,6 +26,13 @@ const contigs = [
   { name: "left", start: 0, length: 253 },
   { name: "right:part", start: 253, length: 3747 },
 ];
+const references = {
+  contigs,
+  scaffolds: [
+    { name: "shared:one", start: 0, length: 253 },
+    { name: "two", start: 253, length: 1747 },
+  ],
+};
 const fields = {
   rowStart: "left:1",
   rowEnd: "left:253",
@@ -34,7 +41,7 @@ const fields = {
 };
 const plain = (value) => JSON.parse(JSON.stringify(value));
 assert.deepEqual(
-  plain(model.parseRegion(fields, "one-based", contigs, domain)),
+  plain(model.parseRegion(fields, "one-based", references, domain)),
   { rowStart: 0, rowEnd: 253, columnStart: 253, columnEnd: 1253 }
 );
 assert.deepEqual(
@@ -47,7 +54,7 @@ assert.deepEqual(
         columnEnd: "right:part:1",
       },
       "zero-based",
-      contigs,
+      references,
       domain
     )
   ),
@@ -67,18 +74,21 @@ for (const bad of [
     model.parseRegion(
       { ...fields, rowStart: bad },
       "one-based",
-      contigs,
+      references,
       domain
     )
   );
 assert.throws(() =>
-  model.parseBoundary("left:254", true, "one-based", contigs)
+  model.parseBoundary("left:254", true, "one-based", references)
 );
 assert.throws(() =>
-  model.parseBoundary("unknown:1", false, "one-based", contigs)
+  model.parseBoundary("unknown:1", false, "one-based", references)
 );
 assert.throws(() =>
-  model.parseBoundary("left:1", false, "one-based", [...contigs, contigs[0]])
+  model.parseBoundary("left:1", false, "one-based", {
+    ...references,
+    contigs: [...contigs, contigs[0]],
+  })
 );
 assert.throws(() =>
   model.parseRegion(
@@ -89,13 +99,52 @@ assert.throws(() =>
   )
 );
 assert.throws(() =>
-  model.parseRegion(fields, "one-based", contigs, { ...domain, rowStart: 1 })
+  model.parseRegion(fields, "one-based", references, { ...domain, rowStart: 1 })
 );
 assert.equal(
-  model.parseBoundary("long:4", false, "one-based", [
-    { name: "long", start: 2_500_000_000, length: 17 },
-  ]),
+  model.parseBoundary("long:4", false, "one-based", {
+    contigs: [{ name: "long", start: 2_500_000_000, length: 17 }],
+    scaffolds: [],
+  }),
   2_500_000_003
+);
+const mixedFields = {
+  rowStart: "scf:shared:one:1",
+  rowEnd: "scf:two:15",
+  columnStart: "ctg:right:part:5",
+  columnEnd: "assembly:2222",
+};
+assert.deepEqual(
+  plain(
+    model.parseRegion(mixedFields, "one-based", references, domain, "scaffold")
+  ),
+  { rowStart: 0, rowEnd: 268, columnStart: 257, columnEnd: 2222 }
+);
+for (const [boundary, end, convention, frame, formatted] of [
+  [253, false, "one-based", "scaffold", "scf:two:1"],
+  [253, true, "one-based", "scaffold", "scf:shared:one:253"],
+  [253, false, "zero-based", "contig", "ctg:right:part:0"],
+  [253, true, "zero-based", "contig", "ctg:left:253"],
+  [2222, true, "one-based", "scaffold", "assembly:2222"],
+]) {
+  assert.equal(
+    model.formatBoundary(boundary, end, convention, references, frame),
+    formatted
+  );
+  assert.equal(
+    model.parseBoundary(formatted, end, convention, references, frame),
+    boundary
+  );
+}
+assert.equal(
+  model.parseBoundary("two:12", true, "one-based", references, "scaffold"),
+  265
+);
+assert.throws(() =>
+  model.parseBoundary("scf:two:1748", true, "one-based", references)
+);
+assert.throws(() =>
+  model.parseBoundary("20", false, "one-based", references, "scaffold")
 );
 assert.equal(model.snapRegionBoundary(30 - 1e-12, false), 30);
 assert.equal(model.snapRegionBoundary(30 + 1e-12, true), 30);

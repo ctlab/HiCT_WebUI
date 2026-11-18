@@ -9,7 +9,7 @@
         aria-labelledby="region-selection-title"
         tabindex="-1"
       >
-        <form @submit.prevent="apply">
+        <form @submit.prevent="apply" @input="copyStatus = ''">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 id="region-selection-title" class="m-0">
               Select region by coordinates
@@ -26,25 +26,49 @@
             Select independent row and column intervals for dot plots, sequence
             tools and exports. This does not select entities for editing.
           </p>
-          <label for="region-convention" class="form-label"
-            >Coordinate convention</label
-          >
-          <select
-            id="region-convention"
-            :value="convention"
-            class="form-select form-select-sm mb-2"
-            @change="changeConvention"
-          >
-            <option value="one-based">
-              1-based, inclusive (genome-browser coordinates)
-            </option>
-            <option value="zero-based">
-              0-based, end excluded (BED coordinates)
-            </option>
-          </select>
+          <div class="region-coordinate-row">
+            <div>
+              <label for="region-frame" class="form-label"
+                >Coordinate frame</label
+              >
+              <select
+                id="region-frame"
+                :value="frame"
+                class="form-select form-select-sm mb-2"
+                @change="changeFrame"
+              >
+                <option value="assembly">Assembly (global)</option>
+                <option value="scaffold">Scaffold (in-scf)</option>
+                <option value="contig">Contig (in-ctg)</option>
+              </select>
+            </div>
+            <div>
+              <label for="region-convention" class="form-label"
+                >Coordinate convention</label
+              >
+              <select
+                id="region-convention"
+                :value="convention"
+                class="form-select form-select-sm mb-2"
+                @change="changeConvention"
+              >
+                <option value="one-based">
+                  1-based, inclusive (genome-browser coordinates)
+                </option>
+                <option value="zero-based">
+                  0-based, end excluded (BED coordinates)
+                </option>
+              </select>
+            </div>
+          </div>
           <p class="small text-muted">
-            Use assembly positions or current-contig:position. Contig positions
-            follow its current orientation. Thousands separators are accepted.
+            Use assembly positions, <code>scf:name:position</code> or
+            <code>ctg:name:position</code>. Positions follow the current
+            assembly orientation. Scaffold coordinates exclude AGP padding.
+            <template v-if="frame !== 'assembly'">
+              Endpoints without a unique name use
+              <code>assembly:position</code>.
+            </template>
           </p>
           <fieldset v-for="axis in axes" :key="axis.key" class="mb-3">
             <legend class="fs-6 mb-1">{{ axis.label }}</legend>
@@ -79,6 +103,9 @@
           </fieldset>
           <p class="small text-muted">{{ domainLabel }}</p>
           <p v-if="error" role="alert" class="text-danger small">{{ error }}</p>
+          <p v-if="copyStatus" role="status" class="small text-success">
+            {{ copyStatus }}
+          </p>
           <div class="d-flex flex-wrap gap-2 mb-3">
             <button
               type="button"
@@ -93,6 +120,14 @@
               @click="fill(layers.getRegionDomain())"
             >
               Use full scope
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              :disabled="cutPending"
+              @click="copyCoordinates"
+            >
+              Copy coordinates
             </button>
           </div>
           <div class="d-flex justify-content-end gap-2">
@@ -130,8 +165,8 @@
               required
             />
             <p id="exact-cut-help" class="form-text">
-              Enter a 1-based assembly position or current-contig:position. The
-              cut keeps all bases and can be undone.
+              Use a 1-based assembly, scaffold or contig position. The cut keeps
+              all bases and can be undone.
             </p>
             <p v-if="cutError" role="alert" class="text-danger small">
               {{ cutError }}
@@ -152,10 +187,14 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import { copyRegionCoordinates } from "@/app/core/mapmanagers/contextMenuActions";
 import {
+  formatBoundary,
+  getCoordinateReferences,
   parseBoundary,
   parseRegion,
   type RegionBounds,
+  type CoordinateFrame,
   type CoordinateConvention,
 } from "@/app/core/mapmanagers/regionSelection";
 import { useModalFocus } from "@/app/ui/modalFocus";
@@ -184,7 +223,9 @@ const canCut = computed(() => {
   );
 });
 const convention = ref<CoordinateConvention>("one-based");
+const frame = ref<CoordinateFrame>("assembly");
 const error = ref("");
+const copyStatus = ref("");
 const fields = ref<Record<keyof RegionBounds, string>>({
   rowStart: "",
   rowEnd: "",
@@ -206,26 +247,18 @@ function contextKey() {
 }
 const openedContext = contextKey();
 const openedLayers = layers.value;
-function contigs() {
-  const h = props.mapManager.contigDimensionHolder;
-  return h.contigDescriptors.map((d, i) => ({
-    name: d.contigName,
-    start: h.prefix_sum_bp[i],
-    length: d.contigLengthBp,
-  }));
-}
+const references = getCoordinateReferences(props.mapManager);
 function fill(bounds: RegionBounds) {
+  const boundary = (bp: number, end: boolean) =>
+    formatBoundary(bp, end, convention.value, references, frame.value);
   fields.value = {
-    rowStart: String(
-      bounds.rowStart + (convention.value === "one-based" ? 1 : 0)
-    ),
-    rowEnd: String(bounds.rowEnd),
-    columnStart: String(
-      bounds.columnStart + (convention.value === "one-based" ? 1 : 0)
-    ),
-    columnEnd: String(bounds.columnEnd),
+    rowStart: boundary(bounds.rowStart, false),
+    rowEnd: boundary(bounds.rowEnd, true),
+    columnStart: boundary(bounds.columnStart, false),
+    columnEnd: boundary(bounds.columnEnd, true),
   };
   error.value = "";
+  copyStatus.value = "";
 }
 function useViewport() {
   fill(
@@ -248,41 +281,69 @@ fill(
 const domainLabel = computed(() => {
   const d = layers.value.getRegionDomain(),
     shift = convention.value === "one-based" ? 1 : 0;
-  return `Current scope: rows ${d.rowStart + shift}–${d.rowEnd}, columns ${
-    d.columnStart + shift
-  }–${d.columnEnd}.`;
+  return `Current scope (assembly): rows ${d.rowStart + shift}–${
+    d.rowEnd
+  }, columns ${d.columnStart + shift}–${d.columnEnd}.`;
 });
-function changeConvention(event: Event) {
-  const select = event.target as HTMLSelectElement;
-  try {
-    const parsed = parseRegion(
-      fields.value,
-      convention.value,
-      contigs(),
-      layers.value.getRegionDomain()
+function parseFields(): RegionBounds {
+  if (layers.value !== openedLayers || contextKey() !== openedContext)
+    throw Error(
+      "The assembly or scopes changed. Reopen this dialog to use the current coordinates."
     );
-    convention.value = select.value as CoordinateConvention;
+  return parseRegion(
+    fields.value,
+    convention.value,
+    references,
+    layers.value.getRegionDomain(),
+    frame.value
+  );
+}
+function changeFormat(
+  frameValue: CoordinateFrame,
+  conventionValue: CoordinateConvention
+) {
+  try {
+    const parsed = parseFields();
+    convention.value = conventionValue;
+    frame.value = frameValue;
     fill(parsed);
   } catch (failure) {
     error.value = String((failure as Error).message);
-    select.value = convention.value;
+  }
+}
+function changeConvention(event: Event) {
+  const select = event.target as HTMLSelectElement;
+  changeFormat(frame.value, select.value as CoordinateConvention);
+  select.value = convention.value;
+}
+function changeFrame(event: Event) {
+  const select = event.target as HTMLSelectElement;
+  changeFormat(select.value as CoordinateFrame, convention.value);
+  select.value = frame.value;
+}
+async function copyCoordinates() {
+  copyStatus.value = "";
+  try {
+    const region = parseFields();
+    error.value = "";
+    const copied = await copyRegionCoordinates(
+      props.mapManager,
+      region,
+      frame.value,
+      convention.value
+    );
+    if (copied) copyStatus.value = "Coordinates copied.";
+    else
+      error.value =
+        "Clipboard unavailable. Copy the coordinate fields manually.";
+  } catch (failure) {
+    error.value = (failure as Error).message;
   }
 }
 function apply() {
   if (cutPending.value) return;
   try {
-    if (layers.value !== openedLayers || contextKey() !== openedContext)
-      throw Error(
-        "The assembly or scopes changed. Reopen this dialog before selecting coordinates."
-      );
-    layers.value.setRegionBounds(
-      parseRegion(
-        fields.value,
-        convention.value,
-        contigs(),
-        layers.value.getRegionDomain()
-      )
-    );
+    layers.value.setRegionBounds(parseFields());
     emit("dismissed");
   } catch (failure) {
     error.value = (failure as Error).message;
@@ -297,7 +358,13 @@ async function cutAtCoordinate() {
       throw Error(
         "The assembly or scopes changed. Reopen this dialog before cutting."
       );
-    const bp = parseBoundary(cutPosition.value, true, "one-based", contigs());
+    const bp = parseBoundary(
+      cutPosition.value,
+      true,
+      "one-based",
+      references,
+      frame.value
+    );
     const eventManager = props.mapManager.eventManager;
     const target = eventManager.getExactCutTarget(bp);
     if (!target)

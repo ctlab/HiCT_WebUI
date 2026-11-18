@@ -50,9 +50,27 @@
         <button
           class="dropdown-item"
           :disabled="!region && !count"
-          @click="copyCoordinates"
+          @click="copyCoordinates('assembly')"
         >
           Copy selection coordinates
+        </button>
+      </li>
+      <li>
+        <button
+          class="dropdown-item"
+          :disabled="!region && !count"
+          @click="copyCoordinates('scaffold')"
+        >
+          Copy scaffold coordinates
+        </button>
+      </li>
+      <li>
+        <button
+          class="dropdown-item"
+          :disabled="!region && !count"
+          @click="copyCoordinates('contig')"
+        >
+          Copy contig coordinates
         </button>
       </li>
       <li>
@@ -105,6 +123,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
+import type { CoordinateFrame } from "@/app/core/mapmanagers/regionSelection";
 import {
   copySelectionCoordinates,
   copySelectionPng,
@@ -132,7 +151,9 @@ const summary = computed(() => {
   return count.value
     ? `${n ? n + (n === 1 ? " scaffold; " : " scaffolds; ") : ""}${
         count.value
-      } ${count.value === 1 ? "contig" : "contigs"} selected for assembly editing.`
+      } ${
+        count.value === 1 ? "contig" : "contigs"
+      } selected for assembly editing.`
     : "No selection.";
 });
 const label = computed(() => {
@@ -144,8 +165,8 @@ const label = computed(() => {
     : "Selection";
 });
 const bothScoped = computed(() => state.value?.scopedAxes ?? false);
-function copyCoordinates() {
-  if (props.mapManager) copySelectionCoordinates(props.mapManager);
+function copyCoordinates(frame: CoordinateFrame) {
+  if (props.mapManager) copySelectionCoordinates(props.mapManager, frame);
 }
 function copyPng() {
   if (props.mapManager) void copySelectionPng(props.mapManager);

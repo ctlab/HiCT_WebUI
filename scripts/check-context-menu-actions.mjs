@@ -3,6 +3,26 @@ import fs from "node:fs";
 import ts from "typescript";
 import vm from "node:vm";
 
+const coordinates = { exports: {} };
+vm.runInNewContext(
+  ts.transpileModule(
+    fs.readFileSync(
+      new URL(
+        "../src/app/core/mapmanagers/regionSelection.ts",
+        import.meta.url
+      ),
+      "utf8"
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  coordinates
+);
+
 // Loads the production module with the browser pieces it touches replaced by recording stubs.
 function load({
   clipboard,
@@ -33,6 +53,7 @@ function load({
   const sandbox = {
     exports: {},
     require: (name) => {
+      if (name === "./regionSelection") return coordinates.exports;
       assert.equal(name, "vue-sonner");
       return {
         toast: {
@@ -81,11 +102,33 @@ function load({
     }),
     getSelectedEntityRange: () => ({ startBP: 10000, endBP: 20000 }),
   };
-  copySelectionCoordinates({ viewAndLayersManager: layers });
+  const manager = {
+    viewAndLayersManager: layers,
+    contigDimensionHolder: {
+      prefix_sum_bp: [0, 5500],
+      contigDescriptors: [{ contigName: "ctgA", contigLengthBp: 5500 }],
+    },
+    scaffoldHolder: {
+      scaffoldTable: new Map([
+        [
+          1,
+          {
+            scaffoldName: "scfA",
+            scaffoldBordersBP: { startBP: 1000, endBP: 5500 },
+          },
+        ],
+      ]),
+    },
+  };
+  copySelectionCoordinates(manager);
+  copySelectionCoordinates(manager, "contig");
+  copySelectionCoordinates(manager, "scaffold");
   layers.getRegionBounds = () => undefined;
-  copySelectionCoordinates({ viewAndLayersManager: layers });
+  copySelectionCoordinates(manager);
   assert.deepEqual(written, [
     "Assembly coordinates (bp, 1-based inclusive)\nRows\t1001\t5500\nColumns\t1\t1",
+    "Contig coordinates (bp, 1-based inclusive)\nRows\tctg:ctgA:1001\tctg:ctgA:5500\nColumns\tctg:ctgA:1\tctg:ctgA:1",
+    "Scaffold coordinates (bp, 1-based inclusive)\nRows\tscf:scfA:1\tscf:scfA:4500\nColumns\tassembly:1\tassembly:1",
     "Assembly coordinates (bp, 1-based inclusive)\n10001\t20000",
   ]);
 }
