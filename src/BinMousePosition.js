@@ -28,6 +28,9 @@ import {
   identityTransform,
 } from "ol/proj";
 import TileLayer from "ol/layer/Tile";
+import { inView } from "ol/layer/Layer";
+import { containsCoordinate } from "ol/extent";
+import { watch } from "vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 
 function getOsdSettings() {
@@ -76,12 +79,26 @@ export default class BinMousePosition extends MousePosition {
   }
 
   setMap(map) {
+    this.stopSettingsWatch?.();
+    this.stopSettingsWatch = null;
     super.setMap(map);
     this.refreshOnRender = false;
     if (!map) {
       this.pointerPixel = null;
       return;
     }
+    const settings = getOsdSettings();
+    if (settings)
+      this.stopSettingsWatch = watch(
+        () => [
+          settings.osdOverlayVisible,
+          settings.osdOverlayPosition,
+          settings.osdOverlayFields,
+          settings.osdOverlayFieldOrder,
+        ],
+        () => this.updateHTML_(this.pointerPixel),
+        { deep: true }
+      );
     this.listenerKeys.push(
       map.getView().on("change:resolution", () => {
         this.refreshOnRender = true;
@@ -94,6 +111,32 @@ export default class BinMousePosition extends MousePosition {
         if (this.pointerPixel) this.updateHTML_(this.pointerPixel);
       })
     );
+  }
+
+  disposeInternal() {
+    this.stopSettingsWatch?.();
+    this.stopSettingsWatch = null;
+    super.disposeInternal();
+  }
+
+  visibleMatrixLayer(map, coordinate) {
+    const extent = map.getView().getProjection().getExtent();
+    if (extent && !containsCoordinate(extent, coordinate)) return null;
+    const owned = new Set(this.layers ?? []);
+    const viewState = map.getView().getState();
+    let top = null;
+    for (const state of map.getLayerGroup().getLayerStatesArray()) {
+      if (
+        !owned.has(state.layer) ||
+        !(state.layer instanceof TileLayer) ||
+        state.opacity <= 0 ||
+        !inView(state, viewState) ||
+        (state.extent && !containsCoordinate(state.extent, coordinate))
+      )
+        continue;
+      if (!top || (state.zIndex ?? 0) >= (top.zIndex ?? 0)) top = state;
+    }
+    return top?.layer ?? null;
   }
 
   render(event) {
@@ -135,6 +178,12 @@ export default class BinMousePosition extends MousePosition {
 
   updateHTML_(pixel) {
     this.pointerPixel = pixel;
+    const osdSettings = getOsdSettings();
+    if (osdSettings && !osdSettings.osdOverlayVisible) {
+      if (this.renderedHTML_ !== "") this.element.innerHTML = "";
+      this.renderedHTML_ = "";
+      return;
+    }
     let html = this.placeholder_;
     if (pixel && this.mapProjection_) {
       if (!this.transform_) {
@@ -161,16 +210,8 @@ export default class BinMousePosition extends MousePosition {
         }
         this.transform_(coordinate, coordinate);
 
-        const layers = this.layers.filter((l) => l.getData(pixel));
-        // map.forEachLayerAtPixel(pixel, function (layer) {
-        //   layers.push(layer);
-        // });
-        const hovered_layer =
-          layers.length === 0
-            ? null
-            : layers
-                .filter((l) => l instanceof TileLayer)
-                .sort((l1, l2) => l2.getZIndex() - l1.getZIndex())[0];
+        // Coordinates and resolution do not depend on GPU pixel readback or loaded tiles.
+        const hovered_layer = this.visibleMatrixLayer(map, mapCoordinate);
         if (hovered_layer) {
           try {
             const bpResolutionString = hovered_layer.get("bpResolution");
@@ -192,22 +233,23 @@ export default class BinMousePosition extends MousePosition {
               this.getDimensionHolderForDescriptor(guidanceDescriptor);
             const bpResolution = guidanceDescriptor.bpResolution;
             const pixelResolution = guidanceDescriptor.pixelResolution;
-            const osdSettings = getOsdSettings();
-            if (osdSettings && !osdSettings.osdOverlayVisible) {
-              html = "";
-              if (!this.renderedHTML_ || html !== this.renderedHTML_) {
-                this.element.innerHTML = html;
-                this.renderedHTML_ = html;
-              }
-              return;
-            }
             const fields = osdSettings?.osdOverlayFields ?? {};
             const fieldOrder = osdSettings?.osdOverlayFieldOrder ?? [];
             const osdLines = {};
             const fieldEnabled = (field) => fields[field] !== false;
             const appendLine = (field, text) => {
               if (fieldEnabled(field)) {
-                osdLines[field] = text;
+                osdLines[field] = String(text).replace(
+                  /[&<>"']/g,
+                  (character) =>
+                    ({
+                      "&": "&amp;",
+                      "<": "&lt;",
+                      ">": "&gt;",
+                      '"': "&quot;",
+                      "'": "&#39;",
+                    }[character])
+                );
               }
             };
             const fixed_coordinates = mapCoordinate.map((c) =>
@@ -239,16 +281,14 @@ export default class BinMousePosition extends MousePosition {
             // html = html + "br/>";
 
             if (fixed_coordinates) {
-              appendLine("resolution", "Bin resolution: 1:" + bpResolution);
-              if (
-                Number.isFinite(hoveredBpResolution) &&
-                hoveredBpResolution !== bpResolution
-              ) {
-                appendLine(
-                  "resolution",
-                  "Hovered tile resolution: 1:" + hoveredBpResolution
-                );
-              }
+              appendLine(
+                "resolution",
+                guidanceDescriptor.displayGrid === "SEQUENCE_BP"
+                  ? "Base scale; native bins: " +
+                      guidanceDescriptor.sourceBpResolution +
+                      " bp"
+                  : "Bin resolution: 1:" + bpResolution
+              );
               if (guidanceDescriptor.sourceName) {
                 appendLine(
                   "source",
@@ -260,10 +300,16 @@ export default class BinMousePosition extends MousePosition {
                   this.layersManager.getVisibleSourceResolutionDescriptors();
                 const details = [
                   visible.primary
-                    ? `Primary 1:${visible.primary.bpResolution}`
+                    ? `Primary 1:${
+                        visible.primary.sourceBpResolution ??
+                        visible.primary.bpResolution
+                      }`
                     : null,
                   visible.secondary
-                    ? `Secondary 1:${visible.secondary.bpResolution}`
+                    ? `Secondary 1:${
+                        visible.secondary.sourceBpResolution ??
+                        visible.secondary.bpResolution
+                      }`
                     : null,
                 ].filter(Boolean);
                 if (details.length > 0) {
@@ -369,7 +415,7 @@ export default class BinMousePosition extends MousePosition {
         }
       }
     }
-    if (!this.renderedHTML_ || html !== this.renderedHTML_) {
+    if (html !== this.renderedHTML_) {
       this.element.innerHTML = html;
       this.renderedHTML_ = html;
     }

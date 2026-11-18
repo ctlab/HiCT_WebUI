@@ -18,6 +18,16 @@ const requestDtoSource = readFileSync(
 
 const requiredMappings = [
   {
+    className: "RemoteBlastRetrievalRequest",
+    dtoName: "RemoteBlastRetrievalRequestDTO",
+    requestPath: "/sequence/remote_blast/retrieve",
+  },
+  {
+    className: "SplitContigAtBpRequest",
+    dtoName: "SplitContigAtBpRequestDTO",
+    requestPath: "/split_contig_at_bp",
+  },
+  {
     className: "ListConvertibleMatrixFilesRequest",
     dtoName: "ListConvertibleMatrixFilesRequestDTO",
     requestPath: "/list_convertible_matrices",
@@ -93,11 +103,42 @@ function loadTypeScript(filename) {
 const { ContigDescriptorDTO, AssemblyInfoDTO } = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/dto/dto.ts")
 );
+const { TrackQueryResponseDTO } = loadTypeScript(
+  resolve(projectRoot, "src/app/core/net/dto/responseDTO.ts")
+);
+const baseQuery = new TrackQueryResponseDTO({
+  startBp: 3,
+  endBp: 6,
+  startPx: 3,
+  endPx: 6,
+  widthPx: 100,
+  bpResolution: 1,
+  displayGrid: "SEQUENCE_BP",
+  sourceBpResolution: 100,
+  tracks: [
+    {
+      trackId: "w",
+      name: "Weights",
+      type: "COOLER_WEIGHTS",
+      color: "#123456",
+      renderStyle: "SIGNAL",
+      bins: [],
+      maxValue: 2,
+      error: null,
+      samplingBpResolution: 200,
+    },
+  ],
+}).toEntity();
+assert.equal(baseQuery.displayGrid, "SEQUENCE_BP");
+assert.equal(baseQuery.sourceBpResolution, 100);
+assert.equal(baseQuery.tracks[0].samplingBpResolution, 200);
 const descriptors = Array.from({ length: 4 }, (_, i) => ({
   contigId: i,
   contigName: "c" + i,
   contigOriginalName: "source" + i,
   contigOffsetInSource: i * 1000,
+  contigSharedBinSlice: i === 1,
+  contigBinOffsets: { 100: -25, 250: -125 },
   contigLengthBp: i * 1000,
   contigLengthBins: { 100: String(i * 10), 250: i * 4, 1000: i },
   contigPresenceAtResolution: { 100: i, 250: i, 1000: i },
@@ -124,6 +165,13 @@ for (const [i, descriptor] of descriptors.entries()) {
   assert.equal(entity.direction, i % 2);
   assert.equal(entity.contigSourceName, "source" + i);
   assert.equal(entity.contigOffsetInSource, i * 1000);
+  assert.deepEqual(
+    [...entity.contigBinOffsets],
+    [
+      [100, -25],
+      [250, -125],
+    ]
+  );
 }
 const input = { contigDescriptors: descriptors, scaffoldDescriptors: [] };
 const first = new AssemblyInfoDTO(input).toEntity();
@@ -171,6 +219,10 @@ const legacy = {
 };
 const compact = {
   format: "compact-v1",
+  sharedBinContigs: [1],
+  contigBinOffsets: Object.fromEntries(
+    legacy.contigDescriptors.map((d) => [d.contigId, d.contigBinOffsets])
+  ),
   resolutions: [100, 250, 1000],
   contigs: legacy.contigDescriptors.map((d) => [
     d.contigId,
@@ -214,6 +266,18 @@ assert.deepEqual(
 );
 for (const damage of [
   (c) => {
+    c.sharedBinContigs = [1, 1];
+  },
+  (c) => {
+    c.sharedBinContigs = [999999];
+  },
+  (c) => {
+    c.sharedBinContigs = [1.5];
+  },
+  (c) => {
+    c.sharedBinContigs = "1";
+  },
+  (c) => {
     c.format = "compact-v2";
   },
   (c) => {
@@ -245,6 +309,49 @@ const { HiCTAPIRequestDTO } = loadTypeScript(
 const requestClasses = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/api/request.ts")
 );
+const { SequenceAnalysisRequest } = loadTypeScript(
+  resolve(projectRoot, "src/app/core/net/api/SequenceAnalysisRequest.ts")
+);
+for (const options of [
+  { startBp: 2_500_000_000, endBp: 2_500_000_012 },
+  { jobId: "repeat-1" },
+]) {
+  const request = new SequenceAnalysisRequest(
+    "/sequence/repeat_period",
+    options
+  );
+  assert.deepEqual(HiCTAPIRequestDTO.toDTOClass(request).toDTO(), options);
+}
+for (const exampleId of [undefined, "jobs-convert-auto"]) {
+  const request = new requestClasses.StartConversionJobRequest({
+    filename: "examples/jobs-convert-auto/example.mcool",
+    exampleId,
+  });
+  assert.equal(
+    HiCTAPIRequestDTO.toDTOClass(request).toDTO().exampleId,
+    exampleId
+  );
+}
+for (const approximateRebin of [undefined, false, true]) {
+  const request = new requestClasses.StartConversionJobRequest({
+    filename: "source.hict.hdf5",
+    approximateRebin,
+  });
+  assert.equal(
+    HiCTAPIRequestDTO.toDTOClass(request).toDTO().approximateRebin,
+    approximateRebin
+  );
+  const batch = new requestClasses.StartBatchConversionJobsRequest({
+    files: ["source.hict.hdf5"],
+    parallelJobs: 1,
+    parallelism: 1,
+    approximateRebin,
+  });
+  assert.equal(
+    HiCTAPIRequestDTO.toDTOClass(batch).toDTO().approximateRebin,
+    approximateRebin
+  );
+}
 for (const name of [
   "ReverseSelectionRangeRequest",
   "MoveSelectionRangeRequest",
@@ -321,6 +428,28 @@ assert.deepEqual(
 console.log(
   "Journal pagination, unscaffold-all and guarded restoration payloads passed."
 );
+for (const name of ["QueryTracks1DRequest", "GetTrackFeatureContextRequest"]) {
+  const options = {
+    unit: "BP",
+    startBP: 3,
+    endBP: 6,
+    widthPx: 100,
+    bpResolution: 100,
+    sequenceScale: true,
+  };
+  const dto = HiCTAPIRequestDTO.toDTOClass(
+    new requestClasses[name](options)
+  ).toDTO();
+  assert.equal(dto.sequenceScale, true);
+  assert.equal(dto.bpResolution, 100);
+  assert.equal(dto.startBP, 3);
+  assert.equal(
+    HiCTAPIRequestDTO.toDTOClass(
+      new requestClasses[name]({ ...options, sequenceScale: undefined })
+    ).toDTO().sequenceScale,
+    undefined
+  );
+}
 
 // Execute the production HTTP adapter with controlled responses. A history-list
 // response must not authorize edits using coordinates from an older displayed map.
@@ -340,15 +469,22 @@ const adapterSource = ts.transpileModule(
 ).outputText;
 let responseRevision = 2;
 let sentHeaders;
+let sentTimeout;
 let sentPayload;
 let requestsSent = 0;
 let serializationFailure = false;
 let pendingWorkspace;
+let fetched;
+let downloadResponse;
 const notificationErrors = [];
 const adapterExports = {};
 vm.runInNewContext(adapterSource, {
   exports: adapterExports,
   console,
+  fetch: async (url, options) => {
+    fetched = { url, options };
+    return downloadResponse;
+  },
   require: (name) => {
     if (name.includes("backgroundResultDelivery"))
       return loadTypeScript(
@@ -358,11 +494,15 @@ vm.runInNewContext(adapterSource, {
         )
       );
     if (name === "vue") return { shallowReactive: (value) => value };
+    if (name === "./request") return requestClasses;
+    if (name === "./SequenceAnalysisRequest")
+      return { SequenceAnalysisRequest };
     if (name === "axios")
       return {
         post: async (url, payload, config) => {
           requestsSent++;
           sentPayload = payload;
+          sentTimeout = config?.timeout;
           if (url.endsWith("/workspace/state"))
             return new Promise((resolve, reject) => {
               pendingWorkspace = { payload, resolve, reject };
@@ -435,6 +575,26 @@ await adapter.querySequenceRegion(0, 60, undefined, {
 assert.equal(sentHeaders["X-HiCT-History-Revision"], "3");
 assert.equal(sentPayload.includeGaps, true);
 assert.equal(sentPayload.assemblyAnchorBp, 5000);
+await adapter.sendRequest(
+  new SequenceAnalysisRequest("/sequence/search/jobs", {
+    searchTarget: "NCBI_REMOTE",
+  })
+);
+assert.equal(
+  sentHeaders["X-HiCT-History-Revision"],
+  undefined,
+  "External query submission must not depend on the displayed assembly revision"
+);
+await adapter.sendRequest(
+  new SequenceAnalysisRequest("/sequence/search/jobs", {
+    searchTarget: "LOCAL_ASSEMBLY",
+  })
+);
+assert.equal(
+  sentHeaders["X-HiCT-History-Revision"],
+  "3",
+  "Local sequence searches retain their captured assembly guard"
+);
 adapter.sequenceViewReadOnly = true;
 const sentBefore = requestsSent;
 for (const requestPath of [
@@ -452,6 +612,102 @@ assert.equal(
 );
 assert.equal(adapter.history.busy, 0);
 adapter.sequenceViewReadOnly = false;
+const capturedVersion = { ...adapter.history.applied };
+adapter.history.applied = {
+  ...capturedVersion,
+  revision: capturedVersion.revision + 1,
+};
+for (const [method, request] of [
+  ["getFASTAForAssembly", new requestClasses.GetFastaForAssemblyRequest()],
+  ["getAGPForAssembly", new requestClasses.GetAGPForAssemblyRequest()],
+  [
+    "getFASTAForSelection",
+    new requestClasses.GetFastaForSelectionRequest({
+      fromBpX: 1,
+      toBpX: 2,
+      fromBpY: 3,
+      toBpY: 4,
+    }),
+  ],
+]) {
+  await adapter[method](request, capturedVersion);
+  assert.equal(
+    sentHeaders["X-HiCT-History-Revision"],
+    String(capturedVersion.revision),
+    "Coordinate downloads retain the revision captured before choosing a destination"
+  );
+}
+adapter.history.applied = capturedVersion;
+const body = new ReadableStream({
+  start(controller) {
+    controller.enqueue(new Uint8Array([65, 67]));
+    controller.close();
+  },
+});
+downloadResponse = new Response(body, {
+  headers: { "content-type": "text/plain; charset=utf-8" },
+});
+const controller = new AbortController();
+const streamed = await adapter.openCoordinateDownload(
+  new requestClasses.GetFastaForAssemblyRequest(),
+  capturedVersion,
+  controller.signal
+);
+assert.equal(streamed, body);
+assert.equal(fetched.url, "http://example.test/get_fasta_for_assembly");
+assert.equal(
+  fetched.options.headers["X-HiCT-History-Revision"],
+  String(capturedVersion.revision)
+);
+assert.equal(fetched.options.signal, controller.signal);
+assert.equal(fetched.options.method, "POST");
+assert.deepEqual(JSON.parse(fetched.options.body), {});
+assert.equal(await new Response(streamed).text(), "AC");
+let cancelled = 0;
+for (const [status, type, expected] of [
+  [409, "text/plain", /Refresh/],
+  [500, "text/plain", /HTTP 500/],
+  [200, "text/html", /did not return/],
+]) {
+  downloadResponse = new Response(
+    new ReadableStream({
+      cancel() {
+        cancelled++;
+      },
+    }),
+    { status, headers: { "content-type": type } }
+  );
+  await assert.rejects(
+    adapter.openCoordinateDownload(
+      new requestClasses.GetFastaForAssemblyRequest(),
+      capturedVersion
+    ),
+    expected
+  );
+}
+assert.equal(
+  cancelled,
+  3,
+  "Error responses must be cancelled without buffering their bodies"
+);
+await adapter.queryAlignmentDetail({ jobId: "bounded-alignment" });
+assert.equal(
+  sentTimeout,
+  15_000,
+  "Initial submissions must remain bounded while awaiting the cancellable job ID"
+);
+await adapter.sendRequest({
+  requestPath: "/sequence/repeat_period",
+  options: { startBp: 3, endBp: 15 },
+});
+assert.equal(
+  sentHeaders["X-HiCT-History-Session"],
+  adapter.history.applied.session
+);
+assert.equal(
+  sentHeaders["X-HiCT-History-Revision"],
+  String(adapter.history.applied.revision)
+);
 console.log(
   "FASTA reads carry the displayed revision; sequence view prevents edits and history restoration."
 );
@@ -507,4 +763,79 @@ assert.equal(
 );
 console.log(
   "Workspace autosaves preserve Open/Attach tokens across delayed responses and conflicts."
+);
+
+for (const invalid of [null, [], { 100: NaN }, { 100: 0.5 }, { 0: 1 }]) {
+  assert.throws(
+    () =>
+      new ContigDescriptorDTO({
+        ...descriptors[0],
+        contigBinOffsets: invalid,
+      }).toEntity(),
+    /Invalid contig bin offset/
+  );
+}
+const oldDescriptor = { ...descriptors[0] };
+delete oldDescriptor.contigBinOffsets;
+assert.equal(
+  new ContigDescriptorDTO(oldDescriptor).toEntity().contigBinOffsets,
+  undefined
+);
+const mixed = new AssemblyInfoDTO({
+  ...compact,
+  contigBinOffsets: { 0: { 100: -25 } },
+}).toEntity();
+assert.deepEqual([...mixed.contigDescriptors[1].contigBinOffsets], []);
+console.log(
+  "Explicit bin geometry validates offsets and retains older-server compatibility."
+);
+
+const retrievalRequests = loadTypeScript(
+  resolve(projectRoot, "src/app/core/net/api/request.ts")
+);
+const retrievalDtos = loadTypeScript(
+  resolve(projectRoot, "src/app/core/net/dto/requestDTO.ts")
+);
+const recoverySettings = {
+  queries: "ACGT",
+  remoteRequestId: " fr9p7tgf016 ",
+  searchTarget: "NCBI_REMOTE",
+  remoteConsent: true,
+  remoteDatabase: "nt",
+  mode: "blast",
+  scope: "database",
+  bothStrands: true,
+  degenerate: false,
+  mismatches: 0,
+  threads: -1,
+};
+const recoveryRequest = new retrievalRequests.RemoteBlastRetrievalRequest(
+  recoverySettings
+);
+assert.equal(recoveryRequest.requestPath, "/sequence/remote_blast/retrieve");
+assert.notEqual(recoveryRequest.requestPath, "/sequence/search/jobs");
+assert.equal(recoveryRequest.options.remoteRequestId, "FR9P7TGF016");
+assert.equal(recoveryRequest.options.queries, "ACGT");
+assert.deepEqual(
+  retrievalDtos.HiCTAPIRequestDTO.toDTOClass(recoveryRequest).toDTO(),
+  recoveryRequest.options
+);
+assert.deepEqual(
+  retrievalDtos.HiCTAPIRequestDTO.toDTOClass({
+    requestPath: recoveryRequest.requestPath,
+    options: recoveryRequest.options,
+  }).toDTO(),
+  recoveryRequest.options
+);
+
+assert.throws(
+  () =>
+    new retrievalRequests.RemoteBlastRetrievalRequest({
+      ...recoverySettings,
+      remoteRequestId: "RID&CMD=Put",
+    }),
+  /valid NCBI request/
+);
+console.log(
+  "RID recovery uses a distinct download-only route and preserves pasted queries for local verification."
 );

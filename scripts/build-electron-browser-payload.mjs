@@ -176,10 +176,12 @@ async function copyElectronApp(target) {
     join(target, "preload"),
     { recursive: true }
   );
-  await cp(resolve(repoDir, "dist", "index.html"), join(target, "index.html"));
-  await cp(resolve(repoDir, "dist", "assets"), join(target, "assets"), {
-    recursive: true,
-  });
+  // Keep root public files (icons/manifests) as well as hashed assets for bundled recovery.
+  const webRoot = resolve(repoDir, "dist");
+  for (const entry of readdirSync(webRoot)) {
+    if (entry !== "electron")
+      await cp(join(webRoot, entry), join(target, entry), { recursive: true });
+  }
 
   const appPackage = {
     name: "hict-electron-browser",

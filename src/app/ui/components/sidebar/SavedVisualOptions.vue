@@ -101,6 +101,7 @@
 </template>
 
 <script setup lang="ts">
+import { saveFileWithNotice } from "@/app/ui/fileSaveNotice";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { Ref, ref, shallowRef, triggerRef, onMounted, watch } from "vue";
 import SavedVisualOptionsElement from "./SavedVisualOptionsElement.vue";
@@ -216,6 +217,7 @@ async function saveOptions() {
   if (!manager || savingPreset.value) return;
   savingPreset.value = true;
   try {
+    await manager.visualizationManager.waitForPendingOptionRequests();
     const snapshot =
       await manager.networkManager.requestManager.getSessionSnapshot();
     if (manager !== props.mapManager)
@@ -298,14 +300,14 @@ function exportOptions() {
 
   const blob = new Blob([data], { type: "application/json" });
 
-  const a = document.createElement("a");
-  a.download =
+  void saveFileWithNotice(
+    blob,
     "visualizationOptionsPresets." +
-    props.mapManager?.getOptions().filename +
-    ".hict.json";
-  a.href = URL.createObjectURL(blob);
-  a.click();
-  URL.revokeObjectURL(a.href);
+      props.mapManager?.getOptions().filename +
+      ".hict.json",
+    "preset",
+    "Visualization presets"
+  );
 }
 
 function syncSessionStore() {
@@ -540,6 +542,7 @@ function serializeVisualizationOptions(
         endColorRGBAString: cmap.endColorRGBA.RGBA,
         minSignal: cmap.minSignal,
         maxSignal: cmap.maxSignal,
+        ...(cmap.gamma !== 1 ? { gamma: cmap.gamma } : {}),
       },
     };
   }
@@ -613,7 +616,13 @@ function deserializeVisualizationOptions(
     } catch {
       endCt = new ColorTranslator("rgba(0,96,0,1.0)", { legacyCSS: true });
     }
-    cmap = new SimpleLinearGradient(startCt, endCt, minSignal, maxSignal);
+    cmap = new SimpleLinearGradient(
+      startCt,
+      endCt,
+      minSignal,
+      maxSignal,
+      cmapRaw.gamma === undefined ? 1 : Number(cmapRaw.gamma)
+    );
   } else {
     cmap = new Colormap(cmapType);
   }
@@ -672,7 +681,8 @@ function applySignalThresholds(option: {
       cmap.startColorRGBA,
       cmap.endColorRGBA,
       lower,
-      typeof upper === "number" ? upper : cmap.maxSignal
+      typeof upper === "number" ? upper : cmap.maxSignal,
+      cmap.gamma
     );
   }
 }

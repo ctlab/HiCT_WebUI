@@ -6,6 +6,9 @@ export interface SessionSavedLocation {
   location_id: number;
   name?: string;
   center_point: [number, number];
+  centerBp?: number[];
+  displayGrid?: string;
+  bpResolution?: number;
   resolution: number;
   rotation: number;
 }

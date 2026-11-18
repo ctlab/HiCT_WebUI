@@ -33,6 +33,18 @@
           Rename…
         </button>
         <template v-if="item.kind === 'selection'">
+          <button role="menuitem" @click="copyCoordinates('assembly')">
+            Copy selection coordinates
+          </button>
+          <button role="menuitem" @click="copyCoordinates('scaffold')">
+            Copy scaffold coordinates
+          </button>
+          <button role="menuitem" @click="copyCoordinates('contig')">
+            Copy contig coordinates
+          </button>
+          <button role="menuitem" @click="copyPng">
+            Copy selection as PNG
+          </button>
           <button
             role="menuitem"
             @click="
@@ -63,7 +75,12 @@
             Export selection as {{ format }}
           </button>
         </template>
-        <template v-if="item.kind === 'scaffold' || !hasScaffold">
+        <template
+          v-if="
+            item.kind !== 'selection' &&
+            (item.kind === 'scaffold' || !hasScaffold)
+          "
+        >
           <button
             role="menuitem"
             :disabled="item.structural === false"
@@ -98,8 +115,8 @@
         v-if="items.some((item) => item.kind === 'selection')"
         class="scope-note"
       >
-        Structural edits use the interval where the rectangle crosses the
-        diagonal and expand to whole scaffolds.
+        This region is for analysis and export. Shift-select entities for
+        assembly edits.
       </p>
       <p v-if="hasScaffold" class="scope-note">
         Structural edits act on the whole scaffold.
@@ -188,7 +205,7 @@ import {
   watch,
 } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import type { ContigDescriptor } from "@/app/core/domain/ContigDescriptor";
+import type { CoordinateFrame } from "@/app/core/mapmanagers/regionSelection";
 import {
   ReverseSelectionRangeRequest,
   UngroupContigsFromScaffoldRequest,
@@ -200,6 +217,8 @@ import { unByKey } from "ol/Observable";
 import type { EventsKey } from "ol/events";
 import AxisContextMenu from "@/app/ui/components/common/AxisContextMenu.vue";
 import {
+  copySelectionCoordinates,
+  copySelectionPng,
   copyText,
   formatLocus,
   type ContextMenuItem,
@@ -342,7 +361,7 @@ async function open(event: MouseEvent) {
       title: "Selection: active rectangle",
       startBP,
       endBP,
-      structural: endBP > startBP,
+      structural: false,
     });
   }
   if (!found.length) found = itemsAtEvent(event);
@@ -448,27 +467,11 @@ function move(item: Item) {
     manager.eventManager.onMoveSelectionClicked();
     return;
   }
-  manager.eventManager.resetSelection();
-  const resolution =
-    manager.viewAndLayersManager.currentViewState.resolutionDesciptor
-      .bpResolution;
-  const features =
-    manager.viewAndLayersManager.track2DHolder.contigBordersTrack.features.get(
-      resolution
-    ) ?? [];
-  for (const feature of features) {
-    const descriptor = feature.get("contigDescriptor") as
-      | ContigDescriptor
-      | undefined;
-    if (!descriptor || feature.get("trackType") !== "contigBorders") continue;
-    const order =
-      manager.contigDimensionHolder.contigIdToOrd[descriptor.contigId];
-    const prefix = manager.contigDimensionHolder.prefix_sum_bp;
-    if (prefix[order] < item.endBP && prefix[order + 1] > item.startBP)
-      manager.viewAndLayersManager.selectionCollections.selectedContigFeatures.push(
-        feature
-      );
-  }
+  manager.viewAndLayersManager.selectEntityRangeByBp(
+    item.startBP,
+    item.endBP,
+    item.kind === "scaffold" ? "scaffold" : "contig"
+  );
   manager.eventManager.onMoveSelectionClicked();
 }
 function openAnalysis(kind: "moddotplot" | "dotplot" | "search") {
@@ -478,6 +481,14 @@ function openAnalysis(kind: "moddotplot" | "dotplot" | "search") {
 function exportFasta() {
   items.value = [];
   props.mapManager.eventManager.onExportFASTAForSelectionClicked();
+}
+function copyCoordinates(frame: CoordinateFrame) {
+  items.value = [];
+  copySelectionCoordinates(props.mapManager, frame);
+}
+function copyPng() {
+  items.value = [];
+  void copySelectionPng(props.mapManager);
 }
 async function exportSelection(format: "PNG" | "SVG" | "PDF") {
   items.value = [];

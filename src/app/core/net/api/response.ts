@@ -169,11 +169,13 @@ class TrackRenderResponse {
     public readonly maxValue: number,
     public readonly error: string | null,
     public readonly statusMessage: string | null = null,
-    public readonly analysisWarning: string | null = null
+    public readonly analysisWarning: string | null = null,
+    public readonly samplingBpResolution?: number
   ) {}
 }
 
 class TrackQueryResponse {
+  public readonly samplingBpResolution?: number;
   public constructor(
     public readonly startBp: number,
     public readonly endBp: number,
@@ -181,7 +183,9 @@ class TrackQueryResponse {
     public readonly endPx: number,
     public readonly widthPx: number,
     public readonly bpResolution: number,
-    public readonly tracks: TrackRenderResponse[]
+    public readonly tracks: TrackRenderResponse[],
+    public readonly displayGrid?: "SEQUENCE_BP",
+    public readonly sourceBpResolution?: number
   ) {}
 }
 

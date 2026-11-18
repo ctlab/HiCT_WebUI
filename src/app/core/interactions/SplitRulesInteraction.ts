@@ -148,6 +148,21 @@ class SplitRulesInteraction extends PointerInteraction {
     coordinate: Coordinate,
     descriptor: LayerResolutionDescriptor
   ): Coordinate {
+    if (
+      this.mapManager.networkManager.requestManager.sourceCapabilities.PRIMARY
+        ?.sequenceScaleTiles === true
+    ) {
+      const holder = this.getDimensionHolderForDescriptor(descriptor);
+      return [coordinate[0], -coordinate[1]].map((value) => {
+        const bp = Math.round(
+          holder.getFractionalBpOfPx(
+            value / descriptor.pixelResolution,
+            descriptor.bpResolution
+          )
+        );
+        return holder.getFractionalPxOfBp(bp, descriptor.bpResolution);
+      });
+    }
     const fixedCoordinates = coordinate.map((value) =>
       Math.ceil(value / descriptor.pixelResolution)
     );
@@ -199,9 +214,14 @@ class SplitRulesInteraction extends PointerInteraction {
     const mapSizePx = prefixSumPx ? prefixSumPx[contigCount] : 1000;
     const mapSizeProj = mapSizePx * pixelResolution;
 
-    const fixedCoordinate = coordinate.map((x) =>
-      CommonUtils.clamp(x, 0, mapSizePx * pixelResolution)
+    const split = this.coordinateToPxAtResolution(
+      coordinate,
+      guidanceDescriptor
     );
+    const fixedCoordinate = [
+      CommonUtils.clamp(split[0], 0, mapSizePx) * pixelResolution,
+      -CommonUtils.clamp(split[1], 0, mapSizePx) * pixelResolution,
+    ];
 
     const verticalRuleCoordinates = [
       [fixedCoordinate[0], 0],

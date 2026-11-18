@@ -37,17 +37,25 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 id="unsaved-edits-title" class="modal-title">
-              Unsaved assembly edits
+              {{
+                assemblyChanges !== false
+                  ? "Unsaved assembly edits"
+                  : "Unsaved figure snapshots"
+              }}
             </h5>
           </div>
           <div id="unsaved-edits-body" class="modal-body">
             <p class="mb-2">
-              You changed the assembly since it was opened or last saved. If you
-              {{ action }}, those edits are lost.
+              {{
+                assemblyChanges !== false
+                  ? "You changed the assembly since it was opened or last saved."
+                  : "You changed the saved figure snapshots."
+              }}
+              If you {{ action }}, those changes are lost.
             </p>
             <p class="small text-muted mb-0">
               Saving a session keeps the edited assembly, tracks, scopes and
-              processing graph. Undo history is not saved.
+              processing graph and figure snapshots. Undo history is not saved.
             </p>
             <p v-if="error" class="text-danger small mt-2 mb-0" role="alert">
               {{ error }}
@@ -97,6 +105,7 @@ import { nextTick, onMounted, onUnmounted, ref } from "vue";
 defineProps<{
   /** Completes the sentence "If you …", for example "close this map". */
   action: string;
+  assemblyChanges?: boolean;
   busy: boolean;
   error: string;
 }>();

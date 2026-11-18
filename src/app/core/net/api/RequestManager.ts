@@ -1,5 +1,10 @@
 import { BackgroundResultDelivery } from "../../sequence/backgroundResultDelivery";
-import { BackgroundJobsRequest, CancelBackgroundJobRequest } from "./request";
+import {
+  BackgroundJobsRequest,
+  CancelBackgroundJobRequest,
+  RemoteBlastRetrievalRequest,
+  type RemoteBlastRetrievalSettings,
+} from "./request";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -83,6 +88,7 @@ import {
   UngroupContigsFromScaffoldRequest,
   type HiCTAPIRequest,
   SplitContigRequest,
+  SplitContigAtBpRequest,
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
@@ -164,11 +170,13 @@ import {
   WorkerSchedulerDiagnosticsResponse,
 } from "./response";
 import { toast } from "vue-sonner";
+import { SequenceAnalysisRequest } from "./SequenceAnalysisRequest";
 import { useSessionStore } from "@/app/stores/sessionStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 import { extractErrorMessage } from "./errorMessage";
 
 export interface BackgroundJobOutput {
+  displayName?: string;
   displayMode?: "overlay" | "below" | "above" | "none" | null;
   mapFilename?: string | null;
   filename: string;
@@ -176,6 +184,7 @@ export interface BackgroundJobOutput {
     | "open_map"
     | "download"
     | "open_tracks"
+    | "open_blast_results"
     | "attach_identity"
     | "attach_dotplot"
     | "fasta_only"
@@ -195,6 +204,14 @@ export interface BackgroundJob {
   message: string | null;
   error: string | null;
   outputs: BackgroundJobOutput[];
+  details?: {
+    title?: string;
+    completedBytes?: number;
+    totalBytes?: number;
+    currentFile?: string | null;
+    warnings?: string[];
+    exampleId?: string | null;
+  } | null;
 }
 
 export type AlignmentDetailSegment = {
@@ -215,6 +232,20 @@ export type AlignmentDetailResponse = {
     coordinateSystem: "ASSEMBLY_BP" | "PADDED_SEQUENCE";
     segments: AlignmentDetailSegment[];
     alignmentCount: number;
+    method?: string;
+    aligner?: string;
+    alignerSha256?: string;
+    rowSha256?: string;
+    columnSha256?: string;
+    snapshot?: string;
+    profile?: {
+      name: string;
+      kmer: number;
+      window: number;
+      chainScore: number;
+      seeds: number;
+      alignmentScore: number;
+    };
     message?: string;
   };
 };
@@ -319,6 +350,7 @@ const assemblyMutationPaths = new Set([
   "/reverse_selection_range",
   "/move_selection_range",
   "/split_contig_at_bin",
+  "/split_contig_at_bp",
   "/unscaffold_all",
   "/group_contigs_into_scaffold",
   "/ungroup_contigs_from_scaffold",
@@ -423,6 +455,8 @@ export type ExampleEntry = {
   bundled: boolean;
   /** The manifest and every required file are on the server. */
   downloaded?: boolean;
+  /** Cached file names from the current manifest, including prepared references. */
+  downloadedFiles?: string[];
 };
 export type ExamplesCatalogResponse = {
   sections: {
@@ -435,6 +469,7 @@ export type ExamplesCatalogResponse = {
   problems: { source: string; pointer: string; message: string }[];
 };
 export type ExampleDownloadStatus = {
+  jobId?: string | null;
   state: "IDLE" | "RUNNING" | "READY" | "FAILED" | "CANCELLED";
   exampleId: string | null;
   progress: number;
@@ -793,6 +828,12 @@ class RequestManager {
     };
   }
 
+  public async retrieveRemoteBlast(
+    settings: RemoteBlastRetrievalSettings
+  ): Promise<AxiosResponse> {
+    return this.sendRequest(new RemoteBlastRetrievalRequest(settings));
+  }
+
   public async sendRequest(
     request: HiCTAPIRequest,
     axiosConfig?: AxiosRequestConfig | undefined
@@ -817,9 +858,16 @@ class RequestManager {
       !this.hasUnsavedAssemblyEdits();
     const summary = this.history.applied;
     const sequenceSnapshot =
+      !(
+        request instanceof SequenceAnalysisRequest &&
+        request.options &&
+        "searchTarget" in request.options &&
+        request.options.searchTarget === "NCBI_REMOTE"
+      ) &&
       request.requestPath.startsWith("/sequence/") &&
       (request.requestPath.endsWith("/jobs") ||
-        request.requestPath === "/sequence/alignment_detail");
+        request.requestPath === "/sequence/alignment_detail" ||
+        request.requestPath === "/sequence/repeat_period");
     const historyHeaders =
       (mutation ||
         sequenceSnapshot ||
@@ -944,7 +992,7 @@ class RequestManager {
     return status;
   }
 
-  /** Capture server state for a future v3 session without advancing displayed coordinates. */
+  /** Capture server state for a portable session without advancing displayed coordinates. */
   public async getSessionSnapshot(
     verifyAssemblyRoundTrip = false,
     fingerprintFiles = false,
@@ -964,7 +1012,7 @@ class RequestManager {
       )
     );
     const snapshot = response.data as Record<string, unknown>;
-    if (snapshot.snapshotVersion !== 1)
+    if (snapshot.snapshotVersion !== 1 && snapshot.snapshotVersion !== 2)
       throw new Error("Unsupported server session snapshot version");
     if (verifyAssemblyRoundTrip && snapshot.assemblyVerified !== true)
       throw new Error("Server did not verify assembly reconstruction");
@@ -1403,6 +1451,15 @@ class RequestManager {
     widthPx: number,
     bpResolution: number
   ): Promise<TrackQueryResponse> {
+    const layers = this.networkManager.mapManager?.viewAndLayersManager;
+    if (layers?.isSequenceScale && bpResolution === 1)
+      return this.queryTracks1DByUnits({
+        unit: "BP",
+        start: startPx,
+        end: endPx,
+        widthPx,
+        bpResolution: layers.getNativeResolutionDescriptor().bpResolution,
+      });
     return this.sendRequest(
       new QueryTracks1DRequest({
         unit: "PIXELS",
@@ -1426,8 +1483,20 @@ class RequestManager {
     },
     signal?: AbortSignal
   ): Promise<TrackQueryResponse> {
+    const layers = this.networkManager.mapManager?.viewAndLayersManager;
+    if (
+      layers?.isSequenceScale &&
+      options.bpResolution === 1 &&
+      options.unit !== "BINS"
+    )
+      options = {
+        ...options,
+        unit: "BP",
+        bpResolution: layers.getNativeResolutionDescriptor().bpResolution,
+      };
     const payload: {
       unit: "PIXELS" | "BINS" | "BP";
+      sequenceScale?: boolean;
       widthPx: number;
       bpResolution: number;
       startPx?: number;
@@ -1441,6 +1510,12 @@ class RequestManager {
       widthPx: options.widthPx,
       bpResolution: options.bpResolution,
     };
+    if (
+      layers?.isSequenceScale &&
+      options.unit === "BP" &&
+      this.sourceCapabilities.PRIMARY?.sequenceScaleTracks === true
+    )
+      payload.sequenceScale = true;
     if (options.unit === "PIXELS") {
       payload.startPx = options.start;
       payload.endPx = options.end;
@@ -1482,8 +1557,20 @@ class RequestManager {
     bpResolution: number;
     marginScreens?: number;
   }): Promise<TrackFeatureContextResponse> {
+    const layers = this.networkManager.mapManager?.viewAndLayersManager;
+    if (
+      layers?.isSequenceScale &&
+      options.bpResolution === 1 &&
+      options.unit !== "BINS"
+    )
+      options = {
+        ...options,
+        unit: "BP",
+        bpResolution: layers.getNativeResolutionDescriptor().bpResolution,
+      };
     const payload: {
       unit: "PIXELS" | "BINS" | "BP";
+      sequenceScale?: boolean;
       widthPx: number;
       bpResolution: number;
       marginScreens?: number;
@@ -1499,6 +1586,12 @@ class RequestManager {
       bpResolution: options.bpResolution,
       marginScreens: options.marginScreens,
     };
+    if (
+      layers?.isSequenceScale &&
+      options.unit === "BP" &&
+      this.sourceCapabilities.PRIMARY?.sequenceScaleTracks === true
+    )
+      payload.sequenceScale = true;
     if (options.unit === "PIXELS") {
       payload.startPx = options.start;
       payload.endPx = options.end;
@@ -1785,7 +1878,10 @@ class RequestManager {
     signal?: AbortSignal
   ): Promise<AlignmentDetailResponse> {
     return (
-      await this.sendRequest(new AlignmentDetailRequest(options), { signal })
+      await this.sendRequest(new AlignmentDetailRequest(options), {
+        signal,
+        timeout: 15_000,
+      })
     ).data;
   }
 
@@ -1833,6 +1929,7 @@ class RequestManager {
 
   public async querySignalStatistics(options: {
     bpResolution: number;
+    signalMode?: "PIPELINE_SIGNAL" | "TRADITIONAL_NORMALIZED";
     metadataOnly?: boolean;
     revision?: string;
     startRowPx?: number;
@@ -1856,6 +1953,7 @@ class RequestManager {
 
   public async queryMatrixFloat32(options: {
     bpResolution: number;
+    unit?: "PIXELS" | "BINS";
     startRowPx: number;
     endRowPx: number;
     startColPx: number;
@@ -1877,12 +1975,21 @@ class RequestManager {
     const response = await axios.post(
       `${host}/matrix/query`,
       {
-        unit: "PIXELS",
+        unit: options.unit ?? "PIXELS",
         bpResolution: options.bpResolution,
-        startRowPx: options.startRowPx,
-        endRowPx: options.endRowPx,
-        startColPx: options.startColPx,
-        endColPx: options.endColPx,
+        ...(options.unit === "BINS"
+          ? {
+              startRowBin: options.startRowPx,
+              endRowBin: options.endRowPx,
+              startColBin: options.startColPx,
+              endColBin: options.endColPx,
+            }
+          : {
+              startRowPx: options.startRowPx,
+              endRowPx: options.endRowPx,
+              startColPx: options.startColPx,
+              endColPx: options.endColPx,
+            }),
         source: options.source ?? "PRIMARY",
         signalMode: options.signalMode ?? "TRADITIONAL_NORMALIZED",
         format: "BINARY_FLOAT32",
@@ -1983,10 +2090,85 @@ class RequestManager {
       });
   }
 
+  public coordinateDownloadRequest(
+    request:
+      | GetFastaForAssemblyRequest
+      | GetFastaForSelectionRequest
+      | GetAGPForAssemblyRequest,
+    version = this.history.applied
+  ): import("../../export/FileSave").CoordinateDownloadRequest {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    const path = request.requestPath.replace(/^\/+/, "");
+    return {
+      url: `${host}/${path}`,
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/plain",
+        ...(version
+          ? {
+              "X-HiCT-History-Session": version.session,
+              "X-HiCT-History-Revision": String(version.revision),
+            }
+          : {}),
+      },
+      body: JSON.stringify(HiCTAPIRequestDTO.toDTOClass(request).toDTO()),
+    };
+  }
+
+  /** Streaming coordinate download; the caller owns cancellation and consumes the body once. */
+  public async openCoordinateDownload(
+    request:
+      | GetFastaForAssemblyRequest
+      | GetFastaForSelectionRequest
+      | GetAGPForAssemblyRequest,
+    version = this.history.applied,
+    signal?: AbortSignal
+  ): Promise<ReadableStream<Uint8Array>> {
+    const spec = this.coordinateDownloadRequest(request, version);
+    const response = await fetch(spec.url, {
+      method: "POST",
+      headers: spec.headers,
+      body: spec.body,
+      signal,
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(
+        response.status === 409
+          ? "The displayed assembly changed. Refresh the map and export again."
+          : `Export failed (HTTP ${response.status}). Check the linked files and retry.`
+      );
+    }
+    const type = response.headers
+      .get("content-type")
+      ?.split(";")[0]
+      .trim()
+      .toLowerCase();
+    if (
+      !response.body ||
+      (type !== "text/plain" && type !== "application/octet-stream")
+    ) {
+      await response.body?.cancel();
+      throw new Error(
+        "The server did not return an assembly file. No file was saved."
+      );
+    }
+    return response.body;
+  }
+
   public async getFASTAForAssembly(
-    request: GetFastaForAssemblyRequest
+    request: GetFastaForAssemblyRequest,
+    version = this.history.applied
   ): Promise<unknown> {
-    return this.sendRequest(request, { responseType: "arraybuffer" })
+    return this.sendRequest(request, {
+      responseType: "arraybuffer",
+      headers: version
+        ? {
+            "X-HiCT-History-Session": version.session,
+            "X-HiCT-History-Revision": String(version.revision),
+          }
+        : {},
+    })
       .then((response) => response.data)
       .catch((err) => {
         throw new Error(
@@ -1996,9 +2178,18 @@ class RequestManager {
   }
 
   public async getAGPForAssembly(
-    request: GetAGPForAssemblyRequest
+    request: GetAGPForAssemblyRequest,
+    version = this.history.applied
   ): Promise<unknown> {
-    return this.sendRequest(request, { responseType: "arraybuffer" })
+    return this.sendRequest(request, {
+      responseType: "arraybuffer",
+      headers: version
+        ? {
+            "X-HiCT-History-Session": version.session,
+            "X-HiCT-History-Revision": String(version.revision),
+          }
+        : {},
+    })
       .then((response) => response.data)
       .catch((err) => {
         throw new Error(
@@ -2008,9 +2199,18 @@ class RequestManager {
   }
 
   public async getFASTAForSelection(
-    request: GetFastaForSelectionRequest
+    request: GetFastaForSelectionRequest,
+    version = this.history.applied
   ): Promise<unknown> {
-    return this.sendRequest(request, { responseType: "arraybuffer" })
+    return this.sendRequest(request, {
+      responseType: "arraybuffer",
+      headers: version
+        ? {
+            "X-HiCT-History-Session": version.session,
+            "X-HiCT-History-Revision": String(version.revision),
+          }
+        : {},
+    })
       .then((response) => response.data)
       .catch((err) => {
         throw new Error(
@@ -2086,6 +2286,27 @@ class RequestManager {
       );
   }
 
+  public async splitContigAtBp(
+    contigId: number,
+    offsetBp: number
+  ): Promise<AssemblyInfo> {
+    const summary = this.history.applied;
+    if (!summary)
+      throw new Error(
+        "Attach to the current assembly before cutting a contig."
+      );
+    const response = await this.sendRequest(
+      new SplitContigAtBpRequest({
+        contigId,
+        offsetBp,
+        expectedRevision: summary.revision,
+      })
+    );
+    return new AssemblyInfoDTO(
+      this.normalizeAssemblyInfo(response.data)
+    ).toEntity();
+  }
+
   public async getVisualizationOptions(
     request: GetVisualizationOptionsRequest
   ): Promise<VisualizationOptions> {
@@ -2105,7 +2326,37 @@ class RequestManager {
     return new VisualizationOptionsDTO(response.data).toEntity();
   }
 
+  public async createRenderCapture(bounds: {
+    unit?: "PIXELS" | "BINS";
+    bpResolution: number;
+    startRowPx: number;
+    endRowPx: number;
+    startColPx: number;
+    endColPx: number;
+  }): Promise<{ id: string; [key: string]: unknown }> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    // Keep the response observable on cancellation so its context can be released.
+    return (await axios.post(`${host}/visualization/captures`, bounds)).data;
+  }
+
+  public async validateRenderCapture(id: string): Promise<void> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    await axios.post(
+      `${host}/visualization/captures/${encodeURIComponent(id)}/validate`,
+      {}
+    );
+  }
+
+  public async releaseRenderCapture(id: string): Promise<void> {
+    const host = this.networkManager.host.replace(/\/+$/, "");
+    await axios.post(
+      `${host}/visualization/captures/${encodeURIComponent(id)}/release`,
+      {}
+    );
+  }
+
   public async setViewportExpectedProfile(options: {
+    unit?: "PIXELS" | "BINS";
     bpResolution: number;
     startRowPx: number;
     endRowPx: number;

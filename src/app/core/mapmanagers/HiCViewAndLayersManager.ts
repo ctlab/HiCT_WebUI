@@ -22,7 +22,15 @@ import { sequenceZoomResolution } from "../visualization/sequenceZoom";
 
 import { unByKey } from "ol/Observable";
 import { aggregateTileSignals } from "../visualization/tileSignalRange";
-import { Extent, Select } from "ol/interaction";
+import { Extent, Select, DragBox } from "ol/interaction";
+import { fromExtent } from "ol/geom/Polygon";
+import type { SequenceMeasurement } from "../sequence/sequenceMeasurement";
+import type { EventsKey } from "ol/events";
+import {
+  validateRegion,
+  snapRegionBoundary,
+  type RegionBounds,
+} from "./regionSelection";
 import { Projection } from "ol/proj";
 import type Layer from "ol/layer/Layer";
 import type { ContactMapManager } from "./ContactMapManager";
@@ -39,7 +47,11 @@ import { asString, type Color } from "ol/color";
 import type { ColorLike } from "ol/colorlike";
 import { type Ref, ref, markRaw, shallowRef, shallowReactive } from "vue";
 import { installTopLeftAnchor } from "./mapAnchor";
-import { selectionAreaStyle, selectionPointerStyle } from "./selectionStyles";
+import {
+  selectionAreaStyle,
+  selectionPointerStyle,
+  selectionBorderStyle,
+} from "./selectionStyles";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import ContigMouseWheelZoom from "@/ContigMouseWheelZoom";
 import BinMousePosition from "@/BinMousePosition";
@@ -63,7 +75,13 @@ import type {
   TrackStylePresetBundle,
 } from "../tracks/TrackStylePreset";
 import Fill from "ol/style/Fill";
-import { pointerMove, shiftKeyOnly, singleClick } from "ol/events/condition";
+import {
+  pointerMove,
+  shiftKeyOnly,
+  platformModifierKeyOnly,
+  singleClick,
+  never,
+} from "ol/events/condition";
 import type { ContigDescriptor } from "../domain/ContigDescriptor";
 import { CurrentSignalRangeResponse } from "../net/api/response";
 import { SplitRulesInteraction } from "../interactions/SplitRulesInteraction";
@@ -125,6 +143,12 @@ interface CurrentHiCViewState {
   resolutionDesciptor: LayerResolutionDescriptor;
   selectionBorders: SelectionBorders;
   activeTool?: ActiveTool;
+  entitySelectionKind: "contig" | "scaffold";
+  selectedContigIds: number[];
+  selectedScaffoldIds: number[];
+  hideScopedBorders: boolean;
+  scopedAxes: boolean;
+  sequenceMeasurement?: SequenceMeasurement;
 }
 
 interface LayersHolder {
@@ -154,6 +178,10 @@ interface Track2DHolder {
 }
 
 class HiCViewAndLayersManager {
+  /** Server-owned immutable rendering inputs for the current figure only. */
+  public figureRenderCaptureId: string | undefined;
+  public figureRenderCaptureError: Error | undefined;
+  public figureRenderCaptureFailed: ((error: Error) => void) | undefined;
   private static styleLoadSerial = 0;
   /**
    * `revision` changes on every style edit. `loaded` changes only when a manager is created or a whole
@@ -205,9 +233,632 @@ class HiCViewAndLayersManager {
   private activeOverlay?: Layer;
   private outgoingOverlay?: Layer;
   private cancelOverlayTransition?: () => void;
-  public readonly overlayStatus = markRaw({ loading: ref(false) });
+  public readonly overlayStatus = markRaw({
+    loading: ref(false),
+    zoomRequired: ref(false),
+  });
   private wheelZoomInteraction?: ContigMouseWheelZoom;
   private coordinateBaseBp: number;
+  private readonly sequenceScaleSupported: boolean;
+  private sequenceCoordinates = false;
+  private changingDisplayGrid = false;
+  private readonly sequenceLayers = new Map<MatrixSourceName, Layer>();
+  private selectionEventKeys: EventsKey[] = [];
+  private projectingRegion = false;
+  private regionGestureActive = false;
+  private entityHighlightLayer?: VectorLayer<VectorSource>;
+  private selectedContigIds = new Set<number>();
+  private selectedScaffoldIds = new Set<number>();
+
+  private canSelect(): boolean {
+    return (
+      this.currentViewState.activeTool === undefined &&
+      !this.mapManager.isExporting
+    );
+  }
+
+  public getRegionDomain(): RegionBounds {
+    const total =
+      this.mapManager.contigDimensionHolder.prefix_sum_bp[
+        this.mapManager.contigDimensionHolder.contig_count
+      ] ?? 0;
+    const { row, column } = this.getAxisScopes();
+    return {
+      rowStart: row.startBp ?? 0,
+      rowEnd: row.endBp ?? total,
+      columnStart: column.startBp ?? 0,
+      columnEnd: column.endBp ?? total,
+    };
+  }
+
+  public getRegionBounds(): RegionBounds | undefined {
+    const { leftBP, rightBP } = this.currentViewState.selectionBorders;
+    return leftBP && rightBP
+      ? {
+          rowStart: leftBP[1],
+          rowEnd: rightBP[1],
+          columnStart: leftBP[0],
+          columnEnd: rightBP[0],
+        }
+      : undefined;
+  }
+
+  public regionFromExtent(extent: number[]): RegionBounds | undefined {
+    const d = this.currentViewState.resolutionDesciptor,
+      holder = this.mapManager.contigDimensionHolder;
+    const values = [extent[0], -extent[3], extent[2], -extent[1]].map((value) =>
+      holder.getFractionalBpOfPx(value / d.pixelResolution, d.bpResolution)
+    );
+    const domain = this.getRegionDomain();
+    const region = {
+      columnStart: Math.max(
+        domain.columnStart,
+        snapRegionBoundary(values[0], false)
+      ),
+      rowStart: Math.max(domain.rowStart, snapRegionBoundary(values[1], false)),
+      columnEnd: Math.min(
+        domain.columnEnd,
+        snapRegionBoundary(values[2], true)
+      ),
+      rowEnd: Math.min(domain.rowEnd, snapRegionBoundary(values[3], true)),
+    };
+    return region.rowEnd > region.rowStart &&
+      region.columnEnd > region.columnStart
+      ? region
+      : undefined;
+  }
+
+  /** BP bounds are authoritative; reprojecting a rectangle must never round them to a native bin. */
+  public setRegionBounds(region: RegionBounds): void {
+    const valid = validateRegion(region, this.getRegionDomain());
+    this.clearEntitySelection();
+    let d = this.currentViewState.resolutionDesciptor;
+    const holder = this.mapManager.contigDimensionHolder;
+    let p = [
+      valid.columnStart,
+      valid.rowStart,
+      valid.columnEnd,
+      valid.rowEnd,
+    ].map((value) => holder.getFractionalPxOfBp(value, d.bpResolution));
+    if (
+      (p[2] <= p[0] || p[3] <= p[1]) &&
+      this.sequenceScaleSupported &&
+      !this.isSequenceScale
+    ) {
+      this.restoreViewPosition({
+        centerBp: [
+          (valid.columnStart + valid.columnEnd) / 2,
+          (valid.rowStart + valid.rowEnd) / 2,
+        ],
+        resolution: 1 / this.coordinateBaseBp / 20,
+      });
+      d = this.currentViewState.resolutionDesciptor;
+      p = [
+        valid.columnStart,
+        valid.rowStart,
+        valid.columnEnd,
+        valid.rowEnd,
+      ].map((value) => holder.getFractionalPxOfBp(value, d.bpResolution));
+    }
+    this.currentViewState.selectionBorders = {
+      leftBP: [valid.columnStart, valid.rowStart],
+      rightBP: [valid.columnEnd, valid.rowEnd],
+      leftPx: [p[0], p[1]],
+      rightPx: [p[2], p[3]],
+    };
+    this.projectingRegion = true;
+    try {
+      this.selectionInteractions.contigSelectExtent.setExtent([
+        p[0] * d.pixelResolution,
+        -p[3] * d.pixelResolution,
+        p[2] * d.pixelResolution,
+        -p[1] * d.pixelResolution,
+      ]);
+    } finally {
+      this.projectingRegion = false;
+    }
+    this.setSelectionPresentationVisible(!this.mapManager.isExporting);
+  }
+
+  public clearRegionSelection(): void {
+    this.regionGestureActive = false;
+    (
+      this.selectionInteractions.contigSelectExtent as unknown as {
+        handlingDownUpSequence: boolean;
+      }
+    ).handlingDownUpSequence = false;
+    this.currentViewState.selectionBorders = {};
+    this.projectingRegion = true;
+    try {
+      this.selectionInteractions.contigSelectExtent.setExtent(undefined!);
+    } finally {
+      this.projectingRegion = false;
+    }
+    const extent = this.selectionInteractions.contigSelectExtent as unknown as {
+      vertexOverlay_?: Layer;
+    };
+    extent.vertexOverlay_?.setVisible(false);
+  }
+
+  public clearEntitySelection(): void {
+    this.selectedContigIds.clear();
+    this.selectedScaffoldIds.clear();
+    this.currentViewState.selectedContigIds = [];
+    this.currentViewState.selectedScaffoldIds = [];
+    this.selectionCollections.selectedContigFeatures.clear();
+    this.selectionCollections.selectedScaffoldFeatures.clear();
+    this.entityHighlightLayer?.getSource()?.clear(true);
+  }
+
+  public setSequenceMeasurement(measurement?: SequenceMeasurement): void {
+    this.currentViewState.sequenceMeasurement = measurement;
+  }
+
+  public clearSelections(): void {
+    this.setSequenceMeasurement();
+    this.clearRegionSelection();
+    this.clearEntitySelection();
+  }
+
+  public selectEntityRangeByBp(
+    start: number,
+    end: number,
+    kind = this.currentViewState.entitySelectionKind
+  ): void {
+    this.clearRegionSelection();
+    this.clearEntitySelection();
+    if (!(end > start)) return;
+    const holder = this.mapManager.contigDimensionHolder;
+    let scaffoldIds: number[] = [];
+    if (kind === "scaffold") {
+      const selected =
+        this.mapManager.scaffoldHolder.scaffoldBordersSorted.filter(
+          ([bounds]) => bounds.startBP < end && bounds.endBP > start
+        );
+      if (!selected.length) return;
+      start = selected[0][0].startBP;
+      end = selected[selected.length - 1][0].endBP;
+      scaffoldIds = selected.map(([, id]) => id);
+    }
+    const ids = holder.contigDescriptors
+      .filter(
+        (_, i) =>
+          holder.prefix_sum_bp[i] < end && holder.prefix_sum_bp[i + 1] > start
+      )
+      .map((d) => d.contigId);
+    this.currentViewState.selectedContigIds = ids;
+    this.currentViewState.selectedScaffoldIds = scaffoldIds;
+    this.selectedContigIds = new Set(ids);
+    this.selectedScaffoldIds = new Set(scaffoldIds);
+    this.refreshEntityHighlights();
+  }
+
+  public getSelectedEntityRange(): { startBP: number; endBP: number } | null {
+    const holder = this.mapManager.contigDimensionHolder;
+    const ids = this.currentViewState.selectedContigIds ?? [];
+    const orders = ids
+      .map((id) => holder.contigIdToOrd[id])
+      .filter((order) => order !== undefined);
+    if (!orders.length) return null;
+    let first = orders[0],
+      last = orders[0];
+    for (const order of orders) {
+      first = Math.min(first, order);
+      last = Math.max(last, order);
+    }
+    return {
+      startBP: holder.prefix_sum_bp[first],
+      endBP: holder.prefix_sum_bp[last + 1],
+    };
+  }
+
+  public setEntitySelectionKind(kind: "contig" | "scaffold"): void {
+    this.clearEntitySelection();
+    this.currentViewState.entitySelectionKind = kind;
+  }
+
+  /** OL 9.1 Extent has two private presentation layers; isolate this pinned API access here. */
+  public setSelectionPresentationVisible(visible: boolean): void {
+    const extent = this.selectionInteractions.contigSelectExtent as unknown as {
+      extentOverlay_?: Layer;
+      vertexOverlay_?: Layer;
+    };
+    extent.extentOverlay_?.setVisible(visible);
+    extent.vertexOverlay_?.setVisible(visible && !!this.getRegionBounds());
+    this.entityHighlightLayer?.setVisible(visible);
+  }
+
+  private refreshEntityHighlights(): void {
+    if (!this.entityHighlightLayer) return;
+    const d = this.currentViewState.resolutionDesciptor,
+      holder = this.mapManager.contigDimensionHolder;
+    const features: Feature<Geometry>[] = [];
+    const contigs: Feature<Geometry>[] = [],
+      scaffolds: Feature<Geometry>[] = [];
+    const append = (start: number, end: number) => {
+      const a =
+          holder.getFractionalPxOfBp(start, d.bpResolution) * d.pixelResolution,
+        b = holder.getFractionalPxOfBp(end, d.bpResolution) * d.pixelResolution;
+      if (b > a)
+        features.push(new Feature({ geometry: fromExtent([a, -b, b, -a]) }));
+    };
+    for (const feature of this.track2DHolder.contigBordersTrack.features.get(
+      d.bpResolution
+    ) ?? []) {
+      const cd = feature.get("contigDescriptor") as
+        | ContigDescriptor
+        | undefined;
+      if (
+        feature.get("trackType") !== "contigBorders" ||
+        !cd ||
+        !this.selectedContigIds.has(cd.contigId)
+      )
+        continue;
+      contigs.push(feature);
+      if (!this.selectedScaffoldIds.size) {
+        const i = holder.contigIdToOrd[cd.contigId];
+        append(holder.prefix_sum_bp[i], holder.prefix_sum_bp[i + 1]);
+      }
+    }
+    for (const feature of this.track2DHolder.scaffoldBordersTrack.features.get(
+      d.bpResolution
+    ) ?? []) {
+      const sd = (feature.get("scaffoldDescriptor") ??
+        feature.get("scaffolDescriptor")) as { scaffoldId: number } | undefined;
+      if (
+        feature.get("trackType") !== "scaffoldBorders" ||
+        !sd ||
+        !this.selectedScaffoldIds.has(sd.scaffoldId)
+      )
+        continue;
+      const bounds = this.mapManager.scaffoldHolder.scaffoldBordersBp.get(
+        sd.scaffoldId
+      );
+      if (!bounds) continue;
+      scaffolds.push(feature);
+      append(bounds.startBP, bounds.endBP);
+    }
+    const source = this.entityHighlightLayer.getSource()!;
+    source.clear(true);
+    source.addFeatures(features);
+    this.entityHighlightLayer.setExtent(this.activeAxisScopeExtent);
+    this.selectionCollections.selectedContigFeatures.clear();
+    this.selectionCollections.selectedContigFeatures.extend(contigs);
+    this.selectionCollections.selectedScaffoldFeatures.clear();
+    this.selectionCollections.selectedScaffoldFeatures.extend(scaffolds);
+  }
+  private viewRestoreGeneration = 0;
+
+  public get isSequenceScale(): boolean {
+    return (
+      this.currentViewState?.resolutionDesciptor.displayGrid === "SEQUENCE_BP"
+    );
+  }
+
+  private wantsSequenceCoordinates(viewResolution: number): boolean {
+    return (
+      this.sequenceScaleSupported &&
+      Number.isFinite(viewResolution) &&
+      viewResolution > 0 &&
+      viewResolution <=
+        1 / this.coordinateBaseBp / (this.sequenceCoordinates ? 2 : 4)
+    );
+  }
+
+  public getDimensionHolderForDescriptor(
+    descriptor: LayerResolutionDescriptor
+  ) {
+    const holder = this.mapManager.contigDimensionHolder;
+    return descriptor.displayGrid === "SEQUENCE_BP"
+      ? holder.getSequenceCoordinates()
+      : holder.getNativeCoordinates();
+  }
+
+  public captureViewPosition() {
+    const descriptor = this.currentViewState.resolutionDesciptor,
+      holder = this.mapManager.contigDimensionHolder;
+    const center = this.view.getCenter();
+    const centerBp = center?.map((value, index) =>
+      holder.getFractionalBpOfPx(
+        (index === 0 ? value : -value) / descriptor.pixelResolution,
+        descriptor.bpResolution
+      )
+    ) as [number, number] | undefined;
+    return {
+      center: center ? [...center] : undefined,
+      centerBp,
+      resolution: this.view.getResolution(),
+      rotation: this.view.getRotation(),
+      displayGrid: descriptor.displayGrid ?? "NATIVE",
+      bpResolution: descriptor.bpResolution,
+    };
+  }
+
+  public restoreViewPosition(position: {
+    center?: number[];
+    centerBp?: number[];
+    resolution?: number;
+    rotation?: number;
+    displayGrid?: string;
+    bpResolution?: number;
+  }): void {
+    this.view.cancelAnimations();
+    if (Number.isFinite(position.resolution) && position.resolution! > 0) {
+      this.transitionDisplayGrid(position.resolution!);
+      this.view.setResolution(position.resolution);
+    }
+    this.updateCurrentHiCViewState();
+    const descriptor = this.currentViewState.resolutionDesciptor;
+    if (
+      position.centerBp?.length === 2 &&
+      position.centerBp.every(Number.isFinite)
+    ) {
+      const holder = this.mapManager.contigDimensionHolder;
+      const center = position.centerBp.map(
+        (bp) =>
+          holder.getFractionalPxOfBp(bp, descriptor.bpResolution) *
+          descriptor.pixelResolution
+      );
+      this.view.setCenter([center[0], -center[1]]);
+    } else if (
+      position.center?.length === 2 &&
+      position.center.every(Number.isFinite)
+    ) {
+      const native = this.getNativeResolutionDescriptor();
+      const stored =
+        position.displayGrid === "SEQUENCE_BP"
+          ? this.sequenceDescriptor(native)
+          : native;
+      this.view.setCenter(
+        this.reprojectPoint(position.center, stored, descriptor)
+      );
+    }
+    if (Number.isFinite(position.rotation))
+      this.view.setRotation(position.rotation!);
+    this.scheduleRulerRender();
+    // Entering letter scale changes the ruler strip size on the next Vue frame.
+    // Reapply the requested BP center after that layout, so an assembly-edge
+    // bookmark is not permanently clamped using the previous viewport size.
+    // Any intervening user input or another restore owns the view instead.
+    const generation = ++this.viewRestoreGeneration;
+    if (
+      position.centerBp?.length === 2 &&
+      position.centerBp.every(Number.isFinite)
+    ) {
+      const centerBp = [...position.centerBp];
+      const resolution = this.view.getResolution();
+      let interrupted = false;
+      const cancel = () => {
+        interrupted = true;
+      };
+      const events = ["pointerdown", "wheel", "keydown"] as const;
+      events.forEach((event) =>
+        window.addEventListener(event, cancel, { capture: true, once: true })
+      );
+      window.requestAnimationFrame(() =>
+        window.requestAnimationFrame(() => {
+          events.forEach((event) =>
+            window.removeEventListener(event, cancel, true)
+          );
+          if (
+            interrupted ||
+            this.mapManager.isDisposed ||
+            generation !== this.viewRestoreGeneration ||
+            resolution !== this.view.getResolution()
+          )
+            return;
+          this.mapManager.getMap().updateSize();
+          const current = this.currentViewState.resolutionDesciptor;
+          const holder = this.mapManager.contigDimensionHolder;
+          const center = centerBp.map(
+            (bp) =>
+              holder.getFractionalPxOfBp(bp, current.bpResolution) *
+              current.pixelResolution
+          );
+          this.view.setCenter([center[0], -center[1]]);
+          this.scheduleRulerRender();
+        })
+      );
+    }
+  }
+
+  public reprojectPoint(
+    point: number[],
+    from: LayerResolutionDescriptor,
+    to: LayerResolutionDescriptor
+  ): [number, number] {
+    const source = this.getDimensionHolderForDescriptor(from),
+      target = this.getDimensionHolderForDescriptor(to);
+    const sourceSize =
+      source.prefix_sum_px.get(from.bpResolution)?.[source.contig_count] ?? 0;
+    const targetSize =
+      target.prefix_sum_px.get(to.bpResolution)?.[target.contig_count] ?? 0;
+    const length = source.prefix_sum_bp[source.contig_count] ?? 0;
+    const values = [point[0], -point[1]].map((value) => {
+      const pixel = value / from.pixelResolution;
+      const bp =
+        pixel < 0
+          ? pixel * from.bpResolution
+          : pixel > sourceSize
+          ? length + (pixel - sourceSize) * from.bpResolution
+          : source.getFractionalBpOfPx(pixel, from.bpResolution);
+      const coordinate =
+        bp < 0
+          ? bp / to.bpResolution
+          : bp > length
+          ? targetSize + (bp - length) / to.bpResolution
+          : target.getFractionalPxOfBp(bp, to.bpResolution);
+      return coordinate * to.pixelResolution;
+    });
+    return [values[0], -values[1]];
+  }
+
+  private refreshNativeGeometry(): void {
+    const holder = this.mapManager.contigDimensionHolder.getNativeCoordinates();
+    const sizes = this.primaryResolutionSet.resolutions.map(
+      (res, index) =>
+        holder.prefix_sum_px.get(res)?.[holder.contig_count] ??
+        this.primaryResolutionSet.imageSizes[index]
+    );
+    if (
+      sizes.every(
+        (size, index) => size === this.primaryResolutionSet.imageSizes[index]
+      )
+    )
+      return;
+    this.removeSourceHiCDataLayers("PRIMARY");
+    this.primaryResolutionSet = this.buildResolutionDescriptorSet(
+      "PRIMARY",
+      this.primaryResolutionSet.resolutions,
+      sizes
+    );
+    this.applyPrimaryResolutionSet(this.primaryResolutionSet);
+    this.addSourceHiCDataLayers(this.primaryResolutionSet);
+    if (this.secondaryUsesPrimaryGrid) {
+      this.cancelOverlayTransition?.();
+      if (this.outgoingOverlay)
+        this.removeProjectedOverlay(this.outgoingOverlay);
+      if (this.activeOverlay) this.removeProjectedOverlay(this.activeOverlay);
+      this.outgoingOverlay = undefined;
+      this.activeOverlay = undefined;
+    }
+    this.updateProjectionAndViewExtent();
+    this.syncLayerVisibilityForCurrentResolution();
+    this.mapManager.rebuildOverviewMinimap();
+  }
+
+  public getNativeMatrixBounds(
+    extent: number[],
+    source: MatrixSourceName = "PRIMARY"
+  ) {
+    const display = this.currentViewState.resolutionDesciptor;
+    const native = this.getNativeResolutionDescriptor(source);
+    const holder = this.mapManager.contigDimensionHolder.getNativeCoordinates();
+    const totalBp = holder.prefix_sum_bp[holder.contig_count] ?? 0;
+    const bp = [extent[0], -extent[3], extent[2], -extent[1]].map((value) =>
+      Math.max(
+        0,
+        Math.min(
+          totalBp,
+          this.mapManager.contigDimensionHolder.getFractionalBpOfPx(
+            value / display.pixelResolution,
+            display.bpResolution
+          )
+        )
+      )
+    );
+    const start = (value: number) =>
+      holder.getBinContainingBp(
+        Math.floor(Math.min(value, Math.max(0, totalBp - 1))),
+        native.bpResolution
+      );
+    const end = (value: number) =>
+      value <= 0
+        ? 0
+        : holder.getBinContainingBp(
+            Math.ceil(Math.min(value, totalBp)) - 1,
+            native.bpResolution
+          ) + 1;
+    return {
+      bpResolution: native.bpResolution,
+      unit: "BINS" as const,
+      startRowPx: start(bp[1]),
+      endRowPx: end(bp[3]),
+      startColPx: start(bp[0]),
+      endColPx: end(bp[2]),
+    };
+  }
+
+  private sequenceDescriptor(
+    native: LayerResolutionDescriptor
+  ): LayerResolutionDescriptor {
+    return {
+      ...native,
+      bpResolution: 1,
+      pixelResolution: 1 / this.coordinateBaseBp,
+      displayGrid: "SEQUENCE_BP",
+      sourceBpResolution: native.bpResolution,
+    };
+  }
+
+  public normalizeSequenceZoomResolution(requested: number): number {
+    if (
+      !this.sequenceScaleSupported &&
+      !this.mapManager.networkManager.requestManager.hasLinkedFasta
+    )
+      return requested;
+    const model = this.getNavigationResolutionModel();
+    const index = model.resolutions.indexOf(Math.min(...model.resolutions));
+    return sequenceZoomResolution(
+      this.view.getResolution(),
+      requested,
+      model.pixelResolutionSet[index],
+      model.resolutions[index],
+      this.mapManager.getMap().getSize() ?? [1, 1]
+    );
+  }
+
+  /** Change coordinate bases atomically. Wheel/trackpad callers can preserve their exact pointer anchor. */
+  public transitionDisplayGrid(
+    resolution: number,
+    anchorBp?: number[],
+    anchorPixel?: number[]
+  ): boolean {
+    const next = this.wantsSequenceCoordinates(resolution);
+    if (next === this.sequenceCoordinates || this.changingDisplayGrid)
+      return false;
+    const previous = this.currentViewState.resolutionDesciptor;
+    const previousHolder = this.getDimensionHolderForDescriptor(previous);
+    const center = this.view.getCenter() ?? [0, 0];
+    const bp =
+      anchorBp ??
+      [center[0], -center[1]].map((value) =>
+        previousHolder.getFractionalBpOfPx(
+          value / previous.pixelResolution,
+          previous.bpResolution
+        )
+      );
+    const target = this.getNativeResolutionDescriptor("PRIMARY", resolution);
+    const descriptor = next ? this.sequenceDescriptor(target) : target;
+    const holder = this.getDimensionHolderForDescriptor(descriptor);
+    const point = bp.map(
+      (value) =>
+        holder.getFractionalPxOfBp(value, descriptor.bpResolution) *
+        descriptor.pixelResolution
+    );
+    const size = this.mapManager.getMap().getSize() ?? [0, 0];
+    const pixel = anchorPixel ?? [size[0] / 2, size[1] / 2];
+    const nextCenter: [number, number] = [
+      point[0] + (size[0] / 2 - pixel[0]) * resolution,
+      -point[1] - (size[1] / 2 - pixel[1]) * resolution,
+    ];
+    const selection = this.currentViewState.selectionBorders;
+    this.changingDisplayGrid = true;
+    try {
+      this.sequenceCoordinates = next;
+      this.mapManager.contigDimensionHolder.setSequenceCoordinates(next);
+      this.currentViewState.resolutionDesciptor = descriptor;
+      this.ensureSequenceLayers();
+      this.updateProjectionAndViewExtent(1, { center: nextCenter, resolution });
+      this.markBuiltinVectorLayersDirty();
+      this.vectorBuilt = undefined;
+      this.vectorExactKey = "";
+      if (selection.leftBP && selection.rightBP)
+        this.setRegionBounds({
+          columnStart: selection.leftBP[0],
+          rowStart: selection.leftBP[1],
+          columnEnd: selection.rightBP[0],
+          rowEnd: selection.rightBP[1],
+        });
+    } finally {
+      this.changingDisplayGrid = false;
+    }
+    this.updateCurrentHiCViewState();
+    void this.mapManager.linearTrackManager?.clearCachesAndRender();
+    this.scheduleRulerRender();
+    return true;
+  }
+
   private enabledBpResolutions?: Set<number>;
   /** Extent, zoom bucket and matrix resolution the border/label features were last built for. */
   private vectorBuilt?: {
@@ -266,6 +917,7 @@ class HiCViewAndLayersManager {
     readonly translocationArrowHoverInteraction: Select;
     readonly translocationArrowSelectionInteraction: Select;
     readonly contigSelectExtent: Extent;
+    readonly entityDragBox: DragBox;
   };
 
   public readonly deferredInitializationInteractions: {
@@ -294,6 +946,8 @@ class HiCViewAndLayersManager {
     public readonly useVectorImageLayer: boolean = false
   ) {
     this.mapManager = mapManager;
+    this.sequenceScaleSupported =
+      response.capabilities?.sequenceScaleTiles === true;
     this.tileSize = mapManager.getOptions().tileSize;
     const primaryResolutions = response.resolutions
       .map((value) => Number(value))
@@ -369,6 +1023,11 @@ class HiCViewAndLayersManager {
         rightContigDescriptorInclusive: undefined,
         rightContigOrderInclusive: undefined,
       },
+      entitySelectionKind: "contig",
+      selectedContigIds: [],
+      selectedScaffoldIds: [],
+      hideScopedBorders: false,
+      scopedAxes: false,
     });
 
     // The armed tool is read by toolbar buttons and written from async completions that hold the raw
@@ -407,10 +1066,11 @@ class HiCViewAndLayersManager {
       contigSelectionInteraction: new Select({
         multi: false,
         layers: this.layersHolder.contigBordersLayers,
-        style: selectionAreaStyle(),
+        style: null,
         hitTolerance: 0,
         features: this.selectionCollections.selectedContigFeatures,
-        condition: singleClick,
+        // Entity clicks are resolved through assembly BP, even with borders hidden.
+        condition: never,
       }),
       translocationArrowHoverInteraction: new Select({
         multi: false,
@@ -448,10 +1108,24 @@ class HiCViewAndLayersManager {
         condition: singleClick,
       }),
       contigSelectExtent: new Extent({
-        condition: shiftKeyOnly,
+        condition: (event) => {
+          if (!this.canSelect()) return false;
+          if (event.type === "pointerup" && this.regionGestureActive) {
+            this.regionGestureActive = false;
+            return true;
+          }
+          if (event.type === "pointerdown" && platformModifierKeyOnly(event))
+            this.regionGestureActive = true;
+          return this.regionGestureActive || platformModifierKeyOnly(event);
+        },
         pixelTolerance: 0,
         boxStyle: selectionAreaStyle(),
         pointerStyle: selectionPointerStyle(),
+      }),
+      entityDragBox: new DragBox({
+        condition: (event) => shiftKeyOnly(event) && this.canSelect(),
+        minArea: 0,
+        className: "hict-entity-drag",
       }),
     });
 
@@ -507,6 +1181,13 @@ class HiCViewAndLayersManager {
     primarySet: SourceResolutionDescriptorSet,
     secondarySet?: SourceResolutionDescriptorSet
   ): number {
+    if (this.sequenceCoordinates) {
+      const holder = this.mapManager.contigDimensionHolder;
+      return Math.max(
+        1,
+        (holder.prefix_sum_bp[holder.contig_count] ?? 0) / this.coordinateBaseBp
+      );
+    }
     return calculateMaximumScaledImageSizeForSets(primarySet, secondarySet);
   }
 
@@ -591,10 +1272,19 @@ class HiCViewAndLayersManager {
   }
 
   public getVectorResolutionTuples(): LayerResolutionDescriptor[] {
-    return getVectorResolutionTuplesForSets(
+    const native = getVectorResolutionTuplesForSets(
       this.primaryResolutionSet,
       this.secondaryResolutionSet
     );
+    if (
+      !this.sequenceScaleSupported ||
+      native.some((tuple) => tuple.bpResolution === 1)
+    )
+      return native;
+    const finest = native.reduce((best, tuple) =>
+      tuple.bpResolution < best.bpResolution ? tuple : best
+    );
+    return [...native, this.sequenceDescriptor(finest)];
   }
 
   private updateWheelZoomResolutionModel(): void {
@@ -697,6 +1387,7 @@ class HiCViewAndLayersManager {
     this.mapManager.getMap().changed();
   }
 
+  private zoomLimitUpdatePending = false;
   public updateZoomLimit(): void {
     const size = this.mapManager.getMap().getSize();
     if (!size || size[0] <= 0 || size[1] <= 0) return;
@@ -712,6 +1403,19 @@ class HiCViewAndLayersManager {
       this.view.getMaxResolution() === maxResolution
     )
       return;
+    // Updating OL constraints cancels animations. A FASTA strip can resize the
+    // viewport midway through a wheel zoom; finish that gesture before changing
+    // the zoom-out limit, preserving both its target and its pointer anchor.
+    if (this.view.getAnimating() || this.view.getInteracting()) {
+      if (!this.zoomLimitUpdatePending) {
+        this.zoomLimitUpdatePending = true;
+        this.mapManager.getMap().once("moveend", () => {
+          this.zoomLimitUpdatePending = false;
+          if (!this.mapManager.isDisposed) this.updateZoomLimit();
+        });
+      }
+      return;
+    }
     // Retain the View object, center and resolution when changing its limits.
     this.view.applyOptions_(
       this.view.getUpdatedOptions_(this.createViewOptions(extent))
@@ -722,6 +1426,7 @@ class HiCViewAndLayersManager {
     row: AxisScopeSelection,
     column: AxisScopeSelection
   ): void {
+    this.clearSelections();
     this.activeAxisScopes = {
       row: this.normalizeAxisScope(row, "row"),
       column: this.normalizeAxisScope(column, "column"),
@@ -750,6 +1455,8 @@ class HiCViewAndLayersManager {
       row: resolvedRow,
       column: resolvedColumn,
     };
+    this.currentViewState.scopedAxes =
+      resolvedRow.kind !== "all" && resolvedColumn.kind !== "all";
 
     const nextExtent = this.computeAxisScopeExtent(resolvedRow, resolvedColumn);
     this.activeAxisScopeExtent = nextExtent ?? undefined;
@@ -947,6 +1654,10 @@ class HiCViewAndLayersManager {
       return current;
     }
     const candidates = this.getVectorResolutionTuples()
+      .filter(
+        (tuple) =>
+          this.sequenceCoordinates || tuple.displayGrid !== "SEQUENCE_BP"
+      )
       .slice()
       .sort((a, b) => a.bpResolution - b.bpResolution);
     return (
@@ -1074,7 +1785,10 @@ class HiCViewAndLayersManager {
     }
   }
 
-  private updateProjectionAndViewExtent(scalePreservedView = 1): void {
+  private updateProjectionAndViewExtent(
+    scalePreservedView = 1,
+    displayView?: { center: [number, number]; resolution: number }
+  ): void {
     const previousCenter = this.view.getCenter();
     const previousResolution = this.view.getResolution();
     const maximumScaledImageSize = this.calculateMaximumScaledImageSize(
@@ -1096,21 +1810,23 @@ class HiCViewAndLayersManager {
       ) ?? undefined;
     const activeExtent = this.getActiveMapExtent();
     const nextCenter =
-      previousCenter &&
+      displayView?.center ??
+      (previousCenter &&
       previousCenter.length >= 2 &&
       previousCenter.every((value) => Number.isFinite(value))
         ? ([
             previousCenter[0] * scalePreservedView,
             previousCenter[1] * scalePreservedView,
           ] as [number, number])
-        : ([activeExtent[0], activeExtent[3]] as [number, number]);
+        : ([activeExtent[0], activeExtent[3]] as [number, number]));
     const nextResolution =
-      previousResolution !== undefined && Number.isFinite(previousResolution)
+      displayView?.resolution ??
+      (previousResolution !== undefined && Number.isFinite(previousResolution)
         ? previousResolution * scalePreservedView
         : Math.max(
             ...this.getNavigationResolutionModel().pixelResolutionSet,
             1
-          );
+          ));
 
     const viewOptions = this.view.getUpdatedOptions_({
       ...this.createViewOptions(activeExtent),
@@ -1126,11 +1842,19 @@ class HiCViewAndLayersManager {
   private previousSequenceZoomResolution: number | undefined;
   private sequenceZoomPending = false;
   public async onViewResolutionChanged(): Promise<void> {
+    if (this.changingDisplayGrid) return;
     const requested = this.view.getResolution();
+    if (requested && !this.mapManager.isExporting)
+      this.transitionDisplayGrid(requested);
     if (
       requested &&
       !this.mapManager.isExporting &&
-      this.mapManager.networkManager.requestManager.hasLinkedFasta
+      // Wheel/trackpad already normalize their target with a BP pointer anchor.
+      // Rewriting an intermediate animation frame cancels that anchored zoom.
+      !this.view.getAnimating() &&
+      !this.view.getInteracting() &&
+      (this.sequenceScaleSupported ||
+        this.mapManager.networkManager.requestManager.hasLinkedFasta)
     ) {
       const model = this.getNavigationResolutionModel();
       const index = model.resolutions.indexOf(Math.min(...model.resolutions));
@@ -1645,6 +2369,17 @@ class HiCViewAndLayersManager {
     sourceName: MatrixSourceName,
     viewResolution: number
   ): LayerResolutionDescriptor {
+    const native = this.getNativeResolutionDescriptor(
+      sourceName,
+      viewResolution
+    );
+    return this.sequenceCoordinates ? this.sequenceDescriptor(native) : native;
+  }
+
+  public getNativeResolutionDescriptor(
+    sourceName: MatrixSourceName = "PRIMARY",
+    viewResolution = this.view.getResolution() ?? 0
+  ): LayerResolutionDescriptor {
     const set =
       sourceName === "SECONDARY"
         ? this.secondaryResolutionSet
@@ -1721,7 +2456,7 @@ class HiCViewAndLayersManager {
   ): LayerResolutionDescriptor {
     const descriptor =
       preferred ?? this.getFinestVisibleSourceResolutionDescriptor();
-    const holder = this.getDimensionHolderForSource(descriptor.sourceName);
+    const holder = this.getDimensionHolderForDescriptor(descriptor);
     if (
       Number.isFinite(descriptor.bpResolution) &&
       !holder.prefix_sum_px.has(descriptor.bpResolution)
@@ -1737,9 +2472,24 @@ class HiCViewAndLayersManager {
   public getGuidanceResolutionDescriptorForViewResolution(
     viewResolution: number
   ): LayerResolutionDescriptor {
-    return this.ensureGuidanceResolutionDescriptor(
-      this.getFinestVisibleSourceResolutionDescriptor(viewResolution)
+    const primary = this.getNativeResolutionDescriptor(
+      "PRIMARY",
+      viewResolution
     );
+    if (this.wantsSequenceCoordinates(viewResolution))
+      return this.ensureGuidanceResolutionDescriptor(
+        this.sequenceDescriptor(primary)
+      );
+    const secondary = this.secondaryResolutionSet
+      ? this.getNativeResolutionDescriptor("SECONDARY", viewResolution)
+      : undefined;
+    const native =
+      secondary &&
+      !this.secondaryUsesPrimaryGrid &&
+      secondary.pixelResolution < primary.pixelResolution
+        ? secondary
+        : primary;
+    return this.ensureGuidanceResolutionDescriptor(native);
   }
 
   public setSecondaryResolutionModel(
@@ -1935,6 +2685,7 @@ class HiCViewAndLayersManager {
         extent[3] + marginY,
       ],
       resolution,
+      visibleExtent: extent,
     };
   }
 
@@ -2069,6 +2820,8 @@ class HiCViewAndLayersManager {
       return;
     }
     try {
+      unByKey(this.selectionEventKeys);
+      this.selectionEventKeys = [];
       if (this.vectorViewportListener) {
         this.mapManager.getMap().un("precompose", this.vectorViewportListener);
         this.vectorViewportListener = undefined;
@@ -2105,6 +2858,12 @@ class HiCViewAndLayersManager {
   }
 
   public initializeMapInteractions(): void {
+    this.entityHighlightLayer = new VectorLayer({
+      source: new VectorSource(),
+      style: selectionBorderStyle(),
+      zIndex: this.layersZIndices.TRACK_2D_LAYER_Z_INDEX * 2 + 2,
+    });
+    this.mapManager.getMap().addLayer(this.entityHighlightLayer);
     const navigationModel = this.getNavigationResolutionModel();
     this.wheelZoomInteraction = new ContigMouseWheelZoom({
       dimension_holder: this.mapManager.getContigDimensionHolder(),
@@ -2153,38 +2912,6 @@ class HiCViewAndLayersManager {
     this.deferredInitializationInteractions.scissorsGuideInteraction.setActive(
       false
     );
-    this.selectionInteractions.contigSelectionInteraction.on(
-      "select",
-      (evt) => {
-        const c = evt.mapBrowserEvent.coordinate;
-        this.selectionInteractions.contigSelectExtent.setExtent([
-          c[0],
-          c[1],
-          c[0],
-          c[1],
-        ]);
-        const selectedArray =
-          this.selectionCollections.selectedContigFeatures.getArray();
-        if (selectedArray && selectedArray.length > 0) {
-          const selectedContigFeature = selectedArray[0];
-          const contigDescriptor = selectedContigFeature.get(
-            "contigDescriptor"
-          ) as ContigDescriptor;
-          const contigOrder =
-            this.mapManager.contigDimensionHolder.contigIdToOrd[
-              contigDescriptor.contigId
-            ];
-
-          this.currentViewState.selectionBorders = {
-            leftContigOrderInclusive: contigOrder,
-            leftContigDescriptorInclusive: contigDescriptor,
-            rightContigOrderInclusive: contigOrder,
-            rightContigDescriptorInclusive: contigDescriptor,
-          };
-        }
-      }
-    );
-
     this.selectionInteractions.translocationArrowSelectionInteraction
       .getFeatures()
       .on("add", () => {
@@ -2194,150 +2921,89 @@ class HiCViewAndLayersManager {
           .clear();
       });
     this.selectionInteractions.contigSelectExtent.on("extentchanged", () => {
-      this.selectionCollections.selectedContigFeatures.clear();
+      if (this.projectingRegion) return;
       const extent = this.selectionInteractions.contigSelectExtent.getExtent();
-      if (!extent) {
-        this.currentViewState.selectionBorders = {
-          leftContigOrderInclusive: undefined,
-          leftContigDescriptorInclusive: undefined,
-          rightContigOrderInclusive: undefined,
-          rightContigDescriptorInclusive: undefined,
-          leftPx: undefined,
-          rightPx: undefined,
-          leftBP: undefined,
-          rightBP: undefined,
-        };
+      if (!extent || extent[2] <= extent[0] || extent[3] <= extent[1]) {
+        this.currentViewState.selectionBorders = {};
         return;
       }
-
-      const vectorResolutionDescriptor =
-        this.getActiveVectorResolutionDescriptor();
-      const bpResolution = vectorResolutionDescriptor.bpResolution;
-
-      const [a, b, c, d] = extent;
-      const [x0, y0, x1, y1] = [a, -d, c, -b];
-
-      const [x0_px, y0_px, x1_px, y1_px] = [x0, y0, x1, y1].map((c) =>
-        Math.floor(c / vectorResolutionDescriptor.pixelResolution)
-      );
-
-      const [leftPxInclusive, rightPxInclusive] = [
-        Math.max(x0_px, y0_px),
-        Math.min(x1_px, y1_px),
-      ];
-
-      let [leftContigOrderInclusive, rightContigOrderInclusive] = [
-        leftPxInclusive,
-        rightPxInclusive,
-      ].map((px) =>
-        this.mapManager.contigDimensionHolder.getContigOrderByPx(
-          px,
-          bpResolution
-        )
-      );
-
-      if (leftPxInclusive < 0) {
-        leftContigOrderInclusive = 0;
-      }
-      const activePrefixSum =
-        this.mapManager.contigDimensionHolder.prefix_sum_px.get(bpResolution);
-      const activeImageSize =
-        activePrefixSum && activePrefixSum.length > 0
-          ? activePrefixSum[activePrefixSum.length - 1]
-          : Number.POSITIVE_INFINITY;
-      if (rightPxInclusive > activeImageSize) {
-        rightContigOrderInclusive =
-          this.mapManager.contigDimensionHolder.contig_count - 1;
-      }
-
-      const [leftContigDescriptorInclusive, rightContigDescriptorInclusive] = [
-        leftContigOrderInclusive,
-        rightContigOrderInclusive,
-      ].map(
-        (ctgOrder) =>
-          this.mapManager.contigDimensionHolder.contigDescriptors[ctgOrder]
-      );
-
-      this.currentViewState.selectionBorders = {
-        leftContigOrderInclusive: leftContigOrderInclusive,
-        leftContigDescriptorInclusive: leftContigDescriptorInclusive,
-        rightContigOrderInclusive: rightContigOrderInclusive,
-        rightContigDescriptorInclusive: rightContigDescriptorInclusive,
-        leftPx: [x0_px, y0_px],
-        rightPx: [x1_px, y1_px],
-        leftBP: [
-          this.mapManager.contigDimensionHolder.getStartBpOfPx(
-            x0_px,
-            bpResolution
-          ),
-          this.mapManager.contigDimensionHolder.getStartBpOfPx(
-            y0_px,
-            bpResolution
-          ),
-        ],
-        rightBP: [
-          this.mapManager.contigDimensionHolder.getStartBpOfPx(
-            x1_px,
-            bpResolution
-          ),
-          this.mapManager.contigDimensionHolder.getStartBpOfPx(
-            y1_px,
-            bpResolution
-          ),
-        ],
-      };
-
-      const activeContigBordersLayer =
-        this.layersHolder.bpResolutionToContigBordersLayer.get(bpResolution);
-      if (!activeContigBordersLayer) {
-        throw new Error(
-          `Unknown bp resolution ${bpResolution} that does not correspond to any contig borders layer`
-        );
-      }
-      const vectorSource = activeContigBordersLayer.getSource() as VectorSource;
-
-      // A Shift-drag can extend beyond the current viewport after panning.
-      // Materialize that selection's features as well, preserving the native
-      // selection semantics; ordinary rendering remains viewport bounded.
-      const track = this.track2DHolder.contigBordersTrack;
-      const viewport = this.getTrackViewport();
-      if (viewport) {
-        viewport.extent = [
-          Math.min(viewport.extent[0], extent[0]),
-          Math.min(viewport.extent[1], extent[1]),
-          Math.max(viewport.extent[2], extent[2]),
-          Math.max(viewport.extent[3], extent[3]),
-        ];
-      }
-      track.recalculateBorders(bpResolution, viewport);
-      this.refreshVectorLayerFromFeatures(
-        activeContigBordersLayer,
-        track.features,
-        { force: true }
-      );
-      // Selection follows the diagonal assembly interval, independently of how
-      // its borders are styled. TOP/BOTTOM outlines are LineStrings: testing
-      // line/box intersection rejected a drag entirely inside a large contig.
-      // Labels must not become duplicate selected contig objects either.
-      const boxFeatures =
-        leftPxInclusive <= rightPxInclusive
-          ? vectorSource.getFeaturesInExtent(extent).filter((feature) => {
-              if (feature.get("trackType") !== "contigBorders") return false;
-              const descriptor = feature.get(
-                "contigDescriptor"
-              ) as ContigDescriptor;
-              const order =
-                this.mapManager.contigDimensionHolder.contigIdToOrd[
-                  descriptor.contigId
-                ];
-              return (
-                order >= leftContigOrderInclusive &&
-                order <= rightContigOrderInclusive
-              );
-            })
-          : [];
-      this.selectionCollections.selectedContigFeatures.extend(boxFeatures);
+      const region = this.regionFromExtent(extent);
+      if (region) this.setRegionBounds(region);
     });
+    const box = this.selectionInteractions.entityDragBox;
+    box.on("boxstart", () => {
+      this.clearRegionSelection();
+      this.clearEntitySelection();
+    });
+    box.on("boxend", () => {
+      const region = this.regionFromExtent(box.getGeometry().getExtent());
+      if (!region) return;
+      this.selectEntityRangeByBp(
+        Math.max(region.rowStart, region.columnStart),
+        Math.min(region.rowEnd, region.columnEnd)
+      );
+    });
+    this.mapManager.map.addInteraction(box);
+    this.selectionEventKeys.push(
+      this.mapManager.map.on("singleclick", (event) => {
+        if (!this.canSelect()) return;
+        if (shiftKeyOnly(event)) {
+          const d = this.currentViewState.resolutionDesciptor,
+            holder = this.mapManager.contigDimensionHolder;
+          const bp = [event.coordinate[0], -event.coordinate[1]].map((value) =>
+            holder.getFractionalBpOfPx(
+              value / d.pixelResolution,
+              d.bpResolution
+            )
+          );
+          const region = this.getRegionDomain();
+          if (
+            bp[0] < region.columnStart ||
+            bp[0] >= region.columnEnd ||
+            bp[1] < region.rowStart ||
+            bp[1] >= region.rowEnd
+          )
+            return;
+          const start = Math.max(...bp),
+            end = Math.min(...bp);
+          const kind = this.currentViewState.entitySelectionKind;
+          const first =
+            kind === "contig"
+              ? holder.getContigLocusByBp(Math.floor(bp[0])).contigId
+              : this.mapManager.scaffoldHolder.getScaffoldLocusByBp(
+                  Math.floor(bp[0])
+                )?.scaffoldId;
+          const last =
+            kind === "contig"
+              ? holder.getContigLocusByBp(Math.floor(bp[1])).contigId
+              : this.mapManager.scaffoldHolder.getScaffoldLocusByBp(
+                  Math.floor(bp[1])
+                )?.scaffoldId;
+          if (first !== undefined && first === last)
+            this.selectEntityRangeByBp(Math.floor(end), Math.floor(start) + 1);
+          else {
+            this.clearRegionSelection();
+            this.clearEntitySelection();
+          }
+        } else if (
+          !event.originalEvent.ctrlKey &&
+          !event.originalEvent.metaKey &&
+          !event.originalEvent.altKey
+        ) {
+          const extent =
+            this.selectionInteractions.contigSelectExtent.getExtent();
+          if (
+            !extent ||
+            event.coordinate[0] < extent[0] ||
+            event.coordinate[0] > extent[2] ||
+            event.coordinate[1] < extent[1] ||
+            event.coordinate[1] > extent[3]
+          )
+            this.clearRegionSelection();
+          this.clearEntitySelection();
+        }
+      })
+    );
     this.mapManager.map.addInteraction(
       this.selectionInteractions.contigSelectExtent
     );
@@ -2345,8 +3011,9 @@ class HiCViewAndLayersManager {
 
   public getActiveHiCDataLayer(): Layer {
     const bpResolution = this.currentViewState.resolutionDesciptor.bpResolution;
-    const layer =
-      this.layersHolder.primaryBpResolutionToHiCDataLayer.get(bpResolution);
+    const layer = this.sequenceCoordinates
+      ? this.sequenceLayers.get("PRIMARY")
+      : this.layersHolder.primaryBpResolutionToHiCDataLayer.get(bpResolution);
     if (!layer) {
       throw new Error(
         `Unknown resolution ${bpResolution} for Hi-C data layers`
@@ -2383,6 +3050,7 @@ class HiCViewAndLayersManager {
   }
 
   public reloadTiles(version?: number): void {
+    this.refreshNativeGeometry();
     for (const layer of this.layersHolder.hicDataLayers) {
       const source = layer.getSource();
       if (source instanceof VersionedXYZContactMapSource) {
@@ -2440,7 +3108,6 @@ class HiCViewAndLayersManager {
       return;
     }
 
-    source.clear(true);
     const bpResolution = Number(layer.get("bpResolution"));
     const features = featuresByResolution.get(bpResolution);
     if (!features) {
@@ -2448,8 +3115,27 @@ class HiCViewAndLayersManager {
         `Cannot refresh vector track at resolution ${bpResolution}`
       );
     }
-    source.addFeatures(features);
-    source.changed();
+    const hideBorders =
+      this.currentViewState.hideScopedBorders &&
+      this.activeAxisScopes.row.kind !== "all" &&
+      this.activeAxisScopes.column.kind !== "all";
+    const wanted = hideBorders
+      ? features.filter(
+          (feature) =>
+            !["contigBorders", "scaffoldBorders"].includes(
+              String(feature.get("trackType"))
+            )
+        )
+      : features;
+    // Preserve unchanged border instances and their spatial index/listeners.
+    // Labels are still replaced when their viewport layout changes.
+    const desired = new Set(wanted);
+    const current = source.getFeatures();
+    const removed = current.filter((feature) => !desired.has(feature));
+    if (removed.length === current.length && removed.length) source.clear(true);
+    else if (removed.length) source.removeFeatures(removed);
+    const added = wanted.filter((feature) => !source.hasFeature(feature));
+    if (added.length) source.addFeatures(added);
     layer.set(HiCViewAndLayersManager.VECTOR_SOURCE_DIRTY_FLAG, false);
     layer.changed();
   }
@@ -2605,6 +3291,13 @@ class HiCViewAndLayersManager {
         this.track2DHolder.scaffoldBordersTrack.features
       );
     }
+    this.refreshEntityHighlights();
+  }
+
+  public setHideScopedBorders(hidden: boolean): void {
+    this.currentViewState.hideScopedBorders = hidden;
+    this.markBuiltinVectorLayersDirty();
+    this.refreshVisibleBuiltinVectorSources();
   }
 
   public refreshTranslocationArrows(): void {
@@ -2655,6 +3348,7 @@ class HiCViewAndLayersManager {
   }
 
   private syncLayerVisibilityForCurrentResolution(): void {
+    this.ensureSequenceLayers();
     const visibleDescriptors = this.getVisibleSourceResolutionDescriptors();
     const activeResolution = visibleDescriptors.primary.bpResolution;
     if (!Number.isFinite(activeResolution)) {
@@ -2665,20 +3359,43 @@ class HiCViewAndLayersManager {
 
     for (const layer of this.layersHolder.primaryHiCDataLayers) {
       const layerResolution = Number(layer.get("bpResolution"));
-      layer.setVisible(layerResolution === activeResolution);
+      layer.setVisible(
+        layerResolution === activeResolution &&
+          !!layer.get("sequenceScale") === this.sequenceCoordinates
+      );
     }
     this.currentLevels.PRIMARY = visibleDescriptors.primary.bpResolution;
     this.currentLevels.SECONDARY = visibleDescriptors.secondary?.bpResolution;
-    if (visibleDescriptors.secondary && this.secondaryUsesPrimaryGrid) {
-      this.showProjectedOverlay(
+    if (
+      visibleDescriptors.secondary &&
+      this.secondaryUsesPrimaryGrid &&
+      !this.sequenceCoordinates
+    ) {
+      const showOverlay = this.showProjectedOverlay(
         visibleDescriptors.primary,
         visibleDescriptors.secondary
       );
+      this.overlayStatus.zoomRequired.value = !showOverlay;
+      // Changing from a native/sequence grid can leave its secondary layer
+      // visible. Only the projected pair belongs in this coordinate grid;
+      // otherwise the hidden-underneath native image also queues every tile.
+      for (const layer of this.layersHolder.secondaryHiCDataLayers) {
+        layer.setVisible(
+          showOverlay &&
+            (layer === this.activeOverlay || layer === this.outgoingOverlay)
+        );
+      }
     } else {
+      this.overlayStatus.zoomRequired.value = false;
+      this.activeOverlay?.setVisible(false);
+      this.outgoingOverlay?.setVisible(false);
       for (const layer of this.layersHolder.secondaryHiCDataLayers) {
         layer.setVisible(
           layer.get("bpResolution") ===
-            visibleDescriptors.secondary?.bpResolution
+            visibleDescriptors.secondary?.bpResolution &&
+            !!layer.get("sequenceScale") === this.sequenceCoordinates &&
+            layer !== this.activeOverlay &&
+            layer !== this.outgoingOverlay
         );
       }
     }
@@ -2709,20 +3426,143 @@ class HiCViewAndLayersManager {
     this.refreshVisibleBuiltinVectorSources();
   }
 
+  private ensureSequenceLayers(): void {
+    if (!this.sequenceScaleSupported || !this.mapManager.getMap()) return;
+    for (const source of ["PRIMARY", "SECONDARY"] as const) {
+      if (!this.sequenceCoordinates) continue;
+      if (source === "SECONDARY" && !this.secondaryResolutionSet) continue;
+      const collection =
+        source === "PRIMARY"
+          ? this.layersHolder.primaryHiCDataLayers
+          : this.layersHolder.secondaryHiCDataLayers;
+      const existing = this.sequenceLayers.get(source);
+      const native = this.getNativeResolutionDescriptor(source, 0);
+      if (
+        existing &&
+        existing.get("sourceBpResolution") === native.bpResolution &&
+        collection.includes(existing) &&
+        existing.get("sequenceLengthBp") ===
+          (this.mapManager.contigDimensionHolder.prefix_sum_bp[
+            this.mapManager.contigDimensionHolder.contig_count
+          ] ?? 0)
+      )
+        continue;
+      if (existing) {
+        this.mapManager.getMap().removeLayer(existing);
+        existing.getSource()?.dispose();
+        for (const layers of [collection, this.layersHolder.hicDataLayers]) {
+          const index = layers.indexOf(existing);
+          if (index >= 0) layers.splice(index, 1);
+        }
+      }
+      const holder = this.mapManager.contigDimensionHolder;
+      const size =
+        (holder.prefix_sum_bp[holder.contig_count] ?? 0) /
+        this.coordinateBaseBp;
+      const pixel = 1 / this.coordinateBaseBp;
+      const grid = new TileGrid({
+        extent: [0, -size, size, 0],
+        resolutions: [pixel],
+        tileSize: [this.tileSize, this.tileSize],
+      });
+      const tiles = new VersionedXYZContactMapSource(
+        this,
+        native.imageSizeIndex,
+        native.bpResolution,
+        source,
+        {
+          projection: this.pixelProjection,
+          tileGrid: grid,
+          interpolate: false,
+          cacheSize: 0,
+        },
+        undefined,
+        true
+      );
+      const layer = new TileLayer({
+        source: tiles,
+        visible: false,
+        zIndex:
+          this.layersZIndices.HIC_MAP_LAYER_Z_INDEX +
+          (source === "SECONDARY" ? 1 : 0),
+      });
+      layer.set("sourceName", source);
+      layer.set("bpResolution", 1);
+      layer.set("pixelResolution", pixel);
+      layer.set("sourceBpResolution", native.bpResolution);
+      layer.set("sequenceScale", true);
+      layer.set(
+        "sequenceLengthBp",
+        holder.prefix_sum_bp[holder.contig_count] ?? 0
+      );
+      this.sequenceLayers.set(source, layer);
+      collection.push(layer);
+      this.layersHolder.hicDataLayers.push(layer);
+      this.mapManager.getMap().addLayer(layer);
+    }
+    const map = this.layersHolder.bpResolutionToHiCDataLayer;
+    const active = this.sequenceCoordinates
+      ? this.sequenceLayers.get("PRIMARY")
+      : this.layersHolder.primaryHiCDataLayers.find(
+          (layer) =>
+            layer.get("bpResolution") === 1 && !layer.get("sequenceScale")
+        );
+    if (active) map.set(1, active);
+    else map.delete(1);
+  }
+
+  /** Figures must render a complete current overlay, without waiting on an outgoing cross-fade. */
+  public settleProjectedOverlayForFigure(): void {
+    this.cancelOverlayTransition?.();
+    if (this.outgoingOverlay) this.removeProjectedOverlay(this.outgoingOverlay);
+    this.outgoingOverlay = undefined;
+    this.activeOverlay?.setOpacity(1);
+    this.overlayStatus.loading.value = false;
+  }
+
   private showProjectedOverlay(
     primary: LayerResolutionDescriptor,
     secondary: LayerResolutionDescriptor
-  ): void {
+  ): boolean {
     const target = this.view.getResolution() ?? primary.pixelResolution;
+    const nativeRatio = primary.bpResolution / secondary.bpResolution;
+    const maximumFactor = Math.min(65_536, primary.bpResolution);
     const oversampling = Math.min(
-      64,
-      primary.bpResolution / secondary.bpResolution,
+      maximumFactor,
+      nativeRatio,
       primary.pixelResolution / target
     );
     const sampleFactor =
-      oversampling > 1 ? 2 ** Math.floor(Math.log2(oversampling)) : 1;
+      nativeRatio > 1 && target <= secondary.pixelResolution
+        ? Math.min(
+            maximumFactor,
+            Number.isInteger(nativeRatio)
+              ? nativeRatio
+              : Math.ceil(2 * nativeRatio)
+          )
+        : oversampling > 1
+        ? 2 ** Math.floor(Math.log2(oversampling))
+        : 1;
+    // The server bounds reads to 32 Mi native cells per projected tile. A
+    // fine-only overlay can exceed that budget until the user zooms closer.
+    const nativeEdge =
+      Math.ceil((this.tileSize * (nativeRatio + 1)) / sampleFactor) + 2;
+    if (nativeEdge ** 2 > 32 * 1024 * 1024) {
+      this.settleProjectedOverlayForFigure();
+      return false;
+    }
     const key = `${primary.bpResolution}/${secondary.bpResolution}/${sampleFactor}`;
-    if (this.activeOverlay?.get("projectionKey") === key) return;
+    if (this.mapManager.isExporting) {
+      this.settleProjectedOverlayForFigure();
+      if (
+        this.activeOverlay?.get("projectionKey") !== key &&
+        this.activeOverlay
+      ) {
+        this.removeProjectedOverlay(this.activeOverlay);
+        this.activeOverlay = undefined;
+      }
+    }
+    if (this.activeOverlay?.get("projectionKey") === key) return true;
 
     const map = this.mapManager.getMap();
     this.cancelOverlayTransition?.();
@@ -2773,6 +3613,10 @@ class HiCViewAndLayersManager {
     this.layersHolder.hicDataLayers.push(layer);
     this.overlayStatus.loading.value = true;
     map.addLayer(layer);
+    if (this.mapManager.isExporting) {
+      this.overlayStatus.loading.value = false;
+      return true;
+    }
 
     const finish = () => {
       this.cancelOverlayTransition?.();
@@ -2792,6 +3636,7 @@ class HiCViewAndLayersManager {
       window.clearInterval(renderCheck);
       this.cancelOverlayTransition = undefined;
     };
+    return true;
   }
 
   private removeProjectedOverlay(layer: Layer): void {

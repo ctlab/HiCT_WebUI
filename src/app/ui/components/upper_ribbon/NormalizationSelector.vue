@@ -107,9 +107,28 @@
       id="normalization-help"
       class="small text-muted mb-0"
     >
-      Each bin is divided by the square root of its total contacts in the whole
-      map. Bins without contacts stay empty.
+      Total contacts means the sum of a bin’s row (or column) over the whole
+      map, counting its diagonal entry once. Use this normalization to reduce
+      uneven contact coverage.
     </p>
+    <details
+      v-if="choice === 'sqrt' && !preparing"
+      class="coverage-explanation small"
+    >
+      <summary>How coverage is calculated</summary>
+      <p class="mb-1 mt-2">
+        For raw contact M between bins i and j, with row sums r:
+        <span class="coverage-formula">M / √(rᵢ × rⱼ) × C</span>. C is one scale
+        factor per source and resolution that preserves the whole-map contact
+        total. That total counts off-diagonal entries in both symmetric halves
+        of the matrix.
+      </p>
+      <p class="mb-0">
+        Coverage includes contacts between contigs and stays fixed as you pan.
+        Bins without contacts have no coverage weight. Selected signal
+        transforms also contribute to the displayed values.
+      </p>
+    </details>
     <div
       v-if="preparing"
       id="normalization-progress"
@@ -307,8 +326,11 @@ const contactUnavailable = computed(
 const weightsAvailability = computed(() =>
   importedWeightsAvailability(
     capabilities.value,
-    props.mapManager?.viewAndLayersManager.currentViewState.resolutionDesciptor
-      .bpResolution
+    capabilities.value
+      ? props.mapManager?.viewAndLayersManager.getNativeResolutionDescriptor(
+          matrixViewStore.activeVisualizationSource
+        ).bpResolution
+      : undefined
   )
 );
 const weightsUnavailable = computed(
@@ -356,6 +378,9 @@ function setTransform(on: boolean): void {
   // Off is a separate state: the remembered base is kept, never negated into something else.
   if (on) rememberedBase.value = DEFAULT_BASE;
   postLogBase.value = on ? DEFAULT_BASE : -rememberedBase.value;
+  props.mapManager?.visualizationManager.noteVisualizationDraft({
+    postLogBase: postLogBase.value,
+  });
 }
 
 function commitBase(): void {
@@ -371,7 +396,12 @@ function commitBase(): void {
   baseError.value = "";
   rememberedBase.value = value;
   baseDraft.value = formatBase(value);
-  if (logEnabled.value) postLogBase.value = value;
+  if (logEnabled.value) {
+    postLogBase.value = value;
+    props.mapManager?.visualizationManager.noteVisualizationDraft({
+      postLogBase: value,
+    });
+  }
 }
 
 type ScalingMode = "none" | "linear" | "quadratic" | "both";
@@ -389,6 +419,10 @@ const scalingMode = computed<ScalingMode>({
     if (mode === "both") return;
     resolutionLinearScaling.value = mode === "linear";
     resolutionScaling.value = mode === "quadratic";
+    props.mapManager?.visualizationManager.noteVisualizationDraft({
+      resolutionScaling: resolutionScaling.value,
+      resolutionLinearScaling: resolutionLinearScaling.value,
+    });
   },
 });
 
@@ -397,9 +431,15 @@ const legacyPreLog = computed(
 );
 function removePreLog(): void {
   preLogBase.value = -1;
+  props.mapManager?.visualizationManager.noteVisualizationDraft({
+    preLogBase: -1,
+  });
 }
 function stopAutoThreshold(): void {
   autoThresholdEnabled.value = false;
+  props.mapManager?.visualizationManager.noteVisualizationDraft({
+    autoThresholdEnabled: false,
+  });
 }
 
 function resetAttributes(): void {
@@ -411,6 +451,15 @@ function resetAttributes(): void {
   resolutionLinearScaling.value = false;
   autoThresholdEnabled.value = false;
   autoThresholdQuantile.value = 0.995;
+  props.mapManager?.visualizationManager.noteVisualizationDraft({
+    preLogBase: -1,
+    postLogBase: DEFAULT_BASE,
+    applyCoolerWeights: false,
+    resolutionScaling: false,
+    resolutionLinearScaling: false,
+    autoThresholdEnabled: false,
+    autoThresholdQuantile: 0.995,
+  });
   emit("apply");
 }
 
@@ -440,27 +489,71 @@ const normalizationHelpId = computed(() =>
     : undefined
 );
 
+type ChoiceAttempt = {
+  manager: ContactMapManager;
+  context: import("@/app/core/visualization/visualizationDrafts").VisualizationContext;
+  current: () => boolean;
+};
+const choiceGenerations = new Map<string, number>();
+let vectorGeneration = 0;
+let statusGeneration = 0;
+function beginChoice(next: NormalizationChoice): ChoiceAttempt | undefined {
+  const manager = props.mapManager;
+  if (!manager || manager.isDisposed) return;
+  const context = manager.visualizationManager.captureVisualizationContext();
+  const key = JSON.stringify([
+    context.source,
+    context.targetId,
+    context.source === "PRIMARY" ? context.mode : "OBSERVED",
+  ]);
+  const generation = (choiceGenerations.get(key) ?? 0) + 1;
+  choiceGenerations.set(key, generation);
+  if (next !== "none") ++vectorGeneration;
+  const vectors = vectorGeneration;
+  return {
+    manager,
+    context,
+    current: () =>
+      !disposed &&
+      !manager.isDisposed &&
+      props.mapManager?.getMap() === manager.getMap() &&
+      choiceGenerations.get(key) === generation &&
+      (next === "none" || vectors === vectorGeneration),
+  };
+}
+
 const requests = () => props.mapManager?.networkManager.requestManager;
 
 async function refreshStatus(): Promise<void> {
-  const rm = requests();
+  const manager = props.mapManager;
+  const generation = ++statusGeneration;
+  const rm = manager?.networkManager.requestManager;
   if (!rm) {
     status.value = null;
     return;
   }
   try {
-    status.value = await rm.coverageNormalizationStatus();
+    const response = await rm.coverageNormalizationStatus();
+    if (
+      generation !== statusGeneration ||
+      manager?.getMap() !== props.mapManager?.getMap()
+    )
+      return;
+    status.value = response;
     if (status.value.state === "RUNNING" && !preparing.value)
       void waitForPreparation(false);
   } catch (error) {
     console.debug("Normalization status unavailable", error);
-    status.value = null;
+    if (generation === statusGeneration) status.value = null;
   }
 }
 
 /** Follows the background job until it ends. Returns true when the vectors are ready. */
-async function waitForPreparation(start: boolean): Promise<boolean> {
-  const rm = requests();
+async function waitForPreparation(
+  start: boolean,
+  attempt?: ChoiceAttempt
+): Promise<boolean> {
+  const rm = attempt?.manager.networkManager.requestManager ?? requests();
   if (!rm) return false;
   preparing.value = true;
   prepareError.value = "";
@@ -468,12 +561,17 @@ async function waitForPreparation(start: boolean): Promise<boolean> {
     const outcome = await prepareCoverage(
       rm,
       (current) => {
+        if (attempt && !attempt.current()) return;
         status.value = current;
         prepareProgress.value = current.progress;
         prepareMessage.value = current.message || "Preparing";
       },
-      { start, shouldStop: () => disposed }
+      {
+        start,
+        shouldStop: () => disposed || Boolean(attempt && !attempt.current()),
+      }
     );
+    if (attempt && !attempt.current()) return false;
     if (!outcome.ok && !outcome.cancelled) prepareError.value = outcome.message;
     return outcome.ok;
   } finally {
@@ -489,11 +587,16 @@ async function cancelPreparation(): Promise<void> {
   }
 }
 
-async function switchWeights(mode: "FILE" | "SQRT_COVERAGE"): Promise<boolean> {
-  const rm = requests();
+async function switchWeights(
+  mode: "FILE" | "SQRT_COVERAGE",
+  attempt: ChoiceAttempt
+): Promise<boolean> {
+  if (!attempt.current()) return false;
+  const rm = attempt.manager.networkManager.requestManager;
   if (!rm) return false;
   try {
     await rm.selectNormalizationWeights(mode);
+    if (!attempt.current()) return false;
     await refreshStatus();
     return true;
   } catch (error) {
@@ -509,9 +612,12 @@ async function switchWeights(mode: "FILE" | "SQRT_COVERAGE"): Promise<boolean> {
  * range together. A change of normalization changes the scale of the values, so the range is refitted;
  * keeping the old one would leave the map blank or saturated.
  */
-async function applyChoice(useWeights: boolean): Promise<void> {
-  const manager = props.mapManager;
-  if (!manager) return;
+async function applyChoice(
+  useWeights: boolean,
+  attempt: ChoiceAttempt
+): Promise<void> {
+  if (!attempt.current()) return;
+  const manager = attempt.manager;
   const policy: CoolerWeightsNaNPolicy = !useWeights
     ? "DISABLE_WEIGHTS"
     : coolerWeightsNaNPolicy.value === "DISABLE_WEIGHTS"
@@ -520,32 +626,37 @@ async function applyChoice(useWeights: boolean): Promise<void> {
   try {
     await manager.visualizationManager.applyCoolerWeightsPolicy(
       policy,
-      useWeights
+      useWeights,
+      attempt.context
     );
   } catch (error) {
     console.debug("Applying the normalization failed", error);
-    prepareError.value = "The normalization could not be applied.";
+    if (attempt.current())
+      prepareError.value = "The normalization could not be applied.";
   }
 }
 
-async function useCoverage(): Promise<void> {
-  if (!(await waitForPreparation(true))) return;
-  if (!(await switchWeights("SQRT_COVERAGE"))) return;
-  await applyChoice(true);
+async function useCoverage(attempt: ChoiceAttempt): Promise<void> {
+  if (!(await waitForPreparation(true, attempt)) || !attempt.current()) return;
+  if (!(await switchWeights("SQRT_COVERAGE", attempt))) return;
+  await applyChoice(true, attempt);
 }
 
 async function onChoose(value: string): Promise<void> {
   prepareError.value = "";
   const next = value as NormalizationChoice;
   if (next === choice.value) return;
+  const attempt = beginChoice(next);
+  if (!attempt) return;
   if (next === "none") {
-    await applyChoice(false);
+    await applyChoice(false, attempt);
   } else if (next === "file") {
-    if (!(await switchWeights("FILE"))) return;
-    await applyChoice(true);
+    if (!(await switchWeights("FILE", attempt))) return;
+    await applyChoice(true, attempt);
   } else {
-    await useCoverage();
+    await useCoverage(attempt);
   }
+  if (!attempt.current()) return;
   // A refused or cancelled change leaves the control showing what is really in use.
   const element = document.getElementById(
     "normalization-mode"
@@ -555,13 +666,18 @@ async function onChoose(value: string): Promise<void> {
 
 async function reapplyCoverage(): Promise<void> {
   toast.message("Preparing square-root coverage for the attached source…");
-  await useCoverage();
+  const attempt = beginChoice("sqrt");
+  if (attempt) await useCoverage(attempt);
 }
 
 onMounted(() => void refreshStatus());
 watch(
   () => props.mapManager,
-  () => void refreshStatus()
+  () => {
+    choiceGenerations.clear();
+    ++vectorGeneration;
+    void refreshStatus();
+  }
 );
 onBeforeUnmount(() => {
   disposed = true;
@@ -574,6 +690,7 @@ function openRenderingPipeline(): void {
 
 <style scoped>
 .signal-processing {
+  min-width: 0;
   margin: 0.5rem 0 0.75rem;
   font-size: 0.875rem;
   display: flex;
@@ -581,8 +698,20 @@ function openRenderingPipeline(): void {
   gap: 0.4rem;
 }
 
+.coverage-explanation {
+  color: var(--hict-ui-muted, #64748b);
+  overflow-wrap: anywhere;
+}
+.coverage-explanation summary {
+  cursor: pointer;
+}
+.coverage-formula {
+  white-space: nowrap;
+}
+
 .signal-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
@@ -634,6 +763,7 @@ function openRenderingPipeline(): void {
 
 .base-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
@@ -646,11 +776,15 @@ function openRenderingPipeline(): void {
 
 .scaling-select {
   width: 11rem;
+  flex: 1 1 11rem;
+  min-width: 0;
   max-width: 100%;
 }
 
 .normalization-select {
   width: 13rem;
+  flex: 1 1 13rem;
+  min-width: 0;
   max-width: 100%;
 }
 

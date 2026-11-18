@@ -52,6 +52,8 @@
       <button
         v-if="props.mapManager"
         type="button"
+        ref="layersToggle"
+        aria-label="Borders and labels"
         class="layers-block-toggle"
         :aria-expanded="layersBlockExpanded"
         aria-controls="layers-block"
@@ -345,7 +347,15 @@ import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import AssemblyHistory from "../AssemblyHistory.vue";
 import LayerComponent from "@/app/ui/components/sidebar/LayerComponent.vue";
 import SavedLocations from "@/app/ui/components/sidebar/SavedLocations.vue";
-import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+  type Ref,
+} from "vue";
 import { CommonEventManager } from "@/app/core/mapmanagers/CommonEventManager";
 import { BorderStyle, NamePlacement } from "@/app/core/tracks/Track2DSymmetric";
 import Style from "ol/style/Style";
@@ -386,6 +396,19 @@ function writeLayoutFlag(key: string, value: boolean): void {
 }
 // New users on a narrow window start with the panel hidden so the map has the room. A choice made
 // once is remembered and wins.
+const layersToggle = ref<HTMLButtonElement | null>(null);
+async function showMapLayers(): Promise<void> {
+  sidebarCollapsed.value = false;
+  layersBlockExpanded.value = true;
+  writeLayoutFlag("hict.sidebar.collapsed", false);
+  writeLayoutFlag("hict.sidebar.layersExpanded", true);
+  await nextTick();
+  layersToggle.value?.focus();
+}
+onMounted(() => window.addEventListener("hict:show-map-layers", showMapLayers));
+onUnmounted(() =>
+  window.removeEventListener("hict:show-map-layers", showMapLayers)
+);
 const sidebarCollapsed = ref(
   readLayoutFlag("hict.sidebar.collapsed", window.innerWidth < 900)
 );
@@ -1013,7 +1036,7 @@ function selectVisualizationSource(source: "PRIMARY" | "SECONDARY"): void {
   top: 6px;
   left: -1px;
   z-index: 5;
-  width: 22px;
+  width: 24px;
   height: 40px;
   padding: 0;
   border: 1px solid #94a3b8;

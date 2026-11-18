@@ -69,6 +69,23 @@
         </label>
       </div>
 
+      <label v-if="observedExpectedPalette" class="oe-palette-preset">
+        O/E palette
+        <select
+          class="form-select form-select-sm"
+          :value="oePalettePresetId(fromColor.HEXA, toColor.HEXA)"
+          @change="chooseOePalette(($event.target as HTMLSelectElement).value)"
+        >
+          <option
+            v-for="preset in OE_PALETTE_PRESETS"
+            :key="preset.id"
+            :value="preset.id"
+          >
+            {{ preset.label }}
+          </option>
+          <option value="custom" disabled>Custom colors</option>
+        </select>
+      </label>
       <SignalRangeControl
         :min="sliderPositionMin"
         :max="sliderPositionMax"
@@ -78,10 +95,74 @@
         :upper-text="formatSignal(upperBound)"
         :lower-color="fromColor.RGBA"
         :upper-color="toColor.RGBA"
+        :neutral="observedExpectedPalette ? toSliderPosition(1) : undefined"
+        :midpoint="midpointPosition"
+        :midpoint-text="formatSignal(midpointSignal) + ' signal; half color'"
+        :gradient="colorRailGradient"
+        @adjustment-start="keepAdjustmentLimits"
         @lower="onLowerRangeInput"
         @upper="onUpperRangeInput"
-      />
+        @midpoint="onMidpointInput"
+      >
+        <template #histogram>
+          <ViewportSignalHistogram
+            :manager="mapManager"
+            :source="activeVisualizationSource"
+            :expression="activeRangeExpression"
+            :derived="
+              activeVisualizationSource === 'PRIMARY' &&
+              visualizationOptionsStore.signalDisplayMode !== 'OBSERVED'
+            "
+            :oe="observedExpectedPalette"
+            :context="histogramContext"
+            :min="sliderPositionMin"
+            :max="sliderPositionMax"
+            :lower="lowerSliderValue"
+            :upper="upperSliderValue"
+            :position="toHistogramPosition"
+            @levels="fitViewportLevels"
+          />
+        </template>
+      </SignalRangeControl>
+      <p
+        v-if="visualizationOptionsStore.pendingVisualizationMutations"
+        class="range-help mb-0"
+        role="status"
+      >
+        Applying visualization changes…
+      </p>
+      <p
+        v-else-if="visualizationOptionsStore.visualizationDraftState"
+        class="range-help mb-0"
+        role="status"
+      >
+        {{
+          visualizationOptionsStore.visualizationDraftState === "scheduled"
+            ? "Preview pending…"
+            : "Changes pending. Apply to retry."
+        }}
+      </p>
+      <p
+        v-if="rangeValidationError"
+        class="small text-danger mb-0"
+        role="alert"
+      >
+        {{ rangeValidationError }}
+      </p>
+      <p v-if="observedExpectedPalette" class="range-help mb-0">
+        O/E: lower color is depleted, white is 1, upper color is enriched.
+        Limits must satisfy 0 &lt; lower &lt; 1 &lt; upper.
+      </p>
       <div class="range-actions">
+        <button
+          v-if="midpointPosition !== undefined && colorGamma !== 1"
+          type="button"
+          class="range-text-button"
+          @click="setColorGamma(1)"
+          title="Restore a linear color transition without changing thresholds"
+        >
+          Reset midpoint
+        </button>
         <div class="scale-group">
           <span id="slider-scale-label" class="scale-caption"
             >Slider scale</span
@@ -147,6 +228,7 @@
           /></label>
         </div>
         <button
+          v-if="!primaryDerivedSignal"
           type="button"
           class="range-text-button"
           title="Use the exact minimum and maximum of the loaded tiles, including rare extreme pixels"
@@ -161,13 +243,27 @@
           v-if="!percentageSignalScale"
           type="button"
           class="range-text-button"
+          :disabled="rangeScanning"
           @click="fetchExactRange"
         >
           Scan whole map
         </button>
+        <button
+          v-if="rangeScanning"
+          type="button"
+          class="range-text-button"
+          @click="cancelExactRange"
+        >
+          Cancel scan
+        </button>
         <span v-if="!percentageSignalScale" class="range-help">
           · Reads all tiles; may take time.</span
         >
+        <p v-if="primaryDerivedSignal" class="range-help">
+          Whole-map Expected/O/E limits use a profile fitted across this
+          resolution, independently of the viewport profile. Scanning changes
+          slider limits only.
+        </p>
       </details>
       <p
         v-if="applyCoolerWeights && coolerWeightsHaveNaNs"
@@ -244,9 +340,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, Ref, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  Ref,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  watch,
+} from "vue";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import SignalRangeControl from "./SignalRangeControl.vue";
+import ViewportSignalHistogram from "./ViewportSignalHistogram.vue";
+import {
+  OE_PALETTE_PRESETS,
+  oePalettePresetId,
+} from "@/app/core/visualization/oePalette";
 import NormalizationSelector from "../upper_ribbon/NormalizationSelector.vue";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import { toast } from "vue-sonner";
@@ -254,6 +363,11 @@ import { reportFailure } from "@/app/ui/reportFailure";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { storeToRefs } from "pinia";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
+import {
+  midpointFraction,
+  gammaFromMidpoint,
+  colorFraction,
+} from "@/app/core/visualization/colorMidpoint";
 import { ColorTranslator } from "colortranslator";
 import type { CurrentSignalRangeResponse } from "@/app/core/net/api/response";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
@@ -285,6 +399,25 @@ const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
 
+const activePaletteMode = ref("LINEAR");
+const primaryDerivedSignal = computed(
+  () =>
+    activeVisualizationSource.value === "PRIMARY" &&
+    visualizationOptionsStore.signalDisplayMode !== "OBSERVED"
+);
+const observedExpectedPalette = computed(
+  () =>
+    (activeVisualizationSource.value === "PRIMARY" &&
+      visualizationOptionsStore.signalDisplayMode ===
+        "OBSERVED_OVER_EXPECTED") ||
+    activePaletteMode.value === "OBSERVED_OVER_EXPECTED"
+);
+function chooseOePalette(id: string): void {
+  const preset = OE_PALETTE_PRESETS.find((p) => p.id === id);
+  if (!preset) return;
+  fromColor.value = new ColorTranslator(preset.startColor, { legacyCSS: true });
+  toColor.value = new ColorTranslator(preset.endColor, { legacyCSS: true });
+}
 const signalMin: Ref<number> = ref(0);
 const signalMax: Ref<number> = ref(1);
 const fromColor: Ref<ColorTranslator> = ref(
@@ -295,6 +428,18 @@ const toColor = ref(
 ) as Ref<ColorTranslator>;
 const lowerBound: Ref<number> = ref(signalMin.value);
 const upperBound: Ref<number> = ref(signalMax.value);
+const rangeValidationError = computed(() => {
+  if (!Number.isFinite(lowerBound.value) || !Number.isFinite(upperBound.value))
+    return "Enter finite lower and upper thresholds.";
+  if (!(upperBound.value > lowerBound.value))
+    return "Lower must be below Upper. The last applied range is unchanged.";
+  if (
+    observedExpectedPalette.value &&
+    !(lowerBound.value > 0 && lowerBound.value < 1 && upperBound.value > 1)
+  )
+    return "O/E limits must satisfy 0 < lower < 1 < upper.";
+  return "";
+});
 const sliderLowerLimit: Ref<number> = ref(0);
 const sliderUpperLimit: Ref<number> = ref(1);
 const sliderBoundsManual: Ref<boolean> = ref(false);
@@ -303,20 +448,41 @@ const syncingFromColormap: Ref<boolean> = ref(false);
 const liveApplyReady: Ref<boolean> = ref(false);
 const percentageSignalScale: Ref<boolean> = ref(false);
 let registeredRangeMapManager: ContactMapManager | undefined;
-let liveApplyTimer: number | undefined;
 let optionsHydrationGeneration = 0;
 let rangeController: AbortController | undefined;
-let rangeRequestKey = "";
+let exactRangeResolution: number | undefined;
 let rangeTimer: number | undefined;
 let rangeGeneration = 0;
 let rangeProbe = 0;
 const rangeStatus = ref("Waiting for visible tile limits");
-let activeRangeExpression: Record<string, unknown> | undefined;
+const rangeScanning = ref(false);
+const activeRangeExpression = shallowRef<Record<string, unknown>>();
+const histogramContext = computed(() =>
+  JSON.stringify([
+    activeRangeExpression.value,
+    activeVisualizationSource.value,
+    activeVisualizationTargetId.value,
+    visualizationOptionsStore.signalDisplayMode,
+    preLogBase.value,
+    postLogBase.value,
+    applyCoolerWeights.value,
+    visualizationOptionsStore.resolutionScaling,
+    visualizationOptionsStore.resolutionLinearScaling,
+    coolerWeightsNaNPolicy.value,
+  ])
+);
+function fitViewportLevels(lower: number, upper: number): void {
+  lowerBound.value = lower;
+  upperBound.value = upper;
+  sliderBoundsManual.value = true;
+  sliderLowerLimit.value = lower;
+  sliderUpperLimit.value = upper;
+}
+let rangeDomainContext = "";
 let rangeMap: ContactMapManager | undefined;
 const onViewportRangeChanged = () => refreshProcessedRange();
 const rangeCache = new Map<string, ExactRange>();
 const LOG_SLIDER_FLOOR_FRACTION = 1e-10;
-const LIVE_APPLY_DELAY_MS = 350;
 
 const fromColorFn: Ref<() => ColorTranslator> = ref(
   () => fromColor.value
@@ -367,6 +533,74 @@ const sliderPositionMin = computed(() => toSliderPosition(sliderMin.value));
 const sliderPositionMax = computed(() => toSliderPosition(sliderMax.value));
 const lowerSliderValue = computed(() => toSliderPosition(lowerBound.value));
 const upperSliderValue = computed(() => toSliderPosition(upperBound.value));
+const colorGamma = computed(() =>
+  colormap.value instanceof SimpleLinearGradient ? colormap.value.gamma : 1
+);
+const midpointSignal = computed(
+  () =>
+    lowerBound.value +
+    (upperBound.value - lowerBound.value) * midpointFraction(colorGamma.value)
+);
+const midpointPosition = computed(() =>
+  !observedExpectedPalette.value &&
+  !percentageSignalScale.value &&
+  upperBound.value > lowerBound.value
+    ? toSliderPosition(midpointSignal.value)
+    : undefined
+);
+function setColorGamma(gamma: number): void {
+  const current = colormap.value;
+  if (!(current instanceof SimpleLinearGradient)) return;
+  colormap.value = new SimpleLinearGradient(
+    current.startColorRGBA,
+    current.endColorRGBA,
+    current.minSignal,
+    current.maxSignal,
+    gamma
+  );
+  props.mapManager?.visualizationManager.noteVisualizationDraft({ gamma });
+}
+function onMidpointInput(position: number): void {
+  if (midpointPosition.value === undefined) return;
+  setColorGamma(
+    gammaFromMidpoint(
+      (fromSliderPosition(position) - lowerBound.value) /
+        (upperBound.value - lowerBound.value)
+    )
+  );
+}
+const colorRailGradient = computed(() => {
+  if (observedExpectedPalette.value || !(upperBound.value > lowerBound.value))
+    return undefined;
+  const start = fromColor.value,
+    end = toColor.value;
+  const stops = Array.from({ length: 33 }, (_, index) => {
+    const offset = index / 32;
+    const value = fromSliderPosition(
+      lowerSliderValue.value +
+        offset * (upperSliderValue.value - lowerSliderValue.value)
+    );
+    const mix = colorFraction(
+      (value - lowerBound.value) / (upperBound.value - lowerBound.value),
+      colorGamma.value
+    );
+    const channels = [start.R, start.G, start.B, start.A].map(
+      (value, index) =>
+        value + ([end.R, end.G, end.B, end.A][index] - value) * mix
+    );
+    return `rgba(${channels.join(",")}) ${offset * 100}%`;
+  });
+  return `linear-gradient(90deg, ${stops.join(",")})`;
+});
+// Capture both ends before either threshold changes. Otherwise an outlying selected
+// threshold can drag the computed domain along with it on every pointer move.
+function keepAdjustmentLimits() {
+  const min = sliderMin.value,
+    max = sliderMax.value;
+  sliderBoundsManual.value = true;
+  sliderLowerLimit.value = min;
+  sliderUpperLimit.value = max;
+}
 function focusThresholds() {
   if (!(upperBound.value > lowerBound.value)) return;
   sliderBoundsManual.value = true;
@@ -374,6 +608,8 @@ function focusThresholds() {
   sliderUpperLimit.value = upperBound.value;
 }
 function useLoadedRange() {
+  exactRangeResolution = undefined;
+  fetchProcessedRange();
   sliderBoundsManual.value = false;
   sliderLowerLimit.value = signalMin.value;
   sliderUpperLimit.value =
@@ -389,9 +625,13 @@ watch(
   },
   () => {
     if (colormap.value instanceof SimpleLinearGradient) {
-      syncingFromColormap.value = true;
-      // console.log("Colormap type changed and simple linear gradient, was: ", fromColor.value, toColor.value);
       const cmap = colormap.value as SimpleLinearGradient;
+      if (
+        fromColor.value?.RGBA === cmap.startColorRGBA?.RGBA &&
+        toColor.value?.RGBA === cmap.endColorRGBA?.RGBA
+      )
+        return;
+      syncingFromColormap.value = true;
       if (fromColor.value?.RGBA !== cmap.startColorRGBA?.RGBA) {
         fromColor.value = cmap.startColorRGBA;
       }
@@ -413,8 +653,13 @@ watch(
   () => colormap.value,
   () => {
     if (colormap.value instanceof SimpleLinearGradient) {
-      syncingFromColormap.value = true;
       const cmap = colormap.value as SimpleLinearGradient;
+      if (
+        lowerBound.value === cmap.minSignal &&
+        upperBound.value === cmap.maxSignal
+      )
+        return;
+      syncingFromColormap.value = true;
       if (lowerBound.value !== cmap.minSignal) {
         lowerBound.value = cmap.minSignal;
       }
@@ -430,12 +675,7 @@ watch(
 );
 
 watch(
-  () => [
-    fromColor.value,
-    toColor.value,
-    lowerBound.value,
-    upperBound.value,
-  ],
+  () => [fromColor.value, toColor.value, lowerBound.value, upperBound.value],
   () => {
     if (syncingFromColormap.value) {
       return;
@@ -458,7 +698,8 @@ watch(
         fromColor.value,
         toColor.value,
         nextMin,
-        nextMax
+        nextMax,
+        existing instanceof SimpleLinearGradient ? existing.gamma : 1
       );
     }
     // console.log("UpperBound", upperBound.value);
@@ -472,8 +713,21 @@ watch(
     lowerBound.value,
     upperBound.value,
   ],
-  () => {
-    scheduleLiveApply();
+  (next, previous) => {
+    if (syncingFromColormap.value) return;
+    const patch: import("@/app/core/visualization/visualizationDrafts").VisualizationDraft =
+      {};
+    if (next[0] !== previous[0]) patch.startColor = fromColor.value.HEXA;
+    if (next[1] !== previous[1]) patch.endColor = toColor.value.HEXA;
+    if (next[2] !== previous[2]) patch.minSignal = lowerBound.value;
+    if (next[3] !== previous[3]) patch.maxSignal = upperBound.value;
+    const valid =
+      Number.isFinite(lowerBound.value) &&
+      Number.isFinite(upperBound.value) &&
+      upperBound.value > lowerBound.value &&
+      (!observedExpectedPalette.value ||
+        (lowerBound.value > 0 && lowerBound.value < 1 && upperBound.value > 1));
+    props.mapManager?.visualizationManager.noteVisualizationDraft(patch, valid);
   }
 );
 
@@ -517,10 +771,6 @@ onBeforeUnmount(() => {
   ++rangeProbe;
   window.clearTimeout(rangeTimer);
   rangeController?.abort();
-  if (liveApplyTimer !== undefined) {
-    window.clearTimeout(liveApplyTimer);
-    liveApplyTimer = undefined;
-  }
 });
 
 function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
@@ -537,16 +787,12 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
   ++rangeProbe;
   ++rangeGeneration;
   rangeController?.abort();
-  rangeRequestKey = "";
+  rangeScanning.value = false;
+  exactRangeResolution = undefined;
   rangeStatus.value = "Waiting for visible tile limits";
-  activeRangeExpression = undefined;
+  activeRangeExpression.value = undefined;
   const generation = ++optionsHydrationGeneration;
-  liveApplyReady.value = false;
   percentageSignalScale.value = false;
-  if (liveApplyTimer !== undefined) {
-    window.clearTimeout(liveApplyTimer);
-    liveApplyTimer = undefined;
-  }
   try {
     await manager.visualizationManager.loadVisualizationOptionsForSource(
       activeSourceForOptions(),
@@ -563,24 +809,36 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
       sourceTargets.find(
         (target) => target.id === activeVisualizationTargetId.value
       ) ?? sourceTargets[0];
-    percentageSignalScale.value = activeTarget?.displayUnit === "PERCENT";
-    activeRangeExpression =
+    activePaletteMode.value = primaryDerivedSignal.value
+      ? "LINEAR"
+      : activeTarget?.mode ?? "LINEAR";
+    percentageSignalScale.value =
+      !primaryDerivedSignal.value && activeTarget?.displayUnit === "PERCENT";
+    activeRangeExpression.value =
       await manager.visualizationManager.getSourceSignalExpression(
         activeVisualizationSource.value,
         activeVisualizationTargetId.value
       );
     if (generation !== optionsHydrationGeneration || manager.isDisposed) return;
+    const domainContext = JSON.stringify([
+      activeVisualizationSource.value,
+      activeVisualizationTargetId.value,
+      activeVisualizationSource.value === "PRIMARY"
+        ? visualizationOptionsStore.signalDisplayMode
+        : "OBSERVED",
+      activeTarget?.mode ?? "LINEAR",
+    ]);
+    if (domainContext !== rangeDomainContext) {
+      rangeDomainContext = domainContext;
+      sliderBoundsManual.value = false;
+      sliderLowerLimit.value = lowerBound.value;
+      sliderUpperLimit.value = upperBound.value;
+    }
     updateFromStore();
-    rangeRequestKey = "";
+    exactRangeResolution = undefined;
     void refreshProcessedRange();
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
-    if (generation === optionsHydrationGeneration && !manager.isDisposed) {
-      liveApplyReady.value = true;
-    }
   } catch {
-    if (generation === optionsHydrationGeneration) {
-      liveApplyReady.value = true;
-    }
+    // Keep the current draft when a source/graph refresh is temporarily unavailable.
   }
 }
 
@@ -629,16 +887,28 @@ function refreshProcessedRange(): void {
 
 function fetchProcessedRange(): void {
   const manager = props.mapManager;
+  if (rangeScanning.value) return;
+  if (exactRangeResolution !== undefined) {
+    if (
+      exactRangeResolution ===
+      manager?.viewAndLayersManager.currentViewState.resolutionDesciptor
+        .bpResolution
+    )
+      return;
+    exactRangeResolution = undefined;
+    rangeStatus.value = "Resolution changed; scan again for exact limits";
+  }
+  if (primaryDerivedSignal.value) return;
   if (
     !manager ||
     manager.isDisposed ||
     percentageSignalScale.value ||
-    !activeRangeExpression
+    !activeRangeExpression.value
   )
     return;
   const range = manager.viewAndLayersManager.loadedViewportSignalRange(
     activeVisualizationSource.value,
-    activeRangeExpression
+    activeRangeExpression.value
   );
   if (
     !range ||
@@ -671,43 +941,65 @@ function fetchProcessedRange(): void {
   )}`;
 }
 
+function cancelExactRange(): void {
+  ++rangeProbe;
+  ++rangeGeneration;
+  rangeController?.abort();
+  rangeScanning.value = false;
+  exactRangeResolution = undefined;
+  rangeStatus.value = "Scan cancelled; previous bounds retained";
+}
+
+watch(histogramContext, () => {
+  exactRangeResolution = undefined;
+  if (rangeScanning.value) cancelExactRange();
+});
+
 async function fetchExactRange(): Promise<void> {
   const manager = props.mapManager;
-  const probe = ++rangeProbe;
-  if (!manager || manager.isDisposed || percentageSignalScale.value) {
-    ++rangeGeneration;
-    rangeController?.abort();
-    rangeRequestKey = "";
-    return;
-  }
-  let generation: number | undefined;
+  if (!manager || manager.isDisposed || percentageSignalScale.value) return;
+  const probe = ++rangeProbe,
+    generation = ++rangeGeneration;
+  rangeController?.abort();
+  const controller = new AbortController();
+  rangeController = controller;
+  rangeScanning.value = true;
+  rangeStatus.value = primaryDerivedSignal.value
+    ? "Preparing whole-map expected profile and exact limits…"
+    : "Preparing exact limits…";
   try {
+    await manager.visualizationManager.waitForPendingOptionRequests();
+    if (controller.signal.aborted || probe !== rangeProbe || manager.isDisposed)
+      return;
     const bpResolution =
       manager.viewAndLayersManager.currentViewState.resolutionDesciptor
         .bpResolution;
-    const expression =
-      await manager.visualizationManager.getSourceSignalExpression(
-        activeVisualizationSource.value,
-        activeVisualizationTargetId.value
-      );
+    const derived = primaryDerivedSignal.value;
+    const signalMode = derived ? "TRADITIONAL_NORMALIZED" : "PIPELINE_SIGNAL";
+    const expression = derived
+      ? undefined
+      : await manager.visualizationManager.getSourceSignalExpression(
+          activeVisualizationSource.value,
+          activeVisualizationTargetId.value
+        );
+    const displayMode = visualizationOptionsStore.signalDisplayMode;
     const api = manager.networkManager.requestManager;
     const snapshot = await api.querySignalStatistics({
       bpResolution,
+      signalMode,
       metadataOnly: true,
+      signal: controller.signal,
     });
-    if (probe !== rangeProbe || manager.isDisposed) return;
+    if (controller.signal.aborted || probe !== rangeProbe || manager.isDisposed)
+      return;
     const key = JSON.stringify([
       bpResolution,
+      signalMode,
       expression,
+      displayMode,
       snapshot.revision,
       snapshot.size,
     ]);
-    if (key === rangeRequestKey) return;
-    generation = ++rangeGeneration;
-    rangeController?.abort();
-    const controller = new AbortController();
-    rangeController = controller;
-    rangeRequestKey = key;
     const range =
       rangeCache.get(key) ??
       (await scanExactSignalRange(
@@ -721,7 +1013,8 @@ async function fetchExactRange(): Promise<void> {
             controller.abort();
           return api.querySignalStatistics({
             bpResolution,
-            expression,
+            signalMode,
+            ...(expression ? { expression } : {}),
             revision: snapshot.revision,
             startRowPx,
             startColPx,
@@ -730,10 +1023,11 @@ async function fetchExactRange(): Promise<void> {
         },
         controller.signal,
         (completed, total) => {
-          rangeStatus.value = `Exact limits: ${(
-            (100 * completed) /
-            total
-          ).toFixed(1)}% (${completed}/${total} blocks)`;
+          if (generation === rangeGeneration && !controller.signal.aborted)
+            rangeStatus.value = `Exact limits: ${(
+              (100 * completed) /
+              total
+            ).toFixed(1)}% (${completed}/${total} blocks)`;
         }
       ));
     if (controller.signal.aborted || generation !== rangeGeneration) return;
@@ -741,31 +1035,34 @@ async function fetchExactRange(): Promise<void> {
     const oldestKey = rangeCache.keys().next().value;
     if (rangeCache.size > 8 && oldestKey !== undefined)
       rangeCache.delete(oldestKey);
+    exactRangeResolution = bpResolution;
     signalMin.value = range.min;
     signalMax.value = range.max > range.min ? range.max : range.min + 1;
-    if (!sliderBoundsManual.value) {
-      sliderLowerLimit.value = signalMin.value;
-      sliderUpperLimit.value = signalMax.value;
-    }
-    rangeStatus.value = `Exact limits: ${formatSignal(
-      range.min
-    )} - ${formatSignal(range.max)}`;
+    // Whole-map limits are an explicit user choice and must outlive viewport tile refreshes.
+    sliderBoundsManual.value = true;
+    sliderLowerLimit.value = signalMin.value;
+    sliderUpperLimit.value = signalMax.value;
+    rangeStatus.value = `Exact limits${
+      derived
+        ? " (whole-map " +
+          displayMode
+            .replace("OBSERVED_OVER_EXPECTED", "O/E")
+            .replace("EXPECTED", "Expected") +
+          ")"
+        : ""
+    }: ${formatSignal(range.min)} – ${formatSignal(range.max)} (${
+      range.count
+    } finite cells)`;
   } catch (error) {
-    if (
-      (generation === undefined
-        ? probe !== rangeProbe
-        : generation !== rangeGeneration) ||
-      manager.isDisposed
-    )
-      return;
-    rangeRequestKey = "";
-    rangeStatus.value = "Exact limits unavailable; previous bounds retained";
-    if (
-      (error as { response?: { status?: number } })?.response?.status === 409
-    ) {
-      rangeStatus.value = "Exact limits pending";
-      refreshProcessedRange();
-    }
+    if (generation !== rangeGeneration || manager.isDisposed) return;
+    exactRangeResolution = undefined;
+    rangeStatus.value = controller.signal.aborted
+      ? "Scan cancelled; previous bounds retained"
+      : "Exact limits unavailable; previous bounds retained";
+    if ((error as { response?: { status?: number } })?.response?.status === 409)
+      rangeStatus.value = "Map changed; scan again for exact limits";
+  } finally {
+    if (generation === rangeGeneration) rangeScanning.value = false;
   }
 }
 
@@ -802,13 +1099,18 @@ function updateFromStore() {
 }
 
 function applySettings() {
-  if (liveApplyTimer !== undefined) {
-    window.clearTimeout(liveApplyTimer);
-    liveApplyTimer = undefined;
-  }
   if (!(upperBound.value > lowerBound.value)) {
     toast.error(
       "Signal range must be positive: lower threshold must be below upper threshold."
+    );
+    return;
+  }
+  if (
+    observedExpectedPalette.value &&
+    !(lowerBound.value > 0 && lowerBound.value < 1 && upperBound.value > 1)
+  ) {
+    toast.error(
+      "O/E limits must straddle neutral 1: choose 0 < lower < 1 < upper."
     );
     return;
   }
@@ -839,19 +1141,6 @@ function onCoolerWeightsNaNPolicyChanged(): void {
     });
 }
 
-function scheduleLiveApply(): void {
-  if (!liveApplyReady.value || syncingFromColormap.value) {
-    return;
-  }
-  if (liveApplyTimer !== undefined) {
-    window.clearTimeout(liveApplyTimer);
-  }
-  liveApplyTimer = window.setTimeout(() => {
-    liveApplyTimer = undefined;
-    applySettings();
-  }, LIVE_APPLY_DELAY_MS);
-}
-
 function onLowerRangeInput(value: number): void {
   if (!Number.isFinite(value)) {
     return;
@@ -862,7 +1151,12 @@ function onLowerRangeInput(value: number): void {
     Math.abs(sliderMin.value) * Number.EPSILON,
     Math.abs(sliderMax.value) * Number.EPSILON
   );
-  lowerBound.value = Math.min(actual, upperBound.value - minGap);
+  lowerBound.value = observedExpectedPalette.value
+    ? Math.max(
+        Number.EPSILON,
+        Math.min(actual, 1 - Math.max(Number.EPSILON, minGap))
+      )
+    : Math.min(actual, upperBound.value - minGap);
 }
 
 function onUpperRangeInput(value: number): void {
@@ -875,7 +1169,9 @@ function onUpperRangeInput(value: number): void {
     Math.abs(sliderMin.value) * Number.EPSILON,
     Math.abs(sliderMax.value) * Number.EPSILON
   );
-  upperBound.value = Math.max(actual, lowerBound.value + minGap);
+  upperBound.value = observedExpectedPalette.value
+    ? Math.max(actual, 1 + Math.max(Number.EPSILON, minGap))
+    : Math.max(actual, lowerBound.value + minGap);
 }
 
 function onSliderLimitChanged(): void {
@@ -883,6 +1179,12 @@ function onSliderLimitChanged(): void {
   if (!(sliderUpperLimit.value > sliderLowerLimit.value)) {
     sliderUpperLimit.value = sliderLowerLimit.value + 1;
   }
+}
+
+function toHistogramPosition(value: number): number {
+  if (value < sliderMin.value) return sliderPositionMin.value - 1;
+  if (value > sliderMax.value) return sliderPositionMax.value + 1;
+  return toSliderPosition(value);
 }
 
 function toSliderPosition(value: number): number {
@@ -940,8 +1242,16 @@ function formatSignal(value: number): string {
 </script>
 
 <style scoped>
+.oe-palette-preset {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  min-width: 0;
+}
 .threshold-compact-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 10px;
   padding: 14px 12px;
   background: var(--hict-surface-bg, #fff);
@@ -997,6 +1307,7 @@ function formatSignal(value: number): string {
 }
 .range-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;

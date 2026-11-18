@@ -36,7 +36,60 @@ export default class ContigDimensionHolder {
 
   public contigDescriptors: ContigDescriptor[] = [];
   private readonly ensuredResolutions = new Set<number>();
+  private readonly nativeResolutions = new Set<number>();
   private readonly changeListeners = new Set<() => void>();
+  private sourceDescriptors: ContigDescriptor[] = [];
+  private sequenceCoordinates = false;
+  private nativeCoordinates?: ContigDimensionHolder;
+  private sequencePreview?: ContigDimensionHolder;
+
+  public get usesSequenceCoordinates(): boolean {
+    return this.sequenceCoordinates;
+  }
+
+  /** Native matrix axes remain available when the display uses one coordinate per base. */
+  public getNativeCoordinates(): ContigDimensionHolder {
+    return this.nativeCoordinates ?? this;
+  }
+
+  /** Look-ahead zoom guidance must not mutate the current view before its coordinate transition. */
+  public getSequenceCoordinates(): ContigDimensionHolder {
+    if (this.sequenceCoordinates) return this;
+    if (!this.sequencePreview) {
+      this.sequencePreview = markRaw(
+        new ContigDimensionHolder(this.sourceDescriptors)
+      );
+      this.sequencePreview.setSequenceCoordinates(true);
+    }
+    return this.sequencePreview;
+  }
+
+  public setSequenceCoordinates(enabled: boolean): void {
+    if (enabled === this.sequenceCoordinates) return;
+    this.sequenceCoordinates = enabled;
+    this.updateContigData(this.sourceDescriptors);
+  }
+
+  private displayDescriptors(source: ContigDescriptor[]): ContigDescriptor[] {
+    return source.map((descriptor) => {
+      const bins = new Map(descriptor.contigLengthBins);
+      const presence = new Map(descriptor.presenceAtResolution);
+      const offsets = descriptor.contigBinOffsets
+        ? new Map(descriptor.contigBinOffsets)
+        : undefined;
+      if (this.sequenceCoordinates) {
+        bins.set(1, descriptor.contigLengthBp);
+        presence.set(1, ContigHideType.AUTO_SHOWN);
+        offsets?.set(1, 0);
+      }
+      return {
+        ...descriptor,
+        contigLengthBins: bins,
+        presenceAtResolution: presence,
+        contigBinOffsets: offsets,
+      };
+    });
+  }
 
   /** Called after every wholesale replacement of the contig snapshot (edits, undo, restore). */
   public onChange(listener: () => void): () => void {
@@ -50,8 +103,15 @@ export default class ContigDimensionHolder {
     }
   }
 
-  public updateContigData(contigDescriptors: ContigDescriptor[]): void {
+  public updateContigData(source: ContigDescriptor[]): void {
+    this.sourceDescriptors = markRaw(source);
+    this.sequencePreview = undefined;
+    this.nativeCoordinates = this.sequenceCoordinates
+      ? new ContigDimensionHolder(source)
+      : undefined;
+    const contigDescriptors = this.displayDescriptors(source);
     this.ensuredResolutions.clear();
+    this.nativeResolutions.clear();
     // Assembly responses replace this snapshot as a whole. Vue observes the
     // replacement; individual bin counts and prefix-sum cells are model data.
     this.contigDescriptors = markRaw(contigDescriptors);
@@ -65,6 +125,7 @@ export default class ContigDimensionHolder {
     if (contigDescriptors.length > 0) {
       for (const resolution of contigDescriptors[0].contigLengthBins.keys()) {
         this.resolutions.push(resolution);
+        this.nativeResolutions.add(resolution);
       }
     }
 
@@ -426,6 +487,54 @@ export default class ContigDimensionHolder {
     return 0;
   }
 
+  /** Project the retained source-bin interval, clipping it to the fragment. */
+  private fragmentBinStart(
+    order: number,
+    bin: number,
+    resolution: number
+  ): number | undefined {
+    const d = this.contigDescriptors[order];
+    if (!d.contigBinOffsets || !this.nativeResolutions.has(resolution))
+      return undefined;
+    const bins = d.contigLengthBins.get(resolution) ?? 0;
+    if (!bins) return 0;
+    const reversed = d.direction !== ContigDirection.FORWARD;
+    const local = CommonUtils.clamp(Math.floor(bin), 0, bins - 1);
+    const ordinal = reversed ? bins - 1 - local : local;
+    const start =
+      (d.contigBinOffsets.get(resolution) ?? 0) + ordinal * resolution;
+    return CommonUtils.clamp(
+      reversed
+        ? d.contigLengthBp - Math.min(d.contigLengthBp, start + resolution)
+        : start,
+      0,
+      d.contigLengthBp - 1
+    );
+  }
+
+  private fragmentBinContaining(
+    order: number,
+    bp: number,
+    resolution: number
+  ): number | undefined {
+    const d = this.contigDescriptors[order];
+    if (!d.contigBinOffsets || !this.nativeResolutions.has(resolution))
+      return undefined;
+    const bins = d.contigLengthBins.get(resolution) ?? 0;
+    if (!bins) return 0;
+    const reversed = d.direction !== ContigDirection.FORWARD;
+    const local = CommonUtils.clamp(Math.floor(bp), 0, d.contigLengthBp - 1);
+    const source = reversed ? d.contigLengthBp - 1 - local : local;
+    const ordinal = CommonUtils.clamp(
+      Math.floor(
+        (source - (d.contigBinOffsets.get(resolution) ?? 0)) / resolution
+      ),
+      0,
+      bins - 1
+    );
+    return reversed ? bins - 1 - ordinal : ordinal;
+  }
+
   protected getStartBpOfBin_internal(
     bin_id: number,
     resolution: number
@@ -437,6 +546,12 @@ export default class ContigDimensionHolder {
       contig_ord
     ];
     const in_contig_offset_bins = bin_id - contig_start_bins;
+    const fragmentStart = this.fragmentBinStart(
+      contig_ord,
+      in_contig_offset_bins,
+      resolution
+    );
+    if (fragmentStart !== undefined) return contig_start_bp + fragmentStart;
     if (contig_direction !== ContigDirection.FORWARD) {
       const contig_length_bp =
         this.contigDescriptors[contig_ord].contigLengthBp;
@@ -464,6 +579,12 @@ export default class ContigDimensionHolder {
       contig_ord
     ];
     const in_contig_offset_bins = px - contig_start_px;
+    const fragmentStart = this.fragmentBinStart(
+      contig_ord,
+      in_contig_offset_bins,
+      resolution
+    );
+    if (fragmentStart !== undefined) return contig_start_bp + fragmentStart;
     if (contig_direction !== ContigDirection.FORWARD) {
       const contig_length_bp =
         this.contigDescriptors[contig_ord].contigLengthBp;
@@ -554,6 +675,12 @@ export default class ContigDimensionHolder {
 
     const contig_start_bp = this.prefix_sum_bp[contig_ord];
     const in_contig_offset_bp = bp - contig_start_bp;
+    const fragmentBin = this.fragmentBinContaining(
+      contig_ord,
+      in_contig_offset_bp,
+      resolution
+    );
+    if (fragmentBin !== undefined) return contig_start_bins + fragmentBin;
     if (contig_direction !== ContigDirection.FORWARD) {
       const contig_length_bp =
         this.contigDescriptors[contig_ord].contigLengthBp;
@@ -604,6 +731,12 @@ export default class ContigDimensionHolder {
 
     const contig_start_bp = this.prefix_sum_bp[contig_ord];
     const in_contig_offset_bp = bp - contig_start_bp;
+    const fragmentBin = this.fragmentBinContaining(
+      contig_ord,
+      in_contig_offset_bp,
+      resolution
+    );
+    if (fragmentBin !== undefined) return contig_start_px + fragmentBin;
     if (contig_direction !== ContigDirection.FORWARD) {
       const contig_length_bp =
         this.contigDescriptors[contig_ord].contigLengthBp;

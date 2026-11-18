@@ -252,6 +252,9 @@
 </template>
 
 <script setup lang="ts">
+import { prepareFileSave } from "@/app/core/export/FileSave";
+import { notifyFileSave } from "@/app/ui/fileSaveNotice";
+import { saveFileWithNotice } from "@/app/ui/fileSaveNotice";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import SavedLocationElement from "./SavedLocationElement.vue";
 import { computed, Ref, ref, watch, onMounted, onBeforeUnmount } from "vue";
@@ -279,6 +282,9 @@ const savedLocations: Ref<
       location_id: number;
       name?: string;
       center_point: Coordinate | undefined;
+      centerBp?: number[];
+      displayGrid?: string;
+      bpResolution?: number;
       resolution: number | undefined;
       rotation: number | undefined;
     }
@@ -390,10 +396,14 @@ function saveLocation() {
   const map = props.mapManager;
   const view = map?.getView();
   if (props.mapManager && map && view) {
+    const position = map.viewAndLayersManager.captureViewPosition();
     savedLocations.value.set(locationCount.value, {
       location_id: locationCount.value,
       name: `${locationCount.value} unnamed location`,
       center_point: view.getCenter(),
+      centerBp: position.centerBp,
+      displayGrid: position.displayGrid,
+      bpResolution: position.bpResolution,
       resolution: view.getResolution(),
       rotation: view.getRotation(),
     });
@@ -414,10 +424,9 @@ function gotoSavedLocation(location_id: number) {
   const view = map?.getView();
   const loc = savedLocations.value.get(location_id);
   if (loc && props.mapManager && map && view) {
-    view.animate({
+    map.viewAndLayersManager.restoreViewPosition({
+      ...loc,
       center: loc.center_point,
-      resolution: loc.resolution,
-      rotation: loc.rotation,
     });
   }
 }
@@ -432,12 +441,12 @@ function exportBookmarks(): void {
   const blob = new Blob([JSON.stringify(entries, null, 2)], {
     type: "application/json",
   });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "hict_bookmarks.json";
-  a.click();
-  URL.revokeObjectURL(url);
+  void saveFileWithNotice(
+    blob,
+    "hict_bookmarks.json",
+    "bookmarks",
+    "Bookmarks"
+  );
 }
 
 function importBookmarks(event: Event): void {
@@ -456,6 +465,9 @@ function importBookmarks(event: Event): void {
           location_id: idx,
           name: entry.name,
           center_point: entry.center_point,
+          centerBp: entry.centerBp,
+          displayGrid: entry.displayGrid,
+          bpResolution: entry.bpResolution,
           resolution: entry.resolution,
           rotation: entry.rotation,
         });
@@ -473,6 +485,9 @@ function syncSessionStore() {
     location_id: idx,
     name: loc.name,
     center_point: (loc.center_point ?? [0, 0]) as [number, number],
+    centerBp: loc.centerBp,
+    displayGrid: loc.displayGrid,
+    bpResolution: loc.bpResolution,
     resolution: loc.resolution ?? 1,
     rotation: loc.rotation ?? 0,
   }));
@@ -487,6 +502,9 @@ function loadFromSessionStore() {
       location_id: idx,
       name: entry.name,
       center_point: entry.center_point,
+      centerBp: entry.centerBp,
+      displayGrid: entry.displayGrid,
+      bpResolution: entry.bpResolution,
       resolution: entry.resolution,
       rotation: entry.rotation,
     });
@@ -501,6 +519,9 @@ watch(
       location_id: loc.location_id,
       name: loc.name,
       center_point: loc.center_point,
+      centerBp: loc.centerBp,
+      displayGrid: loc.displayGrid,
+      bpResolution: loc.bpResolution,
       resolution: loc.resolution,
       rotation: loc.rotation,
     }));
@@ -602,25 +623,26 @@ function goToScaffold(scaffoldId: number): void {
   map.linearTrackManager.centerOnBpRange(borders.startBP, borders.endBP);
 }
 
-function exportNames(): void {
+async function exportNames(): Promise<void> {
   const map = props.mapManager;
   if (!map) return;
-  map.networkManager.requestManager
-    .exportNameMapping()
-    .then((mapping) => {
-      const blob = new Blob([JSON.stringify(mapping, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "hict_names.json";
-      a.click();
-      URL.revokeObjectURL(url);
-    })
-    .catch((err) => {
-      toast.error(err?.message ?? "Failed to export names");
-    });
+  try {
+    const destination = await prepareFileSave("hict_names.json", "other");
+    if (!destination || map.isDisposed) return;
+    const mapping = await map.networkManager.requestManager.exportNameMapping();
+    notifyFileSave(
+      await destination.write(
+        new Blob([JSON.stringify(mapping, null, 2)], {
+          type: "application/json",
+        })
+      ),
+      "Names"
+    );
+  } catch (error) {
+    toast.error(
+      error instanceof Error ? error.message : "Failed to export names"
+    );
+  }
 }
 
 function importNames(event: Event): void {

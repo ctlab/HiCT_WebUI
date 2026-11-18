@@ -82,6 +82,26 @@ export function cropSelectionScene(
   svg.setAttribute("width", String(pageWidth));
   svg.setAttribute("height", String(pageHeight));
   svg.setAttribute("viewBox", `0 0 ${pageWidth} ${pageHeight}`);
+  const metadata = Array.from(scene.svg.childNodes).find(
+    (node) => node.nodeType === 1 && (node as Element).localName === "metadata"
+  );
+  if (metadata) {
+    const copy = metadata.cloneNode(true);
+    const contents = JSON.parse(metadata.textContent ?? "{}");
+    copy.textContent = JSON.stringify({
+      ...contents,
+      imageCrop: {
+        units: "CSS_PIXELS",
+        left,
+        top,
+        width,
+        height,
+        marginLeft,
+        marginTop,
+      },
+    });
+    svg.append(copy);
+  }
   const defs = document.createElementNS(ns, "defs");
   const id = `hict-selection-${crypto.randomUUID()}`;
   svg.append(defs);
@@ -119,7 +139,7 @@ export function cropSelectionScene(
     // clips. Explicit vector copies avoid that bug; each copy needs unique IDs.
     const copy = document.createElementNS(ns, "g");
     for (const child of Array.from(scene.svg.childNodes))
-      copy.append(child.cloneNode(true));
+      if (child !== metadata) copy.append(child.cloneNode(true));
     const ids = new Map<string, string>();
     const prefix = `${id}-copy-${copyIndex++}-`;
     for (const element of Array.from(copy.querySelectorAll("[id]"))) {

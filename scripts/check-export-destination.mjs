@@ -5,6 +5,7 @@ import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 import ts from "typescript";
+import { loadElectronSource } from "./load-electron-source.mjs";
 
 const require = createRequire(import.meta.url);
 const directory = await fs.mkdtemp(
@@ -12,7 +13,10 @@ const directory = await fs.mkdtemp(
 );
 const exportsDirectory = path.join(directory, "selected-destination");
 await fs.mkdir(exportsDirectory);
-let handler, nextDialog, options;
+let handler,
+  nextDialog,
+  options,
+  rejectRename = false;
 const fakeElectron = {
   app: {
     commandLine: { appendSwitch() {} },
@@ -55,7 +59,21 @@ const compiled = ts.transpileModule(
   }
 ).outputText;
 vm.runInNewContext(compiled, {
-  require: (name) => (name === "electron" ? fakeElectron : require(name)),
+  require: (name) =>
+    name === "./CoordinateExports" || name === "./BundledUi"
+      ? loadElectronSource(name.slice(2))
+      : name === "electron"
+      ? fakeElectron
+      : name === "node:fs/promises"
+      ? {
+          ...require(name),
+          rename: async (...args) => {
+            if (rejectRename) throw Error("rename denied");
+            return fs.rename(...args);
+          },
+        }
+      : require(name),
+  __dirname: directory,
   exports: {},
   process: { platform: "linux", env: {} },
   Buffer,
@@ -109,6 +127,45 @@ assert.equal(
   await fs.readFile(path.join(directory, "last-export-directory.txt"), "utf8"),
   exportsDirectory
 );
+const sessions = path.join(directory, "sessions");
+await fs.mkdir(sessions);
+nextDialog = { canceled: false, filePath: path.join(sessions, "saved.json") };
+await handler(
+  { sender: {} },
+  { filename: "session.json", kind: "session", bytes: new Uint8Array([4, 5]) }
+);
+assert.equal(
+  await fs.readFile(path.join(directory, "last-session-directory.txt"), "utf8"),
+  sessions
+);
+nextDialog = { canceled: true };
+await handler({ sender: {} }, { filename: "another.json", kind: "session" });
+assert.equal(options.defaultPath, path.join(sessions, "another.json"));
+await handler({ sender: {} }, { filename: "assembly.fasta", kind: "fasta" });
+assert.equal(
+  options.defaultPath,
+  "assembly.fasta",
+  "File kinds do not inherit another kind's destination"
+);
+nextDialog = { canceled: false, filePath: target };
+rejectRename = true;
+const original = await fs.readFile(target);
+await assert.rejects(
+  handler({ sender: {} }, { filename: "map.png", bytes: [9, 9, 9] }),
+  /rename denied/
+);
+assert.deepEqual(
+  await fs.readFile(target),
+  original,
+  "Failed atomic replacement must preserve the previous file"
+);
+assert.ok(
+  !(await fs.readdir(exportsDirectory)).some((name) =>
+    name.startsWith(".hict-save-")
+  ),
+  "Failed staging writes must be cleaned"
+);
+rejectRename = false;
 console.log(
   "Export destination: successful save retained; cancellation/failure preserve preference; filename is sanitized."
 );

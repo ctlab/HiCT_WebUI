@@ -27,9 +27,14 @@
           <input
             id="global-search-input"
             :disabled="!props.mapManager"
-            :title="props.mapManager ? undefined : 'Open a map to search'"
+            :title="
+              props.mapManager
+                ? 'Find a contig, scaffold or feature'
+                : 'Open a map to search'
+            "
+            aria-label="Find a contig, scaffold or feature"
             class="form-control form-control-sm m-0"
-            placeholder="Find contig, scaffold or feature"
+            placeholder="Search map"
             type="text"
             autocomplete="off"
             v-model="searchQuery"
@@ -44,7 +49,7 @@
             id="global-search-button"
             :disabled="!props.mapManager"
             :title="props.mapManager ? undefined : 'Open a map to search'"
-            class="btn btn-sm btn-outline-light"
+            class="btn btn-sm"
             type="button"
             @click="goToSelection"
           >
@@ -177,7 +182,7 @@
         <select
           v-model="signalDisplayMode"
           class="form-select form-select-sm"
-          title="Expected and O/E use the standard renderer for the primary map, within scaffolds (or contigs when unscaffolded). The secondary overlay and observed rendering graph are preserved."
+          title="Expected and O/E use the standard renderer for the primary map, within scaffolds (or contigs when unscaffolded). The secondary overlay and observed rendering graph are preserved. After exact cuts, repeated bin pairs share one sample’s weight across their positions in the fitting window."
           :disabled="signalDisplayModePending"
           @change="onSignalDisplayModeChanged"
         >
@@ -186,6 +191,13 @@
           <option value="OBSERVED_OVER_EXPECTED">Show O/E</option>
         </select>
       </div>
+      <span
+        v-if="sequenceScaleStatus"
+        class="small text-dark bg-light rounded px-2 py-1 mb-3"
+        data-testid="sequence-scale-status"
+        title="Display coordinates follow individual bases. Matrix values retain their stored bin resolution."
+        >{{ sequenceScaleStatus }}</span
+      >
     </div>
     <div id="right-header-block" class="header-block">
       <div class="export-group">
@@ -216,139 +228,69 @@
           <span class="ruler-button-label">{{ rulerModeLabel }}</span>
         </button>
       </div>
-      <div class="dropdown export-dropdown">
-        <button
-          id="export-dropdown-toggle"
-          class="btn btn-sm btn-outline-primary dropdown-toggle"
-          type="button"
-          data-bs-toggle="dropdown"
-          data-bs-auto-close="outside"
-          aria-expanded="false"
-          :disabled="!props.mapManager"
-          :title="
-            props.mapManager
-              ? 'Export the map as SVG, PNG or PDF'
-              : 'Open a map to export it'
-          "
-        >
-          <template v-if="exportingType !== null">
-            <span
-              class="spinner-border spinner-border-sm me-1"
-              aria-hidden="true"
-            ></span>
-            {{ exportingType.toUpperCase() }}
-            {{ Math.round(svgProgress * 100) }}%
-          </template>
-          <template v-else>Export</template>
-        </button>
-        <div
-          class="dropdown-menu dropdown-menu-end p-2 export-menu"
-          role="group"
-          aria-label="Image export"
-        >
-          <span
-            v-if="
-              props.mapManager?.networkManager.requestManager
-                .sequenceViewReadOnly
-            "
-            class="text-nowrap px-2"
-            >Sequence windows</span
-          >
-          <template v-else>
-            <select
-              v-model="exportScope"
-              class="form-select form-select-sm export-scope mb-2"
-              aria-label="Export area"
-              title="Area used by SVG, PNG and PDF exports"
-            >
-              <option value="viewport">Viewport</option>
-              <option value="whole-map">Whole map</option>
-            </select>
-            <label
-              class="d-flex align-items-center gap-1 text-nowrap mb-2"
-              title="Crop exports to the map: no empty margin outside the contact map"
-            >
-              <input
-                type="checkbox"
-                v-model="cropExportToMap"
-                aria-label="Crop export to map"
-              />
-              Crop
-            </label>
-          </template>
-          <div class="d-flex gap-1">
-            <button
-              id="export-svg-button"
-              class="btn btn-sm btn-outline-primary"
-              type="button"
-              :disabled="exportingType !== null"
-              @click="runExport('svg')"
-              title="Export selected area as SVG"
-            >
-              <i
-                class="bi bi-box-arrow-up export-button-icon"
-                aria-hidden="true"
-              ></i
-              ><span class="export-button-label">SVG</span>
-            </button>
-            <button
-              id="export-png-button"
-              class="btn btn-sm btn-outline-primary"
-              type="button"
-              :disabled="exportingType !== null"
-              @click="runExport('png')"
-              title="Export selected area as PNG"
-            >
-              <i
-                class="bi bi-box-arrow-up export-button-icon"
-                aria-hidden="true"
-              ></i
-              ><span class="export-button-label">PNG</span>
-            </button>
-            <button
-              id="export-pdf-button"
-              class="btn btn-sm btn-outline-primary"
-              type="button"
-              :disabled="exportingType !== null"
-              @click="runExport('pdf')"
-              title="Export selected area as PDF"
-            >
-              <i
-                class="bi bi-box-arrow-up export-button-icon"
-                aria-hidden="true"
-              ></i
-              ><span class="export-button-label">PDF</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <button
+        id="export-dropdown-toggle"
+        class="btn btn-sm btn-outline-primary"
+        type="button"
+        aria-haspopup="dialog"
+        :aria-expanded="exportOpen"
+        :disabled="!props.mapManager"
+        :title="
+          props.mapManager
+            ? 'Preview and export a figure'
+            : 'Open a map to export it'
+        "
+        @click="exportOpen = true"
+      >
+        Export
+      </button>
+      <FigureExportModal
+        v-if="exportOpen && props.mapManager"
+        :map-manager="props.mapManager"
+        @dismissed="exportOpen = false"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reportFailure } from "@/app/ui/reportFailure";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { AxisScopeSelection } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
 import { useVisualizationOptionsSync } from "./useVisualizationOptionsSync";
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import {
+  computed,
+  defineAsyncComponent,
+  onBeforeUnmount,
+  ref,
+  watch,
+} from "vue";
 import { toast } from "vue-sonner";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { storeToRefs } from "pinia";
-import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
 
 useVisualizationOptionsSync(() => props.mapManager);
+const sequenceScaleStatus = computed(() => {
+  const descriptor =
+    props.mapManager?.viewAndLayersManager.currentViewState.resolutionDesciptor;
+  if (descriptor?.displayGrid !== "SEQUENCE_BP") return "";
+  return props.mapManager?.networkManager.requestManager.sourceCapabilities
+    .PRIMARY?.units === "SEQUENCE_ONLY"
+    ? "Base scale"
+    : `Base scale · ${descriptor.sourceBpResolution?.toLocaleString()} bp bins`;
+});
 
 const uiSettingsStore = useUiSettingsStore();
 const { osdOverlayVisible, rulerCoordinateMode } = storeToRefs(uiSettingsStore);
-const exportingType = ref<"svg" | "png" | "pdf" | null>(null);
-const svgProgress = ref(0);
+const exportOpen = ref(false);
+const FigureExportModal = defineAsyncComponent(
+  () => import("./FigureExportModal.vue")
+);
 type ScopeAxis = "row" | "column";
 interface ScopeOption extends AxisScopeSelection {
   key: string;
@@ -395,15 +337,7 @@ let searchDebounceTimer: number | null = null;
 const stylesStore = useStyleStore();
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
-const {
-  preLogBase,
-  postLogBase,
-  applyCoolerWeights,
-  resolutionScaling,
-  resolutionLinearScaling,
-  signalDisplayMode,
-  colormap,
-} = storeToRefs(visualizationOptionsStore);
+const { signalDisplayMode } = storeToRefs(visualizationOptionsStore);
 
 const allScopeLabel = (axis: ScopeAxis) =>
   axis === "row" ? "All Rows" : "All Columns";
@@ -703,63 +637,6 @@ function cycleRulerMode(): void {
       ? "scaffold"
       : "global";
   props.mapManager?.getLayersManager().scheduleRulerRender();
-}
-
-const exportScope = ref<"viewport" | "whole-map">("viewport");
-const cropExportToMap = ref(true);
-
-function buildExportMetadata(): Record<string, unknown> {
-  const cmap = colormap.value;
-  return {
-    filename: props.mapManager?.getOptions().filename,
-    visualization: {
-      preLogBase: preLogBase.value,
-      postLogBase: postLogBase.value,
-      applyCoolerWeights: applyCoolerWeights.value,
-      resolutionScaling: resolutionScaling.value,
-      resolutionLinearScaling: resolutionLinearScaling.value,
-      signalDisplayMode: signalDisplayMode.value,
-      colormap:
-        cmap instanceof SimpleLinearGradient
-          ? {
-              type: cmap.colormapType,
-              startColor: cmap.startColorRGBA?.RGBA,
-              endColor: cmap.endColorRGBA?.RGBA,
-              minSignal: cmap.minSignal,
-              maxSignal: cmap.maxSignal,
-            }
-          : { type: cmap?.colormapType ?? "Unknown" },
-    },
-  };
-}
-
-async function runExport(type: "svg" | "png" | "pdf") {
-  const manager = props.mapManager;
-  if (!manager || exportingType.value) return;
-  exportingType.value = type;
-  svgProgress.value = 0;
-  const options = {
-    backgroundColor: mapBackgroundColor.value.RGBA,
-    metadata: buildExportMetadata(),
-    scope: exportScope.value,
-    cropToMap: cropExportToMap.value,
-  };
-  const onProgress = (progress: number) => {
-    svgProgress.value = progress;
-  };
-  try {
-    if (type === "svg") {
-      await manager.exportCurrentMapSvg(onProgress, options);
-    } else if (type === "png") {
-      await manager.exportCurrentMapPng(onProgress, options);
-    } else {
-      await manager.exportCurrentMapPdf(onProgress, options);
-    }
-  } catch (e) {
-    reportFailure(`Export ${type.toUpperCase()}`, e);
-  } finally {
-    exportingType.value = null;
-  }
 }
 
 function buildSearchResults(): void {
@@ -1176,30 +1053,42 @@ async function onSignalDisplayModeChanged() {
 }
 
 #search-input-group {
-  /* Input group */
-
-  box-sizing: border-box;
-
-  /* Auto layout */
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  padding: 0px;
-
+  --search-border: #aab5c1;
+  align-items: stretch;
+  flex-wrap: nowrap;
   width: 200px;
   height: 30px;
-
-  /* Global/09. White */
-  /*background: #FFFFFF;*/
-
-  /* Components/Forms/Input border */
-  /*border: 1px solid #CED4DA;*/
+  border: 1px solid var(--search-border);
   border-radius: 4px;
+  overflow: hidden;
+}
 
-  /* Inside auto layout */
-  flex: none;
-  order: 0;
-  flex-grow: 0;
+#search-input-group > :is(input, button) {
+  margin-left: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#search-input-group > :is(input, button):focus-visible {
+  outline: 2px solid #0b5ed7;
+  outline-offset: -2px;
+}
+
+#search-input-group > :is(input, button):disabled {
+  background: #f0f3f6;
+  opacity: 1;
+}
+
+#search-input-group > button {
+  background: #f8fafc;
+  border-inline-start: 1px solid var(--search-border);
+  border-color: var(--search-border) !important;
+}
+
+#search-input-group > button:hover:enabled {
+  background: #e8f0f9;
 }
 
 .search-dropdown {
@@ -1472,11 +1361,5 @@ async function onSignalDisplayModeChanged() {
   .export-group {
     flex-wrap: wrap;
   }
-}
-
-#global-search-button {
-  border-color: rgba(15, 23, 38, 0.18);
-  color: rgba(24, 30, 38, 0.95);
-  background: rgba(255, 255, 255, 0.94);
 }
 </style>

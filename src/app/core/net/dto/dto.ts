@@ -98,8 +98,33 @@ function resolutionMap<T>(
   return result;
 }
 
+function binOffsets(json: unknown): Map<number, number> | undefined {
+  if (json === undefined) return undefined;
+  if (json === null || typeof json !== "object" || Array.isArray(json)) {
+    throw new Error("Invalid contig bin offsets");
+  }
+  const result = new Map<number, number>();
+  for (const [key, offset] of Object.entries(json)) {
+    const resolution = Number(key);
+    if (
+      !Number.isSafeInteger(resolution) ||
+      resolution <= 0 ||
+      !Number.isSafeInteger(offset)
+    ) {
+      throw new Error("Invalid contig bin offset");
+    }
+    result.set(resolution, offset as number);
+  }
+  return result;
+}
+
 class ContigDescriptorDTO extends InboundDTO<ContigDescriptor> {
   public toEntity(): ContigDescriptor {
+    if (
+      this.json.contigSharedBinSlice !== undefined &&
+      typeof this.json.contigSharedBinSlice !== "boolean"
+    )
+      throw new Error("Invalid contig shared-bin flag");
     return {
       contigId: this.json.contigId as number,
       contigName: this.json.contigName as string,
@@ -109,6 +134,8 @@ class ContigDescriptorDTO extends InboundDTO<ContigDescriptor> {
         (this.json.contigOriginalName as string),
       contigOffsetInSource: (this.json.contigOffsetInSource as number) ?? 0,
       contigLengthBp: this.json.contigLengthBp as number,
+      contigBinOffsets: binOffsets(this.json.contigBinOffsets),
+      contigSharedBinSlice: this.json.contigSharedBinSlice === true,
       contigLengthBins: resolutionMap(
         this.json.contigLengthBins as Record<string, number>,
         Number
@@ -165,6 +192,14 @@ class AssemblyInfoDTO extends InboundDTO<AssemblyInfo> {
   }
 
   private fromCompact(): AssemblyInfo {
+    const shared = this.json.sharedBinContigs ?? [];
+    if (
+      !Array.isArray(shared) ||
+      shared.some((id) => !Number.isSafeInteger(id) || id < 0) ||
+      new Set(shared).size !== shared.length
+    )
+      throw new Error("Invalid shared-bin contig IDs");
+    const sharedIds = new Set<number>(shared);
     const resolutions = this.json.resolutions;
     if (
       !Array.isArray(resolutions) ||
@@ -215,10 +250,24 @@ class AssemblyInfoDTO extends InboundDTO<AssemblyInfo> {
           direction: contigDirectionFromDTO(row[5]),
           contigLengthBp: row[6],
           contigLengthBins: lengths,
+          contigSharedBinSlice: sharedIds.has(row[0]),
+          contigBinOffsets:
+            this.json.contigBinOffsets === undefined
+              ? undefined
+              : binOffsets(
+                  (this.json.contigBinOffsets as Record<string, unknown>)[
+                    String(row[0])
+                  ] ?? {}
+                ),
           presenceAtResolution: presence,
         };
       }
     );
+    if (sharedIds.size > 0) {
+      const knownIds = new Set(contigDescriptors.map((d) => d.contigId));
+      if ([...sharedIds].some((id) => !knownIds.has(id)))
+        throw new Error("Unknown shared-bin contig ID");
+    }
     const scaffoldDescriptors = this.json.scaffolds.map(
       (row: unknown): ScaffoldDescriptor => {
         if (
@@ -254,6 +303,10 @@ class OpenFileResponseDTO extends InboundDTO<OpenFileResponse> {
     return {
       status: this.json.status as string,
       capabilities: parseSourceCapabilities(this.json.capabilities),
+      usableCoolerWeights:
+        typeof this.json.usableCoolerWeights === "boolean"
+          ? this.json.usableCoolerWeights
+          : undefined,
       dtype: this.json.dtype as string,
       resolutions: this.json.resolutions as number[],
       pixelResolutions: this.json.pixelResolutions as number[],
@@ -284,6 +337,7 @@ class SimpleLinearGradientDTO extends InboundDTO<SimpleLinearGradient> {
       endColorRGBAString: e.endColorRGBA.RGBA,
       minSignal: e.minSignal,
       maxSignal: e.maxSignal,
+      ...(e.gamma !== 1 ? { gamma: e.gamma } : {}),
     });
   }
 
@@ -306,7 +360,13 @@ class SimpleLinearGradientDTO extends InboundDTO<SimpleLinearGradient> {
       typeof maxSignalRaw === "number" && Number.isFinite(maxSignalRaw)
         ? maxSignalRaw
         : 1;
-    return new SimpleLinearGradient(start, end, minSignal, maxSignal);
+    return new SimpleLinearGradient(
+      start,
+      end,
+      minSignal,
+      maxSignal,
+      this.json["gamma"] === undefined ? 1 : Number(this.json["gamma"])
+    );
   }
 }
 

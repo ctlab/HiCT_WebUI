@@ -166,3 +166,79 @@ assert.deepEqual(
 console.log(
   "Ruler ticks preserve assembly coordinates across hidden spans, reversals, split components, scopes and one-bin contigs."
 );
+
+// Enumerate source-bin/base intersections independently of the mapping formula.
+for (const reversed of [false, true]) {
+  for (const anchor of [-999, -501, -1, 0]) {
+    const length = 2501;
+    const intervals = [];
+    for (let start = anchor; start < length; start += resolution) {
+      intervals.push([
+        Math.max(0, start),
+        Math.min(length, start + resolution),
+      ]);
+    }
+    if (reversed) intervals.reverse();
+    const d = makeContig(0, length, { reversed });
+    d.contigLengthBins.set(resolution, intervals.length);
+    d.contigBinOffsets = new Map([[resolution, anchor]]);
+    const clipped = new Holder([d]);
+    // The live renderer ensures native levels as well as synthetic levels.
+    clipped.ensureResolution(resolution);
+    intervals.forEach(([start, end], bin) => {
+      const expectedStart = reversed ? length - end : start;
+      const expectedEnd = reversed ? length - start : end;
+      assert.equal(clipped.getStartBpOfPx(bin, resolution), expectedStart);
+      assert.equal(clipped.getStartBpOfBin(bin, resolution), expectedStart);
+      for (let bp = expectedStart; bp < expectedEnd; bp++) {
+        assert.equal(clipped.getPxContainingBp(bp, resolution), bin);
+        assert.equal(clipped.getBinContainingBp(bp, resolution), bin);
+        const pixel = clipped.getFractionalPxOfBp(bp + 0.5, resolution);
+        assert.ok(
+          Math.abs(clipped.getFractionalBpOfPx(pixel, resolution) - bp - 0.5) <
+            1e-8
+        );
+      }
+    });
+  }
+}
+console.log(
+  "Partial source-bin intersections preserve exact forward/reverse base and fractional coordinates."
+);
+
+// Sub-padding bands retain their rectangles but need no expensive text shaping.
+const bandControl = Object.create(RulerControl.prototype);
+bandControl.direction = "horizontal";
+bandControl.canvas = { width: 100, height: 70 };
+bandControl.getRulerStrokeColors = () => ({ mainStroke: "black" });
+bandControl.setFillStrokeContrastColors = () => {};
+const measured = [],
+  rectangles = [],
+  labels = [];
+const context = new Proxy(
+  {
+    measureText: (label) => {
+      measured.push(label);
+      return { width: 8 };
+    },
+    fillRect: (...args) => rectangles.push(args),
+    fillText: (label) => labels.push(label),
+  },
+  { get: (target, key) => target[key] ?? (() => {}) }
+);
+bandControl.drawEntityBands(context, {
+  contigs: [
+    { start: 0, end: 0.1, label: "tiny", count: 1 },
+    { start: 1, end: 6.99, label: "narrow", count: 1 },
+    { start: 7, end: 13, label: "boundary", count: 1 },
+    { start: 14, end: 30, label: "fits", count: 1 },
+  ],
+  scaffolds: [],
+  breaks: [],
+});
+assert.equal(rectangles.length, 4);
+assert.deepEqual(measured, ["boundary", "fits"]);
+assert.deepEqual(labels, ["fits"]);
+console.log(
+  "Dense ruler bands skip impossible labels while preserving geometry and fit boundaries."
+);

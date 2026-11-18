@@ -86,6 +86,8 @@ class LinearTrackManager {
   private horizontalResizeObserver: ResizeObserver | null = null;
   private verticalResizeObserver: ResizeObserver | null = null;
   private tracks: TrackSummaryResponse[] = [];
+  private trackListRequestId = 0;
+  private disposed = false;
   private readonly hiddenByAxis: Record<Orientation, Set<string>> = {
     horizontal: new Set<string>(),
     vertical: new Set<string>(),
@@ -165,6 +167,8 @@ class LinearTrackManager {
   }
 
   public dispose(): void {
+    this.disposed = true;
+    this.trackListRequestId++;
     if (this.moveEndListener) {
       unByKey(this.moveEndListener);
     }
@@ -299,8 +303,14 @@ class LinearTrackManager {
   public async refreshTrackList(
     waitForRender = true
   ): Promise<TrackSummaryResponse[]> {
-    this.tracks =
+    if (this.disposed) return this.tracks.slice();
+    const requestId = ++this.trackListRequestId;
+    const snapshot =
       await this.mapManager.networkManager.requestManager.listTracks();
+    // A late list response must not undo a newer edit or reset its local settings.
+    if (this.disposed || requestId !== this.trackListRequestId)
+      return this.tracks.slice();
+    this.tracks = snapshot;
     this.syncTrackRenderSettings();
     this.invalidateQueryCache();
     this.notifyTrackListChanged();
@@ -778,6 +788,7 @@ class LinearTrackManager {
           trackId: track.trackId,
           trackName: track.name,
           trackType: track.type,
+          samplingBpResolution: track.samplingBpResolution,
           startBp: Math.min(bin.startBp, bin.endBp),
           endBp: Math.max(bin.startBp, bin.endBp),
           startPx: interval.startPx,
@@ -858,7 +869,13 @@ class LinearTrackManager {
 
   public centerOnFeature(entry: FeatureSearchEntry): void {
     this.setSelectedFeature(entry);
-    this.centerOnBpRange(entry.startBp, entry.endBp);
+    const view = this.mapManager.getView();
+    const midpoint = (entry.startBp + entry.endBp) / 2;
+    this.mapManager.getLayersManager().restoreViewPosition({
+      centerBp: [midpoint, midpoint],
+      resolution: view.getResolution(),
+      rotation: view.getRotation(),
+    });
   }
 
   /** Center the feature at measured, readable FASTA letter scale on both axes. */
@@ -871,21 +888,20 @@ class LinearTrackManager {
     const worldPerBase = finestPixel / finest;
     const resolution = worldPerBase / (sequenceLetterMinimumPixels() * 1.1);
     const midpoint = (entry.startBp + entry.endBp) / 2;
-    const coordinate =
-      this.mapManager
-        .getContigDimensionHolder()
-        .getFractionalPxOfBp(midpoint, finest) * finestPixel;
-    if (![resolution, coordinate].every(Number.isFinite) || resolution <= 0)
+    if (![resolution, midpoint].every(Number.isFinite) || resolution <= 0)
       return;
     this.setSelectedFeature(entry);
     const view = this.mapManager.getView();
-    view.cancelAnimations();
-    view.setResolution(resolution);
-    view.setCenter([coordinate, -coordinate]);
+    layers.restoreViewPosition({
+      centerBp: [midpoint, midpoint],
+      resolution,
+      rotation: view.getRotation(),
+    });
   }
 
   /** Finest bp resolution of the open map; map units are pixels at this resolution. */
   public getFinestBpResolution(): number {
+    if (this.mapManager.getLayersManager().isSequenceScale) return 1;
     const tuples = this.mapManager.getLayersManager().resolutionTuples;
     const finestBpResolution = tuples.reduce(
       (acc, tuple) => Math.min(acc, tuple.bpResolution),
@@ -933,22 +949,16 @@ class LinearTrackManager {
     const spanPxAtFinest = spanBp / Math.max(1, safeFinestBpResolution);
     const minViewResolution = view.getMinResolution() ?? 0;
     const desiredScaleFactor =
-      spanPxAtFinest > 0 ? Math.min(1, spanPxAtFinest / targetSpanPx) : 1;
+      spanPxAtFinest > 0 ? spanPxAtFinest / targetSpanPx : 1;
     const pixelResolution = Math.max(
       minViewResolution,
       finestPixelResolution * desiredScaleFactor
     );
     const midpointBp = (startBp + endBp) / 2;
-    const midpointPx = this.mapManager
-      .getContigDimensionHolder()
-      .getPxContainingBp(
-        Math.max(0, Math.round(midpointBp)),
-        safeFinestBpResolution
-      );
-    view.animate({
-      center: [midpointPx, -midpointPx],
+    this.mapManager.getLayersManager().restoreViewPosition({
+      centerBp: [midpointBp, midpointBp],
       resolution: pixelResolution,
-      duration: 220,
+      rotation: view.getRotation(),
     });
   }
 
@@ -1262,6 +1272,7 @@ class LinearTrackManager {
       return [];
     }
     ctx.textBaseline = "top";
+    ctx.textAlign = "left";
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = this.resolveTrackBackgroundColor();
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1286,7 +1297,8 @@ class LinearTrackManager {
     const responseTracks = (response.tracks ?? []).filter((track) =>
       this.isTrackVisibleOnAxis(track.trackId, visibilityOrientation)
     );
-    const tracks = responseTracks.length > 0 ? responseTracks : fallbackTracks;
+    const tracks: TrackRenderResponse[] =
+      responseTracks.length > 0 ? responseTracks : fallbackTracks;
     const featureHits: RenderedFeatureHit[] = [];
     if (publishState)
       this.lastRenderedSnapshot[orientation] = {
@@ -1445,9 +1457,10 @@ class LinearTrackManager {
           }
           if (renderStyle === "SIGNAL") {
             const normalizedValue = scaleTransform.normalize(bin.value ?? 0);
-            const barHeight = (laneInnerEnd - laneInnerStart) * normalizedValue;
-            const y = laneInnerEnd - barHeight;
-            ctx.fillRect(x0, y, x1 - x0, Math.max(1, barHeight));
+            const baseline = scaleTransform.normalize(0);
+            const y = laneInnerEnd - crossSpan * Math.max(baseline, normalizedValue);
+            const barHeight = crossSpan * Math.abs(normalizedValue - baseline);
+            if (barHeight > 0) ctx.fillRect(x0, y, x1 - x0, Math.max(1, barHeight));
           } else {
             if (!this.isFeatureDensityBin(bin))
               featureHits.push({
@@ -1493,9 +1506,10 @@ class LinearTrackManager {
           }
           if (renderStyle === "SIGNAL") {
             const normalizedValue = scaleTransform.normalize(bin.value ?? 0);
-            const barWidth = (laneInnerEnd - laneInnerStart) * normalizedValue;
-            const x = laneInnerEnd - Math.max(1, barWidth);
-            ctx.fillRect(x, y0, Math.max(1, barWidth), y1 - y0);
+            const baseline = scaleTransform.normalize(0);
+            const x = laneInnerEnd - crossSpan * Math.max(baseline, normalizedValue);
+            const barWidth = crossSpan * Math.abs(normalizedValue - baseline);
+            if (barWidth > 0) ctx.fillRect(x, y0, Math.max(1, barWidth), y1 - y0);
           } else {
             if (!this.isFeatureDensityBin(bin))
               featureHits.push({
@@ -1519,6 +1533,20 @@ class LinearTrackManager {
             );
           }
         }
+      }
+      if (renderStyle === "SIGNAL" && signalRange.min < 0 && signalRange.max > 0) {
+        const zero = laneInnerEnd - crossSpan * scaleTransform.normalize(0);
+        ctx.strokeStyle = textPalette.axisStroke;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (orientation === "horizontal") {
+          ctx.moveTo(0, zero);
+          ctx.lineTo(canvas.width, zero);
+        } else {
+          ctx.moveTo(zero, 0);
+          ctx.lineTo(zero, canvas.height);
+        }
+        ctx.stroke();
       }
       if (densityDifference && summaryLane >= 0) {
         const summaryStart =
@@ -1558,6 +1586,10 @@ class LinearTrackManager {
       }
       ctx.fillStyle = textPalette.primary;
       ctx.font = "bold 11px HiCT Sans";
+      // Plot/scale renderers may change text alignment. Titles always start at
+      // their inset, including after rotation on the vertical axis.
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
       if (orientation === "horizontal") {
         this.drawOutlinedText(
           ctx,
@@ -2466,12 +2498,13 @@ class LinearTrackManager {
     };
   }
 
-  private getVisibleSignalMax(
+  private getVisibleSignalRange(
     bins: TrackBinResponse[],
     viewport: ViewportGeometry,
     bpResolution: number
-  ): number {
-    let maxValue = 0;
+  ): { min: number; max: number } {
+    let min = 0;
+    let max = 0;
     for (const bin of bins) {
       const interval = this.resolveBinIntervalPx(bin, bpResolution);
       if (!interval.visible) {
@@ -2483,12 +2516,11 @@ class LinearTrackManager {
       ) {
         continue;
       }
-      const value = Number.isFinite(bin.value) ? Math.max(0, bin.value) : 0;
-      if (value > maxValue) {
-        maxValue = value;
-      }
+      const value = Number.isFinite(bin.value) ? bin.value : 0;
+      min = Math.min(min, value);
+      max = Math.max(max, value);
     }
-    return maxValue;
+    return { min, max };
   }
 
   private resolveSignalRange(
@@ -2506,10 +2538,7 @@ class LinearTrackManager {
     ) {
       return { min: trackSummary.rangeMin, max: trackSummary.rangeMax };
     }
-    return {
-      min: 0,
-      max: this.getVisibleSignalMax(bins, viewport, bpResolution),
-    };
+    return this.getVisibleSignalRange(bins, viewport, bpResolution);
   }
 
   /** The server reports feature extents in whole map pixels (bins), so an 11 bp
@@ -2521,6 +2550,31 @@ class LinearTrackManager {
     response: TrackQueryResponse
   ): TrackQueryResponse {
     const holder = this.mapManager.getContigDimensionHolder();
+    if (this.mapManager.getLayersManager().isSequenceScale) {
+      if (response.displayGrid === "SEQUENCE_BP") return response;
+      return {
+        ...response,
+        samplingBpResolution: response.bpResolution,
+        bpResolution: 1,
+        startPx: response.startBp,
+        endPx: response.endBp,
+        tracks: response.tracks.map((track) => ({
+          ...track,
+          bins: track.bins.map((bin) => ({
+            ...bin,
+            startPx: bin.startBp,
+            endPx: bin.endBp,
+            thickStartPx: bin.thickStartBp,
+            thickEndPx: bin.thickEndBp,
+            blocks: bin.blocks.map((block) => ({
+              ...block,
+              startPx: block.startBp,
+              endPx: block.endBp,
+            })),
+          })),
+        })),
+      };
+    }
     const resolution = response.bpResolution;
     if (!(holder.contig_count > 0) || !(resolution > 0)) return response;
     const toPx = (bp: number, lo: number, hi: number): number => {
@@ -2679,6 +2733,17 @@ class LinearTrackManager {
     }
     const safeBase = Number.isFinite(logBase) && logBase > 1 ? logBase : 10;
     const logDenominator = Math.log(safeBase);
+    if (safeMin < 0) {
+      // Symmetric log1p preserves sign and a meaningful zero for signed signals.
+      const transform = (value: number) => Math.sign(value) * Math.log1p(Math.abs(value)) / logDenominator;
+      const lo = transform(safeMin), hi = transform(safeMax);
+      return {
+        logScale: true, minValue: safeMin, maxValue: safeMax, logBase: safeBase,
+        display: (value: number) => Number.isFinite(value) ? value : 0,
+        normalize: (value: number) => Math.max(0, Math.min(1,
+          (transform(Number.isFinite(value) ? value : 0) - lo) / (hi - lo))),
+      };
+    }
     const toLog = (value: number): number =>
       Math.log1p(Math.max(0, value - safeMin)) / logDenominator;
     const maxLog = toLog(safeMax);
@@ -2723,31 +2788,39 @@ class LinearTrackManager {
     ctx.fillStyle = textPalette.axis;
     ctx.strokeStyle = textPalette.axisStroke;
     ctx.font = "9px HiCT Mono";
+    const widestLabel = Math.max(
+      ...ticks.map(
+        (tick) =>
+          ctx.measureText(this.formatScaleValue(scale.display(tick))).width
+      )
+    );
     let lastLabelCoord = Number.NEGATIVE_INFINITY;
     const minLabelSpacing = 14;
     if (orientation === "horizontal") {
-      ctx.textAlign = "left";
+      ctx.textAlign = "right";
       const right = canvasWidth * (this.exportLabelBounds?.right ?? 1);
-      const tickX0 = right - 22;
-      const tickX1 = right - 15;
-      const labelX = right - 13;
+      const left = canvasWidth * (this.exportLabelBounds?.left ?? 0);
+      if (right - left < widestLabel + 18) return;
+      const labelX = right - 4;
+      const tickX1 = labelX - widestLabel - 4;
+      const tickX0 = tickX1 - 7;
       for (const tick of ticks) {
         const normalized = scale.normalize(tick);
         const y = laneInnerEnd - normalized * axisSpan;
-        const iy = Math.max(laneStart + 4, Math.min(laneEnd - 12, y));
-        if (Math.abs(iy - lastLabelCoord) < minLabelSpacing) {
+        const labelY = Math.max(laneStart + 2, Math.min(laneEnd - 12, y - 5));
+        if (Math.abs(y - lastLabelCoord) < minLabelSpacing) {
           continue;
         }
-        lastLabelCoord = iy;
+        lastLabelCoord = y;
         ctx.beginPath();
-        ctx.moveTo(tickX0, iy + 3.5);
-        ctx.lineTo(tickX1, iy + 3.5);
+        ctx.moveTo(tickX0, y);
+        ctx.lineTo(tickX1, y);
         ctx.stroke();
         this.drawOutlinedText(
           ctx,
           this.formatScaleValue(scale.display(tick)),
           labelX,
-          iy - 2,
+          labelY,
           textPalette
         );
       }
@@ -2766,26 +2839,31 @@ class LinearTrackManager {
       ctx.textAlign = "left";
       return;
     }
-    const labelAxisY = Math.max(1, laneStart + 2);
-    const markY0 = labelAxisY + 16;
+    const labelAxisY = canvasHeight * (this.exportLabelBounds?.top ?? 0) + 2;
+    const bottom = canvasHeight * (this.exportLabelBounds?.bottom ?? 1);
+    if (bottom - labelAxisY < widestLabel + 13) return;
+    const markY0 = labelAxisY + widestLabel + 5;
     const markY1 = markY0 + 6;
     ctx.textAlign = "center";
     for (const tick of ticks) {
       const normalized = scale.normalize(tick);
       const x = laneInnerEnd - normalized * axisSpan;
-      const ix = Math.max(laneStart + 3, Math.min(laneEnd - 14, x));
+      const ix = Math.max(laneInnerStart, Math.min(laneInnerEnd, x));
       if (Math.abs(ix - lastLabelCoord) < minLabelSpacing) {
         continue;
       }
       lastLabelCoord = ix;
       ctx.beginPath();
-      ctx.moveTo(ix + 3.5, markY0);
-      ctx.lineTo(ix + 3.5, markY1);
+      ctx.moveTo(ix, markY0);
+      ctx.lineTo(ix, markY1);
       ctx.stroke();
       ctx.save();
-      ctx.translate(ix + 9, labelAxisY + 1);
+      ctx.translate(
+        Math.max(laneStart + 2, Math.min(laneEnd - 12, ix - 4)),
+        labelAxisY + 1
+      );
       ctx.rotate(-Math.PI / 2);
-      ctx.textAlign = "left";
+      ctx.textAlign = "right";
       this.drawOutlinedText(
         ctx,
         this.formatScaleValue(scale.display(tick)),
@@ -2920,11 +2998,11 @@ class LinearTrackManager {
     if (!Number.isFinite(maxValue) || maxValue <= minValue) {
       return [minValue];
     }
-    if (!scale.logScale) {
+    if (!scale.logScale || minValue < 0) {
       const step = this.niceStep(
         (maxValue - minValue) / Math.max(1, maxTickCount - 1)
       );
-      const ticks: number[] = [minValue];
+      const ticks: number[] = minValue < 0 && maxValue >= 0 ? [minValue, 0] : [minValue];
       for (let value = minValue + step; value < maxValue; value += step) {
         ticks.push(value);
       }
@@ -3424,6 +3502,7 @@ type SignalHoverInfo = {
   trackId: string;
   trackName: string;
   trackType: string;
+  samplingBpResolution?: number;
   startBp: number;
   endBp: number;
   startPx: number;

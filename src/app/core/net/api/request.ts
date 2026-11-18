@@ -24,11 +24,31 @@ import {
   NormalizationSettings,
 } from "@/app/ui/components/ComponentCommon";
 import assert from "assert";
+import type { SequenceSearchSettings } from "./SequenceAnalysisRequest";
 import { ImageTile, Tile } from "ol";
 import { VisualizationOptionsDTO } from "../dto/dto";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 interface HiCTAPIRequest {
   requestPath: string;
+}
+
+export type RemoteBlastRetrievalSettings = SequenceSearchSettings & {
+  remoteRequestId: string;
+  searchTarget: "NCBI_REMOTE";
+  mode: "blast";
+  scope: "database";
+};
+
+/** Distinct from submission so an older server cannot upload a recovery query. */
+export class RemoteBlastRetrievalRequest implements HiCTAPIRequest {
+  readonly requestPath = "/sequence/remote_blast/retrieve";
+  readonly options: RemoteBlastRetrievalSettings;
+  constructor(options: RemoteBlastRetrievalSettings) {
+    const rid = options.remoteRequestId.trim().toUpperCase();
+    if (!/^[A-Z0-9]{8,64}$/.test(rid))
+      throw new Error("Enter a valid NCBI request ID (RID).");
+    this.options = { ...options, remoteRequestId: rid };
+  }
 }
 
 export class BackgroundJobsRequest implements HiCTAPIRequest {
@@ -319,8 +339,10 @@ class StartConversionJobRequest implements HiCTAPIRequest {
   public constructor(
     public readonly options: {
       readonly filename: string;
+      readonly exampleId?: string;
       readonly assemblyFilename?: string;
       readonly useCurrentAssembly?: boolean;
+      readonly approximateRebin?: boolean;
       readonly direction?: string;
       readonly outputFilename?: string;
       readonly overwrite?: boolean;
@@ -351,6 +373,7 @@ class StartBatchConversionJobsRequest implements HiCTAPIRequest {
       readonly files: string[];
       readonly assemblyFilename?: string;
       readonly assemblyFilenameByFile?: Record<string, string>;
+      readonly approximateRebin?: boolean;
       readonly parallelJobs: number;
       readonly parallelism: number;
       readonly overwrite?: boolean;
@@ -526,6 +549,17 @@ class SplitContigRequest implements HiCTAPIRequest {
     public readonly options: {
       readonly splitPx: number;
       readonly bpResolution: number;
+    }
+  ) {}
+}
+
+class SplitContigAtBpRequest implements HiCTAPIRequest {
+  requestPath = "/split_contig_at_bp";
+  public constructor(
+    public readonly options: {
+      readonly contigId: number;
+      readonly offsetBp: number;
+      readonly expectedRevision: number;
     }
   ) {}
 }
@@ -775,6 +809,7 @@ class QueryTracks1DRequest implements HiCTAPIRequest {
       readonly startBP?: number;
       readonly endBP?: number;
       readonly unit?: "PIXELS" | "BINS" | "BP";
+      readonly sequenceScale?: boolean;
       readonly widthPx: number;
       readonly bpResolution: number;
     }
@@ -806,6 +841,7 @@ class GetTrackFeatureContextRequest implements HiCTAPIRequest {
       readonly startBP?: number;
       readonly endBP?: number;
       readonly unit?: "PIXELS" | "BINS" | "BP";
+      readonly sequenceScale?: boolean;
       readonly widthPx: number;
       readonly bpResolution: number;
       readonly marginScreens?: number;
@@ -912,6 +948,7 @@ export {
   GetCurrentSignalRangeRequest,
   SaveFileRequest,
   SplitContigRequest,
+  SplitContigAtBpRequest,
   // TileLoadPOSTRequest,
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,

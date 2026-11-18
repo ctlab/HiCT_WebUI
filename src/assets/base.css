@@ -202,3 +202,17 @@ body {
 .modal-dialog:not(.pipeline-dialog) > .modal-content > .modal-footer {
   flex-shrink: 0;
 }
+
+/* Keep the active map or ruler menu clickable where a notification overlaps it. */
+body:has(> .assembly-context-menu, > .axis-context-menu) [data-sonner-toaster] {
+  z-index: 1049;
+}
+
+[data-sonner-toaster][data-sonner-theme="light"] [data-sonner-toast][data-type="success"] {
+  --success-text: #087328;
+}
+
+.ol-zoom button {
+  min-width: 24px;
+  min-height: 24px;
+}

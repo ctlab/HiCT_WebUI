@@ -271,9 +271,22 @@ const onMouseMoveFeature = (event: MouseEvent): void => {
   } else {
     secondaryParts.push(`value ${formatTrackValue(hit.value)}`);
     if (hit.count > 1) {
-      secondaryParts.push(`${hit.count.toLocaleString()} bins/items`);
+      const baseGrid = props.mapManager.viewAndLayersManager.isSequenceScale;
+      secondaryParts.push(
+        `${hit.count.toLocaleString()} ${
+          baseGrid
+            ? hit.samplingBpResolution
+              ? "display bases"
+              : "items"
+            : "bins/items"
+        }`
+      );
     }
     secondaryParts.push(hit.trackType);
+    if (hit.samplingBpResolution)
+      secondaryParts.push(
+        `Native weights: ${hit.samplingBpResolution} bp bins`
+      );
     featureTooltipAttributes.value = [];
   }
   featureTooltipSecondary.value = secondaryParts.join(" | ");
@@ -321,6 +334,10 @@ const formatHoverRange = (hit: {
   startPx: number;
   endPx: number;
 }): string => {
+  if (props.mapManager?.viewAndLayersManager.isSequenceScale)
+    return `Assembly ${(
+      hit.startBp + 1
+    ).toLocaleString()}-${hit.endBp.toLocaleString()} bp (1-based, inclusive)`;
   const bpRange = `${hit.startBp.toLocaleString()}-${hit.endBp.toLocaleString()} bp`;
   const binRange = `bins ${hit.startPx.toLocaleString()}-${hit.endPx.toLocaleString()}`;
   return `${bpRange} | ${binRange}`;
@@ -474,7 +491,9 @@ onBeforeUnmount(() => {
   position: relative;
   width: 100%;
   height: 100%;
-  border: 1px solid black;
+  /* Draw the frame without shrinking/scaling the track's coordinate surface. */
+  outline: 1px solid black;
+  outline-offset: -1px;
   overflow: hidden;
   touch-action: none;
   cursor: grab;

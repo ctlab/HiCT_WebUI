@@ -63,6 +63,7 @@ type PipelineExpression =
       endColor: string;
       minSignal: number;
       maxSignal: number;
+      gamma?: number;
     }
   | {
       type: "pixel_blend";
@@ -108,6 +109,9 @@ export const buildColorExpression = (
   return {
     type: "colormap",
     mode: "LINEAR",
+    ...(linearGradient && linearGradient.gamma !== 1
+      ? { gamma: linearGradient.gamma }
+      : {}),
     input: buildSignalExpression(source, options),
     startColor: safeHexa(
       linearGradient?.startColorRGBA?.HEXA ?? "#ffffff00",

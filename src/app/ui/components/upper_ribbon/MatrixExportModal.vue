@@ -37,6 +37,7 @@
           <button
             type="button"
             class="btn-close"
+            aria-label="Close dialog"
             @click="emit('dismissed')"
           ></button>
         </div>
@@ -172,10 +173,39 @@
             </div>
           </div>
 
+          <div v-if="useCurrentAssembly || customAgpFilename" class="mb-3">
+            <div class="form-check">
+              <input
+                id="export-approximate-rebin"
+                v-model="approximateRebin"
+                class="form-check-input"
+                type="checkbox"
+              />
+              <label class="form-check-label" for="export-approximate-rebin"
+                >Approximate rebinning for sequence cuts</label
+              >
+            </div>
+            <small class="text-muted"
+              >Distribute contacts by sequence overlap. Exported counts can be
+              fractional estimates; the original HiCT data stays
+              unchanged.</small
+            >
+            <small
+              v-if="useCurrentAssembly && hasSequenceCuts"
+              class="d-block mt-1"
+              >This assembly contains sequence cuts. Enable approximate
+              rebinning to export its current layout.</small
+            >
+          </div>
+
           <div class="row g-2 mb-3">
             <div class="col-md-4">
               <label class="form-label">Export mode</label>
-              <select v-model="exportMode" class="form-select">
+              <select
+                v-model="exportModeModel"
+                class="form-select"
+                :disabled="effectiveApproximateRebin"
+              >
                 <option value="auto">auto (prefer hictk-assisted)</option>
                 <option value="hictk">hictk-assisted</option>
                 <option value="internal">direct internal exporter</option>
@@ -235,8 +265,8 @@
           <div class="form-check form-switch mb-2">
             <input
               id="export-balance-coolers"
-              v-model="balanceExportedCoolers"
-              :disabled="exportMode === 'internal'"
+              v-model="exportBalanceModel"
+              :disabled="exportMode === 'internal' || effectiveApproximateRebin"
               class="form-check-input"
               type="checkbox"
               role="switch"
@@ -246,10 +276,14 @@
             </label>
           </div>
           <small
-            v-if="exportMode === 'internal'"
+            v-if="exportMode === 'internal' || effectiveApproximateRebin"
             class="text-muted d-block mb-3"
           >
-            Balancing requires auto or hictk-assisted export.
+            {{
+              effectiveApproximateRebin
+                ? "Approximate rebinning exports unbalanced fractional counts with the internal exporter."
+                : "Balancing requires auto or hictk-assisted export."
+            }}
           </small>
           <small v-else class="text-muted d-block mb-3">
             Enabled by default. Auto and hictk-assisted modes run ICE balancing
@@ -318,7 +352,7 @@
 
 <script setup lang="ts">
 import { useModalFocus } from "@/app/ui/modalFocus";
-import { onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
 import { StartConversionJobRequest } from "@/app/core/net/api/request";
 import type { ConversionJobResponse } from "@/app/core/net/api/response";
@@ -337,6 +371,13 @@ const props = defineProps<{
 const sourceFilename = ref(props.initialSourceFilename ?? "");
 const customAgpFilename = ref("");
 const useCurrentAssembly = ref(true);
+const approximateRebin = ref(false);
+const hasSequenceCuts = computed(
+  () =>
+    props.networkManager.mapManager?.contigDimensionHolder.contigDescriptors.some(
+      (d) => d.contigSharedBinSlice
+    ) ?? false
+);
 const overwrite = ref(false);
 const compressionAlgorithm = ref("deflate");
 const compression = ref(6);
@@ -344,6 +385,37 @@ const parallelism = ref(-1);
 const exportMode = ref("auto");
 const exportAllResolutions = ref(false);
 const balanceExportedCoolers = ref(true);
+const effectiveApproximateRebin = computed(
+  () =>
+    approximateRebin.value &&
+    (useCurrentAssembly.value || !!customAgpFilename.value)
+);
+const exportModeModel = computed({
+  get: () => (effectiveApproximateRebin.value ? "internal" : exportMode.value),
+  set: (value: string) => {
+    exportMode.value = value;
+  },
+});
+const exportBalanceModel = computed({
+  get: () =>
+    !effectiveApproximateRebin.value &&
+    exportMode.value !== "internal" &&
+    balanceExportedCoolers.value,
+  set: (value: boolean) => {
+    balanceExportedCoolers.value = value;
+  },
+});
+watch(
+  [
+    effectiveApproximateRebin,
+    useCurrentAssembly,
+    customAgpFilename,
+    sourceFilename,
+  ],
+  () => {
+    errorMessage.value = "";
+  }
+);
 const outputFilename = ref("");
 const outputFilenameTouched = ref(false);
 const selectorKind = ref<"source" | "agp" | null>(null);
@@ -451,6 +523,15 @@ async function startExport(): Promise<void> {
     errorMessage.value = "Select a .hict.hdf5 source matrix first.";
     return;
   }
+  if (
+    useCurrentAssembly.value &&
+    hasSequenceCuts.value &&
+    !effectiveApproximateRebin.value
+  ) {
+    errorMessage.value =
+      "Enable approximate rebinning to export this sequence-cut assembly, or turn off current assembly to export the saved matrix.";
+    return;
+  }
   submitting.value = true;
   errorMessage.value = "";
   jobId.value = "";
@@ -474,10 +555,10 @@ async function startExport(): Promise<void> {
           compression: compression.value,
           compressionAlgorithm: compressionAlgorithm.value,
           parallelism: parallelism.value,
-          exportMode: exportMode.value,
+          exportMode: exportModeModel.value,
+          approximateRebin: effectiveApproximateRebin.value,
           exportAllResolutions: exportAllResolutions.value,
-          balanceExportedCoolers:
-            exportMode.value !== "internal" && balanceExportedCoolers.value,
+          balanceExportedCoolers: exportBalanceModel.value,
         })
       );
     jobId.value = response.jobId;

@@ -3,8 +3,33 @@ import fs from "node:fs";
 import ts from "typescript";
 import vm from "node:vm";
 
+const coordinates = { exports: {} };
+vm.runInNewContext(
+  ts.transpileModule(
+    fs.readFileSync(
+      new URL(
+        "../src/app/core/mapmanagers/regionSelection.ts",
+        import.meta.url
+      ),
+      "utf8"
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  coordinates
+);
+
 // Loads the production module with the browser pieces it touches replaced by recording stubs.
-function load({ clipboard, secure = true, execCommand = () => true }) {
+function load({
+  clipboard,
+  ClipboardItem,
+  secure = true,
+  execCommand = () => true,
+}) {
   const toasts = [];
   const copied = [];
   const removed = [];
@@ -28,6 +53,7 @@ function load({ clipboard, secure = true, execCommand = () => true }) {
   const sandbox = {
     exports: {},
     require: (name) => {
+      if (name === "./regionSelection") return coordinates.exports;
       assert.equal(name, "vue-sonner");
       return {
         toast: {
@@ -37,6 +63,7 @@ function load({ clipboard, secure = true, execCommand = () => true }) {
       };
     },
     navigator: { clipboard },
+    ClipboardItem,
     window: { isSecureContext: secure },
     document,
   };
@@ -61,12 +88,91 @@ function load({ clipboard, secure = true, execCommand = () => true }) {
   return { ...sandbox.exports, toasts, copied, removed };
 }
 
-// formatLocus: thousands separators, no negative or fractional positions.
+{
+  const written = [];
+  const { copySelectionCoordinates } = load({
+    clipboard: { writeText: async (text) => written.push(text) },
+  });
+  const layers = {
+    getRegionBounds: () => ({
+      rowStart: 1000,
+      rowEnd: 5500,
+      columnStart: 0,
+      columnEnd: 1,
+    }),
+    getSelectedEntityRange: () => ({ startBP: 10000, endBP: 20000 }),
+  };
+  const manager = {
+    viewAndLayersManager: layers,
+    contigDimensionHolder: {
+      prefix_sum_bp: [0, 5500],
+      contigDescriptors: [{ contigName: "ctgA", contigLengthBp: 5500 }],
+    },
+    scaffoldHolder: {
+      scaffoldTable: new Map([
+        [
+          1,
+          {
+            scaffoldName: "scfA",
+            scaffoldBordersBP: { startBP: 1000, endBP: 5500 },
+          },
+        ],
+      ]),
+    },
+  };
+  copySelectionCoordinates(manager);
+  copySelectionCoordinates(manager, "contig");
+  copySelectionCoordinates(manager, "scaffold");
+  layers.getRegionBounds = () => undefined;
+  copySelectionCoordinates(manager);
+  assert.deepEqual(written, [
+    "Assembly coordinates (bp, 1-based inclusive)\nRows\t1001\t5500\nColumns\t1\t1",
+    "Contig coordinates (bp, 1-based inclusive)\nRows\tctg:ctgA:1001\tctg:ctgA:5500\nColumns\tctg:ctgA:1\tctg:ctgA:1",
+    "Scaffold coordinates (bp, 1-based inclusive)\nRows\tscf:scfA:1\tscf:scfA:4500\nColumns\tassembly:1\tassembly:1",
+    "Assembly coordinates (bp, 1-based inclusive)\n10001\t20000",
+  ]);
+}
+
+{
+  let finishRender;
+  const png = new Promise((resolve) => {
+    finishRender = resolve;
+  });
+  let startedWrite = false;
+  const written = [];
+  const { copySelectionPng, toasts } = load({
+    ClipboardItem: class {
+      constructor(data) {
+        this.data = data;
+      }
+    },
+    clipboard: {
+      write: async ([item]) => {
+        startedWrite = true;
+        written.push(await item.data["image/png"]);
+      },
+    },
+  });
+  const pendingCopy = copySelectionPng({
+    renderCurrentMapPng: (options) => {
+      assert.equal(options.scope, "selection");
+      return png;
+    },
+  });
+  assert.equal(startedWrite, true, "start writing during the click handler");
+  const blob = new Blob(["png"], { type: "image/png" });
+  finishRender(blob);
+  await pendingCopy;
+  assert.deepEqual(written, [blob]);
+  assert.deepEqual(toasts, [["success", "Selection copied as PNG"]]);
+}
+
+// Copyable loci never contain locale grouping, negative or fractional positions.
 {
   const { formatLocus } = load({});
-  assert.equal(formatLocus("chr1", 12345), "chr1:12,345");
+  assert.equal(formatLocus("chr1", 12345), "chr1:12345");
   assert.equal(formatLocus("scaffold_7", 0), "scaffold_7:0");
-  assert.equal(formatLocus("ctg", 1234567.6), "ctg:1,234,568");
+  assert.equal(formatLocus("ctg", 1234567.6), "ctg:1234568");
   assert.equal(formatLocus("ctg", -5), "ctg:0");
   assert.equal(formatLocus("ctg", NaN), "ctg:0");
 }

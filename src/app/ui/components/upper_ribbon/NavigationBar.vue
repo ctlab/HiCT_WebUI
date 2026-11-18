@@ -22,10 +22,6 @@
 <template>
   <nav class="navbar-bar navbar navbar-expand">
     <div class="container-fluid">
-      <BackgroundJobsPanel
-        :requests="props.networkManager.requestManager"
-        @open="emit('jobResult', $event)"
-      />
       <!-- Logo -->
       <a class="navbar-brand hict-navbar-brand" href="#">
         <img
@@ -44,6 +40,7 @@
             <a
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
               href="#"
               >File</a
             >
@@ -84,6 +81,14 @@
                   >Attach</a
                 >
               </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="emit('examplesRequested')"
+                  >Open Examples…</a
+                >
+              </li>
               <li><hr class="dropdown-divider" /></li>
               <li>
                 <a
@@ -114,6 +119,14 @@
                 <a
                   class="dropdown-item"
                   href="#"
+                  @click.prevent="exportedFigureOpen = true"
+                  >Open exported figure…</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
                   @click.prevent="onConvertCoolersClicked"
                   >Convert matrices</a
                 >
@@ -139,6 +152,7 @@
             <a
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
               href="#"
               >Assembly</a
             >
@@ -200,11 +214,16 @@
               </li>
             </ul>
           </li>
+          <SelectionControls
+            :map-manager="props.mapManager"
+            :popper-config="navbarPopperConfig"
+          />
           <!-- View -->
           <li class="nav-item dropdown">
             <a
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
               href="#"
               >View</a
             >
@@ -305,6 +324,7 @@
             <a
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
               href="#"
               >Tools</a
             >
@@ -314,9 +334,23 @@
                 <button
                   class="dropdown-item"
                   :disabled="!props.mapManager"
-                  @click="sequenceSearchOpen = true"
+                  @click="
+                    sequenceSearchRemote = false;
+                    sequenceSearchOpen = true;
+                  "
                 >
                   Find sequences in linked FASTA…
+                </button>
+              </li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  @click="
+                    sequenceSearchRemote = true;
+                    sequenceSearchOpen = true;
+                  "
+                >
+                  Search NCBI databases…
                 </button>
               </li>
               <li><hr class="dropdown-divider" /></li>
@@ -355,6 +389,7 @@
               aria-current="page"
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
               href="#"
               >Dev</a
             >
@@ -518,6 +553,7 @@
             <a
               class="nav-link active dropdown-toggle"
               data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
               href="#"
               >Help</a
             >
@@ -569,27 +605,41 @@
             </ul>
           </li>
         </ul>
-        <div
-          v-if="props.mapManager"
-          class="file-chips ms-auto d-flex align-items-center gap-2"
-        >
+        <div class="file-chips ms-auto d-flex align-items-center gap-2">
           <span
-            v-if="openMapFilename"
+            v-if="props.mapManager && openMapFilename"
             class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
-            :title="openMapFilename"
+            :title="
+              primaryApproximation
+                ? `${openMapFilename}\n${primaryApproximation.description}\nMethod: ${primaryApproximation.method}`
+                : openMapFilename
+            "
           >
-            {{ noContactData ? "Assembly" : "Hi-C" }}:
+            {{
+              primaryApproximation
+                ? "Estimated"
+                : noContactData
+                ? "Assembly"
+                : "Hi-C"
+            }}:
             {{ shortFileLabel(openMapFilename, MAP_CHIP_LIMIT) }}
           </span>
           <span
-            v-if="secondaryMapFilename"
+            v-if="props.mapManager && secondaryMapFilename"
             class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
-            :title="secondaryMapFilename"
+            :title="
+              secondaryApproximation
+                ? `${secondaryMapFilename}\n${secondaryApproximation.description}\nMethod: ${secondaryApproximation.method}`
+                : secondaryMapFilename
+            "
           >
-            Secondary:
+            {{
+              secondaryApproximation ? "Secondary (estimated)" : "Secondary"
+            }}:
             {{ shortFileLabel(secondaryMapFilename, MAP_CHIP_LIMIT) }}
           </span>
           <button
+            v-if="props.mapManager"
             type="button"
             class="btn btn-sm file-chip"
             :class="
@@ -612,6 +662,7 @@
             }}
           </button>
           <button
+            v-if="props.mapManager"
             type="button"
             class="btn btn-sm file-chip btn-outline-secondary"
             :title="lastAgpFilename || 'No AGP loaded. Click to load one.'"
@@ -620,6 +671,11 @@
             AGP:
             {{ lastAgpFilename ? shortFileLabel(lastAgpFilename) : "none" }}
           </button>
+          <BackgroundJobsPanel
+            :requests="props.networkManager.requestManager"
+            @open="emit('jobResult', $event)"
+            @examplesRequested="emit('examplesRequested')"
+          />
         </div>
       </div>
     </div>
@@ -698,6 +754,10 @@
     :initial-source-filename="currentPrimaryHictFilename"
     @dismissed="exportingMatrix = false"
   />
+  <ExportedFigureModal
+    v-if="exportedFigureOpen"
+    @dismissed="exportedFigureOpen = false"
+  />
   <DotplotGenerator
     v-if="generatingDotplots"
     :network-manager="networkManager"
@@ -720,10 +780,15 @@
     @link-fasta="startLinkFastaForTool('moddotplot')"
   />
   <SequenceSearchModal
-    v-if="sequenceSearchOpen && props.mapManager"
+    v-if="sequenceSearchOpen && (props.mapManager || sequenceSearchRemote)"
     :map-manager="props.mapManager"
+    :requests="props.networkManager.requestManager"
+    :initial-remote="sequenceSearchRemote"
     @dismissed="sequenceSearchOpen = false"
-    @link-fasta="startLinkFastaForTool('search')"
+    @link-fasta="
+      sequenceSearchRemote = false;
+      startLinkFastaForTool('search');
+    "
   />
   <TrackManager
     v-if="trackManagerOpen"
@@ -820,7 +885,12 @@
     >
       <div class="settings-header">
         <h2>Info settings</h2>
-        <button class="btn-close" @click="osdSettingsOpen = false"></button>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Close dialog"
+          @click="osdSettingsOpen = false"
+        ></button>
       </div>
       <div class="settings-body">
         <div class="form-check form-switch mb-3">
@@ -940,7 +1010,12 @@
     >
       <div class="about-header">
         <h2>HiCT</h2>
-        <button class="btn-close" @click="aboutOpen = false"></button>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Close dialog"
+          @click="aboutOpen = false"
+        ></button>
       </div>
       <div class="about-tabs" role="tablist" aria-label="About HiCT">
         <button
@@ -1137,7 +1212,9 @@
       <div class="settings-header">
         <h2 id="resolution-settings-title">Restrict Resolutions</h2>
         <button
+          type="button"
           class="btn-close"
+          aria-label="Close dialog"
           @click="resolutionSettingsOpen = false"
         ></button>
       </div>
@@ -1226,11 +1303,18 @@
 </template>
 
 <script setup lang="ts">
+import SelectionControls from "./SelectionControls.vue";
 import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
 /* global __HICT_WEBUI_BUILD_VERSION__, __HICT_WEBUI_BUILD_COMMIT__ */
 import BackgroundJobsPanel from "./BackgroundJobsPanel.vue";
-import type { BackgroundJobOutput } from "@/app/core/net/api/RequestManager";
+import type { JobOpenRequest } from "@/app/stores/backgroundJobsUiStore";
 import { reportFailure } from "@/app/ui/reportFailure";
+import {
+  prepareFileSave,
+  canPickSessionFile,
+  pickSessionFile,
+} from "@/app/core/export/FileSave";
+import { writeCoordinateFile } from "@/app/core/export/CoordinateFileExport";
 import { AgpImportCancelledError } from "@/app/core/net/agpImportChoice";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { marked } from "marked";
@@ -1281,8 +1365,10 @@ const openingJuiceboxAssemblyFile = ref(false);
 const openingJuiceboxAssemblyFastaFile = ref(false);
 const convertingCoolers = ref(false);
 const exportingMatrix = ref(false);
+const exportedFigureOpen = ref(false);
 const generatingDotplots = ref(false);
 const sequenceSearchOpen = ref(false);
+const sequenceSearchRemote = ref(false);
 const modDotPlotOpen = ref(false);
 const assemblyDotPlotOpen = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
@@ -1333,6 +1419,9 @@ const CoolerConverter = defineAsyncComponent(
 const MatrixExportModal = defineAsyncComponent(
   () => import("./MatrixExportModal.vue")
 );
+const ExportedFigureModal = defineAsyncComponent(
+  () => import("./ExportedFigureModal.vue")
+);
 const ModDotPlotModal = defineAsyncComponent(
   () => import("./ModDotPlotModal.vue")
 );
@@ -1355,6 +1444,16 @@ const noContactData = computed(
     props.mapManager?.networkManager.requestManager.sourceCapabilities.PRIMARY
       ?.contactDataState === "ABSENT"
 );
+const primaryApproximation = computed(
+  () =>
+    props.mapManager?.networkManager.requestManager.sourceCapabilities.PRIMARY
+      ?.approximation
+);
+const secondaryApproximation = computed(
+  () =>
+    props.mapManager?.networkManager.requestManager.sourceCapabilities.SECONDARY
+      ?.approximation
+);
 
 const aboutElement = ref<HTMLElement | null>(null);
 const connectionElement = ref<HTMLElement | null>(null);
@@ -1375,7 +1474,7 @@ useModalFocus(resolutionSettingsElement, () => resolutionSettingsOpen.value);
 useModalFocus(juiceboxFastaPromptElement, () => juiceboxFastaPromptOpen.value);
 
 const emit = defineEmits<{
-  (e: "jobResult", output: BackgroundJobOutput): void;
+  (e: "jobResult", request: JobOpenRequest): void;
   (e: "selected", filename: string): void;
   (e: "closed"): void;
   (e: "attached"): void;
@@ -1426,6 +1525,14 @@ useEscDismissableDialog({
   requestClose: () => {
     cancelJuiceboxFlow();
   },
+});
+
+// Navbar dropdowns otherwise disable Popper positioning and can leave a narrow viewport.
+const navbarPopperConfig = JSON.stringify({
+  modifiers: [
+    { name: "applyStyles", enabled: true },
+    { name: "preventOverflow", options: { padding: 8 } },
+  ],
 });
 
 const props = defineProps<{
@@ -1630,7 +1737,7 @@ function onOpenFile() {
   openingFile.value = true;
 }
 
-defineExpose({ openFile: onOpenFile });
+defineExpose({ openFile: onOpenFile, openSession: onOpenSessionClicked });
 
 function onOpenWizard(): void {
   emit("wizardRequested");
@@ -1842,8 +1949,17 @@ function onSaveSessionClicked(): void {
 
 const sessionFileInput = ref<HTMLInputElement | null>(null);
 
-function onOpenSessionClicked(): void {
-  sessionFileInput.value?.click();
+async function onOpenSessionClicked(): Promise<void> {
+  if (!canPickSessionFile()) {
+    sessionFileInput.value?.click();
+    return;
+  }
+  try {
+    const file = await pickSessionFile();
+    if (file) emit("openSession", file);
+  } catch (error) {
+    reportFailure("Open session", error);
+  }
 }
 
 function onSessionFileSelected(event: Event): void {
@@ -2274,38 +2390,38 @@ function onAGPFileSelected() {
   openingAGPFile.value = false;
 }
 
+const assemblyExportBusy = ref(false);
+async function exportAssemblyFile(kind: "fasta" | "agp") {
+  if (!props.mapManager || assemblyExportBusy.value) return;
+  const api = props.networkManager.requestManager;
+  const version = api.history.applied ? { ...api.history.applied } : null;
+  assemblyExportBusy.value = true;
+  try {
+    const destination = await prepareFileSave(`assembly.${kind}`, kind);
+    if (!destination) return;
+    await writeCoordinateFile(
+      destination,
+      api,
+      kind === "fasta"
+        ? new GetFastaForAssemblyRequest()
+        : new GetAGPForAssemblyRequest(),
+      version,
+      kind === "fasta" ? "Assembly FASTA" : "Assembly AGP"
+    );
+  } catch (error) {
+    reportFailure(`Export assembly ${kind.toUpperCase()}`, error);
+  } finally {
+    assemblyExportBusy.value = false;
+  }
+}
 function onAssemblyFASTARequest() {
-  toast.message("Preparing export…");
-  props.networkManager.requestManager
-    .getFASTAForAssembly(new GetFastaForAssemblyRequest())
-    .then((data) => {
-      // eslint-disable-next-line
-      const blob = new Blob([data as BlobPart], { type: "text/plain" });
-      const link = document.createElement("a");
-      link.href = window.URL.createObjectURL(blob);
-      link.download = `assembly.fasta`;
-      link.click();
-    })
-    .catch((error) => reportFailure("Export assembly", error));
+  void exportAssemblyFile("fasta");
 }
-
-function onSelectionFASTARequest() {
-  props.mapManager?.eventManager.onExportFASTAForSelectionClicked();
-}
-
 function onAssemblyAGPRequest() {
-  toast.message("Preparing export…");
-  props.networkManager.requestManager
-    .getAGPForAssembly(new GetAGPForAssemblyRequest())
-    .then((data) => {
-      // eslint-disable-next-line
-      const blob = new Blob([data as BlobPart], { type: "text/plain" });
-      const link = document.createElement("a");
-      link.href = window.URL.createObjectURL(blob);
-      link.download = `assembly.agp`;
-      link.click();
-    })
-    .catch((error) => reportFailure("Export assembly", error));
+  void exportAssemblyFile("agp");
+}
+function onSelectionFASTARequest() {
+  void props.mapManager?.eventManager.onExportFASTAForSelectionClicked();
 }
 </script>
 
@@ -2323,10 +2439,6 @@ function onAssemblyAGPRequest() {
   }
   .navbar-bar .nav-link {
     padding: 0.25rem 0.5rem;
-  }
-  .navbar-bar .file-chips {
-    flex-wrap: wrap;
-    margin-left: 0 !important;
   }
 }
 
@@ -2372,6 +2484,42 @@ function onAssemblyAGPRequest() {
   }
 }
 
+/* Let metadata use another row rather than push menus or Jobs outside the window. */
+.navbar-bar {
+  height: auto;
+  min-height: 56px;
+}
+.navbar-bar .container-fluid {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+#navbarSupportedContent {
+  min-width: 0;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+#navbarSupportedContent > .navbar-nav {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.navbar-bar .file-chips {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.navbar-bar :deep(.jobs-button) {
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .navbar-bar .file-chips {
+    flex-wrap: nowrap;
+  }
+}
+
 .navbar-bar :deep(.navbar-brand),
 .navbar-bar :deep(.nav-link),
 .navbar-bar :deep(.dropdown-item),
@@ -2384,6 +2532,8 @@ function onAssemblyAGPRequest() {
 }
 
 .navbar-bar :deep(.dropdown-menu) {
+  max-height: min(70vh, 32rem);
+  overflow-y: auto;
   border-color: var(--hict-ui-border, rgba(15, 23, 38, 0.22));
 }
 
@@ -2404,6 +2554,8 @@ function onAssemblyAGPRequest() {
 }
 
 .file-chip {
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 16rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2411,6 +2563,7 @@ function onAssemblyAGPRequest() {
 }
 
 .file-chip--static {
+  color: var(--hict-ui-fg, #1f2937);
   cursor: default;
   pointer-events: auto;
 }

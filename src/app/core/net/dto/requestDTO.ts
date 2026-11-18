@@ -1,5 +1,6 @@
 import {
   BackgroundJobsRequest,
+  RemoteBlastRetrievalRequest,
   CancelBackgroundJobRequest,
 } from "../api/request";
 /*
@@ -106,6 +107,7 @@ import {
   ImportNameMappingRequest,
   ReloadTilesRequest,
   SplitContigRequest,
+  SplitContigAtBpRequest,
   MoveSelectionToDebrisRequest,
   GetVisualizationOptionsRequest,
   SetVisualizationOptionsRequest,
@@ -139,6 +141,10 @@ abstract class HiCTAPIRequestDTO<
         };
       case entity instanceof AlignmentDetailRequest:
         return { toDTO: () => (entity as AlignmentDetailRequest).options };
+      case entity instanceof RemoteBlastRetrievalRequest:
+        return new RemoteBlastRetrievalRequestDTO(
+          entity as RemoteBlastRetrievalRequest
+        );
       case entity instanceof SequenceAnalysisRequest:
         return { toDTO: () => (entity as SequenceAnalysisRequest).options };
       case entity instanceof AssemblyHistoryRequest:
@@ -166,6 +172,8 @@ abstract class HiCTAPIRequestDTO<
         );
       case entity instanceof SplitContigRequest:
         return new SplitContigRequestDTO(entity as SplitContigRequest);
+      case entity instanceof SplitContigAtBpRequest:
+        return new SplitContigAtBpRequestDTO(entity as SplitContigAtBpRequest);
       case entity instanceof StartConversionJobRequest:
         return new StartConversionJobRequestDTO(
           entity as StartConversionJobRequest
@@ -396,6 +404,12 @@ abstract class HiCTAPIRequestDTO<
 
   private static toDTOByRequestPath(entity: HiCTAPIRequest) {
     switch (entity.requestPath) {
+      case "/sequence/remote_blast/retrieve":
+        return new RemoteBlastRetrievalRequestDTO(
+          entity as RemoteBlastRetrievalRequest
+        );
+      case "/split_contig_at_bp":
+        return new SplitContigAtBpRequestDTO(entity as SplitContigAtBpRequest);
       case "/tracks/open_cooler_weights":
         return new OpenCoolerWeightsTrackRequestDTO(
           entity as OpenCoolerWeightsTrackRequest
@@ -593,8 +607,10 @@ class StartConversionJobRequestDTO extends HiCTAPIRequestDTO<StartConversionJobR
   toDTO(): Record<string, unknown> {
     return {
       filename: this.entity.options.filename,
+      exampleId: this.entity.options.exampleId,
       assemblyFilename: this.entity.options.assemblyFilename,
       useCurrentAssembly: this.entity.options.useCurrentAssembly,
+      approximateRebin: this.entity.options.approximateRebin,
       direction: this.entity.options.direction,
       outputFilename: this.entity.options.outputFilename,
       overwrite: this.entity.options.overwrite,
@@ -623,6 +639,7 @@ class StartBatchConversionJobsRequestDTO extends HiCTAPIRequestDTO<StartBatchCon
       files: this.entity.options.files,
       assemblyFilename: this.entity.options.assemblyFilename,
       assemblyFilenameByFile: this.entity.options.assemblyFilenameByFile,
+      approximateRebin: this.entity.options.approximateRebin,
       parallelJobs: this.entity.options.parallelJobs,
       parallelism: this.entity.options.parallelism,
       overwrite: this.entity.options.overwrite,
@@ -774,6 +791,12 @@ class SplitContigRequestDTO extends HiCTAPIRequestDTO<SplitContigRequest> {
       splitPx: this.entity.options.splitPx,
       bpResolution: this.entity.options.bpResolution,
     };
+  }
+}
+
+class SplitContigAtBpRequestDTO extends HiCTAPIRequestDTO<SplitContigAtBpRequest> {
+  toDTO(): Record<string, unknown> {
+    return { assemblyFormat: "compact-v1", ...this.entity.options };
   }
 }
 
@@ -1007,6 +1030,8 @@ class QueryTracks1DRequestDTO extends HiCTAPIRequestDTO<QueryTracks1DRequest> {
       widthPx: this.entity.options.widthPx,
       bpResolution: this.entity.options.bpResolution,
     };
+    if (this.entity.options.sequenceScale !== undefined)
+      dto.sequenceScale = this.entity.options.sequenceScale;
     if (this.entity.options.unit) {
       dto.unit = this.entity.options.unit;
     }
@@ -1050,6 +1075,8 @@ class GetTrackFeatureContextRequestDTO extends HiCTAPIRequestDTO<GetTrackFeature
       bpResolution: this.entity.options.bpResolution,
       marginScreens: this.entity.options.marginScreens,
     };
+    if (this.entity.options.sequenceScale !== undefined)
+      dto.sequenceScale = this.entity.options.sequenceScale;
     if (this.entity.options.unit) {
       dto.unit = this.entity.options.unit;
     }
@@ -1224,6 +1251,7 @@ export {
   ProbeTrackPrecomputeCacheRequestDTO,
   ListCoolerFilesRequestDTO,
   SplitContigRequestDTO,
+  SplitContigAtBpRequestDTO,
   MoveSelectionToDebrisRequestDTO,
   GetVisualizationOptionsRequestDTO,
   SetVisualizationOptionsRequestDTO,
@@ -1247,5 +1275,12 @@ class GetSessionSnapshotRequestDTO extends HiCTAPIRequestDTO<GetSessionSnapshotR
       verifyTrackDefinitions: this.entity.verifyTrackDefinitions,
       fullFingerprints: this.entity.fullFingerprints,
     };
+  }
+}
+
+export class RemoteBlastRetrievalRequestDTO {
+  constructor(private readonly entity: RemoteBlastRetrievalRequest) {}
+  toDTO(): object {
+    return this.entity.options;
   }
 }

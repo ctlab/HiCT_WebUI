@@ -55,6 +55,9 @@ class Feature {
   setStyle(style) {
     this.style = style;
   }
+  set(key, value) {
+    this[key] = value;
+  }
 }
 class Shape {
   constructor(options) {
@@ -80,6 +83,10 @@ const { AlignmentDetailLayer } = load(
       sequenceLetterMinimumPixels: () => 10,
     },
     "../visualization/alignmentMarkers": markers,
+    "../visualization/alignmentRunGeometry": load(
+      "../src/app/core/visualization/alignmentRunGeometry.ts",
+      {}
+    ),
     "../net/api/SequenceAnalysisRequest": {
       SequenceAnalysisRequest: class {
         constructor(path) {
@@ -106,9 +113,9 @@ const finished = {
     ],
   },
 };
-let requests = 0,
-  stops = [],
-  query = async () => finished;
+const stops = [];
+let requests = 0;
+let query = async () => finished;
 const api = {
   hasLinkedFasta: true,
   history: { applied: 0 },
@@ -154,7 +161,12 @@ const manager = {
 };
 const layer = new AlignmentDetailLayer(manager);
 await layer.refresh();
-assert.equal(layer.source.features.length, 2);
+assert.equal(layer.source.features.length, 1);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(layer.source.features[0].geometry)),
+  { 0: [1, -1], 1: [2, -2], 2: [3, -3] }
+);
+assert.equal(layer.source.features[0].style[1].stroke.color, "#047857");
 assert.equal(layer.state.visible.value, true);
 settings.automaticAlignmentEnabled = false;
 assert.equal(layer.source.features.length, 0);
@@ -168,7 +180,7 @@ assert.equal(
 );
 settings.automaticAlignmentEnabled = true;
 await new Promise((resolve) => setTimeout(resolve, 160));
-assert.equal(layer.source.features.length, 2, "enabling resumes automatically");
+assert.equal(layer.source.features.length, 1, "enabling resumes automatically");
 let resolveHeld;
 query = () =>
   new Promise((resolve) => {
@@ -192,6 +204,20 @@ assert.ok(
   stops.includes("/sequence/jobs/active/stop"),
   "disable stops the known running job"
 );
+query = () =>
+  new Promise((resolve) => {
+    resolveHeld = resolve;
+  });
+settings.automaticAlignmentEnabled = true;
+await new Promise((resolve) => setTimeout(resolve, 140));
+settings.automaticAlignmentEnabled = false;
+resolveHeld({ status: "submitted", jobId: "late-submit" });
+await layer.pending;
+assert.ok(
+  stops.includes("/sequence/jobs/late-submit/stop"),
+  "Late submissions must be stopped even after the response owner changes"
+);
+assert.equal(layer.source.features.length, 0);
 layer.dispose();
 console.log(
   "Alignment controls: marker key, automatic resume, disabled navigation, stale results and job cancellation passed."

@@ -24,11 +24,15 @@
     <div v-show="!previewMode" class="modal-backdrop fade show"></div>
     <div
       class="modal fade show"
-      :class="{ 'pipeline-preview': previewMode }"
+      :class="{
+        'pipeline-preview': previewMode,
+        'pipeline-palette': editorTarget === 'oe',
+      }"
       tabindex="-1"
       style="display: block"
       ref="modalFocusElement"
       role="dialog"
+      aria-label="Rendering Pipeline"
       :aria-modal="!previewMode"
     >
       <div class="modal-dialog pipeline-dialog">
@@ -40,96 +44,157 @@
               class="btn btn-sm btn-outline-secondary ms-auto me-2 d-flex align-items-center gap-1"
               @click="togglePreviewMode"
             >
-              <i :class="previewMode ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
+              <i
+                :class="previewMode ? 'bi bi-eye-slash' : 'bi bi-eye'"
+                aria-hidden="true"
+              ></i>
               <span>{{ previewMode ? "Show editor" : "Preview" }}</span>
             </button>
             <button
               type="button"
               class="btn-close"
+              aria-label="Close rendering editor"
               @click="dismissModal"
             ></button>
           </div>
           <div v-show="!previewMode" class="modal-body">
-            <div class="alert alert-warning py-2 mb-3">
-              Normalization dropdown updates this pipeline, but pipeline edits
-              are not fully back-synced to checkbox controls. Expected and O/E
-              views fall back to the standard renderer because custom pipelines
-              operate on per-pixel signals.
-            </div>
-            <div class="d-flex gap-3 align-items-center mb-3">
-              <div class="form-check">
-                <input
-                  id="pipeline-enabled"
-                  v-model="enabled"
-                  class="form-check-input"
-                  type="checkbox"
-                />
-                <label class="form-check-label" for="pipeline-enabled"
-                  >Enable custom pipeline</label
-                >
-              </div>
-              <div class="form-check">
-                <input
-                  id="pipeline-swap"
-                  v-model="swapUpperLower"
-                  class="form-check-input"
-                  type="checkbox"
-                />
-                <label class="form-check-label" for="pipeline-swap"
-                  >Swap upper/lower diagonal branches</label
-                >
-              </div>
-              <select
-                v-model="selectedPresetId"
-                class="form-select form-select-sm pipeline-preset-select"
-                :disabled="loading || saving"
-              >
-                <option
-                  v-for="preset in RENDERING_PRESETS"
-                  :key="preset.id"
-                  :value="preset.id"
-                >
-                  {{ preset.label }}
-                </option>
-              </select>
+            <div
+              v-if="allowOeTarget"
+              role="tablist"
+              aria-label="Rendering target"
+              class="pipeline-target-tabs mb-3"
+            >
               <button
-                class="btn btn-sm btn-outline-primary"
+                id="pipeline-tab-observed"
+                role="tab"
+                aria-controls="pipeline-panel-observed"
+                :aria-selected="editorTarget === 'observed'"
+                :tabindex="editorTarget === 'observed' ? 0 : -1"
                 :disabled="loading || saving"
-                @click="loadSelectedPreset"
+                @click="switchEditorTarget('observed')"
+                @keydown="onEditorTabKey"
               >
-                Load preset
+                Observed graph
               </button>
               <button
-                class="btn btn-sm btn-outline-secondary ms-auto"
+                id="pipeline-tab-oe"
+                role="tab"
+                aria-controls="pipeline-panel-oe"
+                :aria-selected="editorTarget === 'oe'"
+                :tabindex="editorTarget === 'oe' ? 0 : -1"
                 :disabled="loading || saving"
-                @click="loadConfig"
+                @click="switchEditorTarget('oe')"
+                @keydown="onEditorTabKey"
               >
-                Reload
+                Primary O/E colormap
               </button>
             </div>
+            <OePaletteEditor
+              v-if="editorTarget === 'oe' && mapManager"
+              id="pipeline-panel-oe"
+              ref="oeEditor"
+              :map-manager="mapManager"
+              role="tabpanel"
+              aria-labelledby="pipeline-tab-oe"
+              @busy="oeBusy = $event"
+            />
+            <div
+              v-show="editorTarget === 'observed'"
+              id="pipeline-panel-observed"
+              :role="allowOeTarget ? 'tabpanel' : undefined"
+              aria-label="Observed graph"
+              :aria-labelledby="
+                allowOeTarget ? 'pipeline-tab-observed' : undefined
+              "
+            >
+              <div class="alert alert-warning py-2 mb-3">
+                This graph controls the Observed view. Expected and O/E keep
+                their own primary-map processing and palette. Use the O/E
+                palette in a Colormap node for a signal that already represents
+                contact ratios; its neutral value is 1.
+              </div>
+              <div class="d-flex gap-3 align-items-center mb-3">
+                <div class="form-check">
+                  <input
+                    id="pipeline-enabled"
+                    v-model="enabled"
+                    class="form-check-input"
+                    type="checkbox"
+                    :disabled="loading || saving"
+                  />
+                  <label class="form-check-label" for="pipeline-enabled"
+                    >Enable custom pipeline</label
+                  >
+                </div>
+                <div class="form-check">
+                  <input
+                    id="pipeline-swap"
+                    v-model="swapUpperLower"
+                    class="form-check-input"
+                    type="checkbox"
+                    :disabled="loading || saving"
+                  />
+                  <label class="form-check-label" for="pipeline-swap"
+                    >Swap upper/lower diagonal branches</label
+                  >
+                </div>
+                <select
+                  v-model="selectedPresetId"
+                  class="form-select form-select-sm pipeline-preset-select"
+                  :disabled="loading || saving"
+                >
+                  <option
+                    v-for="preset in RENDERING_PRESETS"
+                    :key="preset.id"
+                    :value="preset.id"
+                  >
+                    {{ preset.label }}
+                  </option>
+                </select>
+                <button
+                  class="btn btn-sm btn-outline-primary"
+                  :disabled="loading || saving"
+                  @click="loadSelectedPreset"
+                >
+                  Load preset
+                </button>
+                <button
+                  class="btn btn-sm btn-outline-secondary ms-auto"
+                  :disabled="loading || saving"
+                  @click="loadConfig"
+                >
+                  Reload
+                </button>
+              </div>
 
-            <div class="pipeline-graph card mb-2">
-              <div class="card-body p-0">
-                <div ref="graphHost" class="graph-host">
-                  <canvas ref="graphCanvasRef" class="graph-canvas"></canvas>
+              <div class="pipeline-graph card mb-2">
+                <div class="card-body p-0">
+                  <div
+                    ref="graphHost"
+                    class="graph-host"
+                    :inert="loading || saving || previewing"
+                    :aria-busy="loading || saving || previewing"
+                  >
+                    <canvas ref="graphCanvasRef" class="graph-canvas"></canvas>
+                  </div>
                 </div>
               </div>
-            </div>
-            <small class="text-muted d-block mb-2">
-              Blue round ports carry numeric signals; purple square ports carry
-              colors. Sinks accept only colors. Right-click to add nodes; use
-              the same full-map graph on both sinks for overlays.
-            </small>
+              <small class="text-muted d-block mb-2">
+                Blue round ports carry numeric signals; purple square ports
+                carry colors. Sinks accept only colors. Right-click to add
+                nodes; use the same full-map graph on both sinks for overlays.
+              </small>
 
-            <div v-if="loading" class="py-2">
-              <span class="spinner-border spinner-border-sm me-2"></span>
-              Loading pipeline configuration…
+              <div v-if="loading" class="py-2">
+                <span class="spinner-border spinner-border-sm me-2"></span>
+                Loading pipeline configuration…
+              </div>
             </div>
           </div>
           <div v-show="!previewMode" class="modal-footer">
             <button
               class="btn btn-outline-danger me-auto"
-              :disabled="saving"
+              :disabled="saving || loading || oeBusy"
               @click="resetConfig"
             >
               Reset
@@ -143,24 +208,24 @@
             />
             <button
               class="btn btn-outline-secondary"
-              :disabled="saving || loading"
+              :disabled="saving || loading || oeBusy"
               @click="exportGraphToFile"
             >
-              Export graph
+              {{ editorTarget === "oe" ? "Export palette" : "Export graph" }}
             </button>
             <button
               class="btn btn-outline-secondary"
-              :disabled="saving || loading"
+              :disabled="saving || loading || oeBusy"
               @click="triggerImportGraph"
             >
-              Import graph
+              {{ editorTarget === "oe" ? "Import palette" : "Import graph" }}
             </button>
             <button class="btn btn-secondary" @click="dismissModal">
               Close
             </button>
             <button
               class="btn btn-outline-primary"
-              :disabled="saving || previewing"
+              :disabled="saving || loading || previewing || oeBusy"
               @click="previewConfig"
             >
               <span
@@ -171,7 +236,7 @@
             </button>
             <button
               class="btn btn-primary"
-              :disabled="saving"
+              :disabled="saving || loading || previewing || oeBusy"
               @click="saveConfig"
             >
               <span
@@ -194,6 +259,7 @@
 </template>
 
 <script setup lang="ts">
+import { saveFileWithNotice } from "@/app/ui/fileSaveNotice";
 import { pipelineEditorStorageKey } from "@/app/core/visualization/renderPipelinePreset";
 import { reportFailure } from "@/app/ui/reportFailure";
 import { useModalFocus } from "@/app/ui/modalFocus";
@@ -210,7 +276,15 @@ import {
 } from "@/app/core/visualization/pipelineEditorState";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import OePaletteEditor from "./OePaletteEditor.vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 import { toast } from "vue-sonner";
 import { LGraph, LGraphCanvas, LGraphNode, LiteGraph } from "litegraph.js";
 import "litegraph.js/css/litegraph.css";
@@ -282,12 +356,13 @@ type PipelineExpression =
     }
   | {
       type: "colormap";
-      mode: "LINEAR" | "MODDOTPLOT_IDENTITY";
+      mode: "LINEAR" | "MODDOTPLOT_IDENTITY" | "OBSERVED_OVER_EXPECTED";
       input: PipelineExpression;
       startColor: string;
       endColor: string;
       minSignal: number;
       maxSignal: number;
+      gamma?: number;
       min?: PipelineExpression;
       max?: PipelineExpression;
     }
@@ -452,6 +527,70 @@ let originalGetNodeTypesInCategory:
 
 const visualizationOptionsStore = useVisualizationOptionsStore();
 const styleStore = useStyleStore();
+const allowOeTarget = computed(
+  () => visualizationOptionsStore.signalDisplayMode === "OBSERVED_OVER_EXPECTED"
+);
+const editorTarget = ref<"observed" | "oe">(
+  allowOeTarget.value ? "oe" : "observed"
+);
+const oeEditor = ref<InstanceType<typeof OePaletteEditor>>();
+const oeBusy = ref(false);
+const runOeAction = async (action: () => Promise<void>): Promise<boolean> => {
+  saving.value = true;
+  try {
+    await action();
+    return true;
+  } catch (error) {
+    reportFailure("Update O/E palette", error);
+    return false;
+  } finally {
+    saving.value = false;
+  }
+};
+const switchEditorTarget = async (target: "observed" | "oe") => {
+  if (target === editorTarget.value || loading.value || saving.value) return;
+  if (editorTarget.value === "oe") {
+    if (!(await runOeAction(() => oeEditor.value!.flushValid()))) return;
+  } else if (graph && observedDraftChanged()) {
+    saving.value = true;
+    try {
+      await persistConfig(false);
+    } catch (error) {
+      reportFailure("Save pipeline", error);
+      return;
+    } finally {
+      saving.value = false;
+    }
+  }
+  destroyGraphRuntime();
+  pendingVisualizationSync.value = false;
+  editorTarget.value = target;
+  oeBusy.value = target === "oe";
+  await nextTick();
+  if (target === "observed") {
+    initializeGraph();
+    await loadConfig();
+  }
+};
+const onEditorTabKey = (event: KeyboardEvent) => {
+  if (
+    !allowOeTarget.value ||
+    !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+  )
+    return;
+  event.preventDefault();
+  const target =
+    event.key === "Home"
+      ? "observed"
+      : event.key === "End"
+      ? "oe"
+      : editorTarget.value === "oe"
+      ? "observed"
+      : "oe";
+  void switchEditorTarget(target).then(() =>
+    document.getElementById(`pipeline-tab-${editorTarget.value}`)?.focus()
+  );
+};
 
 const defaultSignalExpression = (): PipelineExpression => ({
   type: "source",
@@ -610,6 +749,7 @@ const buildColorExpressionFromVisualizationOptions = (
     endColor?: string;
     minSignal?: number;
     maxSignal?: number;
+    gamma?: number;
   }
 ): PipelineExpression => {
   const gradient = getVisualizationGradient();
@@ -619,6 +759,9 @@ const buildColorExpressionFromVisualizationOptions = (
     type: "colormap",
     mode: "LINEAR",
     input: buildSignalExpressionFromVisualizationOptions(source, overrides),
+    ...((overrides?.gamma ?? gradient?.gamma ?? 1) !== 1
+      ? { gamma: overrides?.gamma ?? gradient?.gamma }
+      : {}),
     startColor: sanitizeColor(
       overrides?.startColor ?? gradient?.startColorRGBA?.HEXA,
       "#ffffff00"
@@ -911,8 +1054,14 @@ const parseExpression = (raw: unknown): PipelineExpression => {
     return {
       type: "colormap",
       mode:
-        node.mode === "MODDOTPLOT_IDENTITY" ? "MODDOTPLOT_IDENTITY" : "LINEAR",
+        node.mode === "MODDOTPLOT_IDENTITY" ||
+        node.mode === "OBSERVED_OVER_EXPECTED"
+          ? node.mode
+          : "LINEAR",
       input: parseExpression(node.input),
+      ...(node.gamma !== undefined && node.gamma !== 1
+        ? { gamma: Number(node.gamma) }
+        : {}),
       startColor: sanitizeColor(node.startColor, "#ffffff00"),
       endColor: sanitizeColor(node.endColor, "#006000ff"),
       minSignal: toFiniteNumber(node.minSignal ?? 0, 0),
@@ -1330,7 +1479,7 @@ const ensureNodeTypesRegistered = (): void => {
   class ColormapNode extends LGraphNode {
     constructor() {
       super();
-      this.title = "Linear Colormap";
+      this.title = "Colormap";
       this.addInput("signal", "number");
       this.addInput("minSignal", "number");
       this.addInput("maxSignal", "number");
@@ -1342,6 +1491,24 @@ const ensureNodeTypesRegistered = (): void => {
         minSignal: 0,
         maxSignal: 1,
       };
+      this.addWidget(
+        "combo",
+        "palette",
+        "Linear",
+        (value: string) => {
+          this.properties.mode =
+            value === "O/E (neutral 1)" ? "OBSERVED_OVER_EXPECTED" : "LINEAR";
+          if (this.properties.mode === "OBSERVED_OVER_EXPECTED") {
+            this.properties.startColor = "#2166acff";
+            this.properties.endColor = "#b2182bff";
+            this.properties.minSignal = 0.5;
+            this.properties.maxSignal = 2;
+          }
+          syncNodeWidgetsFromProperties(this);
+          graphCanvas?.draw(true, true);
+        },
+        { values: ["Linear", "O/E (neutral 1)"] }
+      );
       this.addWidget("button", "pick start", "", () => {
         openColorPickerInput(
           sanitizeColor(this.properties.startColor, "#ffffff00"),
@@ -1398,7 +1565,20 @@ const ensureNodeTypesRegistered = (): void => {
           this.properties.maxSignal = toFiniteNumber(value, 1);
         }
       );
-      this.size = [250, 300];
+      this.properties.gamma = 1;
+      this.addWidget(
+        "number",
+        "gamma (linear)",
+        1,
+        (value: unknown) => {
+          this.properties.gamma = Math.max(
+            0.05,
+            Math.min(100, toFiniteNumber(value, 1))
+          );
+        },
+        { min: 0.05, max: 100, step: 0.1, precision: 3 }
+      );
+      this.size = [250, 325];
     }
 
     onDrawForeground(context: CanvasRenderingContext2D): void {
@@ -1810,6 +1990,13 @@ const syncNodeWidgetsFromProperties = (node: LGraphNode): void => {
   if (node.type === COLORMAP_NODE_TYPE) {
     setWidgetValue(
       node,
+      "palette",
+      node.properties?.mode === "OBSERVED_OVER_EXPECTED"
+        ? "O/E (neutral 1)"
+        : "Linear"
+    );
+    setWidgetValue(
+      node,
       "start hex",
       sanitizeColor(node.properties?.startColor, "#ffffff00")
     );
@@ -1817,6 +2004,11 @@ const syncNodeWidgetsFromProperties = (node: LGraphNode): void => {
       node,
       "end hex",
       sanitizeColor(node.properties?.endColor, "#006000ff")
+    );
+    setWidgetValue(
+      node,
+      "gamma (linear)",
+      toFiniteNumber(node.properties?.gamma, 1)
     );
     setWidgetValue(node, "min", toFiniteNumber(node.properties?.minSignal, 0));
     setWidgetValue(node, "max", toFiniteNumber(node.properties?.maxSignal, 1));
@@ -2086,6 +2278,10 @@ const initializeGraph = (): void => {
 };
 
 const triggerImportGraph = (): void => {
+  if (editorTarget.value === "oe") {
+    oeEditor.value?.importPalette();
+    return;
+  }
   importInputRef.value?.click();
 };
 
@@ -2330,6 +2526,7 @@ const createNodeForExpression = (
         node.properties.endColor = expression.endColor;
         node.properties.minSignal = expression.minSignal;
         node.properties.maxSignal = expression.maxSignal;
+        node.properties.gamma = expression.gamma ?? 1;
       }
       break;
     case "rgb":
@@ -2846,8 +3043,13 @@ const expressionFromNode = (
       mode:
         node.type === MODDOTPLOT_COLORMAP_NODE_TYPE
           ? "MODDOTPLOT_IDENTITY"
+          : node.properties?.mode === "OBSERVED_OVER_EXPECTED"
+          ? "OBSERVED_OVER_EXPECTED"
           : "LINEAR",
       input: input(0),
+      ...(node.properties?.gamma !== undefined && node.properties.gamma !== 1
+        ? { gamma: Number(node.properties.gamma) }
+        : {}),
       startColor: sanitizeColor(node.properties?.startColor, "#ffffff00"),
       endColor: sanitizeColor(node.properties?.endColor, "#006000ff"),
       minSignal:
@@ -2940,6 +3142,15 @@ const expressionFromSink = (branch: "UPPER" | "LOWER"): PipelineExpression => {
 const editorStateKey = () =>
   pipelineEditorStorageKey(props.mapManager?.networkManager.host ?? "");
 let lastServerSignature = "";
+let loadedObservedEnabled = false,
+  loadedObservedSwap = false;
+const observedDraftChanged = () =>
+  enabled.value !== loadedObservedEnabled ||
+  swapUpperLower.value !== loadedObservedSwap ||
+  expressionPairSignature(
+    expressionFromSink("UPPER"),
+    expressionFromSink("LOWER")
+  ) !== lastServerSignature;
 const expressionPairSignature = (
   upper: PipelineExpression,
   lower: PipelineExpression
@@ -3039,6 +3250,12 @@ const rememberEditorState = (): void => {
 };
 
 const exportGraphToFile = (): void => {
+  if (editorTarget.value === "oe") {
+    void oeEditor.value
+      ?.exportPalette()
+      .catch((error) => reportFailure("Export O/E palette", error));
+    return;
+  }
   try {
     const payload = {
       schemaVersion: 2,
@@ -3052,12 +3269,12 @@ const exportGraphToFile = (): void => {
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
     });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "hict_render_pipeline.json";
-    anchor.click();
-    URL.revokeObjectURL(url);
+    void saveFileWithNotice(
+      blob,
+      "hict_render_pipeline.json",
+      "pipeline",
+      "Pipeline"
+    );
   } catch (error) {
     reportFailure("Export pipeline", error);
   }
@@ -3074,6 +3291,10 @@ const onImportFileSelected = async (event: Event): Promise<void> => {
       throw new Error("Pipeline files must be smaller than 2 MB.");
     const text = await file.text();
     const parsed = JSON.parse(text) as Record<string, unknown>;
+    if (parsed.target === "PRIMARY_OE")
+      throw new Error(
+        "Select Show O/E and use the Primary O/E colormap tab to import this palette."
+      );
     const importedEnabled = parsed.enabled;
     const importedSwap = parsed.swapUpperLower;
     const upperRaw = parsed.upperExpression ?? parsed.upper;
@@ -3167,6 +3388,8 @@ const persistConfig = async (
     parseExpression(payload.upperExpression),
     parseExpression(payload.lowerExpression)
   );
+  loadedObservedEnabled = enabled.value;
+  loadedObservedSwap = swapUpperLower.value;
   rememberEditorState();
   if (reloadTiles) {
     await manager.reloadTilesFromBackend();
@@ -3254,12 +3477,19 @@ const restoreGraphRuntime = async (): Promise<void> => {
 };
 
 const dismissModal = async (): Promise<void> => {
+  if (editorTarget.value === "oe") {
+    if (!(await runOeAction(() => oeEditor.value!.flushValid()))) return;
+    previewMode.value = false;
+    destroyGraphRuntime();
+    emit("dismissed");
+    return;
+  }
   previewMode.value = false;
   cleanupColorPicker();
   cleanupContextMenus();
   if (!loading.value && !saving.value) {
     try {
-      if (graph) {
+      if (graph && observedDraftChanged()) {
         await persistConfig(false);
       } else if (previewSnapshot.value) {
         const manager = ensureMapManager();
@@ -3286,10 +3516,21 @@ const togglePreviewMode = (): void => {
     return;
   }
   previewMode.value = false;
-  void restoreGraphRuntime();
+  if (editorTarget.value === "observed") void restoreGraphRuntime();
+  else if (allowOeTarget.value) void oeEditor.value?.reload();
+  else {
+    editorTarget.value = "observed";
+    oeBusy.value = false;
+    void restoreGraphRuntime();
+  }
 };
 
 const previewConfig = async (): Promise<void> => {
+  if (editorTarget.value === "oe") {
+    if (await runOeAction(() => oeEditor.value!.apply()))
+      previewMode.value = true;
+    return;
+  }
   if (!graph || previewMode.value) {
     return;
   }
@@ -3312,6 +3553,7 @@ const previewConfig = async (): Promise<void> => {
 };
 
 const onVisualizationOptionsUpdated = (event: Event): void => {
+  if (editorTarget.value === "oe") return;
   // Hydrating the sidebar does not change the graph and must not rebuild it.
   const source = (event as CustomEvent<{ source?: string }>).detail?.source;
   if (source === "server_fetch" || source === "pipeline_source_fetch") return;
@@ -3323,6 +3565,7 @@ const onVisualizationOptionsUpdated = (event: Event): void => {
 };
 
 const onPipelineChanged = () => {
+  if (editorTarget.value === "oe") return;
   if (previewMode.value || loading.value || saving.value) {
     pendingVisualizationSync.value = true;
   } else {
@@ -3345,18 +3588,26 @@ const refreshTrackOptions = async (): Promise<void> => {
 };
 
 const loadConfig = async (): Promise<void> => {
+  if (editorTarget.value === "oe") {
+    await oeEditor.value?.reload();
+    return;
+  }
   if (previewMode.value || !graph) {
     pendingVisualizationSync.value = true;
     return;
   }
   loading.value = true;
   try {
-    await refreshTrackOptions();
     const manager = ensureMapManager();
+    await manager.visualizationManager.waitForPendingOptionRequests();
+    pendingVisualizationSync.value = false;
+    await refreshTrackOptions();
     const response =
       await manager.networkManager.requestManager.getRenderPipelineConfig();
     enabled.value = Boolean(response.enabled ?? false);
     swapUpperLower.value = Boolean(response.swapUpperLower ?? false);
+    loadedObservedEnabled = enabled.value;
+    loadedObservedSwap = swapUpperLower.value;
     const upperExpression = parseExpression(
       response.upperExpression ?? response.upper
     );
@@ -3394,6 +3645,10 @@ const loadConfig = async (): Promise<void> => {
 };
 
 const saveConfig = async (): Promise<void> => {
+  if (editorTarget.value === "oe") {
+    await runOeAction(() => oeEditor.value!.apply());
+    return;
+  }
   saving.value = true;
   try {
     await persistConfig(true, "Rendering pipeline updated");
@@ -3405,6 +3660,10 @@ const saveConfig = async (): Promise<void> => {
 };
 
 const resetConfig = async (): Promise<void> => {
+  if (editorTarget.value === "oe") {
+    await runOeAction(() => oeEditor.value!.reset());
+    return;
+  }
   saving.value = true;
   try {
     const manager = ensureMapManager();
@@ -3453,14 +3712,14 @@ const onHistogramRequested = (event: Event): void => {
 
 onMounted(() => {
   window.addEventListener("hict:pipeline-histogram", onHistogramRequested);
-  initializeGraph();
+  if (editorTarget.value === "observed") initializeGraph();
   window.addEventListener("resize", fitGraphCanvas);
   window.addEventListener("hict:render-pipeline-changed", onPipelineChanged);
   window.addEventListener(
     VisualizationManager.VISUALIZATION_OPTIONS_UPDATED_EVENT,
     onVisualizationOptionsUpdated
   );
-  void loadConfig();
+  if (editorTarget.value === "observed") void loadConfig();
 });
 
 onBeforeUnmount(() => {
@@ -3482,6 +3741,25 @@ useModalFocus(modalFocusElement, () => !previewMode.value);
 </script>
 
 <style scoped>
+.pipeline-target-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pipeline-target-tabs button {
+  border: 1px solid #94a3b8;
+  border-radius: 5px;
+  background: white;
+  padding: 6px 12px;
+}
+.pipeline-target-tabs button[aria-selected="true"] {
+  background: #0d6efd;
+  color: white;
+}
+.pipeline-target-tabs button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
 .pipeline-root .modal {
   z-index: 1065;
   position: fixed;
@@ -3514,6 +3792,19 @@ useModalFocus(modalFocusElement, () => !previewMode.value);
   display: flex;
   overflow: hidden;
   position: relative;
+}
+
+.pipeline-root .modal.pipeline-palette .pipeline-dialog {
+  width: min(760px, calc(100vw - 24px));
+  height: auto;
+  min-height: 0;
+  max-height: calc(100vh - 24px);
+}
+.pipeline-root .modal.pipeline-palette .modal-content {
+  max-height: calc(100vh - 24px);
+}
+.pipeline-root .modal.pipeline-palette .modal-body {
+  overflow-y: auto;
 }
 
 .pipeline-root .modal.pipeline-preview .pipeline-dialog {

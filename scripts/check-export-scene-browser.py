@@ -32,16 +32,20 @@ with sync_playwright() as pw:
       const render=async()=>{
         map.clearRect(0,0,200,200);map.fillStyle='red';map.fillRect(0,0,100,100);
         map.fillStyle='black';map.fillText('SCAFFOLD_LABEL',20,130);
+        map.fillText('SKIP_NEGATIVE',20,150,-51);
+        map.fillText('SKIP_ZERO',20,160,0);
+        map.fillText('SKIP_INFINITE',20,170,Infinity);
         nav.fillStyle='blue';nav.fillRect(0,0,80,80);nav.fillText('MINIMAP_ONLY',0,40);
       };
       const original=CanvasRenderingContext2D.prototype.fillRect;
-      const scene=await exports.captureCanvasScene(workspace,render,undefined,{excludedRoots:[minimap],mapRoot:document.querySelector('#map')});
+      const scene=await exports.captureCanvasScene(workspace,render,{format:'golden'},{excludedRoots:[minimap],mapRoot:document.querySelector('#map')});
       const context=scene.canvas.getContext('2d');
       const crop=exports.includeMapCaptions(scene.svg,{left:0,top:0,width:100,height:100},
         {left:0,top:0,width:200,height:200});
       if(crop.height<130) throw Error('Caption below map was cropped');
       const cropped=exports.cropSelectionScene(scene,{...crop,marginLeft:0,marginTop:0});
       if(!cropped.svg.textContent.includes('SCAFFOLD_LABEL')) throw Error('Lost vector label');
+      if(cropped.svg.querySelectorAll('metadata').length!==1 || !Array.from(cropped.svg.children).some(node=>node.localName==='metadata')) throw Error('Crop must retain one top-level provenance record');
       const ns='http://www.w3.org/2000/svg';
       const ruler=document.createElementNS(ns,'text');
       ruler.setAttribute('x','2');ruler.setAttribute('y','105');
@@ -62,6 +66,7 @@ with sync_playwright() as pw:
     assert result['live'] == [0, 0, 255, 255], result
     assert result['excluded'] == [255, 255, 255, 255], result
     assert 'SCAFFOLD_LABEL' in result['svg'] and 'MINIMAP_ONLY' not in result['svg']
+    assert not any(label in result['svg'] for label in ('SKIP_NEGATIVE','SKIP_ZERO','SKIP_INFINITE'))
     assert result['restored'] and result['failed']
     browser.close()
     print(json.dumps({'minimapExcluded': True, 'liveMinimapUnchanged': True,

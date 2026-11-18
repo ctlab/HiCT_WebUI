@@ -4,10 +4,15 @@
   "description": "Allow the local HiCT WebUI served by HiCT_JVM to call the small Tauri wrapper commands.",
   "windows": ["main"],
   "remote": {
-    "urls": [
-      "http://localhost:*",
-      "http://127.0.0.1:*"
-    ]
+    "urls": ["http://localhost:*", "http://127.0.0.1:*"]
   },
-  "permissions": ["allow-quit-app", "allow-save-export"]
+  "permissions": [
+    "allow-quit-app",
+    "allow-save-export",
+    "allow-begin-export-stream",
+    "allow-write-export-chunk",
+    "allow-finish-export-stream",
+    "allow-abort-export-stream",
+    "allow-download-export-request"
+  ]
 }

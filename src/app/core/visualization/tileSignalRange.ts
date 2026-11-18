@@ -17,6 +17,8 @@ export type TileSignals = {
   source: string;
   bpResolution: number;
   revision: string;
+  /** Older servers omit this. Counts describe rendered cells, not unique contact observations. */
+  countSemantics?: "DISPLAY_CELLS";
   raw: FiniteRange;
   processed: { expression: string; range: FiniteRange }[];
 };

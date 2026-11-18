@@ -1,10 +1,10 @@
 import { Feature } from "ol";
-import { LineString, Point } from "ol/geom";
+import { LineString } from "ol/geom";
 import VectorLayer from "ol/layer/Vector";
 import VectorSource from "ol/source/Vector";
 import { unByKey } from "ol/Observable";
 import type { EventsKey } from "ol/events";
-import { Icon, Stroke, Style } from "ol/style";
+import { Stroke, Style } from "ol/style";
 import { markRaw, ref, watch } from "vue";
 import { sequenceLetterMinimumPixels } from "../visualization/sequenceLetterMetrics";
 import type { ContactMapManager } from "./ContactMapManager";
@@ -12,10 +12,8 @@ import type { AlignmentDetailSegment } from "../net/api/RequestManager";
 import { SequenceAnalysisRequest } from "../net/api/SequenceAnalysisRequest";
 
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
-import {
-  alignmentMarker,
-  alignmentMarkerSvg,
-} from "../visualization/alignmentMarkers";
+import { alignmentMarker } from "../visualization/alignmentMarkers";
+import { alignmentRunGeometry } from "../visualization/alignmentRunGeometry";
 
 /** Bounded alignment geometry uses the same fractional assembly mapping as the FASTA axes. */
 export class AlignmentDetailLayer {
@@ -36,7 +34,7 @@ export class AlignmentDetailLayer {
     manager.getMap().addLayer(this.layer);
     const schedule = () => {
       window.clearTimeout(this.timer);
-      this.controller?.abort();
+      this.cancel();
       this.timer = window.setTimeout(() => void this.refresh(), 120);
     };
     this.listeners = [
@@ -126,6 +124,9 @@ export class AlignmentDetailLayer {
       api.history.applied,
       api.sequenceRevision,
       windows,
+      descriptor.bpResolution,
+      descriptor.pixelResolution,
+      descriptor.displayGrid,
     ]);
     if (key === this.requestKey && !this.controller?.signal.aborted)
       return this.pending;
@@ -139,11 +140,18 @@ export class AlignmentDetailLayer {
     this.state.message.value = "Aligning visible FASTA regions…";
     const task = async () => {
       try {
-        let response = await api.queryAlignmentDetail(
-          windows,
-          controller.signal
-        );
-        if (generation !== this.generation || controller.signal.aborted) return;
+        // Let submission return its job ID even if navigation cancels meanwhile.
+        // Aborting the HTTP response loses that ID and can orphan queued work.
+        let response = await api.queryAlignmentDetail(windows);
+        if (
+          generation !== this.generation ||
+          controller.signal.aborted ||
+          manager.isDisposed
+        ) {
+          if (response.status === "submitted" || response.status === "running")
+            this.stopJob(response.jobId);
+          return;
+        }
         this.jobId = response.jobId;
         while (
           response.status === "submitted" ||
@@ -202,6 +210,7 @@ export class AlignmentDetailLayer {
     const descriptor =
       this.manager.viewAndLayersManager.getActiveVectorResolutionDescriptor();
     const features: Feature[] = [];
+    let vertices = 0;
     const point = (column: number, row: number) => [
       holder.getFractionalPxOfBp(column, descriptor.bpResolution) *
         descriptor.pixelResolution,
@@ -209,41 +218,43 @@ export class AlignmentDetailLayer {
         descriptor.pixelResolution,
     ];
     for (const segment of segments) {
-      const { rowStart, rowEnd, columnStart, columnEnd, operation, reverse } =
-        segment;
+      const { operation, reverse } = segment;
       const marker = alignmentMarker(operation, reverse);
-      const style = new Style({
-        stroke: new Stroke({ color: marker.color, width: 3 }),
-        image: new Icon({
-          src: `data:image/svg+xml,${encodeURIComponent(
-            alignmentMarkerSvg(marker)
-          )}`,
-          scale: 0.75,
+      const coordinates = alignmentRunGeometry(segment, point);
+      vertices += coordinates.length;
+      if (features.length >= 4096 || vertices > 65536)
+        throw new Error(
+          "Too many alignment runs to display. Zoom into a smaller region."
+        );
+      const feature = new Feature(new LineString(coordinates));
+      feature.set("alignmentSegment", segment);
+      const lineDash =
+        operation === "AMBIGUOUS"
+          ? [3, 3]
+          : operation === "INSERTION" || operation === "DELETION"
+          ? [5, 3]
+          : undefined;
+      feature.setStyle([
+        new Style({
+          stroke: new Stroke({
+            color: "rgba(255,255,255,0.9)",
+            width: 5,
+            lineDash,
+            lineCap: "butt",
+            lineJoin: "round",
+          }),
         }),
-      });
-      if (operation === "INSERTION" || operation === "DELETION") {
-        const geometry = new LineString([
-          point(columnStart, rowStart),
-          point(columnEnd, rowEnd),
-        ]);
-        const feature = new Feature(geometry);
-        feature.setStyle(style);
-        features.push(feature);
-      } else {
-        const bases = rowEnd - rowStart;
-        for (let i = 0; i < bases; i++) {
-          if (features.length >= 8192)
-            throw new Error(
-              "Too many alignment bases to display. Zoom into a smaller region."
-            );
-          const col = reverse ? columnEnd - i - 0.5 : columnStart + i + 0.5;
-          const feature = new Feature(
-            new Point(point(col, rowStart + i + 0.5))
-          );
-          feature.setStyle(style);
-          features.push(feature);
-        }
-      }
+        new Style({
+          stroke: new Stroke({
+            color: marker.color,
+            width: 3,
+            lineDash,
+            lineCap: "butt",
+            lineJoin: "round",
+          }),
+        }),
+      ]);
+      features.push(feature);
     }
     return features;
   }
@@ -252,14 +263,17 @@ export class AlignmentDetailLayer {
     ++this.generation;
     this.controller?.abort();
     this.controller = undefined;
+    this.requestKey = "";
     if (this.jobId) {
-      void this.manager.networkManager.requestManager
-        .sendRequest(
-          new SequenceAnalysisRequest(`/sequence/jobs/${this.jobId}/stop`)
-        )
-        .catch(() => undefined);
+      this.stopJob(this.jobId);
       this.jobId = undefined;
     }
+  }
+
+  private stopJob(id: string): void {
+    void this.manager.networkManager.requestManager
+      .sendRequest(new SequenceAnalysisRequest(`/sequence/jobs/${id}/stop`))
+      .catch(() => undefined);
   }
 
   private clear(): void {

@@ -49,6 +49,41 @@ const persistRef = <T>(key: string, value: { value: T }) => {
 };
 
 export const useUiSettingsStore = defineStore("uiSettings", () => {
+  const savedFileLocations = ref<Record<string, string>>(
+    readStored("hict.files.savedLocations", {})
+  );
+  const fileSelections = ref<
+    Record<string, { directory: string; filename: string }>
+  >(readStored("hict.files.selections", {}));
+  persistRef("hict.files.savedLocations", savedFileLocations);
+  persistRef("hict.files.selections", fileSelections);
+  function rememberSavedFile(kind: string, path: string) {
+    savedFileLocations.value = { ...savedFileLocations.value, [kind]: path };
+  }
+  function rememberFileSelection(
+    server: string,
+    kind: string,
+    filename: string
+  ) {
+    const normalized = filename.replaceAll("\\", "/");
+    const directory = normalized.includes("/")
+      ? normalized.slice(0, normalized.lastIndexOf("/"))
+      : "";
+    fileSelections.value = {
+      ...fileSelections.value,
+      [`${server}|${kind}`]: { directory, filename: normalized },
+    };
+  }
+  function rememberedFileSelection(server: string, kind: string) {
+    const item = fileSelections.value?.[`${server}|${kind}`];
+    return item &&
+      typeof item.directory === "string" &&
+      typeof item.filename === "string" &&
+      !item.directory.split("/").includes("..") &&
+      !item.directory.startsWith("/")
+      ? item
+      : undefined;
+  }
   const sequenceGapLengthBp = ref(
     readStored("hict.sequence.gapLengthBp", 1000)
   );
@@ -134,6 +169,10 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
   persistRef("hict.ui.osd.fieldOrder", osdOverlayFieldOrder);
 
   return {
+    savedFileLocations,
+    rememberSavedFile,
+    rememberFileSelection,
+    rememberedFileSelection,
     automaticAlignmentEnabled,
     sequenceGapLengthBp,
     sequenceForwardColor,

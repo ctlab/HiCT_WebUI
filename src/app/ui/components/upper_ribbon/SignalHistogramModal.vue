@@ -57,6 +57,10 @@
         {{ result.sampled ? "sampled" : "measured" }} {{ domainLabel }};
         resolution {{ result.resolution.toLocaleString() }} bp
       </p>
+      <p v-if="result && sharedReferences" class="small text-muted">
+        Exact cuts can show the same source bin more than once. This histogram
+        counts displayed samples.
+      </p>
       <p v-if="error" class="text-danger" role="alert">{{ error }}</p>
       <button class="btn btn-primary" :disabled="loading" @click="compute">
         {{ result ? "Refresh" : "Compute" }}
@@ -91,11 +95,18 @@ const result = shallowRef<SignalHistogram>(),
 const domainLabel = computed(
   () =>
     ({
-      matrix: "matrix values",
+      matrix: props.mapManager.viewAndLayersManager.isSequenceScale
+        ? "native matrix references"
+        : "displayed matrix cells",
       row: "row samples",
       column: "column samples",
       scalar: "scalar value",
     }[result.value?.domain ?? "matrix"])
+);
+const sharedReferences = computed(() =>
+  props.mapManager.contigDimensionHolder.contigDescriptors.some(
+    (contig) => contig.contigSharedBinSlice
+  )
 );
 let controller: AbortController | undefined;
 let generation = 0;

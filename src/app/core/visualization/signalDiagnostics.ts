@@ -1,6 +1,7 @@
 import type { ContactMapManager } from "../mapmanagers/ContactMapManager";
 
 export type SignalBounds = {
+  unit?: "PIXELS" | "BINS";
   bpResolution: number;
   startRowPx: number;
   endRowPx: number;
@@ -99,6 +100,8 @@ export function diagnosticBounds(
     : manager.getView().calculateExtent(manager.getMap().getSize());
   if (!extent || !extent.every(Number.isFinite))
     throw new Error("Select a rectangle first.");
+  if (descriptor.displayGrid === "SEQUENCE_BP")
+    return layers.getNativeMatrixBounds(extent);
   const bounds = layers.getActiveMapPixelBounds(descriptor.bpResolution);
   const scale = descriptor.pixelResolution;
   const result = {
@@ -142,6 +145,30 @@ export function histogram(
   return { min, max, count, counts };
 }
 
+/** Two-dimensional strata avoid sampling one column repeatedly on square maps. */
+export function histogramTileIndices(
+  rows: number,
+  cols: number,
+  limit = 16
+): number[] {
+  if (rows * cols <= limit)
+    return Array.from({ length: rows * cols }, (_, i) => i);
+  const rowStrata = Math.min(
+    rows,
+    limit,
+    Math.max(1, Math.round(Math.sqrt((limit * rows) / cols)))
+  );
+  const colStrata = Math.min(cols, Math.max(1, Math.floor(limit / rowStrata)));
+  const indices: number[] = [];
+  for (let r = 0; r < rowStrata; r++)
+    for (let c = 0; c < colStrata; c++)
+      indices.push(
+        Math.floor(((r + 0.5) * rows) / rowStrata) * cols +
+          Math.floor(((c + 0.5) * cols) / colStrata)
+      );
+  return indices;
+}
+
 /** Bounded memory and request sizes, with explicit stratified sampling for large regions. */
 export async function querySignalHistogram(
   manager: ContactMapManager,
@@ -153,6 +180,9 @@ export async function querySignalHistogram(
     triangle?: "both" | "upper" | "lower";
     signal?: AbortSignal;
     domain?: "auto" | "matrix";
+    /** Smaller bounded blocks for interactive viewport previews. */
+    tileEdge?: 64 | 128 | 256;
+    concurrency?: 1 | 2 | 4;
   } = {}
 ): Promise<SignalHistogram> {
   const domain =
@@ -172,20 +202,21 @@ export async function querySignalHistogram(
   )
     throw new Error("The region does not intersect the map.");
   const maxTiles = 16;
-  const rowEdge = domain === "matrix" ? 256 : domain === "row" ? 4096 : 1;
-  const colEdge = domain === "matrix" ? 256 : domain === "column" ? 4096 : 1;
+  const edge = options.tileEdge ?? 256;
+  const rowEdge = domain === "matrix" ? edge : domain === "row" ? 4096 : 1;
+  const colEdge = domain === "matrix" ? edge : domain === "column" ? 4096 : 1;
   const rows = Math.ceil((bounds.endRowPx - bounds.startRowPx) / rowEdge);
   const cols = Math.ceil((bounds.endColPx - bounds.startColPx) / colEdge);
-  const tileCount = rows * cols,
-    n = Math.min(maxTiles, tileCount);
+  const tileCount = rows * cols;
+  const tileIndices = histogramTileIndices(rows, cols, maxTiles);
+  const n = tileIndices.length;
   const values = new Float32Array(n * rowEdge * colEdge);
   let count = 0;
   const api = manager.networkManager.requestManager;
-  for (let i = 0; i < n; i++) {
+  const queryBlock = async (i: number) => {
     if (options.signal?.aborted || manager.isDisposed)
       throw new DOMException("Cancelled", "AbortError");
-    const index =
-      tileCount <= maxTiles ? i : Math.floor(((i + 0.5) * tileCount) / n);
+    const index = tileIndices[i];
     const startRowPx = bounds.startRowPx + Math.floor(index / cols) * rowEdge;
     const startColPx = bounds.startColPx + (index % cols) * colEdge;
     const endRowPx = Math.min(bounds.endRowPx, startRowPx + rowEdge);
@@ -206,27 +237,38 @@ export async function querySignalHistogram(
       result.values.length !== result.rows * result.cols
     )
       throw new Error("Histogram query was interrupted. Refresh to try again.");
-    for (let row = 0; row < result.rows; row++)
-      for (let col = 0; col < result.cols; col++) {
-        if (
-          domain === "matrix" &&
-          options.triangle === "upper" &&
-          startRowPx + row > startColPx + col
-        )
-          continue;
-        if (
-          domain === "matrix" &&
-          options.triangle === "lower" &&
-          startRowPx + row < startColPx + col
-        )
-          continue;
-        values[count++] = result.values[row * result.cols + col];
-      }
+    return { result, startRowPx, startColPx };
+  };
+  const concurrency = options.concurrency ?? 1;
+  for (let i = 0; i < n; i += concurrency) {
+    const blocks = await Promise.all(
+      Array.from({ length: Math.min(concurrency, n - i) }, (_, j) =>
+        queryBlock(i + j)
+      )
+    );
+    for (const { result, startRowPx, startColPx } of blocks) {
+      for (let row = 0; row < result.rows; row++)
+        for (let col = 0; col < result.cols; col++) {
+          if (
+            domain === "matrix" &&
+            options.triangle === "upper" &&
+            startRowPx + row > startColPx + col
+          )
+            continue;
+          if (
+            domain === "matrix" &&
+            options.triangle === "lower" &&
+            startRowPx + row < startColPx + col
+          )
+            continue;
+          values[count++] = result.values[row * result.cols + col];
+        }
+    }
   }
   return {
     ...histogram(values.subarray(0, count)),
     values: values.subarray(0, count),
-    sampled: tileCount > maxTiles,
+    sampled: tileCount > n,
     resolution: bounds.bpResolution,
     domain,
   };

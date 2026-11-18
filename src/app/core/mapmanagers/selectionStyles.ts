@@ -55,6 +55,22 @@ export function selectionAreaStyle(): Style[] {
   ];
 }
 
+/** Entity selection marks boundaries; it must not look like a persistent analysis area. */
+export function selectionBorderStyle(): Style[] {
+  return [
+    new Style({
+      stroke: new Stroke({ color: SELECTION_DARK, width: DARK_WIDTH }),
+    }),
+    new Style({
+      stroke: new Stroke({
+        color: SELECTION_LIGHT,
+        width: LIGHT_WIDTH,
+        lineDash: SELECTION_DASH,
+      }),
+    }),
+  ];
+}
+
 /** The corner and edge handle of the drag-selection box. */
 export function selectionPointerStyle(): Style[] {
   return [

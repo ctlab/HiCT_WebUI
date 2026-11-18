@@ -20,12 +20,18 @@ export interface WorkspaceState {
   >;
   matrixView: ReturnType<typeof useMatrixViewStore>["$state"];
   rulerMode: "global" | "contig" | "scaffold";
-  view: { center?: number[]; resolution?: number; rotation: number };
+  view: {
+    center?: number[];
+    centerBp?: number[];
+    displayGrid?: string;
+    bpResolution?: number;
+    resolution?: number;
+    rotation: number;
+  };
 }
 
 export function captureWorkspace(manager: ContactMapManager): WorkspaceState {
-  const layers = manager.viewAndLayersManager,
-    view = manager.getView();
+  const layers = manager.viewAndLayersManager;
   return JSON.parse(
     JSON.stringify({
       version: 1,
@@ -46,11 +52,7 @@ export function captureWorkspace(manager: ContactMapManager): WorkspaceState {
       enabledResolutions: layers.getEnabledBpResolutions(),
       matrixView: useMatrixViewStore().$state,
       rulerMode: useUiSettingsStore().rulerCoordinateMode,
-      view: {
-        center: view.getCenter(),
-        resolution: view.getResolution(),
-        rotation: view.getRotation(),
-      },
+      view: layers.captureViewPosition(),
     })
   );
 }
@@ -74,16 +76,7 @@ export function restoreWorkspace(
   layers.setAxisScopes(state.axisScopes.row, state.axisScopes.column);
   useMatrixViewStore().$patch(state.matrixView);
   useUiSettingsStore().rulerCoordinateMode = state.rulerMode;
-  const view = manager.getView();
-  if (
-    state.view.center?.length === 2 &&
-    state.view.center.every(Number.isFinite)
-  )
-    view.setCenter(state.view.center);
-  if (Number.isFinite(state.view.resolution) && state.view.resolution! > 0)
-    view.setResolution(state.view.resolution);
-  if (Number.isFinite(state.view.rotation))
-    view.setRotation(state.view.rotation);
+  layers.restoreViewPosition(state.view);
   layers.updateCurrentHiCViewState();
   manager.scheduleWorkspaceLayoutRefresh();
 }

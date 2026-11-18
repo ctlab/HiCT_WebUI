@@ -15,6 +15,7 @@
           <button
             type="button"
             class="btn-close"
+            aria-label="Close dialog"
             @click="emit('dismissed')"
           ></button>
         </div>

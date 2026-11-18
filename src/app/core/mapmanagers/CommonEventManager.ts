@@ -1,4 +1,6 @@
 import { reportFailure } from "@/app/ui/reportFailure";
+import { prepareFileSave } from "../export/FileSave";
+import { writeCoordinateFile } from "../export/CoordinateFileExport";
 /*
  Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
 
@@ -53,6 +55,7 @@ class CommonEventManager {
     contigDescriptors: ContigDescriptor[];
     scaffoldDescriptors: ScaffoldDescriptor[];
   }): void {
+    this.mapManager.viewAndLayersManager.clearSelections();
     this.mapManager.contigDimensionHolder.updateContigData(
       asmInfo.contigDescriptors
     );
@@ -71,6 +74,9 @@ class CommonEventManager {
       toast("Return to the contact map before editing the assembly.");
       return null;
     }
+    const entityRange =
+      this.mapManager.viewAndLayersManager.getSelectedEntityRange();
+    if (entityRange) return entityRange;
     const selectedArray =
       this.mapManager.viewAndLayersManager.selectionCollections.selectedContigFeatures
         .getArray()
@@ -582,63 +588,145 @@ class CommonEventManager {
       });
   }
 
+  /** Snapshot both the oriented cut locus and its assembly revision for delayed menu actions. */
+  public getExactCutTarget(assemblyBp: number):
+    | {
+        assemblyBp: number;
+        contigId: number;
+        offsetBp: number;
+        session: string;
+        revision: number;
+      }
+    | undefined {
+    const api = this.mapManager.networkManager.requestManager;
+    const applied = api.history.applied;
+    const holder = this.mapManager.contigDimensionHolder;
+    if (
+      api.sourceCapabilities.PRIMARY?.sequenceScaleTiles !== true ||
+      api.sequenceViewReadOnly ||
+      api.history.busy ||
+      !applied ||
+      this.mapManager.isDisposed ||
+      this.mapManager.isExporting ||
+      !Number.isSafeInteger(assemblyBp) ||
+      assemblyBp <= 0 ||
+      assemblyBp >= holder.prefix_sum_bp[holder.contig_count]
+    )
+      return;
+    const locus = holder.getContigLocusByBp(assemblyBp);
+    const order = holder.contigIdToOrd[locus.contigId];
+    const descriptor = holder.contigDescriptors[order];
+    const offsetBp = assemblyBp - holder.prefix_sum_bp[order];
+    if (!descriptor || offsetBp <= 0 || offsetBp >= descriptor.contigLengthBp)
+      return;
+    return {
+      assemblyBp,
+      contigId: locus.contigId,
+      offsetBp,
+      session: applied.session,
+      revision: applied.revision,
+    };
+  }
+
+  public async cutAtExactTarget(
+    target: NonNullable<ReturnType<CommonEventManager["getExactCutTarget"]>>
+  ): Promise<boolean> {
+    const current = this.getExactCutTarget(target.assemblyBp);
+    if (
+      !current ||
+      current.session !== target.session ||
+      current.revision !== target.revision ||
+      current.contigId !== target.contigId ||
+      current.offsetBp !== target.offsetBp
+    ) {
+      toast("The assembly or editing state changed. Choose the cut again.");
+      return false;
+    }
+    let response;
+    try {
+      response =
+        await this.mapManager.networkManager.requestManager.splitContigAtBp(
+          target.contigId,
+          target.offsetBp
+        );
+    } catch {
+      // RequestManager reports rejected/conflicting requests. Keep the current assembly visible.
+      return false;
+    }
+    try {
+      if (this.mapManager.isDisposed) return false;
+      // A sequence-preserving cut changes native reference-bin widths, not BP
+      // positions. Preserve the locus currently in view while rebuilding them.
+      const layers = this.mapManager.viewAndLayersManager;
+      const position = layers.captureViewPosition();
+      this.applyAssemblyInfo(response);
+      this.resetSelection();
+      this.mapManager.reloadVisuals();
+      layers.restoreViewPosition(position);
+      return true;
+    } catch (failure) {
+      reportFailure("Refresh the cut assembly", failure);
+      return false;
+    }
+  }
+
   public onClickInScissorsMode(
     coordinate_px: Coordinate,
     bp_resolution: number
   ): void {
-    console.log(
-      "Click in Scissors mode:",
-      "coordinate_px:",
-      coordinate_px,
-      "bp_resolution:",
-      bp_resolution
-    );
-
-    this.mapManager.networkManager.requestManager
-      .splitContigAtPx(
+    const api = this.mapManager.networkManager.requestManager;
+    let operation;
+    if (api.sourceCapabilities.PRIMARY?.sequenceScaleTiles === true) {
+      const holder = this.mapManager.contigDimensionHolder;
+      const bp = Math.round(
+        holder.getFractionalBpOfPx(coordinate_px[0], bp_resolution)
+      );
+      const target = this.getExactCutTarget(bp);
+      if (!target) {
+        toast("Choose a base boundary inside an editable contig.");
+        return;
+      }
+      void this.cutAtExactTarget(target);
+      return;
+    } else {
+      operation = api.splitContigAtPx(
         new SplitContigRequest({
           splitPx: coordinate_px[0],
           bpResolution: bp_resolution,
         })
-      )
-      .then((asmInfo) => {
-        this.applyAssemblyInfo(asmInfo);
-      })
-      .catch((error) => reportFailure("Split contig", error))
-      .finally(() => {
-        this.mapManager.deactivateScissors();
-        this.mapManager.eventManager.resetSelection();
+      );
+    }
+    void operation
+      .then((response) => {
+        this.applyAssemblyInfo(response);
+        this.resetSelection();
         this.mapManager.reloadVisuals();
+      })
+      .catch(() => {
+        /* RequestManager reports the recoverable error. Keep the cut tool available. */
       });
   }
 
-  public onExportFASTAForSelectionClicked(): void {
+  public async onExportFASTAForSelectionClicked(): Promise<void> {
     const matrixViewStore = useMatrixViewStore();
     this.mapManager.deactivateTranslocation();
-    const [fromPx, toPx] = [
+    const [fromBp, toBp] = [
       this.mapManager.viewAndLayersManager.currentViewState.selectionBorders
-        .leftPx,
+        .leftBP,
       this.mapManager.viewAndLayersManager.currentViewState.selectionBorders
-        .rightPx,
+        .rightBP,
     ];
-    if (!fromPx || !toPx) {
+    if (!fromBp || !toBp) {
       const message =
-        "Cannot export FASTA for selection because there is no valid selection.";
+        "Select a region with Ctrl/Cmd-drag or Selection → Select region by coordinates.";
       console.warn(message, {
-        fromPx,
-        toPx,
+        fromBp,
+        toBp,
       });
       toast.error(message);
       return;
     }
-    const bpResolution =
-      this.mapManager.viewAndLayersManager.currentViewState.resolutionDesciptor
-        .bpResolution;
-    const [fromBpX, fromBpY, toBpX, toBpY] = [fromPx, toPx]
-      .flatMap((coords) => coords ?? [])
-      .map((px) =>
-        this.mapManager.contigDimensionHolder.getStartBpOfPx(px, bpResolution)
-      );
+    const [fromBpX, fromBpY, toBpX, toBpY] = [...fromBp, ...toBp];
     if (
       !Number.isFinite(fromBpX) ||
       !Number.isFinite(fromBpY) ||
@@ -656,38 +744,37 @@ class CommonEventManager {
       toast.error(message);
       return;
     }
-    console.log("Bps: ", fromBpX, fromBpY, toBpX, toBpY, " pxs ", fromPx, toPx);
 
-    this.mapManager.networkManager.requestManager
-      .getFASTAForSelection(
-        new GetFastaForSelectionRequest({
-          fromBpX: fromBpX,
-          fromBpY: fromBpY,
-          toBpX: toBpX,
-          toBpY: toBpY,
-          horizontalSource: matrixViewStore.horizontalFastaSource,
-          verticalSource: matrixViewStore.verticalFastaSource,
-        })
-      )
-      .then((data) => {
-        // eslint-disable-next-line
-        const blob = new Blob([data as BlobPart], { type: "text/plain" });
-        const link = document.createElement("a");
-        link.href = window.URL.createObjectURL(blob);
-        link.download = `selection_(${fromBpX}bp-${toBpX}bp).(${fromBpY}bp-${toBpY}bp).fasta`;
-        link.click();
-      })
-      .catch((error) => reportFailure("Export FASTA for selection", error));
-    return;
+    const api = this.mapManager.networkManager.requestManager;
+    const version = api.history.applied ? { ...api.history.applied } : null;
+    const request = new GetFastaForSelectionRequest({
+      fromBpX: fromBpX,
+      fromBpY: fromBpY,
+      toBpX: toBpX,
+      toBpY: toBpY,
+      horizontalSource: matrixViewStore.horizontalFastaSource,
+      verticalSource: matrixViewStore.verticalFastaSource,
+    });
+    try {
+      const destination = await prepareFileSave(
+        `selection_${fromBpX}-${toBpX}_${fromBpY}-${toBpY}.fasta`,
+        "fasta"
+      );
+      if (!destination) return;
+      await writeCoordinateFile(
+        destination,
+        api,
+        request,
+        version,
+        "Selection FASTA"
+      );
+    } catch (error) {
+      reportFailure("Export FASTA for selection", error);
+    }
   }
 
   public resetSelection(): void {
-    const extentInteraction =
-      this.mapManager.viewAndLayersManager.selectionInteractions
-        .contigSelectExtent;
-    // @ts-expect-error "Extent should be reset"
-    extentInteraction.setExtent(undefined);
-    extentInteraction.changed();
+    this.mapManager.viewAndLayersManager.clearSelections();
   }
 }
 

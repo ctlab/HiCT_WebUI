@@ -26,6 +26,9 @@ import { execFileSync } from "child_process";
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import vueJsx from "@vitejs/plugin-vue-jsx";
+import { sonnerVisibilityPlugins } from "./scripts/vue-sonner-visibility-fix.mjs";
+
+const sonnerVisibility = sonnerVisibilityPlugins();
 
 function manualChunk(id: string): string | undefined {
   // Runtime helpers stay separate from map and export modules.
@@ -49,7 +52,9 @@ export default defineConfig({
       }).trim()
     ),
   },
+  optimizeDeps: { esbuildOptions: { plugins: [sonnerVisibility.esbuild] } },
   plugins: [
+    sonnerVisibility.vite,
     {
       name: "sanitize-litegraph-eval",
       enforce: "pre",

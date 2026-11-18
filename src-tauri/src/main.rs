@@ -1,10 +1,60 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::sync::Arc;
+
+#[cfg(all(test, target_os = "linux"))]
+mod dependency_regressions {
+    use webkit2gtk::glib::{variant::ToVariant, Variant};
+
+    #[test]
+    fn glib_variant_string_iteration_preserves_values_in_release_builds() {
+        let labels = ["ctg-A", "ctg-B", "ctg-C", "ctg-D", "ctg-E", "ctg-F"];
+        let variant =
+            Variant::array_from_iter::<String>(labels.iter().map(|label| label.to_variant()));
+        assert_eq!(
+            variant.array_iter_str().unwrap().collect::<Vec<_>>(),
+            labels
+        );
+        assert_eq!(variant.array_iter_str().unwrap().last(), Some("ctg-F"));
+        let mut iter = variant.array_iter_str().unwrap();
+        assert_eq!(iter.nth(1), Some("ctg-B"));
+        assert_eq!(iter.next_back(), Some("ctg-F"));
+        assert_eq!(iter.next(), Some("ctg-C"));
+        assert_eq!(iter.nth_back(1), Some("ctg-D"));
+        assert_eq!(iter.next(), None);
+    }
+}
 use std::{env, net::IpAddr, process};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use url::Url;
 
+mod coordinate_download;
+mod export_stream;
+use export_stream::ExportStreams;
+
 const DEFAULT_HICT_URL: &str = "http://127.0.0.1:8080/";
+
+#[cfg(unix)]
+fn install_shutdown_signals(app: &tauri::AppHandle) -> std::io::Result<()> {
+    use tokio::signal::unix::{signal, SignalKind};
+    // Register inside the runtime before opening the window. Launcher Stop
+    // sends SIGTERM; route it through the same awaited cleanup as File -> Quit.
+    let signals = tauri::async_runtime::block_on(async {
+        [SignalKind::terminate(), SignalKind::interrupt()]
+            .into_iter()
+            .map(signal)
+            .collect::<std::io::Result<Vec<_>>>()
+    })?;
+    for mut stream in signals {
+        let handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            if stream.recv().await.is_some() {
+                handle.exit(0);
+            }
+        });
+    }
+    Ok(())
+}
 
 fn finish_browser_reset(window: &tauri::WebviewWindow, url: Url) {
     use tauri::Manager;
@@ -17,46 +67,217 @@ fn finish_browser_reset(window: &tauri::WebviewWindow, url: Url) {
 }
 
 #[tauri::command]
-fn quit_app(app: tauri::AppHandle) {
+async fn quit_app(
+    app: tauri::AppHandle,
+    streams: tauri::State<'_, Arc<ExportStreams>>,
+) -> Result<(), String> {
+    let state = streams.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.shutdown())
+        .await
+        .map_err(|error| format!("Failed to stop active exports: {error}"))?;
     app.exit(0);
+    Ok(())
 }
 
 #[tauri::command]
 async fn save_export(
     window: tauri::WebviewWindow,
+    streams: tauri::State<'_, Arc<ExportStreams>>,
     filename: String,
     bytes: Vec<u8>,
+    kind: Option<String>,
 ) -> Result<Option<String>, String> {
+    let state = streams.inner().clone();
+    let owner = window.label().to_owned();
+    let generation = state.current_generation(&owner);
+    // A page replacement aborts Tauri's IPC fetch and can replay the command
+    // through postMessage while the original native dialog is still pending.
+    let _chooser = state
+        .claim_chooser(&owner)
+        .map_err(|error| error.to_string())?;
+    let Some((target, preference_path)) =
+        choose_export_path(&window, &filename, kind.as_deref()).await
+    else {
+        return Ok(None);
+    };
+    let committed = tauri::async_runtime::spawn_blocking(move || {
+        state.save_legacy_export(owner, target, preference_path, generation, &bytes)
+    })
+    .await
+    .map_err(|error| format!("Failed to save export: {error}"))?
+    .map_err(|error| format!("Failed to save export: {error}"))?;
+    remember_export_directory(committed.preference, &committed.target);
+    Ok(Some(committed.target.to_string_lossy().to_string()))
+}
+
+async fn choose_export_path(
+    window: &tauri::WebviewWindow,
+    filename: &str,
+    kind: Option<&str>,
+) -> Option<(std::path::PathBuf, Option<std::path::PathBuf>)> {
     use tauri::Manager;
-    let preference_path = window.app_handle().path().app_config_dir().ok()
-        .map(|path| path.join("last-export-directory.txt"));
-    let remembered = preference_path.as_ref()
+    let category = match kind {
+        Some(
+            value @ ("session" | "fasta" | "agp" | "figure" | "bookmarks" | "preset" | "pipeline"
+            | "other"),
+        ) => value,
+        _ => "export",
+    };
+    let preference_path = window
+        .app_handle()
+        .path()
+        .app_config_dir()
+        .ok()
+        .map(|path| path.join(format!("last-{category}-directory.txt")));
+    let remembered = preference_path
+        .as_ref()
         .and_then(|path| std::fs::read_to_string(path).ok())
         .filter(|path| std::path::Path::new(path).is_dir());
-    let safe_filename = sanitize_export_filename(&filename);
+    let safe_filename = sanitize_export_filename(filename);
     let mut dialog = rfd::AsyncFileDialog::new()
-        .set_parent(&window)
+        .set_parent(window)
         .set_title("Save HiCT export")
         .set_file_name(&safe_filename);
     if let Some(directory) = remembered.or_else(|| env::var("HICT_EXPORT_DIR").ok()) {
         dialog = dialog.set_directory(directory);
     }
-    let Some(file) = dialog.save_file().await else {
-        return Ok(None);
-    };
-    file.write(&bytes)
+    dialog
+        .save_file()
         .await
-        .map_err(|error| format!("Failed to save export: {error}"))?;
-    if let (Some(preference), Some(directory)) = (preference_path, file.path().parent()) {
+        .map(|file| (file.path().to_path_buf(), preference_path))
+}
+
+fn remember_export_directory(
+    preference_path: Option<std::path::PathBuf>,
+    target: &std::path::Path,
+) {
+    if let (Some(preference), Some(directory)) = (preference_path, target.parent()) {
         let remember = || -> std::io::Result<()> {
-            if let Some(parent) = preference.parent() { std::fs::create_dir_all(parent)?; }
+            if let Some(parent) = preference.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
             std::fs::write(preference, directory.to_string_lossy().as_bytes())
         };
         if let Err(error) = remember() {
             eprintln!("Export saved, but its destination could not be remembered: {error}");
         }
     }
-    Ok(Some(file.path().to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+async fn begin_export_stream(
+    window: tauri::WebviewWindow,
+    streams: tauri::State<'_, Arc<ExportStreams>>,
+    filename: String,
+    kind: Option<String>,
+) -> Result<Option<(String, String)>, String> {
+    let state = streams.inner().clone();
+    let owner = window.label().to_owned();
+    let generation = state.current_generation(&owner);
+    let _chooser = state
+        .claim_chooser(&owner)
+        .map_err(|error| error.to_string())?;
+    let Some((target, preference)) = choose_export_path(&window, &filename, kind.as_deref()).await
+    else {
+        return Ok(None);
+    };
+    let path = target.to_string_lossy().to_string();
+    let id = tauri::async_runtime::spawn_blocking(move || {
+        state.begin_for_generation(owner, target, preference, generation)
+    })
+    .await
+    .map_err(|error| format!("Failed to start export: {error}"))?
+    .map_err(|error| format!("Failed to start export: {error}"))?;
+    Ok(Some((id, path)))
+}
+
+#[tauri::command]
+async fn write_export_chunk(
+    window: tauri::WebviewWindow,
+    streams: tauri::State<'_, Arc<ExportStreams>>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), String> {
+    let header = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| !value.is_empty() && value.len() <= 256)
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                "The export transfer metadata is incomplete. Retry the export.".to_owned()
+            })
+    };
+    let id = header("x-hict-export-id")?;
+    let sequence = header("x-hict-export-sequence")?
+        .parse::<u64>()
+        .map_err(|_| "The export transfer order is invalid. Retry the export.".to_owned())?;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("The export transfer was not binary. Retry the export.".to_owned());
+    };
+    if bytes.len() > export_stream::MAX_CHUNK_BYTES {
+        return Err("The export transfer exceeded its chunk limit. Retry the export.".to_owned());
+    }
+    let bytes = bytes.to_vec();
+    let state = streams.inner().clone();
+    let owner = window.label().to_owned();
+    tauri::async_runtime::spawn_blocking(move || state.write(&owner, &id, sequence, &bytes))
+        .await
+        .map_err(|error| format!("Failed to write export: {error}"))?
+        .map_err(|error| format!("Failed to write export: {error}"))
+}
+
+#[tauri::command]
+async fn finish_export_stream(
+    window: tauri::WebviewWindow,
+    streams: tauri::State<'_, Arc<ExportStreams>>,
+    id: String,
+) -> Result<String, String> {
+    let state = streams.inner().clone();
+    let owner = window.label().to_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        let committed = state
+            .finish(&owner, &id)
+            .map_err(|error| format!("Failed to save export: {error}"))?;
+        remember_export_directory(committed.preference, &committed.target);
+        Ok(committed.target.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|error| format!("Failed to save export: {error}"))?
+}
+
+#[tauri::command]
+async fn abort_export_stream(
+    window: tauri::WebviewWindow,
+    streams: tauri::State<'_, Arc<ExportStreams>>,
+    id: String,
+) -> Result<(), String> {
+    let state = streams.inner().clone();
+    let owner = window.label().to_owned();
+    tauri::async_runtime::spawn_blocking(move || state.abort(&owner, &id))
+        .await
+        .map_err(|error| format!("Failed to cancel export: {error}"))?
+        .map_err(|error| format!("Failed to cancel export: {error}"))
+}
+
+#[tauri::command]
+async fn download_export_request(
+    window: tauri::WebviewWindow,
+    streams: tauri::State<'_, Arc<ExportStreams>>,
+    id: String,
+    request: coordinate_download::CoordinateRequest,
+) -> Result<String, String> {
+    let state = streams.inner().clone();
+    let owner = window.label().to_owned();
+    let (target, preference) = coordinate_download::download(state, owner, id, request).await?;
+    let path = target.to_string_lossy().to_string();
+    if let Err(error) =
+        tauri::async_runtime::spawn_blocking(move || remember_export_directory(preference, &target))
+            .await
+    {
+        eprintln!("Export saved, but its destination could not be remembered: {error}");
+    }
+    Ok(path)
 }
 
 #[cfg(target_os = "linux")]
@@ -93,8 +314,8 @@ fn reset_and_navigate(window: &tauri::WebviewWindow, url: Url) -> tauri::Result<
 fn reset_and_navigate(window: &tauri::WebviewWindow, url: Url) -> tauri::Result<()> {
     use tauri::Manager;
     use webview2_com::{
-        Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile2, ICoreWebView2_13},
         ClearBrowsingDataCompletedHandler,
+        Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile2, ICoreWebView2_13},
     };
     use windows::core::Interface;
 
@@ -207,6 +428,7 @@ fn allowed_local_url(raw_url: &str) -> Result<Url, String> {
 }
 
 fn is_allowed_hict_host(host: &str) -> bool {
+    let host = host.trim_start_matches('[').trim_end_matches(']');
     if host == "localhost" {
         return true;
     }
@@ -218,9 +440,7 @@ fn is_allowed_hict_host(host: &str) -> bool {
             address.is_loopback() || address.is_private() || address.is_link_local()
         }
         IpAddr::V6(address) => {
-            address.is_loopback()
-                || address.is_unique_local()
-                || address.is_unicast_link_local()
+            address.is_loopback() || address.is_unique_local() || address.is_unicast_link_local()
         }
     }
 }
@@ -235,8 +455,34 @@ fn main() {
     };
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![quit_app, save_export])
+        .manage(Arc::new(ExportStreams::default()))
+        .invoke_handler(tauri::generate_handler![quit_app, save_export, begin_export_stream, write_export_chunk, finish_export_stream, abort_export_stream, download_export_request])
+        .on_window_event(|window, event| {
+            use tauri::Manager;
+            let state = window.state::<Arc<ExportStreams>>().inner().clone();
+            let owner = window.label().to_owned();
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if !state.window_closed(&owner) {
+                    // Do not let the last window exit before temporary files
+                    // are closed and removed. The second close is authorized.
+                    api.prevent_close();
+                    let target = window.clone();
+                    tauri::async_runtime::spawn(async move {
+                        match tauri::async_runtime::spawn_blocking(move || state.abort_window(&owner)).await {
+                            Ok(()) => { let _ = target.close(); }
+                            Err(error) => eprintln!("HiCT export cleanup before closing failed: {error}"),
+                        }
+                    });
+                }
+            } else if matches!(event, tauri::WindowEvent::Destroyed) {
+                let _ = tauri::async_runtime::spawn_blocking(move || state.abort_window(&owner));
+            }
+        })
         .setup(move |app| {
+            use tauri::Manager;
+            #[cfg(unix)]
+            install_shutdown_signals(app.handle())?;
+            let navigation_state = app.state::<Arc<ExportStreams>>().inner().clone();
             let reset = env::var("HICT_RESET_WEBUI").as_deref() == Ok("1");
             let initial_url = if reset {
                 "about:blank".parse()?
@@ -244,6 +490,15 @@ fn main() {
                 webui_url.clone()
             };
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(initial_url))
+                .on_navigation(move |_| {
+                    let previous = navigation_state.navigation_started("main");
+                    let state = navigation_state.clone();
+                    let _ = tauri::async_runtime::spawn_blocking(move || {
+                        state.abort_generation("main", &previous)
+                    });
+                    true
+                })
+                .initialization_script("Object.defineProperty(window, '__HICT_TAURI_EXPORT_STREAM_VERSION__', { value: 1 });")
                 .title("HiCT")
                 .inner_size(1480.0, 980.0)
                 .min_inner_size(900.0, 640.0)
@@ -254,6 +509,24 @@ fn main() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("HiCT Tauri browser failed");
+        .build(tauri::generate_context!())
+        .expect("HiCT Tauri browser failed")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+                use tauri::Manager;
+                let state = app.state::<Arc<ExportStreams>>().inner().clone();
+                if !state.shutdown_complete() {
+                    // WebView/OS exit requests can bypass WindowEvent::CloseRequested.
+                    // The process must remain alive until owned files are removed.
+                    api.prevent_exit();
+                    let handle = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        match tauri::async_runtime::spawn_blocking(move || state.shutdown()).await {
+                            Ok(()) => handle.exit(code.unwrap_or(0)),
+                            Err(error) => eprintln!("HiCT export cleanup before exiting failed: {error}"),
+                        }
+                    });
+                }
+            }
+        });
 }

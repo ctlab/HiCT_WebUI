@@ -38,6 +38,7 @@ import {
 } from "@/app/stores/notificationCenterStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { toast } from "vue-sonner";
+import "vue-sonner/style.css";
 import { watch } from "vue";
 import "./app/ui/zoomslider.css";
 
