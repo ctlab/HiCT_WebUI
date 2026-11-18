@@ -18,6 +18,7 @@ function moduleFor(mainDirectory) {
   const exports = {},
     handlers = new Map(),
     errors = [];
+  let permissionRequest;
   const electron = {
     net: { fetch },
     app: {
@@ -33,7 +34,9 @@ function moduleFor(mainDirectory) {
     ipcMain: { handle: (name, fn) => handlers.set(name, fn) },
     session: {
       defaultSession: {
-        setPermissionRequestHandler() {},
+        setPermissionRequestHandler(handler) {
+          permissionRequest = handler;
+        },
         webRequest: { onHeadersReceived() {} },
       },
     },
@@ -63,7 +66,15 @@ function moduleFor(mainDirectory) {
           : require(name),
     }
   );
-  return { ...exports.test, handlers, errors };
+  return {
+    ...exports.test,
+    handlers,
+    errors,
+    requestPermission: (permission, details) =>
+      new Promise((resolve) =>
+        permissionRequest(null, permission, resolve, details)
+      ),
+  };
 }
 class Window {
   constructor() {
@@ -173,6 +184,30 @@ try {
   assert.equal(window.url, base.href);
   assert.equal(window.webContents.listenerCount("did-navigate"), 0);
   const owned = packaged.configureSecurity(base);
+  const clipboardWrite = "clipboard-sanitized-write";
+  const primaryFrame = { isMainFrame: true, requestingUrl: base.href };
+  assert.equal(
+    await packaged.requestPermission(clipboardWrite, primaryFrame),
+    true
+  );
+  assert.equal(
+    await packaged.requestPermission("clipboard-read", primaryFrame),
+    false
+  );
+  assert.equal(
+    await packaged.requestPermission(clipboardWrite, {
+      ...primaryFrame,
+      isMainFrame: false,
+    }),
+    false
+  );
+  assert.equal(
+    await packaged.requestPermission(clipboardWrite, {
+      ...primaryFrame,
+      requestingUrl: "http://localhost:1/",
+    }),
+    false
+  );
   const reconnect = packaged.handlers.get("hict:reconnect");
   assert.equal(
     (await reconnect({ sender: window.webContents })).connected,

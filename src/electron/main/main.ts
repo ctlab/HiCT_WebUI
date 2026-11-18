@@ -440,8 +440,12 @@ function configureSecurity(baseUrl: URL): BundledUiServer {
     }
   );
   session.defaultSession.setPermissionRequestHandler(
-    (_webContents, _permission, callback) => {
-      callback(false);
+    (_webContents, permission, callback, details) => {
+      callback(
+        permission === "clipboard-sanitized-write" &&
+          details.isMainFrame &&
+          details.requestingUrl.startsWith(`${baseUrl.origin}/`)
+      );
     }
   );
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
