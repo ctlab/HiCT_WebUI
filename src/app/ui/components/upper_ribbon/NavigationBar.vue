@@ -2551,6 +2551,7 @@ function onSelectionFASTARequest() {
 }
 
 .file-chip--static {
+  color: var(--hict-ui-fg, #1f2937);
   cursor: default;
   pointer-events: auto;
 }

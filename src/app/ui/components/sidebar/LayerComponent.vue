@@ -88,11 +88,11 @@
             Black border outline
           </label>
           <div class="mb-2">
-            <label class="form-label" for="track-border-width"
+            <label class="form-label" :for="`${styleFieldId}-border-width`"
               >Border width</label
             >
             <input
-              id="track-border-width"
+              :id="`${styleFieldId}-border-width`"
               class="form-control form-control-sm"
               type="number"
               min="1"
@@ -101,9 +101,9 @@
             />
           </div>
           <div class="mb-2">
-            <label class="form-label" for="track-label-size">Label size</label>
+            <label class="form-label" :for="`${styleFieldId}-label-size`">Label size</label>
             <input
-              id="track-label-size"
+              :id="`${styleFieldId}-label-size`"
               class="form-control form-control-sm"
               type="number"
               min="6"
@@ -112,11 +112,11 @@
             />
           </div>
           <div class="mb-2">
-            <label class="form-label" for="track-label-offset"
+            <label class="form-label" :for="`${styleFieldId}-label-offset`"
               >Label offset</label
             >
             <input
-              id="track-label-offset"
+              :id="`${styleFieldId}-label-offset`"
               class="form-control form-control-sm"
               type="number"
               min="0"
@@ -127,32 +127,34 @@
           <div class="mb-2" v-if="props.layerName.includes('names')">
             <div class="form-check">
               <input
-                id="track-label-bold"
+                :id="`${styleFieldId}-label-bold`"
                 class="form-check-input"
                 type="checkbox"
                 v-model="labelBold"
               />
-              <label class="form-check-label" for="track-label-bold"
+              <label class="form-check-label" :for="`${styleFieldId}-label-bold`"
                 >Bold</label
               >
             </div>
             <div class="form-check mt-1">
               <input
-                id="track-label-outline"
+                :id="`${styleFieldId}-label-outline`"
                 class="form-check-input"
                 type="checkbox"
                 v-model="labelOutline"
               />
-              <label class="form-check-label" for="track-label-outline"
+              <label class="form-check-label" :for="`${styleFieldId}-label-outline`"
                 >Outline</label
               >
             </div>
             <div class="mt-2">
-              <label class="form-label" for="track-label-outline-width"
+              <label
+                class="form-label"
+                :for="`${styleFieldId}-label-outline-width`"
                 >Outline width</label
               >
               <input
-                id="track-label-outline-width"
+                :id="`${styleFieldId}-label-outline-width`"
                 class="form-control form-control-sm"
                 type="number"
                 min="0"
@@ -165,12 +167,15 @@
           <div class="mb-2">
             <div class="form-check">
               <input
-                id="track-export-svg"
+                :id="`${styleFieldId}-export-svg`"
                 class="form-check-input"
                 type="checkbox"
                 v-model="includeInSvg"
               />
-              <label class="form-check-label" for="track-export-svg">
+              <label
+                class="form-check-label"
+                :for="`${styleFieldId}-export-svg`"
+              >
                 Include in SVG export
               </label>
             </div>
@@ -194,7 +199,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, type Ref, ref, watch } from "vue";
+import { computed, type Ref, ref, useId, watch } from "vue";
 import { BorderStyle } from "@/app/core/tracks/Track2DSymmetric";
 import ColorPickerRectangle from "./ColorPickerRectangle.vue";
 import Style from "ol/style/Style";
@@ -215,6 +220,8 @@ const props = defineProps<{
   getIncludeInSvg?: () => boolean;
   getBorderOutline?: () => boolean;
 }>();
+
+const styleFieldId = useId();
 
 function getBaseColor(): ColorTranslator {
   try {

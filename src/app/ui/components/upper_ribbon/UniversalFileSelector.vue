@@ -48,6 +48,7 @@
             <button
               type="button"
               class="btn-close"
+              aria-label="Close file picker"
               @click="onDismissClicked"
             ></button>
           </div>
@@ -119,13 +120,14 @@
               </div>
               <div
                 v-if="!props.multiSelect"
-                class="btn-group btn-group-sm ms-auto"
+                class="btn-group btn-group-sm ms-auto selector-mode"
                 role="group"
                 aria-label="Selector mode"
               >
                 <button
                   type="button"
                   class="btn"
+                  :aria-pressed="selectorMode === 'explorer'"
                   :class="
                     selectorMode === 'explorer'
                       ? 'btn-primary'
@@ -138,6 +140,7 @@
                 <button
                   type="button"
                   class="btn"
+                  :aria-pressed="selectorMode === 'tree'"
                   :class="
                     selectorMode === 'tree'
                       ? 'btn-primary'
@@ -824,6 +827,9 @@ useModalFocus(modalFocusElement, () => !props.embedded);
 </script>
 
 <style scoped>
+.selector-mode .btn-outline-primary {
+  --bs-btn-color: var(--hict-surface-fg);
+}
 .embedded-file-browser .tree-host {
   max-height: 34vh;
 }

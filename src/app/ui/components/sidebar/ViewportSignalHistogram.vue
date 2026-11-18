@@ -1,6 +1,7 @@
 <template>
   <div
     class="viewport-histogram"
+    role="group"
     aria-label="Viewport signal histogram"
     :aria-busy="loading"
   >

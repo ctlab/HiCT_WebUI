@@ -1036,7 +1036,7 @@ function selectVisualizationSource(source: "PRIMARY" | "SECONDARY"): void {
   top: 6px;
   left: -1px;
   z-index: 5;
-  width: 22px;
+  width: 24px;
   height: 40px;
   padding: 0;
   border: 1px solid #94a3b8;

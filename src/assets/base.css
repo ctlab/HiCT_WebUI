@@ -207,3 +207,12 @@ body {
 body:has(> .assembly-context-menu, > .axis-context-menu) [data-sonner-toaster] {
   z-index: 1049;
 }
+
+[data-sonner-toaster][data-sonner-theme="light"] [data-sonner-toast][data-type="success"] {
+  --success-text: #087328;
+}
+
+.ol-zoom button {
+  min-width: 24px;
+  min-height: 24px;
+}

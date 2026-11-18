@@ -185,8 +185,15 @@ class ContactMapManager {
   }
 
   public initializeMapControls(): void {
-    // Add some more controls:
     this.map.addControl(new ZoomSlider());
+    // OpenLayers supplies keyboard zoom through the separate + and − buttons.
+    const zoomThumb = this.map.getViewport().querySelector<HTMLButtonElement>(
+      ".ol-zoomslider-thumb"
+    );
+    if (zoomThumb) {
+      zoomThumb.tabIndex = -1;
+      zoomThumb.setAttribute("aria-hidden", "true");
+    }
     // this.map.addInteraction(
     //   new SplitRulesInteraction({
     //     mapManager: this,

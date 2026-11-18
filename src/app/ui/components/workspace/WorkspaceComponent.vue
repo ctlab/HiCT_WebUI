@@ -20,14 +20,14 @@
  -->
 
 <template>
-  <div class="workspace-component">
+  <main class="workspace-component" aria-label="Contact map workspace">
     <ToolBar :mapManager="props.mapManager"></ToolBar>
     <InteractiveWorkspace
       :map-manager="props.mapManager"
       :filename="filename"
     ></InteractiveWorkspace>
     <SideBar :mapManager="props.mapManager"></SideBar>
-  </div>
+  </main>
 </template>
 
 <script setup lang="ts">
