@@ -277,8 +277,8 @@
       <h2 id="empty-workspace-title">No contact map open</h2>
       <p>
         Open a <code>.hict.hdf5</code>, <code>.mcool</code> or
-        <code>.hic</code> map from the server data folder, or reconnect to a map
-        that is already open on the server.
+        <code>.hic</code> map, load a saved session, or attach to a session
+        running on the server.
       </p>
       <div class="empty-workspace-actions">
         <button
@@ -287,6 +287,13 @@
           @click="upperFrame?.openFile()"
         >
           <i class="bi bi-folder2-open me-1" aria-hidden="true"></i>Open map…
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          @click="upperFrame?.openSession()"
+        >
+          Load saved session…
         </button>
         <button
           type="button"

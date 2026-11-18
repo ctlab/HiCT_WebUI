@@ -1737,7 +1737,7 @@ function onOpenFile() {
   openingFile.value = true;
 }
 
-defineExpose({ openFile: onOpenFile });
+defineExpose({ openFile: onOpenFile, openSession: onOpenSessionClicked });
 
 function onOpenWizard(): void {
   emit("wizardRequested");

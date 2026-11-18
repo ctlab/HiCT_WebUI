@@ -27,9 +27,14 @@
           <input
             id="global-search-input"
             :disabled="!props.mapManager"
-            :title="props.mapManager ? undefined : 'Open a map to search'"
+            :title="
+              props.mapManager
+                ? 'Find a contig, scaffold or feature'
+                : 'Open a map to search'
+            "
+            aria-label="Find a contig, scaffold or feature"
             class="form-control form-control-sm m-0"
-            placeholder="Find contig, scaffold or feature"
+            placeholder="Search map"
             type="text"
             autocomplete="off"
             v-model="searchQuery"
@@ -44,7 +49,7 @@
             id="global-search-button"
             :disabled="!props.mapManager"
             :title="props.mapManager ? undefined : 'Open a map to search'"
-            class="btn btn-sm btn-outline-light"
+            class="btn btn-sm"
             type="button"
             @click="goToSelection"
           >
@@ -1048,30 +1053,42 @@ async function onSignalDisplayModeChanged() {
 }
 
 #search-input-group {
-  /* Input group */
-
-  box-sizing: border-box;
-
-  /* Auto layout */
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  padding: 0px;
-
+  --search-border: #aab5c1;
+  align-items: stretch;
+  flex-wrap: nowrap;
   width: 200px;
   height: 30px;
-
-  /* Global/09. White */
-  /*background: #FFFFFF;*/
-
-  /* Components/Forms/Input border */
-  /*border: 1px solid #CED4DA;*/
+  border: 1px solid var(--search-border);
   border-radius: 4px;
+  overflow: hidden;
+}
 
-  /* Inside auto layout */
-  flex: none;
-  order: 0;
-  flex-grow: 0;
+#search-input-group > :is(input, button) {
+  margin-left: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#search-input-group > :is(input, button):focus-visible {
+  outline: 2px solid #0b5ed7;
+  outline-offset: -2px;
+}
+
+#search-input-group > :is(input, button):disabled {
+  background: #f0f3f6;
+  opacity: 1;
+}
+
+#search-input-group > button {
+  background: #f8fafc;
+  border-inline-start: 1px solid var(--search-border);
+  border-color: var(--search-border) !important;
+}
+
+#search-input-group > button:hover:enabled {
+  background: #e8f0f9;
 }
 
 .search-dropdown {
@@ -1344,11 +1361,5 @@ async function onSignalDisplayModeChanged() {
   .export-group {
     flex-wrap: wrap;
   }
-}
-
-#global-search-button {
-  border-color: rgba(15, 23, 38, 0.18);
-  color: rgba(24, 30, 38, 0.95);
-  background: rgba(255, 255, 255, 0.94);
 }
 </style>

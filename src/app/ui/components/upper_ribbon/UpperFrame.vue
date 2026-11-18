@@ -68,7 +68,10 @@ const props = defineProps<{
 }>();
 
 const navigationBar = ref<InstanceType<typeof NavigationBar> | null>(null);
-defineExpose({ openFile: () => navigationBar.value?.openFile() });
+defineExpose({
+  openFile: () => navigationBar.value?.openFile(),
+  openSession: () => navigationBar.value?.openSession(),
+});
 
 function onFileSelected(filename: string): void {
   emit("selected", filename);
