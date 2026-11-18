@@ -27,11 +27,18 @@
       :map-manager="props.mapManager"
     />
     <div
-      v-if="props.mapManager?.viewAndLayersManager.overlayStatus.loading.value"
+      v-if="
+        props.mapManager?.viewAndLayersManager.overlayStatus.loading.value ||
+        props.mapManager?.viewAndLayersManager.overlayStatus.zoomRequired.value
+      "
       class="overlay-loading"
       role="status"
     >
-      Loading overlay…
+      {{
+        props.mapManager?.viewAndLayersManager.overlayStatus.zoomRequired.value
+          ? "Zoom in to see the fine overlay."
+          : "Loading overlay…"
+      }}
     </div>
     <aside
       v-if="props.mapManager?.alignmentDetail?.state.visible.value"
@@ -40,7 +47,8 @@
     >
       <strong>Automatic FASTA alignment</strong>
       <p>
-        Local alignments between visible FASTA regions · updates with navigation.
+        Local alignments between visible FASTA regions · updates with
+        navigation.
       </p>
       <ul>
         <li v-for="marker in alignmentMarkers" :key="marker.id">

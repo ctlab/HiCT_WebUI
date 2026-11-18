@@ -71,6 +71,11 @@ const { CommonEventManager } = loadManager("CommonEventManager", {
 
 function fixture() {
   const manager = Object.create(HiCViewAndLayersManager.prototype);
+  manager.overlayStatus = {
+    loading: { value: false },
+    zoomRequired: { value: false },
+  };
+  manager.tileSize = 256;
   manager.currentLevels = {};
   manager.sequenceCoordinates = false;
   manager.sequenceScaleSupported = false;

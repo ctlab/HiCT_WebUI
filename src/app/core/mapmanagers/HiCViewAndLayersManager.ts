@@ -233,7 +233,10 @@ class HiCViewAndLayersManager {
   private activeOverlay?: Layer;
   private outgoingOverlay?: Layer;
   private cancelOverlayTransition?: () => void;
-  public readonly overlayStatus = markRaw({ loading: ref(false) });
+  public readonly overlayStatus = markRaw({
+    loading: ref(false),
+    zoomRequired: ref(false),
+  });
   private wheelZoomInteraction?: ContigMouseWheelZoom;
   private coordinateBaseBp: number;
   private readonly sequenceScaleSupported: boolean;
@@ -3368,19 +3371,22 @@ class HiCViewAndLayersManager {
       this.secondaryUsesPrimaryGrid &&
       !this.sequenceCoordinates
     ) {
-      this.showProjectedOverlay(
+      const showOverlay = this.showProjectedOverlay(
         visibleDescriptors.primary,
         visibleDescriptors.secondary
       );
+      this.overlayStatus.zoomRequired.value = !showOverlay;
       // Changing from a native/sequence grid can leave its secondary layer
       // visible. Only the projected pair belongs in this coordinate grid;
       // otherwise the hidden-underneath native image also queues every tile.
       for (const layer of this.layersHolder.secondaryHiCDataLayers) {
         layer.setVisible(
-          layer === this.activeOverlay || layer === this.outgoingOverlay
+          showOverlay &&
+            (layer === this.activeOverlay || layer === this.outgoingOverlay)
         );
       }
     } else {
+      this.overlayStatus.zoomRequired.value = false;
       this.activeOverlay?.setVisible(false);
       this.outgoingOverlay?.setVisible(false);
       for (const layer of this.layersHolder.secondaryHiCDataLayers) {
@@ -3517,7 +3523,7 @@ class HiCViewAndLayersManager {
   private showProjectedOverlay(
     primary: LayerResolutionDescriptor,
     secondary: LayerResolutionDescriptor
-  ): void {
+  ): boolean {
     const target = this.view.getResolution() ?? primary.pixelResolution;
     const nativeRatio = primary.bpResolution / secondary.bpResolution;
     const maximumFactor = Math.min(65_536, primary.bpResolution);
@@ -3537,6 +3543,14 @@ class HiCViewAndLayersManager {
         : oversampling > 1
         ? 2 ** Math.floor(Math.log2(oversampling))
         : 1;
+    // The server bounds reads to 32 Mi native cells per projected tile. A
+    // fine-only overlay can exceed that budget until the user zooms closer.
+    const nativeEdge =
+      Math.ceil((this.tileSize * (nativeRatio + 1)) / sampleFactor) + 2;
+    if (nativeEdge ** 2 > 32 * 1024 * 1024) {
+      this.settleProjectedOverlayForFigure();
+      return false;
+    }
     const key = `${primary.bpResolution}/${secondary.bpResolution}/${sampleFactor}`;
     if (this.mapManager.isExporting) {
       this.settleProjectedOverlayForFigure();
@@ -3548,7 +3562,7 @@ class HiCViewAndLayersManager {
         this.activeOverlay = undefined;
       }
     }
-    if (this.activeOverlay?.get("projectionKey") === key) return;
+    if (this.activeOverlay?.get("projectionKey") === key) return true;
 
     const map = this.mapManager.getMap();
     this.cancelOverlayTransition?.();
@@ -3601,7 +3615,7 @@ class HiCViewAndLayersManager {
     map.addLayer(layer);
     if (this.mapManager.isExporting) {
       this.overlayStatus.loading.value = false;
-      return;
+      return true;
     }
 
     const finish = () => {
@@ -3622,6 +3636,7 @@ class HiCViewAndLayersManager {
       window.clearInterval(renderCheck);
       this.cancelOverlayTransition = undefined;
     };
+    return true;
   }
 
   private removeProjectedOverlay(layer: Layer): void {
