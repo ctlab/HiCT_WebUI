@@ -242,7 +242,7 @@ class HiCViewAndLayersManager {
   private readonly sequenceScaleSupported: boolean;
   private sequenceCoordinates = false;
   private changingDisplayGrid = false;
-  private readonly sequenceLayers = new Map<MatrixSourceName, Layer>();
+  private readonly sequenceLayers = markRaw(new Map<MatrixSourceName, Layer>());
   private selectionEventKeys: EventsKey[] = [];
   private projectingRegion = false;
   private regionGestureActive = false;
@@ -3440,6 +3440,7 @@ class HiCViewAndLayersManager {
       if (
         existing &&
         existing.get("sourceBpResolution") === native.bpResolution &&
+        existing.get("pixelResolution") === 1 / this.coordinateBaseBp &&
         collection.includes(existing) &&
         existing.get("sequenceLengthBp") ===
           (this.mapManager.contigDimensionHolder.prefix_sum_bp[
@@ -3479,13 +3480,13 @@ class HiCViewAndLayersManager {
         undefined,
         true
       );
-      const layer = new TileLayer({
+      const layer = markRaw(new TileLayer({
         source: tiles,
         visible: false,
         zIndex:
           this.layersZIndices.HIC_MAP_LAYER_Z_INDEX +
           (source === "SECONDARY" ? 1 : 0),
-      });
+      }));
       layer.set("sourceName", source);
       layer.set("bpResolution", 1);
       layer.set("pixelResolution", pixel);
