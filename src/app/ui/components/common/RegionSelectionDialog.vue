@@ -102,6 +102,19 @@
           <p v-if="copyStatus" role="status" class="small text-success">
             {{ copyStatus }}
           </p>
+          <details class="mb-3">
+            <summary>Paste region</summary>
+            <label for="paste-region" class="form-label"
+              >Copied HiCT coordinates</label
+            >
+            <textarea
+              id="paste-region"
+              v-model="pasteText"
+              class="form-control"
+              rows="3"
+              @input="previewPaste"
+            />
+          </details>
           <div class="d-flex flex-wrap gap-2 mb-3">
             <button
               type="button"
@@ -138,7 +151,7 @@
             <button
               type="submit"
               class="btn btn-primary"
-              :disabled="cutPending"
+              :disabled="cutPending || invalidPaste"
             >
               Select region
             </button>
@@ -188,6 +201,7 @@ import {
   formatBoundary,
   getCoordinateReferences,
   parseBoundary,
+  parseCopiedRegion,
   parseRegion,
   type RegionBounds,
   type CoordinateFrame,
@@ -255,6 +269,27 @@ function fill(bounds: RegionBounds) {
   };
   error.value = "";
   copyStatus.value = "";
+}
+const pasteText = ref("");
+const invalidPaste = ref(false);
+function previewPaste(event: Event) {
+  const text = (event.target as HTMLTextAreaElement).value;
+  invalidPaste.value = false;
+  error.value = "";
+  if (!text.trim()) return;
+  try {
+    const preview = parseCopiedRegion(
+      text,
+      references,
+      layers.value.getRegionDomain()
+    );
+    convention.value = preview.convention;
+    frame.value = preview.frame;
+    fill(preview.bounds);
+  } catch (failure) {
+    invalidPaste.value = true;
+    error.value = (failure as Error).message;
+  }
 }
 function useViewport() {
   fill(
@@ -337,7 +372,7 @@ async function copyCoordinates() {
   }
 }
 function apply() {
-  if (cutPending.value) return;
+  if (cutPending.value || invalidPaste.value) return;
   try {
     layers.value.setRegionBounds(parseFields());
     emit("dismissed");

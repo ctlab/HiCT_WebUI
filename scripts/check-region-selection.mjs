@@ -243,3 +243,30 @@ assert.equal(vertexVisible, false);
 console.log(
   "Separate entity/region state, exact BP projections, coordinate conventions, scopes, malformed inputs and long positions passed."
 );
+
+for (const frame of ["assembly", "scaffold", "contig"]) {
+  for (const convention of ["one-based", "zero-based"]) {
+    const formatted = (x, end) =>
+      model.formatBoundary(x, end, convention, references, frame);
+    const heading =
+      frame[0].toUpperCase() +
+      frame.slice(1) +
+      " coordinates (bp, " +
+      (convention === "one-based"
+        ? "1-based inclusive)"
+        : "0-based, end excluded)");
+    const text = [
+      heading,
+      "Rows\t" + formatted(240, false) + "\t" + formatted(290, true),
+      "Columns\t" + formatted(259, false) + "\t" + formatted(333, true),
+    ].join("\r\n");
+    assert.deepEqual(plain(model.parseCopiedRegion(text, references, domain)), {
+      frame,
+      convention,
+      bounds: { rowStart: 240, rowEnd: 290, columnStart: 259, columnEnd: 333 },
+    });
+    assert.throws(() =>
+      model.parseCopiedRegion(text + "\textra", references, domain)
+    );
+  }
+}

@@ -1120,6 +1120,14 @@ async function openJobResult({
         tracks.setTrackVisibleOnAxis(track.trackId, "horizontal", true);
         tracks.setTrackVisibleOnAxis(track.trackId, "vertical", true);
         manager.scheduleWorkspaceLayoutRefresh();
+      } else if (output.action === "attach_overview") {
+        const status = await requests.openSecondarySource(output.filename);
+        if (!status.attached || status.requiresConfirmation)
+          throw Error("The overview does not match the current map.");
+        manager.viewAndLayersManager.setSecondaryResolutionModel(
+          status.compatibility
+        );
+        await manager.reloadTilesFromBackend();
       } else if (
         output.action === "attach_identity" ||
         output.action === "attach_dotplot"

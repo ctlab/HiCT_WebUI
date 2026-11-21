@@ -561,7 +561,7 @@
               <li>
                 <a
                   class="dropdown-item"
-                  href="https://github.com/ctlab/HiCT_JVM/blob/jvm-sfx-native/docs/user-guide.md"
+                  href="./docs/user-guide.md"
                   target="_blank"
                   rel="noopener noreferrer"
                   >User guide and shortcuts</a
@@ -1061,12 +1061,17 @@
         </label>
         <section class="how-to-cite">
           <h3>How to cite</h3>
-          <p>
-            {{ projectAttribution.authors }} HiCT {{ webuiVersion }}.
-            https://github.com/ctlab/HiCT_JVM. WebUI revision {{ webuiCommit }}.
-          </p>
+          <p>{{ citation }}</p>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary me-2"
+            :disabled="!backendRevision || backendVersion === 'loading...'"
+            @click="copyText(citation, 'Citation')"
+          >
+            Copy citation
+          </button>
           <a
-            href="https://github.com/ctlab/HiCT_JVM/blob/jvm-sfx-native/CITATION.cff"
+            href="./docs/CITATION.cff"
             target="_blank"
             rel="noopener noreferrer"
             >Machine-readable software citation</a
@@ -1303,6 +1308,7 @@
 </template>
 
 <script setup lang="ts">
+import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
 import SelectionControls from "./SelectionControls.vue";
 import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
 /* global __HICT_WEBUI_BUILD_VERSION__, __HICT_WEBUI_BUILD_COMMIT__ */
@@ -1411,8 +1417,17 @@ const toolchainStatus = ref<ConversionToolchainStatusResponse | null>(null);
 const dotplotAlignerPreference = ref("auto");
 const dotplotAlignerBusy = ref(false);
 const backendVersion = ref("loading...");
+const backendRevision = ref("");
 const webuiVersion = __HICT_WEBUI_BUILD_VERSION__;
 const webuiCommit = __HICT_WEBUI_BUILD_COMMIT__;
+const citation = computed(
+  () =>
+    `${projectAttribution.authors} HiCT ${
+      backendVersion.value
+    }. https://github.com/ctlab/HiCT_JVM. JVM revision ${
+      backendRevision.value || "unknown"
+    }. WebUI revision ${webuiCommit}.`
+);
 const CoolerConverter = defineAsyncComponent(
   () => import("./CoolerConverter.vue")
 );
@@ -1996,6 +2011,7 @@ function openAbout(): void {
   aboutOpen.value = true;
   aboutActiveTab.value = "about";
   backendVersion.value = "loading...";
+  backendRevision.value = "";
   loadChangelog();
   props.networkManager.requestManager
     .getBackendVersion()
@@ -2003,6 +2019,8 @@ function openAbout(): void {
       if (typeof v === "string") {
         backendVersion.value = v;
       } else {
+        backendRevision.value =
+          v.backendRevision === "unknown" ? "" : v.backendRevision ?? "";
         backendVersion.value = v.version ?? "unknown";
       }
     })

@@ -36,9 +36,21 @@
     >
       {{
         props.mapManager?.viewAndLayersManager.overlayStatus.zoomRequired.value
-          ? "Zoom in to see the fine overlay."
+          ? cacheError || "The fine overlay needs an overview at this zoom."
           : "Loading overlay…"
       }}
+      <button
+        v-if="
+          cacheJobId &&
+          props.mapManager?.viewAndLayersManager.overlayStatus.zoomRequired
+            .value
+        "
+        type="button"
+        class="btn btn-sm btn-link"
+        @click="jobsUi.open('sequence/' + cacheJobId)"
+      >
+        View overview job
+      </button>
     </div>
     <aside
       v-if="props.mapManager?.alignmentDetail?.state.visible.value"
@@ -91,6 +103,10 @@
 
 <script setup lang="ts">
 import "ol/ol.css";
+import { useSessionStore } from "@/app/stores/sessionStore";
+import { useBackgroundJobsUiStore } from "@/app/stores/backgroundJobsUiStore";
+import { SequenceAnalysisRequest } from "@/app/core/net/api/SequenceAnalysisRequest";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { alignmentMarkers } from "@/app/core/visualization/alignmentMarkers";
 import AssemblyContextMenu from "./AssemblyContextMenu.vue";
 import { useStyleStore } from "@/app/stores/styleStore";
@@ -123,6 +139,38 @@ const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
 
+const jobsUi = useBackgroundJobsUiStore();
+const session = useSessionStore();
+const cacheJobId = ref("");
+const cacheError = ref("");
+watch(
+  () =>
+    [
+      props.mapManager,
+      session.secondaryMapFilename,
+      props.mapManager?.viewAndLayersManager.overlayStatus.zoomRequired.value,
+    ] as const,
+  async ([manager, source, needed], _, cleanup) => {
+    let active = true;
+    cleanup(() => {
+      active = false;
+    });
+    cacheJobId.value = "";
+    cacheError.value = "";
+    if (!manager || !source || !needed) return;
+    try {
+      const job = await manager.networkManager.requestManager.sendRequest(
+        new SequenceAnalysisRequest("/sequence/overview/jobs", {
+          sourceFilename: source,
+        })
+      );
+      if (active) cacheJobId.value = job.data.jobId;
+    } catch (error) {
+      if (active) cacheError.value = extractErrorMessage(error);
+    }
+  },
+  { immediate: true }
+);
 const uiSettingsStore = useUiSettingsStore();
 const { customZoomSliderEnabled } = storeToRefs(uiSettingsStore);
 
@@ -187,6 +235,9 @@ const managerKey = computed(() => {
   padding-top: 0.35rem;
 }
 
+.overlay-loading button {
+  pointer-events: auto;
+}
 .overlay-loading {
   position: absolute;
   z-index: 2;

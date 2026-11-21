@@ -31,7 +31,8 @@ export interface SequenceAnalysisJob {
     | "dotplot"
     | "moddotplot"
     | "alignment_detail"
-    | "repeat_period";
+    | "repeat_period"
+    | "overview-cache";
   searchTarget?: "LOCAL_ASSEMBLY" | "NCBI_REMOTE";
   remoteDatabase?: string;
   remoteRequestId?: string | null;
@@ -62,7 +63,7 @@ export class SequenceAnalysisRequest {
     public readonly options: object = {}
   ) {
     if (
-      !/^\/sequence\/(settings|cleanup|repeat_period|remote_blast\/result|(?:search|moddotplot|dotplot)\/jobs|jobs\/list|jobs\/[a-zA-Z0-9-]+\/stop)$/.test(
+      !/^\/sequence\/(settings|cleanup|repeat_period|remote_blast\/result|(?:search|overview)\/jobs|(?:moddotplot|dotplot)\/(?:jobs|estimate)|jobs\/list|jobs\/[a-zA-Z0-9-]+\/stop)$/.test(
         requestPath
       )
     )

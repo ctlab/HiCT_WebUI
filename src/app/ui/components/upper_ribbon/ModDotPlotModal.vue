@@ -65,9 +65,6 @@
             </button>
           </div>
           <fieldset :disabled="busy">
-            <SequenceGapSettings
-              :request-manager="props.mapManager.networkManager.requestManager"
-            />
             <label for="moddotplot-scope" class="form-label"
               >Analysis scope</label
             >
@@ -115,6 +112,42 @@
             <p v-if="resolutionError" class="small text-danger" role="alert">
               {{ resolutionError }}
             </p>
+            <div v-if="cost" class="small mb-2" role="status">
+              <div>
+                Requested analysis levels ·
+                {{ cost.requestedLevels.join(", ") }} bp
+              </div>
+              <div>
+                Automatic overview levels ·
+                {{ cost.overviewLevels.join(", ") || "None" }}
+              </div>
+              <div>
+                Selected span · {{ cost.rowBp.toLocaleString() }} ×
+                {{ cost.columnBp.toLocaleString() }} bp
+              </div>
+              <div>
+                Estimated storage ·
+                {{ cost.estimatedBytes.toLocaleString() }} bytes
+              </div>
+              <div v-if="cost.limitingLevel">
+                Budget exceeded at {{ cost.limitingLevel }} bp.
+              </div>
+            </div>
+            <p v-if="costError" class="text-danger small" role="alert">
+              {{ costError }}
+            </p>
+            <button
+              v-if="
+                (cost?.limitingLevel || costError) &&
+                selection &&
+                scope === 'assembly'
+              "
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              @click="scope = 'selection'"
+            >
+              Use current rectangle
+            </button>
             <div class="resolution-options mb-3">
               <label
                 v-for="resolution in availableResolutions"
@@ -151,27 +184,33 @@
                   required
                 />
               </div>
-              <div class="col-sm-6">
-                <label for="moddotplot-threads" class="form-label"
-                  >Worker threads</label
-                ><input
-                  id="moddotplot-threads"
-                  v-model.number="threads"
-                  type="number"
-                  min="-1"
-                  max="256"
-                  step="1"
-                  class="form-control"
-                  required
-                /><small class="form-text"
-                  >-1 uses all allocated logical CPUs; 0 chooses automatically;
-                  1 is single-threaded.</small
-                >
-              </div>
             </div>
             <details v-if="!alignment" class="mt-3">
               <summary>Advanced</summary>
+              <SequenceGapSettings
+                :request-manager="
+                  props.mapManager.networkManager.requestManager
+                "
+              />
+
               <div class="row g-3 mt-0">
+                <div class="col-sm-6">
+                  <label for="moddotplot-threads" class="form-label"
+                    >Worker threads</label
+                  ><input
+                    id="moddotplot-threads"
+                    v-model.number="threads"
+                    type="number"
+                    min="-1"
+                    max="256"
+                    step="1"
+                    class="form-control"
+                    required
+                  /><small class="form-text"
+                    >-1 uses all allocated logical CPUs; 0 chooses
+                    automatically; 1 is single-threaded.</small
+                  >
+                </div>
                 <div class="col-sm-6">
                   <label for="moddotplot-k" class="form-label"
                     >k-mer length</label
@@ -241,6 +280,12 @@
             </div>
             <details v-if="alignment" class="mt-3">
               <summary>Advanced</summary>
+              <SequenceGapSettings
+                :request-manager="
+                  props.mapManager.networkManager.requestManager
+                "
+              />
+
               <div class="row g-3 mt-0">
                 <div
                   class="col-sm-6"
@@ -446,6 +491,8 @@
             :disabled="
               busy ||
               !!unavailableReason ||
+              !cost ||
+              !!cost.limitingLevel ||
               !!resolutionError ||
               !resolutions.length
             "
@@ -600,6 +647,63 @@ const mergeCompatible = ref(true),
   ),
   submitting = ref(false),
   error = ref("");
+const jobOptions = computed(() => ({
+  gapLengthBp: uiSettings.sequenceGapLengthBp,
+  scope: scope.value,
+  displayMode: displayMode.value,
+  region: scope.value === "selection" ? selection : undefined,
+  resolutions: resolutions.value,
+  mergeCompatible: mergeCompatible.value,
+  ...(alignment
+    ? alignmentSettings.value
+    : {
+        identity: identity.value,
+        k: k.value,
+        sketchSize: sketchSize.value,
+        delta: delta.value,
+        threads: threads.value,
+      }),
+  ...(saveReusable.value
+    ? {
+        outputFilename: outputFilename.value || defaultOutputFilename,
+        overwrite: overwrite.value,
+      }
+    : {}),
+}));
+type GenerationCost = {
+  requestedLevels: number[];
+  overviewLevels: number[];
+  rowBp: number;
+  columnBp: number;
+  estimatedBytes: number;
+  limitingLevel?: number;
+};
+const cost = ref<GenerationCost | null>(null);
+const costError = ref("");
+watch(
+  [jobOptions, resolutionError, unavailableReason],
+  ([options, invalid, unavailable], _, cleanup) => {
+    cost.value = null;
+    costError.value = "";
+    if (invalid || unavailable || !options.resolutions.length) return;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await api.sendRequest(
+          new SequenceAnalysisRequest(`/sequence/${kind}/estimate`, options)
+        );
+        if (active) cost.value = response.data;
+      } catch (failure) {
+        if (active) costError.value = extractErrorMessage(failure);
+      }
+    }, 200);
+    cleanup(() => {
+      active = false;
+      window.clearTimeout(timer);
+    });
+  },
+  { immediate: true, flush: "sync" }
+);
 watch(scope, (value) => {
   displayMode.value = value === "selection" ? "overlay" : "below";
 });
@@ -652,6 +756,8 @@ async function start() {
   if (
     busy.value ||
     unavailableReason.value ||
+    !cost.value ||
+    cost.value.limitingLevel ||
     resolutionError.value ||
     !resolutions.value.length
   )
@@ -665,29 +771,7 @@ async function start() {
   try {
     job.value = (
       await api.sendRequest(
-        new SequenceAnalysisRequest(`/sequence/${kind}/jobs`, {
-          gapLengthBp: uiSettings.sequenceGapLengthBp,
-          scope: scope.value,
-          displayMode: displayMode.value,
-          region: scope.value === "selection" ? selection : undefined,
-          resolutions: resolutions.value,
-          mergeCompatible: mergeCompatible.value,
-          ...(alignment
-            ? alignmentSettings.value
-            : {
-                identity: identity.value,
-                k: k.value,
-                sketchSize: sketchSize.value,
-                delta: delta.value,
-                threads: threads.value,
-              }),
-          ...(saveReusable.value
-            ? {
-                outputFilename: outputFilename.value || defaultOutputFilename,
-                overwrite: overwrite.value,
-              }
-            : {}),
-        })
+        new SequenceAnalysisRequest(`/sequence/${kind}/jobs`, jobOptions.value)
       )
     ).data;
     if (disposed) deferResult();

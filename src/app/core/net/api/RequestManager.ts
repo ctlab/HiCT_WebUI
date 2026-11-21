@@ -185,6 +185,7 @@ export interface BackgroundJobOutput {
     | "download"
     | "open_tracks"
     | "open_blast_results"
+    | "attach_overview"
     | "attach_identity"
     | "attach_dotplot"
     | "fasta_only"
@@ -1848,7 +1849,7 @@ class RequestManager {
   }
 
   public async getBackendVersion(): Promise<
-    { version: string; webuiVersion?: string } | string
+    { version: string; webuiVersion?: string; backendRevision?: string } | string
   > {
     const host = this.networkManager.host.replace(/\/+$/, "");
     return axios
