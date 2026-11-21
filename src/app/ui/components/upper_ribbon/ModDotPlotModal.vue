@@ -74,8 +74,12 @@
               class="form-select mb-3"
             >
               <option value="assembly">Whole active assembly</option>
-              <option value="selection" :disabled="!selection">
-                Selected rectangle
+              <option value="selection" :disabled="!currentRectangle">
+                {{
+                  selection
+                    ? "Selected rectangle"
+                    : "Current viewport rectangle"
+                }}
               </option>
             </select>
             <p v-if="scope === 'selection' && selection" class="small">
@@ -139,7 +143,7 @@
             <button
               v-if="
                 (cost?.limitingLevel || costError) &&
-                selection &&
+                currentRectangle &&
                 scope === 'assembly'
               "
               type="button"
@@ -584,6 +588,13 @@ const selection =
         columnEnd: Math.max(borders.leftBP[0], borders.rightBP[0]),
       }
     : null;
+const currentRectangle =
+  selection ??
+  view.regionFromExtent(
+    props.mapManager
+      .getView()
+      .calculateExtent(props.mapManager.getMap().getSize())
+  );
 const availableResolutions = [...new Set([50, ...view.resolutions])].sort(
   (a, b) => a - b
 );
@@ -651,7 +662,7 @@ const jobOptions = computed(() => ({
   gapLengthBp: uiSettings.sequenceGapLengthBp,
   scope: scope.value,
   displayMode: displayMode.value,
-  region: scope.value === "selection" ? selection : undefined,
+  region: scope.value === "selection" ? currentRectangle : undefined,
   resolutions: resolutions.value,
   mergeCompatible: mergeCompatible.value,
   ...(alignment

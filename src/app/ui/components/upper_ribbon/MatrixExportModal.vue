@@ -316,10 +316,13 @@
           >
             Dismiss
           </button>
+          <span v-if="numericError" role="alert" class="text-danger small">{{
+            numericError
+          }}</span>
           <button
             class="btn btn-primary"
             type="button"
-            :disabled="submitting || !sourceFilename"
+            :disabled="submitting || !sourceFilename || !!numericError"
             @click="startExport"
           >
             <span
@@ -382,6 +385,21 @@ const overwrite = ref(false);
 const compressionAlgorithm = ref("deflate");
 const compression = ref(6);
 const parallelism = ref(-1);
+const numericError = computed(() => {
+  if (
+    !Number.isInteger(compression.value) ||
+    compression.value < 0 ||
+    compression.value > 9
+  )
+    return "Compression level must be a whole number from 0 to 9.";
+  if (
+    !Number.isInteger(parallelism.value) ||
+    parallelism.value < -1 ||
+    parallelism.value > 2147483647
+  )
+    return "Threads must be a whole number from -1 to 2147483647.";
+  return "";
+});
 const exportMode = ref("auto");
 const exportAllResolutions = ref(false);
 const balanceExportedCoolers = ref(true);
@@ -519,6 +537,7 @@ function loadConversionJobs(): void {
 }
 
 async function startExport(): Promise<void> {
+  if (numericError.value) return;
   if (!sourceFilename.value) {
     errorMessage.value = "Select a .hict.hdf5 source matrix first.";
     return;
