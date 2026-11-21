@@ -3552,6 +3552,19 @@ class HiCViewAndLayersManager {
       return false;
     }
     const key = `${primary.bpResolution}/${secondary.bpResolution}/${sampleFactor}`;
+    // A single-resolution outgoing tile grid still enumerates every visible
+    // tile when loading is paused. Retire it before a large zoom-out asks
+    // OpenLayers to enumerate a whole genome in base-resolution tiles.
+    const tooFineForViewport = (layer: Layer | undefined) =>
+      !!layer && target > 4 * Number(layer.get("pixelResolution"));
+    if (tooFineForViewport(this.outgoingOverlay)) {
+      this.settleProjectedOverlayForFigure();
+    }
+    if (this.activeOverlay && tooFineForViewport(this.activeOverlay)) {
+      this.settleProjectedOverlayForFigure();
+      this.removeProjectedOverlay(this.activeOverlay);
+      this.activeOverlay = undefined;
+    }
     if (this.mapManager.isExporting) {
       this.settleProjectedOverlayForFigure();
       if (
