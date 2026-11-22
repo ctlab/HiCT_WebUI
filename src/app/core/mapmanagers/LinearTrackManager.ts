@@ -1443,7 +1443,7 @@ class LinearTrackManager {
       const crossSpan = Math.max(1, laneInnerEnd - laneInnerStart);
       const rows =
         renderStyle === "FEATURE" ? this.rowsFor(track.bins, bpResolution) : [];
-      const rowHeight = 20;
+      const rowHeight = 24;
       const offset = Math.min(
         this.scrollOffsets[orientation].get(track.trackId) ?? 0,
         Math.max(0, rows.length * rowHeight - crossSpan)
@@ -1460,11 +1460,6 @@ class LinearTrackManager {
         ctx.rect(0, laneInnerStart, canvas.width, crossSpan);
       else ctx.rect(laneInnerStart, 0, crossSpan, canvas.height);
       ctx.clip();
-      const visibleLabels: {
-        bin: TrackBinResponse;
-        start: number;
-        end: number;
-      }[] = [];
       for (
         let row = renderStyle === "SIGNAL" ? -1 : firstRow;
         row < (renderStyle === "SIGNAL" ? 0 : lastRow);
@@ -1483,6 +1478,7 @@ class LinearTrackManager {
               low = mid + 1;
             else high = mid;
           }
+        let previousEnd = 0;
         for (let i = low; i < binsToRender.length; i++) {
           const bin = binsToRender[i];
           if (row >= 0 && (bin.startPx ?? -Infinity) >= viewport.endPx) break;
@@ -1535,22 +1531,20 @@ class LinearTrackManager {
               if (barHeight > 0)
                 ctx.fillRect(x0, y, x1 - x0, Math.max(1, barHeight));
             } else {
-              if (bin.label)
-                visibleLabels.push({ bin, start: packedStart, end: packedEnd });
               if (!this.isFeatureDensityBin(bin))
                 featureHits.push({
                   trackId: track.trackId,
                   bin,
                   axisStart: x0,
                   axisEnd: x1,
-                  crossStart: packedStart,
-                  crossEnd: packedEnd,
+                  crossStart: Math.max(laneInnerStart, packedStart),
+                  crossEnd: Math.min(laneInnerEnd, packedEnd),
                 });
               this.drawHorizontalFeatureBin(
                 ctx,
                 bin,
                 viewport,
-                packedStart,
+                packedStart + 6,
                 packedEnd,
                 canvas.width,
                 x0,
@@ -1578,22 +1572,20 @@ class LinearTrackManager {
               if (barWidth > 0)
                 ctx.fillRect(x, y0, Math.max(1, barWidth), y1 - y0);
             } else {
-              if (bin.label)
-                visibleLabels.push({ bin, start: packedStart, end: packedEnd });
               if (!this.isFeatureDensityBin(bin))
                 featureHits.push({
                   trackId: track.trackId,
                   bin,
                   axisStart: y0,
                   axisEnd: y1,
-                  crossStart: packedStart,
-                  crossEnd: packedEnd,
+                  crossStart: Math.max(laneInnerStart, packedStart),
+                  crossEnd: Math.min(laneInnerEnd, packedEnd),
                 });
               this.drawVerticalFeatureBin(
                 ctx,
                 bin,
                 viewport,
-                packedStart,
+                packedStart + 6,
                 packedEnd,
                 canvas.height,
                 y0,
@@ -1601,6 +1593,26 @@ class LinearTrackManager {
                 isSelectedFeature
               );
             }
+          }
+          if (renderStyle === "FEATURE") {
+            const start = Math.max(0, viewport.pxToScreen(startPx));
+            const end = Math.min(
+              orientation === "horizontal" ? canvas.width : canvas.height,
+              viewport.pxToScreen(endPx)
+            );
+            if (bin.label && (start - previousEnd >= 16 || end - start >= 22)) {
+              this.drawFeatureLabel(
+                ctx,
+                orientation,
+                bin.label,
+                previousEnd,
+                start,
+                end,
+                packedStart,
+                textPalette
+              );
+            }
+            previousEnd = end;
           }
         }
       }
@@ -1622,18 +1634,6 @@ class LinearTrackManager {
           ctx.lineTo(zero, canvas.height);
         }
         ctx.stroke();
-      }
-      for (const { bin, start, end } of visibleLabels) {
-        if (start < laneInnerStart || end > laneInnerEnd) continue;
-        this.drawFeatureLabels(
-          ctx,
-          orientation,
-          start - 12,
-          end,
-          viewport,
-          [bin],
-          textPalette
-        );
       }
       ctx.fillStyle = textPalette.primary;
       ctx.font = "bold 11px HiCT Sans";
@@ -1815,84 +1815,32 @@ class LinearTrackManager {
     };
   }
 
-  private drawFeatureLabels(
+  private drawFeatureLabel(
     ctx: CanvasRenderingContext2D,
     orientation: Orientation,
-    laneInnerStart: number,
-    laneInnerEnd: number,
-    viewport: ViewportGeometry,
-    bins: TrackBinResponse[],
-    textPalette: TrackTextPalette
+    label: string,
+    previousEnd: number,
+    start: number,
+    end: number,
+    rowStart: number,
+    palette: TrackTextPalette
   ): void {
-    const minFeatureSpanPx = 22;
-    const minLabelGapPx = 6;
-    const maxLabelsPerLane = 32;
-    let drawnCount = 0;
-    let lastLabelEnd = Number.NEGATIVE_INFINITY;
-    ctx.fillStyle = textPalette.primary;
     ctx.font = "10px HiCT Sans";
     ctx.textAlign = "left";
-    for (const bin of bins) {
-      if (drawnCount >= maxLabelsPerLane) {
-        break;
-      }
-      const label = (bin.label ?? "").trim();
-      if (!label) {
-        continue;
-      }
-      const interval = this.resolveBinIntervalPx(bin, viewport.bpResolution);
-      if (!interval.visible) {
-        continue;
-      }
-      if (
-        interval.endPx <= viewport.startPx ||
-        interval.startPx >= viewport.endPx
-      ) {
-        continue;
-      }
-      const axisStart = Math.floor(viewport.pxToScreen(interval.startPx));
-      const axisEnd = Math.max(
-        axisStart + 1,
-        Math.ceil(viewport.pxToScreen(interval.endPx))
-      );
-      const axisSpan = axisEnd - axisStart;
-      if (axisSpan < minFeatureSpanPx) {
-        continue;
-      }
-      if (orientation === "horizontal") {
-        const textWidth = ctx.measureText(label).width;
-        if (textWidth > axisSpan - 4) {
-          continue;
-        }
-        const drawX = axisStart + 2;
-        if (drawX < lastLabelEnd + minLabelGapPx) {
-          continue;
-        }
-        this.drawOutlinedText(
-          ctx,
-          label,
-          drawX,
-          laneInnerStart + 14,
-          textPalette
-        );
-        lastLabelEnd = drawX + textWidth;
-      } else {
-        const textLength = ctx.measureText(label).width;
-        if (textLength > axisSpan - 4) {
-          continue;
-        }
-        const drawY = axisStart + 2;
-        if (drawY < lastLabelEnd + minLabelGapPx) {
-          continue;
-        }
-        ctx.save();
-        ctx.translate(laneInnerStart + 10, drawY + textLength);
-        ctx.rotate(-Math.PI / 2);
-        this.drawOutlinedText(ctx, label, 0, 0, textPalette);
-        ctx.restore();
-        lastLabelEnd = drawY + textLength;
-      }
-      drawnCount += 1;
+    const width = ctx.measureText(label).width;
+    const beside = start - previousEnd >= width + 8;
+    if (!beside && end - start < width + 4) return;
+    const axis = beside ? start - width - 4 : start + 2;
+    const cross = rowStart + (beside ? 9 : 0);
+    ctx.fillStyle = palette.primary;
+    if (orientation === "horizontal")
+      this.drawOutlinedText(ctx, label, axis, cross, palette);
+    else {
+      ctx.save();
+      ctx.translate(cross, axis + width);
+      ctx.rotate(-Math.PI / 2);
+      this.drawOutlinedText(ctx, label, 0, 0, palette);
+      ctx.restore();
     }
   }
 

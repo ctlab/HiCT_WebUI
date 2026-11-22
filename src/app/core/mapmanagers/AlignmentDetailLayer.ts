@@ -195,6 +195,10 @@ export class AlignmentDetailLayer {
         }
         this.segments = response.result.segments;
         this.displaySegments();
+        if (response.result.alignmentCount === 0) {
+          this.state.message.value =
+            "No alignment reported for these visible regions. Short windows may yield no hit.";
+        }
       } catch (error) {
         if (!controller.signal.aborted && generation === this.generation) {
           this.state.message.value =
