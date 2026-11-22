@@ -31,6 +31,7 @@ import "primeicons/primeicons.css";
 import "./assets/base.css";
 import { createApp } from "vue";
 import { createPinia } from "pinia";
+import PrimeVue from "primevue/config";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import {
   useNotificationCenterStore,
@@ -46,6 +47,7 @@ const pinia = createPinia();
 
 const app = createApp(App);
 app.use(pinia);
+app.use(PrimeVue);
 app.mount("#app");
 
 function applyDefaultTooltips(root: ParentNode = document) {
