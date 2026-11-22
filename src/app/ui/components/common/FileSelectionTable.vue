@@ -23,6 +23,8 @@
   <div class="file-selection-table">
     <DataTable
       :value="tableRows"
+      :paginator="tableRows.length > 100"
+      :rows="100"
       data-key="path"
       class="p-datatable-sm file-selection-datatable"
       column-resize-mode="fit"
@@ -225,9 +227,10 @@ const activeRows = computed(() =>
   renderedRows.value.length > 0 ? renderedRows.value : tableRows.value
 );
 
+const selectedPathSet = computed(() => new Set(props.selectedPaths));
 const isSelected = (path: string): boolean =>
   props.multiSelect
-    ? (props.selectedPaths ?? []).includes(path)
+    ? selectedPathSet.value.has(path)
     : path === props.selectedPath;
 
 const selectPath = (path: string, event?: MouseEvent): void => {
@@ -255,7 +258,7 @@ const togglePath = (path: string, event?: MouseEvent): void => {
       const max = Math.max(start, end);
       for (let i = min; i <= max; i++) {
         const rowPath = rows[i]?.path;
-        if (!rowPath) {
+        if (!rowPath || rows[i].type === "directory") {
           continue;
         }
         if (shouldSelect) {
@@ -281,8 +284,9 @@ const togglePath = (path: string, event?: MouseEvent): void => {
 const emitSelectedPaths = (selected: Set<string>): void => {
   const knownOrder = tableRows.value.map((row) => row.path);
   const ordered = knownOrder.filter((path) => selected.has(path));
+  const known = new Set(knownOrder);
   for (const path of selected) {
-    if (!knownOrder.includes(path)) {
+    if (!known.has(path)) {
       ordered.push(path);
     }
   }

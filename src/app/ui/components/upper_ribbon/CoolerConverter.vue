@@ -109,6 +109,35 @@
           </div>
           <div>
             <div v-if="batchStep === 'select'">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <strong>{{
+                  recursiveList ? "All folders" : currentFolder || "DATA_DIR"
+                }}</strong>
+                <button
+                  v-if="currentFolder || recursiveList"
+                  class="btn btn-sm btn-outline-secondary"
+                  :disabled="filesLoading"
+                  @click="
+                    loadBatchFiles(
+                      recursiveList ? '' : parentFolder(currentFolder)
+                    )
+                  "
+                >
+                  {{ recursiveList ? "Browse folders" : "Up" }}
+                </button>
+                <button
+                  v-if="!recursiveList"
+                  class="btn btn-sm btn-outline-secondary"
+                  :disabled="filesLoading"
+                  @click="loadBatchFiles('', true)"
+                >
+                  List all folders
+                </button>
+                <span v-if="filesLoading" role="status">Loading files…</span>
+                <span v-if="batchSelection.size"
+                  >{{ batchSelection.size }} selected</span
+                >
+              </div>
               <div class="batch-actions">
                 <button
                   class="btn btn-sm btn-outline-primary"
@@ -130,13 +159,13 @@
                 </button>
                 <button
                   class="btn btn-sm btn-outline-success"
-                  @click="selectAllConverted"
+                  @click="selectConvertedStatus(true)"
                 >
                   Select All Converted
                 </button>
                 <button
                   class="btn btn-sm btn-outline-success"
-                  @click="selectAllUnconverted"
+                  @click="selectConvertedStatus(false)"
                 >
                   Select All Unconverted
                 </button>
@@ -148,6 +177,7 @@
                 </button>
               </div>
               <FileSelectionTable
+                v-if="!filesLoading"
                 :entries="batchFileEntries"
                 :multi-select="true"
                 :selected-path="null"
@@ -159,6 +189,7 @@
                 :status-label="batchFileStatusLabel"
                 empty-message="No convertible matrix files found"
                 scroll-height="44vh"
+                @activate="onBatchEntryActivated"
                 @update:selected-paths="onBatchSelectionUpdated"
               />
               <div class="mt-3 d-flex gap-2">
@@ -166,7 +197,9 @@
                   class="btn btn-primary"
                   @click="proceedBatchSettings"
                   :disabled="
-                    batchSelection.size === 0 || Boolean(batchBlockedMessage)
+                    filesLoading ||
+                    batchSelection.size === 0 ||
+                    Boolean(batchBlockedMessage)
                   "
                 >
                   Continue
@@ -277,6 +310,7 @@
                     type="number"
                     class="form-control"
                     v-model.number="batchBinSize"
+                    placeholder="1,000 bp for 4DN pairs"
                     min="1"
                   />
                 </div>
@@ -436,7 +470,18 @@ const modal: Ref<Modal | null> = ref(null);
 const convertCoolerModal = ref<HTMLElement | null>(null);
 useModalFocus(convertCoolerModal);
 const batchStep: Ref<"select" | "settings" | "progress"> = ref("select");
-const batchFiles: Ref<string[]> = ref([]);
+const batchFileEntries = ref<FileSelectionTableEntry[]>([]);
+const batchFiles = computed(() =>
+  batchFileEntries.value
+    .filter((e) => e.type !== "directory")
+    .map((e) => e.path)
+);
+const currentFolder = ref("");
+const filesLoading = ref(false);
+const recursiveList = ref(false);
+let listingRequest = 0;
+const parentFolder = (file: string) =>
+  file.replaceAll("\\", "/").split("/").slice(0, -1).join("/");
 const batchSelection: Ref<Set<string>> = ref(new Set<string>());
 const batchAssemblyFilename: Ref<string> = ref("");
 const assemblySelectorOpen: Ref<boolean> = ref(false);
@@ -449,7 +494,7 @@ const batchParallelism: Ref<number> = ref(-1);
 const batchJobIds: Ref<string[]> = ref([]);
 const batchStatusMap: Ref<Map<string, string>> = ref(new Map());
 const batchProgressMap: Ref<Map<string, number>> = ref(new Map());
-const allFiles: Ref<Set<string>> = ref(new Set<string>());
+const existingOutputs: Ref<Set<string>> = ref(new Set<string>());
 const overwriteConfirmVisible: Ref<boolean> = ref(false);
 const overwriteConfirmMessage: Ref<string> = ref("");
 const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> =
@@ -510,12 +555,13 @@ function resetState(): void {
     modal.value = null;
     errorMessage.value = null;
     batchStep.value = "select";
-    batchFiles.value = [];
+    listingRequest++;
+    batchFileEntries.value = [];
     batchSelection.value = new Set<string>();
     batchJobIds.value = [];
     batchStatusMap.value.clear();
     batchProgressMap.value.clear();
-    allFiles.value = new Set<string>();
+    existingOutputs.value = new Set<string>();
     toolchainStatus.value = null;
     toolchainLoading.value = true;
     batchBinTableFilename.value = "";
@@ -556,7 +602,9 @@ function onSidecarSelected(filename: string): void {
 onMounted(() => {
   batchStep.value = "select";
   loadToolchainStatus();
-  loadBatchFiles();
+  const initial = props.initialCoolerFilename;
+  if (initial) batchSelection.value = new Set([initial]);
+  void loadBatchFiles(parentFolder(initial ?? ""));
   modal.value = new Modal(convertCoolerModal.value ?? "loadAGPModal", {
     backdrop: "static",
     keyboard: false,
@@ -579,26 +627,45 @@ function viewCurrentJobs(): void {
     });
 }
 
-function loadBatchFiles(): void {
-  Promise.all([
-    props.networkManager.requestManager.listConvertibleMatrices(),
-    props.networkManager.requestManager.listFiles(),
-  ])
-    .then(([coolers, files]) => {
-      batchFiles.value = coolers;
-      allFiles.value = new Set(files);
-      if (
-        props.initialCoolerFilename &&
-        coolers.includes(props.initialCoolerFilename)
-      ) {
-        batchSelection.value = new Set<string>([props.initialCoolerFilename]);
-      } else {
-        batchSelection.value = new Set<string>();
-      }
-    })
-    .catch((e) => {
-      errorMessage.value = e;
-    });
+function convertible(file: string) {
+  return /\.(hic|m?cool)$/i.test(file) || isHictkLoadFilename(file);
+}
+async function loadBatchFiles(folder: string, recursive = false) {
+  const request = ++listingRequest;
+  filesLoading.value = true;
+  errorMessage.value = null;
+  try {
+    const api = props.networkManager.requestManager;
+    const entries: FileSelectionTableEntry[] = recursive
+      ? (await api.listFiles()).map((path) => ({ path, type: "file" }))
+      : await api.listDirectory(folder);
+    if (request !== listingRequest) return;
+    currentFolder.value = folder;
+    recursiveList.value = recursive;
+    for (const entry of entries) {
+      if (entry.type !== "directory" && convertible(entry.path))
+        existingOutputs.value.delete(deriveOutputFilename(entry.path));
+    }
+    for (const entry of entries) {
+      if (entry.path.toLowerCase().endsWith(".hict.hdf5"))
+        existingOutputs.value.add(entry.path);
+    }
+    batchFileEntries.value = entries.filter(
+      (e) => e.type === "directory" || convertible(e.path)
+    );
+  } catch (error) {
+    if (request === listingRequest) errorMessage.value = error;
+  } finally {
+    if (request === listingRequest) filesLoading.value = false;
+  }
+}
+function onBatchEntryActivated(path: string) {
+  if (
+    batchFileEntries.value.some(
+      (e) => e.path === path && e.type === "directory"
+    )
+  )
+    void loadBatchFiles(path);
 }
 
 function loadToolchainStatus(): void {
@@ -619,19 +686,17 @@ function loadToolchainStatus(): void {
 
 function isConverted(file: string): boolean {
   const output = deriveOutputFilename(file);
-  return allFiles.value.has(output);
+  return existingOutputs.value.has(output);
 }
-
-const batchFileEntries = computed<FileSelectionTableEntry[]>(() =>
-  batchFiles.value.map((filename) => ({
-    path: filename,
-  }))
-);
 
 const batchSelectedPaths = computed(() => Array.from(batchSelection.value));
 
 const batchFileStatusLabel = (filename: string): string =>
-  isConverted(filename) ? "Converted" : "Unconverted";
+  !convertible(filename)
+    ? ""
+    : isConverted(filename)
+    ? "Converted"
+    : "Unconverted";
 
 const batchFileStatusClass = (filename: string): string =>
   isConverted(filename) ? "converted" : "unconverted";
@@ -666,7 +731,10 @@ function onBatchSelectionUpdated(files: string[]): void {
 }
 
 function selectAll(): void {
-  batchSelection.value = new Set(batchFiles.value);
+  batchSelection.value = new Set([
+    ...batchSelection.value,
+    ...batchFiles.value,
+  ]);
 }
 
 function selectNone(): void {
@@ -674,32 +742,19 @@ function selectNone(): void {
 }
 
 function invertSelection(): void {
-  const next = new Set<string>();
-  batchFiles.value.forEach((file) => {
-    if (!batchSelection.value.has(file)) {
-      next.add(file);
-    }
-  });
+  const next = new Set(batchSelection.value);
+  for (const file of batchFiles.value) {
+    if (!next.delete(file)) next.add(file);
+  }
   batchSelection.value = next;
 }
 
-function selectAllConverted(): void {
-  const next = new Set<string>();
-  batchFiles.value.forEach((file) => {
-    if (isConverted(file)) {
-      next.add(file);
-    }
-  });
-  batchSelection.value = next;
-}
-
-function selectAllUnconverted(): void {
-  const next = new Set<string>();
-  batchFiles.value.forEach((file) => {
-    if (!isConverted(file)) {
-      next.add(file);
-    }
-  });
+function selectConvertedStatus(converted: boolean): void {
+  const next = new Set(batchSelection.value);
+  for (const file of batchFiles.value) {
+    if (isConverted(file) === converted) next.add(file);
+    else next.delete(file);
+  }
   batchSelection.value = next;
 }
 
@@ -731,7 +786,10 @@ async function startBatchConversion(): Promise<void> {
         overwrite: overwriteExisting,
         binTableFilename: batchBinTableFilename.value || undefined,
         chromSizesFilename: batchChromSizesFilename.value || undefined,
-        binSize: batchBinSize.value ?? undefined,
+        binSize:
+          typeof batchBinSize.value === "number"
+            ? batchBinSize.value
+            : undefined,
       })
     )
     .then((resp) => {
@@ -779,6 +837,12 @@ const overallBatchStatusClass = computed(() => {
 });
 
 const batchBlockedMessage = computed(() => {
+  if (
+    typeof batchBinSize.value === "number" &&
+    (!Number.isSafeInteger(batchBinSize.value) || batchBinSize.value < 1)
+  ) {
+    return "Enter a positive whole number for the bin size.";
+  }
   const hasHicSelection = Array.from(batchSelection.value).some((file) =>
     requiresHicToolchain(file)
   );

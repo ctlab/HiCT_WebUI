@@ -684,8 +684,11 @@
                           table for plain text or .gz input.
                         </small>
                       </div>
-                      <div v-if="source.needsChromSizes" class="row g-2">
-                        <div class="col-md-8">
+                      <div
+                        v-if="source.needsChromSizes || source.isPairs"
+                        class="row g-2"
+                      >
+                        <div v-if="source.needsChromSizes" class="col-md-8">
                           <label class="form-label">Chrom sizes</label>
                           <div class="input-group">
                             <input
@@ -726,10 +729,14 @@
                             type="number"
                             min="1"
                             step="1"
-                            placeholder="required"
+                            :placeholder="source.isPairs ? '1000' : 'required'"
                           />
                         </div>
-                        <small class="text-muted">
+                        <small class="text-muted" v-if="source.isPairs"
+                          >4DN pairs use chromosome lengths from the header. The
+                          default bin size is 1,000 bp.</small
+                        >
+                        <small v-else class="text-muted">
                           BEDPE/bedGraph2 and validPairs inputs need chromosome
                           lengths plus a target bin size.
                         </small>
@@ -1724,6 +1731,7 @@ const conversionSidecarSources = computed(() =>
     .map((entry) => ({
       ...entry,
       formatLabel: hictkLoadFormatLabel(entry.draft.filename),
+      isPairs: isPairsFilename(entry.draft.filename),
       needsBinTable:
         isHicProMatrixFilename(entry.draft.filename) ||
         isCooFilename(entry.draft.filename),
@@ -1737,6 +1745,7 @@ const conversionSidecarSources = computed(() =>
     }))
     .filter(
       (entry) =>
+        entry.isPairs ||
         entry.needsBinTable ||
         entry.needsChromSizes ||
         entry.supportsFloatCounts
@@ -1836,6 +1845,13 @@ const wizardBlockingIssues = computed(() => {
     );
   }
   conversionSidecarSources.value.forEach((source) => {
+    if (
+      source.isPairs &&
+      typeof source.draft.binSize === "number" &&
+      (!Number.isSafeInteger(source.draft.binSize) || source.draft.binSize < 1)
+    ) {
+      issues.push("Enter a positive whole number for the pairs bin size.");
+    }
     if (
       source.needsChromSizes &&
       (!source.draft.chromSizesFilename ||
@@ -2562,7 +2578,7 @@ const ensureOpenedFilename = async (source: SourceDraft): Promise<string> => {
       overwrite: true,
       binTableFilename: source.binTableFilename || undefined,
       chromSizesFilename: source.chromSizesFilename || undefined,
-      binSize: source.binSize ?? undefined,
+      binSize: typeof source.binSize === "number" ? source.binSize : undefined,
       countAsFloat: source.countAsFloat || undefined,
       buildResolutionPyramid: buildResolutionPyramid.value,
       balanceInputCoolers: balanceInputCoolers.value,
