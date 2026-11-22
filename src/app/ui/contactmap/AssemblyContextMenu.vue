@@ -10,117 +10,180 @@
       @contextmenu.prevent
       @keydown="navigate"
     >
-      <section v-for="item in items" :key="`${item.kind}-${item.id}`">
-        <div class="entity-title">{{ item.title }}</div>
-        <template v-if="item.kind !== 'selection'">
-          <button role="menuitem" @click="zoomTo(item)">
-            Zoom to {{ item.kind }}
-          </button>
-          <button role="menuitem" @click="copyName(item)">Copy name</button>
-          <button
-            v-if="item.kind === 'contig'"
-            role="menuitem"
-            @click="copyPosition(item)"
-          >
-            Copy position
-          </button>
-        </template>
+      <section
+        v-if="formatsOpen"
+        role="menu"
+        aria-label="Export selection as"
+        @keydown.left.prevent="closeFormats"
+      >
+        <button role="menuitem" @click="closeFormats">‹ Back</button>
         <button
-          v-if="item.kind !== 'selection'"
+          v-for="format in formats"
+          :key="format"
           role="menuitem"
-          @click="beginRename(item)"
+          @click="requestExport(format)"
         >
-          Rename…
+          {{ format }}
         </button>
-        <template v-if="item.kind === 'selection'">
-          <button role="menuitem" @click="copyCoordinates('assembly')">
-            Copy selection coordinates
-          </button>
-          <button role="menuitem" @click="copyCoordinates('scaffold')">
-            Copy scaffold coordinates
-          </button>
-          <button role="menuitem" @click="copyCoordinates('contig')">
-            Copy contig coordinates
-          </button>
-          <button role="menuitem" @click="copyPng">
-            Copy selection as PNG
-          </button>
+      </section>
+      <template v-else>
+        <section v-for="item in items" :key="`${item.kind}-${item.id}`">
+          <div class="entity-title">{{ item.title }}</div>
+          <template v-if="item.kind !== 'selection'">
+            <button role="menuitem" @click="zoomTo(item)">
+              Zoom to {{ item.kind }}
+            </button>
+            <button role="menuitem" @click="copyName(item)">Copy name</button>
+            <button
+              v-if="item.kind === 'contig'"
+              role="menuitem"
+              @click="copyPosition(item)"
+            >
+              Copy position
+            </button>
+          </template>
           <button
+            v-if="item.kind !== 'selection'"
             role="menuitem"
-            @click="
-              items = [];
-              histogramOpen = true;
+            @click="beginRename(item)"
+          >
+            Rename…
+          </button>
+          <template v-if="item.kind === 'selection'">
+            <button role="menuitem" @click="copyCoordinates('assembly')">
+              Copy selection coordinates
+            </button>
+            <button role="menuitem" @click="copyCoordinates('scaffold')">
+              Copy scaffold coordinates
+            </button>
+            <button role="menuitem" @click="copyCoordinates('contig')">
+              Copy contig coordinates
+            </button>
+            <button role="menuitem" @click="requestExport('clipboard')">
+              Copy selection as PNG
+            </button>
+            <button
+              role="menuitem"
+              @click="
+                items = [];
+                histogramOpen = true;
+              "
+            >
+              Signal histogram...
+            </button>
+            <button role="menuitem" @click="openAnalysis('dotplot')">
+              Generate dotplot for selection…
+            </button>
+            <button role="menuitem" @click="openAnalysis('moddotplot')">
+              Generate ModDotPlot for selection…
+            </button>
+            <button role="menuitem" @click="openAnalysis('search')">
+              Find sequences in selection…
+            </button>
+            <button role="menuitem" @click="exportFasta">
+              Export FASTA for selection
+            </button>
+            <button
+              role="menuitem"
+              data-formats
+              aria-haspopup="menu"
+              :aria-expanded="formatsOpen"
+              @click="openFormats"
+              @keydown.right.prevent="openFormats"
+            >
+              Export selection as <span aria-hidden="true">›</span>
+            </button>
+          </template>
+          <template
+            v-if="
+              item.kind !== 'selection' &&
+              (item.kind === 'scaffold' || !hasScaffold)
             "
           >
-            Signal histogram...
-          </button>
-          <button role="menuitem" @click="openAnalysis('dotplot')">
-            Generate dotplot for selection…
-          </button>
-          <button role="menuitem" @click="openAnalysis('moddotplot')">
-            Generate ModDotPlot for selection…
-          </button>
-          <button role="menuitem" @click="openAnalysis('search')">
-            Find sequences in selection…
-          </button>
-          <button role="menuitem" @click="exportFasta">
-            Export FASTA for selection
-          </button>
-          <button
-            v-for="format in ['PNG', 'SVG', 'PDF'] as const"
-            :key="format"
-            role="menuitem"
-            @click="exportSelection(format)"
-          >
-            Export selection as {{ format }}
-          </button>
-        </template>
-        <template
-          v-if="
-            item.kind !== 'selection' &&
-            (item.kind === 'scaffold' || !hasScaffold)
-          "
+            <button
+              role="menuitem"
+              :disabled="item.structural === false"
+              @click="execute(item, 'reverse')"
+            >
+              Reverse {{ item.kind }}
+            </button>
+            <button
+              role="menuitem"
+              :disabled="item.structural === false"
+              @click="move(item)"
+            >
+              Move {{ item.kind }}…
+            </button>
+            <button
+              v-if="item.kind === 'scaffold'"
+              role="menuitem"
+              @click="execute(item, 'ungroup')"
+            >
+              Ungroup into singletons
+            </button>
+            <button
+              role="menuitem"
+              :disabled="item.structural === false"
+              @click="execute(item, 'debris')"
+            >
+              Move to debris and hide
+            </button>
+          </template>
+        </section>
+        <p
+          v-if="items.some((item) => item.kind === 'selection')"
+          class="scope-note"
         >
-          <button
-            role="menuitem"
-            :disabled="item.structural === false"
-            @click="execute(item, 'reverse')"
-          >
-            Reverse {{ item.kind }}
-          </button>
-          <button
-            role="menuitem"
-            :disabled="item.structural === false"
-            @click="move(item)"
-          >
-            Move {{ item.kind }}…
-          </button>
-          <button
-            v-if="item.kind === 'scaffold'"
-            role="menuitem"
-            @click="execute(item, 'ungroup')"
-          >
-            Ungroup into singletons
-          </button>
-          <button
-            role="menuitem"
-            :disabled="item.structural === false"
-            @click="execute(item, 'debris')"
-          >
-            Move to debris and hide
-          </button>
-        </template>
-      </section>
-      <p
-        v-if="items.some((item) => item.kind === 'selection')"
-        class="scope-note"
+          This region is for analysis and export. Shift-select entities for
+          assembly edits.
+        </p>
+        <p v-if="hasScaffold" class="scope-note">
+          Structural edits act on the whole scaffold.
+        </p>
+      </template>
+    </div>
+    <div v-if="warning" class="rename-backdrop">
+      <section
+        ref="warningElement"
+        class="rename-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="export-warning-title"
       >
-        This region is for analysis and export. Shift-select entities for
-        assembly edits.
-      </p>
-      <p v-if="hasScaffold" class="scope-note">
-        Structural edits act on the whole scaffold.
-      </p>
+        <h5 id="export-warning-title">Large selection export</h5>
+        <p>
+          This rectangle spans {{ warning.estimate.columns.toLocaleString() }} ×
+          {{ warning.estimate.rows.toLocaleString() }} bp. At
+          {{ warning.estimate.bin.toLocaleString() }} bp/bin it covers
+          approximately {{ warning.estimate.nx.toLocaleString() }} ×
+          {{ warning.estimate.ny.toLocaleString() }} bins.
+        </p>
+        <p>
+          The fitted figure is about
+          {{ warning.estimate.width.toLocaleString() }} ×
+          {{ warning.estimate.height.toLocaleString() }} px including rulers and
+          tracks. Rendering may take a long time.
+        </p>
+        <button
+          type="button"
+          class="btn btn-secondary me-2"
+          @click="warning = null"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          @click="performExport(warning.action)"
+        >
+          Continue
+          {{
+            warning.action === "clipboard"
+              ? "copy as PNG"
+              : warning.action + " export"
+          }}
+        </button>
+      </section>
     </div>
     <div v-if="renaming" class="rename-backdrop" @click.self="renaming = null">
       <form
@@ -262,10 +325,37 @@ const busy = computed(
 const hasScaffold = computed(() =>
   items.value.some((item) => item.kind === "scaffold")
 );
+const formats = ["PNG", "SVG", "PDF"] as const;
+type ExportAction = typeof formats[number] | "clipboard";
+const formatsOpen = ref(false);
+async function openFormats() {
+  formatsOpen.value = true;
+  await nextTick();
+  menu.value?.querySelectorAll("button")[1]?.focus();
+}
+async function closeFormats() {
+  formatsOpen.value = false;
+  await nextTick();
+  menu.value?.querySelector<HTMLButtonElement>("[data-formats]")?.focus();
+}
+const warningElement = ref<HTMLElement | null>(null);
+const warning = ref<{
+  action: ExportAction;
+  estimate: ReturnType<ContactMapManager["selectionExportEstimate"]>;
+} | null>(null);
+useModalFocus(warningElement, () => !!warning.value);
 useEscDismissableDialog({
   priority: 1060,
-  isOpen: () => !!renaming.value || !!items.value.length,
+  isOpen: () => !!warning.value || !!renaming.value || !!items.value.length,
   requestClose: () => {
+    if (warning.value) {
+      warning.value = null;
+      return;
+    }
+    if (formatsOpen.value && items.value.length) {
+      void closeFormats();
+      return;
+    }
     renaming.value = null;
     items.value = [];
   },
@@ -366,6 +456,7 @@ async function open(event: MouseEvent) {
   }
   if (!found.length) found = itemsAtEvent(event);
   if (!found.length) return;
+  formatsOpen.value = false;
   items.value = found;
   position.value = { x: event.clientX, y: event.clientY };
   await nextTick();
@@ -486,23 +577,35 @@ function copyCoordinates(frame: CoordinateFrame) {
   items.value = [];
   copySelectionCoordinates(props.mapManager, frame);
 }
-function copyPng() {
+function requestExport(action: ExportAction) {
   items.value = [];
-  void copySelectionPng(props.mapManager);
+  try {
+    const estimate = props.mapManager.selectionExportEstimate();
+    if (estimate.large) warning.value = { action, estimate };
+    else void performExport(action);
+  } catch (failure) {
+    useNotificationCenterStore().add("error", String(failure));
+  }
 }
-async function exportSelection(format: "PNG" | "SVG" | "PDF") {
-  items.value = [];
+async function performExport(format: ExportAction) {
+  warning.value = null;
   const notifications = useNotificationCenterStore();
   try {
     const manager = props.mapManager;
+    if (format === "clipboard") return await copySelectionPng(manager);
     const method =
       format === "PNG"
         ? manager.exportCurrentMapPng
         : format === "SVG"
         ? manager.exportCurrentMapSvg
         : manager.exportCurrentMapPdf;
-    await method.call(manager, undefined, { scope: "selection" });
-    notifications.add("success", `Selection exported as ${format}.`);
+    const result = await method.call(manager, undefined, {
+      scope: "selection",
+    });
+    if (result.status === "saved")
+      notifications.add("success", `Saved ${result.path ?? result.filename}`);
+    if (result.status === "download-started")
+      notifications.add("success", `Download started for ${result.filename}`);
   } catch (failure) {
     notifications.add("error", `Selection export failed: ${String(failure)}`);
   }

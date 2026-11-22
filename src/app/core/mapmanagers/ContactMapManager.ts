@@ -187,9 +187,9 @@ class ContactMapManager {
   public initializeMapControls(): void {
     this.map.addControl(new ZoomSlider());
     // OpenLayers supplies keyboard zoom through the separate + and − buttons.
-    const zoomThumb = this.map.getViewport().querySelector<HTMLButtonElement>(
-      ".ol-zoomslider-thumb"
-    );
+    const zoomThumb = this.map
+      .getViewport()
+      .querySelector<HTMLButtonElement>(".ol-zoomslider-thumb");
     if (zoomThumb) {
       zoomThumb.tabIndex = -1;
       zoomThumb.setAttribute("aria-hidden", "true");
@@ -1757,6 +1757,64 @@ class ContactMapManager {
     return result;
   }
 
+  public selectionExportEstimate() {
+    const layers = this.viewAndLayersManager;
+    const extent = layers.selectionInteractions.contigSelectExtent.getExtent();
+    const size = this.map.getSize();
+    const region =
+      layers.getRegionBounds() ?? (extent && layers.regionFromExtent(extent));
+    if (!extent || !region || !size)
+      throw Error("Select a nonempty rectangle before exporting.");
+    const w = extent[2] - extent[0],
+      h = extent[3] - extent[1];
+    const fit = this.getView().getConstrainedResolution(
+      Math.max(w / Math.max(1, size[0] - 2), h / Math.max(1, size[1] - 2)),
+      1
+    );
+    if (!fit || !Number.isFinite(fit))
+      throw Error("Wait for the map to finish loading before exporting.");
+    const map = this.map.getViewport().getBoundingClientRect();
+    const scene = document
+      .querySelector(".interactive-workspace")
+      ?.getBoundingClientRect();
+    const width = Math.ceil(
+      Math.min(size[0], w / fit) + map.left - (scene?.left ?? map.left)
+    );
+    const height = Math.ceil(
+      Math.min(size[1], h / fit) + map.top - (scene?.top ?? map.top)
+    );
+    const columns = region.columnEnd - region.columnStart,
+      rows = region.rowEnd - region.rowStart;
+    const current = layers.getVisibleSourceResolutionDescriptors();
+    const fitted = layers.getVisibleSourceResolutionDescriptors(fit);
+    const bin = Math.min(
+      current.primary.bpResolution,
+      current.secondary?.bpResolution ?? Infinity,
+      fitted.primary.bpResolution,
+      fitted.secondary?.bpResolution ?? Infinity
+    );
+    const nx = Math.ceil(columns / bin),
+      ny = Math.ceil(rows / bin);
+    return {
+      width,
+      height,
+      columns,
+      rows,
+      bin,
+      nx,
+      ny,
+      large:
+        nx * ny >= 4_000_000 ||
+        Math.max(nx, ny) >= 32768 ||
+        width * height >= 4_000_000,
+    };
+  }
+
+  private figureFilename(format: string, scope?: string) {
+    const base = this.options.filename.split(/[\\/]/).pop() || "HiCT";
+    return `${base}${scope === "selection" ? "-selection" : ""}.${format}`;
+  }
+
   public async exportCurrentMapSvg(
     progressCallback?: (progress: number) => void,
     options?: {
@@ -1768,7 +1826,7 @@ class ContactMapManager {
     }
   ): Promise<FileSaveResult> {
     const destination = await prepareFileSave(
-      `${this.options.filename}.svg`,
+      this.figureFilename("svg", options?.scope),
       "figure"
     );
     if (!destination) return cancelledFileSave;
@@ -1799,7 +1857,7 @@ class ContactMapManager {
     }
   ): Promise<FileSaveResult> {
     const destination = await prepareFileSave(
-      `${this.options.filename}.png`,
+      this.figureFilename("png", options?.scope),
       "figure"
     );
     if (!destination) return cancelledFileSave;
@@ -1837,7 +1895,7 @@ class ContactMapManager {
     }
   ): Promise<FileSaveResult> {
     const destination = await prepareFileSave(
-      `${this.options.filename}.pdf`,
+      this.figureFilename("pdf", options?.scope),
       "figure"
     );
     if (!destination) return cancelledFileSave;

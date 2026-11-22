@@ -152,6 +152,35 @@
             >
               Use current rectangle
             </button>
+            <div v-if="availableResolutions.length > 1" class="my-3">
+              <div class="small">
+                Resolution range ·
+                {{ availableResolutions[range[0]].toLocaleString() }}–{{
+                  availableResolutions[range[1]].toLocaleString()
+                }}
+                bp
+              </div>
+              <Slider
+                class="mx-2 my-3"
+                range
+                :model-value="range"
+                :min="0"
+                :max="availableResolutions.length - 1"
+                :step="1"
+                :disabled="busy"
+                :pt="{
+                  startHandler: {
+                    'aria-label': 'Finest resolution',
+                    'aria-valuetext': availableResolutions[range[0]] + ' bp',
+                  },
+                  endHandler: {
+                    'aria-label': 'Coarsest resolution',
+                    'aria-valuetext': availableResolutions[range[1]] + ' bp',
+                  },
+                }"
+                @update:model-value="changeRange"
+              />
+            </div>
             <div class="resolution-options mb-3">
               <label
                 v-for="resolution in availableResolutions"
@@ -521,7 +550,8 @@ import {
   type SequenceAnalysisJob,
 } from "@/app/core/net/api/SequenceAnalysisRequest";
 import type { SecondarySourceStatusResponse } from "@/app/core/net/api/RequestManager";
-import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
+import Slider from "primevue/slider";
+import { dotplotResolutionLevels } from "@/app/core/sequence/generationDefaults";
 import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
@@ -595,15 +625,19 @@ const currentRectangle =
       .getView()
       .calculateExtent(props.mapManager.getMap().getSize())
   );
-const availableResolutions = [...new Set([50, ...view.resolutions])].sort(
-  (a, b) => a - b
-);
-const resolutionList = ref(
-  defaultSequenceResolutions(
+const k = ref(21);
+const suggested = computed(() =>
+  dotplotResolutionLevels(
     view.resolutions,
-    view.currentViewState.resolutionDesciptor.bpResolution
-  ).join(", ")
+    alignment ? alignmentSettings.value.k : k.value,
+    alignment ? 1 : k.value
+  )
 );
+const resolutionList = ref(suggested.value.join(", "));
+watch(suggested, (next, previous) => {
+  if (resolutions.value.join(",") === previous.join(","))
+    resolutionList.value = next.join(", ");
+});
 const resolutionTokens = computed(() =>
   resolutionList.value.split(/[,\s]+/).filter(Boolean)
 );
@@ -620,7 +654,51 @@ const resolutions = computed(() =>
     ),
   ].sort((a, b) => a - b)
 );
+const customLevels = ref<number[]>([]);
+const availableResolutions = computed(() =>
+  [
+    ...new Set([
+      ...suggested.value,
+      ...customLevels.value,
+      ...resolutions.value,
+    ]),
+  ].sort((a, b) => a - b)
+);
+const range = computed(() => {
+  const levels = availableResolutions.value;
+  return resolutions.value.length
+    ? [
+        levels.indexOf(resolutions.value[0]),
+        levels.indexOf(resolutions.value[resolutions.value.length - 1]),
+      ]
+    : [0, Math.max(0, levels.length - 1)];
+});
+function changeRange(bounds: number | number[]) {
+  if (!Array.isArray(bounds)) return;
+  const [oldLow, oldHigh] = range.value;
+  customLevels.value = availableResolutions.value.filter(
+    (level) => !suggested.value.includes(level)
+  );
+  resolutionList.value = availableResolutions.value
+    .filter(
+      (level, index) =>
+        index >= bounds[0] &&
+        index <= bounds[1] &&
+        (!resolutions.value.length ||
+          index <= oldLow ||
+          index >= oldHigh ||
+          resolutions.value.includes(level) ||
+          index === bounds[0] ||
+          index === bounds[1])
+    )
+    .join(", ");
+}
 function toggleResolution(resolution: number, event: Event): void {
+  if (
+    !suggested.value.includes(resolution) &&
+    !customLevels.value.includes(resolution)
+  )
+    customLevels.value.push(resolution);
   const checked = (event.target as HTMLInputElement).checked;
   const tokens = resolutionTokens.value.filter(
     (token) => asResolution(token) !== resolution
@@ -632,7 +710,6 @@ const scope = ref(
   props.initialSelection && selection ? "selection" : "assembly"
 );
 const identity = ref(80),
-  k = ref(21),
   sketchSize = ref(1000),
   delta = ref(0.5);
 const resolutionError = computed(() => {

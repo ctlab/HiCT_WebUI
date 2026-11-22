@@ -120,3 +120,13 @@ assert.deepEqual(choose([0, -1, NaN, Infinity, 1000], 1000), [1000]);
 console.log(
   "Sequence generation defaults: finest through current, sorted unique levels, missing current level and empty maps passed."
 );
+
+const dotplot = (map, k, minimum = k) =>
+  Array.from(defaults.exports.dotplotResolutionLevels(map, k, minimum));
+assert.deepEqual(
+  dotplot([5000, 1000, 2000, 1000], 21),
+  [21, 25, 50, 100, 250, 500, 1000, 2000, 5000]
+);
+assert.deepEqual(dotplot([17, 37, 1100], 21), [21, 25, 37, 1100]);
+assert.deepEqual(dotplot([17, 37], 21, 1), [17, 21, 37]);
+assert.deepEqual(dotplot([25000], 1000), [1000, 2000, 5000, 10000, 25000]);

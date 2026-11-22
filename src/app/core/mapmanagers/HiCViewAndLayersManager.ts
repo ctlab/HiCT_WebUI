@@ -2403,11 +2403,12 @@ class HiCViewAndLayersManager {
     );
   }
 
-  public getVisibleSourceResolutionDescriptors(): {
+  public getVisibleSourceResolutionDescriptors(
+    viewResolution = this.view.getResolution() ?? 0
+  ): {
     primary: LayerResolutionDescriptor;
     secondary?: LayerResolutionDescriptor;
   } {
-    const viewResolution = this.view.getResolution() ?? 0;
     return {
       primary: this.viewResolutionToSourceResolutionDescriptor(
         "PRIMARY",
@@ -3480,13 +3481,15 @@ class HiCViewAndLayersManager {
         undefined,
         true
       );
-      const layer = markRaw(new TileLayer({
-        source: tiles,
-        visible: false,
-        zIndex:
-          this.layersZIndices.HIC_MAP_LAYER_Z_INDEX +
-          (source === "SECONDARY" ? 1 : 0),
-      }));
+      const layer = markRaw(
+        new TileLayer({
+          source: tiles,
+          visible: false,
+          zIndex:
+            this.layersZIndices.HIC_MAP_LAYER_Z_INDEX +
+            (source === "SECONDARY" ? 1 : 0),
+        })
+      );
       layer.set("sourceName", source);
       layer.set("bpResolution", 1);
       layer.set("pixelResolution", pixel);
