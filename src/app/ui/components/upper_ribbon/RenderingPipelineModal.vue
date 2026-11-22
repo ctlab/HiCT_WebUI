@@ -269,7 +269,10 @@ import type { TrackSummaryResponse } from "@/app/core/net/api/response";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import SignalHistogramModal from "./SignalHistogramModal.vue";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
-import { modDotPlotLowerExpression } from "@/app/core/sequence/modDotPlot";
+import {
+  identityColors,
+  modDotPlotLowerExpression,
+} from "@/app/core/sequence/modDotPlot";
 import {
   restorePipelineEditorGraph,
   pipelineExpressionSignature,
@@ -1648,19 +1651,9 @@ const ensureNodeTypesRegistered = (): void => {
         this.size[0] - 14,
         0
       );
-      [
-        "#313695",
-        "#4575b4",
-        "#74add1",
-        "#abd9e9",
-        "#e0f3f8",
-        "#ffffbf",
-        "#fee090",
-        "#fdae61",
-        "#f46d43",
-        "#d73027",
-        "#a50026",
-      ].forEach((color, index) => gradient.addColorStop(index / 10, color));
+      identityColors.forEach((color, index) =>
+        gradient.addColorStop(index / 10, color)
+      );
       context.fillStyle = gradient;
       context.fillRect(14, 78, this.size[0] - 28, 16);
       context.restore();

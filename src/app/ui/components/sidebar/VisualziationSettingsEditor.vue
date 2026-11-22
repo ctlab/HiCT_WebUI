@@ -353,6 +353,7 @@
 </template>
 
 <script setup lang="ts">
+import { identityColors } from "@/app/core/sequence/modDotPlot";
 import {
   computed,
   Ref,
@@ -555,9 +556,7 @@ const midpointSignal = computed(
     (upperBound.value - lowerBound.value) * midpointFraction(colorGamma.value)
 );
 const midpointPosition = computed(() =>
-  !observedExpectedPalette.value &&
-  !percentageSignalScale.value &&
-  upperBound.value > lowerBound.value
+  !observedExpectedPalette.value && upperBound.value > lowerBound.value
     ? toSliderPosition(midpointSignal.value)
     : undefined
 );
@@ -681,6 +680,16 @@ const colorRailGradient = computed(() => {
       colorGamma.value,
       curveData.value
     );
+    if (activePaletteMode.value === "MODDOTPLOT_IDENTITY") {
+      const index = mix * (identityColors.length - 1);
+      const left = Math.min(identityColors.length - 2, Math.floor(index));
+      const channels = [1, 3, 5].map((i) => {
+        const low = parseInt(identityColors[left].slice(i, i + 2), 16);
+        const high = parseInt(identityColors[left + 1].slice(i, i + 2), 16);
+        return Math.round(low + (high - low) * (index - left));
+      });
+      return `rgb(${channels.join(",")}) ${offset * 100}%`;
+    }
     const channels = [start.R, start.G, start.B, start.A].map(
       (value, index) =>
         value + ([end.R, end.G, end.B, end.A][index] - value) * mix

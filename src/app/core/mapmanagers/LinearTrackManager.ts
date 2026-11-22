@@ -2205,7 +2205,7 @@ class LinearTrackManager {
       return;
     }
     const arrowSpacing = 16;
-    const arrowSize = 4;
+    const arrowSize = 2.5;
     const arrowY = Math.floor(laneCenter);
     ctx.beginPath();
     if (strand === "+") {
@@ -2221,7 +2221,7 @@ class LinearTrackManager {
         ctx.lineTo(x + arrowSize, arrowY + arrowSize);
       }
     }
-    this.strokeAndFillFeaturePath(ctx);
+    this.strokeChevronPath(ctx);
   }
 
   private drawFeatureDirectionArrowsVertical(
@@ -2235,7 +2235,7 @@ class LinearTrackManager {
       return;
     }
     const arrowSpacing = 16;
-    const arrowSize = 4;
+    const arrowSize = 2.5;
     const arrowX = Math.floor(laneCenter);
     ctx.beginPath();
     if (strand === "+") {
@@ -2251,7 +2251,19 @@ class LinearTrackManager {
         ctx.lineTo(arrowX + arrowSize, y + arrowSize);
       }
     }
-    this.strokeAndFillFeaturePath(ctx);
+    this.strokeChevronPath(ctx);
+  }
+
+  private strokeChevronPath(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "white";
+    ctx.stroke();
+    ctx.lineWidth = 1.25;
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.stroke();
+    ctx.restore();
   }
 
   private drawFeatureTerminalTriangleHorizontal(
@@ -2416,6 +2428,12 @@ class LinearTrackManager {
     block: TrackBinBlockResponse,
     bpResolution: number
   ): FeatureBlockInterval {
+    if (block.startPx != null && block.endPx != null) {
+      return {
+        ...this.exactFeatureInterval(block, bpResolution),
+        coding: !!block.coding,
+      };
+    }
     const hasProjectedPx =
       typeof block.startPx === "number" &&
       Number.isFinite(block.startPx) &&
@@ -2604,10 +2622,37 @@ class LinearTrackManager {
     };
   }
 
+  private readonly exactFeatureIntervals = new WeakMap<
+    object,
+    { startPx: number; endPx: number; visible: boolean }
+  >();
+  private exactFeatureInterval(
+    feature: TrackBinResponse | TrackBinBlockResponse,
+    resolution: number
+  ) {
+    const cached = this.exactFeatureIntervals.get(feature);
+    if (cached) return cached;
+    const holder = this.mapManager.getContigDimensionHolder();
+    const left = feature.startPx ?? 0,
+      right = feature.endPx ?? Infinity;
+    const clamp = (bp: number) =>
+      Math.min(
+        right,
+        Math.max(left, holder.getFractionalPxOfBp(bp, resolution))
+      );
+    const startPx = clamp(feature.startBp),
+      endPx = clamp(feature.endBp);
+    const result = { startPx, endPx, visible: endPx > startPx };
+    this.exactFeatureIntervals.set(feature, result);
+    return result;
+  }
+
   private resolveBinIntervalPx(
     bin: TrackBinResponse,
     bpResolution: number
   ): { startPx: number; endPx: number; visible: boolean } {
+    if (bin.featureType && bin.startPx != null && bin.endPx != null)
+      return this.exactFeatureInterval(bin, bpResolution);
     const hasProjectedPx =
       typeof bin.startPx === "number" &&
       Number.isFinite(bin.startPx) &&
