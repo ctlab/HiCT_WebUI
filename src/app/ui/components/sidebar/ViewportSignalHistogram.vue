@@ -5,28 +5,50 @@
     aria-label="Viewport signal histogram"
     :aria-busy="loading"
   >
-    <svg
-      viewBox="0 0 1000 64"
-      preserveAspectRatio="none"
-      role="img"
-      :aria-label="description"
+    <div
+      class="curve-editor"
+      ref="editor"
+      @dblclick="addPoint"
+      @pointermove="movePoint"
+      @pointerup="endPoint"
+      @pointercancel="endPoint"
     >
-      <path
-        v-if="curve"
-        :d="`${curve} L 992 60 L 8 60 Z`"
-        class="histogram-area"
-      />
-      <path v-if="curve" :d="curve" class="histogram-curve" />
-      <line
-        v-for="mark in marks"
-        :key="mark.name"
-        :x1="mark.x"
-        :x2="mark.x"
-        y1="0"
-        y2="64"
-        :class="`histogram-mark ${mark.name}`"
-      />
-    </svg>
+      <svg
+        viewBox="0 0 1000 64"
+        preserveAspectRatio="none"
+        role="img"
+        :aria-label="description"
+      >
+        <path
+          v-if="curve"
+          :d="`${curve} L 992 60 L 8 60 Z`"
+          class="histogram-area"
+        />
+        <path v-if="curve" :d="curve" class="histogram-curve" />
+        <line
+          v-for="mark in marks"
+          :key="mark.name"
+          :x1="mark.x"
+          :x2="mark.x"
+          y1="0"
+          y2="64"
+          :class="`histogram-mark ${mark.name}`"
+        />
+        <polyline v-if="transfer" :points="transfer" class="transfer-line" />
+      </svg>
+      <button
+        v-for="(p, i) in controlPoints"
+        :key="i"
+        type="button"
+        class="curve-point"
+        :style="{ left: 100 * p.x + '%', top: 100 * (1 - p.y) + '%' }"
+        :aria-label="'Histogram curve point ' + (i + 1)"
+        @pointerdown.stop="beginPoint($event, i)"
+        @contextmenu.stop.prevent="emit('remove', i)"
+        @keydown.delete.prevent="emit('remove', i)"
+        @dblclick.stop
+      ></button>
+    </div>
     <div class="histogram-caption">
       <span role="status" :title="description">{{ status }}</span>
       <button
@@ -70,6 +92,8 @@ import {
   viewportLevels,
 } from "@/app/core/visualization/viewportHistogram";
 const props = defineProps<{
+  transfer?: string;
+  controlPoints?: { x: number; y: number }[];
   manager?: ContactMapManager;
   source: "PRIMARY" | "SECONDARY";
   expression?: Record<string, unknown>;
@@ -83,8 +107,37 @@ const props = defineProps<{
   position: (value: number) => number;
 }>();
 const emit = defineEmits<{
+  (event: "edit", index: number, position: number, output: number): void;
+  (event: "remove", index: number): void;
   (event: "levels", lower: number, upper: number): void;
 }>();
+const editor = ref<HTMLElement>();
+let dragging: { id: number; index: number } | undefined;
+function editPoint(event: MouseEvent, index: number) {
+  const rect = editor.value?.getBoundingClientRect();
+  if (!props.transfer || !rect || !rect.width || !rect.height) return;
+  emit(
+    "edit",
+    index,
+    props.min +
+      ((props.max - props.min) * (event.clientX - rect.left)) / rect.width,
+    Math.min(1, Math.max(0, 1 - (event.clientY - rect.top) / rect.height))
+  );
+}
+function addPoint(event: MouseEvent) {
+  editPoint(event, -1);
+}
+function beginPoint(event: PointerEvent, index: number) {
+  if (event.button !== 0) return;
+  dragging = { id: event.pointerId, index };
+  editor.value?.setPointerCapture(event.pointerId);
+}
+function movePoint(event: PointerEvent) {
+  if (dragging?.id === event.pointerId) editPoint(event, dragging.index);
+}
+function endPoint(event: PointerEvent) {
+  if (dragging?.id === event.pointerId) dragging = undefined;
+}
 const result = shallowRef<SignalHistogram>();
 const loading = ref(false),
   error = ref("");
@@ -239,6 +292,28 @@ svg {
   width: 100%;
   height: 54px;
   overflow: hidden;
+}
+.curve-editor {
+  position: relative;
+  touch-action: none;
+}
+.transfer-line {
+  fill: none;
+  stroke: #087c9a;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.curve-point {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid white;
+  background: #075f7c;
+  box-shadow: 0 0 0 1px #075f7c;
+  transform: translate(-50%, -50%);
+  cursor: grab;
 }
 .histogram-area {
   fill: #94a3b830;

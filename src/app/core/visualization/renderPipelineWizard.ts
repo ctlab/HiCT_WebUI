@@ -64,6 +64,7 @@ type PipelineExpression =
       minSignal: number;
       maxSignal: number;
       gamma?: number;
+      curve?: number[];
     }
   | {
       type: "pixel_blend";
@@ -109,6 +110,7 @@ export const buildColorExpression = (
   return {
     type: "colormap",
     mode: "LINEAR",
+    ...(linearGradient?.curve ? { curve: linearGradient.curve } : {}),
     ...(linearGradient && linearGradient.gamma !== 1
       ? { gamma: linearGradient.gamma }
       : {}),

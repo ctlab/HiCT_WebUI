@@ -46,7 +46,25 @@
       "
       :style="{ left: `${fraction(valueFor(side)) * 100}%` }"
       @pointerdown.stop="start($event, side)"
+      @contextmenu="side === 'midpoint' && removeMidpoint($event)"
       @keydown="key($event, side)"
+    ></button>
+    <button
+      v-for="(point, index) in points"
+      :key="index"
+      type="button"
+      class="range-handle midpoint"
+      role="slider"
+      :aria-label="'Curve point ' + (index + 1)"
+      :aria-valuemin="lower"
+      :aria-valuemax="upper"
+      :aria-valuenow="point"
+      :style="{ left: fraction(point) * 100 + '%' }"
+      @contextmenu.stop.prevent="emit('remove', index)"
+      @keydown.delete.prevent="emit('remove', index)"
+      @keydown.left.prevent="emit('point', index, point - (max - min) / 100)"
+      @keydown.right.prevent="emit('point', index, point + (max - min) / 100)"
+      @pointerdown.stop="startPoint($event, index)"
     ></button>
     <div v-if="$slots.histogram" class="range-histogram" @pointerdown.stop>
       <slot name="histogram" />
@@ -71,12 +89,15 @@ const props = defineProps<{
   lowerColor: string;
   upperColor: string;
   neutral?: number;
+  points?: number[];
   midpoint?: number;
   midpointText?: string;
   gradient?: string;
 }>();
 const emit = defineEmits<{
   (event: "lower" | "upper" | "midpoint", value: number): void;
+  (event: "remove", index: number): void;
+  (event: "point", index: number, value: number): void;
   (event: "adjustment-start"): void;
 }>();
 const rail = ref<HTMLElement>();
@@ -132,6 +153,18 @@ function at(event: PointerEvent) {
       (props.max - props.min)
   );
 }
+let pointDrag: { id: number; index: number } | undefined;
+function removeMidpoint(event: MouseEvent) {
+  event.preventDefault();
+  emit("remove", 0);
+}
+function startPoint(event: PointerEvent, index: number) {
+  if (event.button !== 0 || !rail.value) return;
+  emit("adjustment-start");
+  pointDrag = { id: event.pointerId, index };
+  rail.value.setPointerCapture(event.pointerId);
+  event.preventDefault();
+}
 function start(event: PointerEvent, side?: Side) {
   if (event.button !== 0 || !rail.value || !(props.max > props.min)) return;
   emit("adjustment-start");
@@ -151,13 +184,17 @@ function start(event: PointerEvent, side?: Side) {
   event.preventDefault();
 }
 function move(event: PointerEvent) {
+  if (pointDrag?.id === event.pointerId)
+    emit("point", pointDrag.index, at(event));
   if (drag?.pointer === event.pointerId) {
     change(drag.side, at(event));
     event.preventDefault();
   }
 }
 function stop(event: PointerEvent) {
-  if (drag?.pointer !== event.pointerId) return;
+  if (drag?.pointer !== event.pointerId && pointDrag?.id !== event.pointerId)
+    return;
+  pointDrag = undefined;
   if (rail.value?.hasPointerCapture(event.pointerId))
     rail.value.releasePointerCapture(event.pointerId);
   drag = undefined;

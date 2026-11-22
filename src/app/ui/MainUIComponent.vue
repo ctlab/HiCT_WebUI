@@ -1366,7 +1366,8 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
     safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
     minSignal,
     maxSignal,
-    cmap["gamma"] === undefined ? 1 : Number(cmap["gamma"])
+    cmap["gamma"] === undefined ? 1 : Number(cmap["gamma"]),
+    cmap["curve"]
   );
   let finalCmap = cmapObj;
   if (
@@ -1380,7 +1381,8 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
       typeof signalThresholds.upperSignalBound === "number"
         ? signalThresholds.upperSignalBound
         : cmapObj.maxSignal,
-      cmapObj.gamma
+      cmapObj.gamma,
+      cmapObj.curve
     );
   }
   const manager = mapManager.value;
@@ -1940,7 +1942,8 @@ async function onOpenSession(file: File): Promise<void> {
         safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
         minSignal,
         maxSignal,
-        cmap["gamma"] === undefined ? 1 : Number(cmap["gamma"])
+        cmap["gamma"] === undefined ? 1 : Number(cmap["gamma"]),
+        cmap["curve"]
       );
       visualizationOptionsStore.setVisualizationOptions(
         new VisualizationOptions(

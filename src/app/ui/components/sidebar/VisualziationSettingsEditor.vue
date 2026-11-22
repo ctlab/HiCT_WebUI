@@ -96,7 +96,10 @@
         :lower-color="fromColor.RGBA"
         :upper-color="toColor.RGBA"
         :neutral="observedExpectedPalette ? toSliderPosition(1) : undefined"
-        :midpoint="midpointPosition"
+        :midpoint="curveData ? undefined : midpointPosition"
+        :points="curveData ? controlPoints.map((p) => p.position) : undefined"
+        @remove="removePoint"
+        @point="editPoint"
         :midpoint-text="formatSignal(midpointSignal) + ' signal; half color'"
         :gradient="colorRailGradient"
         @adjustment-start="keepAdjustmentLimits"
@@ -120,10 +123,18 @@
             :lower="lowerSliderValue"
             :upper="upperSliderValue"
             :position="toHistogramPosition"
+            :transfer="transferPolyline"
+            :control-points="controlPoints"
+            @edit="editPoint"
+            @remove="removePoint"
             @levels="fitViewportLevels"
           />
         </template>
       </SignalRangeControl>
+      <p v-if="midpointPosition !== undefined" class="range-help">
+        Double-click the histogram to add a curve point. Drag to adjust it or
+        right-click to remove it.
+      </p>
       <p
         v-if="visualizationOptionsStore.pendingVisualizationMutations"
         class="range-help mb-0"
@@ -155,13 +166,15 @@
       </p>
       <div class="range-actions">
         <button
-          v-if="midpointPosition !== undefined && colorGamma !== 1"
+          v-if="
+            midpointPosition !== undefined && (colorGamma !== 1 || curveData)
+          "
           type="button"
           class="range-text-button"
           @click="setColorGamma(1)"
           title="Restore a linear color transition without changing thresholds"
         >
-          Reset midpoint
+          Reset curve
         </button>
         <div class="scale-group">
           <span id="slider-scale-label" class="scale-caption"
@@ -548,7 +561,86 @@ const midpointPosition = computed(() =>
     ? toSliderPosition(midpointSignal.value)
     : undefined
 );
-function setColorGamma(gamma: number): void {
+const curveData = computed(() =>
+  colormap.value instanceof SimpleLinearGradient
+    ? colormap.value.curve
+    : undefined
+);
+const controlPoints = computed(() => {
+  if (midpointPosition.value === undefined) return [];
+  const data = curveData.value ?? [midpointFraction(colorGamma.value), 0.5];
+  const points = [];
+  for (let i = 0; i < data.length; i += 2) {
+    const position = toSliderPosition(
+      lowerBound.value + data[i] * (upperBound.value - lowerBound.value)
+    );
+    points.push({
+      fraction: data[i],
+      position,
+      x:
+        (position - sliderPositionMin.value) /
+        (sliderPositionMax.value - sliderPositionMin.value),
+      y: data[i + 1],
+    });
+  }
+  return points;
+});
+const transferPolyline = computed(() => {
+  if (midpointPosition.value === undefined) return undefined;
+  const samples = Array.from({ length: 129 }, (_, i) => i / 128)
+    .concat(controlPoints.value.map((p) => p.x))
+    .sort((a, b) => a - b);
+  return samples
+    .map((x) => {
+      const v = fromSliderPosition(
+        sliderPositionMin.value +
+          x * (sliderPositionMax.value - sliderPositionMin.value)
+      );
+      const y = colorFraction(
+        (v - lowerBound.value) / (upperBound.value - lowerBound.value),
+        colorGamma.value,
+        curveData.value
+      );
+      return 1000 * x + "," + 64 * (1 - y);
+    })
+    .join(" ");
+});
+function editPoint(index: number, position: number, output?: number) {
+  if (midpointPosition.value === undefined) return;
+  keepAdjustmentLimits();
+  const data = controlPoints.value.map((p) => [p.fraction, p.y]);
+  let x =
+    (fromSliderPosition(position) - lowerBound.value) /
+    (upperBound.value - lowerBound.value);
+  if (index < 0) {
+    if (
+      data.length >= 64 ||
+      !(x > 0 && x < 1) ||
+      data.some((p) => Math.abs(p[0] - x) < 1e-6)
+    )
+      return;
+    data.push([x, output ?? 0.5]);
+    data.sort((a, b) => a[0] - b[0]);
+  } else {
+    if (!data[index]) return;
+    x = Math.max(
+      (data[index - 1]?.[0] ?? 0) + 1e-7,
+      Math.min((data[index + 1]?.[0] ?? 1) - 1e-7, x)
+    );
+    data[index] = [x, output ?? data[index][1]];
+  }
+  setColorGamma(1, data.flat());
+}
+function removePoint(index: number) {
+  if (midpointPosition.value === undefined) return;
+  setColorGamma(
+    1,
+    controlPoints.value
+      .filter((_, i) => i !== index)
+      .flatMap((p) => [p.fraction, p.y])
+  );
+}
+function setColorGamma(gamma: number, curve?: number[]): void {
   const current = colormap.value;
   if (!(current instanceof SimpleLinearGradient)) return;
   colormap.value = new SimpleLinearGradient(
@@ -556,9 +648,13 @@ function setColorGamma(gamma: number): void {
     current.endColorRGBA,
     current.minSignal,
     current.maxSignal,
-    gamma
+    gamma,
+    curve
   );
-  props.mapManager?.visualizationManager.noteVisualizationDraft({ gamma });
+  props.mapManager?.visualizationManager.noteVisualizationDraft({
+    gamma,
+    curve: curve ?? null,
+  });
 }
 function onMidpointInput(position: number): void {
   if (midpointPosition.value === undefined) return;
@@ -582,7 +678,8 @@ const colorRailGradient = computed(() => {
     );
     const mix = colorFraction(
       (value - lowerBound.value) / (upperBound.value - lowerBound.value),
-      colorGamma.value
+      colorGamma.value,
+      curveData.value
     );
     const channels = [start.R, start.G, start.B, start.A].map(
       (value, index) =>
@@ -699,7 +796,8 @@ watch(
         toColor.value,
         nextMin,
         nextMax,
-        existing instanceof SimpleLinearGradient ? existing.gamma : 1
+        existing instanceof SimpleLinearGradient ? existing.gamma : 1,
+        existing instanceof SimpleLinearGradient ? existing.curve : undefined
       );
     }
     // console.log("UpperBound", upperBound.value);

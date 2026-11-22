@@ -182,7 +182,8 @@ async function setOptionsPreset() {
             new ColorTranslator(props.action.endColor, { legacyCSS: true }),
             active?.minSignal ?? 0,
             active?.maxSignal ?? 1,
-            active?.gamma ?? 1
+            active?.gamma ?? 1,
+            active?.curve
           ),
           current.autoThresholdEnabled,
           current.autoThresholdQuantile,
@@ -244,7 +245,8 @@ async function setOptionsPreset() {
           cmap.endColorRGBA,
           lower,
           typeof upper === "number" ? upper : cmap.maxSignal,
-          cmap.gamma
+          cmap.gamma,
+          cmap.curve
         );
       }
     }

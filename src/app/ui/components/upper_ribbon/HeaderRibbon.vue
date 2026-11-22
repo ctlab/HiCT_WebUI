@@ -22,6 +22,13 @@
 <template>
   <div class="header-ribbon">
     <div id="left-header-block" class="header-block">
+      <div class="selection-tools">
+        <SelectionControls :map-manager="props.mapManager" />
+        <label
+          ><input v-model="uiSettingsStore.squareSelection" type="checkbox" />
+          Square selection</label
+        >
+      </div>
       <div id="search-container">
         <div id="search-input-group" class="input-group input-group-sm mb-3">
           <input
@@ -254,6 +261,7 @@
 </template>
 
 <script setup lang="ts">
+import SelectionControls from "./SelectionControls.vue";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { AxisScopeSelection } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
 import { useVisualizationOptionsSync } from "./useVisualizationOptionsSync";
@@ -351,7 +359,29 @@ const allScopeOption = (axis: ScopeAxis): ScopeOption => ({
   searchText: allScopeLabel(axis).toLowerCase(),
 });
 
+watch(
+  () => uiSettingsStore.squareSelection,
+  (square) => {
+    const layers = props.mapManager?.getLayersManager();
+    const region = layers?.getRegionBounds();
+    if (square && layers && region) {
+      const start = Math.floor((region.rowStart + region.columnStart) / 2);
+      const end = Math.max(
+        start + 1,
+        Math.ceil((region.rowEnd + region.columnEnd) / 2)
+      );
+      layers.setRegionBounds({
+        rowStart: start,
+        columnStart: start,
+        rowEnd: end,
+        columnEnd: end,
+      });
+    }
+    props.mapManager?.getMap().render();
+  }
+);
 function scopeToSelection(option: AxisScopeSelection): AxisScopeSelection {
+  if (option.kind === "selection") return { ...option };
   if (option.kind === "all" || option.id === undefined) {
     return { kind: "all", label: option.label };
   }
@@ -368,6 +398,7 @@ function normalizeSelectionForAxis(
   selection: AxisScopeSelection,
   axis: ScopeAxis
 ): AxisScopeSelection {
+  if (selection.kind === "selection") return { ...selection };
   if (selection.kind === "all" || selection.id === undefined) {
     return { kind: "all", label: allScopeLabel(axis) };
   }
@@ -923,6 +954,24 @@ async function onSignalDisplayModeChanged() {
 </script>
 
 <style scoped>
+.selection-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  white-space: nowrap;
+  list-style: none;
+  font-size: 0.85rem;
+}
+.selection-tools label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bs-body-bg, white);
+  color: var(--bs-body-color, #20252a);
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
 /* Narrow windows: tighter spacing so the toolbar takes fewer rows. */
 @media (max-width: 767.98px) {
   .header-ribbon {

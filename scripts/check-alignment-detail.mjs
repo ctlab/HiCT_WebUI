@@ -34,7 +34,10 @@ assert.match(
   markers.alignmentMarkerSvg(markers.alignmentMarker("MATCH", false)),
   /<svg/
 );
-const settings = reactive({ automaticAlignmentEnabled: true });
+const settings = reactive({
+  automaticAlignmentEnabled: true,
+  alignmentMinimumLength: 10,
+});
 class Source {
   features = [];
   clear() {
@@ -103,6 +106,7 @@ const finished = {
     alignmentCount: 1,
     segments: [
       {
+        alignment: 0,
         rowStart: 1,
         rowEnd: 3,
         columnStart: 1,
@@ -161,6 +165,9 @@ const manager = {
 };
 const layer = new AlignmentDetailLayer(manager);
 await layer.refresh();
+assert.equal(layer.source.features.length, 0);
+settings.alignmentMinimumLength = 2;
+await Promise.resolve();
 assert.equal(layer.source.features.length, 1);
 assert.deepEqual(
   JSON.parse(JSON.stringify(layer.source.features[0].geometry)),

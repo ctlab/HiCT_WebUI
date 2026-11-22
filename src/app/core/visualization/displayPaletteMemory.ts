@@ -5,6 +5,7 @@ export type DisplayPalette = {
   startColor: string;
   endColor: string;
   gamma?: number;
+  curve?: number[];
 };
 type Mode = "EXPECTED" | "OBSERVED_OVER_EXPECTED";
 const key = "hict.display.palettes.v1";

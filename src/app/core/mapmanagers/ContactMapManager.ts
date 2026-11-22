@@ -146,7 +146,7 @@ class ContactMapManager {
 
     this.visualizationManager = new VisualizationManager(this);
     this.visualizationManager.fetchVisualizationOptions();
-    this.linearTrackManager = new LinearTrackManager(this);
+    this.linearTrackManager = markRaw(new LinearTrackManager(this));
 
     this.minimap = null;
     this.minimapViewportFeature = null;
@@ -2521,13 +2521,23 @@ class ContactMapManager {
     if (!transformedMainExtent.every((value) => Number.isFinite(value))) {
       return;
     }
-    const clampedExtent = this.clampExtentToBounds(
-      transformedMainExtent as [number, number, number, number],
-      minimapProjectionExtent as [number, number, number, number]
-    );
-    this.minimapViewportFeature.setGeometry(
-      clampedExtent ? fromExtent(clampedExtent) : undefined
-    );
+    // At base scale both corners can project into the same overview bin.
+    const marker = [...transformedMainExtent];
+    for (const axis of [0, 1]) {
+      const low = minimapProjectionExtent[axis],
+        high = minimapProjectionExtent[axis + 2];
+      const size = Math.min(
+        high - low,
+        Math.max(
+          7 * (minimapView.getResolution() ?? 1),
+          marker[axis + 2] - marker[axis]
+        )
+      );
+      const center = (marker[axis] + marker[axis + 2]) / 2;
+      marker[axis] = Math.max(low, Math.min(high - size, center - size / 2));
+      marker[axis + 2] = marker[axis] + size;
+    }
+    this.minimapViewportFeature.setGeometry(fromExtent(marker));
     this.minimap.render();
   }
 

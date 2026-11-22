@@ -337,6 +337,7 @@ class SimpleLinearGradientDTO extends InboundDTO<SimpleLinearGradient> {
       endColorRGBAString: e.endColorRGBA.RGBA,
       minSignal: e.minSignal,
       maxSignal: e.maxSignal,
+      ...(e.curve ? { curve: e.curve } : {}),
       ...(e.gamma !== 1 ? { gamma: e.gamma } : {}),
     });
   }
@@ -365,7 +366,8 @@ class SimpleLinearGradientDTO extends InboundDTO<SimpleLinearGradient> {
       end,
       minSignal,
       maxSignal,
-      this.json["gamma"] === undefined ? 1 : Number(this.json["gamma"])
+      this.json["gamma"] === undefined ? 1 : Number(this.json["gamma"]),
+      this.json["curve"]
     );
   }
 }

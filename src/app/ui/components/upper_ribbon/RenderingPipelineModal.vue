@@ -363,6 +363,7 @@ type PipelineExpression =
       minSignal: number;
       maxSignal: number;
       gamma?: number;
+      curve?: number[];
       min?: PipelineExpression;
       max?: PipelineExpression;
     }
@@ -750,6 +751,7 @@ const buildColorExpressionFromVisualizationOptions = (
     minSignal?: number;
     maxSignal?: number;
     gamma?: number;
+    curve?: number[];
   }
 ): PipelineExpression => {
   const gradient = getVisualizationGradient();
@@ -759,6 +761,9 @@ const buildColorExpressionFromVisualizationOptions = (
     type: "colormap",
     mode: "LINEAR",
     input: buildSignalExpressionFromVisualizationOptions(source, overrides),
+    ...(overrides?.curve ?? gradient?.curve
+      ? { curve: overrides?.curve ?? gradient?.curve }
+      : {}),
     ...((overrides?.gamma ?? gradient?.gamma ?? 1) !== 1
       ? { gamma: overrides?.gamma ?? gradient?.gamma }
       : {}),
@@ -1059,6 +1064,7 @@ const parseExpression = (raw: unknown): PipelineExpression => {
           ? node.mode
           : "LINEAR",
       input: parseExpression(node.input),
+      ...(Array.isArray(node.curve) ? { curve: node.curve } : {}),
       ...(node.gamma !== undefined && node.gamma !== 1
         ? { gamma: Number(node.gamma) }
         : {}),
@@ -2526,6 +2532,7 @@ const createNodeForExpression = (
         node.properties.endColor = expression.endColor;
         node.properties.minSignal = expression.minSignal;
         node.properties.maxSignal = expression.maxSignal;
+        node.properties.curve = expression.curve;
         node.properties.gamma = expression.gamma ?? 1;
       }
       break;
@@ -3047,6 +3054,7 @@ const expressionFromNode = (
           ? "OBSERVED_OVER_EXPECTED"
           : "LINEAR",
       input: input(0),
+      ...(node.properties?.curve ? { curve: node.properties.curve } : {}),
       ...(node.properties?.gamma !== undefined && node.properties.gamma !== 1
         ? { gamma: Number(node.properties.gamma) }
         : {}),

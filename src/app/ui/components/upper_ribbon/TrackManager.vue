@@ -36,11 +36,13 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 id="track-manager-title" class="modal-title">
-              Tracks and layers
+              {{
+                props.section === "tracks" ? "1D tracks" : "Sources and layers"
+              }}
             </h5>
             <button
               class="btn-close"
-              aria-label="Close tracks and layers"
+              aria-label="Close manager"
               @click="$emit('dismissed')"
             ></button>
           </div>
@@ -49,33 +51,9 @@
               Open a HiCT file first.
             </div>
             <template v-else>
-              <div
-                class="nav nav-tabs mb-3"
-                role="tablist"
-                aria-label="Tracks and map sources"
-              >
-                <button
-                  v-for="tab in managerTabs"
-                  :key="tab.id"
-                  :id="`track-tab-${tab.id}`"
-                  type="button"
-                  class="nav-link"
-                  :class="{ active: activeTab === tab.id }"
-                  role="tab"
-                  :aria-selected="activeTab === tab.id"
-                  :aria-controls="`track-panel-${tab.id}`"
-                  :tabindex="activeTab === tab.id ? 0 : -1"
-                  @click="activeTab = tab.id"
-                  @keydown="onTabKeydown($event, tab.id)"
-                >
-                  {{ tab.label }}
-                </button>
-              </div>
               <section
                 id="track-panel-tracks"
-                role="tabpanel"
-                aria-labelledby="track-tab-tracks"
-                v-show="activeTab === 'tracks'"
+                v-if="props.section === 'tracks'"
               >
                 <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                   <label for="track-add-kind" class="form-label mb-0"
@@ -607,9 +585,7 @@
               </section>
               <section
                 id="track-panel-sources"
-                role="tabpanel"
-                aria-labelledby="track-tab-sources"
-                v-show="activeTab === 'sources'"
+                v-if="props.section === 'sources'"
               >
                 <p class="small mb-3">
                   Primary map:
@@ -941,41 +917,17 @@ useModalFocus(rootElement);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
+  section: "tracks" | "sources";
 }>();
 
 const emit = defineEmits<{
   (e: "dismissed"): void;
 }>();
 
-const managerTabs = [
-  { id: "tracks", label: "1D tracks" },
-  { id: "sources", label: "Sources and layers" },
-] as const;
-type ManagerTab = typeof managerTabs[number]["id"];
-const activeTab = ref<ManagerTab>("tracks");
 const addKind = ref<"file" | "weights">("file");
 const weightSource = ref<"PRIMARY" | "SECONDARY">("PRIMARY");
 const isAddingTrack = ref(false);
 const sourceChanging = ref(false);
-async function onTabKeydown(
-  event: KeyboardEvent,
-  current: ManagerTab
-): Promise<void> {
-  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-  event.preventDefault();
-  activeTab.value =
-    event.key === "Home"
-      ? "tracks"
-      : event.key === "End"
-      ? "sources"
-      : current === "tracks"
-      ? "sources"
-      : "tracks";
-  await nextTick();
-  rootElement.value
-    ?.querySelector<HTMLElement>(`#track-tab-${activeTab.value}`)
-    ?.focus();
-}
 function showMapLayers(): void {
   emit("dismissed");
   void nextTick(() => window.dispatchEvent(new Event("hict:show-map-layers")));
@@ -1739,6 +1691,10 @@ const onPreparationToggle = (event: Event): void => {
 };
 
 onMounted(async () => {
+  if (props.section === "sources") {
+    await refreshSecondaryStatus();
+    return;
+  }
   unsubscribeTracks = props.mapManager?.linearTrackManager.subscribeTrackList(
     (snapshot) => {
       tracks.value = snapshot;

@@ -173,6 +173,7 @@ layers.selectionCollections = {
 let worldExtent, vertexVisible;
 layers.selectionInteractions = {
   contigSelectExtent: {
+    cancelGesture() {},
     setExtent: (extent) => {
       worldExtent = extent;
     },

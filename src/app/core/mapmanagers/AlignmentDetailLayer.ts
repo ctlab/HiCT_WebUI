@@ -28,6 +28,7 @@ export class AlignmentDetailLayer {
   private jobId?: string;
   private requestKey = "";
   private generation = 0;
+  private segments: AlignmentDetailSegment[] = [];
   private pending?: Promise<void>;
 
   constructor(private readonly manager: ContactMapManager) {
@@ -56,6 +57,12 @@ export class AlignmentDetailLayer {
           if (enabled) schedule();
         },
         { flush: "sync" }
+      ),
+      watch(
+        () => this.settings.alignmentMinimumLength,
+        () => {
+          if (this.segments.length) this.displaySegments();
+        }
       ),
       manager.networkManager.requestManager.onSequenceChange(invalidate),
       manager.contigDimensionHolder.onChange(invalidate),
@@ -186,12 +193,8 @@ export class AlignmentDetailLayer {
             response.error ?? "Alignment detail is unavailable";
           return;
         }
-        const features = this.project(response.result.segments);
-        this.source.addFeatures(features);
-        this.state.message.value =
-          response.result.alignmentCount === 0
-            ? "No alignment reported for these visible regions. Short windows may yield no hit."
-            : "";
+        this.segments = response.result.segments;
+        this.displaySegments();
       } catch (error) {
         if (!controller.signal.aborted && generation === this.generation) {
           this.state.message.value =
@@ -203,6 +206,25 @@ export class AlignmentDetailLayer {
     };
     this.pending = task();
     return this.pending;
+  }
+
+  private displaySegments(): void {
+    const lengths = new Map<number, number>();
+    for (const s of this.segments) {
+      const aligned = Math.max(
+        s.rowEnd - s.rowStart,
+        s.columnEnd - s.columnStart
+      );
+      lengths.set(s.alignment, (lengths.get(s.alignment) ?? 0) + aligned);
+    }
+    const visible = this.segments.filter(
+      (s) => lengths.get(s.alignment)! >= this.settings.alignmentMinimumLength
+    );
+    this.source.clear();
+    this.source.addFeatures(this.project(visible));
+    this.state.message.value = visible.length
+      ? ""
+      : "No alignment meets the minimum length in these regions.";
   }
 
   private project(segments: AlignmentDetailSegment[]): Feature[] {
@@ -260,6 +282,7 @@ export class AlignmentDetailLayer {
   }
 
   private cancel(): void {
+    this.segments = [];
     ++this.generation;
     this.controller?.abort();
     this.controller = undefined;

@@ -105,6 +105,18 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
     readStored("hict.sequence.showReverseStrand", false)
   );
   persistRef("hict.sequence.showReverseStrand", sequenceShowReverseStrand);
+  const squareSelection = ref(readStored("hict.ui.squareSelection", false));
+  persistRef("hict.ui.squareSelection", squareSelection);
+  const alignmentMinimumLength = ref(
+    Math.max(
+      1,
+      Math.min(
+        8192,
+        Math.round(Number(readStored("hict.sequence.minimumLength", 10))) || 10
+      )
+    )
+  );
+  persistRef("hict.sequence.minimumLength", alignmentMinimumLength);
   const automaticAlignmentEnabled = ref(
     readStored("hict.sequence.automaticAlignment", true) === true
   );
@@ -174,6 +186,8 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
     rememberFileSelection,
     rememberedFileSelection,
     automaticAlignmentEnabled,
+    alignmentMinimumLength,
+    squareSelection,
     sequenceGapLengthBp,
     sequenceForwardColor,
     sequenceShowReverseStrand,

@@ -344,6 +344,8 @@ const replaceColormapNode = (
     : replacement.mode ?? "LINEAR";
   target.node.startColor = replacement.startColor;
   target.node.endColor = replacement.endColor;
+  if (replacement.curve) target.node.curve = replacement.curve;
+  else delete target.node.curve;
   if (replacement.gamma === undefined) delete target.node.gamma;
   else target.node.gamma = replacement.gamma;
   target.node.minSignal = replacement.minSignal;
@@ -378,7 +380,8 @@ const visualizationOptionsFromTarget = (
       safeColorTranslator(target.node.endColor, "#006000ff"),
       target.minSignal,
       target.maxSignal,
-      Number(target.node.gamma ?? 1)
+      Number(target.node.gamma ?? 1),
+      target.node.curve
     ),
     currentOptions.autoThresholdEnabled,
     currentOptions.autoThresholdQuantile,
@@ -571,9 +574,14 @@ class VisualizationManager {
     const context = this.captureVisualizationContext();
     this.drafts.note(context, patch);
     if (
-      ["minSignal", "maxSignal", "startColor", "endColor", "gamma"].some(
-        (field) => field in patch
-      )
+      [
+        "minSignal",
+        "maxSignal",
+        "startColor",
+        "endColor",
+        "gamma",
+        "curve",
+      ].some((field) => field in patch)
     )
       this.normalizationFits.delete(visualizationContextKey(context));
     this.cancelDraftTimer(context);
@@ -1232,7 +1240,8 @@ class VisualizationManager {
           options.colormap.endColorRGBA,
           options.colormap.minSignal,
           nextUpperBound,
-          options.colormap.gamma
+          options.colormap.gamma,
+          options.colormap.curve
         ),
         options.autoThresholdEnabled,
         options.autoThresholdQuantile,
@@ -1532,7 +1541,8 @@ class VisualizationManager {
           options.colormap.endColorRGBA,
           options.colormap.minSignal,
           updatedMaxSignal,
-          options.colormap.gamma
+          options.colormap.gamma,
+          options.colormap.curve
         ),
         false,
         quantile,
@@ -1590,6 +1600,7 @@ class VisualizationManager {
       max: cmap.maxSignal,
       startColor: cmap.startColorRGBA.HEXA,
       endColor: cmap.endColorRGBA.HEXA,
+      ...(cmap.curve ? { curve: cmap.curve } : {}),
       ...(cmap.gamma !== 1 ? { gamma: cmap.gamma } : {}),
     });
   }
@@ -1632,7 +1643,8 @@ class VisualizationManager {
           new ColorTranslator(remembered.endColor, { legacyCSS: true }),
           remembered.min,
           remembered.max,
-          remembered.gamma ?? 1
+          remembered.gamma ?? 1,
+          remembered.curve
         )
       : mode === "OBSERVED_OVER_EXPECTED"
       ? new SimpleLinearGradient(

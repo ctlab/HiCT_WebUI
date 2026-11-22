@@ -62,6 +62,17 @@
         Local alignments between visible FASTA regions · updates with
         navigation.
       </p>
+      <label class="alignment-length"
+        >Minimum alignment length (bp)
+        <input
+          type="number"
+          min="1"
+          max="8192"
+          step="1"
+          :value="uiSettingsStore.alignmentMinimumLength"
+          @change="changeMinimumLength"
+        />
+      </label>
       <ul>
         <li v-for="marker in alignmentMarkers" :key="marker.id">
           <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -117,6 +128,12 @@ import ZoomSlider from "@/app/ui/components/toolbar/upper_blocks/ZoomSlider.vue"
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 
+function changeMinimumLength(event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (input.validity.valid && Number.isInteger(input.valueAsNumber))
+    uiSettingsStore.alignmentMinimumLength = input.valueAsNumber;
+  input.value = String(uiSettingsStore.alignmentMinimumLength);
+}
 const stylesStore = useStyleStore();
 
 const htmlElementReferencesStore = usehtmlElementReferencesStore();
@@ -235,6 +252,15 @@ const managerKey = computed(() => {
   padding-top: 0.35rem;
 }
 
+.alignment-length {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  pointer-events: auto;
+}
+.alignment-length input {
+  width: 5em;
+}
 .overlay-loading button {
   pointer-events: auto;
 }

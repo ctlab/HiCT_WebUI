@@ -214,10 +214,6 @@
               </li>
             </ul>
           </li>
-          <SelectionControls
-            :map-manager="props.mapManager"
-            :popper-config="navbarPopperConfig"
-          />
           <!-- View -->
           <li class="nav-item dropdown">
             <a
@@ -233,8 +229,17 @@
                   class="dropdown-item"
                   href="#"
                   :class="{ disabled: !props.mapManager }"
-                  @click.prevent="onOpenTrackManager"
-                  >Tracks and layers…</a
+                  @click.prevent="trackManagerOpen = 'tracks'"
+                  >1D tracks…</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="trackManagerOpen = 'sources'"
+                  >Sources and layers…</a
                 >
               </li>
               <li>
@@ -792,8 +797,9 @@
   />
   <TrackManager
     v-if="trackManagerOpen"
+    :section="trackManagerOpen"
     :map-manager="props.mapManager"
-    @dismissed="trackManagerOpen = false"
+    @dismissed="trackManagerOpen = null"
   />
   <RenderingPipelineModal
     v-if="renderingPipelineOpen"
@@ -1309,7 +1315,7 @@
 
 <script setup lang="ts">
 import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
-import SelectionControls from "./SelectionControls.vue";
+
 import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
 /* global __HICT_WEBUI_BUILD_VERSION__, __HICT_WEBUI_BUILD_COMMIT__ */
 import BackgroundJobsPanel from "./BackgroundJobsPanel.vue";
@@ -1379,7 +1385,7 @@ const modDotPlotOpen = ref(false);
 const assemblyDotPlotOpen = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
 const lastLinkedFastaFilename = ref<string | undefined>(undefined);
-const trackManagerOpen = ref(false);
+const trackManagerOpen = ref<"tracks" | "sources" | null>(null);
 const renderingPipelineOpen = ref(false);
 const workerDiagnosticsOpen = ref(false);
 const serverStatisticsOpen = ref(false);
@@ -1774,10 +1780,6 @@ function onGenerateDotplotClicked(): void {
 
 function onGenerateDotplotDismissed(): void {
   generatingDotplots.value = false;
-}
-
-function onOpenTrackManager() {
-  trackManagerOpen.value = true;
 }
 
 function onOpenRenderingPipeline() {
@@ -2384,7 +2386,7 @@ watch(
 );
 
 function openTrackManagerFromEvent(): void {
-  trackManagerOpen.value = true;
+  trackManagerOpen.value = "tracks";
 }
 
 onMounted(() => {

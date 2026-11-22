@@ -208,6 +208,7 @@ watch([horizontalSequencePresent, verticalSequencePresent], async () => {
 });
 let unsubscribeTrackList: (() => void) | undefined;
 const trackPanelMaximum = ref(420);
+const manuallySized = { horizontal: false, vertical: false };
 const horizontalTrackPanelSizePx = ref(140);
 const verticalTrackPanelSizePx = ref(140);
 let trackPanelResizeState: {
@@ -357,12 +358,11 @@ watch(visibleTrackCount, async () => {
   if (visibleTrackCount.value <= 0) {
     stopTrackPanelResize();
   } else {
-    if (horizontalTrackPanelSizePx.value < 60) {
-      horizontalTrackPanelSizePx.value = 140;
-    }
-    if (verticalTrackPanelSizePx.value < 60) {
-      verticalTrackPanelSizePx.value = 140;
-    }
+    const preferred = clampTrackPanelSize(
+      Math.max(140, visibleTrackCount.value * 56)
+    );
+    if (!manuallySized.horizontal) horizontalTrackPanelSizePx.value = preferred;
+    if (!manuallySized.vertical) verticalTrackPanelSizePx.value = preferred;
   }
   // The visible track count changes the workspace grid dimensions. OpenLayers,
   // rulers and 1D canvases all cache viewport state, so refresh them after Vue
@@ -433,6 +433,7 @@ const resizeTrackPanelByKey = (
   const larger = orientation === "horizontal" ? "ArrowDown" : "ArrowRight";
   if (![smaller, larger, "Home", "End"].includes(event.key)) return;
   event.preventDefault();
+  manuallySized[orientation] = true;
   const size =
     orientation === "horizontal"
       ? horizontalTrackPanelSizePx
@@ -454,6 +455,7 @@ const startTrackPanelResize = (
   if (visibleTrackCount.value <= 0) {
     return;
   }
+  manuallySized[orientation] = true;
   trackPanelResizeState = {
     orientation,
     startPointer: orientation === "horizontal" ? event.clientY : event.clientX,
@@ -625,6 +627,7 @@ const verticalRulerCssSize = computed(() => {
 
 .interactive-workspace_horizontal_tracks {
   grid-area: horizontal-tracks;
+  overflow-y: auto;
 }
 
 .interactive-workspace_horizontal_ruler {
@@ -649,6 +652,7 @@ const verticalRulerCssSize = computed(() => {
 
 .interactive-workspace_vertical_tracks {
   grid-area: vertical-tracks;
+  overflow-x: auto;
 }
 
 .interactive-workspace_vertical_ruler {

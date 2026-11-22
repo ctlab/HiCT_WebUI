@@ -7,16 +7,147 @@
       role="menu"
       aria-label="Assembly actions"
       :style="{ left: `${position.x}px`, top: `${position.y}px` }"
+      @scroll.self="formatsOpen = false"
+      @pointerover="dismissSibling"
       @contextmenu.prevent
       @keydown="navigate"
     >
       <section
+        v-if="
+          props.mapManager.viewAndLayersManager.currentViewState
+            .selectedContigIds.length
+        "
+      >
+        <button role="menuitem" @click="isolate">
+          Isolate view to selection
+        </button>
+      </section>
+      <section v-for="item in items" :key="`${item.kind}-${item.id}`">
+        <div class="entity-title">{{ item.title }}</div>
+        <template v-if="item.kind !== 'selection'">
+          <button role="menuitem" @click="zoomTo(item)">
+            Zoom to {{ item.kind }}
+          </button>
+          <button role="menuitem" @click="copyName(item)">Copy name</button>
+          <button
+            v-if="item.kind === 'contig'"
+            role="menuitem"
+            @click="copyPosition(item)"
+          >
+            Copy position
+          </button>
+        </template>
+        <button
+          v-if="item.kind !== 'selection'"
+          role="menuitem"
+          @click="beginRename(item)"
+        >
+          Rename…
+        </button>
+        <template v-if="item.kind === 'selection'">
+          <button role="menuitem" @click="zoomSelection">
+            Zoom to selection
+          </button>
+          <button role="menuitem" @click="copyCoordinates('assembly')">
+            Copy selection coordinates
+          </button>
+          <button role="menuitem" @click="copyCoordinates('scaffold')">
+            Copy scaffold coordinates
+          </button>
+          <button role="menuitem" @click="copyCoordinates('contig')">
+            Copy contig coordinates
+          </button>
+          <button role="menuitem" @click="requestExport('clipboard')">
+            Copy selection as PNG
+          </button>
+          <button
+            role="menuitem"
+            @click="
+              items = [];
+              histogramOpen = true;
+            "
+          >
+            Signal histogram...
+          </button>
+          <button role="menuitem" @click="openAnalysis('dotplot')">
+            Generate dotplot for selection…
+          </button>
+          <button role="menuitem" @click="openAnalysis('moddotplot')">
+            Generate ModDotPlot for selection…
+          </button>
+          <button role="menuitem" @click="openAnalysis('search')">
+            Find sequences in selection…
+          </button>
+          <button role="menuitem" @click="exportFasta">
+            Export FASTA for selection
+          </button>
+          <button
+            role="menuitem"
+            data-formats
+            aria-haspopup="menu"
+            :aria-expanded="formatsOpen"
+            @pointerenter="openFormats(false)"
+            @click="openFormats(true)"
+            @keydown.right.prevent="openFormats(true)"
+          >
+            Export selection as <span aria-hidden="true">›</span>
+          </button>
+        </template>
+        <template
+          v-if="
+            item.kind !== 'selection' &&
+            (item.kind === 'scaffold' || !hasScaffold)
+          "
+        >
+          <button
+            role="menuitem"
+            :disabled="item.structural === false"
+            @click="execute(item, 'reverse')"
+          >
+            Reverse {{ item.kind }}
+          </button>
+          <button
+            role="menuitem"
+            :disabled="item.structural === false"
+            @click="move(item)"
+          >
+            Move {{ item.kind }}…
+          </button>
+          <button
+            v-if="item.kind === 'scaffold'"
+            role="menuitem"
+            @click="execute(item, 'ungroup')"
+          >
+            Ungroup into singletons
+          </button>
+          <button
+            role="menuitem"
+            :disabled="item.structural === false"
+            @click="execute(item, 'debris')"
+          >
+            Move to debris and hide
+          </button>
+        </template>
+      </section>
+      <p
+        v-if="items.some((item) => item.kind === 'selection')"
+        class="scope-note"
+      >
+        This region is for analysis and export. Shift-select entities for
+        assembly edits.
+      </p>
+      <p v-if="hasScaffold" class="scope-note">
+        Structural edits act on the whole scaffold.
+      </p>
+      <section
         v-if="formatsOpen"
+        ref="formatsMenu"
         role="menu"
         aria-label="Export selection as"
-        @keydown.left.prevent="closeFormats"
+        class="formats-menu assembly-context-menu"
+        :style="formatPosition"
+        @keydown.left.stop.prevent="closeFormats"
       >
-        <button role="menuitem" @click="closeFormats">‹ Back</button>
         <button
           v-for="format in formats"
           :key="format"
@@ -26,121 +157,6 @@
           {{ format }}
         </button>
       </section>
-      <template v-else>
-        <section v-for="item in items" :key="`${item.kind}-${item.id}`">
-          <div class="entity-title">{{ item.title }}</div>
-          <template v-if="item.kind !== 'selection'">
-            <button role="menuitem" @click="zoomTo(item)">
-              Zoom to {{ item.kind }}
-            </button>
-            <button role="menuitem" @click="copyName(item)">Copy name</button>
-            <button
-              v-if="item.kind === 'contig'"
-              role="menuitem"
-              @click="copyPosition(item)"
-            >
-              Copy position
-            </button>
-          </template>
-          <button
-            v-if="item.kind !== 'selection'"
-            role="menuitem"
-            @click="beginRename(item)"
-          >
-            Rename…
-          </button>
-          <template v-if="item.kind === 'selection'">
-            <button role="menuitem" @click="copyCoordinates('assembly')">
-              Copy selection coordinates
-            </button>
-            <button role="menuitem" @click="copyCoordinates('scaffold')">
-              Copy scaffold coordinates
-            </button>
-            <button role="menuitem" @click="copyCoordinates('contig')">
-              Copy contig coordinates
-            </button>
-            <button role="menuitem" @click="requestExport('clipboard')">
-              Copy selection as PNG
-            </button>
-            <button
-              role="menuitem"
-              @click="
-                items = [];
-                histogramOpen = true;
-              "
-            >
-              Signal histogram...
-            </button>
-            <button role="menuitem" @click="openAnalysis('dotplot')">
-              Generate dotplot for selection…
-            </button>
-            <button role="menuitem" @click="openAnalysis('moddotplot')">
-              Generate ModDotPlot for selection…
-            </button>
-            <button role="menuitem" @click="openAnalysis('search')">
-              Find sequences in selection…
-            </button>
-            <button role="menuitem" @click="exportFasta">
-              Export FASTA for selection
-            </button>
-            <button
-              role="menuitem"
-              data-formats
-              aria-haspopup="menu"
-              :aria-expanded="formatsOpen"
-              @click="openFormats"
-              @keydown.right.prevent="openFormats"
-            >
-              Export selection as <span aria-hidden="true">›</span>
-            </button>
-          </template>
-          <template
-            v-if="
-              item.kind !== 'selection' &&
-              (item.kind === 'scaffold' || !hasScaffold)
-            "
-          >
-            <button
-              role="menuitem"
-              :disabled="item.structural === false"
-              @click="execute(item, 'reverse')"
-            >
-              Reverse {{ item.kind }}
-            </button>
-            <button
-              role="menuitem"
-              :disabled="item.structural === false"
-              @click="move(item)"
-            >
-              Move {{ item.kind }}…
-            </button>
-            <button
-              v-if="item.kind === 'scaffold'"
-              role="menuitem"
-              @click="execute(item, 'ungroup')"
-            >
-              Ungroup into singletons
-            </button>
-            <button
-              role="menuitem"
-              :disabled="item.structural === false"
-              @click="execute(item, 'debris')"
-            >
-              Move to debris and hide
-            </button>
-          </template>
-        </section>
-        <p
-          v-if="items.some((item) => item.kind === 'selection')"
-          class="scope-note"
-        >
-          This region is for analysis and export. Shift-select entities for
-          assembly edits.
-        </p>
-        <p v-if="hasScaffold" class="scope-note">
-          Structural edits act on the whole scaffold.
-        </p>
-      </template>
     </div>
     <div v-if="warning" class="rename-backdrop">
       <section
@@ -328,10 +344,43 @@ const hasScaffold = computed(() =>
 const formats = ["PNG", "SVG", "PDF"] as const;
 type ExportAction = typeof formats[number] | "clipboard";
 const formatsOpen = ref(false);
-async function openFormats() {
+const formatsMenu = ref<HTMLElement>();
+const formatPosition = ref({ left: "0px", top: "0px" });
+async function openFormats(focus: boolean) {
   formatsOpen.value = true;
   await nextTick();
-  menu.value?.querySelectorAll("button")[1]?.focus();
+  const anchor = menu.value
+    ?.querySelector("[data-formats]")
+    ?.getBoundingClientRect();
+  const child = formatsMenu.value?.getBoundingClientRect();
+  const parent = menu.value?.getBoundingClientRect();
+  if (!anchor || !child || !parent) return;
+  const x =
+    parent.right + child.width <= innerWidth
+      ? parent.right - 1
+      : Math.max(0, parent.left - child.width + 1);
+  formatPosition.value = {
+    left: x + "px",
+    top:
+      Math.max(0, Math.min(anchor.top, innerHeight - child.height - 4)) + "px",
+  };
+  if (focus) formatsMenu.value?.querySelector("button")?.focus();
+}
+function dismissSibling(event: PointerEvent) {
+  const target = event.target as Element;
+  if (
+    target.closest("button") &&
+    !target.closest("[data-formats], .formats-menu")
+  )
+    formatsOpen.value = false;
+}
+function zoomSelection() {
+  items.value = [];
+  props.mapManager.viewAndLayersManager.zoomToRegion();
+}
+function isolate() {
+  items.value = [];
+  props.mapManager.viewAndLayersManager.isolateSelectedEntities();
 }
 async function closeFormats() {
   formatsOpen.value = false;
@@ -395,16 +444,26 @@ function axisHits(bp: number): AxisHit[] {
 function itemsAtEvent(event: MouseEvent): Item[] {
   const manager = props.mapManager;
   const holder = manager.contigDimensionHolder;
-  const finest = manager.linearTrackManager.getFinestBpResolution();
-  const totalPx = holder.prefix_sum_px.get(finest)?.[holder.contig_count] ?? 0;
+  const d = manager.viewAndLayersManager.currentViewState.resolutionDesciptor;
   const [x, y] = manager.map.getEventCoordinate(event);
-  const columnPx = Math.floor(x);
-  const rowPx = Math.floor(-y);
-  const inside = (px: number) => Number.isFinite(px) && px >= 0 && px < totalPx;
-  // The matrix is square: a point beyond either axis is outside the map, so there is nothing to act on.
-  if (!inside(columnPx) || !inside(rowPx)) return [];
-  const column = axisHits(holder.getStartBpOfPx(columnPx, finest));
-  const row = axisHits(holder.getStartBpOfPx(rowPx, finest));
+  const bounds = manager.viewAndLayersManager.getActiveMapPixelBounds(
+    d.bpResolution
+  );
+  const col = x / d.pixelResolution,
+    line = -y / d.pixelResolution;
+  if (
+    col < bounds.colStartPx ||
+    col >= bounds.colEndPx ||
+    line < bounds.rowStartPx ||
+    line >= bounds.rowEndPx
+  )
+    return [];
+  const column = axisHits(
+    Math.floor(holder.getFractionalBpOfPx(col, d.bpResolution))
+  );
+  const row = axisHits(
+    Math.floor(holder.getFractionalBpOfPx(line, d.bpResolution))
+  );
   const result: Item[] = [];
   for (const kind of ["contig", "scaffold"] as const) {
     const label = kind === "contig" ? "Contig" : "Scaffold";
@@ -498,7 +557,12 @@ function copyPosition(item: Item) {
 function navigate(event: KeyboardEvent) {
   if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
   event.preventDefault();
-  const buttons = Array.from(menu.value?.querySelectorAll("button") ?? []);
+  const activeMenu = (event.target as Element).closest('[role="menu"]');
+  const buttons = Array.from(
+    activeMenu?.querySelectorAll("button:not(:disabled)") ?? []
+  ).filter(
+    (b) => b.closest('[role="menu"]') === activeMenu
+  ) as HTMLButtonElement[];
   const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
   const next =
     event.key === "Home"
@@ -667,6 +731,9 @@ useModalFocus(modalFocusElement, () => !!renaming.value);
   color: var(--hict-surface-fg, #172033);
   border-radius: 0.4rem;
   box-shadow: 0 4px 24px #0003;
+}
+.formats-menu {
+  width: 7rem;
 }
 .entity-title {
   font-weight: 600;

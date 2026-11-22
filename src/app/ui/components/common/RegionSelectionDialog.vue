@@ -375,6 +375,7 @@ function apply() {
   if (cutPending.value || invalidPaste.value) return;
   try {
     layers.value.setRegionBounds(parseFields());
+    layers.value.zoomToRegion();
     emit("dismissed");
   } catch (failure) {
     error.value = (failure as Error).message;

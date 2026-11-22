@@ -110,6 +110,7 @@ export const serializeVisualizationOptions = (
         endColorRGBAString: cmap.endColorRGBA.RGBA,
         minSignal: cmap.minSignal,
         maxSignal: cmap.maxSignal,
+        ...(cmap.curve ? { curve: cmap.curve } : {}),
         ...(cmap.gamma !== 1 ? { gamma: cmap.gamma } : {}),
       },
     };
@@ -189,7 +190,8 @@ export const deserializeVisualizationOptions = (
       safeColor(endColor, "rgba(0,96,0,1.0)"),
       minSignal,
       maxSignal,
-      cmapRaw.gamma === undefined ? 1 : Number(cmapRaw.gamma)
+      cmapRaw.gamma === undefined ? 1 : Number(cmapRaw.gamma),
+      cmapRaw.curve
     );
   } else {
     cmap = new Colormap(cmapType);

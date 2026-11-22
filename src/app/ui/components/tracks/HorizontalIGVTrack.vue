@@ -36,6 +36,33 @@
     @contextmenu.prevent="onContextMenu"
   >
     <canvas ref="trackCanvas"></canvas>
+    <div
+      v-for="(track, index) in axisTracks"
+      :key="'scroll-' + track.trackId"
+      class="track-scroll"
+      :data-track-id="track.trackId"
+      tabindex="0"
+      role="region"
+      :aria-label="track.name + ' feature rows'"
+      :style="{
+        top: (index * 100) / axisTracks.length + '%',
+        height: 100 / axisTracks.length + '%',
+      }"
+      @scroll="
+        props.mapManager?.linearTrackManager.scrollTrack(
+          'horizontal',
+          track.trackId,
+          ($event.currentTarget as HTMLElement).scrollTop
+        )
+      "
+    >
+      <div
+        :style="{
+          width: '1px',
+          height: (scrollSizes[track.trackId] ?? 0) + 'px',
+        }"
+      ></div>
+    </div>
     <button
       v-for="(track, index) in axisTracks"
       :key="track.trackId"
@@ -120,6 +147,11 @@ let unsubscribeTrackList: (() => void) | undefined;
 let draggingPointerId: number | null = null;
 let dragStartClientX = 0;
 let dragCenterX = 0;
+const scrollSizes = ref<Record<string, number>>({});
+let scroller: HTMLElement | null = null;
+let crossStart = 0;
+let scrollStart = 0;
+let direction: "cross" | "axis" | null = null;
 let pointerMoved = false;
 
 const featureTooltipVisible = ref(false);
@@ -149,6 +181,7 @@ const { mapBackgroundColor } = storeToRefs(styleStore);
 const { inheritTrackBackgroundFromMap, trackBackgroundColor } =
   storeToRefs(uiSettingsStore);
 const trackHostStyle = computed(() => ({
+  minHeight: axisTracks.value.length * 52 + "px",
   background: inheritTrackBackgroundFromMap.value
     ? mapBackgroundColor.value.RGB
     : trackBackgroundColor.value,
@@ -176,6 +209,7 @@ const bindSubscriptions = () => {
     props.mapManager.linearTrackManager.subscribeRenderState(
       "horizontal",
       (state) => {
+        if (state.scrollSizes) scrollSizes.value = state.scrollSizes;
         if (statusOverlay.value) {
           statusOverlay.value.textContent = state.statusMessage ?? "";
           statusOverlay.value.style.display = state.statusMessage
@@ -357,6 +391,10 @@ const onPointerDown = (event: PointerEvent): void => {
   if (!center) {
     return;
   }
+  direction = null;
+  scroller = (event.target as Element).closest<HTMLElement>(".track-scroll");
+  crossStart = event.clientY;
+  scrollStart = scroller?.scrollTop ?? 0;
   draggingPointerId = event.pointerId;
   dragStartClientX = event.clientX;
   dragCenterX = center[0];
@@ -377,10 +415,13 @@ const onPointerMove = (event: PointerEvent): void => {
     return;
   }
   const dx = event.clientX - dragStartClientX;
-  if (Math.abs(dx) > 2) {
-    pointerMoved = true;
-  }
-  if (!pointerMoved) {
+  const crossDelta = event.clientY - crossStart;
+  if (!direction && Math.max(Math.abs(crossDelta), Math.abs(dx)) > 2)
+    direction = Math.abs(crossDelta) > Math.abs(dx) ? "cross" : "axis";
+  if (!direction) return;
+  pointerMoved = true;
+  if (direction === "cross") {
+    if (scroller) scroller.scrollTop = scrollStart - crossDelta;
     return;
   }
   view.setCenter([dragCenterX - dx * resolution, center[1]]);
@@ -391,7 +432,12 @@ const stopPointerDrag = (event: PointerEvent): void => {
   if (draggingPointerId !== event.pointerId) {
     return;
   }
-  if (!pointerMoved && props.mapManager && trackHost.value) {
+  if (
+    event.type === "pointerup" &&
+    !pointerMoved &&
+    props.mapManager &&
+    trackHost.value
+  ) {
     const rect = trackHost.value.getBoundingClientRect();
     const axisOffsetPx = event.clientX - rect.left;
     const crossOffsetPx = event.clientY - rect.top;
@@ -506,6 +552,18 @@ onBeforeUnmount(() => {
   display: block;
 }
 
+.track-scroll {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.track-scroll:focus-visible {
+  outline: 2px solid #196ca6;
+  outline-offset: -2px;
+}
 .track-chip-list {
   display: none;
 }

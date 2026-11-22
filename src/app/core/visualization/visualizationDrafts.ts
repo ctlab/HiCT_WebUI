@@ -24,6 +24,7 @@ export type VisualizationDraft = {
   startColor?: string;
   endColor?: string;
   gamma?: number;
+  curve?: number[] | null;
 };
 export const visualizationContextKey = (context: VisualizationContext) =>
   JSON.stringify([
@@ -98,6 +99,7 @@ export function applyVisualizationDraft(
     "startColor",
     "endColor",
     "gamma",
+    "curve",
   ].some((key) => key in patch);
   const colormap =
     hasPalette && map instanceof SimpleLinearGradient
@@ -110,7 +112,8 @@ export function applyVisualizationDraft(
             : map.endColorRGBA,
           patch.minSignal ?? map.minSignal,
           patch.maxSignal ?? map.maxSignal,
-          patch.gamma ?? map.gamma
+          patch.gamma ?? map.gamma,
+          patch.curve === undefined ? map.curve : patch.curve
         )
       : map;
   return new VisualizationOptions(
@@ -153,6 +156,7 @@ export function visualizationOptionsDraft(
           startColor: gradient.startColorRGBA.HEXA,
           endColor: gradient.endColorRGBA.HEXA,
           gamma: gradient.gamma,
+          ...(gradient.curve ? { curve: gradient.curve } : {}),
         }
       : {}),
   };

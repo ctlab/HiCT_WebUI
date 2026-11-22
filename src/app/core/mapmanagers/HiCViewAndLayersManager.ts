@@ -22,7 +22,11 @@ import { sequenceZoomResolution } from "../visualization/sequenceZoom";
 
 import { unByKey } from "ol/Observable";
 import { aggregateTileSignals } from "../visualization/tileSignalRange";
-import { Extent, Select, DragBox } from "ol/interaction";
+import {
+  ContactMapSelectionInteraction,
+  EntityDragBox,
+} from "../interactions/ContactMapSelectionInteraction";
+import { Select, DragBox } from "ol/interaction";
 import { fromExtent } from "ol/geom/Polygon";
 import type { SequenceMeasurement } from "../sequence/sequenceMeasurement";
 import type { EventsKey } from "ol/events";
@@ -112,11 +116,12 @@ interface SelectionBorders {
   rightBP?: [number, number];
 }
 
-type AxisScopeKind = "all" | "contig" | "scaffold";
+type AxisScopeKind = "all" | "contig" | "scaffold" | "selection";
 
 interface AxisScopeSelection {
   kind: AxisScopeKind;
   id?: number;
+  contigIds?: number[];
   label: string;
   startBp?: number;
   endBp?: number;
@@ -245,7 +250,6 @@ class HiCViewAndLayersManager {
   private readonly sequenceLayers = markRaw(new Map<MatrixSourceName, Layer>());
   private selectionEventKeys: EventsKey[] = [];
   private projectingRegion = false;
-  private regionGestureActive = false;
   private entityHighlightLayer?: VectorLayer<VectorSource>;
   private selectedContigIds = new Set<number>();
   private selectedScaffoldIds = new Set<number>();
@@ -360,13 +364,29 @@ class HiCViewAndLayersManager {
     this.setSelectionPresentationVisible(!this.mapManager.isExporting);
   }
 
+  public zoomToRegion(): void {
+    const extent = this.selectionInteractions.contigSelectExtent.getExtent();
+    const size = this.mapManager.getMap().getSize();
+    if (!extent || !size || !size.every((n) => n > 0)) return;
+    this.view.fit(extent, {
+      size,
+      padding: [size[1] * 0.1, size[0] * 0.1, size[1] * 0.1, size[0] * 0.1],
+    });
+  }
+
+  public isolateSelectedEntities(): void {
+    const contigIds = [...this.currentViewState.selectedContigIds];
+    if (!contigIds.length) return;
+    const scope: AxisScopeSelection = {
+      kind: "selection",
+      label: "Selection",
+      contigIds,
+    };
+    this.setAxisScopes(scope, scope);
+  }
+
   public clearRegionSelection(): void {
-    this.regionGestureActive = false;
-    (
-      this.selectionInteractions.contigSelectExtent as unknown as {
-        handlingDownUpSequence: boolean;
-      }
-    ).handlingDownUpSequence = false;
+    this.selectionInteractions.contigSelectExtent.cancelGesture();
     this.currentViewState.selectionBorders = {};
     this.projectingRegion = true;
     try {
@@ -916,7 +936,7 @@ class HiCViewAndLayersManager {
     readonly contigSelectionInteraction: Select;
     readonly translocationArrowHoverInteraction: Select;
     readonly translocationArrowSelectionInteraction: Select;
-    readonly contigSelectExtent: Extent;
+    readonly contigSelectExtent: ContactMapSelectionInteraction;
     readonly entityDragBox: DragBox;
   };
 
@@ -1107,22 +1127,14 @@ class HiCViewAndLayersManager {
         features: this.selectionCollections.selectedTranslocationArrowsFeatures,
         condition: singleClick,
       }),
-      contigSelectExtent: new Extent({
-        condition: (event) => {
-          if (!this.canSelect()) return false;
-          if (event.type === "pointerup" && this.regionGestureActive) {
-            this.regionGestureActive = false;
-            return true;
-          }
-          if (event.type === "pointerdown" && platformModifierKeyOnly(event))
-            this.regionGestureActive = true;
-          return this.regionGestureActive || platformModifierKeyOnly(event);
+      contigSelectExtent: new ContactMapSelectionInteraction(
+        {
+          boxStyle: selectionAreaStyle(),
+          pointerStyle: selectionPointerStyle(),
         },
-        pixelTolerance: 0,
-        boxStyle: selectionAreaStyle(),
-        pointerStyle: selectionPointerStyle(),
-      }),
-      entityDragBox: new DragBox({
+        () => this.canSelect()
+      ),
+      entityDragBox: new EntityDragBox({
         condition: (event) => shiftKeyOnly(event) && this.canSelect(),
         minArea: 0,
         className: "hict-entity-drag",
@@ -1499,6 +1511,7 @@ class HiCViewAndLayersManager {
     scope: AxisScopeSelection | undefined,
     axis: "row" | "column"
   ): AxisScopeSelection {
+    if (scope?.kind === "selection") return this.resolveAxisScope(scope, axis);
     if (!scope || scope.kind === "all" || scope.id === undefined) {
       return {
         kind: "all",
@@ -1519,6 +1532,26 @@ class HiCViewAndLayersManager {
     scope: AxisScopeSelection,
     axis: "row" | "column"
   ): AxisScopeSelection {
+    if (scope.kind === "selection" && scope.contigIds?.length) {
+      const holder = this.mapManager.contigDimensionHolder;
+      const orders = scope.contigIds
+        .map((id) => holder.contigIdToOrd[id])
+        .filter(Number.isInteger)
+        .sort((a, b) => a - b);
+      if (
+        orders.length &&
+        orders.length === orders[orders.length - 1] - orders[0] + 1
+      )
+        return {
+          ...scope,
+          startBp: holder.prefix_sum_bp[orders[0]],
+          endBp: holder.prefix_sum_bp[orders[orders.length - 1] + 1],
+        };
+      return {
+        kind: "all",
+        label: axis === "row" ? "All Rows" : "All Columns",
+      };
+    }
     if (scope.kind === "all" || scope.id === undefined) {
       return {
         kind: "all",
