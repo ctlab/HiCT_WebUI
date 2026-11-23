@@ -295,6 +295,13 @@ export default class ContigMouseWheelZoom extends MouseWheelZoom {
       Math.max(newResolution, minResolution ?? newResolution),
       maxResolution ?? newResolution
     );
+    if (delta < 0 && Math.abs(constrainedResolution - currentResolution) <= currentResolution * 1e-9) {
+      this.mode_ = undefined;
+      this.totalDelta_ = 0;
+      this.startTime_ = undefined;
+      this.timeoutId_ = undefined;
+      return;
+    }
 
     if (
       this.layersManager?.transitionDisplayGrid?.(

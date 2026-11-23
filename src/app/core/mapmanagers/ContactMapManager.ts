@@ -192,6 +192,24 @@ class ContactMapManager {
 
   public initializeMapControls(): void {
     this.map.addControl(new ZoomSlider());
+    for (const [className, zoomOut] of [
+      [".ol-zoom-in", false],
+      [".ol-zoom-out", true],
+    ] as const) {
+      this.map.getViewport().querySelector(className)?.addEventListener(
+        "click",
+        (event) => {
+          const view = this.map.getView();
+          const current = view.getResolution();
+          const limit = zoomOut ? view.getMaxResolution() : view.getMinResolution();
+          if (current !== undefined && Math.abs(current - limit) <= limit * 1e-9) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        },
+        { capture: true }
+      );
+    }
     // OpenLayers supplies keyboard zoom through the separate + and − buttons.
     const zoomThumb = this.map
       .getViewport()

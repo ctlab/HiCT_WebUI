@@ -496,6 +496,37 @@ let rangeDomainContext = "";
 let rangeMap: ContactMapManager | undefined;
 const onViewportRangeChanged = () => refreshProcessedRange();
 const rangeCache = new Map<string, ExactRange>();
+const completedRanges = new Map<string, ExactRange>();
+let completedRangesMap: ContactMapManager | undefined;
+
+function exactRangeContext(manager: ContactMapManager, bpResolution: number): string {
+  if (completedRangesMap !== manager) {
+    completedRangesMap = manager;
+    completedRanges.clear();
+    rangeCache.clear();
+  }
+  const request = manager.networkManager.requestManager;
+  return JSON.stringify([
+    bpResolution,
+    histogramContext.value,
+    request.normalizationWeightsMode,
+    request.history.summary?.session,
+    request.history.summary?.revision,
+  ]);
+}
+
+function showExactLimits(range: ExactRange, bpResolution: number): void {
+  exactRangeResolution = bpResolution;
+  signalMin.value = range.min;
+  signalMax.value = range.max > range.min ? range.max : range.min + 1;
+  sliderBoundsManual.value = true;
+  sliderLowerLimit.value = signalMin.value;
+  sliderUpperLimit.value = signalMax.value;
+  const displayMode = visualizationOptionsStore.signalDisplayMode;
+  const mode = displayMode === "OBSERVED_OVER_EXPECTED" ? "O/E" : "Expected";
+  const suffix = primaryDerivedSignal.value ? ` (whole-map ${mode})` : "";
+  rangeStatus.value = `Exact limits${suffix}: ${formatSignal(range.min)} – ${formatSignal(range.max)} (${range.count} finite cells)`;
+}
 const LOG_SLIDER_FLOOR_FRACTION = 1e-10;
 
 const fromColorFn: Ref<() => ColorTranslator> = ref(
@@ -994,16 +1025,16 @@ function refreshProcessedRange(): void {
 
 function fetchProcessedRange(): void {
   const manager = props.mapManager;
-  if (rangeScanning.value) return;
+  if (rangeScanning.value || !manager || manager.isDisposed) return;
+  const resolution = manager.viewAndLayersManager.currentViewState.resolutionDesciptor.bpResolution;
+  const completedRange = completedRanges.get(exactRangeContext(manager, resolution));
+  if (completedRange) {
+    showExactLimits(completedRange, resolution);
+    return;
+  }
   if (exactRangeResolution !== undefined) {
-    if (
-      exactRangeResolution ===
-      manager?.viewAndLayersManager.currentViewState.resolutionDesciptor
-        .bpResolution
-    )
-      return;
     exactRangeResolution = undefined;
-    rangeStatus.value = "Resolution changed; scan again for exact limits";
+    sliderBoundsManual.value = false;
   }
   if (primaryDerivedSignal.value) return;
   if (
@@ -1090,6 +1121,7 @@ async function fetchExactRange(): Promise<void> {
           activeVisualizationTargetId.value
         );
     const displayMode = visualizationOptionsStore.signalDisplayMode;
+    const contextKey = exactRangeContext(manager, bpResolution);
     const api = manager.networkManager.requestManager;
     const snapshot = await api.querySignalStatistics({
       bpResolution,
@@ -1100,6 +1132,8 @@ async function fetchExactRange(): Promise<void> {
     if (controller.signal.aborted || probe !== rangeProbe || manager.isDisposed)
       return;
     const key = JSON.stringify([
+      activeVisualizationSource.value,
+      activeVisualizationTargetId.value,
       bpResolution,
       signalMode,
       expression,
@@ -1142,24 +1176,12 @@ async function fetchExactRange(): Promise<void> {
     const oldestKey = rangeCache.keys().next().value;
     if (rangeCache.size > 8 && oldestKey !== undefined)
       rangeCache.delete(oldestKey);
-    exactRangeResolution = bpResolution;
-    signalMin.value = range.min;
-    signalMax.value = range.max > range.min ? range.max : range.min + 1;
-    // Whole-map limits are an explicit user choice and must outlive viewport tile refreshes.
-    sliderBoundsManual.value = true;
-    sliderLowerLimit.value = signalMin.value;
-    sliderUpperLimit.value = signalMax.value;
-    rangeStatus.value = `Exact limits${
-      derived
-        ? " (whole-map " +
-          displayMode
-            .replace("OBSERVED_OVER_EXPECTED", "O/E")
-            .replace("EXPECTED", "Expected") +
-          ")"
-        : ""
-    }: ${formatSignal(range.min)} – ${formatSignal(range.max)} (${
-      range.count
-    } finite cells)`;
+    completedRanges.set(contextKey, range);
+    const oldestContext = completedRanges.keys().next().value;
+    if (completedRanges.size > 8 && oldestContext !== undefined) {
+      completedRanges.delete(oldestContext);
+    }
+    showExactLimits(range, bpResolution);
   } catch (error) {
     if (generation !== rangeGeneration || manager.isDisposed) return;
     exactRangeResolution = undefined;

@@ -38,6 +38,7 @@ import {
   querySignalHistogram,
 } from "../visualization/signalDiagnostics";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import { viewportLevels } from "../visualization/viewportHistogram";
 import {
   VisualizationDrafts,
   applyVisualizationDraft,
@@ -490,6 +491,9 @@ class VisualizationManager {
     string,
     { revision: number; quantile: number }
   >();
+  private readonly manualCoverageLimits = new Set<string>();
+  private readonly coverageFitResolutions = new Map<string, number>();
+  private coverageFitRequest?: AbortController;
 
   // Opening fits contrast once. Navigation may update the slider domain, but
   // must not refit thresholds, publish a pipeline or invalidate decoded tiles.
@@ -497,6 +501,7 @@ class VisualizationManager {
   public constructor(public readonly mapManager: ContactMapManager) {
     this.moveEndListener = this.mapManager.getMap().on("moveend", () => {
       void this.refreshExpectedProfileOnMoveEnd();
+      void this.refitCoverageOnResolutionChange();
     });
   }
 
@@ -504,6 +509,7 @@ class VisualizationManager {
     ++this.visualizationOptionsLoadGeneration;
     this.latestApplications.clear();
     this.normalizationFits.clear();
+    this.coverageFitRequest?.abort();
     for (const { timer } of this.draftTimers.values())
       window.clearTimeout(timer);
     this.draftTimers.clear();
@@ -573,6 +579,10 @@ class VisualizationManager {
     if (this.mapManager.isDisposed || !Object.keys(patch).length) return;
     const context = this.captureVisualizationContext();
     this.drafts.note(context, patch);
+    if ("minSignal" in patch || "maxSignal" in patch) {
+      this.manualCoverageLimits.add(visualizationContextKey(context));
+      this.coverageFitRequest?.abort();
+    }
     if (
       [
         "minSignal",
@@ -1979,6 +1989,57 @@ class VisualizationManager {
         throw error;
       }
     });
+  }
+
+  private async refitCoverageOnResolutionChange(): Promise<void> {
+    const manager = this.mapManager;
+    const request = manager.networkManager.requestManager;
+    if (request.normalizationWeightsMode !== "SQRT_COVERAGE") {
+      this.coverageFitResolutions.clear();
+      this.coverageFitRequest?.abort();
+      return;
+    }
+    const layers = manager.viewAndLayersManager;
+    const context = this.captureVisualizationContext("PRIMARY", null);
+    if (manager.isDisposed || context.mode !== "OBSERVED" || layers.isSequenceScale)
+      return;
+    const key = visualizationContextKey(context);
+    if (this.manualCoverageLimits.has(key)) return;
+    const resolution = layers.getVisibleSourceResolutionDescriptors().primary.bpResolution;
+    if (this.coverageFitResolutions.get(key) === resolution) return;
+    this.coverageFitRequest?.abort();
+    const controller = new AbortController();
+    this.coverageFitRequest = controller;
+    this.coverageFitResolutions.set(key, resolution);
+    const current = () =>
+      !controller.signal.aborted && !manager.isDisposed &&
+      !this.manualCoverageLimits.has(key) &&
+      request.normalizationWeightsMode === "SQRT_COVERAGE" &&
+      layers.getVisibleSourceResolutionDescriptors().primary.bpResolution === resolution;
+    try {
+      const expression = await this.getSourceSignalExpression("PRIMARY");
+      const sample = await querySignalHistogram(manager, diagnosticBounds(manager), {
+        source: "PRIMARY",
+        signalMode: expression ? "PIPELINE_SIGNAL" : "TRADITIONAL_NORMALIZED",
+        expression,
+        signal: controller.signal,
+        domain: "matrix",
+        tileEdge: 64,
+        concurrency: 4,
+      });
+      if (!current()) return;
+      const levels = viewportLevels(sample.values, false);
+      await this.runVisualizationMutation(context, async () => {
+        const options = await this.freshVisualizationOptions(context);
+        if (!current() || !options.applyCoolerWeights || options.signalDisplayMode !== "OBSERVED") return;
+        await this.applyVisualizationSnapshot(context, applyVisualizationDraft(options, {
+          minSignal: levels.lower,
+          maxSignal: levels.upper,
+        }));
+      });
+    } catch {
+      if (this.coverageFitRequest === controller) this.coverageFitResolutions.delete(key);
+    }
   }
 
   private async fitVisualizationContext(

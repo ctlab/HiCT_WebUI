@@ -66,7 +66,7 @@ class CommonEventManager {
     this.mapManager.refreshOverviewMinimap();
   }
 
-  private getSelectedContigBpRange(actionLabel: string): {
+  private getSelectedContigBpRange(): {
     startBP: number;
     endBP: number;
   } | null {
@@ -82,7 +82,7 @@ class CommonEventManager {
         .getArray()
         .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
     if (selectedArray.length === 0) {
-      toast.error(`Select one or more contigs before ${actionLabel}.`);
+      toast.error("Select a contig or scaffold first");
       return null;
     }
 
@@ -105,12 +105,6 @@ class CommonEventManager {
     if (typeof startBP !== "number" || typeof endBP !== "number") {
       toast.error(
         "Selected contig range is no longer available in the current assembly."
-      );
-      console.log(
-        `Not ${actionLabel}: left border bp is`,
-        startBP,
-        " right border bp is ",
-        endBP
       );
       return null;
     }
@@ -331,7 +325,7 @@ class CommonEventManager {
       ),
     ];
     */
-    const range = this.getSelectedContigBpRange("grouping a scaffold");
+    const range = this.getSelectedContigBpRange();
     if (!range) return;
     const { startBP, endBP } = range;
     this.mapManager.networkManager.requestManager
@@ -355,7 +349,7 @@ class CommonEventManager {
   public onRemoveScaffoldClicked(): void {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
-    const range = this.getSelectedContigBpRange("ungrouping a scaffold");
+    const range = this.getSelectedContigBpRange();
     if (!range) return;
     const { startBP, endBP } = range;
     this.mapManager.networkManager.requestManager
@@ -385,7 +379,7 @@ class CommonEventManager {
   public onMoveToDebrisClicked(): void {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
-    const range = this.getSelectedContigBpRange("moving selection to debris");
+    const range = this.getSelectedContigBpRange();
     if (!range) {
       return;
     }
@@ -408,7 +402,7 @@ class CommonEventManager {
   public onReverseSelectionClicked(): void {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
-    const range = this.getSelectedContigBpRange("reversing a selection");
+    const range = this.getSelectedContigBpRange();
     if (!range) {
       return;
     }
@@ -434,9 +428,7 @@ class CommonEventManager {
       showTranslocationStatus(false);
       this.mapManager.deactivateTranslocation();
     } else {
-      const range = this.getSelectedContigBpRange(
-        "entering translocation mode"
-      );
+      const range = this.getSelectedContigBpRange();
       if (!range) {
         return;
       }
