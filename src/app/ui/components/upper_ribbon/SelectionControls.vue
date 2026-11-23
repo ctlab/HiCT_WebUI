@@ -119,7 +119,7 @@ const props = defineProps<{
 const navbarPopperConfig = JSON.stringify({
   modifiers: [
     { name: "applyStyles", enabled: true },
-    { name: "preventOverflow", options: { padding: 8 } },
+    { name: "preventOverflow", options: { padding: 8, altAxis: true } },
   ],
 });
 const coordinateOpen = ref(false);
@@ -185,6 +185,9 @@ function copyPng() {
 .selection-menu {
   min-width: min(25rem, 90vw);
   max-width: 90vw;
+  max-height: min(25rem, calc(100dvh - 8rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .selection-menu .dropdown-item {
   white-space: normal;
