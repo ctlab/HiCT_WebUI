@@ -34,16 +34,15 @@
           <div class="threshold-field-row">
             <input
               class="form-control form-control-sm threshold-number-input"
-              :type="focusedThreshold === 'lower' ? 'number' : 'text'"
+              inputmode="decimal"
               :aria-label="'Lower signal threshold'"
               lang="en"
-              step="any"
               :value="
                 focusedThreshold === 'lower'
-                  ? lowerBound
+                  ? thresholdDraft
                   : formatSignal(lowerBound)
               "
-              @focus="focusedThreshold = 'lower'"
+              @focus="startThresholdEdit('lower', lowerBound)"
               @blur="focusedThreshold = null"
               @input="lowerBound = readThreshold($event)"
               @keydown.enter="applySettings"
@@ -60,16 +59,15 @@
           <div class="threshold-field-row">
             <input
               class="form-control form-control-sm threshold-number-input"
-              :type="focusedThreshold === 'upper' ? 'number' : 'text'"
+              inputmode="decimal"
               aria-label="Upper signal threshold"
               lang="en"
-              step="any"
               :value="
                 focusedThreshold === 'upper'
-                  ? upperBound
+                  ? thresholdDraft
                   : formatSignal(upperBound)
               "
-              @focus="focusedThreshold = 'upper'"
+              @focus="startThresholdEdit('upper', upperBound)"
               @blur="focusedThreshold = null"
               @input="upperBound = readThreshold($event)"
               @keydown.enter="applySettings"
@@ -260,14 +258,13 @@
                 >Minimum<input
                   :value="
                     focusedThreshold === 'slider-min'
-                      ? sliderLowerLimit
+                      ? thresholdDraft
                       : formatSignal(sliderLowerLimit)
                   "
-                  @focus="focusedThreshold = 'slider-min'"
+                  @focus="startThresholdEdit('slider-min', sliderLowerLimit)"
                   @blur="focusedThreshold = null"
                   @input="sliderLowerLimit = readThreshold($event)"
-                  :type="focusedThreshold === 'slider-min' ? 'number' : 'text'"
-                  step="any"
+                  inputmode="decimal"
                   aria-label="Slider minimum signal"
                   @change="onSliderLimitChanged"
               /></label>
@@ -275,14 +272,13 @@
                 >Maximum<input
                   :value="
                     focusedThreshold === 'slider-max'
-                      ? sliderUpperLimit
+                      ? thresholdDraft
                       : formatSignal(sliderUpperLimit)
                   "
-                  @focus="focusedThreshold = 'slider-max'"
+                  @focus="startThresholdEdit('slider-max', sliderUpperLimit)"
                   @blur="focusedThreshold = null"
                   @input="sliderUpperLimit = readThreshold($event)"
-                  :type="focusedThreshold === 'slider-max' ? 'number' : 'text'"
-                  step="any"
+                  inputmode="decimal"
                   aria-label="Slider maximum signal"
                   @change="onSliderLimitChanged"
               /></label>
@@ -479,11 +475,17 @@ const fromColor: Ref<ColorTranslator> = ref(
 const toColor = ref(
   new ColorTranslator("rgba(0,96,0,1.0)", { legacyCSS: true })
 ) as Ref<ColorTranslator>;
+const focusedThreshold = ref<string | null>(null);
+const thresholdDraft = ref("");
+function startThresholdEdit(field: string, value: number): void {
+  thresholdDraft.value = Number.isFinite(value) ? String(value) : "";
+  focusedThreshold.value = field;
+}
 function readThreshold(event: Event): number {
-  const value = (event.target as HTMLInputElement).value.trim();
+  thresholdDraft.value = (event.target as HTMLInputElement).value;
+  const value = thresholdDraft.value.trim();
   return value ? Number(value) : NaN;
 }
-const focusedThreshold = ref<string | null>(null);
 const lowerBound: Ref<number> = ref(signalMin.value);
 const upperBound: Ref<number> = ref(signalMax.value);
 const rangeValidationError = computed(() => {

@@ -20,7 +20,11 @@
  -->
 
 <template>
-  <main class="workspace-component" aria-label="Contact map workspace">
+  <main
+    class="workspace-component"
+    :class="{ 'workspace-component--empty': !props.mapManager }"
+    aria-label="Contact map workspace"
+  >
     <ToolBar :mapManager="props.mapManager"></ToolBar>
     <InteractiveWorkspace
       :map-manager="props.mapManager"
@@ -48,6 +52,14 @@ const props = defineProps<{
   /* background-color: orange; */
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.workspace-component--empty :deep(.interactive-workspace) {
+  visibility: hidden;
+}
+
+.workspace-component--empty :deep(.toolbar-outer .btn:disabled) {
+  opacity: 0.42;
 }
 
 @media (max-width: 700px) {

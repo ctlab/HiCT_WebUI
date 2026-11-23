@@ -20,7 +20,10 @@
  -->
 
 <template>
-  <div class="header-ribbon">
+  <div
+    class="header-ribbon"
+    :class="{ 'header-ribbon--empty': !props.mapManager }"
+  >
     <div id="left-header-block" class="header-block">
       <div class="selection-tools">
         <SelectionControls :map-manager="props.mapManager" />
@@ -328,14 +331,14 @@ interface ScopeOption extends AxisScopeSelection {
 }
 const selectedRowScope = ref<AxisScopeSelection>({
   kind: "all",
-  label: "All Rows",
+  label: "All rows",
 });
 const selectedColumnScope = ref<AxisScopeSelection>({
   kind: "all",
-  label: "All Columns",
+  label: "All columns",
 });
-const rowScopeQuery = ref("All Rows");
-const columnScopeQuery = ref("All Columns");
+const rowScopeQuery = ref("All rows");
+const columnScopeQuery = ref("All columns");
 const rowScopeFilterQuery = ref("");
 const columnScopeFilterQuery = ref("");
 const rowScopeOpen = ref(false);
@@ -368,7 +371,7 @@ const { mapBackgroundColor } = storeToRefs(stylesStore);
 const { signalDisplayMode } = storeToRefs(visualizationOptionsStore);
 
 const allScopeLabel = (axis: ScopeAxis) =>
-  axis === "row" ? "All Rows" : "All Columns";
+  axis === "row" ? "All rows" : "All columns";
 
 const allScopeOption = (axis: ScopeAxis): ScopeOption => ({
   kind: "all",
@@ -572,12 +575,12 @@ function deferScopePickerClose(axis: ScopeAxis): void {
 
 function restoreScopeQuery(axis: ScopeAxis): void {
   if (axis === "row") {
-    rowScopeQuery.value = selectedRowScope.value.label || "All Rows";
+    rowScopeQuery.value = selectedRowScope.value.label || "All rows";
     rowScopeFilterQuery.value = "";
     rowScopeOpen.value = false;
     rowScopeIndex.value = 0;
   } else {
-    columnScopeQuery.value = selectedColumnScope.value.label || "All Columns";
+    columnScopeQuery.value = selectedColumnScope.value.label || "All columns";
     columnScopeFilterQuery.value = "";
     columnScopeOpen.value = false;
     columnScopeIndex.value = 0;
@@ -626,18 +629,18 @@ function acceptHighlightedScope(axis: ScopeAxis): void {
 function syncScopeQueriesFromManager(): void {
   const scopes = props.mapManager?.getLayersManager().getAxisScopes();
   if (!scopes) {
-    selectedRowScope.value = { kind: "all", label: "All Rows" };
-    selectedColumnScope.value = { kind: "all", label: "All Columns" };
+    selectedRowScope.value = { kind: "all", label: "All rows" };
+    selectedColumnScope.value = { kind: "all", label: "All columns" };
   } else {
     selectedRowScope.value = scopes.row;
     selectedColumnScope.value = scopes.column;
   }
   if (!rowScopeOpen.value) {
-    rowScopeQuery.value = selectedRowScope.value.label || "All Rows";
+    rowScopeQuery.value = selectedRowScope.value.label || "All rows";
     rowScopeFilterQuery.value = "";
   }
   if (!columnScopeOpen.value) {
-    columnScopeQuery.value = selectedColumnScope.value.label || "All Columns";
+    columnScopeQuery.value = selectedColumnScope.value.label || "All columns";
     columnScopeFilterQuery.value = "";
   }
 }
@@ -1201,8 +1204,15 @@ async function onSignalDisplayModeChanged(event: Event) {
 
 .scope-picker {
   position: relative;
-  width: 180px;
-  flex: 0 0 180px;
+  width: 120px;
+  flex: 0 0 120px;
+}
+
+.header-ribbon--empty :deep(.btn:disabled),
+.header-ribbon--empty :deep(.form-select:disabled),
+.header-ribbon--empty :deep(.form-control:disabled),
+.header-ribbon--empty .selection-tools label {
+  opacity: 0.55;
 }
 
 .scope-picker .form-control {

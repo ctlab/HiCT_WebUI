@@ -45,8 +45,8 @@
       v-if="!props.mapManager && !sidebarCollapsed"
       class="sidebar-empty-hint"
     >
-      Settings for borders, colors, presets, contigs and the edit journal appear
-      here once a map is open.
+      Colors, borders, contigs and the edit history appear here once a map is
+      open.
     </div>
     <div id="upper-block" v-show="!sidebarCollapsed">
       <button
@@ -409,8 +409,12 @@ function showEditHistory(): void {
   sidebarCollapsed.value = false;
   activeSidebarPanel.value = "history";
 }
-onMounted(() => window.addEventListener("hict:show-edit-history", showEditHistory));
-onUnmounted(() => window.removeEventListener("hict:show-edit-history", showEditHistory));
+onMounted(() =>
+  window.addEventListener("hict:show-edit-history", showEditHistory)
+);
+onUnmounted(() =>
+  window.removeEventListener("hict:show-edit-history", showEditHistory)
+);
 onMounted(() => window.addEventListener("hict:show-map-layers", showMapLayers));
 onUnmounted(() =>
   window.removeEventListener("hict:show-map-layers", showMapLayers)

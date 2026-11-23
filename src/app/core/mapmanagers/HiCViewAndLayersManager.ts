@@ -928,8 +928,8 @@ class HiCViewAndLayersManager {
   public axisScopeRevision = 0;
   private fullGlobalExtent: [number, number, number, number] = [0, 0, 0, 0];
   private activeAxisScopes: MapAxisScopes = {
-    row: { kind: "all", label: "All Rows" },
-    column: { kind: "all", label: "All Columns" },
+    row: { kind: "all", label: "All rows" },
+    column: { kind: "all", label: "All columns" },
   };
   private activeAxisScopeExtent?: [number, number, number, number];
 
@@ -1548,7 +1548,7 @@ class HiCViewAndLayersManager {
     if (!scope || scope.kind === "all" || scope.id === undefined) {
       return {
         kind: "all",
-        label: axis === "row" ? "All Rows" : "All Columns",
+        label: axis === "row" ? "All rows" : "All columns",
       };
     }
     const id = Number(scope.id);
@@ -1594,13 +1594,13 @@ class HiCViewAndLayersManager {
         };
       return {
         kind: "all",
-        label: axis === "row" ? "All Rows" : "All Columns",
+        label: axis === "row" ? "All rows" : "All columns",
       };
     }
     if (scope.kind === "all" || scope.id === undefined) {
       return {
         kind: "all",
-        label: axis === "row" ? "All Rows" : "All Columns",
+        label: axis === "row" ? "All rows" : "All columns",
       };
     }
     if (scope.kind === "contig") {
@@ -1613,7 +1613,7 @@ class HiCViewAndLayersManager {
       if (!descriptor) {
         return {
           kind: "all",
-          label: axis === "row" ? "All Rows" : "All Columns",
+          label: axis === "row" ? "All rows" : "All columns",
         };
       }
       const startBp =
@@ -1634,7 +1634,7 @@ class HiCViewAndLayersManager {
     if (!scaffold || !borders) {
       return {
         kind: "all",
-        label: axis === "row" ? "All Rows" : "All Columns",
+        label: axis === "row" ? "All rows" : "All columns",
       };
     }
     return {

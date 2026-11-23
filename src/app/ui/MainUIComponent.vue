@@ -317,18 +317,19 @@
           class="btn btn-outline-secondary"
           @click="examplesOpen = true"
         >
-          Examples…
+          <i class="bi bi-stars me-1" aria-hidden="true"></i>Examples…
         </button>
         <button
           type="button"
           class="btn btn-outline-secondary"
           @click="upperFrame?.openSession()"
         >
-          Open session…
+          <i class="bi bi-clock-history me-1" aria-hidden="true"></i>Open
+          session…
         </button>
       </div>
-      <div class="d-flex flex-wrap gap-2 align-items-center small mt-3">
-        <span>Also</span>
+      <div class="empty-workspace-links">
+        <span>Also:</span>
         <button
           type="button"
           class="btn btn-link btn-sm p-0"
@@ -2209,14 +2210,14 @@ function onFileSelected(newFilename: string) {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -40%);
+  transform: translate(-50%, -50%);
   z-index: 10;
-  width: min(460px, calc(100vw - 32px));
-  padding: 24px 28px;
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
+  width: min(520px, calc(100vw - 32px));
+  padding: 28px 32px;
+  border: 1px solid var(--hict-border, #dfe3ea);
+  border-radius: 14px;
   background: #ffffff;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  box-shadow: var(--hict-surface-shadow);
   color: #1f2937;
   text-align: center;
 }
@@ -2228,7 +2229,7 @@ function onFileSelected(newFilename: string) {
 }
 
 .empty-workspace-prompt p {
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
   color: #475569;
   font-size: 0.9rem;
 }
@@ -2237,8 +2238,38 @@ function onFileSelected(newFilename: string) {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
-  margin-bottom: 0.75rem;
+  gap: 10px;
+  margin-bottom: 0.875rem;
+}
+
+.empty-workspace-actions .btn {
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  border-radius: 8px;
+}
+
+.empty-workspace-actions .btn-outline-secondary {
+  color: #344054;
+  border-color: #d0d5dd;
+}
+
+.empty-workspace-links {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: #667085;
+  font-size: 0.8125rem;
+}
+
+.empty-workspace-links .btn-link {
+  font-size: inherit;
+  text-decoration: none;
+}
+
+.empty-workspace-links .btn-link:hover {
+  text-decoration: underline;
 }
 
 .main-ui-component {
