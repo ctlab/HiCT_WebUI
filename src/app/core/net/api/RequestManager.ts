@@ -113,6 +113,7 @@ import {
   GetSessionSnapshotRequest,
   RestoreSessionRequest,
   AttachSessionRequest,
+  SessionAvailabilityRequest,
   CloseFileRequest,
   OpenProgressRequest,
   OpenSecondarySourceRequest,
@@ -1078,6 +1079,11 @@ class RequestManager {
     this.workspaceVersion = undefined;
     this.hasLinkedFasta = false;
     this.bumpSequenceRevision();
+  }
+
+  public async canJoinSession(): Promise<boolean> {
+    const reply = await this.sendRequest(new SessionAvailabilityRequest(), { method: "GET" });
+    return reply.data?.available === true;
   }
 
   public async attachSession(): Promise<AttachedSession> {

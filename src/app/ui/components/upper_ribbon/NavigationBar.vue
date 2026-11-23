@@ -20,6 +20,11 @@
  -->
 
 <template>
+  <RegionSelectionDialog
+    v-if="regionByCoordinates && props.mapManager"
+    :map-manager="props.mapManager"
+    @dismissed="regionByCoordinates = false"
+  />
   <nav class="navbar-bar navbar navbar-expand">
     <div class="container-fluid">
       <!-- Logo -->
@@ -139,12 +144,34 @@
                   >Export matrix</a
                 >
               </li>
-              <li><hr class="dropdown-divider" /></li>
-              <li>
+              <li v-if="canQuit"><hr class="dropdown-divider" /></li>
+              <li v-if="canQuit">
                 <a class="dropdown-item" href="#" @click.prevent="onQuitClicked"
-                  >Quit</a
+                  >Quit HiCT</a
                 >
               </li>
+            </ul>
+          </li>
+          <li class="nav-item dropdown">
+            <a class="nav-link active dropdown-toggle" data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig" href="#">Edit</a>
+            <ul class="dropdown-menu">
+              <li><button class="dropdown-item" type="button" :disabled="!historyCan('undo')"
+                :title="props.mapManager ? 'Undo (Ctrl+Z)' : 'Open a map to edit'"
+                @click="editHistory('undo')">Undo</button></li>
+              <li><button class="dropdown-item" type="button" :disabled="!historyCan('redo')"
+                :title="props.mapManager ? 'Redo (Ctrl+Shift+Z)' : 'Open a map to edit'"
+                @click="editHistory('redo')">Redo</button></li>
+              <li><hr class="dropdown-divider" /></li>
+              <li><button class="dropdown-item" type="button" :disabled="!props.mapManager"
+                title="Open a map to select a region"
+                @click="regionByCoordinates = true">Select region by coordinates…</button></li>
+              <li><button class="dropdown-item" type="button" :disabled="!props.mapManager"
+                title="Open a map to clear a selection"
+                @click="props.mapManager?.viewAndLayersManager.clearSelections()">Clear selection</button></li>
+              <li><button class="dropdown-item" type="button" :disabled="!props.mapManager"
+                title="Open a map to view edit history"
+                @click="showEditHistory">Edit history…</button></li>
             </ul>
           </li>
           <!-- Assembly -->
@@ -653,18 +680,13 @@
                 : 'btn-outline-warning'
             "
             :title="
-              linkedFastaFilename || 'No FASTA linked. Click to link one.'
+              linkedFastaFilename || 'Link the FASTA that matches this map'
             "
-            :aria-label="linkedFastaFilename ? 'Relink FASTA' : 'Link FASTA'"
+            :aria-label="linkedFastaFilename ? 'Relink FASTA' : 'Link FASTA…'"
             @click="onOpenFASTAFile"
           >
-            <i class="bi bi-link-45deg" aria-hidden="true"></i>
-            FASTA:
-            {{
-              linkedFastaFilename
-                ? shortFileLabel(linkedFastaFilename)
-                : "not linked"
-            }}
+            <i class="bi" :class="linkedFastaFilename ? 'bi-check2' : 'bi-link-45deg'" aria-hidden="true"></i>
+            {{ linkedFastaFilename ? `FASTA: ${linkedFastaFilename.split(/[\\/]/).pop()}` : "Link FASTA…" }}
           </button>
           <button
             v-if="props.mapManager"
@@ -1314,6 +1336,8 @@
 </template>
 
 <script setup lang="ts">
+import RegionSelectionDialog from "../common/RegionSelectionDialog.vue";
+import { offerFastaLink } from "@/app/ui/fastaExportPrerequisite";
 import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
 
 import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
@@ -1754,6 +1778,33 @@ type TauriBridge = {
   ) => Promise<unknown>;
 };
 
+const regionByCoordinates = ref(false);
+const canQuit = computed(() => {
+  const desktop = (window as unknown as { hictDesktop?: HictDesktopBridge }).hictDesktop;
+  const tauri = (window as unknown as { __TAURI__?: TauriBridge }).__TAURI__;
+  return !!(desktop?.quit || tauri?.core?.invoke || tauri?.invoke);
+});
+function historyCan(action: "undo" | "redo"): boolean {
+  const api = props.mapManager?.networkManager.requestManager;
+  return !!api && !api.history.busy && !api.sequenceViewReadOnly &&
+    !!(action === "undo" ? api.history.summary?.canUndo : api.history.summary?.canRedo);
+}
+function editHistory(action: "undo" | "redo"): void {
+  if (!historyCan(action)) return;
+  void props.networkManager.requestManager.restoreAssemblyHistory(action)
+    .catch((error) => reportFailure(action === "undo" ? "Undo" : "Redo", error));
+}
+function showEditHistory(): void {
+  window.dispatchEvent(new Event("hict:show-edit-history"));
+}
+let pendingFastaExport: { manager: ContactMapManager; resume: () => void } | undefined;
+function linkFastaForExport(event: Event): void {
+  const detail = (event as CustomEvent<typeof pendingFastaExport>).detail;
+  if (!detail || detail.manager !== props.mapManager) return;
+  pendingFastaExport = detail;
+  onOpenFASTAFile();
+}
+
 function onOpenFile() {
   openingFile.value = true;
 }
@@ -2089,6 +2140,7 @@ function onOpenFASTAFile() {
 }
 
 function onFASTAFileDismissed() {
+  pendingFastaExport = undefined;
   openingFASTAFile.value = false;
   toolAfterFastaLink.value = null;
   pendingFastaFilename.value = null;
@@ -2251,6 +2303,7 @@ function openAGP(filename: string) {
         return;
       }
       errorMessage.value = e;
+      reportFailure("Load AGP", e);
     })
     .finally(() => {
       agpLoading.value = false;
@@ -2326,6 +2379,7 @@ function isFastaFilename(name: string): boolean {
 }
 
 function cancelFastaLinkWarning(): void {
+  pendingFastaExport = undefined;
   pendingFastaFilename.value = null;
   fastaLinkReport.value = null;
   toolAfterFastaLink.value = null;
@@ -2369,6 +2423,11 @@ function linkFASTA(filename: string, allowMismatch = false) {
       );
       toast.message("Linked FASTA file " + filename);
       reopenToolAfterFastaLink();
+      const pendingExport = pendingFastaExport;
+      pendingFastaExport = undefined;
+      if (pendingExport && pendingExport.manager === props.mapManager && !pendingExport.manager.isDisposed) {
+        pendingExport.resume();
+      }
     })
     .catch((e) => {
       reportFailure("Link FASTA", e);
@@ -2391,11 +2450,13 @@ function openTrackManagerFromEvent(): void {
 
 onMounted(() => {
   window.addEventListener("hict:open-track-manager", openTrackManagerFromEvent);
+  window.addEventListener("hict:link-fasta-for-export", linkFastaForExport);
   void refreshNativeProcessingStatus();
   void refreshConversionToolchainStatus();
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("hict:link-fasta-for-export", linkFastaForExport);
   window.removeEventListener(
     "hict:open-track-manager",
     openTrackManagerFromEvent
@@ -2414,6 +2475,10 @@ const assemblyExportBusy = ref(false);
 async function exportAssemblyFile(kind: "fasta" | "agp") {
   if (!props.mapManager || assemblyExportBusy.value) return;
   const api = props.networkManager.requestManager;
+  if (kind === "fasta" && !api.hasLinkedFasta) {
+    await offerFastaLink(props.mapManager, () => void exportAssemblyFile("fasta"));
+    return;
+  }
   const version = api.history.applied ? { ...api.history.applied } : null;
   assemblyExportBusy.value = true;
   try {
@@ -2461,6 +2526,8 @@ function onSelectionFASTARequest() {
     padding: 0.25rem 0.5rem;
   }
 }
+
+.file-chip { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .navbar-bar {
   /* Navbar */

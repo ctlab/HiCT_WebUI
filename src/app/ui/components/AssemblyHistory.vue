@@ -94,10 +94,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
 import type { HistoryPage } from "@/app/core/net/api/RequestManager";
-import { hasAnyOpenEscDialog } from "@/app/ui/escapeDialogRegistry";
 
 const props = defineProps<{
   networkManager: NetworkManager;
@@ -156,49 +155,7 @@ watch(
     }
   }
 );
-function keyboard(event: KeyboardEvent) {
-  if (
-    event.defaultPrevented ||
-    event.repeat ||
-    event.altKey ||
-    !(event.ctrlKey || event.metaKey)
-  )
-    return;
-  const element = event.target instanceof Element ? event.target : null;
-  if (
-    element?.closest(
-      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]'
-    )
-  )
-    return;
-  if (
-    hasAnyOpenEscDialog() ||
-    document.querySelector('.modal.show, [role="dialog"][aria-modal="true"]')
-  )
-    return;
-  const key = event.key.toLowerCase();
-  const action =
-    key === "z"
-      ? event.shiftKey
-        ? "redo"
-        : "undo"
-      : key === "y" && !event.shiftKey
-      ? "redo"
-      : null;
-  if (!action || !summary.value) return;
-  event.preventDefault();
-  if (
-    busy.value ||
-    !(action === "undo" ? summary.value.canUndo : summary.value.canRedo)
-  )
-    return;
-  void restore(action);
-}
-onMounted(() => window.addEventListener("keydown", keyboard));
-onUnmounted(() => {
-  requestId++;
-  window.removeEventListener("keydown", keyboard);
-});
+onUnmounted(() => { requestId++; });
 </script>
 
 <style scoped>

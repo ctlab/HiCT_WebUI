@@ -405,6 +405,12 @@ async function showMapLayers(): Promise<void> {
   await nextTick();
   layersToggle.value?.focus();
 }
+function showEditHistory(): void {
+  sidebarCollapsed.value = false;
+  activeSidebarPanel.value = "history";
+}
+onMounted(() => window.addEventListener("hict:show-edit-history", showEditHistory));
+onUnmounted(() => window.removeEventListener("hict:show-edit-history", showEditHistory));
 onMounted(() => window.addEventListener("hict:show-map-layers", showMapLayers));
 onUnmounted(() =>
   window.removeEventListener("hict:show-map-layers", showMapLayers)

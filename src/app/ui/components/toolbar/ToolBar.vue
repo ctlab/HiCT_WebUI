@@ -22,6 +22,7 @@
 <template>
   <div class="toolbar-outer">
     <div class="toolbar-upper">
+      <HistoryButtons :map-manager="props.mapManager" />
       <FirstBlock :map-manager="props.mapManager"></FirstBlock>
       <RearrangementButtons
         :map-manager="props.mapManager"
@@ -36,6 +37,7 @@
 </template>
 
 <script setup lang="ts">
+import HistoryButtons from "./upper_blocks/HistoryButtons.vue";
 import FirstBlock from "@/app/ui/components/toolbar/upper_blocks/FirstBlock.vue";
 import ThirdBlock from "@/app/ui/components/toolbar/upper_blocks/ThirdBlock.vue";
 import BottomButtons from "@/app/ui/components/toolbar/bottom_blocks/BottomButtons.vue";
@@ -65,7 +67,6 @@ const props = defineProps<{
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
-  /* height: 100%; TODO: сделать иначе  */
 
   background: var(--hict-ui-bg, #f8f9fa);
   color: var(--hict-ui-fg, #1f2937);

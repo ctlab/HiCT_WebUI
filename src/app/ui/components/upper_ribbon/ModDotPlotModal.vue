@@ -478,12 +478,10 @@
               }}</span
             >
           </div>
-          <pre
-            v-if="job?.logs.length"
-            class="analysis-logs"
-            aria-label="ModDotPlot log"
-            >{{ job.logs.join("\n") }}</pre
-          >
+          <details v-if="job?.logs.length" class="analysis-log-details">
+            <summary>Show log</summary>
+            <pre class="analysis-logs" aria-label="ModDotPlot log">{{ job.logs.slice(-40).join("\n") }}</pre>
+          </details>
         </div>
         <footer class="modal-footer">
           <button
@@ -540,6 +538,7 @@
 <script setup lang="ts">
 import { useModalFocus } from "@/app/ui/modalFocus";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
+import { showFailure } from "@/app/ui/reportFailure";
 import { watch, ref, computed, onBeforeUnmount } from "vue";
 import { useSequenceReadiness } from "./useSequenceReadiness";
 import SequenceGapSettings from "./SequenceGapSettings.vue";
@@ -900,8 +899,10 @@ async function poll() {
       return;
     }
     if (current.status === "failed") {
-      error.value = current.error ?? `${title} failed`;
-      notifications.add("error", error.value);
+      const title = alignment ? "The dotplot could not finish." : "ModDotPlot could not finish.";
+      const description = "The bundled tool reported an error.";
+      error.value = `${title} ${description}`;
+      showFailure(title, description, current.logs.slice(-40).join("\n"));
       return;
     }
     if (current.status === "cancelled") {

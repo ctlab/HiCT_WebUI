@@ -25,7 +25,8 @@
       <div class="selection-tools">
         <SelectionControls :map-manager="props.mapManager" />
         <label
-          ><input v-model="uiSettingsStore.squareSelection" type="checkbox" />
+          ><input v-model="uiSettingsStore.squareSelection" type="checkbox" :disabled="!props.mapManager"
+            :title="props.mapManager ? 'Constrain new selections to a square' : 'Open a map to select'" />
           Square selection</label
         >
       </div>
@@ -187,10 +188,13 @@
       </div>
       <div class="mb-3">
         <select
-          v-model="signalDisplayMode"
+          :value="signalDisplayMode"
           class="form-select form-select-sm"
-          title="Expected and O/E use the standard renderer for the primary map, within scaffolds (or contigs when unscaffolded). The secondary overlay and observed rendering graph are preserved. After exact cuts, repeated bin pairs share one sample’s weight across their positions in the fitting window."
-          :disabled="signalDisplayModePending"
+          aria-label="Signal display"
+          :title="props.mapManager
+            ? 'Expected shows the average contact level at each distance. Observed/Expected highlights contacts above or below that average.'
+            : 'Open a map to change the signal display'"
+          :disabled="!props.mapManager || signalDisplayModePending"
           @change="onSignalDisplayModeChanged"
         >
           <option value="OBSERVED">Show Observed</option>
@@ -212,6 +216,7 @@
           id="toggle-osd-button"
           class="btn btn-sm btn-outline-primary"
           type="button"
+          :disabled="!props.mapManager"
           @click="osdOverlayVisible = !osdOverlayVisible"
           :aria-pressed="osdOverlayVisible"
           aria-label="Map Info"
@@ -228,8 +233,9 @@
           id="ruler-mode-button"
           class="btn btn-sm btn-outline-primary"
           type="button"
+          :disabled="!props.mapManager"
           @click="cycleRulerMode"
-          :title="`Cycle ruler coordinate mode. Current: ${rulerModeLabel}`"
+          :title="props.mapManager ? `Cycle ruler coordinate mode. Current: ${rulerModeLabel}` : 'Open a map to change the ruler'"
         >
           <i class="bi bi-rulers me-1" aria-hidden="true"></i>
           <span class="ruler-button-label">{{ rulerModeLabel }}</span>
@@ -359,27 +365,6 @@ const allScopeOption = (axis: ScopeAxis): ScopeOption => ({
   searchText: allScopeLabel(axis).toLowerCase(),
 });
 
-watch(
-  () => uiSettingsStore.squareSelection,
-  (square) => {
-    const layers = props.mapManager?.getLayersManager();
-    const region = layers?.getRegionBounds();
-    if (square && layers && region) {
-      const start = Math.floor((region.rowStart + region.columnStart) / 2);
-      const end = Math.max(
-        start + 1,
-        Math.ceil((region.rowEnd + region.columnEnd) / 2)
-      );
-      layers.setRegionBounds({
-        rowStart: start,
-        columnStart: start,
-        rowEnd: end,
-        columnEnd: end,
-      });
-    }
-    props.mapManager?.getMap().render();
-  }
-);
 function scopeToSelection(option: AxisScopeSelection): AxisScopeSelection {
   if (option.kind === "selection") return { ...option };
   if (option.kind === "all" || option.id === undefined) {
@@ -937,14 +922,19 @@ onBeforeUnmount(() => {
 });
 
 const signalDisplayModePending = ref(false);
-async function onSignalDisplayModeChanged() {
+async function onSignalDisplayModeChanged(event: Event) {
+  const select = event.currentTarget as HTMLSelectElement;
+  const requested = select.value as typeof signalDisplayMode.value;
+  const previous = signalDisplayMode.value;
   if (!props.mapManager || signalDisplayModePending.value) return;
   signalDisplayModePending.value = true;
   try {
     await props.mapManager.visualizationManager.setSignalDisplayMode(
-      signalDisplayMode.value
+      requested
     );
   } catch (error) {
+    signalDisplayMode.value = previous;
+    select.value = previous;
     toast.error("Failed to update signal display mode");
     console.debug(error);
   } finally {

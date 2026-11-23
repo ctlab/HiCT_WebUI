@@ -125,7 +125,7 @@
             :disabled="item.structural === false"
             @click="execute(item, 'debris')"
           >
-            Move to debris and hide
+            Move to unplaced (debris)…
           </button>
         </template>
       </section>
@@ -155,49 +155,6 @@
           @click="requestExport(format)"
         >
           {{ format }}
-        </button>
-      </section>
-    </div>
-    <div v-if="warning" class="rename-backdrop">
-      <section
-        ref="warningElement"
-        class="rename-dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="export-warning-title"
-      >
-        <h5 id="export-warning-title">Large selection export</h5>
-        <p>
-          This rectangle spans {{ warning.estimate.columns.toLocaleString() }} ×
-          {{ warning.estimate.rows.toLocaleString() }} bp. At
-          {{ warning.estimate.bin.toLocaleString() }} bp/bin it covers
-          approximately {{ warning.estimate.nx.toLocaleString() }} ×
-          {{ warning.estimate.ny.toLocaleString() }} bins.
-        </p>
-        <p>
-          The fitted figure is about
-          {{ warning.estimate.width.toLocaleString() }} ×
-          {{ warning.estimate.height.toLocaleString() }} px including rulers and
-          tracks. Rendering may take a long time.
-        </p>
-        <button
-          type="button"
-          class="btn btn-secondary me-2"
-          @click="warning = null"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary"
-          @click="performExport(warning.action)"
-        >
-          Continue
-          {{
-            warning.action === "clipboard"
-              ? "copy as PNG"
-              : warning.action + " export"
-          }}
         </button>
       </section>
     </div>
@@ -274,6 +231,8 @@
   />
 </template>
 <script setup lang="ts">
+import { reportFailure } from "@/app/ui/reportFailure";
+import { askForConfirmation } from "@/app/ui/confirmAction";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import {
   computed,
@@ -387,20 +346,10 @@ async function closeFormats() {
   await nextTick();
   menu.value?.querySelector<HTMLButtonElement>("[data-formats]")?.focus();
 }
-const warningElement = ref<HTMLElement | null>(null);
-const warning = ref<{
-  action: ExportAction;
-  estimate: ReturnType<ContactMapManager["selectionExportEstimate"]>;
-} | null>(null);
-useModalFocus(warningElement, () => !!warning.value);
 useEscDismissableDialog({
   priority: 1060,
-  isOpen: () => !!warning.value || !!renaming.value || !!items.value.length,
+  isOpen: () => !!renaming.value || !!items.value.length,
   requestClose: () => {
-    if (warning.value) {
-      warning.value = null;
-      return;
-    }
     if (formatsOpen.value && items.value.length) {
       void closeFormats();
       return;
@@ -591,16 +540,17 @@ async function saveName() {
     props.mapManager.eventManager.applyAssemblyInfo(assembly);
     renaming.value = null;
     await props.mapManager.reloadVisuals();
-  } catch {
-    /* API failure is retained in the notification center. */
+  } catch (error) {
+    reportFailure("Edit assembly", error);
   }
 }
 async function execute(item: Item, action: "reverse" | "ungroup" | "debris") {
   items.value = [];
   if (busy.value) return;
+  const manager = props.mapManager;
+  if (action === "debris" && !(await manager.eventManager.confirmDebris(item))) return;
   try {
-    const manager = props.mapManager,
-      api = manager.networkManager.requestManager;
+    const api = manager.networkManager.requestManager;
     const assembly = await (action === "reverse"
       ? api.reverseSelectionRange(new ReverseSelectionRangeRequest(item))
       : action === "ungroup"
@@ -611,8 +561,8 @@ async function execute(item: Item, action: "reverse" | "ungroup" | "debris") {
     manager.eventManager.applyAssemblyInfo(assembly);
     manager.eventManager.resetSelection();
     await manager.reloadVisuals();
-  } catch {
-    /* API failure is retained in the notification center. */
+  } catch (error) {
+    reportFailure("Edit assembly", error);
   }
 }
 function move(item: Item) {
@@ -641,18 +591,38 @@ function copyCoordinates(frame: CoordinateFrame) {
   items.value = [];
   copySelectionCoordinates(props.mapManager, frame);
 }
-function requestExport(action: ExportAction) {
+async function requestExport(format: ExportAction) {
   items.value = [];
+  const manager = props.mapManager;
+  const size = (columns: number, rows: number) =>
+    `${columns.toLocaleString()} × ${rows.toLocaleString()}`;
   try {
-    const estimate = props.mapManager.selectionExportEstimate();
-    if (estimate.large) warning.value = { action, estimate };
-    else void performExport(action);
+    const estimate = manager.selectionExportEstimate();
+    if (estimate.large) {
+      const region = manager.viewAndLayersManager.getRegionBounds();
+      const decision = await askForConfirmation({
+        title: "Large selection export",
+        body: "Rendering this region may take a long time. Cancel to select a smaller region.",
+        details: [
+          `Region: ${size(estimate.columns, estimate.rows)} bp`,
+          `At ${estimate.bin.toLocaleString()} bp/bin: about ${size(estimate.nx, estimate.ny)} bins`,
+          `Figure with rulers and tracks: about ${size(estimate.width, estimate.height)} px`,
+        ],
+        tone: "warn",
+        icon: "bi-exclamation-triangle",
+        confirmLabel: format === "clipboard" ? "Copy as PNG" : `Export ${format}`,
+      });
+      if (decision !== "confirm") return;
+      if (JSON.stringify(region) !== JSON.stringify(manager.viewAndLayersManager.getRegionBounds())) {
+        throw new Error("The region changed. Open the export menu to review the new size.");
+      }
+    }
+    await performExport(format);
   } catch (failure) {
-    useNotificationCenterStore().add("error", String(failure));
+    reportFailure("Export selection", failure);
   }
 }
 async function performExport(format: ExportAction) {
-  warning.value = null;
   const notifications = useNotificationCenterStore();
   try {
     const manager = props.mapManager;
@@ -671,7 +641,7 @@ async function performExport(format: ExportAction) {
     if (result.status === "download-started")
       notifications.add("success", `Download started for ${result.filename}`);
   } catch (failure) {
-    notifications.add("error", `Selection export failed: ${String(failure)}`);
+    reportFailure("Export selection", failure);
   }
 }
 watch(

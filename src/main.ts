@@ -20,6 +20,7 @@
  */
 
 import App from "./App.vue";
+import { showFailure } from "@/app/ui/reportFailure";
 import "normalize.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap";
@@ -50,40 +51,39 @@ app.use(pinia);
 app.use(PrimeVue);
 app.mount("#app");
 
-function applyDefaultTooltips(root: ParentNode = document) {
-  const candidates = root.querySelectorAll(
-    "button, a, input, select, textarea, [role='button'], [role='menuitem']"
-  );
-  candidates.forEach((el) => {
-    const element = el as HTMLElement;
-    if (element.getAttribute("title")) return;
-    const aria =
-      element.getAttribute("aria-label") ||
-      element.getAttribute("data-bs-title");
-    const placeholder =
-      element instanceof HTMLInputElement ||
-      element instanceof HTMLTextAreaElement
-        ? element.placeholder
-        : "";
-    const text = element.textContent?.trim() ?? "";
-    const title = aria || placeholder || text;
-    if (title) {
-      element.setAttribute("title", title);
-    }
-  });
+const tooltipSelector = "button, a, input, select, textarea, [role='button'], [role='menuitem']";
+const fallbackTitles = new WeakMap<HTMLElement, string>();
+
+function applyDefaultTooltip(element: HTMLElement) {
+  const existing = element.getAttribute("title");
+  if (existing && fallbackTitles.get(element) !== existing) return;
+  const aria = element.getAttribute("aria-label") || element.getAttribute("data-bs-title");
+  const placeholder = (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)
+    ? element.placeholder : "";
+  const title = aria || placeholder || element.textContent?.trim() || "";
+  if (title && title !== existing) {
+    fallbackTitles.set(element, title);
+    element.setAttribute("title", title);
+  }
 }
 
-applyDefaultTooltips();
+document.querySelectorAll<HTMLElement>(tooltipSelector).forEach(applyDefaultTooltip);
 const tooltipObserver = new MutationObserver((mutations) => {
   for (const mutation of mutations) {
+    if (mutation.type === "attributes" && mutation.target instanceof HTMLElement &&
+      mutation.target.matches(tooltipSelector)) {
+      applyDefaultTooltip(mutation.target);
+    }
     mutation.addedNodes.forEach((node) => {
-      if (node instanceof HTMLElement) {
-        applyDefaultTooltips(node);
-      }
+      if (!(node instanceof HTMLElement)) return;
+      if (node.matches(tooltipSelector)) applyDefaultTooltip(node);
+      node.querySelectorAll<HTMLElement>(tooltipSelector).forEach(applyDefaultTooltip);
     });
   }
 });
-tooltipObserver.observe(document.body, { childList: true, subtree: true });
+tooltipObserver.observe(document.body, {
+  childList: true, subtree: true, attributes: true, attributeFilter: ["title", "aria-label"],
+});
 
 const errorToastStore = useErrorToastStore(pinia);
 const notificationCenterStore = useNotificationCenterStore(pinia);
@@ -217,5 +217,6 @@ window.addEventListener("unhandledrejection", (event) => {
       : typeof reason === "string"
       ? reason
       : "Unhandled promise rejection";
-  pushNotification("error", msg, { skipConsole: true });
+  const short = msg.split(/\r?\n/, 1)[0].slice(0, 180);
+  showFailure(`Something went wrong: ${short}`, undefined, msg);
 });

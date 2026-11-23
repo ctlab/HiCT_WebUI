@@ -1,3 +1,5 @@
+import { askForConfirmation } from "@/app/ui/confirmAction";
+import { offerFastaLink } from "@/app/ui/fastaExportPrerequisite";
 import { reportFailure } from "@/app/ui/reportFailure";
 import { prepareFileSave } from "../export/FileSave";
 import { writeCoordinateFile } from "../export/CoordinateFileExport";
@@ -376,13 +378,14 @@ class CommonEventManager {
     await this.mapManager.reloadVisuals();
   }
 
-  public onMoveToDebrisClicked(): void {
+  public async onMoveToDebrisClicked(): Promise<void> {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
     const range = this.getSelectedContigBpRange();
     if (!range) {
       return;
     }
+    if (!(await this.confirmDebris(range))) return;
     this.mapManager.networkManager.requestManager
       .moveSelectionToDebris(
         new MoveSelectionToDebrisRequest({
@@ -397,6 +400,27 @@ class CommonEventManager {
         this.reloadTracks();
       })
       .catch((error) => reportFailure("Move selection to debris", error));
+  }
+
+  public async confirmDebris(range: { startBP: number; endBP: number }): Promise<boolean> {
+    const manager = this.mapManager;
+    const api = manager.networkManager.requestManager;
+    const history = api.history.applied;
+    const scaffolds = manager.scaffoldHolder.scaffoldBordersSorted
+      .filter(([bounds]) => bounds.startBP < range.endBP && bounds.endBP > range.startBP)
+      .map(([, id]) => manager.scaffoldHolder.getScaffoldById(id).scaffoldName);
+    if (scaffolds.length < 2) return true;
+    const details = scaffolds.slice(0, 5);
+    if (scaffolds.length > details.length) details.push(`and ${scaffolds.length - details.length} more`);
+    const result = await askForConfirmation({
+      title: `Move ${scaffolds.length} scaffolds to unplaced?`,
+      body: "These scaffolds will be removed from the assembly and from AGP and FASTA exports. Undo restores them.",
+      tone: "danger",
+      icon: "bi-box-arrow-down",
+      confirmLabel: `Move ${scaffolds.length} scaffolds`,
+      details,
+    });
+    return result === "confirm" && !manager.isDisposed && history === api.history.applied;
   }
 
   public onReverseSelectionClicked(): void {
@@ -700,6 +724,10 @@ class CommonEventManager {
   }
 
   public async onExportFASTAForSelectionClicked(): Promise<void> {
+    if (!this.mapManager.networkManager.requestManager.hasLinkedFasta) {
+      await offerFastaLink(this.mapManager, () => void this.onExportFASTAForSelectionClicked());
+      return;
+    }
     const matrixViewStore = useMatrixViewStore();
     this.mapManager.deactivateTranslocation();
     const [fromBp, toBp] = [

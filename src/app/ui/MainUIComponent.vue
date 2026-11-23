@@ -21,6 +21,29 @@
 
 <template>
   <AGPImportChoiceModal />
+  <ConfirmActionDialog
+    v-if="confirmation"
+    v-bind="confirmation"
+    :dont-ask-again="confirmation.rememberKey ? rememberConfirmation : undefined"
+    @update:dont-ask-again="rememberConfirmation = $event"
+    @cancel="settleConfirmation('cancel')"
+    @secondary="settleConfirmation('secondary')"
+    @confirm="settleConfirmation('confirm', rememberConfirmation)"
+  >
+    {{ confirmation.body }}
+    <ul v-if="confirmation.details?.length">
+      <li v-for="item in confirmation.details" :key="item">{{ item }}</li>
+    </ul>
+  </ConfirmActionDialog>
+  <UniversalFileSelector
+    v-if="missingSessionFile"
+    :network-manager="networkManager"
+    :title="missingSessionFile.title"
+    :file-type="missingSessionFile.kind"
+    :file-name-predicate="missingSessionFile.accept"
+    @selected="finishSessionFile"
+    @dismissed="finishSessionFile(null)"
+  />
   <div :class="{ 'modal-notifications': hasActiveModal() }">
     <Toaster position="bottom-center" richColors closeButton />
   </div>
@@ -345,6 +368,9 @@
 </template>
 
 <script setup lang="ts">
+import ConfirmActionDialog from "./components/common/ConfirmActionDialog.vue";
+import UniversalFileSelector from "./components/upper_ribbon/UniversalFileSelector.vue";
+import { askForConfirmation, confirmation, settleConfirmation } from "./confirmAction";
 import type { JobOpenRequest } from "@/app/stores/backgroundJobsUiStore";
 import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
 import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
@@ -392,6 +418,7 @@ import {
   onMounted,
   onUnmounted,
   ref,
+  shallowRef,
   watch,
   type Ref,
   type CSSProperties,
@@ -499,6 +526,8 @@ const visualizationOptionsStore = useVisualizationOptionsStore();
 const stylesStore = useStyleStore();
 const uiSettingsStore = useUiSettingsStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
+const rememberConfirmation = ref(false);
+watch(confirmation, () => { rememberConfirmation.value = false; });
 const sessionStore = useSessionStore();
 const remoteBlastResults = useRemoteBlastResultsStore();
 watch(fastaFilename, (v) => sessionStore.setLinkedFastaFilename(v ?? ""), {
@@ -890,6 +919,10 @@ async function onAttached() {
   await persistWorkspace();
   workspaceRestoring = true;
   try {
+    if (!(await networkManager.requestManager.canJoinSession())) {
+      toast.message("Open a map first");
+      return;
+    }
     const attached = await networkManager.requestManager.attachSession();
     if (!attached.filename) {
       toast.error("No active session to attach");
@@ -897,16 +930,8 @@ async function onAttached() {
     }
     await adoptSession(attached, { fresh: false });
     toast.success("Attached to session " + attached.filename);
-  } catch (err) {
-    const failure = err as {
-      response?: { data?: { error?: string } };
-      message?: string;
-    };
-    toast.error(
-      failure?.response?.data?.error ??
-        failure?.message ??
-        "Failed to attach session"
-    );
+  } catch (error) {
+    reportFailure("Join running session", error);
   } finally {
     workspaceRestoring = false;
   }
@@ -1626,6 +1651,28 @@ async function onSaveSession(): Promise<boolean> {
   }
 }
 
+const missingSessionFile = shallowRef<{
+  title: string;
+  kind: string;
+  accept: (name: string) => boolean;
+  complete: (name: string | null) => void;
+}>();
+
+function finishSessionFile(name: string | null): void {
+  const pending = missingSessionFile.value;
+  if (name && !pending?.accept(name)) return;
+  missingSessionFile.value = undefined;
+  pending?.complete(name);
+}
+
+function chooseSessionFile(kind: string, list: string[], title: string): Promise<string | null> {
+  if (missingSessionFile.value) return Promise.resolve(null);
+  const names = new Set(list);
+  return new Promise((complete) => {
+    missingSessionFile.value = { kind, title, accept: (name) => names.has(name), complete };
+  });
+}
+
 async function resolveFilename(
   label: string,
   original: string,
@@ -1633,15 +1680,19 @@ async function resolveFilename(
 ): Promise<string | null> {
   if (!original) return "";
   if (list.includes(original)) return original;
-  const replacement = window.prompt(
-    `${label} file '${original}' not found. Enter an alternative filename or leave empty to cancel:`
-  );
-  if (!replacement) return null;
-  if (!list.includes(replacement)) {
-    toast.error(`${label} file '${replacement}' not found`);
-    return null;
-  }
-  return replacement;
+  const basename = pathBasename(original);
+  const decision = await askForConfirmation({
+    title: `Where is “${basename}”?`,
+    body: `The saved session links this ${label}, but it could not be found. Choose its new location${label === "FASTA" ? ", or continue without it" : ""}.`,
+    tone: "info",
+    icon: "bi-folder2-open",
+    confirmLabel: "Choose file…",
+    cancelLabel: "Cancel restore",
+    secondaryLabel: label === "FASTA" ? "Continue without FASTA" : undefined,
+  });
+  if (decision === "secondary" && label === "FASTA") return "";
+  if (decision !== "confirm") return null;
+  return chooseSessionFile(label, list, `Choose ${label} file`);
 }
 
 function pathBasename(path: string): string {
@@ -1718,28 +1769,17 @@ async function resolveRequiredHiCTSessionFilename(
   const visibleCandidates = (likely.length > 0 ? likely : ranked)
     .slice(0, 10)
     .map((entry) => entry.candidate);
-  const defaultCandidate = visibleCandidates[0] ?? "";
-  const promptLines = [
-    "This session does not record the HiCT map filename.",
-    "Enter the relative .hict.hdf5 file path to open, or leave empty to cancel.",
-  ];
-  if (visibleCandidates.length > 0) {
-    promptLines.push("", "Likely candidates:");
-    visibleCandidates.forEach((candidate) => {
-      promptLines.push(`- ${candidate}`);
-    });
-  }
-  const replacement = window.prompt(promptLines.join("\n"), defaultCandidate);
-  if (!replacement) return null;
-  if (!list.includes(replacement)) {
-    toast.error(`HiCT file '${replacement}' not found`);
-    return null;
-  }
-  if (!isHiCTMapFilename(replacement)) {
-    toast.error(`'${replacement}' is not a HiCT map file`);
-    return null;
-  }
-  return replacement;
+  const decision = await askForConfirmation({
+    title: "Choose a map for this saved session",
+    body: "This session does not record the HiCT map filename.",
+    tone: "info",
+    icon: "bi-folder2-open",
+    confirmLabel: "Choose file…",
+    cancelLabel: "Cancel restore",
+    details: visibleCandidates,
+  });
+  if (decision !== "confirm") return null;
+  return chooseSessionFile("HiCT maps", list.filter(isHiCTMapFilename), "Choose a map");
 }
 
 /** Opens a v3 session. The server prepares everything first, so a rejected file leaves the open map untouched. */

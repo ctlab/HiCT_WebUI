@@ -38,12 +38,12 @@
       type="button"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Move selection to debris"
-      aria-label="Move selection to debris"
-      :disabled="!props.mapManager"
+      title="Removed from the assembly and from AGP and FASTA exports. Undo restores it."
+      aria-label="Move to unplaced (debris)…"
+      :disabled="!props.mapManager || props.mapManager.networkManager.requestManager.history.busy > 0"
       @click="moveToDebrisClicked"
     >
-      <i class="bi bi-trash"></i>
+      <i class="bi bi-box-arrow-down"></i>
     </button>
   </div>
 </template>

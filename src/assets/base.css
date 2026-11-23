@@ -216,3 +216,28 @@ body:has(> .assembly-context-menu, > .axis-context-menu) [data-sonner-toaster] {
   min-width: 24px;
   min-height: 24px;
 }
+
+:root {
+  /* NEW tokens */
+  --hict-primary: #0d6efd;            /* Bootstrap 5.2 primary; PrimeVue must use this too */
+  --hict-primary-soft: #e7f1ff;
+  --hict-danger: #b42318;
+  --hict-danger-soft: #fef3f2;
+  --hict-warning: #b54708;
+  --hict-warning-soft: #fffaeb;
+  --hict-success: #067647;
+  --hict-success-soft: #ecfdf3;
+  --hict-radius-sm: 6px;
+  --hict-radius-md: 10px;
+  --hict-space-1: 4px;
+  --hict-space-2: 8px;
+  --hict-space-3: 12px;
+  --hict-space-4: 16px;
+  --hict-space-5: 24px;
+  --hict-text-xs: 0.75rem;   /* 12px: captions, help text */
+  --hict-text-sm: 0.8125rem; /* 13px: secondary labels */
+  --hict-text-md: 0.875rem;  /* 14px: body, controls */
+  --hict-text-lg: 1.0625rem; /* 17px: dialog titles */
+  --hict-focus-ring: 0 0 0 3px rgba(13, 110, 253, 0.28);
+  --hict-toolbar-btn: 44px;
+}

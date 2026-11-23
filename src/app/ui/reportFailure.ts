@@ -1,10 +1,7 @@
-import { toast } from "vue-sonner";
+import { describeHttpFailure, notify } from "./notifications/toastPolicy";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
-
-const duplicateWindowMs = 1500;
-const recentFailures = new Map<string, { at: number; message: string }>();
 
 export function failureDetails(operation: string, error: unknown) {
   const description = extractErrorMessage(
@@ -37,23 +34,21 @@ export function failureDetails(operation: string, error: unknown) {
 
 export function reportFailure(operation: string, error: unknown): void {
   const { message, diagnostics } = failureDetails(operation, error);
-  const now = Date.now();
-  for (const [key, failure] of recentFailures) {
-    if (now - failure.at >= duplicateWindowMs) recentFailures.delete(key);
-  }
-  if (recentFailures.get(operation)?.message === message) return;
-  recentFailures.set(operation, { at: now, message });
+  const failure = error as { response?: { status?: number }; cause?: { response?: { status?: number } };
+    code?: string } | undefined;
+  const status = failure?.response?.status ?? failure?.cause?.response?.status;
+  const http = status !== undefined || failure?.code === "ERR_NETWORK"
+    ? describeHttpFailure(status, message, operation.toLowerCase())
+    : undefined;
+  showFailure(http?.title ?? message, http?.description, diagnostics);
+}
 
+export function showFailure(title: string, description?: string, diagnostics?: string): void {
   const notifications = useNotificationCenterStore();
-  const entry = notifications.add("error", message, diagnostics);
+  const entry = notifications.add("error", title, diagnostics);
   if (!useErrorToastStore().requestErrorToastsEnabled) return;
-  const options = {
-    id: `failure:${operation}`,
-    diagnosticsRecorded: true,
-    action: {
-      label: "Details",
-      onClick: () => notifications.openAndExpandEntry(entry),
-    },
-  };
-  toast.error(message, options);
+  notify("error", title, description, {
+    label: "Details",
+    onClick: () => notifications.openAndExpandEntry(entry),
+  }, undefined, true);
 }

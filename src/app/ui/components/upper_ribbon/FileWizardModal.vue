@@ -1267,6 +1267,8 @@
 </template>
 
 <script setup lang="ts">
+import { askForConfirmation } from "@/app/ui/confirmAction";
+import { reportFailure } from "@/app/ui/reportFailure";
 import { waitForConversionJob } from "@/app/core/net/api/waitForConversionJob";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import SequenceGapSettings from "./SequenceGapSettings.vue";
@@ -2489,20 +2491,26 @@ const convertAssemblySelectionToAgp = async (
     return;
   }
   const outputFilename = filename.replace(/\.assembly$/i, ".agp");
-  if (
-    !window.confirm(
-      `Convert ${filename} to ${outputFilename}? An existing AGP copy will be overwritten.`
-    )
-  ) {
-    return;
-  }
-  const result = await props.networkManager.requestManager.convertAssemblyToAgp(
-    {
+  const confirm = await askForConfirmation({
+    title: "Convert the .assembly file to AGP?",
+    body: `HiCT reads layouts as AGP. ${filename} will be converted to ${outputFilename} next to it. The original file is unchanged.`,
+    tone: "info",
+    icon: "bi-arrow-left-right",
+    confirmLabel: "Convert and apply",
+    rememberKey: "hict.ui.confirm.convertAssembly",
+  });
+  if (confirm !== "confirm") return;
+  let result;
+  try {
+    result = await props.networkManager.requestManager.convertAssemblyToAgp({
       filename,
       outputFilename,
       overwrite: true,
-    }
-  );
+    });
+  } catch (error) {
+    reportFailure("Convert assembly to AGP", error);
+    return;
+  }
   if (source === "primary") {
     primaryAgp.value = result.outputFilename;
   } else {

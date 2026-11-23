@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, computed, watch } from "vue";
 
 export type NotificationLevel =
   | "error"
@@ -23,6 +23,12 @@ export const useNotificationCenterStore = defineStore(
     const isOpen = ref(false);
     const keepLast100 = ref(true);
     const nextId = ref(1);
+    const lastRead = ref(0);
+    const unread = computed(() => entries.value.filter((entry) =>
+      entry.id > lastRead.value && (entry.level === "error" || entry.level === "warning")).length);
+    watch(isOpen, (open) => {
+      if (open) lastRead.value = nextId.value - 1;
+    }, { flush: "sync" });
     const expandedEntryIds = ref<number[]>([]);
 
     const add = (
@@ -31,6 +37,7 @@ export const useNotificationCenterStore = defineStore(
       diagnostics?: string
     ): number => {
       const id = nextId.value++;
+      if (isOpen.value) lastRead.value = id;
       entries.value.push({
         id,
         level,
@@ -86,6 +93,7 @@ export const useNotificationCenterStore = defineStore(
 
     return {
       entries,
+      unread,
       isOpen,
       keepLast100,
       expandedEntryIds,

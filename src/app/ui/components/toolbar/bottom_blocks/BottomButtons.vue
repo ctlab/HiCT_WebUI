@@ -41,7 +41,7 @@ import { computed } from "vue";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
 
 const notificationStore = useNotificationCenterStore();
-const notificationCount = computed(() => notificationStore.entries.length);
+const notificationCount = computed(() => notificationStore.unread);
 </script>
 
 <style scoped>

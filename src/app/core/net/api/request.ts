@@ -255,6 +255,10 @@ class CancelExampleDownloadRequest implements HiCTAPIRequest {
   requestPath = "/examples/download/cancel";
 }
 
+class SessionAvailabilityRequest implements HiCTAPIRequest {
+  requestPath = "/session/availability";
+}
+
 class AttachSessionRequest implements HiCTAPIRequest {
   requestPath = "/attach";
 }
@@ -890,6 +894,7 @@ class ProbeTrackPrecomputeCacheRequest implements HiCTAPIRequest {
 export {
   type HiCTAPIRequest,
   AttachSessionRequest,
+  SessionAvailabilityRequest,
   CloseFileRequest,
   ListExamplesRequest,
   StartExampleDownloadRequest,

@@ -406,12 +406,12 @@
                       job.stageDetail ||
                       job.toolchainSummary
                     }}</small>
-                    <pre v-if="job.error" class="dotplot-error mt-2">{{
-                      job.error
-                    }}</pre>
+                    <p v-if="job.status === 'failed'" class="alert alert-danger mt-2 mb-0" role="alert">
+                      The dotplot could not finish. The bundled tool reported an error.
+                    </p>
                     <details v-if="job.logs.length" class="mt-2">
                       <summary>Logs</summary>
-                      <pre class="dotplot-logs">{{ job.logs.join("\n") }}</pre>
+                      <pre class="dotplot-logs">{{ job.logs.slice(-40).join("\n") }}</pre>
                     </details>
                   </div>
                 </div>

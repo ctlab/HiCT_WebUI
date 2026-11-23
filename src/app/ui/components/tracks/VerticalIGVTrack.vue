@@ -453,6 +453,13 @@ const stopPointerDrag = (event: PointerEvent): void => {
 
 const onWheelForward = (event: WheelEvent): void => {
   hideFeatureTooltip();
+  const rows = (event.target as Element).closest<HTMLElement>(".track-scroll");
+  if (!event.ctrlKey && !event.metaKey && rows && rows.scrollWidth > rows.clientWidth) {
+    const delta = event.deltaX || event.deltaY;
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rows.clientWidth : 1;
+    rows.scrollLeft += delta * unit;
+    return;
+  }
   if (!props.mapManager || !trackHost.value) {
     return;
   }
@@ -561,8 +568,12 @@ onBeforeUnmount(() => {
   bottom: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: #98a2b3 #eaecf0;
 }
+.track-scroll::-webkit-scrollbar { height: 5px; }
+.track-scroll::-webkit-scrollbar-thumb { background: #98a2b3; border-radius: 3px; }
+.track-scroll::-webkit-scrollbar-track { background: #eaecf0; }
 .track-scroll:focus-visible {
   outline: 2px solid #196ca6;
   outline-offset: -2px;

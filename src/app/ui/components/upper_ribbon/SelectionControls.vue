@@ -1,16 +1,14 @@
 <template>
   <li class="nav-item dropdown">
-    <a
-      class="nav-link active dropdown-toggle selection-label"
+    <button
+      type="button"
+      class="btn btn-sm btn-outline-primary dropdown-toggle selection-label"
       aria-label="Selection"
       data-bs-toggle="dropdown"
-      :data-bs-popper-config="popperConfig"
-      href="#"
-      :title="
-        summary + ' · Shift-drag entities; Ctrl/Cmd-drag a region; Esc clears.'
-      "
-      >{{ label }}</a
-    >
+      :data-bs-popper-config="navbarPopperConfig"
+      :disabled="!mapManager"
+      :title="mapManager ? summary : 'Open a map to select a region'"
+    >{{ label }}</button>
     <ul class="dropdown-menu selection-menu">
       <li class="px-3 py-2 small" role="status" aria-live="polite">
         {{ summary }}
@@ -20,6 +18,7 @@
         persistent region. Esc clears.
       </li>
       <li><hr class="dropdown-divider" /></li>
+      <li class="dropdown-header">Shift-drag selects</li>
       <li v-for="kind in ['contig','scaffold'] as const" :key="kind">
         <button
           class="dropdown-item"
@@ -28,8 +27,7 @@
           :disabled="!mapManager"
           @click="mapManager?.viewAndLayersManager.setEntitySelectionKind(kind)"
         >
-          {{ state?.entitySelectionKind === kind ? "✓ " : "" }}Shift selects
-          {{ kind === "contig" ? "contigs" : "scaffolds" }}
+          {{ state?.entitySelectionKind === kind ? "✓ " : "" }}{{ kind === "contig" ? "Contigs" : "Scaffolds" }}
         </button>
       </li>
       <li><hr class="dropdown-divider" /></li>
@@ -47,30 +45,8 @@
         </button>
       </li>
       <li>
-        <button
-          class="dropdown-item"
-          :disabled="!region && !count"
-          @click="copyCoordinates('assembly')"
-        >
-          Copy selection coordinates
-        </button>
-      </li>
-      <li>
-        <button
-          class="dropdown-item"
-          :disabled="!region && !count"
-          @click="copyCoordinates('scaffold')"
-        >
-          Copy scaffold coordinates
-        </button>
-      </li>
-      <li>
-        <button
-          class="dropdown-item"
-          :disabled="!region && !count"
-          @click="copyCoordinates('contig')"
-        >
-          Copy contig coordinates
+        <button class="dropdown-item" :disabled="!region && !count" @click="copyCoordinates">
+          Copy coordinates
         </button>
       </li>
       <li>
@@ -80,7 +56,7 @@
           title="Select a region with Ctrl-drag or ⌘-drag to copy its image"
           @click="copyPng"
         >
-          Copy selection as PNG
+          Copy as image
         </button>
       </li>
       <li>
@@ -123,7 +99,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import type { CoordinateFrame } from "@/app/core/mapmanagers/regionSelection";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import {
   copySelectionCoordinates,
   copySelectionPng,
@@ -131,8 +107,13 @@ import {
 import RegionSelectionDialog from "../common/RegionSelectionDialog.vue";
 const props = defineProps<{
   mapManager?: ContactMapManager;
-  popperConfig?: string;
 }>();
+const navbarPopperConfig = JSON.stringify({
+  modifiers: [
+    { name: "applyStyles", enabled: true },
+    { name: "preventOverflow", options: { padding: 8 } },
+  ],
+});
 const coordinateOpen = ref(false);
 const state = computed(
   () => props.mapManager?.viewAndLayersManager.currentViewState
@@ -165,8 +146,9 @@ const label = computed(() => {
     : "Selection";
 });
 const bothScoped = computed(() => state.value?.scopedAxes ?? false);
-function copyCoordinates(frame: CoordinateFrame) {
-  if (props.mapManager) copySelectionCoordinates(props.mapManager, frame);
+function copyCoordinates() {
+  const mode = useUiSettingsStore().rulerCoordinateMode;
+  if (props.mapManager) copySelectionCoordinates(props.mapManager, mode === "global" ? "assembly" : mode);
 }
 function copyPng() {
   if (props.mapManager) void copySelectionPng(props.mapManager);
@@ -179,7 +161,7 @@ function copyPng() {
   background: rgba(255, 176, 0, 0.16);
 }
 .selection-label {
-  max-width: 18rem;
+  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -9,6 +9,19 @@ const ERROR_FIELD_KEYS = [
 const ERROR_PREFIX_RE =
   /^(AxiosError|Error|TypeError|ReferenceError|RangeError|URIError|SyntaxError|EvalError|AggregateError):\s*/;
 
+export function formatHttpError(status: unknown, message: string): string {
+  if (status === 409 && /(?:no (?:open|active) (?:file|map)|open .{0,20}\b(?:map|file) first)/i.test(message)) {
+    return "Open a map first";
+  }
+  if (typeof status === "number" && status >= 500) {
+    const reference = /\bref(?:erence)? ([0-9a-f]{8})\b/i.exec(message)?.[1];
+    return reference
+      ? `Unexpected server error (ref ${reference}). Please retry. If it repeats, report it with this reference.`
+      : "Unexpected server error. Please retry.";
+  }
+  return message;
+}
+
 const normalizeString = (value: string): string => {
   const trimmed = value.trim();
   if (trimmed === "[object Object]") {
@@ -77,15 +90,13 @@ export const extractErrorMessage = (
   }
   if (error && typeof error === "object") {
     const record = error as Record<string, unknown>;
-    const responseData =
+    const response =
       record.response && typeof record.response === "object"
-        ? (record.response as Record<string, unknown>).data
+        ? (record.response as Record<string, unknown>)
         : undefined;
     const nested =
-      readErrorCandidate(responseData) || readFirstStringField(responseData);
-    if (nested) {
-      return nested;
-    }
+      readErrorCandidate(response?.data) || readFirstStringField(response?.data);
+    if (response) return formatHttpError(response.status, nested || fallback);
     const direct = readFirstStringField(error);
     if (direct) {
       return direct;

@@ -45,6 +45,7 @@ import {
   CancelCoverageNormalizationRequest,
   SelectNormalizationWeightsRequest,
   AttachSessionRequest,
+  SessionAvailabilityRequest,
   GetFastaForAssemblyRequest,
   type HiCTAPIRequest,
   GroupContigsIntoScaffoldRequest,
@@ -371,6 +372,8 @@ abstract class HiCTAPIRequestDTO<
         return new SelectNormalizationWeightsRequestDTO(
           entity as SelectNormalizationWeightsRequest
         );
+      case entity instanceof SessionAvailabilityRequest:
+        return new SessionAvailabilityRequestDTO(entity);
       case entity instanceof AttachSessionRequest:
         return new AttachSessionRequestDTO(entity as AttachSessionRequest);
       case entity instanceof GetFastaForAssemblyRequest:
@@ -1166,6 +1169,12 @@ class SelectNormalizationWeightsRequestDTO extends HiCTAPIRequestDTO<SelectNorma
 
 class CloseFileRequestDTO extends HiCTAPIRequestDTO<CloseFileRequest> {
   toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class SessionAvailabilityRequestDTO extends HiCTAPIRequestDTO<SessionAvailabilityRequest> {
+  toDTO(): Record<string, never> {
     return {};
   }
 }
