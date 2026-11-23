@@ -42,7 +42,7 @@
                   ? thresholdDraft
                   : formatSignal(lowerBound)
               "
-              @focus="startThresholdEdit('lower', lowerBound)"
+              @focus="startThresholdEdit($event, 'lower', lowerBound)"
               @blur="focusedThreshold = null"
               @input="lowerBound = readThreshold($event)"
               @keydown.enter="applySettings"
@@ -67,7 +67,7 @@
                   ? thresholdDraft
                   : formatSignal(upperBound)
               "
-              @focus="startThresholdEdit('upper', upperBound)"
+              @focus="startThresholdEdit($event, 'upper', upperBound)"
               @blur="focusedThreshold = null"
               @input="upperBound = readThreshold($event)"
               @keydown.enter="applySettings"
@@ -261,7 +261,9 @@
                       ? thresholdDraft
                       : formatSignal(sliderLowerLimit)
                   "
-                  @focus="startThresholdEdit('slider-min', sliderLowerLimit)"
+                  @focus="
+                    startThresholdEdit($event, 'slider-min', sliderLowerLimit)
+                  "
                   @blur="focusedThreshold = null"
                   @input="sliderLowerLimit = readThreshold($event)"
                   inputmode="decimal"
@@ -275,7 +277,9 @@
                       ? thresholdDraft
                       : formatSignal(sliderUpperLimit)
                   "
-                  @focus="startThresholdEdit('slider-max', sliderUpperLimit)"
+                  @focus="
+                    startThresholdEdit($event, 'slider-max', sliderUpperLimit)
+                  "
                   @blur="focusedThreshold = null"
                   @input="sliderUpperLimit = readThreshold($event)"
                   inputmode="decimal"
@@ -391,6 +395,7 @@ import { formatSignal } from "@/app/core/format/formatSignal";
 import { identityColors } from "@/app/core/sequence/modDotPlot";
 import {
   computed,
+  nextTick,
   Ref,
   onBeforeUnmount,
   onMounted,
@@ -477,9 +482,17 @@ const toColor = ref(
 ) as Ref<ColorTranslator>;
 const focusedThreshold = ref<string | null>(null);
 const thresholdDraft = ref("");
-function startThresholdEdit(field: string, value: number): void {
+function startThresholdEdit(
+  event: FocusEvent,
+  field: string,
+  value: number
+): void {
+  const input = event.currentTarget as HTMLInputElement;
   thresholdDraft.value = Number.isFinite(value) ? String(value) : "";
   focusedThreshold.value = field;
+  void nextTick(() => {
+    if (document.activeElement === input) input.select();
+  });
 }
 function readThreshold(event: Event): number {
   thresholdDraft.value = (event.target as HTMLInputElement).value;
