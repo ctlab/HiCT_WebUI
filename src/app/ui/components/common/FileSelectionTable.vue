@@ -46,6 +46,17 @@
         header-class="selection-cell"
         style="width: 3rem; min-width: 3rem"
       >
+        <template #header>
+          <input
+            aria-label="Select all listed files"
+            class="form-check-input file-row-checkbox"
+            type="checkbox"
+            :checked="allListedSelected"
+            :indeterminate.prop="someListedSelected && !allListedSelected"
+            :disabled="listedFiles.length === 0"
+            @change="toggleListedFiles"
+          />
+        </template>
         <template #body="{ data }">
           <input
             :aria-label="`Select ${data.name}`"
@@ -228,6 +239,30 @@ const activeRows = computed(() =>
 );
 
 const selectedPathSet = computed(() => new Set(props.selectedPaths));
+const listedFiles = computed(() =>
+  activeRows.value
+    .filter((row) => row.type !== "directory")
+    .map((row) => row.path)
+);
+const allListedSelected = computed(
+  () =>
+    listedFiles.value.length > 0 &&
+    listedFiles.value.every((path) => selectedPathSet.value.has(path))
+);
+const someListedSelected = computed(() =>
+  listedFiles.value.some((path) => selectedPathSet.value.has(path))
+);
+
+function toggleListedFiles(): void {
+  const selected = new Set(selectedPathSet.value);
+  const deselect = allListedSelected.value;
+  listedFiles.value.forEach((path) => {
+    if (deselect) selected.delete(path);
+    else selected.add(path);
+  });
+  emit("update:selectedPaths", [...selected]);
+}
+
 const isSelected = (path: string): boolean =>
   props.multiSelect
     ? selectedPathSet.value.has(path)

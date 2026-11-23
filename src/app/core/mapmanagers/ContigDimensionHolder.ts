@@ -21,7 +21,6 @@
 
 "use strict";
 
-/* TODO: Keep only one binary search module */
 import binarySearch from "binary-search";
 import bounds from "binary-search-bounds";
 import CommonUtils from "@/CommonUtils";

@@ -33,6 +33,8 @@ import { containsCoordinate } from "ol/extent";
 import { watch } from "vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 
+import { formatBp } from "./app/core/format/formatSignal";
+
 function getOsdSettings() {
   try {
     return useUiSettingsStore();
@@ -51,12 +53,12 @@ function overlayStyle(position) {
     "position: absolute",
     location,
     "max-width: min(48rem, calc(100vw - 3rem))",
-    "padding: 14px 16px",
-    "background: rgba(0, 0, 0, 0.35)",
-    "border: 1px solid black",
+    "padding: 8px 10px",
+    "background: rgba(255, 255, 255, 0.96)",
+    "border: 1px solid #d0d5dd",
     "border-radius: 12px",
-    "color: white",
-    "text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000",
+    "color: #344054",
+    "box-shadow: 0 2px 8px #17203325",
     "pointer-events: none",
   ].join("; ");
 }
@@ -64,6 +66,24 @@ function overlayStyle(position) {
 export default class BinMousePosition extends MousePosition {
   constructor(opt_options) {
     super(opt_options);
+    this.moreFields = false;
+    this.element.addEventListener("click", (event) => {
+      const button = event.target.closest(".hict-info-more");
+      if (!button) return;
+      event.stopPropagation();
+      this.moreFields = !this.moreFields;
+      this.updateHTML_(this.pointerPixel);
+      this.element
+        .querySelector(".hict-info-more")
+        ?.focus({ preventScroll: true });
+    });
+    this.element.addEventListener("pointerdown", (event) => {
+      if (event.target.closest(".hict-info-more")) event.stopPropagation();
+    });
+    this.element.addEventListener("pointermove", (event) => {
+      if (event.target.closest(".hict-info-more")) event.stopPropagation();
+    });
+
     if (opt_options.dimension_holder) {
       this.dimension_holder = opt_options.dimension_holder;
     }
@@ -270,10 +290,6 @@ export default class BinMousePosition extends MousePosition {
             html = `<div style="${overlayStyle(
               osdSettings?.osdOverlayPosition
             )}">`;
-            appendLine(
-              "global",
-              "Global projection coordinate: " + coordinate.map(Math.floor)
-            );
 
             // html +=
             //   "Center coordinate: " + map.getView().getCenter().map(Math.floor);
@@ -287,12 +303,13 @@ export default class BinMousePosition extends MousePosition {
                   ? "Base scale; native bins: " +
                       guidanceDescriptor.sourceBpResolution +
                       " bp"
-                  : "Bin resolution: 1:" + bpResolution
+                  : "Resolution: 1:" + formatBp(bpResolution)
               );
               if (guidanceDescriptor.sourceName) {
                 appendLine(
                   "source",
-                  "Guidance source: " + guidanceDescriptor.sourceName
+                  "Showing data from: " +
+                    guidanceDescriptor.sourceName.toLowerCase()
                 );
               }
               if (this.layersManager?.getVisibleSourceResolutionDescriptors) {
@@ -315,15 +332,15 @@ export default class BinMousePosition extends MousePosition {
                 if (details.length > 0) {
                   appendLine(
                     "visibleResolutions",
-                    "Visible source resolutions: " + details.join("; ")
+                    "Available resolutions: " + details.join("; ")
                   );
                 }
               }
               appendLine(
                 "pixels",
-                "Position: px1=" +
+                "Matrix cell (display): " +
                   int_coordinates_px[0] +
-                  " px2=" +
+                  " × " +
                   int_coordinates_px[1]
               );
             }
@@ -335,9 +352,9 @@ export default class BinMousePosition extends MousePosition {
               );
               appendLine(
                 "bins",
-                "Position: bin1=" +
+                "Matrix cell (stored): " +
                   int_coordinates_bins[0] +
-                  " bin2=" +
+                  " × " +
                   int_coordinates_bins[1]
               );
               const bp1 = dimensionHolder.getStartBpOfPx(
@@ -356,7 +373,14 @@ export default class BinMousePosition extends MousePosition {
                 int_coordinates_px[1],
                 bpResolution
               );
-              appendLine("basePairs", "Position: bp1=" + bp1 + " bp2=" + bp2);
+              appendLine(
+                "global",
+                `Position: ${formatBp(bp2 + 1)} × ${formatBp(bp1 + 1)} bp`
+              );
+              appendLine(
+                "basePairs",
+                `Map position (0-based): ${formatBp(bp2)} × ${formatBp(bp1)} bp`
+              );
               appendLine("contigs", "Contigs: ctg1=" + ctg1 + " ctg2=" + ctg2);
               if (dimensionHolder.getContigLocusByPx) {
                 const locus1 = dimensionHolder.getContigLocusByPx(
@@ -369,9 +393,9 @@ export default class BinMousePosition extends MousePosition {
                 );
                 appendLine(
                   "inContig",
-                  "In-contig bp: ctg1=+" +
+                  "Position in contig: +" +
                     locus1.inContigBp +
-                    " ctg2=+" +
+                    " × +" +
                     locus2.inContigBp
                 );
               }
@@ -384,14 +408,14 @@ export default class BinMousePosition extends MousePosition {
                   "scaffolds",
                   "Scaffolds: scf1=" +
                     (scaffold1 ? scaffold1.scaffoldName : "unscaffolded") +
-                    " scf2=" +
+                    " × " +
                     (scaffold2 ? scaffold2.scaffoldName : "unscaffolded")
                 );
                 appendLine(
                   "inScaffold",
-                  "In-scaffold bp: scf1=" +
+                  "Position in scaffold: " +
                     (scaffold1 ? "+" + scaffold1.inScaffoldBp : "n/a") +
-                    " scf2=" +
+                    " × " +
                     (scaffold2 ? "+" + scaffold2.inScaffoldBp : "n/a")
                 );
               }
@@ -403,10 +427,27 @@ export default class BinMousePosition extends MousePosition {
                 (field) => !fieldOrder.includes(field)
               ),
             ];
-            const orderedLines = orderedFields
+            const mainFields = new Set(["global", "resolution"]);
+            const base = orderedFields.filter((field) => mainFields.has(field));
+            const extra = orderedFields.filter(
+              (field) =>
+                !mainFields.has(field) &&
+                field !== "visibleResolutions" &&
+                osdLines[field]
+            );
+            html += base
               .map((field) => osdLines[field])
-              .filter(Boolean);
-            html += orderedLines.join("<br/>");
+              .filter(Boolean)
+              .join("<br/>");
+            if (extra.length) {
+              html += ` <button type="button" class="btn btn-sm btn-link hict-info-more p-0"
+                style="pointer-events: auto;" aria-expanded="${
+                  this.moreFields
+                }">${this.moreFields ? "Less" : "More…"}</button>`;
+              if (this.moreFields)
+                html +=
+                  "<br/>" + extra.map((field) => osdLines[field]).join("<br/>");
+            }
             html += "</div>";
           } catch (error) {
             console.warn("Unable to update map mouse position overlay", error);

@@ -7,7 +7,7 @@
       role="menu"
       aria-label="Assembly actions"
       :style="{ left: `${position.x}px`, top: `${position.y}px` }"
-      @scroll.self="formatsOpen = false"
+      @scroll.self="activeSubmenu = null"
       @pointerover="dismissSibling"
       @contextmenu.prevent
       @keydown="navigate"
@@ -18,9 +18,7 @@
             .selectedContigIds.length
         "
       >
-        <button role="menuitem" @click="isolate">
-          Isolate view to selection
-        </button>
+        <button role="menuitem" @click="isolate">Isolate view to region</button>
       </section>
       <section v-for="item in items" :key="`${item.kind}-${item.id}`">
         <div class="entity-title">{{ item.title }}</div>
@@ -46,51 +44,26 @@
         </button>
         <template v-if="item.kind === 'selection'">
           <button role="menuitem" @click="zoomSelection">
-            Zoom to selection
+            <i class="bi bi-fullscreen" aria-hidden="true"></i> Zoom to region
           </button>
-          <button role="menuitem" @click="copyCoordinates('assembly')">
-            Copy selection coordinates
-          </button>
-          <button role="menuitem" @click="copyCoordinates('scaffold')">
-            Copy scaffold coordinates
-          </button>
-          <button role="menuitem" @click="copyCoordinates('contig')">
-            Copy contig coordinates
-          </button>
-          <button role="menuitem" @click="requestExport('clipboard')">
-            Copy selection as PNG
+          <button v-if="!regionIsolated" role="menuitem" @click="isolateRegion">
+            <i class="bi bi-bounding-box" aria-hidden="true"></i> Isolate view
+            to region
           </button>
           <button
+            v-for="submenu in submenus"
+            :key="submenu.id"
             role="menuitem"
-            @click="
-              items = [];
-              histogramOpen = true;
-            "
-          >
-            Signal histogram...
-          </button>
-          <button role="menuitem" @click="openAnalysis('dotplot')">
-            Generate dotplot for selection…
-          </button>
-          <button role="menuitem" @click="openAnalysis('moddotplot')">
-            Generate ModDotPlot for selection…
-          </button>
-          <button role="menuitem" @click="openAnalysis('search')">
-            Find sequences in selection…
-          </button>
-          <button role="menuitem" @click="exportFasta">
-            Export FASTA for selection
-          </button>
-          <button
-            role="menuitem"
-            data-formats
+            :data-submenu="submenu.id"
             aria-haspopup="menu"
-            :aria-expanded="formatsOpen"
-            @pointerenter="openFormats(false)"
-            @click="openFormats(true)"
-            @keydown.right.prevent="openFormats(true)"
+            :aria-expanded="activeSubmenu === submenu.id"
+            @pointerenter="openSubmenu(submenu.id, false)"
+            @click="openSubmenu(submenu.id, true)"
+            @keydown.right.prevent="openSubmenu(submenu.id, true)"
           >
-            Export selection as <span aria-hidden="true">›</span>
+            <i class="bi" :class="submenu.icon" aria-hidden="true"></i>
+            {{ submenu.label }}
+            <span class="submenu-arrow" aria-hidden="true">›</span>
           </button>
         </template>
         <template
@@ -104,14 +77,14 @@
             :disabled="item.structural === false"
             @click="execute(item, 'reverse')"
           >
-            Reverse {{ item.kind }}
+            Reverse
           </button>
           <button
             role="menuitem"
             :disabled="item.structural === false"
             @click="move(item)"
           >
-            Move {{ item.kind }}…
+            Move…
           </button>
           <button
             v-if="item.kind === 'scaffold'"
@@ -140,24 +113,82 @@
         Structural edits act on the whole scaffold.
       </p>
       <section
-        v-if="formatsOpen"
-        ref="formatsMenu"
+        v-if="activeSubmenu"
+        ref="submenuMenu"
         role="menu"
-        aria-label="Export selection as"
-        class="formats-menu assembly-context-menu"
-        :style="formatPosition"
-        @keydown.left.stop.prevent="closeFormats"
+        :aria-label="submenus.find(({ id }) => id === activeSubmenu)?.label"
+        class="child-menu assembly-context-menu"
+        :style="submenuPosition"
+        @keydown.left.stop.prevent="closeSubmenu"
       >
-        <button
-          v-for="format in formats"
-          :key="format"
-          role="menuitem"
-          @click="requestExport(format)"
-        >
-          {{ format }}
-        </button>
+        <template v-if="activeSubmenu === 'edit'">
+          <button role="menuitem" @click="openRegionCoordinates">
+            Edit region coordinates…
+          </button>
+          <button role="menuitem" @click="clearRegion">Clear selection</button>
+        </template>
+        <template v-else-if="activeSubmenu === 'copy'">
+          <button
+            role="menuitem"
+            @click="copyCoordinates(currentCoordinateFrame)"
+          >
+            Coordinates
+          </button>
+          <button role="menuitem" @click="copyCoordinates('scaffold')">
+            Coordinates in scaffold
+          </button>
+          <button role="menuitem" @click="copyCoordinates('contig')">
+            Coordinates in contig
+          </button>
+          <button
+            v-if="contextContig"
+            role="menuitem"
+            @click="copyName(contextContig)"
+          >
+            Contig name
+          </button>
+          <button role="menuitem" @click="requestExport('clipboard')">
+            Region as image
+          </button>
+        </template>
+        <template v-else-if="activeSubmenu === 'export'">
+          <button
+            v-for="format in formats"
+            :key="format"
+            role="menuitem"
+            @click="requestExport(format)"
+          >
+            <i
+              class="bi"
+              :class="`bi-filetype-${format.toLowerCase()}`"
+              aria-hidden="true"
+            ></i>
+            Image as {{ format }}…
+          </button>
+          <hr class="dropdown-divider" />
+          <button role="menuitem" @click="exportFasta">FASTA of region…</button>
+        </template>
+        <template v-else>
+          <button role="menuitem" @click="openHistogram">
+            Signal histogram…
+          </button>
+          <button role="menuitem" @click="openAnalysis('search')">
+            Find sequences in region…
+          </button>
+          <button role="menuitem" @click="openAnalysis('dotplot')">
+            Dotplot of region…
+          </button>
+          <button role="menuitem" @click="openAnalysis('moddotplot')">
+            ModDotPlot of region…
+          </button>
+        </template>
       </section>
     </div>
+    <RegionSelectionDialog
+      v-if="regionCoordinatesOpen"
+      :map-manager="props.mapManager"
+      @dismissed="regionCoordinatesOpen = false"
+    />
     <div v-if="renaming" class="rename-backdrop" @click.self="renaming = null">
       <form
         class="rename-dialog"
@@ -233,6 +264,8 @@
 <script setup lang="ts">
 import { reportFailure } from "@/app/ui/reportFailure";
 import { askForConfirmation } from "@/app/ui/confirmAction";
+import RegionSelectionDialog from "@/app/ui/components/common/RegionSelectionDialog.vue";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import {
   computed,
@@ -302,36 +335,80 @@ const hasScaffold = computed(() =>
 );
 const formats = ["PNG", "SVG", "PDF"] as const;
 type ExportAction = typeof formats[number] | "clipboard";
-const formatsOpen = ref(false);
-const formatsMenu = ref<HTMLElement>();
-const formatPosition = ref({ left: "0px", top: "0px" });
-async function openFormats(focus: boolean) {
-  formatsOpen.value = true;
+const submenus = [
+  { id: "edit", label: "Edit", icon: "bi-pencil-square" },
+  { id: "copy", label: "Copy", icon: "bi-clipboard" },
+  { id: "export", label: "Export", icon: "bi-download" },
+  { id: "analyse", label: "Analyse", icon: "bi-graph-up" },
+] as const;
+type Submenu = typeof submenus[number]["id"];
+const activeSubmenu = ref<Submenu | null>(null);
+const submenuMenu = ref<HTMLElement>();
+const submenuPosition = ref({ left: "0px", top: "0px" });
+const regionCoordinatesOpen = ref(false);
+const contextContig = computed(() =>
+  items.value.find((item) => item.kind === "contig")
+);
+const regionIsolated = computed(() =>
+  props.mapManager.viewAndLayersManager.isRegionIsolated()
+);
+const uiSettings = useUiSettingsStore();
+const currentCoordinateFrame = computed<CoordinateFrame>(() =>
+  uiSettings.rulerCoordinateMode === "global"
+    ? "assembly"
+    : uiSettings.rulerCoordinateMode
+);
+
+async function openSubmenu(id: Submenu, focus: boolean) {
+  activeSubmenu.value = id;
   await nextTick();
+  if (activeSubmenu.value !== id) return;
   const anchor = menu.value
-    ?.querySelector("[data-formats]")
+    ?.querySelector(`[data-submenu="${id}"]`)
     ?.getBoundingClientRect();
-  const child = formatsMenu.value?.getBoundingClientRect();
+  const child = submenuMenu.value?.getBoundingClientRect();
   const parent = menu.value?.getBoundingClientRect();
   if (!anchor || !child || !parent) return;
+  const width = document.documentElement.clientWidth;
+  const height = document.documentElement.clientHeight;
   const x =
-    parent.right + child.width <= innerWidth
+    parent.right + child.width <= width - 8
       ? parent.right - 1
-      : Math.max(0, parent.left - child.width + 1);
-  formatPosition.value = {
+      : Math.max(8, parent.left - child.width + 1);
+  submenuPosition.value = {
     left: x + "px",
-    top:
-      Math.max(0, Math.min(anchor.top, innerHeight - child.height - 4)) + "px",
+    top: Math.max(8, Math.min(anchor.top, height - child.height - 8)) + "px",
   };
-  if (focus) formatsMenu.value?.querySelector("button")?.focus();
+  if (focus) submenuMenu.value?.querySelector("button")?.focus();
 }
+
 function dismissSibling(event: PointerEvent) {
   const target = event.target as Element;
   if (
     target.closest("button") &&
-    !target.closest("[data-formats], .formats-menu")
+    !target.closest("[data-submenu], .child-menu")
   )
-    formatsOpen.value = false;
+    activeSubmenu.value = null;
+}
+
+function openRegionCoordinates() {
+  items.value = [];
+  regionCoordinatesOpen.value = true;
+}
+
+function openHistogram() {
+  items.value = [];
+  histogramOpen.value = true;
+}
+
+function clearRegion() {
+  items.value = [];
+  props.mapManager.viewAndLayersManager.clearRegionSelection();
+}
+
+function isolateRegion() {
+  items.value = [];
+  props.mapManager.viewAndLayersManager.isolateRegion();
 }
 function zoomSelection() {
   items.value = [];
@@ -341,19 +418,20 @@ function isolate() {
   items.value = [];
   props.mapManager.viewAndLayersManager.isolateSelectedEntities();
 }
-async function closeFormats() {
-  formatsOpen.value = false;
+async function closeSubmenu() {
+  const previous = activeSubmenu.value;
+  activeSubmenu.value = null;
   await nextTick();
-  menu.value?.querySelector<HTMLButtonElement>("[data-formats]")?.focus();
+  if (previous)
+    menu.value
+      ?.querySelector<HTMLButtonElement>(`[data-submenu="${previous}"]`)
+      ?.focus();
 }
 useEscDismissableDialog({
   priority: 1060,
   isOpen: () => !!renaming.value || !!items.value.length,
   requestClose: () => {
-    if (formatsOpen.value && items.value.length) {
-      void closeFormats();
-      return;
-    }
+    activeSubmenu.value = null;
     renaming.value = null;
     items.value = [];
   },
@@ -456,15 +534,15 @@ async function open(event: MouseEvent) {
       kind: "selection",
       id: -1,
       name: "active rectangle",
-      title: "Selection: active rectangle",
+      title: "Region",
       startBP,
       endBP,
       structural: false,
     });
   }
-  if (!found.length) found = itemsAtEvent(event);
+  found = [...itemsAtEvent(event), ...found];
   if (!found.length) return;
-  formatsOpen.value = false;
+  activeSubmenu.value = null;
   items.value = found;
   position.value = { x: event.clientX, y: event.clientY };
   await nextTick();
@@ -548,7 +626,8 @@ async function execute(item: Item, action: "reverse" | "ungroup" | "debris") {
   items.value = [];
   if (busy.value) return;
   const manager = props.mapManager;
-  if (action === "debris" && !(await manager.eventManager.confirmDebris(item))) return;
+  if (action === "debris" && !(await manager.eventManager.confirmDebris(item)))
+    return;
   try {
     const api = manager.networkManager.requestManager;
     const assembly = await (action === "reverse"
@@ -605,16 +684,28 @@ async function requestExport(format: ExportAction) {
         body: "Rendering this region may take a long time. Cancel to select a smaller region.",
         details: [
           `Region: ${size(estimate.columns, estimate.rows)} bp`,
-          `At ${estimate.bin.toLocaleString()} bp/bin: about ${size(estimate.nx, estimate.ny)} bins`,
-          `Figure with rulers and tracks: about ${size(estimate.width, estimate.height)} px`,
+          `At ${estimate.bin.toLocaleString()} bp/bin: about ${size(
+            estimate.nx,
+            estimate.ny
+          )} bins`,
+          `Figure with rulers and tracks: about ${size(
+            estimate.width,
+            estimate.height
+          )} px`,
         ],
         tone: "warn",
         icon: "bi-exclamation-triangle",
-        confirmLabel: format === "clipboard" ? "Copy as PNG" : `Export ${format}`,
+        confirmLabel:
+          format === "clipboard" ? "Copy as PNG" : `Export ${format}`,
       });
       if (decision !== "confirm") return;
-      if (JSON.stringify(region) !== JSON.stringify(manager.viewAndLayersManager.getRegionBounds())) {
-        throw new Error("The region changed. Open the export menu to review the new size.");
+      if (
+        JSON.stringify(region) !==
+        JSON.stringify(manager.viewAndLayersManager.getRegionBounds())
+      ) {
+        throw new Error(
+          "The region changed. Open the export menu to review the new size."
+        );
       }
     }
     await performExport(format);
@@ -702,8 +793,12 @@ useModalFocus(modalFocusElement, () => !!renaming.value);
   border-radius: 0.4rem;
   box-shadow: 0 4px 24px #0003;
 }
-.formats-menu {
-  width: 7rem;
+.child-menu {
+  width: 15rem;
+  z-index: 1051;
+}
+.submenu-arrow {
+  float: right;
 }
 .entity-title {
   font-weight: 600;

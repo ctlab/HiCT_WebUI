@@ -37,7 +37,7 @@
         <div class="modal-content">
           <div class="modal-header">
             <div>
-              <h5 class="modal-title">Generate self-alignment dotplots</h5>
+              <h5 class="modal-title">Dotplots from FASTA files</h5>
               <small class="text-muted">
                 Builds self-alignment maps from FASTA files using the configured
                 dotplot toolchain.
@@ -55,31 +55,43 @@
               {{ errorMessage }}
             </div>
             <div v-if="step === 'select'">
-              <div class="batch-actions">
+              <div class="dropdown mb-2">
                 <button
-                  class="btn btn-sm btn-outline-primary"
-                  @click="selectAll"
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm dropdown-toggle"
+                  data-bs-toggle="dropdown"
                 >
-                  Select All
+                  Select
                 </button>
-                <button
-                  class="btn btn-sm btn-outline-secondary"
-                  @click="selectNone"
-                >
-                  Select None
-                </button>
-                <button
-                  class="btn btn-sm btn-outline-secondary"
-                  @click="invertSelection"
-                >
-                  Invert Selection
-                </button>
-                <button
-                  class="btn btn-sm btn-outline-secondary"
-                  @click="viewCurrentJobs"
-                >
-                  View current dotplot jobs
-                </button>
+                <ul class="dropdown-menu">
+                  <li>
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      @click="selectAll"
+                    >
+                      All
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      @click="selectNone"
+                    >
+                      None
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      @click="invertSelection"
+                    >
+                      Invert
+                    </button>
+                  </li>
+                </ul>
               </div>
               <FileSelectionTable
                 :entries="fastaEntries"
@@ -92,265 +104,270 @@
                 scroll-height="44vh"
                 @update:selected-paths="onSelectionUpdated"
               />
-            </div>
-
-            <div v-else-if="step === 'settings'" class="dotplot-settings">
-              <div class="alert alert-warning dotplot-ram-warning">
-                <strong>Memory warning.</strong>
-                <div class="mt-1">
-                  Dotplot generation can require a large amount of RAM,
-                  depending on genome assembly size. Machines with less than 64
-                  GB of memory may not be enough for large inputs.
-                </div>
-                <details class="mt-2">
-                  <summary>Show cluster guidance</summary>
-                  <div class="mt-2">
-                    If you have access to a Linux-powered cluster with enough
-                    resources, you can run HiCT in remote server mode and
-                    connect to it with SSH port forwarding for HTTP 5000 and
-                    8080.
+              <AdvancedSection dialog-id="dotplot-fasta" class="mt-3">
+                <div class="alert alert-warning dotplot-ram-warning">
+                  <strong>Memory warning.</strong>
+                  <div class="mt-1">
+                    Dotplot generation can require a large amount of RAM,
+                    depending on genome assembly size. Machines with less than
+                    64 GB of memory may not be enough for large inputs.
                   </div>
-                </details>
-              </div>
-              <div class="row g-3">
-                <div class="col-md-4">
-                  <label class="form-label" for="dotplot-base-resolution"
-                    >Base dotplot resolution, bp/bin</label
-                  >
-                  <input
-                    id="dotplot-base-resolution"
-                    v-model.number="binSize"
-                    type="number"
-                    min="1"
-                    class="form-control"
-                  />
-                  <small class="text-muted"
-                    >Fine values such as 25 are supported when the toolchain can
-                    handle the output size.</small
-                  >
+                  <details class="mt-2">
+                    <summary>Show cluster guidance</summary>
+                    <div class="mt-2">
+                      If you have access to a Linux-powered cluster with enough
+                      resources, you can run HiCT in remote server mode and
+                      connect to it with SSH port forwarding for HTTP 5000 and
+                      8080.
+                    </div>
+                  </details>
                 </div>
-                <div class="col-md-8">
-                  <label class="form-label" for="dotplot-zoom-resolutions"
-                    >Zoom resolutions</label
-                  >
-                  <input
-                    id="dotplot-zoom-resolutions"
-                    v-model.trim="resolutions"
-                    type="text"
-                    class="form-control"
-                  />
-                  <small class="text-muted">
-                    Comma-separated. Leave empty to mirror the reference map if
-                    selected, otherwise derive a pyramid up to roughly 500 px
-                    per axis.
-                  </small>
-                </div>
-                <div class="col-md-12">
-                  <label class="form-label"
-                    >Reference .hict.hdf5 map for resolution sync
-                    (optional)</label
-                  >
-                  <div class="input-group">
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <label class="form-label" for="dotplot-base-resolution"
+                      >Base dotplot resolution, bp/bin</label
+                    >
                     <input
+                      id="dotplot-base-resolution"
+                      v-model.number="binSize"
+                      type="number"
+                      min="1"
                       class="form-control"
-                      :value="
-                        referenceMapFilename ||
-                        'No reference map: derive zoom resolutions automatically'
-                      "
-                      readonly
                     />
-                    <button
-                      type="button"
-                      class="btn btn-outline-primary"
-                      @click="referenceMapSelectorOpen = true"
+                    <small class="text-muted"
+                      >Fine values such as 25 are supported when the toolchain
+                      can handle the output size.</small
                     >
-                      Browse...
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-outline-secondary"
-                      :disabled="!referenceMapFilename"
-                      @click="referenceMapFilename = ''"
-                    >
-                      Clear
-                    </button>
                   </div>
-                  <small class="text-muted">
-                    When selected and zoom resolutions are empty, the dotplot
-                    reuses this map's resolutions and adds finer intermediate
-                    levels from the base dotplot resolution.
-                  </small>
-                </div>
-                <div class="col-md-12">
-                  <label class="form-label"
-                    >Apply AGP to FASTA before self-alignment (optional)</label
-                  >
-                  <select v-model="assemblyAgpFilename" class="form-select">
-                    <option value="">Use FASTA as-is</option>
-                    <option v-for="file in agpFiles" :key="file" :value="file">
-                      {{ file }}
-                    </option>
-                  </select>
-                  <small class="text-muted">
-                    Use this when the dotplot should be generated for a
-                    scaffolded assembly state. The AGP-defined sequence is
-                    written to a temporary FASTA before mm2-plus/minimap2 runs.
-                  </small>
-                </div>
-                <div v-if="dotplotOffsetWarnings.length" class="col-12">
-                  <div class="alert alert-warning py-2 mb-0">
-                    <strong>Overlay alignment warning.</strong>
-                    <ul class="mb-0 ps-3">
-                      <li
-                        v-for="warning in dotplotOffsetWarnings"
-                        :key="warning"
+                  <div class="col-md-8">
+                    <label class="form-label" for="dotplot-zoom-resolutions"
+                      >Zoom resolutions</label
+                    >
+                    <input
+                      id="dotplot-zoom-resolutions"
+                      v-model.trim="resolutions"
+                      type="text"
+                      class="form-control"
+                    />
+                    <small class="text-muted">
+                      Comma-separated. Leave empty to mirror the reference map
+                      if selected, otherwise derive a pyramid up to roughly 500
+                      px per axis.
+                    </small>
+                  </div>
+                  <div class="col-md-12">
+                    <label class="form-label"
+                      >Reference .hict.hdf5 map for resolution sync
+                      (optional)</label
+                    >
+                    <div class="input-group">
+                      <input
+                        class="form-control"
+                        :value="
+                          referenceMapFilename ||
+                          'No reference map: derive zoom resolutions automatically'
+                        "
+                        readonly
+                      />
+                      <button
+                        type="button"
+                        class="btn btn-outline-primary"
+                        @click="referenceMapSelectorOpen = true"
                       >
-                        {{ warning }}
-                      </li>
-                    </ul>
+                        Browse...
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-outline-secondary"
+                        :disabled="!referenceMapFilename"
+                        @click="referenceMapFilename = ''"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <small class="text-muted">
+                      When selected and zoom resolutions are empty, the dotplot
+                      reuses this map's resolutions and adds finer intermediate
+                      levels from the base dotplot resolution.
+                    </small>
                   </div>
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Minimizer k-mer length</label>
-                  <input
-                    v-model.number="minimizerK"
-                    type="number"
-                    min="5"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Minimizer window size</label>
-                  <input
-                    v-model.number="minimizerWindow"
-                    type="number"
-                    min="1"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Aligner -m chain score</label>
-                  <input
-                    v-model.number="minChainScore"
-                    type="number"
-                    min="0"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Drop near-diagonal bins</label>
-                  <input
-                    v-model.number="dropNearDiagonalBins"
-                    type="number"
-                    min="0"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">PAF sample step, bp</label>
-                  <input
-                    v-model.number="sampleBp"
-                    type="number"
-                    min="1"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Minimum alignment length</label>
-                  <input
-                    v-model.number="minAlignmentLength"
-                    type="number"
-                    min="0"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Aligner threads</label>
-                  <input
-                    v-model.number="alignmentThreads"
-                    type="number"
-                    min="-1"
-                    title="-1: automatic server CPU allocation"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Conversion threads</label>
-                  <input
-                    v-model.number="conversionThreads"
-                    type="number"
-                    min="-1"
-                    title="-1: automatic server CPU allocation"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Self-alignment engine</label>
-                  <select v-model="alignerPreference" class="form-select">
-                    <option value="auto">
-                      Auto (mm2-plus AVX-512 -> AVX2 -> minimap2)
-                    </option>
-                    <option value="mm2plus">mm2-plus best available</option>
-                    <option value="mm2plus-avx512">mm2-plus AVX-512</option>
-                    <option value="mm2plus-avx2">mm2-plus AVX2</option>
-                    <option value="minimap2">minimap2</option>
-                  </select>
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Extra aligner arguments</label>
-                  <input
-                    v-model.trim="extraMinimap2Args"
-                    type="text"
-                    class="form-control"
-                    placeholder="e.g. -f 0.0002"
-                  />
-                  <small class="text-muted"
-                    >Passed as separate arguments without a shell; leave empty
-                    for HiCT defaults.</small
-                  >
-                </div>
-                <div class="col-12">
-                  <label class="form-label">Alignment command preview</label>
-                  <pre class="dotplot-command-preview">{{
-                    alignerCommandPreview
-                  }}</pre>
-                  <small class="text-muted">
-                    The final PAF path is a runtime temporary file; arguments
-                    and selected aligner match the current settings.
-                  </small>
-                </div>
-                <div class="col-md-3 d-flex align-items-end">
-                  <div class="form-check form-switch">
+                  <div class="col-md-12">
+                    <label class="form-label"
+                      >Apply AGP to FASTA before self-alignment
+                      (optional)</label
+                    >
+                    <select v-model="assemblyAgpFilename" class="form-select">
+                      <option value="">Use FASTA as-is</option>
+                      <option
+                        v-for="file in agpFiles"
+                        :key="file"
+                        :value="file"
+                      >
+                        {{ file }}
+                      </option>
+                    </select>
+                    <small class="text-muted">
+                      Use this when the dotplot should be generated for a
+                      scaffolded assembly state. The AGP-defined sequence is
+                      written to a temporary FASTA before mm2-plus/minimap2
+                      runs.
+                    </small>
+                  </div>
+                  <div v-if="dotplotOffsetWarnings.length" class="col-12">
+                    <div class="alert alert-warning py-2 mb-0">
+                      <strong>Overlay alignment warning.</strong>
+                      <ul class="mb-0 ps-3">
+                        <li
+                          v-for="warning in dotplotOffsetWarnings"
+                          :key="warning"
+                        >
+                          {{ warning }}
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Minimizer k-mer length</label>
                     <input
-                      id="dotplot-skip-diag"
-                      v-model="skipDiagonal"
-                      class="form-check-input"
-                      type="checkbox"
+                      v-model.number="minimizerK"
+                      type="number"
+                      min="5"
+                      class="form-control"
                     />
-                    <label class="form-check-label" for="dotplot-skip-diag"
-                      >Skip exact diagonal</label
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Minimizer window size</label>
+                    <input
+                      v-model.number="minimizerWindow"
+                      type="number"
+                      min="1"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Aligner -m chain score</label>
+                    <input
+                      v-model.number="minChainScore"
+                      type="number"
+                      min="0"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Drop near-diagonal bins</label>
+                    <input
+                      v-model.number="dropNearDiagonalBins"
+                      type="number"
+                      min="0"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">PAF sample step, bp</label>
+                    <input
+                      v-model.number="sampleBp"
+                      type="number"
+                      min="1"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Minimum alignment length</label>
+                    <input
+                      v-model.number="minAlignmentLength"
+                      type="number"
+                      min="0"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Aligner threads</label>
+                    <input
+                      v-model.number="alignmentThreads"
+                      type="number"
+                      min="-1"
+                      title="-1: automatic server CPU allocation"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Conversion threads</label>
+                    <input
+                      v-model.number="conversionThreads"
+                      type="number"
+                      min="-1"
+                      title="-1: automatic server CPU allocation"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Self-alignment engine</label>
+                    <select v-model="alignerPreference" class="form-select">
+                      <option value="auto">
+                        Auto (mm2-plus AVX-512 -> AVX2 -> minimap2)
+                      </option>
+                      <option value="mm2plus">mm2-plus best available</option>
+                      <option value="mm2plus-avx512">mm2-plus AVX-512</option>
+                      <option value="mm2plus-avx2">mm2-plus AVX2</option>
+                      <option value="minimap2">minimap2</option>
+                    </select>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Extra aligner arguments</label>
+                    <input
+                      v-model.trim="extraMinimap2Args"
+                      type="text"
+                      class="form-control"
+                      placeholder="e.g. -f 0.0002"
+                    />
+                    <small class="text-muted"
+                      >Passed as separate arguments without a shell; leave empty
+                      for HiCT defaults.</small
                     >
                   </div>
-                </div>
-                <div class="col-md-3 d-flex align-items-end">
-                  <div class="form-check form-switch">
-                    <input
-                      id="dotplot-overwrite"
-                      v-model="overwrite"
-                      class="form-check-input"
-                      type="checkbox"
-                    />
-                    <label class="form-check-label" for="dotplot-overwrite"
-                      >Overwrite outputs</label
-                    >
+                  <div class="col-12">
+                    <label class="form-label">Alignment command preview</label>
+                    <pre class="dotplot-command-preview">{{
+                      alignerCommandPreview
+                    }}</pre>
+                    <small class="text-muted">
+                      The final PAF path is a runtime temporary file; arguments
+                      and selected aligner match the current settings.
+                    </small>
+                  </div>
+                  <div class="col-md-3 d-flex align-items-end">
+                    <div class="form-check form-switch">
+                      <input
+                        id="dotplot-skip-diag"
+                        v-model="skipDiagonal"
+                        class="form-check-input"
+                        type="checkbox"
+                      />
+                      <label class="form-check-label" for="dotplot-skip-diag"
+                        >Skip exact diagonal</label
+                      >
+                    </div>
+                  </div>
+                  <div class="col-md-3 d-flex align-items-end">
+                    <div class="form-check form-switch">
+                      <input
+                        id="dotplot-overwrite"
+                        v-model="overwrite"
+                        class="form-check-input"
+                        type="checkbox"
+                      />
+                      <label class="form-check-label" for="dotplot-overwrite"
+                        >Overwrite outputs</label
+                      >
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div class="alert alert-info mt-3 mb-0">
-                Packaged builds use mm2-plus or minimap2 for self-alignment,
-                HiCT's integrated Java/native PAF writer, and hictk for
-                <code>load</code>/<code>zoomify</code>.
-              </div>
+                <div class="alert alert-info mt-3 mb-0">
+                  Packaged builds use mm2-plus or minimap2 for self-alignment,
+                  HiCT's integrated Java/native PAF writer, and hictk for
+                  <code>load</code>/<code>zoomify</code>.
+                </div>
+              </AdvancedSection>
             </div>
 
             <div v-else>
@@ -406,12 +423,19 @@
                       job.stageDetail ||
                       job.toolchainSummary
                     }}</small>
-                    <p v-if="job.status === 'failed'" class="alert alert-danger mt-2 mb-0" role="alert">
-                      The dotplot could not finish. The bundled tool reported an error.
+                    <p
+                      v-if="job.status === 'failed'"
+                      class="alert alert-danger mt-2 mb-0"
+                      role="alert"
+                    >
+                      The dotplot could not finish. The bundled tool reported an
+                      error.
                     </p>
                     <details v-if="job.logs.length" class="mt-2">
-                      <summary>Logs</summary>
-                      <pre class="dotplot-logs">{{ job.logs.slice(-40).join("\n") }}</pre>
+                      <summary>Show log</summary>
+                      <pre class="dotplot-logs">{{
+                        job.logs.slice(-40).join("\n")
+                      }}</pre>
                     </details>
                   </div>
                 </div>
@@ -423,23 +447,25 @@
               class="btn btn-secondary"
               @click="step === 'select' ? emit('dismissed') : (step = 'select')"
             >
-              {{ step === "select" ? "Dismiss" : "Back" }}
+              {{ step === "select" ? "Cancel" : "Back" }}
             </button>
             <button
               v-if="step === 'select'"
-              class="btn btn-primary"
-              :disabled="selection.size === 0"
-              @click="step = 'settings'"
+              type="button"
+              class="btn btn-link me-auto"
+              @click="viewCurrentJobs"
             >
-              Continue
+              View dotplot jobs
             </button>
             <button
-              v-else-if="step === 'settings'"
-              class="btn btn-success"
-              :disabled="submitting"
+              v-if="step === 'select'"
+              type="button"
+              class="btn btn-primary"
+              :disabled="submitting || !selection.size"
               @click="startDotplots"
             >
-              Start
+              Generate {{ selection.size }}
+              {{ selection.size === 1 ? "dotplot" : "dotplots" }}
             </button>
             <button v-else class="btn btn-outline-primary" @click="refreshJobs">
               Refresh
@@ -463,6 +489,7 @@
 </template>
 
 <script setup lang="ts">
+import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
 import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import {
@@ -495,7 +522,7 @@ const props = defineProps<{
   initialResolutions?: number[];
 }>();
 
-const step: Ref<"select" | "settings" | "progress"> = ref("select");
+const step: Ref<"select" | "progress"> = ref("select");
 const fastaFiles: Ref<string[]> = ref([]);
 const allFiles: Ref<string[]> = ref([]);
 const selection: Ref<Set<string>> = ref(new Set<string>());

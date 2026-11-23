@@ -19,24 +19,6 @@
           ></button>
         </header>
         <div class="modal-body">
-          <details class="small mb-3">
-            <summary>How this works</summary>
-            <p>
-              {{
-                alignment
-                  ? "Align sequence from the linked FASTA"
-                  : "Estimate sequence identity from the linked FASTA"
-              }}
-              in the current assembly order, preserving AGP gaps and adding the
-              configured separator between scaffolds. Debris and excluded
-              sequence are omitted.
-            </p>
-            <p class="small">
-              Scores are anchored to contact bins and follow assembly edits.
-              They describe the captured sequence: new joins need recomputation.
-              Each selected resolution is computed independently.
-            </p>
-          </details>
           <p v-if="error" class="alert alert-danger" role="alert">
             {{ error }}
           </p>
@@ -202,127 +184,109 @@
               Select a rectangle for a shorter calculation; other regions can be
               added later.
             </p>
-            <div v-if="!alignment" class="row g-3">
-              <div class="col-sm-6">
-                <label for="moddotplot-identity" class="form-label"
-                  >Minimum identity (%)</label
-                ><input
-                  id="moddotplot-identity"
-                  v-model.number="identity"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  class="form-control"
-                  required
-                />
-              </div>
-            </div>
-            <details v-if="!alignment" class="mt-3">
-              <summary>Advanced</summary>
-              <SequenceGapSettings
-                :request-manager="
-                  props.mapManager.networkManager.requestManager
-                "
-              />
-
-              <div class="row g-3 mt-0">
+            <label for="dotplot-display" class="form-label"
+              >Show result as</label
+            >
+            <select
+              id="dotplot-display"
+              v-model="displayMode"
+              class="form-select mb-2"
+            >
+              <option value="overlay">Overlay on the Hi-C map</option>
+              <option value="above">Above the diagonal</option>
+              <option value="below">Below diagonal</option>
+              <option value="none">Don’t link</option>
+            </select>
+            <AdvancedSection dialog-id="moddotplot">
+              <div v-if="!alignment" class="row g-3">
                 <div class="col-sm-6">
-                  <label for="moddotplot-threads" class="form-label"
-                    >Worker threads</label
+                  <label for="moddotplot-identity" class="form-label"
+                    >Minimum identity (%)</label
                   ><input
-                    id="moddotplot-threads"
-                    v-model.number="threads"
-                    type="number"
-                    min="-1"
-                    max="256"
-                    step="1"
-                    class="form-control"
-                    required
-                  /><small class="form-text"
-                    >-1 uses all allocated logical CPUs; 0 chooses
-                    automatically; 1 is single-threaded.</small
-                  >
-                </div>
-                <div class="col-sm-6">
-                  <label for="moddotplot-k" class="form-label"
-                    >k-mer length</label
-                  ><input
-                    id="moddotplot-k"
-                    v-model.number="k"
-                    type="number"
-                    min="1"
-                    max="65535"
-                    step="1"
-                    class="form-control"
-                    required
-                  />
-                </div>
-                <div class="col-sm-6">
-                  <label for="moddotplot-sketch" class="form-label"
-                    >Target sketch size</label
-                  ><input
-                    id="moddotplot-sketch"
-                    v-model.number="sketchSize"
-                    type="number"
-                    min="1"
-                    max="1000000"
-                    step="1"
-                    class="form-control"
-                    required
-                  />
-                </div>
-                <div class="col-sm-6">
-                  <label for="moddotplot-delta" class="form-label"
-                    >Neighbor expansion (fraction of window)</label
-                  ><input
-                    id="moddotplot-delta"
-                    v-model.number="delta"
+                    id="moddotplot-identity"
+                    v-model.number="identity"
                     type="number"
                     min="0"
-                    max="1"
+                    max="100"
                     step="0.1"
                     class="form-control"
                     required
                   />
                 </div>
               </div>
-            </details>
-            <div v-else class="row g-3">
-              <div
-                class="col-sm-6"
-                v-for="option in primaryAlignmentOptions"
-                :key="option.key"
-              >
-                <label :for="'dotplot-' + option.key" class="form-label">{{
-                  option.label
-                }}</label
-                ><input
-                  :id="'dotplot-' + option.key"
-                  v-model.number="alignmentSettings[option.key]"
-                  type="number"
-                  :min="option.min ?? 1"
-                  :max="option.max"
-                  step="1"
-                  class="form-control"
-                  required
-                /><small v-if="option.key === 'threads'" class="form-text"
-                  >-1 uses all allocated CPUs; 0 chooses automatically.</small
-                >
-              </div>
-            </div>
-            <details v-if="alignment" class="mt-3">
-              <summary>Advanced</summary>
-              <SequenceGapSettings
-                :request-manager="
-                  props.mapManager.networkManager.requestManager
-                "
-              />
+              <div v-if="!alignment" class="mt-3">
+                <SequenceGapSettings
+                  :request-manager="
+                    props.mapManager.networkManager.requestManager
+                  "
+                />
 
-              <div class="row g-3 mt-0">
+                <div class="row g-3 mt-0">
+                  <div class="col-sm-6">
+                    <label for="moddotplot-threads" class="form-label"
+                      >Worker threads</label
+                    ><input
+                      id="moddotplot-threads"
+                      v-model.number="threads"
+                      type="number"
+                      min="-1"
+                      max="256"
+                      step="1"
+                      class="form-control"
+                      required
+                    /><small class="form-text"
+                      >-1 uses all allocated logical CPUs; 0 chooses
+                      automatically; 1 is single-threaded.</small
+                    >
+                  </div>
+                  <div class="col-sm-6">
+                    <label for="moddotplot-k" class="form-label"
+                      >k-mer length</label
+                    ><input
+                      id="moddotplot-k"
+                      v-model.number="k"
+                      type="number"
+                      min="1"
+                      max="65535"
+                      step="1"
+                      class="form-control"
+                      required
+                    />
+                  </div>
+                  <div class="col-sm-6">
+                    <label for="moddotplot-sketch" class="form-label"
+                      >Target sketch size</label
+                    ><input
+                      id="moddotplot-sketch"
+                      v-model.number="sketchSize"
+                      type="number"
+                      min="1"
+                      max="1000000"
+                      step="1"
+                      class="form-control"
+                      required
+                    />
+                  </div>
+                  <div class="col-sm-6">
+                    <label for="moddotplot-delta" class="form-label"
+                      >Neighbor expansion (fraction of window)</label
+                    ><input
+                      id="moddotplot-delta"
+                      v-model.number="delta"
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      class="form-control"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+              <div v-if="alignment" class="row g-3">
                 <div
                   class="col-sm-6"
-                  v-for="option in advancedAlignmentOptions"
+                  v-for="option in primaryAlignmentOptions"
                   :key="option.key"
                 >
                   <label :for="'dotplot-' + option.key" class="form-label">{{
@@ -342,89 +306,127 @@
                   >
                 </div>
               </div>
-            </details>
-            <div class="form-check mt-3">
-              <input
-                id="analysis-save-data"
-                v-model="saveReusable"
-                type="checkbox"
-                class="form-check-input"
-              />
-              <label for="analysis-save-data" class="form-check-label"
-                >Save a reusable copy under DATA_DIR</label
-              >
-            </div>
-            <div v-if="saveReusable" class="row g-3 mt-0">
-              <div class="col-sm-9">
-                <label for="analysis-output" class="form-label"
-                  >Output path</label
-                ><input
-                  id="analysis-output"
-                  v-model.trim="outputFilename"
-                  class="form-control"
-                  required
-                  :placeholder="defaultOutputFilename"
-                /><small class="form-text"
-                  >Relative to DATA_DIR; parent folders are created.</small
-                >
+              <div v-if="alignment" class="mt-3">
+                <SequenceGapSettings
+                  :request-manager="
+                    props.mapManager.networkManager.requestManager
+                  "
+                />
+
+                <div class="row g-3 mt-0">
+                  <div
+                    class="col-sm-6"
+                    v-for="option in advancedAlignmentOptions"
+                    :key="option.key"
+                  >
+                    <label :for="'dotplot-' + option.key" class="form-label">{{
+                      option.label
+                    }}</label
+                    ><input
+                      :id="'dotplot-' + option.key"
+                      v-model.number="alignmentSettings[option.key]"
+                      type="number"
+                      :min="option.min ?? 1"
+                      :max="option.max"
+                      step="1"
+                      class="form-control"
+                      required
+                    /><small v-if="option.key === 'threads'" class="form-text"
+                      >-1 uses all allocated CPUs; 0 chooses
+                      automatically.</small
+                    >
+                  </div>
+                </div>
               </div>
-              <div class="col-sm-3 form-check align-self-end pb-2">
+              <div class="form-check mt-3">
                 <input
-                  id="analysis-overwrite"
-                  v-model="overwrite"
+                  id="analysis-save-data"
+                  v-model="saveReusable"
                   type="checkbox"
                   class="form-check-input"
-                /><label for="analysis-overwrite" class="form-check-label"
-                  >Overwrite</label
+                />
+                <label for="analysis-save-data" class="form-check-label"
+                  >Save a reusable copy in the data folder</label
                 >
               </div>
-            </div>
-            <label class="form-check mt-3"
-              ><input
-                v-model="mergeCompatible"
-                type="checkbox"
-                class="form-check-input"
-              />Accumulate compatible regions; replace scores within this
-              rectangle</label
-            >
-            <p class="small">
-              Different settings create a separate overlay. After a successful
-              update, the superseded matrix is removed once detached. Logs and
-              provenance are retained. Cancellation or failure retains the
-              previous matrix.
-            </p>
-            <label for="dotplot-display" class="form-label"
-              >Display completed result</label
-            >
-            <select
-              id="dotplot-display"
-              v-model="displayMode"
-              class="form-select mb-2"
-            >
-              <option value="overlay">Overlay on the Hi-C map</option>
-              <option value="above">Above the diagonal</option>
-              <option value="below">Below diagonal</option>
-              <option value="none">Do not link now</option>
-            </select>
-            <details class="small">
-              <summary>How this works</summary>
+              <div v-if="saveReusable" class="row g-3 mt-0">
+                <div class="col-sm-9">
+                  <label for="analysis-output" class="form-label"
+                    >Output path</label
+                  ><input
+                    id="analysis-output"
+                    v-model.trim="outputFilename"
+                    class="form-control"
+                    required
+                    :placeholder="defaultOutputFilename"
+                  /><small class="form-text"
+                    >Relative to DATA_DIR; parent folders are created.</small
+                  >
+                </div>
+                <div class="col-sm-3 form-check align-self-end pb-2">
+                  <input
+                    id="analysis-overwrite"
+                    v-model="overwrite"
+                    type="checkbox"
+                    class="form-check-input"
+                  /><label for="analysis-overwrite" class="form-check-label"
+                    >Overwrite</label
+                  >
+                </div>
+              </div>
+              <label class="form-check mt-3"
+                ><input
+                  v-model="mergeCompatible"
+                  type="checkbox"
+                  class="form-check-input"
+                />Accumulate compatible regions; replace scores within this
+                rectangle</label
+              >
               <p class="small">
-                Attaching replaces the current secondary source and starts a new
-                edit journal. To retain the current journal, choose “Do not link
-                now” and attach the saved sidecar later.
+                Different settings create a separate overlay. After a successful
+                update, the superseded matrix is removed once detached. Logs and
+                provenance are retained. Cancellation or failure retains the
+                previous matrix.
               </p>
-              <p v-if="!alignment" class="small">
-                Uses Observed display. The ModDotPlot identity colormap runs
-                from blue through yellow to red at 100%; zero/uncomputed cells
-                are transparent. Coverage and provenance are saved in the
-                sidecar.
-              </p>
-              <p v-if="alignment" class="small">
-                Uses Observed display with sampled alignment counts. Counts are
-                not identity percentages. The active minimap2/mm2-plus aligner
-                is used; zeros are transparent.
-              </p>
-            </details>
+              <details class="small mb-3">
+                <summary>How the scores are calculated</summary>
+                <p>
+                  {{
+                    alignment
+                      ? "Align sequence from the linked FASTA"
+                      : "Estimate sequence identity from the linked FASTA"
+                  }}
+                  in the current assembly order, preserving AGP gaps and adding
+                  the configured separator between scaffolds. Debris and
+                  excluded sequence are omitted.
+                </p>
+                <p class="small">
+                  Scores are anchored to contact bins and follow assembly edits.
+                  They describe the captured sequence: new joins need
+                  recomputation. Each selected resolution is computed
+                  independently.
+                </p>
+              </details>
+              <details class="small">
+                <summary>How this works</summary>
+                <p class="small">
+                  Attaching replaces the current secondary source. To keep the
+                  current secondary map, choose “Don’t link” and attach the
+                  saved result later.
+                </p>
+                <p v-if="!alignment" class="small">
+                  Uses Observed display. The ModDotPlot identity colormap runs
+                  from blue through yellow to red at 100%; zero/uncomputed cells
+                  are transparent. Coverage and provenance are saved in the
+                  sidecar.
+                </p>
+                <p v-if="alignment" class="small">
+                  Uses Observed display with sampled alignment counts. Counts
+                  are not identity percentages. The active minimap2/mm2-plus
+                  aligner is used; zeros are transparent.
+                </p>
+              </details>
+            </AdvancedSection>
           </fieldset>
           <div
             v-if="job?.status === 'finished' && job.outputFile"
@@ -480,7 +482,9 @@
           </div>
           <details v-if="job?.logs.length" class="analysis-log-details">
             <summary>Show log</summary>
-            <pre class="analysis-logs" aria-label="ModDotPlot log">{{ job.logs.slice(-40).join("\n") }}</pre>
+            <pre class="analysis-logs" aria-label="ModDotPlot log">{{
+              job.logs.slice(-40).join("\n")
+            }}</pre>
           </details>
         </div>
         <footer class="modal-footer">
@@ -528,7 +532,7 @@
               !resolutions.length
             "
           >
-            {{ title }}
+            Generate
           </button>
         </footer>
       </form>
@@ -536,6 +540,7 @@
   </Teleport>
 </template>
 <script setup lang="ts">
+import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { showFailure } from "@/app/ui/reportFailure";
@@ -561,9 +566,7 @@ const props = defineProps<{
 }>();
 const alignment = props.kind === "dotplot";
 const kind = alignment ? "dotplot" : "moddotplot";
-const title = alignment
-  ? "Generate dotplot from active assembly"
-  : "Generate ModDotPlot";
+const title = alignment ? "Dotplot from current assembly" : "ModDotPlot";
 const alignmentSettings = ref({
   k: 15,
   window: 10,
@@ -899,7 +902,9 @@ async function poll() {
       return;
     }
     if (current.status === "failed") {
-      const title = alignment ? "The dotplot could not finish." : "ModDotPlot could not finish.";
+      const title = alignment
+        ? "The dotplot could not finish."
+        : "ModDotPlot could not finish.";
       const description = "The bundled tool reported an error.";
       error.value = `${title} ${description}`;
       showFailure(title, description, current.logs.slice(-40).join("\n"));

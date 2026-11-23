@@ -465,8 +465,11 @@
                   </div>
                 </div>
 
-                <details class="track-extra-settings mt-3">
-                  <summary>Track appearance</summary>
+                <AdvancedSection
+                  dialog-id="tracks"
+                  @open-change="onPreparationToggle"
+                >
+                  <h6 class="mb-0">Track appearance</h6>
                   <div class="alert alert-light border py-2">
                     <div
                       class="d-flex align-items-center justify-content-between gap-2"
@@ -502,12 +505,7 @@
                       </div>
                     </div>
                   </div>
-                </details>
-                <details
-                  class="track-extra-settings mt-3"
-                  @toggle="onPreparationToggle"
-                >
-                  <summary>Preparation</summary>
+                  <h6 class="mb-0">Preparation</h6>
                   <p
                     v-if="
                       tracks.some((track) => track.type === 'COOLER_WEIGHTS')
@@ -581,7 +579,7 @@
                       >No background jobs yet.</small
                     >
                   </div>
-                </details>
+                </AdvancedSection>
               </section>
               <section
                 id="track-panel-sources"
@@ -676,10 +674,9 @@
                     </div>
                   </div>
                   <p class="small mb-1 mt-2">
-                    Source changes start a new edit journal; earlier undo/redo
-                    states will no longer be available. When Secondary is the
-                    assembly source, replacing it also adopts the new source’s
-                    layout.
+                    HiCT keeps each assembly’s edit history while changing
+                    sources. If you choose the secondary map as the assembly
+                    source, HiCT displays its layout.
                   </p>
                   <p class="small mb-1">
                     Generated dotplot scores move with their original sequence
@@ -893,6 +890,7 @@
 </template>
 
 <script setup lang="ts">
+import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
 import CommittedTrackInput from "@/app/ui/components/tracks/CommittedTrackInput.vue";
 import { reportFailure } from "@/app/ui/reportFailure";
 import { useModalFocus } from "@/app/ui/modalFocus";
@@ -1681,9 +1679,9 @@ const stopPrecomputePolling = (): void => {
   if (precomputePollHandle !== null) window.clearInterval(precomputePollHandle);
   precomputePollHandle = null;
 };
-const onPreparationToggle = (event: Event): void => {
+const onPreparationToggle = (open: boolean): void => {
   stopPrecomputePolling();
-  if (disposed || !(event.target as HTMLDetailsElement).open) return;
+  if (disposed || !open) return;
   void refreshPrecomputeStatus();
   precomputePollHandle = window.setInterval(() => {
     void refreshPrecomputeStatus();

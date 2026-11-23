@@ -34,11 +34,18 @@
           <div class="threshold-field-row">
             <input
               class="form-control form-control-sm threshold-number-input"
-              type="number"
+              :type="focusedThreshold === 'lower' ? 'number' : 'text'"
               :aria-label="'Lower signal threshold'"
               lang="en"
               step="any"
-              v-model.number="lowerBound"
+              :value="
+                focusedThreshold === 'lower'
+                  ? lowerBound
+                  : formatSignal(lowerBound)
+              "
+              @focus="focusedThreshold = 'lower'"
+              @blur="focusedThreshold = null"
+              @input="lowerBound = readThreshold($event)"
               @keydown.enter="applySettings"
             />
             <ColorPickerRectangle
@@ -53,11 +60,18 @@
           <div class="threshold-field-row">
             <input
               class="form-control form-control-sm threshold-number-input"
-              type="number"
+              :type="focusedThreshold === 'upper' ? 'number' : 'text'"
               aria-label="Upper signal threshold"
               lang="en"
               step="any"
-              v-model.number="upperBound"
+              :value="
+                focusedThreshold === 'upper'
+                  ? upperBound
+                  : formatSignal(upperBound)
+              "
+              @focus="focusedThreshold = 'upper'"
+              @blur="focusedThreshold = null"
+              @input="upperBound = readThreshold($event)"
               @keydown.enter="applySettings"
             />
             <ColorPickerRectangle
@@ -131,10 +145,6 @@
           />
         </template>
       </SignalRangeControl>
-      <p v-if="midpointPosition !== undefined" class="range-help">
-        Double-click the histogram to add a curve point. Drag to adjust it or
-        right-click to remove it.
-      </p>
       <p
         v-if="visualizationOptionsStore.pendingVisualizationMutations"
         class="range-help mb-0"
@@ -164,120 +174,6 @@
         O/E: lower color is depleted, white is 1, upper color is enriched.
         Limits must satisfy 0 &lt; lower &lt; 1 &lt; upper.
       </p>
-      <div class="range-actions">
-        <button
-          v-if="
-            midpointPosition !== undefined && (colorGamma !== 1 || curveData)
-          "
-          type="button"
-          class="range-text-button"
-          @click="setColorGamma(1)"
-          title="Restore a linear color transition without changing thresholds"
-        >
-          Reset curve
-        </button>
-        <div class="scale-group">
-          <span id="slider-scale-label" class="scale-caption"
-            >Slider scale</span
-          >
-          <div
-            class="scale-choice"
-            role="group"
-            aria-labelledby="slider-scale-label"
-            title="Changes slider sensitivity, not matrix values"
-          >
-            <button
-              type="button"
-              :aria-pressed="!sliderLogScale"
-              @click="sliderLogScale = false"
-            >
-              Linear
-            </button>
-            <button
-              type="button"
-              :aria-pressed="sliderLogScale"
-              @click="sliderLogScale = true"
-            >
-              Log
-            </button>
-          </div>
-        </div>
-        <button
-          type="button"
-          class="range-text-button"
-          @click="focusThresholds"
-          title="Expand the selected range across the slider for finer adjustment"
-        >
-          Focus range
-        </button>
-      </div>
-      <details class="range-details">
-        <summary>
-          <span>Slider limits &amp; data</span
-          ><span class="range-summary-value"
-            >{{ formatSignal(sliderMin) }} – {{ formatSignal(sliderMax) }}</span
-          >
-        </summary>
-        <p class="range-help">
-          Slider limits control adjustment precision. They do not change the
-          selected colors or thresholds.
-        </p>
-        <div class="domain-inputs">
-          <label
-            >Minimum<input
-              v-model.number="sliderLowerLimit"
-              type="number"
-              step="any"
-              aria-label="Slider minimum signal"
-              @change="onSliderLimitChanged"
-          /></label>
-          <label
-            >Maximum<input
-              v-model.number="sliderUpperLimit"
-              type="number"
-              step="any"
-              aria-label="Slider maximum signal"
-              @change="onSliderLimitChanged"
-          /></label>
-        </div>
-        <button
-          v-if="!primaryDerivedSignal"
-          type="button"
-          class="range-text-button"
-          title="Use the exact minimum and maximum of the loaded tiles, including rare extreme pixels"
-          @click="useLoadedRange"
-        >
-          Use full loaded range
-        </button>
-        <p class="range-help" role="status" data-testid="exact-range-status">
-          {{ percentageSignalScale ? "Percentage scale: 0–100" : rangeStatus }}
-        </p>
-        <button
-          v-if="!percentageSignalScale"
-          type="button"
-          class="range-text-button"
-          :disabled="rangeScanning"
-          @click="fetchExactRange"
-        >
-          Scan whole map
-        </button>
-        <button
-          v-if="rangeScanning"
-          type="button"
-          class="range-text-button"
-          @click="cancelExactRange"
-        >
-          Cancel scan
-        </button>
-        <span v-if="!percentageSignalScale" class="range-help">
-          · Reads all tiles; may take time.</span
-        >
-        <p v-if="primaryDerivedSignal" class="range-help">
-          Whole-map Expected/O/E limits use a profile fitted across this
-          resolution, independently of the viewport profile. Scanning changes
-          slider limits only.
-        </p>
-      </details>
       <p
         v-if="applyCoolerWeights && coolerWeightsHaveNaNs"
         class="small mb-1"
@@ -287,16 +183,158 @@
         {{
           weightsNeedAttention
             ? "Excluded bins use replacement weights."
-            : `${coolerWeightsNaNCount} excluded bins masked.`
+            : `${coolerWeightsNaNCount.toLocaleString()} bins without weights are hidden.`
         }}
       </p>
       <NormalizationSelector
         :map-manager="props.mapManager"
         @apply="applySettings"
       >
+        <template #advanced-top>
+          <p v-if="midpointPosition !== undefined" class="range-help">
+            Double-click the histogram to add a curve point. Drag to adjust it
+            or right-click to remove it.
+          </p>
+          <div class="range-actions">
+            <button
+              v-if="
+                midpointPosition !== undefined &&
+                (colorGamma !== 1 || curveData)
+              "
+              type="button"
+              class="range-text-button"
+              @click="setColorGamma(1)"
+              title="Restore a linear color transition without changing thresholds"
+            >
+              Reset curve
+            </button>
+            <div class="scale-group">
+              <span id="slider-scale-label" class="scale-caption"
+                >Slider scale</span
+              >
+              <div
+                class="scale-choice"
+                role="group"
+                aria-labelledby="slider-scale-label"
+                title="Changes slider sensitivity, not matrix values"
+              >
+                <button
+                  type="button"
+                  :aria-pressed="!sliderLogScale"
+                  @click="sliderLogScale = false"
+                >
+                  Linear
+                </button>
+                <button
+                  type="button"
+                  :aria-pressed="sliderLogScale"
+                  @click="sliderLogScale = true"
+                >
+                  Log
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="range-text-button"
+              @click="focusThresholds"
+              title="Expand the selected range across the slider for finer adjustment"
+            >
+              Focus range
+            </button>
+          </div>
+          <div class="range-details">
+            <div class="fw-semibold">
+              <span>Slider limits</span
+              ><span class="range-summary-value"
+                >{{ formatSignal(sliderMin) }} –
+                {{ formatSignal(sliderMax) }}</span
+              >
+            </div>
+            <p class="range-help">
+              Slider limits control adjustment precision. They do not change the
+              selected colors or thresholds.
+            </p>
+            <div class="domain-inputs">
+              <label
+                >Minimum<input
+                  :value="
+                    focusedThreshold === 'slider-min'
+                      ? sliderLowerLimit
+                      : formatSignal(sliderLowerLimit)
+                  "
+                  @focus="focusedThreshold = 'slider-min'"
+                  @blur="focusedThreshold = null"
+                  @input="sliderLowerLimit = readThreshold($event)"
+                  :type="focusedThreshold === 'slider-min' ? 'number' : 'text'"
+                  step="any"
+                  aria-label="Slider minimum signal"
+                  @change="onSliderLimitChanged"
+              /></label>
+              <label
+                >Maximum<input
+                  :value="
+                    focusedThreshold === 'slider-max'
+                      ? sliderUpperLimit
+                      : formatSignal(sliderUpperLimit)
+                  "
+                  @focus="focusedThreshold = 'slider-max'"
+                  @blur="focusedThreshold = null"
+                  @input="sliderUpperLimit = readThreshold($event)"
+                  :type="focusedThreshold === 'slider-max' ? 'number' : 'text'"
+                  step="any"
+                  aria-label="Slider maximum signal"
+                  @change="onSliderLimitChanged"
+              /></label>
+            </div>
+            <button
+              v-if="!primaryDerivedSignal"
+              type="button"
+              class="range-text-button"
+              title="Use the exact minimum and maximum of the loaded tiles, including rare extreme pixels"
+              @click="useLoadedRange"
+            >
+              Use full loaded range
+            </button>
+            <p
+              class="range-help"
+              role="status"
+              data-testid="exact-range-status"
+            >
+              {{
+                percentageSignalScale ? "Percentage scale: 0–100" : rangeStatus
+              }}
+            </p>
+            <button
+              v-if="!percentageSignalScale"
+              type="button"
+              class="range-text-button"
+              :disabled="rangeScanning"
+              @click="fetchExactRange"
+            >
+              Scan whole map
+            </button>
+            <button
+              v-if="rangeScanning"
+              type="button"
+              class="range-text-button"
+              @click="cancelExactRange"
+            >
+              Cancel scan
+            </button>
+            <span v-if="!percentageSignalScale" class="range-help">
+              · Reads all tiles; may take time.</span
+            >
+            <p v-if="primaryDerivedSignal" class="range-help">
+              Whole-map Expected/O/E limits use a profile fitted across this
+              resolution, independently of the viewport profile. Scanning
+              changes slider limits only.
+            </p>
+          </div>
+        </template>
         <template #excluded-bins>
-          <details v-if="coolerWeightsHaveNaNs" :class="coolerWeightsHintClass">
-            <summary
+          <div v-if="coolerWeightsHaveNaNs" :class="coolerWeightsHintClass">
+            <div
               :title="
                 weightsNeedAttention
                   ? 'Excluded-bin policy needs attention'
@@ -308,16 +346,16 @@
                 class="bi bi-exclamation-triangle-fill"
               ></i>
               Cooler weights
-            </summary>
+            </div>
             <div v-if="coolerWeightsHaveNaNs">
-              Detected {{ coolerWeightsNaNCount }} non-finite Cooler balancing
-              weight{{ coolerWeightsNaNCount === 1 ? "" : "s" }}. Selected
-              tactic: {{ coolerWeightsNaNPolicyLabel }}.
+              Detected {{ coolerWeightsNaNCount }} missing balancing weight{{
+                coolerWeightsNaNCount === 1 ? "" : "s"
+              }}. Selected policy: {{ coolerWeightsNaNPolicyLabel }}.
               <label
                 class="form-label small mt-2 mb-1"
                 for="cooler-weights-nan-policy"
               >
-                NaN weight tactic
+                Bins without balancing weight
               </label>
               <select
                 id="cooler-weights-nan-policy"
@@ -326,17 +364,17 @@
                 @change="onCoolerWeightsNaNPolicyChanged"
               >
                 <option value="DISABLE_WEIGHTS">
-                  Do not use Cooler weights
+                  Show raw contacts (no balancing)
                 </option>
                 <option value="REPLACE_NANS_WITH_ONE">
-                  Replace NaNs with weight 1.0
+                  Treat missing weight as 1
                 </option>
                 <option value="REPLACE_NANS_WITH_ZERO">
-                  Replace NaNs with weight 0
+                  Hide bins without balancing weight (recommended)
                 </option>
               </select>
             </div>
-          </details>
+          </div>
         </template>
       </NormalizationSelector>
 
@@ -353,6 +391,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatSignal } from "@/app/core/format/formatSignal";
 import { identityColors } from "@/app/core/sequence/modDotPlot";
 import {
   computed,
@@ -440,6 +479,11 @@ const fromColor: Ref<ColorTranslator> = ref(
 const toColor = ref(
   new ColorTranslator("rgba(0,96,0,1.0)", { legacyCSS: true })
 ) as Ref<ColorTranslator>;
+function readThreshold(event: Event): number {
+  const value = (event.target as HTMLInputElement).value.trim();
+  return value ? Number(value) : NaN;
+}
+const focusedThreshold = ref<string | null>(null);
 const lowerBound: Ref<number> = ref(signalMin.value);
 const upperBound: Ref<number> = ref(signalMax.value);
 const rangeValidationError = computed(() => {
@@ -499,7 +543,10 @@ const rangeCache = new Map<string, ExactRange>();
 const completedRanges = new Map<string, ExactRange>();
 let completedRangesMap: ContactMapManager | undefined;
 
-function exactRangeContext(manager: ContactMapManager, bpResolution: number): string {
+function exactRangeContext(
+  manager: ContactMapManager,
+  bpResolution: number
+): string {
   if (completedRangesMap !== manager) {
     completedRangesMap = manager;
     completedRanges.clear();
@@ -525,7 +572,9 @@ function showExactLimits(range: ExactRange, bpResolution: number): void {
   const displayMode = visualizationOptionsStore.signalDisplayMode;
   const mode = displayMode === "OBSERVED_OVER_EXPECTED" ? "O/E" : "Expected";
   const suffix = primaryDerivedSignal.value ? ` (whole-map ${mode})` : "";
-  rangeStatus.value = `Exact limits${suffix}: ${formatSignal(range.min)} – ${formatSignal(range.max)} (${range.count} finite cells)`;
+  rangeStatus.value = `Exact limits${suffix}: ${formatSignal(
+    range.min
+  )} – ${formatSignal(range.max)} (${range.count} finite cells)`;
 }
 const LOG_SLIDER_FLOOR_FRACTION = 1e-10;
 
@@ -541,10 +590,10 @@ const coolerWeightsNaNPolicyLabel = computed(() => {
     case "DISABLE_WEIGHTS":
       return "do not use Cooler weights";
     case "REPLACE_NANS_WITH_ZERO":
-      return "replace NaNs with weight 0";
+      return "hide bins without weights";
     case "REPLACE_NANS_WITH_ONE":
     default:
-      return "replace NaNs with weight 1";
+      return "treat missing weight as 1";
   }
 });
 
@@ -1026,8 +1075,12 @@ function refreshProcessedRange(): void {
 function fetchProcessedRange(): void {
   const manager = props.mapManager;
   if (rangeScanning.value || !manager || manager.isDisposed) return;
-  const resolution = manager.viewAndLayersManager.currentViewState.resolutionDesciptor.bpResolution;
-  const completedRange = completedRanges.get(exactRangeContext(manager, resolution));
+  const resolution =
+    manager.viewAndLayersManager.currentViewState.resolutionDesciptor
+      .bpResolution;
+  const completedRange = completedRanges.get(
+    exactRangeContext(manager, resolution)
+  );
   if (completedRange) {
     showExactLimits(completedRange, resolution);
     return;
@@ -1352,21 +1405,6 @@ function fromSliderPosition(value: number): number {
 
 function finiteOr(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
-}
-
-function formatSignal(value: number): string {
-  if (!Number.isFinite(value)) {
-    return "n/a";
-  }
-  if (
-    Math.abs(value) >= 1000 ||
-    (Math.abs(value) > 0 && Math.abs(value) < 0.01)
-  ) {
-    return value.toExponential(2);
-  }
-  return value.toLocaleString(undefined, {
-    maximumFractionDigits: 4,
-  });
 }
 </script>
 

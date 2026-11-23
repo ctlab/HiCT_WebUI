@@ -72,7 +72,6 @@ import {
   SetNormalizationRequest,
   SetContrastRangeRequest,
   GetCurrentSignalRangeRequest,
-  SaveFileRequest,
   GetAGPForAssemblyRequest,
   ListCoolerFilesRequest,
   ListConvertibleMatrixFilesRequest,
@@ -217,8 +216,6 @@ abstract class HiCTAPIRequestDTO<
         );
       case entity instanceof OpenFileRequest:
         return new OpenFileRequestDTO(entity as OpenFileRequest);
-      case entity instanceof SaveFileRequest:
-        return new SaveFileRequestDTO(entity as SaveFileRequest);
       case entity instanceof ListFilesRequest:
         return new ListFilesRequestDTO(entity);
       case entity instanceof ListFilesDetailedRequest:
@@ -812,14 +809,6 @@ class OpenFileRequestDTO extends HiCTAPIRequestDTO<OpenFileRequest> {
   }
 }
 
-class SaveFileRequestDTO extends HiCTAPIRequestDTO<SaveFileRequest> {
-  toDTO(): Record<string, unknown> {
-    return {
-      filename: this.entity.options.filename,
-    };
-  }
-}
-
 class LinkFASTARequestDTO extends HiCTAPIRequestDTO<LinkFASTARequest> {
   toDTO(): Record<string, unknown> {
     return {
@@ -1244,7 +1233,6 @@ export {
   SetNormalizationRequestDTO,
   SetContrastRangeRequestDTO,
   GetCurrentSignalRangeRequestDTO,
-  SaveFileRequestDTO,
   ListTrackFilesRequestDTO,
   OpenTrackRequestDTO,
   ProbeTrackCompatibilityRequestDTO,

@@ -20,8 +20,9 @@
  */
 
 import { fileURLToPath, URL } from "url";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { execFileSync } from "child_process";
+import { resolve } from "path";
 
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
@@ -29,10 +30,39 @@ import vueJsx from "@vitejs/plugin-vue-jsx";
 import { sonnerVisibilityPlugins } from "./scripts/vue-sonner-visibility-fix.mjs";
 
 const sonnerVisibility = sonnerVisibilityPlugins();
-const buildCommit = execFileSync("git", ["rev-parse", "HEAD"], {
-  cwd: fileURLToPath(new URL(".", import.meta.url)),
-  encoding: "utf8",
-}).trim();
+const projectRoot = fileURLToPath(new URL(".", import.meta.url));
+const git = (args: string[]) =>
+  execFileSync("git", args, { cwd: projectRoot, encoding: "utf8" }).trim();
+const changedInputs = git([
+  "status",
+  "--porcelain",
+  "--untracked-files=normal",
+  "--",
+  "src",
+  "public",
+  "scripts",
+  "vite.config.ts",
+  "package.json",
+  "index.html",
+]);
+const buildCommit =
+  git(["rev-parse", "HEAD"]) + (changedInputs ? "-dirty" : "");
+const guideDirectory =
+  process.env.HICT_DOCS_DIR ?? resolve(projectRoot, "../HiCT_JVM/docs");
+const guideFiles = [
+  "user-guide.md",
+  "file-destinations.md",
+  "observed-expected-palettes.md",
+  "alignment-preview.md",
+  "repeat-measurement.md",
+  "remote-blast.md",
+  "figure-capture.md",
+];
+const guideAssets = new Map(
+  guideFiles
+    .map((name) => [`/docs/${name}`, resolve(guideDirectory, name)])
+    .filter(([, source]) => existsSync(source)) as Array<[string, string]>
+);
 
 function manualChunk(id: string): string | undefined {
   // Runtime helpers stay separate from map and export modules.
@@ -61,6 +91,26 @@ export default defineConfig({
           fileName: "webui-revision.txt",
           source: `${buildCommit}\n`,
         });
+      },
+    },
+    {
+      name: "hict-user-guide",
+      configureServer(server) {
+        server.middlewares.use((request, response, next) => {
+          const file = guideAssets.get(request.url?.split("?", 1)[0] ?? "");
+          if (!file) return next();
+          response.setHeader("Content-Type", "text/markdown; charset=utf-8");
+          response.end(readFileSync(file));
+        });
+      },
+      generateBundle() {
+        for (const [url, file] of guideAssets) {
+          this.emitFile({
+            type: "asset",
+            fileName: url.slice(1),
+            source: readFileSync(file),
+          });
+        }
       },
     },
     sonnerVisibility.vite,

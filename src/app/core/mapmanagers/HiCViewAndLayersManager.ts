@@ -385,6 +385,39 @@ class HiCViewAndLayersManager {
     this.setAxisScopes(scope, scope);
   }
 
+  public isRegionIsolated(): boolean {
+    const region = this.getRegionBounds();
+    if (!region) return false;
+    const { row, column } = this.getAxisScopes();
+    return (
+      row.kind === "selection" &&
+      column.kind === "selection" &&
+      row.startBp === region.rowStart &&
+      row.endBp === region.rowEnd &&
+      column.startBp === region.columnStart &&
+      column.endBp === region.columnEnd
+    );
+  }
+
+  public isolateRegion(): void {
+    const region = this.getRegionBounds();
+    if (!region) return;
+    this.setAxisScopes(
+      {
+        kind: "selection",
+        label: "Selection",
+        startBp: region.rowStart,
+        endBp: region.rowEnd,
+      },
+      {
+        kind: "selection",
+        label: "Selection",
+        startBp: region.columnStart,
+        endBp: region.columnEnd,
+      }
+    );
+  }
+
   public clearRegionSelection(): void {
     this.selectionInteractions.contigSelectExtent.cancelGesture();
     this.currentViewState.selectionBorders = {};
@@ -1532,6 +1565,18 @@ class HiCViewAndLayersManager {
     scope: AxisScopeSelection,
     axis: "row" | "column"
   ): AxisScopeSelection {
+    if (
+      scope.kind === "selection" &&
+      !scope.contigIds?.length &&
+      scope.startBp !== undefined &&
+      scope.endBp !== undefined
+    ) {
+      const holder = this.mapManager.contigDimensionHolder;
+      const total = holder.prefix_sum_bp[holder.contig_count] ?? 0;
+      const startBp = Math.max(0, scope.startBp);
+      const endBp = Math.min(total, scope.endBp);
+      if (endBp > startBp) return { ...scope, startBp, endBp };
+    }
     if (scope.kind === "selection" && scope.contigIds?.length) {
       const holder = this.mapManager.contigDimensionHolder;
       const orders = scope.contigIds
@@ -3354,7 +3399,6 @@ class HiCViewAndLayersManager {
       this.currentViewState.activeTool === ActiveTool.TRANSLOCATION;
     this.markBuiltinVectorLayersDirty();
     for (const layer of this.layersHolder.track2DLayers) {
-      //TODO:
       layer.getSource()?.changed();
       layer.changed();
     }
@@ -3381,6 +3425,13 @@ class HiCViewAndLayersManager {
     return this.getVisibleSourceResolutionDescriptors().primary;
   }
 
+  private hideSecondaryDuringCapture = false;
+
+  public setSecondaryCaptureVisible(visible: boolean): void {
+    this.hideSecondaryDuringCapture = !visible;
+    this.syncLayerVisibilityForCurrentResolution();
+  }
+
   private syncLayerVisibilityForCurrentResolution(): void {
     this.ensureSequenceLayers();
     const visibleDescriptors = this.getVisibleSourceResolutionDescriptors();
@@ -3400,7 +3451,10 @@ class HiCViewAndLayersManager {
     }
     this.currentLevels.PRIMARY = visibleDescriptors.primary.bpResolution;
     this.currentLevels.SECONDARY = visibleDescriptors.secondary?.bpResolution;
-    if (
+    if (this.hideSecondaryDuringCapture) {
+      for (const layer of this.layersHolder.secondaryHiCDataLayers)
+        layer.setVisible(false);
+    } else if (
       visibleDescriptors.secondary &&
       this.secondaryUsesPrimaryGrid &&
       !this.sequenceCoordinates

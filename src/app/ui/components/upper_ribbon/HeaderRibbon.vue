@@ -25,8 +25,16 @@
       <div class="selection-tools">
         <SelectionControls :map-manager="props.mapManager" />
         <label
-          ><input v-model="uiSettingsStore.squareSelection" type="checkbox" :disabled="!props.mapManager"
-            :title="props.mapManager ? 'Constrain new selections to a square' : 'Open a map to select'" />
+          ><input
+            v-model="uiSettingsStore.squareSelection"
+            type="checkbox"
+            :disabled="!props.mapManager"
+            :title="
+              props.mapManager
+                ? 'Constrain new selections to a square'
+                : 'Open a map to select'
+            "
+          />
           Square selection</label
         >
       </div>
@@ -42,7 +50,7 @@
             "
             aria-label="Find a contig, scaffold or feature"
             class="form-control form-control-sm m-0"
-            placeholder="Search map"
+            placeholder="Find contig or feature"
             type="text"
             autocomplete="off"
             v-model="searchQuery"
@@ -191,15 +199,17 @@
           :value="signalDisplayMode"
           class="form-select form-select-sm"
           aria-label="Signal display"
-          :title="props.mapManager
-            ? 'Expected shows the average contact level at each distance. Observed/Expected highlights contacts above or below that average.'
-            : 'Open a map to change the signal display'"
+          :title="
+            props.mapManager
+              ? 'Expected shows the average contact level at each distance. Observed/Expected highlights contacts above or below that average.'
+              : 'Open a map to change the signal display'
+          "
           :disabled="!props.mapManager || signalDisplayModePending"
           @change="onSignalDisplayModeChanged"
         >
-          <option value="OBSERVED">Show Observed</option>
-          <option value="EXPECTED">Show Expected</option>
-          <option value="OBSERVED_OVER_EXPECTED">Show O/E</option>
+          <option value="OBSERVED">Observed</option>
+          <option value="EXPECTED">Expected</option>
+          <option value="OBSERVED_OVER_EXPECTED">Observed/Expected</option>
         </select>
       </div>
       <span
@@ -235,7 +245,11 @@
           type="button"
           :disabled="!props.mapManager"
           @click="cycleRulerMode"
-          :title="props.mapManager ? `Cycle ruler coordinate mode. Current: ${rulerModeLabel}` : 'Open a map to change the ruler'"
+          :title="
+            props.mapManager
+              ? `Cycle ruler coordinate mode. Current: ${rulerModeLabel}`
+              : 'Open a map to change the ruler'
+          "
         >
           <i class="bi bi-rulers me-1" aria-hidden="true"></i>
           <span class="ruler-button-label">{{ rulerModeLabel }}</span>
@@ -929,9 +943,7 @@ async function onSignalDisplayModeChanged(event: Event) {
   if (!props.mapManager || signalDisplayModePending.value) return;
   signalDisplayModePending.value = true;
   try {
-    await props.mapManager.visualizationManager.setSignalDisplayMode(
-      requested
-    );
+    await props.mapManager.visualizationManager.setSignalDisplayMode(requested);
   } catch (error) {
     signalDisplayMode.value = previous;
     select.value = previous;

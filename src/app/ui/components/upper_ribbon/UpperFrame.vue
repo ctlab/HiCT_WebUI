@@ -119,7 +119,6 @@ function onWizardRequested(): void {
   /* position: absolute; */
   /* width: 1840px; */
   width: 100%;
-  /* TODO: Константа глобальная */
   height: auto;
   flex: 0 0 auto;
   left: 0px;

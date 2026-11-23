@@ -124,17 +124,6 @@ class OpenFileRequest implements HiCTAPIRequest {
   ) {}
 }
 
-class SaveFileRequest implements HiCTAPIRequest {
-  requestPath = "/save";
-
-  public constructor(
-    public readonly options: {
-      readonly filename?: string;
-      // readonly fastaFilename?: string | undefined;
-    }
-  ) {}
-}
-
 class ListFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_files";
 }
@@ -951,7 +940,6 @@ export {
   SetNormalizationRequest,
   SetContrastRangeRequest,
   GetCurrentSignalRangeRequest,
-  SaveFileRequest,
   SplitContigRequest,
   SplitContigAtBpRequest,
   // TileLoadPOSTRequest,

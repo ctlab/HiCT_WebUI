@@ -32,6 +32,125 @@
               <option value="selection">Selected rectangle</option>
             </select>
           </label>
+          <label v-if="!sequenceOnly" class="form-check-label"
+            ><input
+              v-model="rulers"
+              type="checkbox"
+              aria-label="Include rulers and FASTA"
+              :disabled="busy"
+            />
+            Rulers and FASTA</label
+          >
+          <label v-if="!sequenceOnly" class="form-check-label"
+            ><input
+              v-model="tracks"
+              type="checkbox"
+              aria-label="Include 1D tracks"
+              :disabled="busy"
+            />
+            1D tracks</label
+          >
+          <label v-if="!sequenceOnly" class="form-check-label">
+            <input
+              v-model="includeSecondary"
+              type="checkbox"
+              :disabled="busy"
+              aria-label="Include ModDotPlot or second map"
+            />
+            ModDotPlot or second map
+          </label>
+        </div>
+        <p v-if="capturing" role="status">
+          Capturing figure · {{ Math.round(progress * 100) }}%
+        </p>
+        <p v-if="printError" class="text-danger" role="alert">
+          {{ printError }}
+        </p>
+        <p v-if="error" class="text-danger" role="alert">{{ error }}</p>
+        <div class="figure-export-options">
+          <label
+            >Print width
+            <select
+              v-model="printWidth"
+              class="form-select form-select-sm"
+              aria-label="Figure print size"
+              :disabled="busy"
+            >
+              <option :value="0">Captured size</option>
+              <option :value="86">Single column · 86 mm</option>
+              <option :value="132">1.5 columns · 132 mm</option>
+              <option :value="178">Double column · 178 mm</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label v-if="printWidth === 'custom'">
+            Width (mm)
+            <input
+              v-model.number="customPrintWidth"
+              type="number"
+              min="10"
+              max="2000"
+              step="any"
+              class="form-control form-control-sm"
+              :disabled="busy"
+            />
+          </label>
+          <p v-if="printDimensions" class="small text-muted mb-0" role="status">
+            {{ printDimensions.widthMm }} ×
+            {{ printDimensions.heightMm.toFixed(1) }} mm ·
+            {{ Math.round(printDimensions.effectiveRasterDpi) }} dpi from
+            captured pixels. SVG/PDF labels remain vector.
+          </p>
+        </div>
+        <p
+          v-if="printTextPoints !== null"
+          class="small"
+          :class="printTextPoints < 5 ? 'text-danger' : 'text-muted'"
+          role="status"
+        >
+          Smallest export text: {{ printTextPoints.toFixed(1) }} pt at this
+          width.
+          <template v-if="printTextPoints < 5">
+            For larger text, capture a smaller area or use a vertical
+            comparison.
+          </template>
+        </p>
+        <p v-if="outdated" class="alert alert-info" role="status">
+          Update the preview to apply the changed options.
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary ms-2"
+            :disabled="busy"
+            @click="capture"
+          >
+            Update preview
+          </button>
+        </p>
+        <AdvancedSection dialog-id="figure-export">
+          <label>
+            Label size
+            <select
+              v-model="printLabelMode"
+              class="form-select form-select-sm"
+              :disabled="busy"
+            >
+              <option value="auto">Auto (at least 6 pt)</option>
+              <option value="captured">As captured</option>
+              <option value="custom">Custom minimum</option>
+            </select>
+          </label>
+          <label v-if="printLabelMode === 'custom'">
+            Minimum label size (pt)
+            <input
+              v-model.number="customLabelPoints"
+              type="number"
+              min="1"
+              max="36"
+              step="any"
+              class="form-control form-control-sm"
+              :disabled="busy"
+            />
+          </label>
           <label
             v-if="!sequenceOnly && scope === 'whole-map'"
             class="form-check-label"
@@ -53,24 +172,6 @@
             />
             Crop to map</label
           >
-          <label v-if="!sequenceOnly" class="form-check-label"
-            ><input
-              v-model="rulers"
-              type="checkbox"
-              aria-label="Include rulers and FASTA"
-              :disabled="busy"
-            />
-            Rulers and FASTA</label
-          >
-          <label v-if="!sequenceOnly" class="form-check-label"
-            ><input
-              v-model="tracks"
-              type="checkbox"
-              aria-label="Include 1D tracks"
-              :disabled="busy"
-            />
-            1D tracks</label
-          >
           <button
             class="btn btn-outline-primary btn-sm"
             type="button"
@@ -85,179 +186,129 @@
                 : "Capture preview"
             }}
           </button>
-        </div>
-        <p class="small text-muted">
-          {{
-            sequenceOnly
-              ? "Captures the displayed sequence windows."
-              : "Captures the current map layers. To include ModDotPlot, attach its result and choose the overlay or split display before capturing."
-          }}
-        </p>
-        <p v-if="capturing" role="status">
-          Capturing figure · {{ Math.round(progress * 100) }}%
-        </p>
-        <p v-if="error" class="text-danger" role="alert">{{ error }}</p>
-        <div v-if="displayed" class="figure-export-options">
-          <label
-            >Print size
-            <select
-              v-model="printWidth"
-              class="form-select form-select-sm"
-              aria-label="Figure print size"
-              :disabled="busy"
+          <div v-if="figure" class="snapshot-save-row">
+            <label
+              >Snapshot name
+              <input
+                v-model="snapshotName"
+                class="form-control form-control-sm"
+                aria-label="Snapshot name"
+                maxlength="100"
+                :disabled="busy"
+                placeholder="Before cut"
+              />
+            </label>
+            <button
+              class="btn btn-outline-secondary btn-sm"
+              :disabled="
+                busy ||
+                outdated ||
+                comparisonOutdated ||
+                snapshots.length >= MAX_FIGURE_SNAPSHOTS
+              "
+              @click="saveSnapshot"
             >
-              <option :value="0">Captured size</option>
-              <option :value="86">Single column · 86 mm</option>
-              <option :value="178">Double column · 178 mm</option>
-            </select>
-          </label>
-          <p v-if="printDimensions" class="small text-muted mb-0" role="status">
-            {{ printDimensions.widthMm }} ×
-            {{ printDimensions.heightMm.toFixed(1) }} mm ·
-            {{ Math.round(printDimensions.effectiveRasterDpi) }} dpi from
-            captured pixels. SVG/PDF labels remain vector.
-          </p>
-        </div>
-        <p
-          v-if="printTextPoints !== null"
-          class="small text-muted"
-          role="status"
-        >
-          Smallest vector text: {{ printTextPoints.toFixed(1) }} pt at this
-          width.
-          <template v-if="printTextPoints < 6">
-            For larger text, capture a smaller area or use a vertical
-            comparison.
-          </template>
-          Inspect the exported figure at print size, including any text inside
-          images.
-        </p>
-        <p v-if="outdated" class="alert alert-info" role="status">
-          Options changed. Refresh the capture to apply them. The current
-          preview remains unchanged.
-        </p>
-        <div v-if="figure" class="snapshot-save-row">
-          <label
-            >Snapshot name
-            <input
-              v-model="snapshotName"
-              class="form-control form-control-sm"
-              aria-label="Snapshot name"
-              maxlength="100"
-              :disabled="busy"
-              placeholder="Before cut"
-            />
-          </label>
-          <button
-            class="btn btn-outline-secondary btn-sm"
-            :disabled="
-              busy ||
-              outdated ||
-              comparisonOutdated ||
-              snapshots.length >= MAX_FIGURE_SNAPSHOTS
-            "
-            @click="saveSnapshot"
+              {{ storing ? "Saving snapshot…" : "Save snapshot" }}
+            </button>
+            <button
+              class="btn btn-outline-secondary btn-sm"
+              :aria-expanded="showSnapshots"
+              @click="showSnapshots = !showSnapshots"
+            >
+              Snapshots ({{ snapshots.length }})
+            </button>
+          </div>
+          <p
+            v-if="snapshots.length >= MAX_FIGURE_SNAPSHOTS"
+            class="small text-muted"
+            role="status"
           >
-            {{ storing ? "Saving snapshot…" : "Save snapshot" }}
-          </button>
-          <button
-            class="btn btn-outline-secondary btn-sm"
-            :aria-expanded="showSnapshots"
-            @click="showSnapshots = !showSnapshots"
+            Eight snapshots stored. Remove one to save another.
+          </p>
+          <section
+            v-if="showSnapshots"
+            class="snapshot-library"
+            aria-label="Saved figure snapshots"
           >
-            Snapshots ({{ snapshots.length }})
-          </button>
-        </div>
-        <p
-          v-if="snapshots.length >= MAX_FIGURE_SNAPSHOTS"
-          class="small text-muted"
-          role="status"
-        >
-          Eight snapshots stored. Remove one to save another.
-        </p>
-        <section
-          v-if="showSnapshots"
-          class="snapshot-library"
-          aria-label="Saved figure snapshots"
-        >
-          <p class="small text-muted">
-            Included when you save the session. Comparing uses the captured
-            scenes and their own regions and rendering settings.
-          </p>
-          <p v-if="!snapshots.length" class="small">
-            No snapshots yet. Name the current capture and save a snapshot.
-          </p>
-          <ul v-else class="list-unstyled snapshot-list">
-            <li v-for="snapshot in snapshots" :key="snapshot.document.id">
-              <span>
-                <button
-                  class="btn btn-link p-0 snapshot-name"
-                  :aria-label="`View snapshot ${snapshot.document.name}`"
-                  :disabled="busy"
-                  @click="viewSnapshot(snapshot)"
+            <p class="small text-muted">
+              Included when you save the session. Comparing uses the captured
+              scenes and their own regions and rendering settings.
+            </p>
+            <p v-if="!snapshots.length" class="small">
+              No snapshots yet. Name the current capture and save a snapshot.
+            </p>
+            <ul v-else class="list-unstyled snapshot-list">
+              <li v-for="snapshot in snapshots" :key="snapshot.document.id">
+                <span>
+                  <button
+                    class="btn btn-link p-0 snapshot-name"
+                    :aria-label="`View snapshot ${snapshot.document.name}`"
+                    :disabled="busy"
+                    @click="viewSnapshot(snapshot)"
+                  >
+                    {{ snapshot.document.name }}
+                  </button>
+                  <small>{{
+                    new Date(snapshot.document.capturedAt).toLocaleString()
+                  }}</small></span
                 >
-                  {{ snapshot.document.name }}
+                <button
+                  class="btn btn-outline-primary btn-sm"
+                  :disabled="busy || outdated"
+                  @click="compareSnapshot(snapshot)"
+                >
+                  Compare to snapshot
                 </button>
-                <small>{{
-                  new Date(snapshot.document.capturedAt).toLocaleString()
-                }}</small></span
+                <button
+                  class="btn btn-outline-danger btn-sm"
+                  :aria-label="`Remove snapshot ${snapshot.document.name}`"
+                  :disabled="busy"
+                  @click="removeSnapshot(snapshot.document.id)"
+                >
+                  Remove
+                </button>
+              </li>
+            </ul>
+            <div v-if="selectedSnapshot" class="snapshot-comparison-controls">
+              <label
+                >Current panel label<input
+                  v-model="currentLabel"
+                  class="form-control form-control-sm"
+                  aria-label="Current panel label"
+                  maxlength="100"
+                  :disabled="busy"
+              /></label>
+              <label
+                >Layout<select
+                  v-model="layout"
+                  class="form-select form-select-sm"
+                  aria-label="Comparison layout"
+                  :disabled="busy"
+                >
+                  <option value="horizontal">Side by side</option>
+                  <option value="vertical">Above and below</option>
+                </select></label
               >
               <button
                 class="btn btn-outline-primary btn-sm"
                 :disabled="busy || outdated"
-                @click="compareSnapshot(snapshot)"
+                @click="updateComparison"
               >
-                Compare to snapshot
+                {{ comparing ? "Composing…" : "Update comparison" }}
               </button>
               <button
-                class="btn btn-outline-danger btn-sm"
-                :aria-label="`Remove snapshot ${snapshot.document.name}`"
+                class="btn btn-outline-secondary btn-sm"
                 :disabled="busy"
-                @click="removeSnapshot(snapshot.document.id)"
+                @click="clearComparison"
               >
-                Remove
+                Current capture
               </button>
-            </li>
-          </ul>
-          <div v-if="selectedSnapshot" class="snapshot-comparison-controls">
-            <label
-              >Current panel label<input
-                v-model="currentLabel"
-                class="form-control form-control-sm"
-                aria-label="Current panel label"
-                maxlength="100"
-                :disabled="busy"
-            /></label>
-            <label
-              >Layout<select
-                v-model="layout"
-                class="form-select form-select-sm"
-                aria-label="Comparison layout"
-                :disabled="busy"
-              >
-                <option value="horizontal">Side by side</option>
-                <option value="vertical">Above and below</option>
-              </select></label
-            >
-            <button
-              class="btn btn-outline-primary btn-sm"
-              :disabled="busy || outdated"
-              @click="updateComparison"
-            >
-              {{ comparing ? "Composing…" : "Update comparison" }}
-            </button>
-            <button
-              class="btn btn-outline-secondary btn-sm"
-              :disabled="busy"
-              @click="clearComparison"
-            >
-              Current capture
-            </button>
-          </div>
-          <p v-if="comparisonOutdated" role="status" class="small text-muted">
-            Comparison settings changed. Update the comparison before saving.
-          </p>
-        </section>
+            </div>
+            <p v-if="comparisonOutdated" role="status" class="small text-muted">
+              Comparison settings changed. Update the comparison before saving.
+            </p>
+          </section>
+        </AdvancedSection>
         <p v-if="notice" role="status" class="small text-success">
           {{ notice }}
           <button
@@ -311,11 +362,18 @@
             class="btn btn-outline-primary"
             type="button"
             :disabled="
-              !displayed || busy || !!saving || outdated || comparisonOutdated
+              !displayed ||
+              busy ||
+              !!saving ||
+              outdated ||
+              comparisonOutdated ||
+              !!printError
             "
             @click="save(format)"
           >
-            {{ saving === format ? "Saving…" : format.toUpperCase() }}
+            {{
+              saving === format ? "Saving…" : `Save ${format.toUpperCase()}…`
+            }}
           </button>
           <button
             class="btn btn-secondary"
@@ -331,6 +389,7 @@
 </template>
 
 <script setup lang="ts">
+import AdvancedSection from "../common/AdvancedSection.vue";
 import {
   computed,
   onBeforeUnmount,
@@ -372,7 +431,8 @@ const scope = ref<"viewport" | "whole-map" | "selection">("viewport");
 const crop = ref(true),
   expandWholeMap = ref(true),
   rulers = ref(true),
-  tracks = ref(true);
+  tracks = ref(true),
+  includeSecondary = ref(true);
 const sequenceOnly = computed(
   () => props.mapManager.networkManager.requestManager.sequenceViewReadOnly
 );
@@ -382,21 +442,57 @@ const viewingSnapshot = shallowRef<FigureSnapshot | null>(null);
 const displayed = computed(
   () => comparison.value ?? viewingSnapshot.value?.figure ?? figure.value
 );
-const printWidth = ref<0 | 86 | 178>(0);
+const printWidth = ref<number | "custom">(86);
+const customPrintWidth = ref(86);
+const printLabelMode = ref<"auto" | "captured" | "custom">("auto");
+const customLabelPoints = ref(6);
+const widthMm = computed(() =>
+  printWidth.value === "custom" ? customPrintWidth.value : printWidth.value
+);
+const labelMinimum = computed(() =>
+  printLabelMode.value === "captured"
+    ? undefined
+    : printLabelMode.value === "auto"
+    ? 6
+    : customLabelPoints.value
+);
+const printError = computed(() => {
+  const width = widthMm.value;
+  if (
+    printWidth.value === "custom" &&
+    (!Number.isFinite(width) || width < 10 || width > 2000)
+  )
+    return "Enter a print width from 10 to 2,000 mm.";
+  if (
+    width &&
+    printLabelMode.value === "custom" &&
+    (!Number.isFinite(customLabelPoints.value) ||
+      customLabelPoints.value < 1 ||
+      customLabelPoints.value > 36)
+  )
+    return "Enter a label size from 1 to 36 pt.";
+  return "";
+});
 const smallestTextPx = ref<number | null>(null);
 const printTextPoints = computed(() =>
-  smallestTextPx.value !== null && displayed.value && printWidth.value
-    ? printedTextPoints(
-        smallestTextPx.value,
-        displayed.value.width,
-        printWidth.value
+  !printError.value &&
+  smallestTextPx.value !== null &&
+  displayed.value &&
+  widthMm.value
+    ? Math.max(
+        labelMinimum.value ?? 0,
+        printedTextPoints(
+          smallestTextPx.value,
+          displayed.value.width,
+          widthMm.value
+        )
       )
     : null
 );
 const printDimensions = computed(() =>
-  displayed.value && printWidth.value
+  !printError.value && displayed.value && widthMm.value
     ? figurePrintDimensions(displayed.value.width, displayed.value.height, {
-        widthMm: printWidth.value,
+        widthMm: widthMm.value,
       })
     : null
 );
@@ -576,7 +672,7 @@ function updateComparison() {
   );
   if (snapshot) void compareSnapshot(snapshot);
 }
-watch([scope, crop, rulers, tracks, expandWholeMap], () => {
+watch([scope, crop, rulers, tracks, expandWholeMap, includeSecondary], () => {
   if (figure.value) outdated.value = true;
   clearComparison();
 });
@@ -616,6 +712,7 @@ async function capture() {
         cropToMap: crop.value,
         includeRulers: rulers.value,
         includeTracks: tracks.value,
+        includeSecondary: includeSecondary.value,
         fitSmallWholeMap: expandWholeMap.value,
         metadata: props.metadata,
         backgroundColor: useStyleStore().mapBackgroundColor.RGBA,
@@ -658,7 +755,9 @@ async function save(format: "svg" | "png" | "pdf") {
       (value) => {
         progress.value = value;
       },
-      printWidth.value ? { widthMm: printWidth.value } : undefined
+      widthMm.value
+        ? { widthMm: widthMm.value, minimumTextPoints: labelMinimum.value }
+        : undefined
     );
     notifyFileSave(result, `${format.toUpperCase()} export`);
   } catch (failure) {

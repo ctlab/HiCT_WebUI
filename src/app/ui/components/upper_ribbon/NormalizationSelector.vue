@@ -49,9 +49,7 @@
     </p>
 
     <div class="signal-row">
-      <span id="signal-transform-label" class="signal-label">
-        Signal transform
-      </span>
+      <span id="signal-transform-label" class="signal-label"> Signal </span>
       <div
         class="scale-choice"
         role="group"
@@ -193,8 +191,12 @@
       </template>
     </p>
 
-    <details class="signal-advanced" id="signal-advanced">
-      <summary>Advanced</summary>
+    <AdvancedSection
+      dialog-id="sidebar-visualization"
+      class="signal-advanced"
+      id="signal-advanced"
+    >
+      <slot name="advanced-top" />
       <div class="signal-advanced-body">
         <div class="base-row">
           <label for="normalization-post-log-base">Log base</label>
@@ -253,7 +255,7 @@
             class="btn btn-sm btn-outline-primary flex-grow-1"
             @click="openRenderingPipeline"
           >
-            Rendering pipeline...
+            Rendering pipeline…
           </button>
           <button
             type="button"
@@ -265,7 +267,7 @@
           </button>
         </div>
       </div>
-    </details>
+    </AdvancedSection>
   </section>
   <RenderingPipelineModal
     v-if="pipelineModalOpen"
@@ -275,6 +277,7 @@
 </template>
 
 <script setup lang="ts">
+import AdvancedSection from "../common/AdvancedSection.vue";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import {
   computed,

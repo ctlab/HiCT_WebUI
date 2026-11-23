@@ -84,7 +84,6 @@ import {
   MoveSelectionRangeRequest,
   OpenFileRequest,
   ReverseSelectionRangeRequest,
-  SaveFileRequest,
   UngroupContigsFromScaffoldRequest,
   type HiCTAPIRequest,
   SplitContigRequest,
@@ -1082,7 +1081,9 @@ class RequestManager {
   }
 
   public async canJoinSession(): Promise<boolean> {
-    const reply = await this.sendRequest(new SessionAvailabilityRequest(), { method: "GET" });
+    const reply = await this.sendRequest(new SessionAvailabilityRequest(), {
+      method: "GET",
+    });
     return reply.data?.available === true;
   }
 
@@ -1855,7 +1856,8 @@ class RequestManager {
   }
 
   public async getBackendVersion(): Promise<
-    { version: string; webuiVersion?: string; backendRevision?: string } | string
+    | { version: string; webuiVersion?: string; backendRevision?: string }
+    | string
   > {
     const host = this.networkManager.host.replace(/\/+$/, "");
     return axios
@@ -2029,12 +2031,6 @@ class RequestManager {
   public async listAGPFiles(): Promise<string[]> {
     const response = await this.sendRequest(new ListAGPFilesRequest());
     return response.data as string[];
-  }
-
-  public async save(): Promise<void> {
-    return this.sendRequest(new SaveFileRequest({})).then(() => {
-      return;
-    });
   }
 
   public async loadAGP(

@@ -91,7 +91,7 @@
           </div>
 
           <div class="mb-3">
-            <label class="form-label">Source .hict.hdf5 matrix</label>
+            <label class="form-label">Map</label>
             <div class="input-group">
               <input
                 class="form-control"
@@ -104,13 +104,13 @@
                 type="button"
                 @click="selectorKind = 'source'"
               >
-                Browse...
+                Browse…
               </button>
             </div>
           </div>
 
           <div class="mb-3">
-            <label class="form-label">Output Cooler filename</label>
+            <label class="form-label">Save as</label>
             <input
               v-model="outputFilename"
               class="form-control"
@@ -160,7 +160,7 @@
                 type="button"
                 @click="selectorKind = 'agp'"
               >
-                Browse...
+                Browse…
               </button>
               <button
                 class="btn btn-outline-danger"
@@ -198,109 +198,113 @@
             >
           </div>
 
-          <div class="row g-2 mb-3">
-            <div class="col-md-4">
-              <label class="form-label">Export mode</label>
-              <select
-                v-model="exportModeModel"
-                class="form-select"
-                :disabled="effectiveApproximateRebin"
-              >
-                <option value="auto">auto (prefer hictk-assisted)</option>
-                <option value="hictk">hictk-assisted</option>
-                <option value="internal">direct internal exporter</option>
-              </select>
+          <AdvancedSection dialog-id="matrix-export">
+            <div class="row g-2 mb-3">
+              <div class="col-md-4">
+                <label class="form-label">Export mode</label>
+                <select
+                  v-model="exportModeModel"
+                  class="form-select"
+                  :disabled="effectiveApproximateRebin"
+                >
+                  <option value="auto">auto (prefer hictk-assisted)</option>
+                  <option value="hictk">hictk-assisted</option>
+                  <option value="internal">direct internal exporter</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Compression</label>
+                <select v-model="compressionAlgorithm" class="form-select">
+                  <option value="deflate">deflate</option>
+                  <option value="zstd" disabled>zstd (unavailable)</option>
+                  <option value="lzf" disabled>lzf (unavailable)</option>
+                </select>
+                <small class="text-muted">
+                  Cooler export supports Deflate. Level 0 leaves interaction
+                  data uncompressed.
+                </small>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">Level</label>
+                <input
+                  v-model.number="compression"
+                  class="form-control"
+                  type="number"
+                  min="0"
+                  max="9"
+                />
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">Threads</label>
+                <input
+                  v-model.number="parallelism"
+                  class="form-control"
+                  type="number"
+                  min="-1"
+                  title="-1: automatic server CPU allocation"
+                />
+              </div>
             </div>
-            <div class="col-md-4">
-              <label class="form-label">Compression</label>
-              <select v-model="compressionAlgorithm" class="form-select">
-                <option value="deflate">deflate</option>
-                <option value="zstd" disabled>zstd (unavailable)</option>
-                <option value="lzf" disabled>lzf (unavailable)</option>
-              </select>
-              <small class="text-muted">
-                Cooler export supports Deflate. Level 0 leaves interaction data
-                uncompressed.
-              </small>
-            </div>
-            <div class="col-md-2">
-              <label class="form-label">Level</label>
+
+            <div class="form-check form-switch mb-2">
               <input
-                v-model.number="compression"
-                class="form-control"
-                type="number"
-                min="0"
-                max="9"
+                id="export-all-resolutions"
+                v-model="exportAllResolutions"
+                class="form-check-input"
+                type="checkbox"
+                role="switch"
               />
+              <label class="form-check-label" for="export-all-resolutions">
+                Export all resolutions present in .hict.hdf5
+              </label>
             </div>
-            <div class="col-md-2">
-              <label class="form-label">Threads</label>
+            <small class="text-muted d-block mb-3">
+              Disabled by default: only the finest resolution is exported, so
+              you can zoomify later if needed.
+            </small>
+
+            <div class="form-check form-switch mb-2">
               <input
-                v-model.number="parallelism"
-                class="form-control"
-                type="number"
-                min="-1"
-                title="-1: automatic server CPU allocation"
+                id="export-balance-coolers"
+                v-model="exportBalanceModel"
+                :disabled="
+                  exportMode === 'internal' || effectiveApproximateRebin
+                "
+                class="form-check-input"
+                type="checkbox"
+                role="switch"
               />
+              <label class="form-check-label" for="export-balance-coolers">
+                Balance exported Cooler with hictk
+              </label>
             </div>
-          </div>
+            <small
+              v-if="exportMode === 'internal' || effectiveApproximateRebin"
+              class="text-muted d-block mb-3"
+            >
+              {{
+                effectiveApproximateRebin
+                  ? "Approximate rebinning exports unbalanced fractional counts with the internal exporter."
+                  : "Balancing requires auto or hictk-assisted export."
+              }}
+            </small>
+            <small v-else class="text-muted d-block mb-3">
+              Enabled by default. Auto and hictk-assisted modes run ICE
+              balancing so downstream Cooler tools can use generated weights.
+            </small>
 
-          <div class="form-check form-switch mb-2">
-            <input
-              id="export-all-resolutions"
-              v-model="exportAllResolutions"
-              class="form-check-input"
-              type="checkbox"
-              role="switch"
-            />
-            <label class="form-check-label" for="export-all-resolutions">
-              Export all resolutions present in .hict.hdf5
-            </label>
-          </div>
-          <small class="text-muted d-block mb-3">
-            Disabled by default: only the finest resolution is exported, so you
-            can zoomify later if needed.
-          </small>
-
-          <div class="form-check form-switch mb-2">
-            <input
-              id="export-balance-coolers"
-              v-model="exportBalanceModel"
-              :disabled="exportMode === 'internal' || effectiveApproximateRebin"
-              class="form-check-input"
-              type="checkbox"
-              role="switch"
-            />
-            <label class="form-check-label" for="export-balance-coolers">
-              Balance exported Cooler with hictk
-            </label>
-          </div>
-          <small
-            v-if="exportMode === 'internal' || effectiveApproximateRebin"
-            class="text-muted d-block mb-3"
-          >
-            {{
-              effectiveApproximateRebin
-                ? "Approximate rebinning exports unbalanced fractional counts with the internal exporter."
-                : "Balancing requires auto or hictk-assisted export."
-            }}
-          </small>
-          <small v-else class="text-muted d-block mb-3">
-            Enabled by default. Auto and hictk-assisted modes run ICE balancing
-            so downstream Cooler tools can use generated weights.
-          </small>
-
-          <div class="form-check mb-3">
-            <input
-              id="export-overwrite"
-              v-model="overwrite"
-              class="form-check-input"
-              type="checkbox"
-            />
-            <label class="form-check-label" for="export-overwrite">
-              Overwrite existing output
-            </label>
-          </div>
+            <div class="form-check mb-3">
+              <input
+                id="export-overwrite"
+                v-model="overwrite"
+                class="form-check-input"
+                type="checkbox"
+              />
+              <label class="form-check-label" for="export-overwrite">
+                Overwrite existing output
+              </label>
+            </div>
+          </AdvancedSection>
 
           <ConverterStatusChecker
             v-if="jobId"
@@ -329,7 +333,7 @@
               v-if="submitting"
               class="spinner-border spinner-border-sm me-2"
             ></span>
-            Export Cooler
+            Export
           </button>
         </div>
       </div>
@@ -354,6 +358,7 @@
 </template>
 
 <script setup lang="ts">
+import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import { computed, onMounted, ref, watch } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";

@@ -1,7 +1,8 @@
 import { appendPngProvenance, crc32 } from "./PngProvenance";
 
 export interface FigurePrintOptions {
-  widthMm: 86 | 178;
+  widthMm: number;
+  minimumTextPoints?: number;
 }
 
 /** Physical output size only: source pixels and scientific coordinates never change. */
@@ -11,7 +12,9 @@ export function figurePrintDimensions(
   options: FigurePrintOptions
 ) {
   if (
-    ![86, 178].includes(options.widthMm) ||
+    !Number.isFinite(options.widthMm) ||
+    options.widthMm < 10 ||
+    options.widthMm > 2000 ||
     ![width, height].every((value) => Number.isFinite(value) && value > 0)
   )
     throw Error("Choose a supported figure print size.");

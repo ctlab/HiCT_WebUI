@@ -8,7 +8,9 @@
       :data-bs-popper-config="navbarPopperConfig"
       :disabled="!mapManager"
       :title="mapManager ? summary : 'Open a map to select a region'"
-    >{{ label }}</button>
+    >
+      {{ label }}
+    </button>
     <ul class="dropdown-menu selection-menu">
       <li class="px-3 py-2 small" role="status" aria-live="polite">
         {{ summary }}
@@ -27,7 +29,8 @@
           :disabled="!mapManager"
           @click="mapManager?.viewAndLayersManager.setEntitySelectionKind(kind)"
         >
-          {{ state?.entitySelectionKind === kind ? "✓ " : "" }}{{ kind === "contig" ? "Contigs" : "Scaffolds" }}
+          {{ state?.entitySelectionKind === kind ? "✓ " : ""
+          }}{{ kind === "contig" ? "Contigs" : "Scaffolds" }}
         </button>
       </li>
       <li><hr class="dropdown-divider" /></li>
@@ -45,7 +48,11 @@
         </button>
       </li>
       <li>
-        <button class="dropdown-item" :disabled="!region && !count" @click="copyCoordinates">
+        <button
+          class="dropdown-item"
+          :disabled="!region && !count"
+          @click="copyCoordinates"
+        >
           Copy coordinates
         </button>
       </li>
@@ -98,6 +105,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { formatLength } from "@/app/core/format/formatSignal";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import {
@@ -125,9 +133,11 @@ const count = computed(() => state.value?.selectedContigIds.length ?? 0);
 const summary = computed(() => {
   const r = region.value;
   if (r)
-    return `Region: rows ${r.rowStart + 1}–${r.rowEnd}, columns ${
+    return `Region: rows ${(
+      r.rowStart + 1
+    ).toLocaleString()}–${r.rowEnd.toLocaleString()}, columns ${(
       r.columnStart + 1
-    }–${r.columnEnd} bp (1-based inclusive).`;
+    ).toLocaleString()}–${r.columnEnd.toLocaleString()} bp (1-based inclusive).`;
   const n = state.value?.selectedScaffoldIds.length ?? 0;
   return count.value
     ? `${n ? n + (n === 1 ? " scaffold; " : " scaffolds; ") : ""}${
@@ -140,7 +150,9 @@ const summary = computed(() => {
 const label = computed(() => {
   const r = region.value;
   return r
-    ? `Region · ${r.rowEnd - r.rowStart} × ${r.columnEnd - r.columnStart} bp`
+    ? `Region · ${formatLength(r.rowEnd - r.rowStart)} × ${formatLength(
+        r.columnEnd - r.columnStart
+      )}`
     : count.value
     ? `Selection · ${count.value} ${count.value === 1 ? "contig" : "contigs"}`
     : "Selection";
@@ -148,7 +160,11 @@ const label = computed(() => {
 const bothScoped = computed(() => state.value?.scopedAxes ?? false);
 function copyCoordinates() {
   const mode = useUiSettingsStore().rulerCoordinateMode;
-  if (props.mapManager) copySelectionCoordinates(props.mapManager, mode === "global" ? "assembly" : mode);
+  if (props.mapManager)
+    copySelectionCoordinates(
+      props.mapManager,
+      mode === "global" ? "assembly" : mode
+    );
 }
 function copyPng() {
   if (props.mapManager) void copySelectionPng(props.mapManager);

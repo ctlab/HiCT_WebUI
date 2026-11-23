@@ -24,7 +24,9 @@
   <ConfirmActionDialog
     v-if="confirmation"
     v-bind="confirmation"
-    :dont-ask-again="confirmation.rememberKey ? rememberConfirmation : undefined"
+    :dont-ask-again="
+      confirmation.rememberKey ? rememberConfirmation : undefined
+    "
     @update:dont-ask-again="rememberConfirmation = $event"
     @cancel="settleConfirmation('cancel')"
     @secondary="settleConfirmation('secondary')"
@@ -196,7 +198,7 @@
                 class="btn btn-primary"
                 @click="chooseCoolerWeightsNaNPolicy('DISABLE_WEIGHTS', false)"
               >
-                Do not use Cooler weights
+                Show raw contacts (no balancing)
               </button>
               <button
                 type="button"
@@ -205,7 +207,7 @@
                   chooseCoolerWeightsNaNPolicy('REPLACE_NANS_WITH_ONE', true)
                 "
               >
-                Replace NaNs with weight 1.0
+                Treat missing weight as 1
               </button>
               <button
                 type="button"
@@ -300,8 +302,7 @@
       <h2 id="empty-workspace-title">No contact map open</h2>
       <p>
         Open a <code>.hict.hdf5</code>, <code>.mcool</code> or
-        <code>.hic</code> map, load a saved session, or attach to a session
-        running on the server.
+        <code>.hic</code> map, try an example, or continue a saved session.
       </p>
       <div class="empty-workspace-actions">
         <button
@@ -314,37 +315,43 @@
         <button
           type="button"
           class="btn btn-outline-secondary"
-          @click="upperFrame?.openSession()"
+          @click="examplesOpen = true"
         >
-          Load saved session…
+          Examples…
         </button>
         <button
           type="button"
           class="btn btn-outline-secondary"
+          @click="upperFrame?.openSession()"
+        >
+          Open session…
+        </button>
+      </div>
+      <div class="d-flex flex-wrap gap-2 align-items-center small mt-3">
+        <span>Also</span>
+        <button
+          type="button"
+          class="btn btn-link btn-sm p-0"
           @click="wizardOpen = true"
         >
           Open with options…
         </button>
+        <span aria-hidden="true">·</span>
         <button
           type="button"
-          class="btn btn-outline-secondary"
-          @click="examplesOpen = true"
-        >
-          Open example…
-        </button>
-        <button
-          type="button"
-          class="btn btn-outline-secondary"
+          class="btn btn-link btn-sm p-0"
           @click="fastaOnlyOpen = true"
         >
           Open FASTA only…
         </button>
+        <span aria-hidden="true">·</span>
         <button
           type="button"
-          class="btn btn-outline-secondary"
+          class="btn btn-link btn-sm p-0"
           @click="onAttached"
+          title="Show the map that is already open in another window or tab"
         >
-          <i class="bi bi-plug me-1"></i>Attach to open session
+          Join running session
         </button>
       </div>
     </section>
@@ -370,7 +377,11 @@
 <script setup lang="ts">
 import ConfirmActionDialog from "./components/common/ConfirmActionDialog.vue";
 import UniversalFileSelector from "./components/upper_ribbon/UniversalFileSelector.vue";
-import { askForConfirmation, confirmation, settleConfirmation } from "./confirmAction";
+import {
+  askForConfirmation,
+  confirmation,
+  settleConfirmation,
+} from "./confirmAction";
 import type { JobOpenRequest } from "@/app/stores/backgroundJobsUiStore";
 import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
 import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
@@ -527,7 +538,9 @@ const stylesStore = useStyleStore();
 const uiSettingsStore = useUiSettingsStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
 const rememberConfirmation = ref(false);
-watch(confirmation, () => { rememberConfirmation.value = false; });
+watch(confirmation, () => {
+  rememberConfirmation.value = false;
+});
 const sessionStore = useSessionStore();
 const remoteBlastResults = useRemoteBlastResultsStore();
 watch(fastaFilename, (v) => sessionStore.setLinkedFastaFilename(v ?? ""), {
@@ -717,6 +730,8 @@ function safeColorTranslator(
  * without asking. A one-line note says how many bins are masked and offers Change. The choice is
  * remembered per file, and Attach never asks.
  */
+const maskedMapNotifications = new WeakMap<ContactMapManager, string>();
+
 async function settleExcludedBins(carriedAppearance?: {
   applyCoolerWeights?: boolean;
 }): Promise<void> {
@@ -762,6 +777,8 @@ async function settleExcludedBins(carriedAppearance?: {
   }
   await applyExcludedBinsPolicy("REPLACE_NANS_WITH_ZERO", true);
   if (manager !== mapManager.value) return;
+  if (maskedMapNotifications.get(manager) === file) return;
+  maskedMapNotifications.set(manager, file);
   const count = options.coolerWeightsNaNCount;
   toast.message(
     `${count.toLocaleString()} excluded bin${count === 1 ? "" : "s"} masked.`,
@@ -1665,11 +1682,20 @@ function finishSessionFile(name: string | null): void {
   pending?.complete(name);
 }
 
-function chooseSessionFile(kind: string, list: string[], title: string): Promise<string | null> {
+function chooseSessionFile(
+  kind: string,
+  list: string[],
+  title: string
+): Promise<string | null> {
   if (missingSessionFile.value) return Promise.resolve(null);
   const names = new Set(list);
   return new Promise((complete) => {
-    missingSessionFile.value = { kind, title, accept: (name) => names.has(name), complete };
+    missingSessionFile.value = {
+      kind,
+      title,
+      accept: (name) => names.has(name),
+      complete,
+    };
   });
 }
 
@@ -1683,7 +1709,9 @@ async function resolveFilename(
   const basename = pathBasename(original);
   const decision = await askForConfirmation({
     title: `Where is “${basename}”?`,
-    body: `The saved session links this ${label}, but it could not be found. Choose its new location${label === "FASTA" ? ", or continue without it" : ""}.`,
+    body: `The saved session links this ${label}, but it could not be found. Choose its new location${
+      label === "FASTA" ? ", or continue without it" : ""
+    }.`,
     tone: "info",
     icon: "bi-folder2-open",
     confirmLabel: "Choose file…",
@@ -1779,7 +1807,11 @@ async function resolveRequiredHiCTSessionFilename(
     details: visibleCandidates,
   });
   if (decision !== "confirm") return null;
-  return chooseSessionFile("HiCT maps", list.filter(isHiCTMapFilename), "Choose a map");
+  return chooseSessionFile(
+    "HiCT maps",
+    list.filter(isHiCTMapFilename),
+    "Choose a map"
+  );
 }
 
 /** Opens a v3 session. The server prepares everything first, so a rejected file leaves the open map untouched. */

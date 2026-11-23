@@ -58,138 +58,147 @@
             ></button>
           </div>
           <div v-show="!previewMode" class="modal-body">
-            <div
-              v-if="allowOeTarget"
-              role="tablist"
-              aria-label="Rendering target"
-              class="pipeline-target-tabs mb-3"
-            >
-              <button
-                id="pipeline-tab-observed"
-                role="tab"
-                aria-controls="pipeline-panel-observed"
-                :aria-selected="editorTarget === 'observed'"
-                :tabindex="editorTarget === 'observed' ? 0 : -1"
+            <div class="form-check">
+              <input
+                id="pipeline-enabled"
+                v-model="enabled"
+                class="form-check-input"
+                type="checkbox"
                 :disabled="loading || saving"
-                @click="switchEditorTarget('observed')"
-                @keydown="onEditorTabKey"
+              />
+              <label class="form-check-label" for="pipeline-enabled"
+                >Enable custom rendering</label
               >
-                Observed graph
-              </button>
-              <button
-                id="pipeline-tab-oe"
-                role="tab"
-                aria-controls="pipeline-panel-oe"
-                :aria-selected="editorTarget === 'oe'"
-                :tabindex="editorTarget === 'oe' ? 0 : -1"
-                :disabled="loading || saving"
-                @click="switchEditorTarget('oe')"
-                @keydown="onEditorTabKey"
-              >
-                Primary O/E colormap
-              </button>
             </div>
-            <OePaletteEditor
-              v-if="editorTarget === 'oe' && mapManager"
-              id="pipeline-panel-oe"
-              ref="oeEditor"
-              :map-manager="mapManager"
-              role="tabpanel"
-              aria-labelledby="pipeline-tab-oe"
-              @busy="oeBusy = $event"
-            />
-            <div
-              v-show="editorTarget === 'observed'"
-              id="pipeline-panel-observed"
-              :role="allowOeTarget ? 'tabpanel' : undefined"
-              aria-label="Observed graph"
-              :aria-labelledby="
-                allowOeTarget ? 'pipeline-tab-observed' : undefined
-              "
-            >
-              <div class="alert alert-warning py-2 mb-3">
-                This graph controls the Observed view. Expected and O/E keep
-                their own primary-map processing and palette. Use the O/E
-                palette in a Colormap node for a signal that already represents
-                contact ratios; its neutral value is 1.
-              </div>
-              <div class="d-flex gap-3 align-items-center mb-3">
-                <div class="form-check">
-                  <input
-                    id="pipeline-enabled"
-                    v-model="enabled"
-                    class="form-check-input"
-                    type="checkbox"
-                    :disabled="loading || saving"
-                  />
-                  <label class="form-check-label" for="pipeline-enabled"
-                    >Enable custom pipeline</label
-                  >
-                </div>
-                <div class="form-check">
-                  <input
-                    id="pipeline-swap"
-                    v-model="swapUpperLower"
-                    class="form-check-input"
-                    type="checkbox"
-                    :disabled="loading || saving"
-                  />
-                  <label class="form-check-label" for="pipeline-swap"
-                    >Swap upper/lower diagonal branches</label
-                  >
-                </div>
-                <select
-                  v-model="selectedPresetId"
-                  class="form-select form-select-sm pipeline-preset-select"
-                  :disabled="loading || saving"
-                >
-                  <option
-                    v-for="preset in RENDERING_PRESETS"
-                    :key="preset.id"
-                    :value="preset.id"
-                  >
-                    {{ preset.label }}
-                  </option>
-                </select>
+            <p v-if="!enabled" class="small text-muted">
+              HiCT uses the sidebar settings. Turn this on to design your own
+              colouring.
+            </p>
+            <AdvancedSection dialog-id="rendering-pipeline" class="mt-3">
+              <div
+                v-if="allowOeTarget"
+                role="tablist"
+                aria-label="Rendering target"
+                class="pipeline-target-tabs mb-3"
+              >
                 <button
-                  class="btn btn-sm btn-outline-primary"
+                  id="pipeline-tab-observed"
+                  role="tab"
+                  aria-controls="pipeline-panel-observed"
+                  :aria-selected="editorTarget === 'observed'"
+                  :tabindex="editorTarget === 'observed' ? 0 : -1"
                   :disabled="loading || saving"
-                  @click="loadSelectedPreset"
+                  @click="switchEditorTarget('observed')"
+                  @keydown="onEditorTabKey"
                 >
-                  Load preset
+                  Observed graph
                 </button>
                 <button
-                  class="btn btn-sm btn-outline-secondary ms-auto"
+                  id="pipeline-tab-oe"
+                  role="tab"
+                  aria-controls="pipeline-panel-oe"
+                  :aria-selected="editorTarget === 'oe'"
+                  :tabindex="editorTarget === 'oe' ? 0 : -1"
                   :disabled="loading || saving"
-                  @click="loadConfig"
+                  @click="switchEditorTarget('oe')"
+                  @keydown="onEditorTabKey"
                 >
-                  Reload
+                  Primary O/E colormap
                 </button>
               </div>
+              <OePaletteEditor
+                v-if="editorTarget === 'oe' && mapManager"
+                id="pipeline-panel-oe"
+                ref="oeEditor"
+                :map-manager="mapManager"
+                role="tabpanel"
+                aria-labelledby="pipeline-tab-oe"
+                @busy="oeBusy = $event"
+              />
+              <div
+                v-show="editorTarget === 'observed'"
+                id="pipeline-panel-observed"
+                :role="allowOeTarget ? 'tabpanel' : undefined"
+                aria-label="Observed graph"
+                :aria-labelledby="
+                  allowOeTarget ? 'pipeline-tab-observed' : undefined
+                "
+              >
+                <div class="alert alert-warning py-2 mb-3">
+                  This graph controls the Observed view. Expected and O/E keep
+                  their own primary-map processing and palette. Use the O/E
+                  palette in a Colormap node for a signal that already
+                  represents contact ratios; its neutral value is 1.
+                </div>
+                <div class="d-flex gap-3 align-items-center mb-3">
+                  <div class="form-check">
+                    <input
+                      id="pipeline-swap"
+                      v-model="swapUpperLower"
+                      class="form-check-input"
+                      type="checkbox"
+                      :disabled="loading || saving"
+                    />
+                    <label class="form-check-label" for="pipeline-swap"
+                      >Swap upper/lower diagonal branches</label
+                    >
+                  </div>
+                  <select
+                    v-model="selectedPresetId"
+                    class="form-select form-select-sm pipeline-preset-select"
+                    :disabled="loading || saving"
+                  >
+                    <option
+                      v-for="preset in RENDERING_PRESETS"
+                      :key="preset.id"
+                      :value="preset.id"
+                    >
+                      {{ preset.label }}
+                    </option>
+                  </select>
+                  <button
+                    class="btn btn-sm btn-outline-primary"
+                    :disabled="loading || saving"
+                    @click="loadSelectedPreset"
+                  >
+                    Load preset
+                  </button>
+                  <button
+                    class="btn btn-sm btn-outline-secondary ms-auto"
+                    :disabled="loading || saving"
+                    @click="loadConfig"
+                  >
+                    Reload
+                  </button>
+                </div>
 
-              <div class="pipeline-graph card mb-2">
-                <div class="card-body p-0">
-                  <div
-                    ref="graphHost"
-                    class="graph-host"
-                    :inert="loading || saving || previewing"
-                    :aria-busy="loading || saving || previewing"
-                  >
-                    <canvas ref="graphCanvasRef" class="graph-canvas"></canvas>
+                <div class="pipeline-graph card mb-2">
+                  <div class="card-body p-0">
+                    <div
+                      ref="graphHost"
+                      class="graph-host"
+                      :inert="loading || saving || previewing"
+                      :aria-busy="loading || saving || previewing"
+                    >
+                      <canvas
+                        ref="graphCanvasRef"
+                        class="graph-canvas"
+                      ></canvas>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <small class="text-muted d-block mb-2">
-                Blue round ports carry numeric signals; purple square ports
-                carry colors. Sinks accept only colors. Right-click to add
-                nodes; use the same full-map graph on both sinks for overlays.
-              </small>
+                <small class="text-muted d-block mb-2">
+                  Blue round ports carry numeric signals; purple square ports
+                  carry colors. Sinks accept only colors. Right-click to add
+                  nodes; use the same full-map graph on both sinks for overlays.
+                </small>
 
-              <div v-if="loading" class="py-2">
-                <span class="spinner-border spinner-border-sm me-2"></span>
-                Loading pipeline configuration…
+                <div v-if="loading" class="py-2">
+                  <span class="spinner-border spinner-border-sm me-2"></span>
+                  Loading pipeline configuration…
+                </div>
               </div>
-            </div>
+            </AdvancedSection>
           </div>
           <div v-show="!previewMode" class="modal-footer">
             <button
@@ -197,7 +206,7 @@
               :disabled="saving || loading || oeBusy"
               @click="resetConfig"
             >
-              Reset
+              Reset to default
             </button>
             <input
               ref="importInputRef"
@@ -259,6 +268,7 @@
 </template>
 
 <script setup lang="ts">
+import AdvancedSection from "../common/AdvancedSection.vue";
 import { saveFileWithNotice } from "@/app/ui/fileSaveNotice";
 import { pipelineEditorStorageKey } from "@/app/core/visualization/renderPipelinePreset";
 import { reportFailure } from "@/app/ui/reportFailure";

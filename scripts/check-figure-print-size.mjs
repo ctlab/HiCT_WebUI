@@ -58,7 +58,9 @@ for (const widthMm of [86, 178]) {
 }
 for (const width of [0, NaN, Infinity, -1])
   assert.throws(() => figurePrintDimensions(width, 128, { widthMm: 86 }));
-assert.throws(() => figurePrintDimensions(256, 128, { widthMm: 100 }));
+assert.equal(figurePrintDimensions(256, 128, { widthMm: 100 }).heightMm, 50);
+assert.throws(() => figurePrintDimensions(256, 128, { widthMm: 0 }));
+assert.throws(() => figurePrintDimensions(256, 128, { widthMm: 2001 }));
 
 // Independent CRC and PNG fixture, including a pre-existing physical-size chunk.
 function crc32(bytes) {

@@ -49,6 +49,14 @@
         @dblclick.stop
       ></button>
     </div>
+    <div
+      v-if="result"
+      class="d-flex justify-content-between text-muted small"
+      aria-label="Visible signal range"
+    >
+      <span>{{ formatSignalCompact(result.min) }}</span>
+      <span>{{ formatSignalCompact(result.max) }}</span>
+    </div>
     <div class="histogram-caption">
       <span role="status" :title="description">{{ status }}</span>
       <button
@@ -71,6 +79,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import { formatSignalCompact } from "@/app/core/format/formatSignal";
 import {
   computed,
   onBeforeUnmount,
@@ -197,8 +206,8 @@ const status = computed(() =>
     : error.value ||
       (result.value
         ? `${
-            result.value.sampled ? "Sampled viewport" : "Viewport"
-          } · ${result.value.count.toLocaleString()} finite`
+            result.value.sampled ? "Visible area" : "Viewport"
+          } · ${result.value.count.toLocaleString()} values`
         : "Viewport histogram unavailable")
 );
 const description = computed(() => {

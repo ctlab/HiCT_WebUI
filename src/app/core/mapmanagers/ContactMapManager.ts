@@ -75,6 +75,7 @@ export interface FigureCaptureOptions {
   cropToMap?: boolean;
   includeRulers?: boolean;
   includeTracks?: boolean;
+  includeSecondary?: boolean;
   fitSmallWholeMap?: boolean;
   signal?: AbortSignal;
 }
@@ -196,19 +197,27 @@ class ContactMapManager {
       [".ol-zoom-in", false],
       [".ol-zoom-out", true],
     ] as const) {
-      this.map.getViewport().querySelector(className)?.addEventListener(
-        "click",
-        (event) => {
-          const view = this.map.getView();
-          const current = view.getResolution();
-          const limit = zoomOut ? view.getMaxResolution() : view.getMinResolution();
-          if (current !== undefined && Math.abs(current - limit) <= limit * 1e-9) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-          }
-        },
-        { capture: true }
-      );
+      this.map
+        .getViewport()
+        .querySelector(className)
+        ?.addEventListener(
+          "click",
+          (event) => {
+            const view = this.map.getView();
+            const current = view.getResolution();
+            const limit = zoomOut
+              ? view.getMaxResolution()
+              : view.getMinResolution();
+            if (
+              current !== undefined &&
+              Math.abs(current - limit) <= limit * 1e-9
+            ) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+            }
+          },
+          { capture: true }
+        );
     }
     // OpenLayers supplies keyboard zoom through the separate + and − buttons.
     const zoomThumb = this.map
@@ -1232,6 +1241,7 @@ class ContactMapManager {
     cropToMap?: boolean;
     includeRulers?: boolean;
     includeTracks?: boolean;
+    includeSecondary?: boolean;
     signal?: AbortSignal;
     fitSmallWholeMap?: boolean;
     progress?: (value: number) => void;
@@ -1305,6 +1315,8 @@ class ContactMapManager {
       options?.progress?.(0.05);
       interactions.forEach(([item]) => item.setActive(false));
       this.viewAndLayersManager.settleProjectedOverlayForFigure();
+      if (options?.includeSecondary === false)
+        this.viewAndLayersManager.setSecondaryCaptureVisible(false);
       // The overview shares a coarser source with the map but is excluded from
       // figure content. Suspend it so it cannot request another capture grid.
       overviewLayers.forEach(([layer]) => layer.setVisible(false));
@@ -1609,6 +1621,8 @@ class ContactMapManager {
       }
       return svg;
     } finally {
+      if (options?.includeSecondary === false && !this.disposed)
+        this.viewAndLayersManager.setSecondaryCaptureVisible(true);
       if (renderCapture) {
         this.viewAndLayersManager.figureRenderCaptureId = undefined;
         this.viewAndLayersManager.figureRenderCaptureError = undefined;
@@ -1696,6 +1710,7 @@ class ContactMapManager {
           map: true,
           rulers: options.includeRulers !== false,
           tracks: options.includeTracks !== false,
+          secondary: options.includeSecondary !== false,
         },
         history: captured
           ? {

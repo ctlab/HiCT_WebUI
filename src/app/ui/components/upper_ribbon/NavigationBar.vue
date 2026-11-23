@@ -56,8 +56,12 @@
                 >
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click.prevent="onOpenFile"
-                  >Open…</a
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  title="Open map (Ctrl+O)"
+                  @click.prevent="onOpenFile"
+                  >Open map…</a
                 >
               </li>
               <li>
@@ -75,15 +79,16 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onCloseClicked"
-                  >Close</a
+                  >Close map</a
                 >
               </li>
               <li>
                 <a
                   class="dropdown-item"
                   href="#"
+                  title="Show the map that is already open in another window or tab"
                   @click.prevent="onAttachClicked"
-                  >Attach</a
+                  >Join running session</a
                 >
               </li>
               <li>
@@ -91,7 +96,7 @@
                   class="dropdown-item"
                   href="#"
                   @click.prevent="emit('examplesRequested')"
-                  >Open Examples…</a
+                  >Examples…</a
                 >
               </li>
               <li><hr class="dropdown-divider" /></li>
@@ -100,8 +105,9 @@
                   class="dropdown-item"
                   href="#"
                   :class="{ disabled: !props.mapManager }"
+                  title="Save session (Ctrl+S)"
                   @click.prevent="onSaveSessionClicked"
-                  >Save session</a
+                  >Save session…</a
                 >
               </li>
               <li>
@@ -109,7 +115,7 @@
                   class="dropdown-item"
                   href="#"
                   @click.prevent="onOpenSessionClicked"
-                  >Open session</a
+                  >Open session…</a
                 >
                 <input
                   ref="sessionFileInput"
@@ -133,7 +139,7 @@
                   class="dropdown-item"
                   href="#"
                   @click.prevent="onConvertCoolersClicked"
-                  >Convert matrices</a
+                  >Convert matrices…</a
                 >
               </li>
               <li>
@@ -141,7 +147,7 @@
                   class="dropdown-item"
                   href="#"
                   @click.prevent="exportingMatrix = true"
-                  >Export matrix</a
+                  >Export matrix…</a
                 >
               </li>
               <li v-if="canQuit"><hr class="dropdown-divider" /></li>
@@ -153,25 +159,78 @@
             </ul>
           </li>
           <li class="nav-item dropdown">
-            <a class="nav-link active dropdown-toggle" data-bs-toggle="dropdown"
-              :data-bs-popper-config="navbarPopperConfig" href="#">Edit</a>
+            <a
+              class="nav-link active dropdown-toggle"
+              data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
+              href="#"
+              >Edit</a
+            >
             <ul class="dropdown-menu">
-              <li><button class="dropdown-item" type="button" :disabled="!historyCan('undo')"
-                :title="props.mapManager ? 'Undo (Ctrl+Z)' : 'Open a map to edit'"
-                @click="editHistory('undo')">Undo</button></li>
-              <li><button class="dropdown-item" type="button" :disabled="!historyCan('redo')"
-                :title="props.mapManager ? 'Redo (Ctrl+Shift+Z)' : 'Open a map to edit'"
-                @click="editHistory('redo')">Redo</button></li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  :disabled="!historyCan('undo')"
+                  :title="
+                    props.mapManager ? 'Undo (Ctrl+Z)' : 'Open a map to edit'
+                  "
+                  @click="editHistory('undo')"
+                >
+                  Undo
+                </button>
+              </li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  :disabled="!historyCan('redo')"
+                  :title="
+                    props.mapManager
+                      ? 'Redo (Ctrl+Shift+Z)'
+                      : 'Open a map to edit'
+                  "
+                  @click="editHistory('redo')"
+                >
+                  Redo
+                </button>
+              </li>
               <li><hr class="dropdown-divider" /></li>
-              <li><button class="dropdown-item" type="button" :disabled="!props.mapManager"
-                title="Open a map to select a region"
-                @click="regionByCoordinates = true">Select region by coordinates…</button></li>
-              <li><button class="dropdown-item" type="button" :disabled="!props.mapManager"
-                title="Open a map to clear a selection"
-                @click="props.mapManager?.viewAndLayersManager.clearSelections()">Clear selection</button></li>
-              <li><button class="dropdown-item" type="button" :disabled="!props.mapManager"
-                title="Open a map to view edit history"
-                @click="showEditHistory">Edit history…</button></li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  :disabled="!props.mapManager"
+                  title="Open a map to select a region"
+                  @click="regionByCoordinates = true"
+                >
+                  Select region by coordinates…
+                </button>
+              </li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  :disabled="!props.mapManager"
+                  title="Open a map to clear a selection"
+                  @click="
+                    props.mapManager?.viewAndLayersManager.clearSelections()
+                  "
+                >
+                  Clear selection
+                </button>
+              </li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  :disabled="!props.mapManager"
+                  title="Open a map to view edit history"
+                  @click="showEditHistory"
+                >
+                  Edit history…
+                </button>
+              </li>
             </ul>
           </li>
           <!-- Assembly -->
@@ -190,7 +249,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onOpenFASTAFile"
-                  >Link FASTA</a
+                  >Link FASTA…</a
                 >
               </li>
               <li>
@@ -199,7 +258,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onLoadAGP"
-                  >Load AGP</a
+                  >Load AGP…</a
                 >
               </li>
               <li>
@@ -227,7 +286,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onSelectionFASTARequest"
-                  >Export FASTA for selection</a
+                  >Export FASTA for selection…</a
                 >
               </li>
               <li>
@@ -236,7 +295,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onAssemblyAGPRequest"
-                  >Export to AGP</a
+                  >Export AGP…</a
                 >
               </li>
             </ul>
@@ -292,7 +351,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="openResolutionSettings"
-                  >Restrict Resolutions…</a
+                  >Restrict resolutions…</a
                 >
               </li>
               <li>
@@ -315,7 +374,7 @@
                     "
                     aria-hidden="true"
                   ></i>
-                  Automatically align visible FASTA
+                  Align visible FASTA automatically
                 </button>
                 <small
                   id="automatic-alignment-description"
@@ -346,7 +405,7 @@
                     "
                     aria-hidden="true"
                   ></i
-                  >FASTA: show reverse strand</a
+                  >Show reverse strand of FASTA</a
                 >
               </li>
             </ul>
@@ -392,7 +451,7 @@
                   class="dropdown-item"
                   href="#"
                   @click.prevent="onGenerateDotplotClicked"
-                  >Generate dotplot from FASTA files…</a
+                  >Dotplot from FASTA files…</a
                 >
               </li>
               <li>
@@ -401,7 +460,7 @@
                   :disabled="!props.mapManager"
                   @click="assemblyDotPlotOpen = true"
                 >
-                  Generate dotplot from active assembly…
+                  Dotplot from current assembly…
                 </button>
               </li>
               <li>
@@ -410,7 +469,7 @@
                   :disabled="!props.mapManager"
                   @click="modDotPlotOpen = true"
                 >
-                  Generate ModDotPlot…
+                  ModDotPlot…
                 </button>
               </li>
             </ul>
@@ -593,15 +652,14 @@
               <li>
                 <a
                   class="dropdown-item"
-                  href="./docs/user-guide.md"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  >User guide and shortcuts</a
+                  href="#"
+                  @click.prevent="guideOpen = true"
+                  >User guide and shortcuts…</a
                 >
               </li>
               <li>
                 <a class="dropdown-item" href="#" @click.prevent="onOpenApiDocs"
-                  >API docs…</a
+                  >API documentation…</a
                 >
               </li>
               <li>
@@ -622,7 +680,7 @@
               </li>
               <li>
                 <a class="dropdown-item" href="#" @click.prevent="openAbout"
-                  >About</a
+                  >About HiCT…</a
                 >
               </li>
               <li>
@@ -631,7 +689,7 @@
                   href="https://github.com/ctlab/HiCT/issues"
                   target="_blank"
                   rel="noopener noreferrer"
-                  >Report a bug</a
+                  >Report a bug…</a
                 >
               </li>
             </ul>
@@ -685,8 +743,16 @@
             :aria-label="linkedFastaFilename ? 'Relink FASTA' : 'Link FASTA…'"
             @click="onOpenFASTAFile"
           >
-            <i class="bi" :class="linkedFastaFilename ? 'bi-check2' : 'bi-link-45deg'" aria-hidden="true"></i>
-            {{ linkedFastaFilename ? `FASTA: ${linkedFastaFilename.split(/[\\/]/).pop()}` : "Link FASTA…" }}
+            <i
+              class="bi"
+              :class="linkedFastaFilename ? 'bi-check2' : 'bi-link-45deg'"
+              aria-hidden="true"
+            ></i>
+            {{
+              linkedFastaFilename
+                ? `FASTA: ${linkedFastaFilename.split(/[\\/]/).pop()}`
+                : "Link FASTA…"
+            }}
           </button>
           <button
             v-if="props.mapManager"
@@ -707,12 +773,7 @@
       </div>
     </div>
   </nav>
-  <!-- <OpenFileSelector
-    :network-manager="props.networkManager"
-    v-if="openingFile"
-    @selected="onFileSelected"
-    @dismissed="onFileDismissed"
-  ></OpenFileSelector> -->
+  <UserGuideModal v-if="guideOpen" @dismissed="guideOpen = false" />
   <UniversalFileSelector
     :network-manager="props.networkManager"
     v-if="openingFile"
@@ -909,7 +970,7 @@
       class="settings-modal osd-settings-modal"
       role="dialog"
       aria-modal="true"
-      aria-label="On-screen display settings"
+      aria-label="Info settings"
     >
       <div class="settings-header">
         <h2>Info settings</h2>
@@ -930,7 +991,7 @@
             role="switch"
           />
           <label class="form-check-label" for="toggle-osd-visible">
-            Show overlay
+            Show Info overlay
           </label>
         </div>
         <label class="form-label" for="osd-position-select">Position</label>
@@ -943,7 +1004,11 @@
           <option value="bottom-left">Bottom left</option>
         </select>
         <div class="fw-semibold mb-2">Fields</div>
-        <div v-for="field in osdFieldOrder" :key="field" class="osd-field-row">
+        <div
+          v-for="field in primaryOsdFields"
+          :key="field"
+          class="osd-field-row"
+        >
           <div class="form-check form-switch">
             <input
               :id="`osd-field-${field}`"
@@ -973,6 +1038,46 @@
             </button>
           </div>
         </div>
+        <AdvancedSection dialog-id="info-settings" class="mt-3">
+          <div
+            v-for="field in additionalOsdFields"
+            :key="field"
+            class="osd-field-row"
+          >
+            <div class="form-check form-switch">
+              <input
+                :id="`osd-field-${field}`"
+                v-model="osdOverlayFields[field]"
+                class="form-check-input"
+                type="checkbox"
+                role="switch"
+              />
+              <label
+                class="form-check-label"
+                :for="`osd-field-${field}`"
+                :title="osdFieldDescriptions[field]"
+              >
+                {{ osdFieldLabels[field] ?? field }}
+              </label>
+            </div>
+            <div class="btn-group btn-group-sm">
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                @click="moveOsdField(field, -1)"
+              >
+                Up
+              </button>
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                @click="moveOsdField(field, 1)"
+              >
+                Down
+              </button>
+            </div>
+          </div>
+        </AdvancedSection>
       </div>
       <div class="settings-footer">
         <button
@@ -1336,6 +1441,8 @@
 </template>
 
 <script setup lang="ts">
+import AdvancedSection from "../common/AdvancedSection.vue";
+import UserGuideModal from "./UserGuideModal.vue";
 import RegionSelectionDialog from "../common/RegionSelectionDialog.vue";
 import { offerFastaLink } from "@/app/ui/fastaExportPrerequisite";
 import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
@@ -1413,10 +1520,10 @@ const trackManagerOpen = ref<"tracks" | "sources" | null>(null);
 const renderingPipelineOpen = ref(false);
 const workerDiagnosticsOpen = ref(false);
 const serverStatisticsOpen = ref(false);
-const saving = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
 const osdSettingsOpen = ref(false);
+const guideOpen = ref(false);
 const connectionOpen = ref(false);
 const resolutionSettingsOpen = ref(false);
 const aboutActiveTab = ref<"about" | "attribution" | "changelog">("about");
@@ -1606,22 +1713,38 @@ const {
 } = storeToRefs(uiSettingsStore);
 
 const osdFieldLabels: Record<string, string> = {
-  global: "Global coordinates",
+  global: "Position",
   resolution: "Resolution",
-  source: "Guidance source",
-  visibleResolutions: "Visible source resolutions",
-  pixels: "Pixel position",
-  bins: "Bin position",
-  basePairs: "Genome bp position",
+  source: "Showing data from",
+  visibleResolutions: "Available resolutions",
+  pixels: "Matrix cell (display)",
+  bins: "Matrix cell (stored)",
+  basePairs: "Map position",
   contigs: "Contigs",
-  inContig: "In-contig bp",
+  inContig: "Position in contig",
   scaffolds: "Scaffolds",
-  inScaffold: "In-scaffold bp",
+  inScaffold: "Position in scaffold",
 };
 
 const osdFieldOrder = computed(() =>
   osdOverlayFieldOrder.value.filter((field) => field in osdFieldLabels)
 );
+const primaryOsdFields = computed(() =>
+  osdFieldOrder.value.filter(
+    (field) => field === "global" || field === "resolution"
+  )
+);
+const additionalOsdFields = computed(() =>
+  osdFieldOrder.value.filter(
+    (field) => field !== "global" && field !== "resolution"
+  )
+);
+const osdFieldDescriptions: Record<string, string> = {
+  source: "Which map supplies the displayed data at the pointer.",
+  pixels: "The displayed cell at the current zoom level.",
+  bins: "The stored contact bin containing the pointer.",
+  visibleResolutions: "The available detail levels for visible sources.",
+};
 const enabledResolutions = ref<number[]>([]);
 const resolutionFinestLimit = ref<number | null>(null);
 const resolutionCoarsestLimit = ref<number | null>(null);
@@ -1780,24 +1903,36 @@ type TauriBridge = {
 
 const regionByCoordinates = ref(false);
 const canQuit = computed(() => {
-  const desktop = (window as unknown as { hictDesktop?: HictDesktopBridge }).hictDesktop;
+  const desktop = (window as unknown as { hictDesktop?: HictDesktopBridge })
+    .hictDesktop;
   const tauri = (window as unknown as { __TAURI__?: TauriBridge }).__TAURI__;
   return !!(desktop?.quit || tauri?.core?.invoke || tauri?.invoke);
 });
 function historyCan(action: "undo" | "redo"): boolean {
   const api = props.mapManager?.networkManager.requestManager;
-  return !!api && !api.history.busy && !api.sequenceViewReadOnly &&
-    !!(action === "undo" ? api.history.summary?.canUndo : api.history.summary?.canRedo);
+  return (
+    !!api &&
+    !api.history.busy &&
+    !api.sequenceViewReadOnly &&
+    !!(action === "undo"
+      ? api.history.summary?.canUndo
+      : api.history.summary?.canRedo)
+  );
 }
 function editHistory(action: "undo" | "redo"): void {
   if (!historyCan(action)) return;
-  void props.networkManager.requestManager.restoreAssemblyHistory(action)
-    .catch((error) => reportFailure(action === "undo" ? "Undo" : "Redo", error));
+  void props.networkManager.requestManager
+    .restoreAssemblyHistory(action)
+    .catch((error) =>
+      reportFailure(action === "undo" ? "Undo" : "Redo", error)
+    );
 }
 function showEditHistory(): void {
   window.dispatchEvent(new Event("hict:show-edit-history"));
 }
-let pendingFastaExport: { manager: ContactMapManager; resume: () => void } | undefined;
+let pendingFastaExport:
+  | { manager: ContactMapManager; resume: () => void }
+  | undefined;
 function linkFastaForExport(event: Event): void {
   const detail = (event as CustomEvent<typeof pendingFastaExport>).detail;
   if (!detail || detail.manager !== props.mapManager) return;
@@ -1991,13 +2126,6 @@ function onApplyJuiceboxAssembly(): void {
 function onFileDismissed() {
   openingFile.value = false;
   errorMessage.value = null;
-}
-
-function onSaveClicked(): void {
-  saving.value = true;
-  props.networkManager.requestManager.save().finally(() => {
-    saving.value = false;
-  });
 }
 
 function onCloseClicked(): void {
@@ -2425,7 +2553,11 @@ function linkFASTA(filename: string, allowMismatch = false) {
       reopenToolAfterFastaLink();
       const pendingExport = pendingFastaExport;
       pendingFastaExport = undefined;
-      if (pendingExport && pendingExport.manager === props.mapManager && !pendingExport.manager.isDisposed) {
+      if (
+        pendingExport &&
+        pendingExport.manager === props.mapManager &&
+        !pendingExport.manager.isDisposed
+      ) {
         pendingExport.resume();
       }
     })
@@ -2476,7 +2608,10 @@ async function exportAssemblyFile(kind: "fasta" | "agp") {
   if (!props.mapManager || assemblyExportBusy.value) return;
   const api = props.networkManager.requestManager;
   if (kind === "fasta" && !api.hasLinkedFasta) {
-    await offerFastaLink(props.mapManager, () => void exportAssemblyFile("fasta"));
+    await offerFastaLink(
+      props.mapManager,
+      () => void exportAssemblyFile("fasta")
+    );
     return;
   }
   const version = api.history.applied ? { ...api.history.applied } : null;
@@ -2527,7 +2662,12 @@ function onSelectionFASTARequest() {
   }
 }
 
-.file-chip { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-chip {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .navbar-bar {
   /* Navbar */
