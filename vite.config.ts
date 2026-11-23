@@ -29,6 +29,10 @@ import vueJsx from "@vitejs/plugin-vue-jsx";
 import { sonnerVisibilityPlugins } from "./scripts/vue-sonner-visibility-fix.mjs";
 
 const sonnerVisibility = sonnerVisibilityPlugins();
+const buildCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+  cwd: fileURLToPath(new URL(".", import.meta.url)),
+  encoding: "utf8",
+}).trim();
 
 function manualChunk(id: string): string | undefined {
   // Runtime helpers stay separate from map and export modules.
@@ -45,15 +49,20 @@ export default defineConfig({
         readFileSync(new URL("./package.json", import.meta.url), "utf8")
       ).version
     ),
-    __HICT_WEBUI_BUILD_COMMIT__: JSON.stringify(
-      execFileSync("git", ["rev-parse", "HEAD"], {
-        cwd: fileURLToPath(new URL(".", import.meta.url)),
-        encoding: "utf8",
-      }).trim()
-    ),
+    __HICT_WEBUI_BUILD_COMMIT__: JSON.stringify(buildCommit),
   },
   optimizeDeps: { esbuildOptions: { plugins: [sonnerVisibility.esbuild] } },
   plugins: [
+    {
+      name: "hict-webui-revision",
+      generateBundle() {
+        this.emitFile({
+          type: "asset",
+          fileName: "webui-revision.txt",
+          source: `${buildCommit}\n`,
+        });
+      },
+    },
     sonnerVisibility.vite,
     {
       name: "sanitize-litegraph-eval",
