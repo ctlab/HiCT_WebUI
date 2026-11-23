@@ -2058,7 +2058,10 @@ class RequestManager {
           asmInfo.scaffoldDescriptors
         );
         this.networkManager.mapManager?.getLayersManager().reapplyAxisScopes();
-        this.networkManager.mapManager?.reloadVisuals();
+        const version = response.data.version;
+        this.networkManager.mapManager?.reloadVisuals(
+          Number.isSafeInteger(version) && version >= 0 ? version : undefined
+        );
       }
       return asmInfo;
     } catch (err) {

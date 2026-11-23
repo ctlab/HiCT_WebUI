@@ -3371,8 +3371,8 @@ class HiCViewAndLayersManager {
     }
   }
 
-  public reloadVisuals(): void {
-    this.reloadTiles();
+  public reloadVisuals(version?: number): void {
+    this.reloadTiles(version);
     this.reloadTracks();
     this.mapManager.map.changed();
   }

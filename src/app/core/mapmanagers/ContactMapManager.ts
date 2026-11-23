@@ -2199,9 +2199,9 @@ class ContactMapManager {
     );
   }
 
-  public reloadVisuals(): void {
+  public reloadVisuals(version?: number): void {
     if (this.disposed) return;
-    this.viewAndLayersManager.reloadVisuals();
+    this.viewAndLayersManager.reloadVisuals(version);
     void this.linearTrackManager.clearCachesAndRender();
     this.scheduleMinimapViewportSync();
   }
