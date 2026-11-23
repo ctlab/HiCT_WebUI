@@ -1,3 +1,9 @@
+import {
+  cropSelectionScene,
+  exportPixelSpan,
+  includeMapCaptions,
+  visibleMapBounds,
+} from "../export/SelectionScene";
 import { FigureSnapshotLibrary } from "../export/FigureSnapshotLibrary";
 import type { FigurePrintOptions } from "../export/FigurePrintSize";
 import { watchMapRenderCompletion } from "./mapRenderCompletion";
@@ -1550,9 +1556,6 @@ class ContactMapManager {
         selection ?? (options?.cropToMap !== false ? dataExtent : undefined);
       if (cropExtent) {
         const size = this.map.getSize()!;
-        const { cropSelectionScene, visibleMapBounds } = await import(
-          "../export/SelectionScene"
-        );
         const bounds = visibleMapBounds(
           [
             [cropExtent[0], cropExtent[3]],
@@ -1577,9 +1580,6 @@ class ContactMapManager {
           height: bounds.height,
         };
         if (!selection) {
-          const { includeMapCaptions } = await import(
-            "../export/SelectionScene"
-          );
           crop = includeMapCaptions(svg.svg, crop, {
             left: marginLeft,
             top: marginTop,
@@ -1777,10 +1777,10 @@ class ContactMapManager {
     const scene = document
       .querySelector(".interactive-workspace")
       ?.getBoundingClientRect();
-    const width = Math.ceil(
+    const width = exportPixelSpan(
       Math.min(size[0], w / fit) + map.left - (scene?.left ?? map.left)
     );
-    const height = Math.ceil(
+    const height = exportPixelSpan(
       Math.min(size[1], h / fit) + map.top - (scene?.top ?? map.top)
     );
     const columns = region.columnEnd - region.columnStart,
