@@ -696,6 +696,16 @@ function handleGlobalEscape(event: KeyboardEvent): void {
   }
   if (!hasAnyOpenEscDialog()) {
     const target = event.target;
+    if (target instanceof Element) {
+      const disclosure = target.closest("[data-escape-disclosure]");
+      if (
+        disclosure
+          ?.querySelector(':scope > button[aria-expanded="true"]')
+          ?.getClientRects().length
+      ) {
+        return;
+      }
+    }
     if (
       target instanceof Element &&
       target.closest(

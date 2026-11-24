@@ -20,7 +20,7 @@
  -->
 
 <template>
-  <div class="toolbar-outer" @keydown.esc="closeCompactTools">
+  <div class="toolbar-outer" data-escape-disclosure @keydown.esc="closeCompactTools">
     <button
       ref="compactToggle"
       type="button"

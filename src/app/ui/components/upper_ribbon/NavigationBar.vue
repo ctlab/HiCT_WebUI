@@ -695,7 +695,7 @@
             </ul>
           </li>
         </ul>
-        <div class="file-chips ms-auto" @keydown.esc="closeSourceDetails">
+        <div class="file-chips ms-auto" data-escape-disclosure @keydown.esc="closeSourceDetails">
           <button
             v-if="props.mapManager"
             ref="sourceDetailsToggle"
