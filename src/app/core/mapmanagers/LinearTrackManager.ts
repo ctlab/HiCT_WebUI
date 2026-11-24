@@ -24,6 +24,7 @@ import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore
 import type { EventsKey } from "ol/events";
 import { unByKey } from "ol/Observable";
 import { transform } from "ol/proj";
+import { watch } from "vue";
 import type { ContactMapManager } from "./ContactMapManager";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
@@ -97,6 +98,7 @@ class LinearTrackManager {
   private readonly moveEndListener?: EventsKey;
   private readonly centerListener?: EventsKey;
   private readonly resolutionListener?: EventsKey;
+  private readonly stopTrackBackgroundWatch: () => void;
   private interactiveRenderFramePending = false;
   private readonly listSubscribers = new Set<
     (tracks: TrackSummaryResponse[]) => void
@@ -164,10 +166,18 @@ class LinearTrackManager {
       }
       void this.render({ allowFetch: true });
     });
+    this.stopTrackBackgroundWatch = watch(
+      () => this.resolveTrackBackgroundColor(),
+      () => {
+        this.redrawTrackCanvas("horizontal");
+        this.redrawTrackCanvas("vertical");
+      }
+    );
   }
 
   public dispose(): void {
     this.disposed = true;
+    this.stopTrackBackgroundWatch();
     this.trackListRequestId++;
     if (this.moveEndListener) {
       unByKey(this.moveEndListener);
@@ -1293,14 +1303,16 @@ class LinearTrackManager {
     this.scrollFrames.add(orientation);
     requestAnimationFrame(() => {
       this.scrollFrames.delete(orientation);
-      const snapshot = this.lastRenderedSnapshot[orientation];
-      const canvas =
-        orientation === "horizontal"
-          ? this.horizontalCanvas
-          : this.verticalCanvas;
-      if (snapshot && canvas)
-        this.drawTrackCanvas(canvas, orientation, snapshot, snapshot.viewport);
+      this.redrawTrackCanvas(orientation);
     });
+  }
+
+  private redrawTrackCanvas(orientation: Orientation): void {
+    const snapshot = this.lastRenderedSnapshot[orientation];
+    const canvas =
+      orientation === "horizontal" ? this.horizontalCanvas : this.verticalCanvas;
+    if (snapshot && canvas)
+      this.drawTrackCanvas(canvas, orientation, snapshot, snapshot.viewport);
   }
 
   private rowsFor(bins: TrackBinResponse[], resolution: number) {
