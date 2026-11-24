@@ -65,8 +65,8 @@ const props = defineProps<{
 @media (max-width: 700px) {
   .workspace-component {
     display: grid;
-    grid-template-columns: 52px minmax(0, 1fr);
-    grid-template-rows: minmax(440px, 65vh) max-content;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(440px, 65vh) max-content;
     overflow: auto;
   }
   .workspace-component :deep(.sidebar) {

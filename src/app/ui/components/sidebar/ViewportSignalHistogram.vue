@@ -52,6 +52,7 @@
     <div
       v-if="result"
       class="d-flex justify-content-between text-muted small"
+      role="group"
       aria-label="Visible signal range"
     >
       <span>{{ formatSignalCompact(result.min) }}</span>

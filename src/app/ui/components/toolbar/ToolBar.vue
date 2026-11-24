@@ -20,8 +20,26 @@
  -->
 
 <template>
-  <div class="toolbar-outer">
-    <div class="toolbar-upper" role="region" aria-label="Map tools" tabindex="0">
+  <div class="toolbar-outer" @keydown.esc="closeCompactTools">
+    <button
+      ref="compactToggle"
+      type="button"
+      class="btn btn-sm btn-outline-primary compact-tools-toggle"
+      aria-controls="workspace-map-tools"
+      :aria-expanded="compactOpen"
+      :disabled="!props.mapManager"
+      @click="compactOpen = !compactOpen"
+    >
+      Map tools
+    </button>
+    <div
+      id="workspace-map-tools"
+      class="toolbar-upper"
+      :class="{ 'toolbar-upper--open': compactOpen }"
+      role="region"
+      aria-label="Map tools"
+      tabindex="0"
+    >
       <HistoryButtons :map-manager="props.mapManager" />
       <FirstBlock :map-manager="props.mapManager"></FirstBlock>
       <RearrangementButtons
@@ -37,6 +55,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import HistoryButtons from "./upper_blocks/HistoryButtons.vue";
 import FirstBlock from "@/app/ui/components/toolbar/upper_blocks/FirstBlock.vue";
 import ThirdBlock from "@/app/ui/components/toolbar/upper_blocks/ThirdBlock.vue";
@@ -48,6 +67,15 @@ import ScaffoldingButtons from "./upper_blocks/ScaffoldingButtons.vue";
 const props = defineProps<{
   readonly mapManager?: ContactMapManager | undefined;
 }>();
+const compactOpen = ref(false);
+const compactToggle = ref<HTMLButtonElement>();
+
+function closeCompactTools(event: KeyboardEvent): void {
+  if (!compactOpen.value || !compactToggle.value?.getClientRects().length) return;
+  event.stopPropagation();
+  compactOpen.value = false;
+  compactToggle.value.focus();
+}
 </script>
 
 <style scoped>
@@ -97,6 +125,42 @@ const props = defineProps<{
 
 .toolbar-bottom {
   flex: 0 0 auto;
+}
+
+.compact-tools-toggle {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .toolbar-outer {
+    position: relative;
+    flex-direction: row;
+    justify-content: space-between;
+    width: auto;
+    padding: 4px 8px;
+    box-shadow: inset 0 -1px 0 var(--hict-ui-border, #b6c1cf);
+  }
+
+  .compact-tools-toggle {
+    display: inline-block;
+  }
+
+  .toolbar-upper {
+    display: none;
+    position: absolute;
+    z-index: 20;
+    top: 100%;
+    left: 0;
+    width: 56px;
+    max-height: min(52vh, 32rem);
+    padding: 8px 4px;
+    background: inherit;
+    border: 1px solid var(--hict-ui-border, #b6c1cf);
+  }
+
+  .toolbar-upper--open {
+    display: flex;
+  }
 }
 
 @media (max-height: 820px) {

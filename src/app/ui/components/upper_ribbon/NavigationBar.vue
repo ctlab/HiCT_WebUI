@@ -695,75 +695,102 @@
             </ul>
           </li>
         </ul>
-        <div class="file-chips ms-auto d-flex align-items-center gap-2">
-          <span
-            v-if="props.mapManager && openMapFilename"
-            class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
-            :title="
-              primaryApproximation
-                ? `${openMapFilename}\n${primaryApproximation.description}\nMethod: ${primaryApproximation.method}`
-                : openMapFilename
-            "
-          >
-            {{
-              primaryApproximation
-                ? "Estimated"
-                : noContactData
-                ? "Assembly"
-                : "Hi-C"
-            }}:
-            {{ shortFileLabel(openMapFilename, MAP_CHIP_LIMIT) }}
-          </span>
-          <span
-            v-if="props.mapManager && secondaryMapFilename"
-            class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
-            :title="
-              secondaryApproximation
-                ? `${secondaryMapFilename}\n${secondaryApproximation.description}\nMethod: ${secondaryApproximation.method}`
-                : secondaryMapFilename
-            "
-          >
-            {{
-              secondaryApproximation ? "Secondary (estimated)" : "Secondary"
-            }}:
-            {{ shortFileLabel(secondaryMapFilename, MAP_CHIP_LIMIT) }}
-          </span>
+        <div class="file-chips ms-auto" @keydown.esc="closeSourceDetails">
           <button
             v-if="props.mapManager"
+            ref="sourceDetailsToggle"
             type="button"
-            class="btn btn-sm file-chip"
-            :class="
-              linkedFastaFilename
-                ? 'btn-outline-secondary'
-                : 'btn-outline-warning'
-            "
-            :title="
-              linkedFastaFilename || 'Link the FASTA that matches this map'
-            "
-            :aria-label="linkedFastaFilename ? 'Relink FASTA' : 'Link FASTA…'"
-            @click="onOpenFASTAFile"
+            class="btn btn-sm btn-outline-secondary source-details-toggle"
+            aria-controls="hict-source-details"
+            :aria-expanded="sourceDetailsOpen"
+            @click="sourceDetailsOpen = !sourceDetailsOpen"
           >
-            <i
-              class="bi"
-              :class="linkedFastaFilename ? 'bi-check2' : 'bi-link-45deg'"
-              aria-hidden="true"
-            ></i>
-            {{
-              linkedFastaFilename
-                ? `FASTA: ${linkedFastaFilename.split(/[\\/]/).pop()}`
-                : "Link FASTA…"
-            }}
+            Sources
           </button>
-          <button
+          <div
             v-if="props.mapManager"
-            type="button"
-            class="btn btn-sm file-chip btn-outline-secondary"
-            :title="lastAgpFilename || 'No AGP loaded. Click to load one.'"
-            @click="onLoadAGP"
+            id="hict-source-details"
+            class="source-details"
+            :class="{ 'source-details--open': sourceDetailsOpen }"
           >
-            AGP:
-            {{ lastAgpFilename ? shortFileLabel(lastAgpFilename) : "none" }}
-          </button>
+            <p class="source-details-active">
+              Visualization options apply to
+              {{ activeVisualizationSource === "SECONDARY" && secondaryMapFilename ? "the secondary map" : "the primary map" }}.
+            </p>
+            <span
+              v-if="openMapFilename"
+              class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
+              :title="
+                primaryApproximation
+                  ? `${openMapFilename}\n${primaryApproximation.description}\nMethod: ${primaryApproximation.method}`
+                  : openMapFilename
+              "
+            >
+              {{
+                primaryApproximation
+                  ? "Estimated"
+                  : noContactData
+                  ? "Assembly"
+                  : "Hi-C"
+              }}:
+              <span class="file-chip-short">{{ shortFileLabel(openMapFilename, MAP_CHIP_LIMIT) }}</span>
+              <span class="file-chip-full">{{ openMapFilename }}</span>
+            </span>
+            <span
+              v-if="secondaryMapFilename"
+              class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
+              :title="
+                secondaryApproximation
+                  ? `${secondaryMapFilename}\n${secondaryApproximation.description}\nMethod: ${secondaryApproximation.method}`
+                  : secondaryMapFilename
+              "
+            >
+              {{
+                secondaryApproximation ? "Secondary (estimated)" : "Secondary"
+              }}:
+              <span class="file-chip-short">{{ shortFileLabel(secondaryMapFilename, MAP_CHIP_LIMIT) }}</span>
+              <span class="file-chip-full">{{ secondaryMapFilename }}</span>
+            </span>
+            <button
+              type="button"
+              class="btn btn-sm file-chip"
+              :class="
+                linkedFastaFilename
+                  ? 'btn-outline-secondary'
+                  : 'btn-outline-warning'
+              "
+              :title="
+                linkedFastaFilename || 'Link the FASTA that matches this map'
+              "
+              :aria-label="linkedFastaFilename ? 'Relink FASTA' : 'Link FASTA…'"
+              @click="onOpenFASTAFile"
+            >
+              <i
+                class="bi"
+                :class="linkedFastaFilename ? 'bi-check2' : 'bi-link-45deg'"
+                aria-hidden="true"
+              ></i>
+              {{
+                linkedFastaFilename
+                  ? "FASTA:"
+                  : "Link FASTA…"
+              }}
+              <template v-if="linkedFastaFilename">
+                <span class="file-chip-short">{{ linkedFastaFilename.split(/[\\/]/).pop() }}</span>
+                <span class="file-chip-full">{{ linkedFastaFilename }}</span>
+              </template>
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm file-chip btn-outline-secondary"
+              :title="lastAgpFilename || 'No AGP loaded. Click to load one.'"
+              @click="onLoadAGP"
+            >
+              AGP:
+              <span class="file-chip-short">{{ lastAgpFilename ? shortFileLabel(lastAgpFilename) : "none" }}</span>
+              <span class="file-chip-full">{{ lastAgpFilename || "none" }}</span>
+            </button>
+          </div>
           <BackgroundJobsPanel
             :requests="props.networkManager.requestManager"
             @open="emit('jobResult', $event)"
@@ -1486,6 +1513,7 @@ import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { useSessionStore } from "@/app/stores/sessionStore";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import type {
   ConversionToolchainStatusResponse,
@@ -1533,6 +1561,16 @@ const renderedChangelog = computed(() => renderMarkdown(changelogText.value));
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
 const sessionStore = useSessionStore();
+const { activeVisualizationSource } = storeToRefs(useMatrixViewStore());
+const sourceDetailsOpen = ref(false);
+const sourceDetailsToggle = ref<HTMLButtonElement>();
+
+function closeSourceDetails(event: KeyboardEvent): void {
+  if (!sourceDetailsOpen.value || !sourceDetailsToggle.value?.getClientRects().length) return;
+  event.stopPropagation();
+  sourceDetailsOpen.value = false;
+  sourceDetailsToggle.value.focus();
+}
 const {
   linkedFastaFilename,
   lastAgpFilename,
@@ -2732,7 +2770,11 @@ function onSelectionFASTARequest() {
   max-width: 100%;
   flex-wrap: wrap;
 }
-.navbar-bar .file-chips {
+.navbar-bar .file-chips,
+.source-details {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   min-width: 0;
   max-width: 100%;
   flex-wrap: wrap;
@@ -2741,9 +2783,59 @@ function onSelectionFASTARequest() {
 .navbar-bar :deep(.jobs-button) {
   flex-shrink: 0;
 }
+.file-chip-full,
+.source-details-active,
+.source-details-toggle {
+  display: none;
+}
+
 @media (max-width: 700px) {
+  .navbar-bar {
+    position: relative;
+  }
   .navbar-bar .file-chips {
     flex-wrap: nowrap;
+  }
+  .source-details-toggle {
+    display: inline-block;
+  }
+  .source-details {
+    display: none;
+    position: absolute;
+    z-index: 1030;
+    top: 100%;
+    right: 0.5rem;
+    width: min(25rem, calc(100% - 1rem));
+    max-height: 50vh;
+    overflow: auto;
+    padding: 0.5rem;
+    align-items: stretch;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    background: var(--hict-ui-bg, #f8f9fa);
+    border: 1px solid var(--hict-ui-border, #b6c1cf);
+    border-radius: 0.25rem;
+  }
+  .source-details--open {
+    display: flex;
+  }
+  .source-details-active {
+    display: block;
+    margin: 0 0 0.25rem;
+    font-size: 0.875rem;
+  }
+  .source-details .file-chip {
+    max-width: none;
+    text-align: start;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    flex-shrink: 0;
+  }
+  .file-chip-full {
+    display: inline;
+  }
+  .file-chip-short {
+    display: none;
   }
 }
 
