@@ -54,6 +54,17 @@ type NativeFileInvoke = (
 function ignoreCleanupFailure(): void {
   /* The caller reports the original outcome. */
 }
+
+function tryByteReader(stream: ReadableStream<Uint8Array>) {
+  try {
+    return stream.getReader({ mode: "byob" });
+  } catch (failure) {
+    // Older browsers and streams built without a byte controller use a
+    // default reader. Do not mask other errors acquiring the stream.
+    if ((failure as { name?: string })?.name !== "TypeError") throw failure;
+    return undefined;
+  }
+}
 const lastHandles = new Map<FileSaveKind, BrowserFileHandle>();
 export const cancelledFileSave: FileSaveResult = { status: "cancelled" };
 export function sanitizeSaveFilename(filename: string): string {
@@ -370,7 +381,10 @@ export async function prepareFileSave(
         return saved();
       },
       async writeStream(stream, signal) {
-        const reader = stream.getReader();
+        const byteReader = tryByteReader(stream);
+        const defaultReader = byteReader ? undefined : stream.getReader();
+        const reader = byteReader ?? defaultReader!;
+        let buffer = byteReader ? new Uint8Array(64 * 1024) : undefined;
         const abort = () => {
           void reader.cancel(signal?.reason).catch(ignoreCleanupFailure);
         };
@@ -383,11 +397,16 @@ export async function prepareFileSave(
           writer = await handle.createWritable();
           for (;;) {
             signal?.throwIfAborted();
-            const { done, value } = await reader.read();
+            const { done, value } = byteReader
+              ? await byteReader.read(buffer!)
+              : await defaultReader!.read();
             signal?.throwIfAborted();
             if (done) break;
             // Await each disk write before pulling another network chunk.
             await writer.write(value);
+            // A byte read transfers the backing buffer and returns it in the
+            // result view. Reuse the full allocation after the write settles.
+            if (byteReader) buffer = new Uint8Array(value.buffer as ArrayBuffer);
           }
           signal?.throwIfAborted();
           await writer.close();
