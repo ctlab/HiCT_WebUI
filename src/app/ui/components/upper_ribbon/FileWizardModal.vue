@@ -30,7 +30,7 @@
       aria-modal="true"
       aria-labelledby="wizard-title"
     >
-      <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content wizard-content">
           <div class="modal-header">
             <div>
@@ -2978,8 +2978,8 @@ onBeforeUnmount(() => {
 }
 
 .wizard-content {
-  /* Fill tall screens; on short ones the body scrolls and Next/Back stay visible. */
-  min-height: min(720px, calc(100vh - 1rem));
+  /* Use the dialog height, which already excludes both Bootstrap margins. */
+  height: min(720px, 100%);
 }
 
 .wizard-body {
