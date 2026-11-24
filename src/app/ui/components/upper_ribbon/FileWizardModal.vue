@@ -36,8 +36,7 @@
             <div>
               <h5 id="wizard-title" class="modal-title">Open with options</h5>
               <small class="text-muted">
-                Guided dataset opening, conversion reuse, layered rendering,
-                FASTA/AGP linkage, and track precompute.
+                Choose a map and, if you have them, a FASTA and a layout.
               </small>
             </div>
             <button
@@ -352,9 +351,6 @@
                     <div class="wizard-card">
                       <div class="wizard-card-header">
                         <strong>Primary assembly</strong>
-                        <SequenceGapSettings
-                          :request-manager="props.networkManager.requestManager"
-                        />
                       </div>
                       <div class="wizard-card-body">
                         <div class="input-group">
@@ -384,9 +380,9 @@
                           </button>
                         </div>
                         <small class="text-muted d-block mt-2">
-                          .agp is loaded after opening. .assembly is passed to
-                          .hic conversion; for already converted matrices it
-                          must be converted to AGP before applying layout.
+                          HiCT applies AGP layouts after opening. For a .hic
+                          map, you can use an .assembly file during conversion.
+                          For other maps, convert the .assembly file to AGP first.
                         </small>
                         <div
                           v-if="selectedHicSourceCount > 0"
@@ -654,6 +650,9 @@
                   </div>
                 </div>
                 <AdvancedSection dialog-id="open-wizard">
+                  <SequenceGapSettings
+                    :request-manager="props.networkManager.requestManager"
+                  />
                   <div class="wizard-section">
                     <h6>Conversion</h6>
                     <div class="wizard-card mb-3">

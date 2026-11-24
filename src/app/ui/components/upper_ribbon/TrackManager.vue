@@ -673,16 +673,6 @@
                       </select>
                     </div>
                   </div>
-                  <p class="small mb-1 mt-2">
-                    HiCT keeps each assembly’s edit history while changing
-                    sources. If you choose the secondary map as the assembly
-                    source, HiCT displays its layout.
-                  </p>
-                  <p class="small mb-1">
-                    Generated dotplot scores move with their original sequence
-                    bins. Recompute after changing joins to refresh
-                    context-dependent scores.
-                  </p>
                   <small class="text-muted d-block mt-1">
                     {{
                       secondaryStatus.attached
@@ -692,7 +682,7 @@
                   </small>
                 </div>
 
-                <div class="border rounded p-3">
+                <div class="border rounded p-3 mb-3">
                   <h6>Map layers</h6>
                   <p class="small text-muted">
                     Adjust contig and scaffold borders, labels and their
@@ -706,6 +696,19 @@
                     Borders and labels…
                   </button>
                 </div>
+                <AdvancedSection dialog-id="sources">
+                  <h6 class="mb-0">Compatibility</h6>
+                  <p class="small mb-0">
+                    HiCT keeps a separate edit history for each assembly.
+                    Choose the secondary map as the assembly source to display
+                    its layout.
+                  </p>
+                  <p class="small mb-0">
+                    Generated dotplot scores move with their original sequence
+                    bins. Recompute after changing joins to refresh scores that
+                    depend on the surrounding sequence.
+                  </p>
+                </AdvancedSection>
               </section>
             </template>
           </div>

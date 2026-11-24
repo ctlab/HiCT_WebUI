@@ -49,7 +49,6 @@
             </button>
           </div>
           <fieldset :disabled="busy">
-            <SequenceGapSettings v-if="!isRemote" :request-manager="manager" />
             <label class="form-label" for="search-sequences"
               >FASTA records, or one DNA sequence per line</label
             >
@@ -283,6 +282,7 @@
               </template>
             </div>
             <AdvancedSection dialog-id="sequence-search">
+              <SequenceGapSettings v-if="!isRemote" :request-manager="manager" />
               <div v-if="mode === 'blast'" class="row g-3">
                 <div class="col-sm-6">
                   <label class="form-label"
