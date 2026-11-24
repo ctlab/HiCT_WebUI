@@ -48,7 +48,7 @@
             ></button>
           </div>
           <div class="modal-body wizard-body">
-            <aside class="wizard-sidebar">
+            <nav class="wizard-steps" aria-label="Opening steps">
               <button
                 v-for="(step, index) in visibleSteps"
                 :key="step.id"
@@ -60,13 +60,21 @@
                   running:
                     runState.running && runState.currentStepId === step.id,
                 }"
+                :aria-current="currentStepIndex === index ? 'step' : undefined"
                 :disabled="runState.running"
                 @click="currentStepIndex = index"
               >
-                <span class="wizard-step-index">{{ index + 1 }}</span>
-                <span class="wizard-step-label">{{ step.label }}</span>
+                {{ index + 1 }} {{ step.label }}
               </button>
-            </aside>
+              <button
+                type="button"
+                class="wizard-step-button wizard-advanced-shortcut"
+                :disabled="runState.running"
+                @click="openAdvancedStep"
+              >
+                Advanced: display mode · conversion · tracks · visualization
+              </button>
+            </nav>
 
             <section class="wizard-main" ref="wizardMain">
               <template v-if="currentStep?.id === 'sources'">
@@ -2691,6 +2699,19 @@ const goNext = (): void => {
   );
 };
 
+const openAdvancedStep = async (): Promise<void> => {
+  if (currentStep.value.id === "fasta") {
+    goNext();
+    await nextTick();
+  }
+  const advanced = wizardMain.value?.querySelector<HTMLDetailsElement>(
+    'details[data-advanced-id="open-wizard"]'
+  );
+  if (!advanced) return;
+  advanced.open = true;
+  advanced.querySelector("summary")?.focus();
+};
+
 const onFinishClicked = async (): Promise<void> => {
   if (runState.completed && !runState.running) {
     emit("dismissed");
@@ -2972,10 +2993,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.wizard-shell {
-  --wizard-sidebar-width: 248px;
-}
-
 .wizard-content {
   /* Use the dialog height, which already excludes both Bootstrap margins. */
   height: min(720px, 100%);
@@ -2983,59 +3000,49 @@ onBeforeUnmount(() => {
 
 .wizard-body {
   display: flex;
-  gap: 20px;
+  flex-direction: column;
+  gap: 14px;
   min-height: 0;
 }
 
-.wizard-sidebar {
-  width: var(--wizard-sidebar-width);
-  flex: 0 0 var(--wizard-sidebar-width);
+.wizard-steps {
+  flex: none;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-right: 8px;
-  border-right: 1px solid rgba(15, 23, 38, 0.12);
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .wizard-step-button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  border: 1px solid rgba(15, 23, 38, 0.12);
-  background: rgba(248, 250, 252, 0.95);
-  border-radius: 12px;
-  padding: 10px 12px;
-  text-align: left;
-  color: rgba(24, 30, 38, 0.95);
+  font-size: 12.5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #d0d5dd;
+  background: transparent;
+  color: #475467;
 }
 
-.wizard-step-button.active {
-  background: rgba(219, 234, 254, 0.95);
-  border-color: rgba(37, 99, 235, 0.35);
+.wizard-advanced-shortcut {
+  border-style: dashed;
 }
 
-.wizard-step-button.completed {
-  border-color: rgba(22, 163, 74, 0.28);
+.wizard-step-button.completed:not(.active) {
+  border-color: var(--hict-success);
 }
 
 .wizard-step-button.running {
-  border-color: rgba(202, 138, 4, 0.4);
+  border-color: var(--hict-warning);
 }
 
-.wizard-step-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  background: rgba(15, 23, 38, 0.08);
-  font-weight: 700;
+.wizard-step-button.active {
+  border-color: var(--hict-primary);
+  background: var(--hict-primary-soft);
+  color: #1849a9;
+  font-weight: 650;
 }
 
-.wizard-step-label {
-  font-size: 0.93rem;
+.wizard-step-button:focus-visible {
+  outline: none;
+  box-shadow: var(--hict-focus-ring);
 }
 
 .wizard-main {
@@ -3132,25 +3139,4 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
 }
 
-@media (max-height: 860px) {
-  .wizard-step-button {
-    padding-top: 0.3rem;
-    padding-bottom: 0.3rem;
-  }
-}
-
-@media (max-width: 992px) {
-  .wizard-body {
-    flex-direction: column;
-  }
-
-  .wizard-sidebar {
-    width: 100%;
-    flex: 0 0 auto;
-    border-right: 0;
-    border-bottom: 1px solid rgba(15, 23, 38, 0.12);
-    padding-right: 0;
-    padding-bottom: 12px;
-  }
-}
 </style>
