@@ -474,6 +474,7 @@ let sentPayload;
 let requestsSent = 0;
 let serializationFailure = false;
 let pendingWorkspace;
+let observeCloseOrder;
 let fetched;
 let downloadResponse;
 const notificationErrors = [];
@@ -503,6 +504,11 @@ vm.runInNewContext(adapterSource, {
           requestsSent++;
           sentPayload = payload;
           sentTimeout = config?.timeout;
+          if (observeCloseOrder) {
+            const path = new URL(url).pathname;
+            observeCloseOrder.requests.push(path);
+            if (path === "/close") await observeCloseOrder.response;
+          }
           if (url.endsWith("/workspace/state"))
             return new Promise((resolve, reject) => {
               pendingWorkspace = { payload, resolve, reject };
@@ -567,6 +573,35 @@ assert.equal(adapter.history.busy, 0);
 console.log(
   "History reads cannot authorize edits on stale displayed coordinates."
 );
+
+const closingAdapter = new adapterExports.RequestManager({
+  host: "http://example.test",
+});
+closingAdapter.notifyInboundPayload = () => {};
+let finishOptions;
+let finishClose;
+const pendingOptions = new Promise((resolve) => {
+  finishOptions = resolve;
+});
+const closeResponse = new Promise((resolve) => {
+  finishClose = resolve;
+});
+observeCloseOrder = { requests: [], response: closeResponse };
+const closing = closingAdapter.closeFile(pendingOptions);
+const replacementPaths = ["/open", "/attach", "/session/restore"];
+const replacements = replacementPaths.map((requestPath) =>
+  closingAdapter.sendRequest({ requestPath })
+);
+await new Promise(setImmediate);
+assert.deepEqual(observeCloseOrder.requests, []);
+finishOptions();
+await new Promise(setImmediate);
+assert.deepEqual(observeCloseOrder.requests, ["/close"]);
+finishClose();
+await Promise.all([closing, ...replacements]);
+assert.deepEqual(observeCloseOrder.requests, ["/close", ...replacementPaths]);
+observeCloseOrder = undefined;
+console.log("Workspace requests wait for pending options and the server close.");
 
 await adapter.querySequenceRegion(0, 60, undefined, {
   includeGaps: true,

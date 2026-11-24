@@ -888,13 +888,11 @@ function resetState() {
 async function onClosed() {
   if (!(await confirmDiscardUnsavedEdits("close this map"))) return;
   const manager = mapManager.value;
-  resetState();
-  void (
-    manager?.visualizationManager.waitForPendingOptionRequests() ??
-    Promise.resolve()
-  ).finally(() =>
-    networkManager.requestManager.closeFile().catch(() => undefined)
+  const closing = networkManager.requestManager.closeFile(
+    manager?.visualizationManager.waitForPendingOptionRequests()
   );
+  resetState();
+  void closing.catch((error) => reportFailure("Close map", error));
 }
 
 /**

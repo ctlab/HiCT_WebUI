@@ -514,6 +514,7 @@ const journalResetPaths = new Set([
 
 class RequestManager {
   private workspaceVersion?: { session: string; revision: number };
+  private pendingSessionClose?: Promise<void>;
   public renderPipelineRevision = 0;
   private readonly sequenceState = shallowReactive({
     revision: 0,
@@ -841,6 +842,15 @@ class RequestManager {
     request: HiCTAPIRequest,
     axiosConfig?: AxiosRequestConfig | undefined
   ): Promise<AxiosResponse> {
+    if (
+      this.pendingSessionClose &&
+      ((assemblySessionPaths.has(request.requestPath) &&
+        request.requestPath !== "/close") ||
+        request.requestPath === "/attach" ||
+        request.requestPath === "/session/availability")
+    ) {
+      await this.pendingSessionClose.catch(() => undefined);
+    }
     const host = this.networkManager.host.replace(/\/+$/, "");
     const path = request.requestPath.replace(/^\/+/, "");
     const mutation = assemblyMutationPaths.has(request.requestPath);
@@ -1078,15 +1088,22 @@ class RequestManager {
       }));
   }
 
-  public async closeFile(): Promise<void> {
-    await this.sendRequest(new CloseFileRequest());
-    this.assemblySavedMark = null;
-    this.resetNormalization("PRIMARY");
-    this.resetNormalization("SECONDARY");
-    this.sourceCapabilities = {};
-    this.workspaceVersion = undefined;
-    this.hasLinkedFasta = false;
-    this.bumpSequenceRevision();
+  public closeFile(pendingOptions?: Promise<void>): Promise<void> {
+    const close = async () => {
+      await pendingOptions?.catch(() => undefined);
+      await this.sendRequest(new CloseFileRequest());
+      this.assemblySavedMark = null;
+      this.resetNormalization("PRIMARY");
+      this.resetNormalization("SECONDARY");
+      this.sourceCapabilities = {};
+      this.workspaceVersion = undefined;
+      this.hasLinkedFasta = false;
+      this.bumpSequenceRevision();
+    };
+    this.pendingSessionClose ??= close().finally(() => {
+      this.pendingSessionClose = undefined;
+    });
+    return this.pendingSessionClose;
   }
 
   public async canJoinSession(): Promise<boolean> {
