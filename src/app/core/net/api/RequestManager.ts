@@ -385,6 +385,9 @@ export interface AttachedSession {
   tracks?: Record<string, unknown>[];
 }
 
+export type NormalizationSource = "PRIMARY" | "SECONDARY";
+export type NormalizationWeightMode = "FILE" | "SQRT_COVERAGE";
+
 /** State of the square-root coverage preparation job and of the weights tiles use. */
 export type CoverageNormalizationStatus = {
   state: "IDLE" | "RUNNING" | "READY" | "FAILED" | "CANCELLED";
@@ -392,12 +395,11 @@ export type CoverageNormalizationStatus = {
   message: string;
   algorithm: string;
   error: string | null;
-  /** Vectors exist for every open source. */
+  source: NormalizationSource;
+  jobId: number;
+  /** All resolutions of this source have coverage vectors. */
   prepared: boolean;
-  /** Weights the primary source uses when weights are applied. */
-  mode: "FILE" | "SQRT_COVERAGE";
-  /** Every open source uses the same weights. */
-  consistent: boolean;
+  mode: NormalizationWeightMode;
   estimatedBytes: number;
 };
 
@@ -961,6 +963,8 @@ class RequestManager {
         this.bumpSequenceRevision();
         this.markAssemblySaved();
         const response = new OpenFileResponseDTO(json).toEntity();
+        this.resetNormalization("PRIMARY");
+        this.resetNormalization("SECONDARY");
         this.sourceCapabilities = { PRIMARY: response.capabilities };
         return response;
       });
@@ -979,16 +983,19 @@ class RequestManager {
 
   /** Keeps the "open files" display in step with every attach/detach, whichever dialog caused it. */
   private publishSecondarySourceStatus(
-    status: SecondarySourceStatusResponse
+    status: SecondarySourceStatusResponse,
+    replaced = false
   ): SecondarySourceStatusResponse {
     if (!status.requiresConfirmation) {
+      const session = useSessionStore();
+      const filename = status.attached ? status.filename : "";
+      if (replaced || session.secondaryMapFilename !== filename)
+        this.resetNormalization("SECONDARY");
       this.sourceCapabilities = {
         ...this.sourceCapabilities,
         SECONDARY: status.attached ? status.capabilities : undefined,
       };
-      useSessionStore().setSecondaryMapFilename(
-        status.attached ? status.filename : ""
-      );
+      session.setSecondaryMapFilename(filename);
     }
     return status;
   }
@@ -1040,14 +1047,14 @@ class RequestManager {
     )
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => this.parseSecondarySourceStatus(json))
-      .then((status) => this.publishSecondarySourceStatus(status));
+      .then((status) => this.publishSecondarySourceStatus(status, true));
   }
 
   public async closeSecondarySource(): Promise<SecondarySourceStatusResponse> {
     return this.sendRequest(new CloseSecondarySourceRequest())
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => this.parseSecondarySourceStatus(json))
-      .then((status) => this.publishSecondarySourceStatus(status));
+      .then((status) => this.publishSecondarySourceStatus(status, true));
   }
 
   public async setAssemblyInfoSource(
@@ -1074,6 +1081,8 @@ class RequestManager {
   public async closeFile(): Promise<void> {
     await this.sendRequest(new CloseFileRequest());
     this.assemblySavedMark = null;
+    this.resetNormalization("PRIMARY");
+    this.resetNormalization("SECONDARY");
     this.sourceCapabilities = {};
     this.workspaceVersion = undefined;
     this.hasLinkedFasta = false;
@@ -1123,6 +1132,8 @@ class RequestManager {
     const response = new OpenFileResponseDTO(
       json["openFileResponse"] as Record<string, unknown>
     ).toEntity();
+    this.resetNormalization("PRIMARY");
+    this.resetNormalization("SECONDARY");
     this.sourceCapabilities = { PRIMARY: response.capabilities };
     return {
       filename,
@@ -1252,20 +1263,48 @@ class RequestManager {
       .then((json) => new TrackSummaryResponseDTO(json).toEntity());
   }
 
-  private readonly normalizationState = shallowReactive({
-    mode: "FILE" as "FILE" | "SQRT_COVERAGE",
+  private readonly normalizationState = shallowReactive<
+    Record<
+      NormalizationSource,
+      { mode: NormalizationWeightMode; revision: number }
+    >
+  >({
+    PRIMARY: { mode: "FILE", revision: 0 },
+    SECONDARY: { mode: "FILE", revision: 0 },
   });
-  /** The weights the server applies when weights are on. Reactive, shared by every view of it. */
-  public get normalizationWeightsMode(): "FILE" | "SQRT_COVERAGE" {
-    return this.normalizationState.mode;
+
+  public getNormalizationWeightsMode(
+    source: NormalizationSource
+  ): NormalizationWeightMode {
+    return this.normalizationState[source].mode;
+  }
+
+  public getNormalizationSourceRevision(source: NormalizationSource): number {
+    return this.normalizationState[source].revision;
+  }
+
+  private resetNormalization(source: NormalizationSource): void {
+    this.normalizationState[source] = {
+      mode: "FILE",
+      revision: this.getNormalizationSourceRevision(source) + 1,
+    };
   }
 
   private noteNormalization(
-    status: CoverageNormalizationStatus
-  ): CoverageNormalizationStatus {
-    if (status.mode === "FILE" || status.mode === "SQRT_COVERAGE")
-      this.normalizationState.mode = status.mode;
-    return status;
+    source: NormalizationSource,
+    mode: NormalizationWeightMode,
+    revision: number,
+    receivedSource: NormalizationSource | undefined
+  ): void {
+    if ((receivedSource ?? "PRIMARY") !== source)
+      throw new Error(
+        "The server returned normalization for a different source."
+      );
+    if (
+      revision === this.getNormalizationSourceRevision(source) &&
+      (mode === "FILE" || mode === "SQRT_COVERAGE")
+    )
+      this.normalizationState[source] = { mode, revision };
   }
 
   public readonly backgroundResultDelivery = new BackgroundResultDelivery();
@@ -1342,40 +1381,66 @@ class RequestManager {
     );
   }
 
-  public async prepareCoverageNormalization(): Promise<CoverageNormalizationStatus> {
-    return this.sendRequest(new PrepareCoverageNormalizationRequest())
-      .then((response) => this.noteNormalization(response.data))
-      .catch((error) => {
-        throw new Error(
-          extractErrorMessage(error, "Coverage preparation request failed")
-        );
-      });
+  private async requestNormalizationStatus(
+    request: HiCTAPIRequest,
+    source: NormalizationSource
+  ): Promise<CoverageNormalizationStatus> {
+    const revision = this.getNormalizationSourceRevision(source);
+    const { data } = await this.sendRequest(request);
+    const status = data as CoverageNormalizationStatus;
+    this.noteNormalization(source, status.mode, revision, status.source);
+    return status;
   }
 
-  public async coverageNormalizationStatus(): Promise<CoverageNormalizationStatus> {
-    return this.sendRequest(new CoverageNormalizationStatusRequest()).then(
-      (response) => this.noteNormalization(response.data)
+  public async prepareCoverageNormalization(
+    source: NormalizationSource = "PRIMARY"
+  ): Promise<CoverageNormalizationStatus> {
+    try {
+      return await this.requestNormalizationStatus(
+        new PrepareCoverageNormalizationRequest({ source }),
+        source
+      );
+    } catch (error) {
+      throw new Error(
+        extractErrorMessage(error, "Coverage preparation request failed")
+      );
+    }
+  }
+
+  public coverageNormalizationStatus(
+    source: NormalizationSource = "PRIMARY"
+  ): Promise<CoverageNormalizationStatus> {
+    return this.requestNormalizationStatus(
+      new CoverageNormalizationStatusRequest({ source }),
+      source
     );
   }
 
-  public async cancelCoverageNormalization(): Promise<CoverageNormalizationStatus> {
-    return this.sendRequest(new CancelCoverageNormalizationRequest()).then(
-      (response) => this.noteNormalization(response.data)
+  public cancelCoverageNormalization(
+    source: NormalizationSource = "PRIMARY"
+  ): Promise<CoverageNormalizationStatus> {
+    return this.requestNormalizationStatus(
+      new CancelCoverageNormalizationRequest({ source }),
+      source
     );
   }
 
-  /** Switches the weights of every open source together. Coverage must have been prepared. */
+  /** Selects vectors only for the source whose signal settings are being edited. */
   public async selectNormalizationWeights(
-    mode: "FILE" | "SQRT_COVERAGE"
-  ): Promise<{ mode: string; version: number }> {
-    return this.sendRequest(
-      new SelectNormalizationWeightsRequest({ mode })
-    ).then((response) => {
-      const result = response.data as { mode: string; version: number };
-      if (result.mode === "FILE" || result.mode === "SQRT_COVERAGE")
-        this.normalizationState.mode = result.mode;
-      return result;
-    });
+    mode: NormalizationWeightMode,
+    source: NormalizationSource = "PRIMARY"
+  ): Promise<{ mode: NormalizationWeightMode; version: number }> {
+    const revision = this.getNormalizationSourceRevision(source);
+    const { data } = await this.sendRequest(
+      new SelectNormalizationWeightsRequest({ mode, source })
+    );
+    const result = data as {
+      source: NormalizationSource;
+      mode: NormalizationWeightMode;
+      version: number;
+    };
+    this.noteNormalization(source, result.mode, revision, result.source);
+    return result;
   }
 
   public async openCoolerWeightsTrack(

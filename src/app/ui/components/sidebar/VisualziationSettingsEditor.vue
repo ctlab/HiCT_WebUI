@@ -571,7 +571,8 @@ function exactRangeContext(
   return JSON.stringify([
     bpResolution,
     histogramContext.value,
-    request.normalizationWeightsMode,
+    request.getNormalizationWeightsMode("PRIMARY"),
+    request.getNormalizationWeightsMode("SECONDARY"),
     request.history.summary?.session,
     request.history.summary?.revision,
   ]);

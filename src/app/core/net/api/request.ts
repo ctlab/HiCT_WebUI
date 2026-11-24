@@ -182,17 +182,26 @@ class CloseFileRequest implements HiCTAPIRequest {
   requestPath = "/close";
 }
 
-/** Starts computing square-root coverage vectors for every open source. */
+/** Starts computing square-root coverage vectors for a source. */
 class PrepareCoverageNormalizationRequest implements HiCTAPIRequest {
   requestPath = "/normalization/coverage/prepare";
+  public constructor(
+    public readonly options: { readonly source: "PRIMARY" | "SECONDARY" }
+  ) {}
 }
 
 class CoverageNormalizationStatusRequest implements HiCTAPIRequest {
   requestPath = "/normalization/coverage/status";
+  public constructor(
+    public readonly options: { readonly source: "PRIMARY" | "SECONDARY" }
+  ) {}
 }
 
 class CancelCoverageNormalizationRequest implements HiCTAPIRequest {
   requestPath = "/normalization/coverage/cancel";
+  public constructor(
+    public readonly options: { readonly source: "PRIMARY" | "SECONDARY" }
+  ) {}
 }
 
 /** Chooses which per-bin weights tiles use when weights are applied. */
@@ -200,7 +209,10 @@ class SelectNormalizationWeightsRequest implements HiCTAPIRequest {
   requestPath = "/normalization/weights";
 
   public constructor(
-    public readonly options: { readonly mode: "FILE" | "SQRT_COVERAGE" }
+    public readonly options: {
+      readonly source: "PRIMARY" | "SECONDARY";
+      readonly mode: "FILE" | "SQRT_COVERAGE";
+    }
   ) {}
 }
 

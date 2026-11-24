@@ -1,3 +1,7 @@
+import type {
+  NormalizationSource,
+  NormalizationWeightMode,
+} from "@/app/core/net/api/RequestManager";
 import {
   validateFigureSnapshotDocuments,
   type FigureSnapshotDocument,
@@ -274,8 +278,11 @@ export interface SessionClientState {
   figureSnapshots?: FigureSnapshotDocument[];
   savedLocations: unknown[];
   savedVisualizationPresets: unknown[];
-  /** Weights the map used when the session was saved. Absent in older sessions (file weights). */
-  normalizationWeights?: "FILE" | "SQRT_COVERAGE";
+  /** Saved by older WebUI versions. Applies to the Primary map when present. */
+  normalizationWeights?: NormalizationWeightMode;
+  sourceNormalizationWeights?: Partial<
+    Record<NormalizationSource, NormalizationWeightMode>
+  >;
 }
 
 /** Keep older server snapshots portable; exact-cut snapshots require envelope v4. */
@@ -336,6 +343,22 @@ function envelope(session: RecordValue): void {
       "FILE",
       "SQRT_COVERAGE",
     ]);
+  if ("sourceNormalizationWeights" in client) {
+    const weights = record(
+      client.sourceNormalizationWeights,
+      "client.sourceNormalizationWeights"
+    );
+    for (const [source, mode] of Object.entries(weights)) {
+      choice(source, "client.sourceNormalizationWeights source", [
+        "PRIMARY",
+        "SECONDARY",
+      ]);
+      choice(mode, `client.sourceNormalizationWeights.${source}`, [
+        "FILE",
+        "SQRT_COVERAGE",
+      ]);
+    }
+  }
   if ("workspace" in client && client.workspace !== null) {
     const workspace = record(client.workspace, "client.workspace");
     if (workspace.version !== 1)

@@ -397,6 +397,8 @@ import type {
   AttachedSession,
   FastaOnlyStatus,
   ExampleEntry,
+  NormalizationSource,
+  NormalizationWeightMode,
 } from "@/app/core/net/api/RequestManager";
 import { pipelineTransferIssues } from "@/app/core/visualization/transferVisualization";
 import { prepareCoverage } from "@/app/core/visualization/coverageNormalization";
@@ -1582,9 +1584,17 @@ async function onSaveSession(): Promise<boolean> {
         "The open map changed while choosing a destination. Save again."
       );
     await manager.visualizationManager.waitForPendingOptionRequests();
-    const normalization = await networkManager.requestManager
-      .coverageNormalizationStatus()
-      .catch(() => undefined);
+    const normalizationSources: NormalizationSource[] =
+      sessionStore.secondaryMapFilename
+        ? ["PRIMARY", "SECONDARY"]
+        : ["PRIMARY"];
+    const normalization = await Promise.all(
+      normalizationSources.map((source) =>
+        networkManager.requestManager
+          .coverageNormalizationStatus(source)
+          .catch(() => undefined)
+      )
+    );
     const captured = networkManager.requestManager.history.applied;
     const savedState = captured
       ? { session: captured.session, currentId: captured.currentId }
@@ -1592,7 +1602,12 @@ async function onSaveSession(): Promise<boolean> {
     const savedSnapshotRevision = manager.figureSnapshots.revision;
     const clientState = {
       figureSnapshots: manager.figureSnapshots.documents(),
-      normalizationWeights: normalization?.mode,
+      sourceNormalizationWeights: Object.fromEntries(
+        normalizationSources.flatMap((source, index) => {
+          const status = normalization[index];
+          return status ? [[source, status.mode]] : [];
+        })
+      ),
       workspace: JSON.parse(
         JSON.stringify(captureWorkspace(manager))
       ) as Record<string, unknown>,
@@ -1817,22 +1832,29 @@ async function resolveRequiredHiCTSessionFilename(
 
 /** Opens a v3 session. The server prepares everything first, so a rejected file leaves the open map untouched. */
 /** The saved map used square-root coverage, which is computed from the matrix and not stored. */
-async function restoreCoverageNormalization(): Promise<void> {
+async function restoreCoverageNormalization(
+  source: NormalizationSource
+): Promise<void> {
   const requests = networkManager.requestManager;
-  sessionBusy.value = "Restoring square-root coverage normalization\u2026";
-  const outcome = await prepareCoverage(requests, (status) => {
-    sessionBusy.value = `Restoring square-root coverage normalization: ${Math.round(
-      status.progress * 100
-    )}%`;
-  });
+  const label = source === "PRIMARY" ? "Primary" : "Secondary";
+  sessionBusy.value = `Restoring square-root coverage for ${label}…`;
+  const outcome = await prepareCoverage(
+    requests,
+    (status) => {
+      sessionBusy.value = `Restoring square-root coverage for ${label}: ${Math.round(
+        status.progress * 100
+      )}%`;
+    },
+    { source }
+  );
   try {
     if (!outcome.ok) throw new Error(outcome.message);
-    await requests.selectNormalizationWeights("SQRT_COVERAGE");
+    await requests.selectNormalizationWeights("SQRT_COVERAGE", source);
     await mapManager.value?.reloadTilesFromBackend();
   } catch (error) {
     console.debug("Square-root coverage was not restored", error);
     toast.message(
-      "The saved square-root coverage normalization could not be prepared, so the weights from the file are shown instead.",
+      `Square-root coverage could not be restored for ${label}. That source uses weights from the file.`,
       { duration: 10000 }
     );
   }
@@ -1847,7 +1869,10 @@ async function restoreCompleteSession(
     workspace?: WorkspaceState | null;
     savedLocations?: SessionSavedLocation[];
     savedVisualizationPresets?: SessionVisualizationPreset[];
-    normalizationWeights?: "FILE" | "SQRT_COVERAGE";
+    normalizationWeights?: NormalizationWeightMode;
+    sourceNormalizationWeights?: Partial<
+      Record<NormalizationSource, NormalizationWeightMode>
+    >;
   };
   sessionBusy.value =
     "Restoring session: checking files and rebuilding the assembly\u2026";
@@ -1866,8 +1891,13 @@ async function restoreCompleteSession(
     sessionStore.setSavedVisualizationPresets(
       client.savedVisualizationPresets ?? []
     );
-    if (client.normalizationWeights === "SQRT_COVERAGE")
-      await restoreCoverageNormalization();
+    const normalization = client.sourceNormalizationWeights ?? {
+      PRIMARY: client.normalizationWeights,
+    };
+    for (const source of ["PRIMARY", "SECONDARY"] as const) {
+      if (normalization[source] === "SQRT_COVERAGE")
+        await restoreCoverageNormalization(source);
+    }
     toast.success(
       "Session restored. Undo history starts from the restored assembly.",
       { duration: 6000 }

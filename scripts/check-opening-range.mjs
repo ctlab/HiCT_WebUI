@@ -68,7 +68,14 @@ const manager = new sandbox.exports.VisualizationManager({
   viewAndLayersManager: {
     currentViewState: { resolutionDesciptor: descriptor },
   },
-  networkManager: { requestManager: new Proxy({}, { get: () => unexpected }) },
+  networkManager: {
+    requestManager: new Proxy(
+      { getNormalizationWeightsMode: () => "FILE" },
+      {
+        get: (target, key) => (key in target ? target[key] : unexpected),
+      }
+    ),
+  },
   reloadTilesFromBackend: unexpected,
   reloadTiles: unexpected,
 });

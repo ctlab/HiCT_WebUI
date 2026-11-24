@@ -1206,8 +1206,9 @@ const weightsAlreadyAdded = computed(() =>
 );
 const computedWeights = computed(
   () =>
-    props.mapManager?.networkManager.requestManager.normalizationWeightsMode ===
-    "SQRT_COVERAGE"
+    props.mapManager?.networkManager.requestManager.getNormalizationWeightsMode(
+      weightSource.value
+    ) === "SQRT_COVERAGE"
 );
 const weightsCapability = computed(() => {
   const capabilities =

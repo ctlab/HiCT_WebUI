@@ -796,6 +796,21 @@ const retrievalRequests = loadTypeScript(
 const retrievalDtos = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/dto/requestDTO.ts")
 );
+for (const [name, options] of [
+  ["PrepareCoverageNormalizationRequest", { source: "SECONDARY" }],
+  ["CoverageNormalizationStatusRequest", { source: "SECONDARY" }],
+  ["CancelCoverageNormalizationRequest", { source: "SECONDARY" }],
+  [
+    "SelectNormalizationWeightsRequest",
+    { source: "SECONDARY", mode: "SQRT_COVERAGE" },
+  ],
+]) {
+  const request = new retrievalRequests[name](options);
+  assert.deepEqual(
+    retrievalDtos.HiCTAPIRequestDTO.toDTOClass(request).toDTO(),
+    options
+  );
+}
 const recoverySettings = {
   queries: "ACGT",
   remoteRequestId: " fr9p7tgf016 ",

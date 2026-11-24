@@ -313,6 +313,25 @@ reject(
   { ...v3, client: { ...client, normalizationWeights: "AVERAGE" } },
   "client.normalizationWeights"
 );
+parseSessionDocument(
+  JSON.stringify({
+    ...v3,
+    client: {
+      ...client,
+      sourceNormalizationWeights: {
+        PRIMARY: "FILE",
+        SECONDARY: "SQRT_COVERAGE",
+      },
+    },
+  })
+);
+reject(
+  {
+    ...v3,
+    client: { ...client, sourceNormalizationWeights: { SECONDARY: "AVERAGE" } },
+  },
+  "client.sourceNormalizationWeights.SECONDARY"
+);
 console.log(
   "Version 3 envelope, identity requirement and client state validation passed."
 );

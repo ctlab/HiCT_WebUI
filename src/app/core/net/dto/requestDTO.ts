@@ -355,20 +355,18 @@ abstract class HiCTAPIRequestDTO<
       case entity instanceof CancelExampleDownloadRequest:
       case entity instanceof FastaOnlyStatusRequest:
       case entity instanceof CancelFastaOnlyRequest:
+        return new EmptyBodyRequestDTO(entity);
       case entity instanceof PrepareCoverageNormalizationRequest:
       case entity instanceof CoverageNormalizationStatusRequest:
       case entity instanceof CancelCoverageNormalizationRequest:
-        return new EmptyBodyRequestDTO(entity);
+      case entity instanceof SelectNormalizationWeightsRequest:
+        return new NormalizationRequestDTO(entity as NormalizationRequest);
       case entity instanceof StartExampleDownloadRequest:
         return new StartExampleDownloadRequestDTO(
           entity as StartExampleDownloadRequest
         );
       case entity instanceof StartFastaOnlyRequest:
         return new StartFastaOnlyRequestDTO(entity as StartFastaOnlyRequest);
-      case entity instanceof SelectNormalizationWeightsRequest:
-        return new SelectNormalizationWeightsRequestDTO(
-          entity as SelectNormalizationWeightsRequest
-        );
       case entity instanceof SessionAvailabilityRequest:
         return new SessionAvailabilityRequestDTO(entity);
       case entity instanceof AttachSessionRequest:
@@ -1150,9 +1148,15 @@ class StartFastaOnlyRequestDTO extends HiCTAPIRequestDTO<StartFastaOnlyRequest> 
   }
 }
 
-class SelectNormalizationWeightsRequestDTO extends HiCTAPIRequestDTO<SelectNormalizationWeightsRequest> {
+type NormalizationRequest =
+  | PrepareCoverageNormalizationRequest
+  | CoverageNormalizationStatusRequest
+  | CancelCoverageNormalizationRequest
+  | SelectNormalizationWeightsRequest;
+
+class NormalizationRequestDTO extends HiCTAPIRequestDTO<NormalizationRequest> {
   toDTO(): Record<string, unknown> {
-    return { mode: this.entity.options.mode };
+    return { ...this.entity.options };
   }
 }
 
