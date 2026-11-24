@@ -2213,6 +2213,10 @@ function onFileSelected(newFilename: string) {
   --hict-guidance-visibility: hidden;
 }
 
+.modal-notifications :deep([data-sonner-toaster]) {
+  z-index: 1030;
+}
+
 .modal-notifications :deep([data-sonner-toast][data-type="success"]) {
   visibility: hidden;
 }
