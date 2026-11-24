@@ -20,7 +20,11 @@
  -->
 
 <template>
-  <div class="toolbar-outer" data-escape-disclosure @keydown.esc="closeCompactTools">
+  <div
+    class="toolbar-outer"
+    data-escape-disclosure
+    @keydown.esc="closeCompactTools"
+  >
     <button
       ref="compactToggle"
       type="button"
@@ -34,11 +38,16 @@
     </button>
     <div
       id="workspace-map-tools"
+      ref="toolbarUpper"
       class="toolbar-upper"
-      :class="{ 'toolbar-upper--open': compactOpen }"
+      :class="{
+        'toolbar-upper--open': compactOpen,
+        'toolbar-upper--more-below': moreToolsBelow,
+      }"
       role="region"
       aria-label="Map tools"
       tabindex="0"
+      @scroll.passive="updateToolbarOverflow"
     >
       <HistoryButtons :map-manager="props.mapManager" />
       <FirstBlock :map-manager="props.mapManager"></FirstBlock>
@@ -55,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import HistoryButtons from "./upper_blocks/HistoryButtons.vue";
 import FirstBlock from "@/app/ui/components/toolbar/upper_blocks/FirstBlock.vue";
 import ThirdBlock from "@/app/ui/components/toolbar/upper_blocks/ThirdBlock.vue";
@@ -69,9 +78,28 @@ const props = defineProps<{
 }>();
 const compactOpen = ref(false);
 const compactToggle = ref<HTMLButtonElement>();
+const toolbarUpper = ref<HTMLElement>();
+const moreToolsBelow = ref(false);
+let toolbarObserver: ResizeObserver | undefined;
+
+function updateToolbarOverflow(): void {
+  const pane = toolbarUpper.value;
+  moreToolsBelow.value =
+    !!pane && pane.scrollTop + pane.clientHeight < pane.scrollHeight - 1;
+}
+
+onMounted(() => {
+  const pane = toolbarUpper.value;
+  if (!pane) return;
+  toolbarObserver = new ResizeObserver(updateToolbarOverflow);
+  toolbarObserver.observe(pane);
+  for (const group of Array.from(pane.children)) toolbarObserver.observe(group);
+});
+onBeforeUnmount(() => toolbarObserver?.disconnect());
 
 function closeCompactTools(event: KeyboardEvent): void {
-  if (!compactOpen.value || !compactToggle.value?.getClientRects().length) return;
+  if (!compactOpen.value || !compactToggle.value?.getClientRects().length)
+    return;
   event.stopPropagation();
   compactOpen.value = false;
   compactToggle.value.focus();
@@ -105,7 +133,7 @@ function closeCompactTools(event: KeyboardEvent): void {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(10px, 2.2vh, 24px);
+  gap: clamp(6px, 1.4vh, 24px);
   flex: 1 1 0;
   width: 100%;
   min-height: 0;
@@ -116,6 +144,10 @@ function closeCompactTools(event: KeyboardEvent): void {
 
 .toolbar-upper::-webkit-scrollbar {
   width: 4px;
+}
+
+.toolbar-upper--more-below {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 10px), #0005);
 }
 
 .toolbar-upper:focus-visible {
@@ -173,5 +205,4 @@ function closeCompactTools(event: KeyboardEvent): void {
     line-height: 1.2;
   }
 }
-
 </style>

@@ -123,7 +123,7 @@ onUnmounted(() => window.removeEventListener("keydown", keyboard));
 </script>
 
 <style scoped>
-.tb-history { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px solid #e3e7ec; }
+.tb-history { display: flex; flex-direction: column; gap: 6px; padding-bottom: var(--hict-space-1); border-bottom: 1px solid #e3e7ec; }
 .tb-history .btn { height: 34px; }
 
 
