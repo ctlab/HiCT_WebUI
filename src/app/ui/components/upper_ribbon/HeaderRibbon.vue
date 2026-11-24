@@ -1209,14 +1209,41 @@ async function onSignalDisplayModeChanged(event: Event) {
   flex: 0 0 120px;
 }
 
+@media (min-width: 1280px) {
+  .header-ribbon {
+    flex-wrap: nowrap;
+  }
+
+  #right-header-block {
+    flex: 0 0 auto;
+  }
+
+  .selection-tools {
+    flex-shrink: 0;
+  }
+
+  #search-container {
+    flex: 0 1 200px;
+    min-width: 144px;
+  }
+
+  #search-input-group {
+    width: 100%;
+  }
+
+  .scope-picker {
+    flex: 0 1 120px;
+    min-width: 96px;
+  }
+}
+
 @media (min-width: 1280px) and (max-width: 1499.98px) {
   #left-header-block:has(.sequence-scale-status) {
     gap: 6px;
   }
 
-  #left-header-block:has(.sequence-scale-status) #search-container,
-  #left-header-block:has(.sequence-scale-status) #search-input-group {
-    width: 144px;
+  #left-header-block:has(.sequence-scale-status) #search-container {
+    flex-basis: 144px;
   }
 
   #left-header-block:has(.sequence-scale-status) .scope-picker {

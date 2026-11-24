@@ -2269,7 +2269,7 @@ function onFileSelected(newFilename: string) {
 }
 
 .empty-workspace-prompt h2 {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.375rem;
   font-size: 1.25rem;
   font-weight: 600;
 }
@@ -2277,7 +2277,7 @@ function onFileSelected(newFilename: string) {
 .empty-workspace-prompt p {
   margin-bottom: 1.25rem;
   color: #475569;
-  font-size: 0.9rem;
+  font-size: var(--hict-text-md);
 }
 
 .empty-workspace-actions {
@@ -2285,11 +2285,12 @@ function onFileSelected(newFilename: string) {
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
-  margin-bottom: 0.875rem;
+  margin-bottom: 0.625rem;
 }
 
 .empty-workspace-actions .btn {
-  padding: 8px 14px;
+  min-height: 36px;
+  padding: 6px 14px;
   font-weight: 600;
   font-size: 0.8125rem;
   border-radius: 8px;

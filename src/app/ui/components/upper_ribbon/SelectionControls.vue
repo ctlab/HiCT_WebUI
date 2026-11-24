@@ -147,13 +147,18 @@ const summary = computed(() => {
 const label = computed(() => {
   const r = region.value;
   if (r) {
-    return `Region · ${formatLength(r.rowEnd - r.rowStart)} × ${formatLength(
-      r.columnEnd - r.columnStart
-    )}`;
+    return `Region · ${formatSelectionLength(
+      r.rowEnd - r.rowStart
+    )} × ${formatSelectionLength(r.columnEnd - r.columnStart)}`;
   }
   const n = count.value;
   return n ? `Selection · ${n} ${n === 1 ? "contig" : "contigs"}` : "Selection";
 });
+function formatSelectionLength(bp: number): string {
+  return bp >= 1000 && bp < 1e6
+    ? `${Math.round(bp / 1000)} kb`
+    : formatLength(bp);
+}
 const bothScoped = computed(() => state.value?.scopedAxes ?? false);
 function copyCoordinates() {
   const mode = useUiSettingsStore().rulerCoordinateMode;
@@ -187,6 +192,11 @@ function copyPng() {
 .selection-label::after {
   flex: none;
   margin-left: 0;
+}
+@media (min-width: 1280px) {
+  .selection-label:enabled {
+    width: clamp(190px, calc(50vw - 450px), 260px);
+  }
 }
 .selection-menu {
   min-width: min(25rem, 90vw);
