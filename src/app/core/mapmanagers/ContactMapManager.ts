@@ -1206,8 +1206,12 @@ class ContactMapManager {
   }
 
   private exportInProgress = false;
+  private figureCapturePending = false;
   public get isExporting(): boolean {
     return this.exportInProgress;
+  }
+  public get isFigureCapturePending(): boolean {
+    return this.figureCapturePending;
   }
   private sequenceViewExporter?: (options?: {
     metadata?: Record<string, unknown>;
@@ -1663,11 +1667,24 @@ class ContactMapManager {
     progress?: (fraction: number) => void
   ): Promise<FrozenFigure> {
     options.signal?.throwIfAborted();
-    if (this.disposed || this.exportInProgress)
+    if (this.disposed || this.exportInProgress || this.figureCapturePending)
       throw Error(
         "Wait for the current export to finish before capturing a figure."
       );
+    this.figureCapturePending = true;
+    try {
+      return await this.prepareFigure(options, progress);
+    } finally {
+      this.figureCapturePending = false;
+    }
+  }
+
+  private async prepareFigure(
+    options: FigureCaptureOptions,
+    progress?: (fraction: number) => void
+  ): Promise<FrozenFigure> {
     await this.visualizationManager.waitForPendingOptionRequests();
+    options.signal?.throwIfAborted();
     const api = this.networkManager.requestManager;
     const captured = api.history.applied;
     const { compactFigureProvenance } = await import(

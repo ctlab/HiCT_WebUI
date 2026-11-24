@@ -2190,7 +2190,13 @@ class VisualizationManager {
     return changed;
   }
 
-  public async refreshAutoThresholdAndReload(
+  public refreshAutoThresholdAndReload(
+    source?: SourceName
+  ): Promise<number | null> {
+    return this.trackOptionRequest(this.refreshAutoThreshold(source));
+  }
+
+  private async refreshAutoThreshold(
     source?: SourceName
   ): Promise<number | null> {
     const pipelineConfig = await this.getActiveRenderPipelineConfig();
