@@ -32,13 +32,13 @@
       style="display: block"
       ref="modalFocusElement"
       role="dialog"
-      aria-label="Rendering Pipeline"
+      aria-label="Rendering pipeline"
       :aria-modal="!previewMode"
     >
       <div class="modal-dialog pipeline-dialog">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title">Rendering Pipeline</h5>
+            <h5 class="modal-title">Rendering pipeline</h5>
             <button
               type="button"
               class="btn btn-sm btn-outline-secondary ms-auto me-2 d-flex align-items-center gap-1"

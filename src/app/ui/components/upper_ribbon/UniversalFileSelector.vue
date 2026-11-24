@@ -67,7 +67,7 @@
                 :disabled="loading"
                 class="form-control"
                 type="text"
-                placeholder="Relative folder or file path under DATA_DIR"
+                placeholder="Relative path in the HiCT data folder"
                 @keydown.enter.prevent="onPathGoClicked"
               />
               <button
@@ -160,7 +160,7 @@
             }}</small>
 
             <div v-if="loading" class="d-flex align-items-center gap-2 py-3">
-              <strong>Loading {{ currentDirectory || "DATA_DIR" }}…</strong>
+              <strong>Loading {{ currentDirectory || "the data folder" }}…</strong>
               <div
                 class="spinner-border spinner-border-sm ms-auto"
                 role="status"

@@ -1348,7 +1348,7 @@
       aria-modal="true"
     >
       <div class="settings-header">
-        <h2 id="resolution-settings-title">Restrict Resolutions</h2>
+        <h2 id="resolution-settings-title">Restrict resolutions</h2>
         <button
           type="button"
           class="btn-close"

@@ -27,13 +27,14 @@
     ref="modalFocusElement"
     role="dialog"
     aria-modal="true"
+    aria-labelledby="matrix-export-title"
   >
     <div
       class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"
     >
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">Export matrix to Cooler</h5>
+          <h5 id="matrix-export-title" class="modal-title">Export matrix to Cooler</h5>
           <button
             type="button"
             class="btn-close"
@@ -343,6 +344,7 @@
   <UniversalFileSelector
     v-if="selectorKind"
     :network-manager="props.networkManager"
+    :z-index="1070"
     :title="
       selectorKind === 'source'
         ? 'Select source .hict.hdf5'
@@ -359,6 +361,7 @@
 
 <script setup lang="ts">
 import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import { computed, onMounted, ref, watch } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
@@ -600,6 +603,11 @@ onMounted(() => {
 
 const modalFocusElement = ref<HTMLElement | null>(null);
 useModalFocus(modalFocusElement);
+useEscDismissableDialog({
+  priority: 1055,
+  isOpen: () => true,
+  requestClose: () => emit("dismissed"),
+});
 </script>
 
 <style scoped>

@@ -20,14 +20,15 @@
  -->
 
 <template>
+  <div class="modal-backdrop fade show"></div>
   <div
-    class="modal fade in"
+    class="modal fade show converter-shell"
     id="loadAGPModal"
     ref="convertCoolerModal"
+    role="dialog"
+    aria-modal="true"
     aria-labelledby="matrix-converter-title"
     tabindex="-1"
-    data-keyboard="false"
-    data-backdrop="static"
   >
     <div
       class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable converter-dialog"
@@ -452,45 +453,46 @@
         </div>
       </div>
     </div>
-    <UniversalFileSelector
-      v-if="assemblySelectorOpen"
-      :network-manager="networkManager"
-      title="Select optional Juicebox assembly file"
-      file-type=".assembly"
-      note="Used for selected .hic conversions only. Non-.hic conversions ignore this field."
-      :file-name-predicate="isAssemblyFilename"
-      @selected="onAssemblySelected"
-      @dismissed="assemblySelectorOpen = false"
-    />
-    <UniversalFileSelector
-      v-if="sidecarSelectorKind !== null"
-      :network-manager="networkManager"
-      :title="
-        sidecarSelectorKind === 'bin-table'
-          ? 'Select BED bin table'
-          : 'Select chrom sizes file'
-      "
-      :file-type="sidecarSelectorKind === 'bin-table' ? '.bed' : '.chrom.sizes'"
-      :note="
-        sidecarSelectorKind === 'bin-table'
-          ? 'BED3+ bin table for hictk load.'
-          : 'Chrom sizes for hictk load.'
-      "
-      :file-name-predicate="
-        sidecarSelectorKind === 'bin-table'
-          ? isBinTableFilename
-          : isChromSizesFilename
-      "
-      @selected="onSidecarSelected"
-      @dismissed="sidecarSelectorKind = null"
-    />
   </div>
+  <UniversalFileSelector
+    v-if="assemblySelectorOpen"
+    :network-manager="networkManager"
+    :z-index="1070"
+    title="Select optional .assembly file"
+    file-type=".assembly"
+    note="Used for selected .hic conversions only. Non-.hic conversions ignore this field."
+    :file-name-predicate="isAssemblyFilename"
+    @selected="onAssemblySelected"
+    @dismissed="assemblySelectorOpen = false"
+  />
+  <UniversalFileSelector
+    v-if="sidecarSelectorKind !== null"
+    :network-manager="networkManager"
+    :z-index="1070"
+    :title="
+      sidecarSelectorKind === 'bin-table'
+        ? 'Select BED bin table'
+        : 'Select chrom sizes file'
+    "
+    :file-type="sidecarSelectorKind === 'bin-table' ? '.bed' : '.chrom.sizes'"
+    :note="
+      sidecarSelectorKind === 'bin-table'
+        ? 'BED3+ bin table for hictk load.'
+        : 'Chrom sizes for hictk load.'
+    "
+    :file-name-predicate="
+      sidecarSelectorKind === 'bin-table'
+        ? isBinTableFilename
+        : isChromSizesFilename
+    "
+    @selected="onSidecarSelected"
+    @dismissed="sidecarSelectorKind = null"
+  />
 </template>
 
 <script setup lang="ts">
 import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
-import { type Ref, ref, onMounted, computed } from "vue";
-import { Modal } from "bootstrap";
+import { type Ref, ref, onBeforeUnmount, onMounted, computed } from "vue";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { StartBatchConversionJobsRequest } from "@/app/core/net/api/request";
@@ -511,7 +513,6 @@ const props = defineProps<{
 }>();
 
 const errorMessage: Ref<unknown | null> = ref(null);
-const modal: Ref<Modal | null> = ref(null);
 const convertCoolerModal = ref<HTMLElement | null>(null);
 useModalFocus(convertCoolerModal);
 const forceConversion = ref(false);
@@ -604,34 +605,12 @@ function resolveOverwriteConfirm(approved: boolean): void {
   }
 }
 
-function resetState(): void {
+onBeforeUnmount(() => {
   cancelPendingOverwriteConfirm();
-  try {
-    modal.value?.dispose();
-  } catch (e: unknown) {
-    // Expected
-  } finally {
-    modal.value = null;
-    errorMessage.value = null;
-    batchStep.value = "select";
-    listingRequest++;
-    batchFileEntries.value = [];
-    batchSelection.value = new Set<string>();
-    batchJobIds.value = [];
-    batchStatusMap.value.clear();
-    batchProgressMap.value.clear();
-    existingOutputs.value = new Set<string>();
-    toolchainStatus.value = null;
-    toolchainLoading.value = true;
-    batchBinTableFilename.value = "";
-    batchChromSizesFilename.value = "";
-    batchBinSize.value = null;
-    sidecarSelectorKind.value = null;
-  }
-}
+  listingRequest++;
+});
 
 function onDismissClicked(): void {
-  resetState();
   emit("dismissed");
 }
 
@@ -664,11 +643,6 @@ onMounted(() => {
   const initial = props.initialCoolerFilename;
   if (initial) batchSelection.value = new Set([initial]);
   void loadBatchFiles(parentFolder(initial ?? ""));
-  modal.value = new Modal(convertCoolerModal.value ?? "loadAGPModal", {
-    backdrop: "static",
-    keyboard: false,
-  });
-  modal.value.show();
 });
 
 function viewCurrentJobs(): void {
@@ -1099,6 +1073,10 @@ function isChromSizesFilename(name: string): boolean {
 
 .modal-content {
   position: relative;
+}
+
+.converter-shell {
+  display: block;
 }
 
 .converter-dialog {

@@ -272,7 +272,7 @@
         "
         @click="exportOpen = true"
       >
-        Export
+        Export…
       </button>
       <FigureExportModal
         v-if="exportOpen && props.mapManager"
@@ -1066,7 +1066,7 @@ async function onSignalDisplayModeChanged(event: Event) {
   /* Auto layout */
   align-items: center;
   padding: 0px;
-  gap: 16px;
+  gap: 10px;
 
   width: auto;
   min-height: 30px;
@@ -1093,10 +1093,9 @@ async function onSignalDisplayModeChanged(event: Event) {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 0px 16px 0px 0px;
   gap: 10px;
 
-  width: 216px;
+  width: 200px;
   height: 30px;
 
   /* Inside auto layout */

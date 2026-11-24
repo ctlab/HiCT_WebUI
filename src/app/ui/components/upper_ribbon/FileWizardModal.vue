@@ -364,7 +364,7 @@
                             readonly
                             :value="
                               primaryAgp ||
-                              'Optional .agp or Juicebox .assembly for primary source'
+                              'Optional .agp or .assembly file for the primary source'
                             "
                           />
                           <button
@@ -408,7 +408,7 @@
                             readonly
                             :value="
                               secondaryAgp ||
-                              'Optional .agp or Juicebox .assembly for secondary source'
+                              'Optional .agp or .assembly file for the secondary source'
                             "
                           />
                           <button
@@ -1997,7 +1997,7 @@ const wizardCheckItems = computed<WizardCheckItem[]>(() => {
       message: !isAuthoritative
         ? "Primary AGP is not authoritative in this run and will not replace the secondary-driven overlay assembly."
         : primaryAgp.value.toLowerCase().endsWith(".assembly")
-        ? "Juicebox .assembly will be passed to .hic conversion. For already converted matrices, convert it to AGP before applying layout."
+        ? "HiCT uses the .assembly file when converting the .hic file. For an already converted matrix, convert the layout to AGP before applying it."
         : "AGP will be loaded after the primary matrix is opened.",
       fixable:
         isAuthoritative &&
@@ -2019,7 +2019,7 @@ const wizardCheckItems = computed<WizardCheckItem[]>(() => {
       message: !isAuthoritative
         ? "Secondary AGP is not authoritative in this run and will not replace the primary-driven overlay assembly."
         : secondaryAgp.value.toLowerCase().endsWith(".assembly")
-        ? "Juicebox .assembly will be passed to .hic conversion. For already converted matrices, convert it to AGP before applying layout."
+        ? "HiCT uses the .assembly file when converting the .hic file. For an already converted matrix, convert the layout to AGP before applying it."
         : "AGP will be loaded after the secondary matrix is opened.",
       fixable:
         isAuthoritative &&
@@ -2348,7 +2348,7 @@ const openSelector = (kind: SelectorKind): void => {
       : "Select secondary assembly file";
   selectorState.fileType = ".agp, .assembly";
   selectorState.note =
-    ".agp files are loaded after opening. Juicebox .assembly files are passed into .hic conversion when selected for a .hic source.";
+    "HiCT loads .agp files after opening the map. For a .hic source, HiCT applies the .assembly file during conversion.";
   selectorState.predicate = isAssemblyLayoutFilename;
 };
 
