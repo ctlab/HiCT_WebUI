@@ -245,7 +245,6 @@
     v-if="analysis === 'moddotplot' || analysis === 'dotplot'"
     :kind="analysis"
     :map-manager="props.mapManager"
-    :initial-selection="true"
     @dismissed="analysis = null"
   />
   <SequenceSearchModal

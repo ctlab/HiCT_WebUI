@@ -64,56 +64,26 @@
                 }}
               </option>
             </select>
-            <p v-if="scope === 'selection' && selection" class="small">
-              Rows {{ selection.rowStart.toLocaleString() }}–{{
-                selection.rowEnd.toLocaleString()
-              }}; columns {{ selection.columnStart.toLocaleString() }}–{{
-                selection.columnEnd.toLocaleString()
-              }}
-              bp (zero-based, end excluded). Boundary bins{{
-                alignment ? "" : " and neighboring sketch context"
-              }}
-              are included.
-            </p>
-            <label for="sequence-overlay-resolutions" class="form-label">
+            <p v-if="scope === 'selection' && currentRectangle" class="small">
+              Region ·
               {{
-                alignment
-                  ? "Dotplot resolutions (bp/bin)"
-                  : "ModDotPlot window sizes (bp)"
+                formatLength(
+                  currentRectangle.rowEnd - currentRectangle.rowStart
+                )
               }}
-            </label>
-            <input
-              id="sequence-overlay-resolutions"
-              v-model="resolutionList"
-              type="text"
-              class="form-control"
-              :class="{ 'is-invalid': resolutionError }"
-              :aria-invalid="!!resolutionError"
-              aria-describedby="sequence-overlay-resolution-help"
-            />
-            <p id="sequence-overlay-resolution-help" class="form-text">
-              Enter sizes separated by commas or spaces, for example 50, 250,
-              1000. The checkboxes change only their own sizes.
+              ×
+              {{
+                formatLength(
+                  currentRectangle.columnEnd - currentRectangle.columnStart
+                )
+              }}
             </p>
             <p v-if="resolutionError" class="small text-danger" role="alert">
               {{ resolutionError }}
             </p>
             <div v-if="cost" class="small mb-2" role="status">
-              <div>
-                Requested analysis levels ·
-                {{ cost.requestedLevels.join(", ") }} bp
-              </div>
-              <div>
-                Automatic overview levels ·
-                {{ cost.overviewLevels.join(", ") || "None" }}
-              </div>
-              <div>
-                Selected span · {{ cost.rowBp.toLocaleString() }} ×
-                {{ cost.columnBp.toLocaleString() }} bp
-              </div>
-              <div>
-                Estimated storage ·
-                {{ cost.estimatedBytes.toLocaleString() }} bytes
+              <div :title="`${cost.estimatedBytes.toLocaleString()} bytes`">
+                Estimated storage · {{ formatBytes(cost.estimatedBytes) }}
               </div>
               <div v-if="cost.limitingLevel">
                 Budget exceeded at {{ cost.limitingLevel }} bp.
@@ -122,6 +92,14 @@
             <p v-if="costError" class="text-danger small" role="alert">
               {{ costError }}
             </p>
+            <button
+              v-if="cost?.limitingLevel && resolutions.length > 1"
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              @click="useSizesThatFit"
+            >
+              Use sizes that fit
+            </button>
             <button
               v-if="
                 (cost?.limitingLevel || costError) &&
@@ -179,7 +157,7 @@
                 {{ resolution.toLocaleString() }} bp
               </label>
             </div>
-            <p class="form-text">
+            <p v-if="scope === 'assembly'" class="form-text">
               Fine windows over a whole genome can require many comparisons.
               Select a rectangle for a shorter calculation; other regions can be
               added later.
@@ -197,7 +175,36 @@
               <option value="below">Below diagonal</option>
               <option value="none">Don’t link</option>
             </select>
-            <AdvancedSection dialog-id="moddotplot">
+            <AdvancedSection
+              dialog-id="moddotplot"
+              hint="custom sizes, tuning and output"
+            >
+              <label for="sequence-overlay-resolutions" class="form-label">
+                {{
+                  alignment
+                    ? "Dotplot resolutions (bp/bin)"
+                    : "ModDotPlot window sizes (bp)"
+                }}
+              </label>
+              <input
+                id="sequence-overlay-resolutions"
+                v-model="resolutionList"
+                type="text"
+                class="form-control"
+                :class="{ 'is-invalid': resolutionError }"
+                :aria-invalid="!!resolutionError"
+                aria-describedby="sequence-overlay-resolution-help"
+              />
+              <p id="sequence-overlay-resolution-help" class="form-text">
+                Enter sizes separated by commas or spaces, for example 50, 250,
+                1000.
+              </p>
+              <dl v-if="cost" class="small">
+                <dt>Requested analysis levels</dt>
+                <dd>{{ cost.requestedLevels.join(", ") }} bp</dd>
+                <dt>Automatic overview levels</dt>
+                <dd>{{ cost.overviewLevels.join(", ") || "None" }}</dd>
+              </dl>
               <div v-if="!alignment" class="row g-3">
                 <div class="col-sm-6">
                   <label for="moddotplot-identity" class="form-label"
@@ -523,14 +530,8 @@
           <button
             type="submit"
             class="btn btn-primary"
-            :disabled="
-              busy ||
-              !!unavailableReason ||
-              !cost ||
-              !!cost.limitingLevel ||
-              !!resolutionError ||
-              !resolutions.length
-            "
+            :disabled="!!generateDisabledReason"
+            :title="generateDisabledReason || undefined"
           >
             Generate
           </button>
@@ -559,9 +560,9 @@ import { dotplotResolutionLevels } from "@/app/core/sequence/generationDefaults"
 import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
+import { formatLength } from "@/app/core/format/formatSignal";
 const props = defineProps<{
   mapManager: ContactMapManager;
-  initialSelection?: boolean;
   kind?: "moddotplot" | "dotplot";
 }>();
 const alignment = props.kind === "dotplot";
@@ -708,9 +709,7 @@ function toggleResolution(resolution: number, event: Event): void {
   if (checked) tokens.push(String(resolution));
   resolutionList.value = tokens.join(", ");
 }
-const scope = ref(
-  props.initialSelection && selection ? "selection" : "assembly"
-);
+const scope = ref(selection ? "selection" : "assembly");
 const identity = ref(80),
   sketchSize = ref(1000),
   delta = ref(0.5);
@@ -763,13 +762,52 @@ const jobOptions = computed(() => ({
 type GenerationCost = {
   requestedLevels: number[];
   overviewLevels: number[];
-  rowBp: number;
-  columnBp: number;
   estimatedBytes: number;
   limitingLevel?: number;
 };
+function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let unit = 0;
+  while (bytes >= 1000 && unit < units.length - 1) {
+    bytes /= 1000;
+    unit++;
+  }
+  return `${bytes.toLocaleString(undefined, { maximumSignificantDigits: 3 })} ${
+    units[unit]
+  }`;
+}
 const cost = ref<GenerationCost | null>(null);
 const costError = ref("");
+const findingFittingSizes = ref(false);
+async function estimateCost(
+  options: typeof jobOptions.value
+): Promise<GenerationCost> {
+  const response = await api.sendRequest(
+    new SequenceAnalysisRequest(`/sequence/${kind}/estimate`, options)
+  );
+  return response.data;
+}
+async function useSizesThatFit(): Promise<void> {
+  const options = jobOptions.value;
+  findingFittingSizes.value = true;
+  costError.value = "";
+  try {
+    for (let start = 1; start < options.resolutions.length; start++) {
+      const sizes = options.resolutions.slice(start);
+      const estimate = await estimateCost({ ...options, resolutions: sizes });
+      if (disposed || jobOptions.value !== options) return;
+      if (estimate.limitingLevel) continue;
+      resolutionList.value = sizes.join(", ");
+      return;
+    }
+    costError.value = "Select a smaller region or choose a coarser resolution.";
+  } catch (failure) {
+    if (!disposed && jobOptions.value === options)
+      costError.value = extractErrorMessage(failure);
+  } finally {
+    findingFittingSizes.value = false;
+  }
+}
 watch(
   [jobOptions, resolutionError, unavailableReason],
   ([options, invalid, unavailable], _, cleanup) => {
@@ -779,10 +817,8 @@ watch(
     let active = true;
     const timer = window.setTimeout(async () => {
       try {
-        const response = await api.sendRequest(
-          new SequenceAnalysisRequest(`/sequence/${kind}/estimate`, options)
-        );
-        if (active) cost.value = response.data;
+        const estimate = await estimateCost(options);
+        if (active) cost.value = estimate;
       } catch (failure) {
         if (active) costError.value = extractErrorMessage(failure);
       }
@@ -823,11 +859,23 @@ const displaying = ref(false);
 const pendingCompatibility = ref<SecondarySourceStatusResponse | null>(null);
 const busy = computed(
   () =>
+    findingFittingSizes.value ||
     submitting.value ||
     displaying.value ||
     (!!job.value &&
       ["submitted", "preparing", "running"].includes(job.value.status))
 );
+const generateDisabledReason = computed(() => {
+  if (busy.value) return "Analysis is in progress.";
+  if (unavailableReason.value) return unavailableReason.value;
+  if (resolutionError.value) return resolutionError.value;
+  if (!resolutions.value.length) return "Choose at least one resolution.";
+  if (costError.value) return costError.value;
+  if (!cost.value) return "Estimating analysis size…";
+  if (cost.value.limitingLevel)
+    return `Budget exceeded at ${cost.value.limitingLevel.toLocaleString()} bp. Choose coarser resolutions or select a smaller region.`;
+  return "";
+});
 let disposed = false,
   openingResult = false,
   timer: number | undefined,

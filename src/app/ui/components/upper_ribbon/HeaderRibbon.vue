@@ -1134,7 +1134,6 @@ async function onSignalDisplayModeChanged(event: Event) {
 
 #search-input-group > :is(input, button):disabled {
   background: #f0f3f6;
-  opacity: 1;
 }
 
 #search-input-group > button {
