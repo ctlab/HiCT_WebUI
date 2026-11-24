@@ -864,9 +864,13 @@ watch(
       syncingFromColormap.value = true;
       if (lowerBound.value !== cmap.minSignal) {
         lowerBound.value = cmap.minSignal;
+        if (focusedThreshold.value === "lower")
+          thresholdDraft.value = String(cmap.minSignal);
       }
       if (upperBound.value !== cmap.maxSignal) {
         upperBound.value = cmap.maxSignal;
+        if (focusedThreshold.value === "upper")
+          thresholdDraft.value = String(cmap.maxSignal);
       }
       queueMicrotask(() => {
         syncingFromColormap.value = false;
