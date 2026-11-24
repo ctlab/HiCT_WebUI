@@ -26,7 +26,7 @@ exports AGP and FASTA. Export above the map produces PNG, SVG and PDF.
 
 ## Develop
 
-Use Node.js and npm. Keep `HiCT_JVM` beside this checkout for the integrated
+Use Node.js 24 LTS and npm. Keep `HiCT_JVM` beside this checkout for the integrated
 packaged build. A WebUI-only build also works independently in this Git checkout.
 
 ```sh

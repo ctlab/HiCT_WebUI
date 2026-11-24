@@ -37,7 +37,7 @@
       @fastaOnlyRequested="emit('fastaOnlyRequested')"
       @examplesRequested="emit('examplesRequested')"
     ></NavigationBar>
-    <HeaderRibbon :mapManager="props.mapManager"></HeaderRibbon>
+    <HeaderRibbon :mapManager="props.mapManager" :mapOpening="props.mapOpening" />
   </div>
 </template>
 
@@ -65,6 +65,7 @@ const emit = defineEmits<{
 const props = defineProps<{
   networkManager: NetworkManager;
   mapManager?: ContactMapManager;
+  mapOpening?: boolean;
 }>();
 
 const navigationBar = ref<InstanceType<typeof NavigationBar> | null>(null);

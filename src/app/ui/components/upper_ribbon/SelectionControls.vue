@@ -1,9 +1,8 @@
 <template>
-  <li class="nav-item dropdown">
+  <div class="nav-item dropdown">
     <button
       type="button"
       class="btn btn-sm btn-outline-primary dropdown-toggle selection-label"
-      aria-label="Selection"
       data-bs-toggle="dropdown"
       :data-bs-popper-config="navbarPopperConfig"
       :disabled="!mapManager"
@@ -12,8 +11,8 @@
       <span>{{ label }}</span>
     </button>
     <ul class="dropdown-menu selection-menu">
-      <li class="px-3 py-2 small" role="status" aria-live="polite">
-        {{ summary }}
+      <li class="px-3 py-2 small">
+        <span role="status">{{ summary }}</span>
       </li>
       <li class="px-3 pb-2 small text-muted">
         Shift-click/drag selects entities. Ctrl-drag (⌘ on macOS) selects a
@@ -24,8 +23,7 @@
       <li v-for="kind in ['contig','scaffold'] as const" :key="kind">
         <button
           class="dropdown-item"
-          role="menuitemradio"
-          :aria-checked="state?.entitySelectionKind === kind"
+          :aria-pressed="state?.entitySelectionKind === kind"
           :disabled="!mapManager"
           @click="mapManager?.viewAndLayersManager.setEntitySelectionKind(kind)"
         >
@@ -79,8 +77,7 @@
       <li>
         <button
           class="dropdown-item"
-          role="menuitemcheckbox"
-          :aria-checked="state?.hideScopedBorders ?? false"
+          :aria-pressed="state?.hideScopedBorders ?? false"
           :disabled="!bothScoped"
           @click="
             mapManager?.viewAndLayersManager.setHideScopedBorders(
@@ -101,7 +98,7 @@
       :map-manager="mapManager"
       @dismissed="coordinateOpen = false"
     />
-  </li>
+  </div>
 </template>
 <script setup lang="ts">
 import { computed, ref } from "vue";

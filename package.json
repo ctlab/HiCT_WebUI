@@ -5,9 +5,13 @@
   "author": "Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov, Pavel Avdeyev, Nikolay Cherkasov and Computer Technologies Laboratory ITMO University team",
   "main": "dist/electron/main/main.js",
   "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "vite",
     "build": "npm run build:web && npm run electron:compile",
+    "prebuild:web": "node scripts/check-node-version.mjs",
     "build:web": "run-p type-check test:api-dto test:map-resolution test:map-viewport test:feature-packing test:visualization-presets test:signal-diagnostics test:native-dependencies build-only",
     "test:native-dependencies": "node scripts/check-native-dependency-patches.mjs",
     "test:signal-diagnostics": "node scripts/check-tile-signal-range.mjs && node scripts/check-signal-diagnostics.mjs && node scripts/check-tile-lifecycle.mjs && node scripts/check-pipeline-editor-state.mjs && node scripts/check-alignment-runs.mjs && node scripts/check-alignment-detail.mjs",

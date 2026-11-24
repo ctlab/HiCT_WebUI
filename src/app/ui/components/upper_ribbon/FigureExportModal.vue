@@ -60,9 +60,21 @@
             ModDotPlot or second map
           </label>
         </div>
-        <p v-if="capturing" role="status">
-          Capturing figure · {{ Math.round(progress * 100) }}%
+        <p role="status" class="small text-muted mb-2">{{ previewStatus }}</p>
+        <p v-if="capturing" aria-hidden="true" class="small text-muted">
+          {{ Math.round(progress * 100) }}%
         </p>
+        <p v-if="captureError" class="text-danger" role="alert">
+          Figure preview failed. {{ captureError }}
+        </p>
+        <button
+          class="btn btn-outline-primary btn-sm mb-2"
+          type="button"
+          :aria-disabled="busy"
+          @click="capture"
+        >
+          {{ captureAction }}
+        </button>
         <p v-if="printError" class="text-danger" role="alert">
           {{ printError }}
         </p>
@@ -115,16 +127,8 @@
             comparison.
           </template>
         </p>
-        <p v-if="outdated" class="alert alert-info" role="status">
+        <p v-if="outdated && !captureError" class="alert alert-info" role="status">
           Update the preview to apply the changed options.
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-primary ms-2"
-            :disabled="busy"
-            @click="capture"
-          >
-            Update preview
-          </button>
         </p>
         <AdvancedSection dialog-id="figure-export">
           <label>
@@ -172,20 +176,6 @@
             />
             Crop to map</label
           >
-          <button
-            class="btn btn-outline-primary btn-sm"
-            type="button"
-            :disabled="busy"
-            @click="capture"
-          >
-            {{
-              capturing
-                ? "Capturing…"
-                : figure
-                ? "Refresh capture"
-                : "Capture preview"
-            }}
-          </button>
           <div v-if="figure" class="snapshot-save-row">
             <label
               >Snapshot name
@@ -512,11 +502,24 @@ const previewUrl = ref("");
 const capturing = ref(false),
   progress = ref(0),
   error = ref("");
+const captureError = ref("");
 const saving = ref<"svg" | "png" | "pdf" | null>(null);
 const busy = computed(
   () => capturing.value || comparing.value || storing.value || !!saving.value
 );
 const outdated = ref(false);
+const previewStatus = computed(() => {
+  if (capturing.value) return "Capturing figure preview…";
+  if (displayed.value && !outdated.value && !comparisonOutdated.value)
+    return "Figure preview ready.";
+  return "";
+});
+const captureAction = computed(() => {
+  if (capturing.value) return "Capturing…";
+  if (captureError.value) return "Retry preview";
+  if (outdated.value) return "Update preview";
+  return figure.value ? "Refresh capture" : "Capture preview";
+});
 let disposed = false,
   generation = 0;
 let controller: AbortController | undefined;
@@ -692,6 +695,7 @@ watch(
     comparisonOutdated.value = false;
     capturing.value = false;
     outdated.value = false;
+    captureError.value = "";
   }
 );
 async function capture() {
@@ -705,6 +709,7 @@ async function capture() {
   capturing.value = true;
   progress.value = 0;
   error.value = "";
+  captureError.value = "";
   try {
     const result = await manager.captureCurrentFigure(
       {
@@ -727,8 +732,10 @@ async function capture() {
     updatePreview();
     outdated.value = false;
   } catch (failure) {
-    if (!disposed && current === generation && !signal.aborted)
-      error.value = extractErrorMessage(failure);
+    if (!disposed && current === generation && !signal.aborted) {
+      outdated.value = figure.value !== null;
+      captureError.value = extractErrorMessage(failure);
+    }
   } finally {
     if (!disposed && current === generation) capturing.value = false;
   }

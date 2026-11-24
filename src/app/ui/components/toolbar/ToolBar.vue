@@ -21,7 +21,7 @@
 
 <template>
   <div class="toolbar-outer">
-    <div class="toolbar-upper">
+    <div class="toolbar-upper" role="region" aria-label="Map tools" tabindex="0">
       <HistoryButtons :map-manager="props.mapManager" />
       <FirstBlock :map-manager="props.mapManager"></FirstBlock>
       <RearrangementButtons
@@ -88,6 +88,11 @@ const props = defineProps<{
 
 .toolbar-upper::-webkit-scrollbar {
   width: 4px;
+}
+
+.toolbar-upper:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
 }
 
 .toolbar-bottom {

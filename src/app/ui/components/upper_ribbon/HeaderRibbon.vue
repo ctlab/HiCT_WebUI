@@ -264,9 +264,11 @@
         type="button"
         aria-haspopup="dialog"
         :aria-expanded="exportOpen"
-        :disabled="!props.mapManager"
+        :disabled="!props.mapManager || props.mapOpening"
         :title="
-          props.mapManager
+          props.mapOpening
+            ? 'Wait for the map to finish opening'
+            : props.mapManager
             ? 'Preview and export a figure'
             : 'Open a map to export it'
         "
@@ -303,6 +305,7 @@ import { storeToRefs } from "pinia";
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
+  mapOpening?: boolean;
 }>();
 
 useVisualizationOptionsSync(() => props.mapManager);

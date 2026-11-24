@@ -227,6 +227,7 @@
       ref="upperFrame"
       :networkManager="networkManager"
       :mapManager="mapManager"
+      :mapOpening="mapOpening"
       @jobResult="openJobResult"
       @selected="onFileSelected"
       @closed="onClosed"
@@ -576,6 +577,7 @@ const htmlElementReferencesStore = usehtmlElementReferencesStore();
 const { miniMapTarget } = storeToRefs(htmlElementReferencesStore);
 const lastAgpFilename: Ref<string> = ref("");
 let openProgressTimer: number | undefined;
+const mapOpening = ref(false);
 const openProgressVisible = ref(false);
 const openProgressStage = ref("starting");
 const openProgressPct = ref(0);
@@ -648,6 +650,7 @@ function startOpenProgress() {
   }
   openProgressStage.value = "starting";
   openProgressPct.value = 0;
+  mapOpening.value = true;
   openProgressVisible.value = true;
   openProgressTimer = window.setInterval(() => {
     if (openProgressInFlight) return;
@@ -674,6 +677,7 @@ function stopOpenProgress() {
     openProgressTimer = undefined;
   }
   openProgressInFlight = false;
+  mapOpening.value = false;
   openProgressVisible.value = false;
 }
 

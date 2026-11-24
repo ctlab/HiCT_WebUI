@@ -53,13 +53,13 @@
         v-if="props.mapManager"
         type="button"
         ref="layersToggle"
-        aria-label="Borders and labels"
         class="layers-block-toggle"
         :aria-expanded="layersBlockExpanded"
         aria-controls="layers-block"
         @click="toggleLayersBlock"
       >
         <i
+          aria-hidden="true"
           :class="
             layersBlockExpanded ? 'bi bi-chevron-down' : 'bi bi-chevron-right'
           "
