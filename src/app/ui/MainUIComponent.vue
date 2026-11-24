@@ -1128,7 +1128,7 @@ async function openJobResult({
       if (!example) throw new Error("The example is no longer in the catalog");
       if (!example.downloaded)
         throw new Error(
-          "The example files or catalog changed. Open Examples to verify them again."
+          "The example files or catalog changed. Use Examples… to verify them again."
         );
       await openExampleInWizard({ example, folder: `examples/${example.id}` });
     } else if (output.action === "fasta_only") {

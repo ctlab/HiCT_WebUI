@@ -132,8 +132,8 @@
               >
                 {{
                   job.kind === "conversion"
-                    ? "Open Examples to retry"
-                    : "Open Examples to resume"
+                    ? "Retry in Examples…"
+                    : "Resume in Examples…"
                 }}
               </button>
               <button

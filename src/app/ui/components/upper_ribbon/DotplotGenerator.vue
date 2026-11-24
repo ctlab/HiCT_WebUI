@@ -174,7 +174,7 @@
                         class="btn btn-outline-primary"
                         @click="referenceMapSelectorOpen = true"
                       >
-                        Browse...
+                        Browse…
                       </button>
                       <button
                         type="button"

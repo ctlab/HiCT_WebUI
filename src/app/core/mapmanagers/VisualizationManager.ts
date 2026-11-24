@@ -1583,7 +1583,7 @@ class VisualizationManager {
       "OBSERVED_OVER_EXPECTED"
     )
       return Promise.reject(
-        new Error("Select Show O/E before editing its palette.")
+        new Error("Select Observed/Expected before editing its palette.")
       );
     const context: VisualizationContext = {
       source: "PRIMARY",

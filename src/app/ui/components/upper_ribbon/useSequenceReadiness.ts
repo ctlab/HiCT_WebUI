@@ -39,7 +39,7 @@ export function useSequenceReadiness(manager: {
         (!mapOpen.value
           ? "Open a Hi-C map first."
           : !fastaLinked.value
-          ? "Link the FASTA for the active map using Assembly → Link FASTA, or open the map and FASTA together in the Open Wizard."
+          ? "Link the FASTA for the active map using Assembly → Link FASTA…, or open the map and FASTA together using File → Open with options…"
           : "")
   );
   function available(name: string) {

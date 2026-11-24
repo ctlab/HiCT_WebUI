@@ -21,7 +21,7 @@ export async function displaySequenceOverlay(
   status ??= await api.getSecondarySourceStatus();
   if (!status.attached)
     throw new Error(
-      "Attach a generated overlay first using Tools → Generate ModDotPlot or View → Sources and layers."
+      "Attach a generated overlay using Tools → ModDotPlot… or View → Sources and layers…"
     );
   if (kind === "moddotplot" && status.sequenceAnalysis?.kind !== "moddotplot")
     throw new Error(

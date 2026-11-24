@@ -3304,7 +3304,7 @@ const onImportFileSelected = async (event: Event): Promise<void> => {
     const parsed = JSON.parse(text) as Record<string, unknown>;
     if (parsed.target === "PRIMARY_OE")
       throw new Error(
-        "Select Show O/E and use the Primary O/E colormap tab to import this palette."
+        "Select Observed/Expected and use the Primary O/E colormap tab to import this palette."
       );
     const importedEnabled = parsed.enabled;
     const importedSwap = parsed.swapUpperLower;

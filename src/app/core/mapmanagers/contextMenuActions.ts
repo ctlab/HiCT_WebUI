@@ -143,7 +143,7 @@ export async function copySelectionPng(
   manager: ContactMapManager
 ): Promise<void> {
   if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
-    toast.error("Image clipboard is unavailable. Use Export selection as PNG.");
+    toast.error("Image clipboard is unavailable. Use Export → Image as PNG…");
     return;
   }
   const png = manager.renderCurrentMapPng({ scope: "selection" });
@@ -158,7 +158,7 @@ export async function copySelectionPng(
     try {
       await png;
       toast.error(
-        "Could not write to the clipboard. Use Export selection as PNG."
+        "Could not write to the clipboard. Use Export → Image as PNG…"
       );
     } catch (error) {
       toast.error(`Could not render the selected region: ${String(error)}`);

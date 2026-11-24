@@ -399,7 +399,7 @@ class CommonEventManager {
         this.resetSelection();
         this.reloadTracks();
       })
-      .catch((error) => reportFailure("Move selection to debris", error));
+      .catch((error) => reportFailure("Move to unplaced (debris)", error));
   }
 
   public async confirmDebris(range: { startBP: number; endBP: number }): Promise<boolean> {
