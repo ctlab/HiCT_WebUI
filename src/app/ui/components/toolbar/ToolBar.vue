@@ -52,21 +52,15 @@ const props = defineProps<{
 
 <style scoped>
 .toolbar-outer {
-  /* Auto layout */
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* justify-content: space-between;  c  */
   padding: 12px 4px;
   gap: 6px;
 
   width: 60px;
   flex: 0 0 60px;
   min-height: 0;
-  /* Short windows: scroll the tool column instead of clipping buttons. */
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
 
   background: var(--hict-ui-bg, #f8f9fa);
   color: var(--hict-ui-fg, #1f2937);
@@ -80,20 +74,24 @@ const props = defineProps<{
 }
 
 .toolbar-upper {
-  /* upper block */
-
-  /* Auto layout */
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  padding: 0px;
+  align-items: center;
   gap: clamp(10px, 2.2vh, 24px);
+  flex: 1 1 0;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  overscroll-behavior-y: contain;
+}
 
-  width: 44px;
+.toolbar-upper::-webkit-scrollbar {
+  width: 4px;
 }
 
 .toolbar-bottom {
-  margin-top: auto;
+  flex: 0 0 auto;
 }
 
 @media (max-height: 820px) {
@@ -107,7 +105,4 @@ const props = defineProps<{
   }
 }
 
-/* .toolbar-bottom {
-  background-color: green;
-} */
 </style>
