@@ -3,14 +3,13 @@
     <button
       type="button"
       class="btn btn-sm btn-outline-primary dropdown-toggle selection-label"
-      :class="{ 'has-selection': region || count }"
       aria-label="Selection"
       data-bs-toggle="dropdown"
       :data-bs-popper-config="navbarPopperConfig"
       :disabled="!mapManager"
       :title="mapManager ? summary : 'Open a map to select a region'"
     >
-      Selection
+      <span>{{ label }}</span>
     </button>
     <ul class="dropdown-menu selection-menu">
       <li class="px-3 py-2 small" role="status" aria-live="polite">
@@ -106,6 +105,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { formatLength } from "@/app/core/format/formatSignal";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import {
@@ -147,6 +147,16 @@ const summary = computed(() => {
       } selected for assembly editing.`
     : "No selection.";
 });
+const label = computed(() => {
+  const r = region.value;
+  if (r) {
+    return `Region · ${formatLength(r.rowEnd - r.rowStart)} × ${formatLength(
+      r.columnEnd - r.columnStart
+    )}`;
+  }
+  const n = count.value;
+  return n ? `Selection · ${n} ${n === 1 ? "contig" : "contigs"}` : "Selection";
+});
 const bothScoped = computed(() => state.value?.scopedAxes ?? false);
 function copyCoordinates() {
   const mode = useUiSettingsStore().rulerCoordinateMode;
@@ -167,11 +177,19 @@ function copyPng() {
   background: rgba(255, 176, 0, 0.16);
 }
 .selection-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 120px;
+}
+.selection-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.selection-label.has-selection {
-  text-decoration: underline 2px var(--bs-primary);
-  text-underline-offset: 3px;
+.selection-label::after {
+  flex: none;
+  margin-left: 0;
 }
 .selection-menu {
   min-width: min(25rem, 90vw);

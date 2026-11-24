@@ -217,9 +217,9 @@
       </div>
       <span
         v-if="sequenceScaleStatus"
-        class="small text-dark bg-light rounded px-2 py-1 mb-3"
+        class="sequence-scale-status small text-dark bg-light rounded px-2 py-1 mb-3"
         data-testid="sequence-scale-status"
-        title="Display coordinates follow individual bases. Matrix values retain their stored bin resolution."
+        :title="`${sequenceScaleStatus}. Display coordinates follow individual bases. Matrix values retain their stored bin resolution.`"
         >{{ sequenceScaleStatus }}</span
       >
     </div>
@@ -1066,7 +1066,7 @@ async function onSignalDisplayModeChanged(event: Event) {
   /* Auto layout */
   align-items: center;
   padding: 0px;
-  gap: 10px;
+  gap: 9px;
 
   width: auto;
   min-height: 30px;
@@ -1205,6 +1205,28 @@ async function onSignalDisplayModeChanged(event: Event) {
   position: relative;
   width: 120px;
   flex: 0 0 120px;
+}
+
+@media (min-width: 1280px) and (max-width: 1499.98px) {
+  #left-header-block:has(.sequence-scale-status) {
+    gap: 6px;
+  }
+
+  #left-header-block:has(.sequence-scale-status) #search-container,
+  #left-header-block:has(.sequence-scale-status) #search-input-group {
+    width: 144px;
+  }
+
+  #left-header-block:has(.sequence-scale-status) .scope-picker {
+    flex-basis: 96px;
+  }
+
+  .sequence-scale-status {
+    max-width: 112px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .header-ribbon--empty :deep(.btn:disabled),
@@ -1390,18 +1412,18 @@ async function onSignalDisplayModeChanged(event: Event) {
   }
 }
 
+#ruler-mode-button {
+  max-width: 8.75rem;
+}
+
+.ruler-button-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @media (max-width: 1120px) {
   .optional-button-label {
     display: none;
-  }
-
-  #ruler-mode-button {
-    max-width: 8.75rem;
-  }
-
-  .ruler-button-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 }
 

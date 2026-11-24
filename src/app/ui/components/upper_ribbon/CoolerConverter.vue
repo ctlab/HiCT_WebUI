@@ -35,9 +35,15 @@
     >
       <div class="modal-content">
         <div class="modal-header">
-          <h5 id="matrix-converter-title" class="modal-title">
-            Convert matrices for HiCT
-          </h5>
+          <div>
+            <h5 id="matrix-converter-title" class="modal-title">
+              Convert matrices for HiCT
+            </h5>
+            <p class="mb-0 small text-muted">
+              Turns .mcool, .cool, .hic and 4DN .pairs files into HiCT maps.
+              Your original files stay unchanged.
+            </p>
+          </div>
           <button
             type="button"
             class="btn-close"
