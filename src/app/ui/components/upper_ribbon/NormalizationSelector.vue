@@ -77,7 +77,7 @@
       </div>
     </div>
 
-    <div class="signal-row">
+    <div class="normalization-field">
       <label
         id="normalization-mode-label"
         for="normalization-mode"
@@ -743,6 +743,12 @@ function openRenderingPipeline(): void {
   font-weight: 600;
 }
 
+.normalization-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
 .scale-choice {
   display: inline-flex;
   padding: 3px;
@@ -803,10 +809,8 @@ function openRenderingPipeline(): void {
 }
 
 .normalization-select {
-  width: 13rem;
-  flex: 1 1 13rem;
+  width: 100%;
   min-width: 0;
-  max-width: 100%;
   appearance: auto;
   padding-inline-end: 0.5rem;
 }
