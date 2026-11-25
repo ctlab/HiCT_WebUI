@@ -1,4 +1,6 @@
 import { toast } from "vue-sonner";
+import { askForConfirmation } from "@/app/ui/confirmAction";
+import { reportFailure } from "@/app/ui/reportFailure";
 import type { ContactMapManager } from "./ContactMapManager";
 import {
   formatBoundary,
@@ -139,11 +141,62 @@ export function copyRegionCoordinates(
   );
 }
 
+export function reviewSelectionImageSize(
+  manager: ContactMapManager,
+  confirmLabel: string
+): Promise<boolean> | undefined {
+  const estimate = manager.selectionExportEstimate();
+  if (!estimate.large) return;
+  const layers = manager.viewAndLayersManager;
+  const regionSnapshot = () => {
+    const extent = layers.selectionInteractions.contigSelectExtent.getExtent();
+    return JSON.stringify(
+      layers.getRegionBounds() ?? (extent && layers.regionFromExtent(extent))
+    );
+  };
+  const region = regionSnapshot();
+  const size = (columns: number, rows: number) =>
+    `${columns.toLocaleString()} × ${rows.toLocaleString()}`;
+  return askForConfirmation({
+    title: "Large selection export",
+    body: "Rendering this region may take a long time. Cancel to select a smaller region.",
+    details: [
+      `Region: ${size(estimate.columns, estimate.rows)} bp`,
+      `At ${estimate.bin.toLocaleString()} bp/bin: about ${size(
+        estimate.nx, estimate.ny
+      )} bins`,
+      `Figure with rulers and tracks: about ${size(estimate.width, estimate.height)} px`,
+    ],
+    tone: "warn",
+    icon: "bi-exclamation-triangle",
+    confirmLabel,
+  }).then((decision) => {
+    if (decision !== "confirm") return false;
+    if (
+      region !== regionSnapshot() ||
+      JSON.stringify(estimate) !==
+        JSON.stringify(manager.selectionExportEstimate())
+    ) {
+      throw new Error(
+        "The selection or estimated size changed. Review the selection and try again."
+      );
+    }
+    return true;
+  });
+}
+
 export async function copySelectionPng(
   manager: ContactMapManager
 ): Promise<void> {
   if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
     toast.error("Image clipboard is unavailable. Use Export → Image as PNG…");
+    return;
+  }
+  try {
+    const review = reviewSelectionImageSize(manager, "Copy as PNG");
+    if (review && !(await review)) return;
+  } catch (failure) {
+    reportFailure("Copy selection as PNG", failure);
     return;
   }
   const png = manager.renderCurrentMapPng({ scope: "selection" });

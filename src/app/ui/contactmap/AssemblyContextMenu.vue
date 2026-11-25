@@ -301,7 +301,6 @@
 </template>
 <script setup lang="ts">
 import { reportFailure } from "@/app/ui/reportFailure";
-import { askForConfirmation } from "@/app/ui/confirmAction";
 import RegionSelectionDialog from "@/app/ui/components/common/RegionSelectionDialog.vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { useModalFocus } from "@/app/ui/modalFocus";
@@ -329,6 +328,7 @@ import AxisContextMenu from "@/app/ui/components/common/AxisContextMenu.vue";
 import {
   copySelectionCoordinates,
   copySelectionPng,
+  reviewSelectionImageSize,
   copyText,
   formatLocus,
   type ContextMenuItem,
@@ -865,51 +865,19 @@ function copyCoordinates(frame: CoordinateFrame) {
 async function requestExport(format: ExportAction) {
   items.value = [];
   const manager = props.mapManager;
-  const size = (columns: number, rows: number) =>
-    `${columns.toLocaleString()} × ${rows.toLocaleString()}`;
   try {
-    const estimate = manager.selectionExportEstimate();
-    if (estimate.large) {
-      const region = manager.viewAndLayersManager.getRegionBounds();
-      const decision = await askForConfirmation({
-        title: "Large selection export",
-        body: "Rendering this region may take a long time. Cancel to select a smaller region.",
-        details: [
-          `Region: ${size(estimate.columns, estimate.rows)} bp`,
-          `At ${estimate.bin.toLocaleString()} bp/bin: about ${size(
-            estimate.nx,
-            estimate.ny
-          )} bins`,
-          `Figure with rulers and tracks: about ${size(
-            estimate.width,
-            estimate.height
-          )} px`,
-        ],
-        tone: "warn",
-        icon: "bi-exclamation-triangle",
-        confirmLabel:
-          format === "clipboard" ? "Copy as PNG" : `Export ${format}`,
-      });
-      if (decision !== "confirm") return;
-      if (
-        JSON.stringify(region) !==
-        JSON.stringify(manager.viewAndLayersManager.getRegionBounds())
-      ) {
-        throw new Error(
-          "The region changed. Open the export menu to review the new size."
-        );
-      }
-    }
+    if (format === "clipboard") return await copySelectionPng(manager);
+    const review = reviewSelectionImageSize(manager, `Export ${format}`);
+    if (review && !(await review)) return;
     await performExport(format);
   } catch (failure) {
     reportFailure("Export selection", failure);
   }
 }
-async function performExport(format: ExportAction) {
+async function performExport(format: (typeof formats)[number]) {
   const notifications = useNotificationCenterStore();
   try {
     const manager = props.mapManager;
-    if (format === "clipboard") return await copySelectionPng(manager);
     const method =
       format === "PNG"
         ? manager.exportCurrentMapPng
