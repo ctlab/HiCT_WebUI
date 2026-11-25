@@ -152,26 +152,13 @@ const lastCounterDiagonalSlideCenterPosition = ref({
  * clamp it, so the result is always a valid resolution and the center stays where it was.
  */
 function stepZoom(direction: 1 | -1): void {
-  const view = props.mapManager?.map?.getView();
-  const current = view?.getZoom();
-  if (!view || current === undefined) return;
-  // The view's own constraint, not the nominal zoom range: the finest usable level is lower.
-  const target = view.getConstrainedZoom(current + direction);
-  const resolution = view.getResolution();
-  const limit = direction > 0 ? view.getMinResolution() : view.getMaxResolution();
-  if (
-    target === undefined ||
-    Math.abs(target - current) < 1e-9 ||
-    (resolution !== undefined && Math.abs(resolution - limit) <= limit * 1e-9)
-  ) {
+  if (props.mapManager && !props.mapManager.stepZoom(direction)) {
     toast.message(
       direction > 0
         ? "Already at the finest zoom"
         : "The whole map is already in view"
     );
-    return;
   }
-  view.animate({ zoom: target, duration: 250 });
 }
 
 function zoomIn(): void {

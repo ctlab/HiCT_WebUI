@@ -191,6 +191,22 @@ class ContactMapManager {
     this.viewAndLayersManager.initializeMapInteractions();
   }
 
+  /** Step around the current center with the view's active resolution limits. */
+  public stepZoom(direction: 1 | -1): boolean {
+    const view = this.map.getView();
+    const zoom = view.getZoom();
+    if (zoom === undefined) return false;
+    const target = view.getConstrainedZoom(zoom + direction);
+    const resolution = view.getResolution();
+    const limit = direction > 0 ? view.getMinResolution() : view.getMaxResolution();
+    if (target === undefined || Math.abs(target - zoom) < 1e-9
+        || (resolution !== undefined && Math.abs(resolution - limit) <= limit * 1e-9)) {
+      return false;
+    }
+    view.animate({ zoom: target, duration: 250 });
+    return true;
+  }
+
   public initializeMapControls(): void {
     this.map.addControl(new ZoomSlider());
     for (const [className, zoomOut] of [
@@ -219,7 +235,6 @@ class ContactMapManager {
           { capture: true }
         );
     }
-    // OpenLayers supplies keyboard zoom through the separate + and − buttons.
     const zoomThumb = this.map
       .getViewport()
       .querySelector<HTMLButtonElement>(".ol-zoomslider-thumb");

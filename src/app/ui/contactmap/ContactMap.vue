@@ -102,7 +102,15 @@
         {{ props.mapManager.alignmentDetail.state.message.value }}
       </p>
     </aside>
-    <div id="hic-contact-map" :style="mapContainerStyle" ref="mapTarget"></div>
+    <div
+      id="hic-contact-map"
+      :style="mapContainerStyle"
+      ref="mapTarget"
+      :tabindex="props.mapManager ? 0 : -1"
+      role="region"
+      aria-label="Contact map"
+      @keydown.self="zoomFromKeyboard"
+    ></div>
     <div
       class="zoom-slider-overlay"
       v-if="props.mapManager && customZoomSliderEnabled"
@@ -156,6 +164,15 @@ const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
 
+function zoomFromKeyboard(event: KeyboardEvent): void {
+  if (!props.mapManager || event.altKey || event.ctrlKey || event.metaKey) return;
+  const direction = event.key === "+" || event.key === "=" ? 1
+    : event.key === "-" || event.key === "−" ? -1 : 0;
+  if (!direction) return;
+  event.preventDefault();
+  props.mapManager.stepZoom(direction);
+}
+
 const jobsUi = useBackgroundJobsUiStore();
 const session = useSessionStore();
 const cacheJobId = ref("");
@@ -208,6 +225,10 @@ const managerKey = computed(() => {
 </script>
 
 <style scoped>
+#hic-contact-map:focus-visible {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: -2px;
+}
 .alignment-legend {
   position: absolute;
   z-index: 10;
