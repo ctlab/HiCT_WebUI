@@ -37,8 +37,9 @@ const mapSource = fs.readFileSync("node_modules/ol/Map.js", "utf8");
 assert.match(mapSource, /getLoadingOrNotReady\(\)/);
 assert.match(mapSource, /this\.tileQueue_/);
 const listeners = new Map();
-let queued = 2,
-  loading = 1,
+let loading = 1,
+  animating = false,
+  interacting = false,
   notReady = false,
   renders = 0;
 const map = {
@@ -47,7 +48,11 @@ const map = {
     assert.equal(listeners.get(name), callback);
     listeners.delete(name);
   },
-  tileQueue_: { getCount: () => queued, getTilesLoading: () => loading },
+  getView: () => ({
+    getAnimating: () => animating,
+    getInteracting: () => interacting,
+  }),
+  tileQueue_: { getCount: () => 1, getTilesLoading: () => loading },
   getLoadingOrNotReady: () => notReady,
   render: () => renders++,
 };
@@ -59,10 +64,15 @@ assert.equal(timers.size, 1);
 const tick = () => [...timers.values()].forEach((callback) => callback());
 tick();
 assert.equal(renders, 0, "Do not redraw while transfers remain");
-queued = 0;
-tick();
-assert.equal(renders, 0, "Wait for the loading slot");
 loading = 0;
+animating = true;
+tick();
+assert.equal(renders, 0, "Do not redraw during an animation");
+animating = false;
+interacting = true;
+tick();
+assert.equal(renders, 0, "Do not redraw during a gesture");
+interacting = false;
 notReady = true;
 tick();
 assert.equal(renders, 0, "Wait for layer readiness");
@@ -71,7 +81,7 @@ tick();
 assert.equal(
   renders,
   1,
-  "Request the frame after obsolete queued tiles were discarded"
+  "Request a fresh frame even when queued entries are waiting to be reprioritized"
 );
 listeners.get("loadend")();
 assert.equal(timers.size, 0, "Stop on completion");

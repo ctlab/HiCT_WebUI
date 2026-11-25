@@ -2,14 +2,14 @@ import type Map from "ol/Map";
 
 export const RENDER_COMPLETION_OL_VERSION = "9.1.0";
 
-/** OpenLayers can discard the last obsolete queue entries after computing
- * frame readiness. No tile then changes state to request the final frame.
- * Poll only during its public loading lifecycle, and render only when both
- * the queue and layer renderers are idle. Never mark a tile/frame complete.
+/** A frame drawn during a gesture can leave queued tiles without a transfer.
+ * The next frame lets OpenLayers reprioritize the queue and update readiness
+ * after obsolete entries are discarded. Poll only during the loading lifecycle
+ * and request a frame only when the view, transfers and layer renderers are idle.
  */
 export function watchMapRenderCompletion(map: Map): () => void {
   const renderer = map as unknown as {
-    tileQueue_: { getCount(): number; getTilesLoading(): number };
+    tileQueue_: { getTilesLoading(): number };
     getLoadingOrNotReady(): boolean;
   };
   let timer: number | undefined;
@@ -21,8 +21,10 @@ export function watchMapRenderCompletion(map: Map): () => void {
   const start = () => {
     if (disposed || timer !== undefined) return;
     timer = window.setInterval(() => {
+      const view = map.getView();
       if (
-        renderer.tileQueue_.getCount() === 0 &&
+        !view.getAnimating() &&
+        !view.getInteracting() &&
         renderer.tileQueue_.getTilesLoading() === 0 &&
         !renderer.getLoadingOrNotReady()
       )
