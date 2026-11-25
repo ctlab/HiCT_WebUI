@@ -4,6 +4,7 @@
       v-if="items.length"
       ref="menu"
       class="assembly-context-menu"
+      :class="{ 'region-context-menu': region }"
       role="menu"
       aria-label="Assembly actions"
       :style="{ left: `${position.x}px`, top: `${position.y}px` }"
@@ -12,107 +13,112 @@
       @contextmenu.prevent
       @keydown="navigate"
     >
-      <section
-        v-if="
-          props.mapManager.viewAndLayersManager.currentViewState
-            .selectedContigIds.length
-        "
-      >
-        <button role="menuitem" @click="isolate">Isolate view to selection</button>
-      </section>
-      <section v-for="item in items" :key="`${item.kind}-${item.id}`">
-        <div class="entity-title">{{ item.title }}</div>
-        <template v-if="item.kind !== 'selection'">
-          <button role="menuitem" @click="zoomTo(item)">
-            Zoom to {{ item.kind }}
-          </button>
-          <button v-if="!hasRegion" role="menuitem" @click="copyName(item)">
-            Copy name
-          </button>
-          <button
-            v-if="!hasRegion && item.kind === 'contig'"
-            role="menuitem"
-            @click="copyPosition(item)"
-          >
-            Copy position
-          </button>
-        </template>
-        <button
-          v-if="item.kind !== 'selection'"
-          role="menuitem"
-          @click="beginRename(item)"
-        >
-          Rename…
+      <section v-if="!region && hasEntitySelection">
+        <button role="menuitem" @click="isolate">
+          Isolate view to selection
         </button>
-        <template v-if="item.kind === 'selection'">
-          <button role="menuitem" @click="zoomSelection">
-            <i class="bi bi-fullscreen" aria-hidden="true"></i> Zoom to region
-          </button>
-          <button v-if="!regionIsolated" role="menuitem" @click="isolateRegion">
-            <i class="bi bi-bounding-box" aria-hidden="true"></i> Isolate view
-            to region
-          </button>
-          <button
-            v-for="submenu in submenus"
-            :key="submenu.id"
-            role="menuitem"
-            :data-submenu="submenu.id"
-            aria-haspopup="menu"
-            :aria-expanded="activeSubmenu === submenu.id"
-            @pointerenter="openSubmenu(submenu.id, false)"
-            @click="openSubmenu(submenu.id, true)"
-            @keydown.right.prevent="openSubmenu(submenu.id, true)"
-          >
-            <i class="bi" :class="submenu.icon" aria-hidden="true"></i>
-            {{ submenu.label }}
-            <span class="submenu-arrow" aria-hidden="true">›</span>
-          </button>
-        </template>
-        <template v-if="offersStructuralEdits(item)">
-          <button
-            role="menuitem"
-            :disabled="item.structural === false"
-            @click="execute(item, 'reverse')"
-          >
-            Reverse
-          </button>
-          <button
-            role="menuitem"
-            :disabled="item.structural === false"
-            @click="move(item)"
-          >
-            Move…
-          </button>
-          <button
-            v-if="item.kind === 'scaffold'"
-            role="menuitem"
-            @click="execute(item, 'ungroup')"
-          >
-            Ungroup into singletons
-          </button>
-        </template>
       </section>
-      <p v-if="hasScaffold" class="scope-note">
-        Structural edits act on the whole scaffold.
-      </p>
+      <section v-if="!region && regionScopeActive">
+        <button role="menuitem" @click="showWholeMap">Show whole map</button>
+      </section>
+      <section v-if="region">
+        <div class="region-title">
+          <span>{{ region.title }}</span>
+          <span>{{ region.detail }}</span>
+        </div>
+        <button role="menuitem" @click="zoomSelection">
+          <i class="bi bi-fullscreen" aria-hidden="true"></i> Zoom to region
+        </button>
+        <button
+          role="menuitem"
+          @click="regionIsolated ? showWholeMap() : isolateRegion()"
+        >
+          <i class="bi bi-bounding-box" aria-hidden="true"></i>
+          {{ regionIsolated ? "Show whole map" : "Isolate view" }}
+        </button>
+        <button
+          v-for="submenu in regionSubmenus"
+          :key="submenu.id"
+          role="menuitem"
+          :data-submenu="submenu.id"
+          :aria-label="submenu.label"
+          aria-haspopup="menu"
+          :aria-expanded="activeSubmenu === submenu.id"
+          @pointerenter="openSubmenu(submenu.id, false)"
+          @click="openSubmenu(submenu.id, true)"
+          @keydown.right.prevent="openSubmenu(submenu.id, true)"
+        >
+          <i class="bi" :class="submenu.icon" aria-hidden="true"></i>
+          <span>{{ submenu.label }}</span>
+          <span class="submenu-arrow" aria-hidden="true">›</span>
+        </button>
+      </section>
+      <section v-if="inlineContig">
+        <div class="entity-title">{{ inlineContig.title }}</div>
+        <button
+          v-for="action in entityActions(inlineContig)"
+          :key="action.label"
+          role="menuitem"
+          :disabled="action.disabled"
+          :title="action.title"
+          @click="action.run"
+        >
+          {{ action.label }}
+        </button>
+      </section>
+      <section v-if="entitySubmenus.length">
+        <button
+          v-for="submenu in entitySubmenus"
+          :key="submenu.id"
+          role="menuitem"
+          :data-submenu="submenu.id"
+          :aria-label="submenu.label"
+          :title="submenu.label"
+          aria-haspopup="menu"
+          :aria-expanded="activeSubmenu === submenu.id"
+          @pointerenter="openSubmenu(submenu.id, false)"
+          @click="openSubmenu(submenu.id, true)"
+          @keydown.right.prevent="openSubmenu(submenu.id, true)"
+        >
+          <i class="bi" :class="submenu.icon" aria-hidden="true"></i>
+          <span class="entity-menu-label">{{ submenu.label }}</span>
+          <span v-if="submenu.detail" class="entity-detail" aria-hidden="true">
+            {{ submenu.detail }}
+          </span>
+          <span class="submenu-arrow" aria-hidden="true">›</span>
+        </button>
+      </section>
       <section v-if="debrisTargets.length">
         <button
-          v-for="item in debrisTargets"
-          :key="`${item.kind}-${item.id}`"
+          v-if="debrisTargets.length === 1"
           role="menuitem"
           class="debris-action"
-          @click="execute(item, 'debris')"
+          @click="execute(debrisTargets[0], 'debris')"
         >
-          {{ debrisTargets.length === 1
-            ? "Move to unplaced (debris)…"
-            : `Move ${item.name} to unplaced (debris)…` }}
+          <i class="bi bi-box-arrow-down" aria-hidden="true"></i>
+          Move to unplaced (debris)…
+        </button>
+        <button
+          v-else
+          role="menuitem"
+          class="debris-action"
+          data-submenu="debris"
+          aria-haspopup="menu"
+          :aria-expanded="activeSubmenu === 'debris'"
+          @pointerenter="openSubmenu('debris', false)"
+          @click="openSubmenu('debris', true)"
+          @keydown.right.prevent="openSubmenu('debris', true)"
+        >
+          <i class="bi bi-box-arrow-down" aria-hidden="true"></i>
+          Move to unplaced (debris)…
+          <span class="submenu-arrow" aria-hidden="true">›</span>
         </button>
       </section>
       <section
         v-if="activeSubmenu"
         ref="submenuMenu"
         role="menu"
-        :aria-label="submenus.find(({ id }) => id === activeSubmenu)?.label"
+        :aria-label="activeSubmenuLabel"
         class="child-menu assembly-context-menu"
         :style="submenuPosition"
         @keydown.left.stop.prevent="closeSubmenu"
@@ -122,6 +128,9 @@
             Edit region coordinates…
           </button>
           <button role="menuitem" @click="clearRegion">Clear selection</button>
+          <button v-if="hasEntitySelection" role="menuitem" @click="isolate">
+            Isolate view to selection
+          </button>
         </template>
         <template v-else-if="activeSubmenu === 'copy'">
           <button
@@ -164,7 +173,7 @@
           <hr class="dropdown-divider" />
           <button role="menuitem" @click="exportFasta">FASTA of region…</button>
         </template>
-        <template v-else>
+        <template v-else-if="activeSubmenu === 'analyse'">
           <button role="menuitem" @click="openHistogram">
             Signal histogram…
           </button>
@@ -177,6 +186,40 @@
           <button role="menuitem" @click="openAnalysis('moddotplot')">
             ModDotPlot of region…
           </button>
+        </template>
+        <template v-else-if="activeSubmenu === 'debris'">
+          <button
+            v-for="item in debrisTargets"
+            :key="`${item.kind}-${item.id}`"
+            role="menuitem"
+            class="debris-action"
+            @click="execute(item, 'debris')"
+          >
+            {{ item.title }}
+          </button>
+        </template>
+        <template v-else>
+          <section
+            v-for="item in activeEntities"
+            :key="`${item.kind}-${item.id}`"
+          >
+            <div v-if="activeEntities.length > 1" class="entity-title">
+              {{ item.title }}
+            </div>
+            <button
+              v-for="action in entityActions(item)"
+              :key="action.label"
+              role="menuitem"
+              :disabled="action.disabled"
+              :title="action.title"
+              @click="action.run"
+            >
+              {{ action.label }}
+            </button>
+          </section>
+          <p v-if="activeSubmenu === 'scaffold'" class="scope-note">
+            Structural edits act on the whole scaffold.
+          </p>
         </template>
       </section>
     </div>
@@ -304,6 +347,7 @@ type Item = {
   endBP: number;
   structural?: boolean;
   title: string;
+  detail?: string;
   inContigBp?: number;
 };
 type AxisHit = Omit<Item, "title">;
@@ -326,17 +370,74 @@ const busyMenuItems: ContextMenuItem[] = [
 const busy = computed(
   () => props.mapManager.networkManager.requestManager.history.busy > 0
 );
-const hasScaffold = computed(() =>
-  items.value.some((item) => item.kind === "scaffold")
+const region = computed(() =>
+  items.value.find((item) => item.kind === "selection")
 );
-const hasRegion = computed(() =>
-  items.value.some((item) => item.kind === "selection")
+const contigs = computed(() =>
+  items.value.filter((item) => item.kind === "contig")
+);
+const scaffolds = computed(() =>
+  items.value.filter((item) => item.kind === "scaffold")
+);
+const hasEntitySelection = computed(
+  () =>
+    props.mapManager.viewAndLayersManager.currentViewState.selectedContigIds
+      .length > 0
+);
+const regionScopeActive = computed(() => {
+  if (!items.value.length) return false;
+  const { row, column } = props.mapManager.viewAndLayersManager.getAxisScopes();
+  return [row, column].every(
+    (scope) => scope.kind === "selection" && scope.startBp !== undefined
+  );
+});
+const inlineContig = computed(() =>
+  !region.value &&
+  contigs.value.length === 1 &&
+  !(regionScopeActive.value && hasEntitySelection.value)
+    ? contigs.value[0]
+    : undefined
 );
 function offersStructuralEdits(item: Item): boolean {
+  if (item.kind === "selection") return false;
   return (
-    item.kind !== "selection" &&
-    (item.kind === "scaffold" || !hasScaffold.value)
+    item.kind === "scaffold" ||
+    !scaffolds.value.some(
+      (scaffold) =>
+        scaffold.startBP <= item.startBP && scaffold.endBP >= item.endBP
+    )
   );
+}
+function entityActions(item: Item): ContextMenuItem[] {
+  const actions: ContextMenuItem[] = [
+    { label: `Zoom to ${item.kind}`, run: () => zoomTo(item) },
+    { label: `Isolate view to ${item.kind}`, run: () => isolateEntity(item) },
+    { label: "Rename…", run: () => beginRename(item) },
+  ];
+  if (offersStructuralEdits(item)) {
+    const disabled = item.structural === false;
+    const title = disabled
+      ? "Structural edits are unavailable for this entity."
+      : undefined;
+    actions.push(
+      {
+        label: "Reverse",
+        disabled,
+        title,
+        run: () => execute(item, "reverse"),
+      },
+      { label: "Move…", disabled, title, run: () => move(item) }
+    );
+    if (item.kind === "scaffold")
+      actions.push({
+        label: "Ungroup into singletons",
+        run: () => execute(item, "ungroup"),
+      });
+  }
+  actions.push({ label: "Copy name", run: () => copyName(item) });
+  if (item.kind === "contig")
+    actions.push({ label: "Copy coordinates", run: () => copyPosition(item) });
+  return actions;
 }
 const debrisTargets = computed(() =>
   items.value.filter(
@@ -345,14 +446,69 @@ const debrisTargets = computed(() =>
 );
 const formats = ["PNG", "SVG", "PDF"] as const;
 type ExportAction = typeof formats[number] | "clipboard";
-const submenus = [
+const regionSubmenus = [
   { id: "edit", label: "Edit", icon: "bi-pencil-square" },
   { id: "copy", label: "Copy", icon: "bi-clipboard" },
   { id: "export", label: "Export", icon: "bi-download" },
   { id: "analyse", label: "Analyse", icon: "bi-graph-up" },
 ] as const;
-type Submenu = typeof submenus[number]["id"];
+type Submenu =
+  | typeof regionSubmenus[number]["id"]
+  | "contig"
+  | "scaffold"
+  | "debris";
 const activeSubmenu = ref<Submenu | null>(null);
+const entitySubmenus = computed(() => {
+  const groups = [
+    {
+      id: "contig",
+      label: "Contig",
+      icon: "bi-dash-lg",
+      entities: inlineContig.value ? [] : contigs.value,
+    },
+    {
+      id: "scaffold",
+      label: "Scaffold",
+      icon: "bi-distribute-horizontal",
+      entities: scaffolds.value,
+    },
+  ] as const;
+  return groups
+    .filter(({ entities }) => entities.length)
+    .map((group) => ({
+      ...group,
+      label:
+        group.entities.length === 1
+          ? `${group.label} · ${group.entities[0].name}`
+          : `${group.label}s`,
+      detail:
+        group.entities.length === 1
+          ? entityDetail(group.entities[0])
+          : undefined,
+    }));
+});
+function entityDetail(item: Item) {
+  if (item.kind === "contig") return formatLength(item.endBP - item.startBP);
+  const holder = props.mapManager.contigDimensionHolder;
+  const orderAt = (bp: number) =>
+    holder.contigIdToOrd[holder.getContigLocusByBp(bp).contigId];
+  const count = orderAt(item.endBP - 1) - orderAt(item.startBP) + 1;
+  return Number.isInteger(count) && count > 0
+    ? `${count} ${count === 1 ? "contig" : "contigs"}`
+    : undefined;
+}
+const activeEntitySubmenu = computed(() =>
+  entitySubmenus.value.find(({ id }) => id === activeSubmenu.value)
+);
+const activeEntities = computed(
+  () => activeEntitySubmenu.value?.entities ?? []
+);
+const activeSubmenuLabel = computed(() =>
+  activeSubmenu.value === "debris"
+    ? "Move to unplaced (debris)…"
+    : activeEntitySubmenu.value?.label ??
+      regionSubmenus.find(({ id }) => id === activeSubmenu.value)?.label
+);
 const submenuMenu = ref<HTMLElement>();
 const submenuPosition = ref({ left: "0px", top: "0px" });
 const regionCoordinatesOpen = ref(false);
@@ -419,6 +575,19 @@ function clearRegion() {
 function isolateRegion() {
   items.value = [];
   props.mapManager.viewAndLayersManager.isolateRegion();
+}
+function showWholeMap() {
+  items.value = [];
+  props.mapManager.viewAndLayersManager.setAxisScopes(
+    { kind: "all", label: "All rows" },
+    { kind: "all", label: "All columns" }
+  );
+}
+function isolateEntity(item: Item) {
+  if (item.kind === "selection") return;
+  items.value = [];
+  const scope = { kind: item.kind, id: item.id, label: item.name };
+  props.mapManager.viewAndLayersManager.setAxisScopes(scope, scope);
 }
 function zoomSelection() {
   items.value = [];
@@ -556,7 +725,8 @@ async function open(event: MouseEvent) {
       kind: "selection",
       id: -1,
       name: "active rectangle",
-      title: `Region · ${rows} × ${columns}`,
+      title: "Region",
+      detail: `${rows} × ${columns}`,
       startBP,
       endBP,
       structural: false,
@@ -808,19 +978,59 @@ useModalFocus(modalFocusElement, () => !!renaming.value);
   max-height: calc(100vh - 16px);
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 0.4rem;
+  padding: 6px;
   border: 1px solid var(--hict-ui-border, #cbd5e1);
   background: var(--hict-surface-bg, #fff);
   color: var(--hict-surface-fg, #172033);
-  border-radius: 0.4rem;
+  border-radius: 10px;
   box-shadow: 0 4px 24px #0003;
+  font-size: 13.5px;
+}
+.region-context-menu {
+  width: 300px;
 }
 .child-menu {
-  width: 15rem;
+  width: 230px;
   z-index: 1051;
 }
 .submenu-arrow {
-  float: right;
+  margin-left: auto;
+  color: var(--hict-ui-muted, #667085);
+}
+.region-title {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px 4px;
+  color: var(--hict-ui-muted, #667085);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.region-title span:first-child {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.region-title span:last-child {
+  font-weight: 500;
+}
+.entity-detail {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--hict-ui-muted, #667085);
+}
+.entity-detail + .submenu-arrow {
+  margin-left: 0;
+}
+.entity-menu-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assembly-context-menu > section:not(.child-menu) + section:not(.child-menu) {
+  border-top: 1px solid var(--hict-ui-border, #cbd5e1);
+  margin-top: 0.25rem;
+  padding-top: 0.25rem;
 }
 .entity-title {
   font-weight: 600;
@@ -828,14 +1038,16 @@ useModalFocus(modalFocusElement, () => !!renaming.value);
   padding: 0.4rem;
 }
 .assembly-context-menu button {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   text-align: left;
-  padding: 0.4rem 0.6rem;
+  padding: 7px 10px;
   border: 0;
   color: inherit;
   background: transparent;
-  border-radius: 0.25rem;
+  border-radius: 6px;
 }
 .assembly-context-menu button:hover,
 .assembly-context-menu button:focus-visible {
