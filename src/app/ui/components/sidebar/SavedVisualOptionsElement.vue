@@ -77,6 +77,7 @@
 <script setup lang="ts">
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
+import { applyVisualizationDraft } from "@/app/core/visualization/visualizationDrafts";
 import type { TrackStylePresetBundle } from "@/app/core/tracks/TrackStylePreset";
 import { nextTick, ref } from "vue";
 import {
@@ -94,14 +95,11 @@ import type { VisualizationPresetAction } from "@/app/stores/sessionStore";
 import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
+import { reportFailure } from "@/app/ui/reportFailure";
 
 const visualizationOptionsStore = useVisualizationOptionsStore();
-const { preLogBase, applyCoolerWeights, postLogBase, colormap } = storeToRefs(
-  visualizationOptionsStore
-);
 
 const stylesStore = useStyleStore();
-const { mapBackgroundColor } = storeToRefs(stylesStore);
 const matrixViewStore = useMatrixViewStore();
 const {
   presentationMode,
@@ -170,8 +168,7 @@ async function setOptionsPreset() {
         current.colormap instanceof SimpleLinearGradient
           ? current.colormap
           : null;
-      visualizationOptionsStore.setVisualizationOptions(
-        new VisualizationOptions(
+      const options = new VisualizationOptions(
           current.preLogBase,
           current.postLogBase,
           current.applyCoolerWeights,
@@ -191,16 +188,15 @@ async function setOptionsPreset() {
           current.coolerWeightsNaNPolicy,
           current.coolerWeightsHaveNaNs,
           current.coolerWeightsNaNCount
-        )
       );
       try {
         await props.mapManager.visualizationManager.applyVisualizationSourcePreset(
-          visualizationOptionsStore.asVisualizationOptions(),
+          options,
           activeVisualizationSource.value,
           activeVisualizationTargetId.value
         );
       } catch (error) {
-        useNotificationCenterStore().add("warning", extractErrorMessage(error));
+        reportFailure("Apply visualization preset", error);
       }
       return;
     }
@@ -218,63 +214,43 @@ async function setOptionsPreset() {
           props.visualizationOptions,
           config
         );
+        if (manager.isDisposed) return;
         stylesStore.setMapBackground(props.backgroundColor);
         if (props.trackStyles)
           manager.getLayersManager().applyTrackStylePreset(props.trackStyles);
         restorePresetEditorState(pipeline, manager.networkManager.host);
         manager.reloadTiles();
       } catch (error) {
-        useNotificationCenterStore().add("warning", extractErrorMessage(error));
+        reportFailure("Apply visualization preset", error);
       }
       return;
     }
-    // console.log("Setting preset: ", props.visualizationOptions);
-    visualizationOptionsStore.setVisualizationOptions(
-      props.visualizationOptions
-    );
-    if (
-      props.signalThresholds &&
-      colormap.value instanceof SimpleLinearGradient
-    ) {
-      const lower = props.signalThresholds.lowerSignalBound;
-      const upper = props.signalThresholds.upperSignalBound;
-      if (typeof lower === "number") {
-        const cmap = colormap.value as SimpleLinearGradient;
-        colormap.value = new SimpleLinearGradient(
-          cmap.startColorRGBA,
-          cmap.endColorRGBA,
-          lower,
-          typeof upper === "number" ? upper : cmap.maxSignal,
-          cmap.gamma,
-          cmap.curve
-        );
-      }
-    }
-    stylesStore.setMapBackground(props.backgroundColor);
-    if (props.trackStyles) {
-      props.mapManager
-        .getLayersManager()
-        .applyTrackStylePreset(props.trackStyles);
-    }
+    const manager = props.mapManager;
+    const lower = props.signalThresholds?.lowerSignalBound;
+    const options = typeof lower === "number"
+      ? applyVisualizationDraft(props.visualizationOptions, {
+          minSignal: lower,
+          maxSignal: props.signalThresholds?.upperSignalBound,
+        })
+      : props.visualizationOptions;
     const source =
       activeVisualizationSource.value === "SECONDARY" ||
       presentationMode.value !== "single"
         ? activeVisualizationSource.value
         : undefined;
-    const action = source
-      ? props.mapManager?.visualizationManager.applyVisualizationSourcePreset(
-          visualizationOptionsStore.asVisualizationOptions(),
-          source,
-          activeVisualizationTargetId.value
-        )
-      : props.mapManager
-      ? props.mapManager.visualizationManager.applyVisualizationPreset(
-          visualizationOptionsStore.asVisualizationOptions()
-        )
-      : undefined;
-    action?.catch((error) => {
-      console.error("Failed to apply visualization preset", error);
-    });
+    try {
+      if (source)
+        await manager.visualizationManager.applyVisualizationSourcePreset(
+          options, source, activeVisualizationTargetId.value
+        );
+      else await manager.visualizationManager.applyVisualizationPreset(options);
+      if (manager.isDisposed) return;
+      stylesStore.setMapBackground(props.backgroundColor);
+      if (props.trackStyles)
+        manager.getLayersManager().applyTrackStylePreset(props.trackStyles);
+    } catch (error) {
+      reportFailure("Apply visualization preset", error);
+    }
   }
 }
 

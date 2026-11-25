@@ -41,12 +41,15 @@ export class VisualizationDrafts {
     string,
     Map<keyof VisualizationDraft, { value: unknown; revision: number }>
   >();
+  public checkpoint(): number {
+    return ++this.sequence;
+  }
   public note(
     context: VisualizationContext,
     patch: VisualizationDraft
   ): number {
     const key = visualizationContextKey(context);
-    const revision = ++this.sequence;
+    const revision = this.checkpoint();
     const fields = this.drafts.get(key) ?? new Map();
     for (const [field, value] of Object.entries(patch))
       if (value !== undefined)

@@ -1798,13 +1798,7 @@ class VisualizationManager {
     };
     const snapshot = applyVisualizationDraft(options, {});
     const config = pipeline ? cloneRecord(pipeline) : undefined;
-    const revision = this.drafts.note(
-      context,
-      visualizationOptionsDraft(snapshot)
-    );
-    this.drafts.discardBefore(revision);
-    this.normalizationFits.clear();
-    this.refreshVisualizationDraftState();
+    const revision = this.drafts.checkpoint();
     return this.runVisualizationMutation(context, async () => {
       if (!this.validVisualizationRange(snapshot, context))
         throw new Error("This preset has an invalid color range.");
@@ -1812,17 +1806,19 @@ class VisualizationManager {
         await this.mapManager.networkManager.requestManager.getVisualizationOptions(
           new GetVisualizationOptionsRequest({})
         );
-      if (
-        previous.signalDisplayMode === "OBSERVED" &&
-        snapshot.signalDisplayMode !== "OBSERVED"
-      )
-        this.observedDisplayOptions = previous;
       const result = await this.sendVisualizationOptionsToServer({
         skipAutoThresholdRefresh: true,
         visualizationOptions: snapshot,
         renderPipeline: config,
       });
-      this.acknowledgeVisualizationDraft(context, revision);
+      if (
+        previous.signalDisplayMode === "OBSERVED" &&
+        snapshot.signalDisplayMode !== "OBSERVED"
+      )
+        this.observedDisplayOptions = previous;
+      this.drafts.discardBefore(revision);
+      this.normalizationFits.clear();
+      this.projectVisualizationOptions(result, context);
       await this.mapManager.reloadTilesFromBackend();
       return result;
     });
@@ -1837,9 +1833,7 @@ class VisualizationManager {
     const context = this.captureVisualizationContext(source, targetId ?? null);
     if (source === "PRIMARY") context.mode = options.signalDisplayMode;
     const patch = visualizationOptionsDraft(options);
-    const revision = this.drafts.note(context, patch);
-    this.normalizationFits.delete(visualizationContextKey(context));
-    this.refreshVisualizationDraftState();
+    const revision = this.drafts.checkpoint();
     return this.runVisualizationMutation(context, async () => {
       const fresh = await this.freshVisualizationOptions(context);
       const next = applyVisualizationDraft(
@@ -1850,6 +1844,7 @@ class VisualizationManager {
           : fresh.signalDisplayMode
       );
       const result = await this.applyVisualizationSnapshot(context, next);
+      this.normalizationFits.delete(visualizationContextKey(context));
       this.acknowledgeVisualizationDraft(context, revision);
       return result;
     });
