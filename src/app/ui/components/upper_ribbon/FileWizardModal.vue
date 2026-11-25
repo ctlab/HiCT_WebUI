@@ -30,7 +30,9 @@
       aria-modal="true"
       aria-labelledby="wizard-title"
     >
-      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div
+        class="modal-dialog wizard-dialog modal-dialog-centered modal-dialog-scrollable"
+      >
         <div class="modal-content wizard-content">
           <div class="modal-header">
             <div>
@@ -79,147 +81,143 @@
             <section class="wizard-main" ref="wizardMain">
               <template v-if="currentStep?.id === 'sources'">
                 <div class="wizard-section">
-                  <h6>Contact maps</h6>
-                  <div class="wizard-source-grid">
-                    <div class="wizard-card">
-                      <div class="wizard-card-header">
-                        <strong>Contact map</strong>
+                  <div class="wizard-map-fields">
+                    <div class="wizard-map-field">
+                      <label for="wizard-primary-map" class="form-label mb-0"
+                        >Contact map</label
+                      >
+                      <div class="input-group">
+                        <input
+                          id="wizard-primary-map"
+                          aria-describedby="wizard-primary-map-help"
+                          class="form-control"
+                          type="text"
+                          readonly
+                          :value="
+                            primarySource.filename || matrixSelectorPlaceholder
+                          "
+                        />
+                        <button
+                          class="btn btn-outline-secondary"
+                          @click="openSelector('primary-matrix')"
+                        >
+                          Browse…
+                        </button>
                       </div>
-                      <div class="wizard-card-body">
-                        <label class="form-label">Matrix file</label>
-                        <div class="input-group mb-2">
-                          <input
-                            class="form-control"
-                            type="text"
-                            readonly
-                            aria-label="Contact map"
-                            :value="
-                              primarySource.filename ||
-                              matrixSelectorPlaceholder
-                            "
-                          />
-                          <button
-                            class="btn btn-outline-secondary"
-                            @click="openSelector('primary-matrix')"
-                          >
-                            Browse…
-                          </button>
-                        </div>
+                      <small id="wizard-primary-map-help" class="text-muted">
+                        .hict.hdf5, .mcool, .cool or .hic. Other formats are
+                        converted first.
+                      </small>
+                      <div
+                        v-if="primarySource.resolving"
+                        class="alert alert-light border py-2 mb-0 d-flex align-items-center gap-2"
+                      >
                         <div
-                          v-if="primarySource.resolving"
-                          class="alert alert-light border py-2 mb-0 d-flex align-items-center gap-2"
-                        >
-                          <div
-                            class="spinner-border spinner-border-sm text-primary flex-shrink-0"
-                            role="status"
-                            aria-hidden="true"
-                          ></div>
-                          <div class="text-truncate">
-                            Checking
-                            <strong>{{ primarySource.filename }}</strong>
-                          </div>
+                          class="spinner-border spinner-border-sm text-primary flex-shrink-0"
+                          role="status"
+                          aria-hidden="true"
+                        ></div>
+                        <div class="text-truncate">
+                          Checking
+                          <strong>{{ primarySource.filename }}</strong>
                         </div>
-                        <div
-                          v-else-if="primarySource.resolution"
-                          class="alert alert-light border py-2 mb-0"
+                      </div>
+                      <div
+                        v-else-if="primarySource.resolution"
+                        class="alert alert-light border py-2 mb-0"
+                      >
+                        <small class="d-block">
+                          Action:
+                          <strong>{{
+                            humanizeMatrixAction(
+                              primarySource.resolution.action
+                            )
+                          }}</strong>
+                        </small>
+                        <small class="d-block"
+                          >Resolved target:
+                          {{ primarySource.resolution.resolvedFilename }}</small
                         >
-                          <small class="d-block">
-                            Action:
-                            <strong>{{
-                              humanizeMatrixAction(
-                                primarySource.resolution.action
-                              )
-                            }}</strong>
-                          </small>
-                          <small class="d-block"
-                            >Resolved target:
-                            {{
-                              primarySource.resolution.resolvedFilename
-                            }}</small
-                          >
-                          <small
-                            v-for="warning in primarySource.resolution.warnings"
-                            :key="`primary-warning-${warning}`"
-                            class="d-block text-warning"
-                          >
-                            {{ warning }}
-                          </small>
-                        </div>
+                        <small
+                          v-for="warning in primarySource.resolution.warnings"
+                          :key="`primary-warning-${warning}`"
+                          class="d-block text-warning"
+                        >
+                          {{ warning }}
+                        </small>
                       </div>
                     </div>
 
-                    <div class="wizard-card">
-                      <div class="wizard-card-header">
-                        <strong>Second map (optional)</strong>
+                    <div class="wizard-map-field">
+                      <label for="wizard-secondary-map" class="form-label mb-0"
+                        >Second map (optional)</label
+                      >
+                      <div class="input-group">
+                        <input
+                          id="wizard-secondary-map"
+                          aria-describedby="wizard-secondary-map-help"
+                          class="form-control"
+                          type="text"
+                          readonly
+                          :value="secondarySource.filename || 'None'"
+                        />
+                        <button
+                          class="btn btn-outline-secondary"
+                          @click="openSelector('secondary-matrix')"
+                        >
+                          Browse…
+                        </button>
+                        <button
+                          v-if="secondarySource.filename"
+                          type="button"
+                          class="btn btn-outline-secondary"
+                          @click="clearSecondMap"
+                        >
+                          Clear
+                        </button>
                       </div>
-                      <div class="wizard-card-body">
-                        <label class="form-label">Matrix file</label>
-                        <div class="input-group mb-2">
-                          <input
-                            class="form-control"
-                            type="text"
-                            readonly
-                            :value="
-                              secondarySource.filename ||
-                              matrixSelectorPlaceholder
-                            "
-                          />
-                          <button
-                            class="btn btn-outline-secondary"
-                            @click="openSelector('secondary-matrix')"
-                          >
-                            Browse…
-                          </button>
-                          <button
-                            v-if="secondarySource.filename"
-                            type="button"
-                            class="btn btn-outline-secondary"
-                            @click="clearSecondMap"
-                          >
-                            Clear
-                          </button>
-                        </div>
+                      <small id="wizard-secondary-map-help" class="text-muted">
+                        Shown on the lower triangle by default, for comparison.
+                      </small>
+                      <div
+                        v-if="secondarySource.resolving"
+                        class="alert alert-light border py-2 mb-0 d-flex align-items-center gap-2"
+                      >
                         <div
-                          v-if="secondarySource.resolving"
-                          class="alert alert-light border py-2 mb-0 d-flex align-items-center gap-2"
-                        >
-                          <div
-                            class="spinner-border spinner-border-sm text-primary flex-shrink-0"
-                            role="status"
-                            aria-hidden="true"
-                          ></div>
-                          <div class="text-truncate">
-                            Checking
-                            <strong>{{ secondarySource.filename }}</strong>
-                          </div>
+                          class="spinner-border spinner-border-sm text-primary flex-shrink-0"
+                          role="status"
+                          aria-hidden="true"
+                        ></div>
+                        <div class="text-truncate">
+                          Checking
+                          <strong>{{ secondarySource.filename }}</strong>
                         </div>
-                        <div
-                          v-else-if="secondarySource.resolution"
-                          class="alert alert-light border py-2 mb-0"
+                      </div>
+                      <div
+                        v-else-if="secondarySource.resolution"
+                        class="alert alert-light border py-2 mb-0"
+                      >
+                        <small class="d-block">
+                          Action:
+                          <strong>{{
+                            humanizeMatrixAction(
+                              secondarySource.resolution.action
+                            )
+                          }}</strong>
+                        </small>
+                        <small class="d-block"
+                          >Resolved target:
+                          {{
+                            secondarySource.resolution.resolvedFilename
+                          }}</small
                         >
-                          <small class="d-block">
-                            Action:
-                            <strong>{{
-                              humanizeMatrixAction(
-                                secondarySource.resolution.action
-                              )
-                            }}</strong>
-                          </small>
-                          <small class="d-block"
-                            >Resolved target:
-                            {{
-                              secondarySource.resolution.resolvedFilename
-                            }}</small
-                          >
-                          <small
-                            v-for="warning in secondarySource.resolution
-                              .warnings"
-                            :key="`secondary-warning-${warning}`"
-                            class="d-block text-warning"
-                          >
-                            {{ warning }}
-                          </small>
-                        </div>
+                        <small
+                          v-for="warning in secondarySource.resolution.warnings"
+                          :key="`secondary-warning-${warning}`"
+                          class="d-block text-warning"
+                        >
+                          {{ warning }}
+                        </small>
                       </div>
                     </div>
                   </div>
@@ -1245,6 +1243,9 @@
             </section>
           </div>
           <div class="modal-footer hict-modal-footer">
+            <span class="wizard-step-status me-auto" role="status">
+              Step {{ currentStepIndex + 1 }} of {{ visibleSteps.length }}
+            </span>
             <button
               class="btn btn-outline-secondary"
               :disabled="runState.running"
@@ -1253,8 +1254,9 @@
               {{ runState.completed ? "Close" : "Cancel" }}
             </button>
             <button
+              v-if="currentStepIndex > 0"
               class="btn btn-outline-secondary"
-              :disabled="runState.running || currentStepIndex === 0"
+              :disabled="runState.running"
               @click="goBack"
             >
               Back
@@ -1269,7 +1271,7 @@
             </button>
             <button
               v-else
-              class="btn btn-success"
+              class="btn btn-primary"
               :disabled="runState.running"
               @click="onFinishClicked"
             >
@@ -2993,9 +2995,23 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.wizard-content {
-  /* Use the dialog height, which already excludes both Bootstrap margins. */
-  height: min(720px, 100%);
+.wizard-dialog {
+  --bs-modal-width: 760px;
+}
+
+.wizard-step-status {
+  color: #667085;
+  font-size: 13px;
+}
+
+.wizard-map-fields,
+.wizard-map-field {
+  display: grid;
+  gap: 14px;
+}
+
+.wizard-map-field {
+  gap: 4px;
 }
 
 .wizard-body {
@@ -3138,5 +3154,4 @@ onBeforeUnmount(() => {
   line-height: 1.35;
   white-space: pre-wrap;
 }
-
 </style>
