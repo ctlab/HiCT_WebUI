@@ -27,6 +27,10 @@ export function compactFigureProvenance(
   };
   const primary = source(snapshot.primary);
   if (!primary) throw Error("The figure has no primary source provenance.");
+  const options = snapshot.visualizationOptions as {
+    diagonalMask?: { enabled?: boolean; distanceBp?: number };
+  } | undefined;
+  const mask = options?.diagonalMask;
   return JSON.parse(
     JSON.stringify({
       primary,
@@ -37,6 +41,9 @@ export function compactFigureProvenance(
       tracksVerified: snapshot.tracksVerified,
       renderPipeline: snapshot.renderPipeline,
       visualizationOptions: snapshot.visualizationOptions,
+      ...(mask?.enabled && typeof mask.distanceBp === "number"
+        ? { notes: [`Excluded contacts within ±${mask.distanceBp.toLocaleString("en-US")} bp of the main diagonal.`] }
+        : {}),
       tracks: snapshot.tracks,
     })
   ) as Record<string, unknown>;

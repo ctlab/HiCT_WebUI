@@ -25,6 +25,7 @@ export type VisualizationDraft = {
   endColor?: string;
   gamma?: number;
   curve?: number[] | null;
+  diagonalMask?: VisualizationOptions["diagonalMask"];
 };
 export const visualizationContextKey = (context: VisualizationContext) =>
   JSON.stringify([
@@ -131,7 +132,8 @@ export function applyVisualizationDraft(
     displayMode,
     patch.coolerWeightsNaNPolicy ?? base.coolerWeightsNaNPolicy,
     base.coolerWeightsHaveNaNs,
-    base.coolerWeightsNaNCount
+    base.coolerWeightsNaNCount,
+    patch.diagonalMask ?? base.diagonalMask
   );
 }
 

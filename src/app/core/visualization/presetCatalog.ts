@@ -26,6 +26,7 @@ import type {
   VisualizationPresetAction,
 } from "@/app/stores/sessionStore";
 import VisualizationOptions from "./VisualizationOptions";
+import { validatedDiagonalMask } from "./diagonalMask";
 import {
   parseRenderPipelinePreset,
   type RenderPipelinePreset,
@@ -104,6 +105,7 @@ export const serializeVisualizationOptions = (
       signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
       coolerWeightsNaNPolicy:
         options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
+      diagonalMask: options.diagonalMask,
       colormap: {
         colormapType: cmap.colormapType,
         startColorRGBAString: cmap.startColorRGBA.RGBA,
@@ -126,6 +128,7 @@ export const serializeVisualizationOptions = (
     signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
     coolerWeightsNaNPolicy:
       options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
+    diagonalMask: options.diagonalMask,
     colormap: {
       colormapType: options.colormap?.colormapType ?? "Unknown",
     },
@@ -206,7 +209,10 @@ export const deserializeVisualizationOptions = (
     autoThresholdEnabled,
     autoThresholdQuantile,
     signalDisplayMode,
-    coolerWeightsNaNPolicy
+    coolerWeightsNaNPolicy,
+    false,
+    0,
+    validatedDiagonalMask(raw.diagonalMask)
   );
 };
 

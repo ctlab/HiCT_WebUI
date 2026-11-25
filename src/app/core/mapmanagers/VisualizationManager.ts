@@ -393,7 +393,8 @@ const visualizationOptionsFromTarget = (
       ? "REPLACE_NANS_WITH_ZERO"
       : currentOptions.coolerWeightsNaNPolicy,
     currentOptions.coolerWeightsHaveNaNs,
-    currentOptions.coolerWeightsNaNCount
+    currentOptions.coolerWeightsNaNCount,
+    currentOptions.diagonalMask
   );
 
 const swapPixelBlendLayers = (expression: unknown): boolean => {
@@ -1262,7 +1263,8 @@ class VisualizationManager {
         options.signalDisplayMode,
         options.coolerWeightsNaNPolicy,
         options.coolerWeightsHaveNaNs,
-        options.coolerWeightsNaNCount
+        options.coolerWeightsNaNCount,
+        options.diagonalMask
       )
     );
     return nextUpperBound;
@@ -1411,7 +1413,8 @@ class VisualizationManager {
           current.signalDisplayMode,
           current.coolerWeightsNaNPolicy,
           current.coolerWeightsHaveNaNs,
-          current.coolerWeightsNaNCount
+          current.coolerWeightsNaNCount,
+          current.diagonalMask
         )
       );
       await this.sendVisualizationOptionsToServer({
@@ -1563,7 +1566,8 @@ class VisualizationManager {
         options.signalDisplayMode,
         options.coolerWeightsNaNPolicy,
         options.coolerWeightsHaveNaNs,
-        options.coolerWeightsNaNCount
+        options.coolerWeightsNaNCount,
+        options.diagonalMask
       )
     );
     await this.sendVisualizationOptionsToServer({
@@ -1680,7 +1684,8 @@ class VisualizationManager {
       mode,
       previous.coolerWeightsNaNPolicy,
       previous.coolerWeightsHaveNaNs,
-      previous.coolerWeightsNaNCount
+      previous.coolerWeightsNaNCount,
+      previous.diagonalMask
     );
     try {
       await this.sendVisualizationOptionsToServer({
@@ -1784,6 +1789,22 @@ class VisualizationManager {
       this.captureVisualizationContext(source, targetId ?? null),
       this.visualizationOptionsStore.asVisualizationOptions()
     );
+  }
+
+  public applyDiagonalMask(mask: VisualizationOptions["diagonalMask"]): Promise<void> {
+    const context = this.captureVisualizationContext("PRIMARY", null);
+    return this.runVisualizationMutation(context, async () => {
+      const current = await this.mapManager.networkManager.requestManager.getVisualizationOptions(
+        new GetVisualizationOptionsRequest({})
+      );
+      if (current.diagonalMask.enabled === mask.enabled && current.diagonalMask.distanceBp === mask.distanceBp) return;
+      await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        preserveCustomPipeline: true,
+        visualizationOptions: applyVisualizationDraft(current, { diagonalMask: mask }),
+      });
+      await this.mapManager.reloadTilesFromBackend();
+    });
   }
 
   public applyVisualizationPreset(

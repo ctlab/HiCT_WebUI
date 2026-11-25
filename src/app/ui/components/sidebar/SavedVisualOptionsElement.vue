@@ -187,7 +187,8 @@ async function setOptionsPreset() {
           current.signalDisplayMode,
           current.coolerWeightsNaNPolicy,
           current.coolerWeightsHaveNaNs,
-          current.coolerWeightsNaNCount
+          current.coolerWeightsNaNCount,
+          current.diagonalMask
       );
       try {
         await props.mapManager.visualizationManager.applyVisualizationSourcePreset(

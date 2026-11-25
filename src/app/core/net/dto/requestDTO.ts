@@ -572,6 +572,7 @@ class SetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<SetVisualizati
       ),
       signalDisplayMode: options.signalDisplayMode,
       coolerWeightsNaNPolicy: options.coolerWeightsNaNPolicy,
+      diagonalMask: options.diagonalMask,
       preserveRenderPipeline:
         this.entity.options.preserveRenderPipeline ?? false,
       renderPipeline: this.entity.options.renderPipeline,

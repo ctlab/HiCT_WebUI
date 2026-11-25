@@ -228,6 +228,7 @@ export async function querySignalHistogram(
       startColPx,
       endRowPx,
       endColPx,
+      respectDiagonalMask: domain === "matrix",
     });
     if (options.signal?.aborted || manager.isDisposed)
       throw new DOMException("Cancelled", "AbortError");

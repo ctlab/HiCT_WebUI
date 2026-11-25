@@ -33,6 +33,7 @@ import type {
 } from "../../domain/ScaffoldDescriptor";
 import Colormap from "../../visualization/colormap/Colormap";
 import SimpleLinearGradient from "../../visualization/colormap/SimpleLinearGradient";
+import { validatedDiagonalMask } from "../../visualization/diagonalMask";
 import VisualizationOptions, {
   type CoolerWeightsNaNPolicy,
 } from "../../visualization/VisualizationOptions";
@@ -411,6 +412,7 @@ class VisualizationOptionsDTO extends InboundDTO<VisualizationOptions> {
       coolerWeightsNaNPolicy: e.coolerWeightsNaNPolicy,
       coolerWeightsHaveNaNs: e.coolerWeightsHaveNaNs,
       coolerWeightsNaNCount: e.coolerWeightsNaNCount,
+      diagonalMask: e.diagonalMask,
       colormap: ColormapDTO.fromEntity(e.colormap),
     });
   }
@@ -450,7 +452,8 @@ class VisualizationOptionsDTO extends InboundDTO<VisualizationOptions> {
         : "OBSERVED",
       coolerWeightsNaNPolicy,
       Boolean(this.json["coolerWeightsHaveNaNs"] ?? false),
-      coolerWeightsNaNCount
+      coolerWeightsNaNCount,
+      validatedDiagonalMask(this.json["diagonalMask"])
     );
   }
 }

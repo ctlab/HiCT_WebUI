@@ -468,6 +468,7 @@ import {
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 import { useRemoteBlastResultsStore } from "@/app/stores/remoteBlastResultsStore";
 import { GetVisualizationOptionsRequest } from "@/app/core/net/api/request";
+import { validatedDiagonalMask } from "@/app/core/visualization/diagonalMask";
 import {
   dismissTopmostEscDialog,
   hasAnyOpenEscDialog,
@@ -1455,7 +1456,11 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
         finalCmap,
         autoThresholdEnabled,
         autoThresholdQuantile,
-        signalDisplayMode
+        signalDisplayMode,
+        undefined,
+        undefined,
+        undefined,
+        validatedDiagonalMask(opt["diagonalMask"])
       )
     );
   visualizationOptionsStore.setVisualizationOptions(openingOptions);
@@ -2073,7 +2078,8 @@ async function onOpenSession(file: File): Promise<void> {
           signalDisplayMode,
           coolerWeightsNaNPolicy,
           coolerWeightsHaveNaNs,
-          coolerWeightsNaNCount
+          coolerWeightsNaNCount,
+          validatedDiagonalMask(visRaw["diagonalMask"])
         )
       );
     }

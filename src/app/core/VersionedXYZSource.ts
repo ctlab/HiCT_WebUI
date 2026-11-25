@@ -292,6 +292,7 @@ class VersionedXYZContactMapSource extends XYZ {
       signalMode: "PIPELINE_SIGNAL",
       format: "BINARY_FLOAT32",
       includeTileStatistics: true,
+      respectDiagonalMask: true,
     };
     const xhr = new XMLHttpRequest();
     const requestEpoch = this.tileRequestEpoch;
@@ -469,6 +470,7 @@ class VersionedXYZContactMapSource extends XYZ {
     const signalRange = Math.max(1e-9, maxSignal - minSignal);
     const pixelCount = Math.min(values.length, rows * cols);
     for (let idx = 0; idx < pixelCount; idx += 1) {
+      if (visualizationOptionsStore.diagonalMask.enabled && !Number.isFinite(values[idx])) continue;
       const signal = Number.isFinite(values[idx]) ? values[idx] : 0;
       const normalized = Math.max(
         0,

@@ -86,7 +86,9 @@
       </button>
     </div>
     <div class="histogram-caption">
-      <span role="status" :title="description">{{ status }}</span>
+      <span role="status" :title="description">
+        {{ status }}<template v-if="diagonalMask?.enabled"> · Ignoring ±{{ formatLength(diagonalMask.distanceBp) }} near diagonal</template>
+      </span>
       <div
         v-if="result"
         class="histogram-range text-muted"
@@ -108,7 +110,8 @@
   </div>
 </template>
 <script setup lang="ts">
-import { formatSignalCompact } from "@/app/core/format/formatSignal";
+import { formatLength, formatSignalCompact } from "@/app/core/format/formatSignal";
+import type { DiagonalMask } from "@/app/core/visualization/diagonalMask";
 import {
   computed,
   onBeforeUnmount,
@@ -134,6 +137,7 @@ const props = defineProps<{
   transfer?: string;
   controlPoints?: { x: number; y: number }[];
   curveEndpoints?: Readonly<Record<Endpoint, number>>;
+  diagonalMask?: Readonly<DiagonalMask>;
   manager?: ContactMapManager;
   source: "PRIMARY" | "SECONDARY";
   expression?: Record<string, unknown>;

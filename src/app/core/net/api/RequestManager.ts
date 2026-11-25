@@ -2059,6 +2059,7 @@ class RequestManager {
       | "PIPELINE_SIGNAL";
     expression?: Record<string, unknown>;
     signal?: AbortSignal;
+    respectDiagonalMask?: boolean;
   }): Promise<{
     rows: number;
     cols: number;
@@ -2087,6 +2088,7 @@ class RequestManager {
         signalMode: options.signalMode ?? "TRADITIONAL_NORMALIZED",
         format: "BINARY_FLOAT32",
         expression: options.expression,
+        ...(options.respectDiagonalMask ? { respectDiagonalMask: true } : {}),
       },
       {
         responseType: "arraybuffer",

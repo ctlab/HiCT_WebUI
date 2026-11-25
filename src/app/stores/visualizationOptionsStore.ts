@@ -26,6 +26,10 @@ import VisualizationOptions, {
   type CoolerWeightsNaNPolicy,
 } from "../core/visualization/VisualizationOptions";
 import Colormap from "../core/visualization/colormap/Colormap";
+import {
+  DEFAULT_DIAGONAL_MASK,
+  type DiagonalMask,
+} from "../core/visualization/diagonalMask";
 import { ColorTranslator } from "colortranslator";
 
 export const useVisualizationOptionsStore = defineStore(
@@ -47,6 +51,7 @@ export const useVisualizationOptionsStore = defineStore(
     const signalEditable = ref(true);
     const coolerWeightsHaveNaNs = ref(false);
     const coolerWeightsNaNCount = ref(0);
+    const diagonalMask = ref<Readonly<DiagonalMask>>(DEFAULT_DIAGONAL_MASK);
     const pendingVisualizationMutations = ref(0);
     const visualizationDraftState = ref<"scheduled" | "unapplied" | null>(null);
     const colormap: Ref<Colormap> = ref(
@@ -71,7 +76,8 @@ export const useVisualizationOptionsStore = defineStore(
         signalDisplayMode.value,
         coolerWeightsNaNPolicy.value,
         coolerWeightsHaveNaNs.value,
-        coolerWeightsNaNCount.value
+        coolerWeightsNaNCount.value,
+        diagonalMask.value
       );
     }
 
@@ -88,6 +94,7 @@ export const useVisualizationOptionsStore = defineStore(
         options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE";
       coolerWeightsHaveNaNs.value = options.coolerWeightsHaveNaNs ?? false;
       coolerWeightsNaNCount.value = options.coolerWeightsNaNCount ?? 0;
+      diagonalMask.value = options.diagonalMask ?? DEFAULT_DIAGONAL_MASK;
       colormap.value = options.colormap;
     }
 
@@ -103,6 +110,7 @@ export const useVisualizationOptionsStore = defineStore(
       coolerWeightsNaNPolicy,
       coolerWeightsHaveNaNs,
       coolerWeightsNaNCount,
+      diagonalMask,
       pendingVisualizationMutations,
       visualizationDraftState,
       signalEditable,

@@ -106,6 +106,7 @@ import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { Ref, ref, shallowRef, triggerRef, onMounted, watch } from "vue";
 import SavedVisualOptionsElement from "./SavedVisualOptionsElement.vue";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
+import { validatedDiagonalMask } from "@/app/core/visualization/diagonalMask";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import Colormap from "@/app/core/visualization/colormap/Colormap";
 import type { TrackStylePresetBundle } from "@/app/core/tracks/TrackStylePreset";
@@ -536,6 +537,7 @@ function serializeVisualizationOptions(
       signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
       coolerWeightsNaNPolicy:
         options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
+      diagonalMask: options.diagonalMask,
       colormap: {
         colormapType: cmap.colormapType,
         startColorRGBAString: cmap.startColorRGBA.RGBA,
@@ -558,6 +560,7 @@ function serializeVisualizationOptions(
     signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
     coolerWeightsNaNPolicy:
       options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
+    diagonalMask: options.diagonalMask,
     colormap: {
       colormapType: options.colormap?.colormapType ?? "Unknown",
     },
@@ -649,7 +652,10 @@ function deserializeVisualizationOptions(
     raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ZERO" ||
     raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ONE"
       ? raw.coolerWeightsNaNPolicy
-      : "REPLACE_NANS_WITH_ONE"
+      : "REPLACE_NANS_WITH_ONE",
+    false,
+    0,
+    validatedDiagonalMask(raw.diagonalMask)
   );
 }
 

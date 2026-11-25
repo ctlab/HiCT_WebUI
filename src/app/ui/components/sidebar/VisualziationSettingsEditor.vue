@@ -130,6 +130,7 @@
             "
             :oe="observedExpectedPalette"
             :context="histogramContext"
+            :diagonal-mask="diagonalMask"
             :min="sliderPositionMin"
             :max="sliderPositionMax"
             :lower="lowerSliderValue"
@@ -227,6 +228,39 @@
           </p>
         </template>
         <template #advanced-top>
+          <div class="diagonal-mask">
+            <label class="diagonal-toggle">
+              <input
+                type="checkbox"
+                :checked="pendingDiagonalMask?.enabled ?? diagonalMask.enabled"
+                :disabled="!mapManager || !!pendingDiagonalMask"
+                aria-describedby="diagonal-mask-help"
+                @change="toggleDiagonalMask(($event.target as HTMLInputElement).checked)"
+              />
+              Ignore values near the diagonal
+            </label>
+            <label class="diagonal-distance">
+              Distance ±
+              <input
+                :value="diagonalDistance"
+                :disabled="!diagonalMask.enabled || !!pendingDiagonalMask"
+                :aria-invalid="!!diagonalError || undefined"
+                :aria-describedby="diagonalError ? 'diagonal-mask-error' : 'diagonal-mask-help'"
+                aria-label="Diagonal mask distance"
+                type="text"
+                @input="diagonalDistance = ($event.target as HTMLInputElement).value"
+                @change="commitDiagonalDistance()"
+              />
+              bp
+            </label>
+            <p v-if="diagonalError" id="diagonal-mask-error" class="small text-danger mb-0" role="alert">
+              {{ diagonalError }}
+            </p>
+            <p id="diagonal-mask-help" class="range-help mb-0">
+              Hides contacts within this distance of the main diagonal and
+              leaves them out of the histogram, Fit levels and the automatic range.
+            </p>
+          </div>
           <div class="range-details">
             <div class="range-option">
               <span>Slider limits</span>
@@ -425,6 +459,7 @@ import {
   MAX_CURVE_POINTS,
 } from "@/app/core/visualization/colorMidpoint";
 import { ColorTranslator } from "colortranslator";
+import { parseDistanceBp, type DiagonalMask } from "@/app/core/visualization/diagonalMask";
 import type { CurrentSignalRangeResponse } from "@/app/core/net/api/response";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 import { robustUpperLimit } from "@/app/core/visualization/tileSignalRange";
@@ -441,7 +476,41 @@ const {
   coolerWeightsNaNPolicy,
   coolerWeightsHaveNaNs,
   coolerWeightsNaNCount,
+  diagonalMask,
 } = storeToRefs(visualizationOptionsStore);
+const diagonalDistance = ref("");
+const diagonalError = ref("");
+const pendingDiagonalMask = ref<DiagonalMask>();
+watch(diagonalMask, ({ distanceBp }) => {
+  diagonalDistance.value = distanceBp.toLocaleString("en-US");
+  diagonalError.value = "";
+}, { immediate: true });
+
+async function updateDiagonalMask(mask: DiagonalMask) {
+  const manager = props.mapManager?.visualizationManager;
+  if (!manager || pendingDiagonalMask.value) return;
+  pendingDiagonalMask.value = mask;
+  diagonalError.value = "";
+  try {
+    await manager.applyDiagonalMask(mask);
+  } catch (error) {
+    diagonalError.value = error instanceof Error ? error.message : "Could not update the diagonal mask.";
+  } finally {
+    pendingDiagonalMask.value = undefined;
+  }
+}
+function toggleDiagonalMask(enabled: boolean) {
+  void updateDiagonalMask({ enabled, distanceBp: diagonalMask.value.distanceBp });
+}
+function commitDiagonalDistance() {
+  const bp = parseDistanceBp(diagonalDistance.value);
+  if (bp === undefined) {
+    diagonalError.value = "Enter a distance from 1 bp to 1,000 Mb.";
+    return;
+  }
+  diagonalDistance.value = bp.toLocaleString("en-US");
+  void updateDiagonalMask({ enabled: true, distanceBp: bp });
+}
 const matrixViewStore = useMatrixViewStore();
 const {
   presentationMode,
@@ -1522,6 +1591,24 @@ function finiteOr(value: number, fallback: number): number {
   justify-content: space-between;
   gap: 4px 8px;
   font-size: 0.8rem;
+}
+.diagonal-mask {
+  display: grid;
+  gap: 6px;
+  padding-block: 6px;
+  font-size: 0.8rem;
+}
+.diagonal-toggle,
+.diagonal-distance {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.diagonal-distance input {
+  width: min(8rem, 42%);
+  padding: 3px 6px;
+  border: 1px solid var(--hict-surface-border, #cbd5e1);
+  border-radius: 4px;
 }
 .slider-spacing {
   display: flex;

@@ -20,6 +20,7 @@
  */
 
 import Colormap from "./colormap/Colormap";
+import { DEFAULT_DIAGONAL_MASK, type DiagonalMask } from "./diagonalMask";
 
 export type SignalDisplayMode =
   | "OBSERVED"
@@ -44,6 +45,7 @@ export default class VisualizationOptions {
     public readonly signalDisplayMode: SignalDisplayMode = "OBSERVED",
     public readonly coolerWeightsNaNPolicy: CoolerWeightsNaNPolicy = "REPLACE_NANS_WITH_ONE",
     public readonly coolerWeightsHaveNaNs: boolean = false,
-    public readonly coolerWeightsNaNCount: number = 0
+    public readonly coolerWeightsNaNCount: number = 0,
+    public readonly diagonalMask: Readonly<DiagonalMask> = DEFAULT_DIAGONAL_MASK
   ) {}
 }
