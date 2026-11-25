@@ -81,25 +81,37 @@
             <p v-if="resolutionError" class="small text-danger" role="alert">
               {{ resolutionError }}
             </p>
-            <div v-if="cost" class="small mb-2" role="status">
-              <div :title="`${cost.estimatedBytes.toLocaleString()} bytes`">
-                Estimated storage · {{ formatBytes(cost.estimatedBytes) }}
+            <div
+              v-if="cost"
+              class="analysis-estimate mb-2"
+              :class="{ 'analysis-estimate-warning': cost.limitingLevel }"
+            >
+              <div role="status">
+                <i
+                  v-if="cost.limitingLevel"
+                  class="bi bi-exclamation-triangle"
+                  aria-hidden="true"
+                ></i>
+                <span :title="`${cost.estimatedBytes.toLocaleString()} bytes`">
+                  Estimated storage · {{ formatBytes(cost.estimatedBytes) }}
+                </span>
+                <span v-if="cost.limitingLevel">
+                  · Budget exceeded at
+                  {{ cost.limitingLevel.toLocaleString() }} bp.
+                </span>
               </div>
-              <div v-if="cost.limitingLevel">
-                Budget exceeded at {{ cost.limitingLevel }} bp.
-              </div>
+              <button
+                v-if="cost.limitingLevel && resolutions.length > 1"
+                type="button"
+                class="btn btn-link analysis-estimate-action"
+                @click="useSizesThatFit"
+              >
+                Use sizes that fit
+              </button>
             </div>
             <p v-if="costError" class="text-danger small" role="alert">
               {{ costError }}
             </p>
-            <button
-              v-if="cost?.limitingLevel && resolutions.length > 1"
-              type="button"
-              class="btn btn-sm btn-outline-secondary"
-              @click="useSizesThatFit"
-            >
-              Use sizes that fit
-            </button>
             <button
               v-if="
                 (cost?.limitingLevel || costError) &&
@@ -1062,6 +1074,32 @@ useModalFocus(modalFocusElement);
 .analysis-modal .modal-body {
   max-height: 77vh;
   overflow-y: auto;
+}
+.analysis-estimate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 8px 12px;
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  background: #f9fafb;
+  font-size: 13px;
+}
+.analysis-estimate-warning {
+  border-color: #fedf89;
+  background: var(--hict-warning-soft);
+}
+.analysis-estimate-warning .bi {
+  margin-inline-end: 4px;
+  color: var(--hict-warning);
+}
+.analysis-estimate-action {
+  margin-inline-start: auto;
+  padding: 0;
+  font-size: inherit;
+  font-weight: 600;
 }
 .resolution-options {
   display: flex;
