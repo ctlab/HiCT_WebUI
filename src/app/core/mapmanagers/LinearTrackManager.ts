@@ -40,6 +40,18 @@ import type {
   TracksPrecomputeStatusResponse,
 } from "@/app/core/net/api/response";
 import { sequenceLetterMinimumPixels } from "../visualization/sequenceLetterMetrics";
+import {
+  DEFAULT_STRAND_COLORS,
+  drawChevrons,
+  drawClippedEdge,
+  featureChevrons,
+  featureGeometry,
+  parseBedRgb,
+  strandFill,
+  type ScreenBlock,
+  type Strand,
+  type StrandColors,
+} from "../visualization/strandArrows";
 import { packIntervalsIntoLanes } from "./featurePacking";
 import {
   projectSequenceTrackBins,
@@ -1406,6 +1418,15 @@ class LinearTrackManager {
       this.mapManager.getLayersManager().currentViewState.resolutionDesciptor;
     const bpResolution = viewport.bpResolution;
     const laneBackgroundColor = this.resolveTrackBackgroundColor();
+    const style = getComputedStyle(document.documentElement);
+    const strandColors = {
+      "+":
+        style.getPropertyValue("--hict-strand-plus").trim() ||
+        DEFAULT_STRAND_COLORS["+"],
+      "-":
+        style.getPropertyValue("--hict-strand-minus").trim() ||
+        DEFAULT_STRAND_COLORS["-"],
+    };
     const laneSize =
       orientation === "horizontal"
         ? canvas.height / tracks.length
@@ -1474,6 +1495,8 @@ class LinearTrackManager {
         ctx.rect(0, laneInnerStart, canvas.width, crossSpan);
       else ctx.rect(laneInnerStart, 0, crossSpan, canvas.height);
       ctx.clip();
+      const defaultTrackColor = track.color ?? "#4e79a7";
+      let usesStrandColors = false;
       for (
         let row = renderStyle === "SIGNAL" ? -1 : firstRow;
         row < (renderStyle === "SIGNAL" ? 0 : lastRow);
@@ -1496,18 +1519,6 @@ class LinearTrackManager {
         for (let i = low; i < binsToRender.length; i++) {
           const bin = binsToRender[i];
           if (row >= 0 && (bin.startPx ?? -Infinity) >= viewport.endPx) break;
-          const itemRgb =
-            renderStyle === "FEATURE"
-              ? this.bedRgbToCss(bin.attributes?.itemRgb)
-              : undefined;
-          const strandColor = bin.featureType?.startsWith("BED")
-            ? bin.strand === "+"
-              ? "#196ca6"
-              : bin.strand === "-"
-              ? "#b54518"
-              : undefined
-            : undefined;
-          ctx.fillStyle = itemRgb ?? strandColor ?? track.color ?? "#4e79a7";
           const interval = this.resolveBinIntervalPx(bin, bpResolution);
           if (
             !interval.visible ||
@@ -1518,6 +1529,26 @@ class LinearTrackManager {
           }
           const startPx = interval.startPx;
           const endPx = interval.endPx;
+          const strand =
+            bin.strand === "+" || bin.strand === "-" ? bin.strand : undefined;
+          const fileColor =
+            renderStyle === "FEATURE"
+              ? parseBedRgb(bin.attributes?.itemRgb) ??
+                parseBedRgb(bin.attributes?.trackRgb)
+              : undefined;
+          ctx.fillStyle =
+            renderStyle === "FEATURE"
+              ? fileColor ??
+                strandFill(
+                  strand,
+                  undefined,
+                  undefined,
+                  defaultTrackColor,
+                  strandColors
+                )
+              : defaultTrackColor;
+          usesStrandColors ||=
+            renderStyle === "FEATURE" && !!strand && !fileColor;
 
           const isSelectedFeature =
             renderStyle === "FEATURE" &&
@@ -1554,16 +1585,20 @@ class LinearTrackManager {
                   crossStart: Math.max(laneInnerStart, packedStart),
                   crossEnd: Math.min(laneInnerEnd, packedEnd),
                 });
-              this.drawHorizontalFeatureBin(
+              this.drawFeatureBin(
                 ctx,
+                orientation,
                 bin,
                 viewport,
-                packedStart + 6,
+                packedStart,
                 packedEnd,
-                canvas.width,
+                strand,
+                x0ByPx,
+                x1ByPx,
                 x0,
                 x1,
-                isSelectedFeature
+                isSelectedFeature,
+                laneBackgroundColor
               );
             }
           } else {
@@ -1595,16 +1630,20 @@ class LinearTrackManager {
                   crossStart: Math.max(laneInnerStart, packedStart),
                   crossEnd: Math.min(laneInnerEnd, packedEnd),
                 });
-              this.drawVerticalFeatureBin(
+              this.drawFeatureBin(
                 ctx,
+                orientation,
                 bin,
                 viewport,
-                packedStart + 6,
+                packedStart,
                 packedEnd,
-                canvas.height,
+                strand,
+                y0ByPx,
+                y1ByPx,
                 y0,
                 y1,
-                isSelectedFeature
+                isSelectedFeature,
+                laneBackgroundColor
               );
             }
           }
@@ -1655,13 +1694,15 @@ class LinearTrackManager {
       // their inset, including after rotation on the vertical axis.
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
+      const trackTitle = (track.analysisWarning ? "⚠ " : "") + track.name;
       if (orientation === "horizontal") {
-        this.drawOutlinedText(
+        this.drawTrackTitle(
           ctx,
-          (track.analysisWarning ? "⚠ " : "") + track.name,
+          trackTitle,
           labelLeft + 6,
           laneStart + 4,
-          textPalette
+          textPalette,
+          usesStrandColors ? strandColors : undefined
         );
         if (track.error) {
           ctx.fillStyle = textPalette.error;
@@ -1702,12 +1743,13 @@ class LinearTrackManager {
         ctx.save();
         ctx.translate(laneStart + 10, labelBottom - 4);
         ctx.rotate(-Math.PI / 2);
-        this.drawOutlinedText(
+        this.drawTrackTitle(
           ctx,
-          (track.analysisWarning ? "⚠ " : "") + track.name,
+          trackTitle,
           0,
           0,
-          textPalette
+          textPalette,
+          usesStrandColors ? strandColors : undefined
         );
         ctx.restore();
         if (track.error) {
@@ -1858,286 +1900,145 @@ class LinearTrackManager {
     }
   }
 
-  private drawHorizontalFeatureBin(
+  private drawFeatureBin(
     ctx: CanvasRenderingContext2D,
+    orientation: Orientation,
     bin: TrackBinResponse,
     viewport: ViewportGeometry,
     laneInnerStart: number,
     laneInnerEnd: number,
-    canvasWidth: number,
+    strand: Strand,
+    rawStart: number,
+    rawEnd: number,
     x0: number,
     x1: number,
-    isSelectedFeature: boolean
+    isSelectedFeature: boolean,
+    background: string
   ): void {
-    const laneCenter = (laneInnerStart + laneInnerEnd) / 2;
-    const laneHeight = Math.max(1, laneInnerEnd - laneInnerStart);
     if (this.isFeatureDensityBin(bin)) {
-      this.drawHorizontalFeatureDensityBin(
-        ctx,
-        laneInnerStart,
-        laneInnerEnd,
-        x0,
-        x1,
-        bin.count
-      );
-      return;
-    }
-    const connectorHeight = Math.max(1, Math.round(laneHeight * 0.12));
-    const exonHeight = Math.max(2, Math.round(laneHeight * 0.34));
-    const codingHeight = Math.max(exonHeight + 1, Math.round(laneHeight * 0.5));
-    const connectorY = Math.floor(laneCenter - connectorHeight / 2);
-    const exonY = Math.floor(laneCenter - exonHeight / 2);
-    const codingY = Math.floor(laneCenter - codingHeight / 2);
-    const projectedBlocks = this.resolveFeatureBlocksIntervals(
-      bin,
-      viewport.bpResolution
-    )
-      .filter(
-        (block) =>
-          block.visible &&
-          block.endPx > viewport.startPx &&
-          block.startPx < viewport.endPx
-      )
-      .map((block) => ({
-        coding: block.coding,
-        x0: Math.max(
+      if (orientation === "horizontal")
+        this.drawHorizontalFeatureDensityBin(
+          ctx,
+          laneInnerStart,
+          laneInnerEnd,
           x0,
-          Math.min(
-            canvasWidth - 1,
-            Math.floor(viewport.pxToScreen(block.startPx))
-          )
-        ),
-        x1: Math.max(
-          x0 + 1,
-          Math.min(canvasWidth, Math.ceil(viewport.pxToScreen(block.endPx)))
-        ),
-      }))
-      .filter((block) => block.x1 > block.x0);
-    if (bin.blocks?.length) {
-      ctx.fillRect(x0, connectorY, Math.max(1, x1 - x0), connectorHeight);
-      for (const block of projectedBlocks) {
-        const blockY = block.coding ? codingY : exonY;
-        const blockHeight = block.coding ? codingHeight : exonHeight;
-        ctx.fillRect(
-          block.x0,
-          blockY,
-          Math.max(1, block.x1 - block.x0),
-          blockHeight
+          x1,
+          bin.count
         );
-      }
-    } else {
-      const thinHeight = Math.max(1, Math.round(laneHeight * 0.16));
-      const thickHeight = Math.max(
-        thinHeight + 1,
-        Math.round(laneHeight * 0.48)
-      );
-      const thinY = Math.floor(laneCenter - thinHeight / 2);
-      const thickY = Math.floor(laneCenter - thickHeight / 2);
-      ctx.fillRect(x0, thinY, x1 - x0, thinHeight);
-      const hasThickPx =
-        typeof bin.thickStartPx === "number" &&
-        Number.isFinite(bin.thickStartPx) &&
-        typeof bin.thickEndPx === "number" &&
-        Number.isFinite(bin.thickEndPx);
-      let thickX0 = x0;
-      let thickX1 = x1;
-      if (hasThickPx) {
-        const thickStartPx = Math.max(
-          0,
-          Math.min(bin.thickStartPx ?? 0, bin.thickEndPx ?? 0)
+      else
+        this.drawVerticalFeatureDensityBin(
+          ctx,
+          laneInnerStart,
+          laneInnerEnd,
+          x0,
+          x1,
+          bin.count
         );
-        const thickEndPx = Math.max(
-          thickStartPx,
-          Math.max(
-            bin.thickStartPx ?? thickStartPx,
-            bin.thickEndPx ?? thickStartPx
-          )
-        );
-        const thickX0ByPx = Math.floor(viewport.pxToScreen(thickStartPx));
-        const thickX1ByPx = Math.max(
-          thickX0ByPx + 1,
-          Math.ceil(viewport.pxToScreen(thickEndPx))
-        );
-        thickX0 = Math.max(x0, Math.min(canvasWidth - 1, thickX0ByPx));
-        thickX1 = Math.max(thickX0 + 1, Math.min(x1, thickX1ByPx));
-      }
-      ctx.fillRect(
-        thickX0,
-        thickY,
-        Math.max(1, thickX1 - thickX0),
-        thickHeight
-      );
-    }
-    this.drawFeatureDirectionArrowsHorizontal(
-      ctx,
-      bin.strand,
-      x0,
-      x1,
-      laneCenter
-    );
-    this.drawFeatureTerminalTriangleHorizontal(
-      ctx,
-      bin.strand,
-      x0,
-      x1,
-      laneCenter,
-      laneInnerStart,
-      laneInnerEnd
-    );
-    if (isSelectedFeature) {
-      ctx.save();
-      ctx.strokeStyle = "rgba(255, 218, 66, 0.98)";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(
-        x0 + 0.5,
-        laneInnerStart + 0.5,
-        Math.max(1, x1 - x0 - 1),
-        Math.max(1, laneInnerEnd - laneInnerStart - 1)
-      );
-      ctx.restore();
-    }
-    if (bin.attributes?.disruptedMatch === "true") {
-      ctx.save();
-      ctx.strokeStyle = "rgba(245, 124, 0, 0.98)";
-      ctx.lineWidth = 2;
-      ctx.setLineDash([3, 2]);
-      ctx.strokeRect(
-        x0 + 0.5,
-        laneInnerStart + 0.5,
-        Math.max(1, x1 - x0 - 1),
-        Math.max(1, laneInnerEnd - laneInnerStart - 1)
-      );
-      ctx.restore();
-    }
-  }
-
-  private drawVerticalFeatureBin(
-    ctx: CanvasRenderingContext2D,
-    bin: TrackBinResponse,
-    viewport: ViewportGeometry,
-    laneInnerStart: number,
-    laneInnerEnd: number,
-    canvasHeight: number,
-    y0: number,
-    y1: number,
-    isSelectedFeature: boolean
-  ): void {
-    const laneCenter = (laneInnerStart + laneInnerEnd) / 2;
-    const laneWidth = Math.max(1, laneInnerEnd - laneInnerStart);
-    if (this.isFeatureDensityBin(bin)) {
-      this.drawVerticalFeatureDensityBin(
-        ctx,
-        laneInnerStart,
-        laneInnerEnd,
-        y0,
-        y1,
-        bin.count
-      );
       return;
     }
-    const connectorWidth = Math.max(1, Math.round(laneWidth * 0.12));
-    const exonWidth = Math.max(2, Math.round(laneWidth * 0.34));
-    const codingWidth = Math.max(exonWidth + 1, Math.round(laneWidth * 0.5));
-    const connectorX = Math.floor(laneCenter - connectorWidth / 2);
-    const exonX = Math.floor(laneCenter - exonWidth / 2);
-    const codingX = Math.floor(laneCenter - codingWidth / 2);
-    const projectedBlocks = this.resolveFeatureBlocksIntervals(
+
+    const laneCenter = (laneInnerStart + laneInnerEnd) / 2;
+    const { coding, utr, intron, chevronHalf } = featureGeometry(
+      laneInnerEnd - laneInnerStart
+    );
+    const connectorY = Math.floor(laneCenter);
+    const fill = String(ctx.fillStyle);
+    ctx.save();
+    // Draw both orientations in increasing genomic coordinates.
+    if (orientation === "vertical") ctx.transform(0, 1, 1, 0, 0, 0);
+
+    const drawBlock = (start: number, end: number, height: number) => {
+      const left = Math.max(x0, start);
+      const right = Math.min(x1, end);
+      if (right > left)
+        ctx.fillRect(
+          left,
+          Math.floor(laneCenter - height / 2),
+          right - left,
+          height
+        );
+    };
+    const projected = this.resolveFeatureBlocksIntervals(
       bin,
       viewport.bpResolution
     )
-      .filter(
-        (block) =>
-          block.visible &&
-          block.endPx > viewport.startPx &&
-          block.startPx < viewport.endPx
-      )
+      .filter((block) => block.visible)
       .map((block) => ({
+        x0: Math.floor(viewport.pxToScreen(block.startPx)),
+        x1: Math.ceil(viewport.pxToScreen(block.endPx)),
         coding: block.coding,
-        y0: Math.max(
-          y0,
-          Math.min(
-            canvasHeight - 1,
-            Math.floor(viewport.pxToScreen(block.startPx))
-          )
-        ),
-        y1: Math.max(
-          y0 + 1,
-          Math.min(canvasHeight, Math.ceil(viewport.pxToScreen(block.endPx)))
-        ),
       }))
-      .filter((block) => block.y1 > block.y0);
+      .sort((a, b) => a.x0 - b.x0);
+    const exons: ScreenBlock[] = [];
     if (bin.blocks?.length) {
-      ctx.fillRect(connectorX, y0, connectorWidth, Math.max(1, y1 - y0));
-      for (const block of projectedBlocks) {
-        const blockX = block.coding ? codingX : exonX;
-        const blockWidth = block.coding ? codingWidth : exonWidth;
-        ctx.fillRect(
-          blockX,
-          block.y0,
-          blockWidth,
-          Math.max(1, block.y1 - block.y0)
-        );
+      ctx.fillRect(x0, connectorY, x1 - x0, intron);
+      for (const block of projected) {
+        drawBlock(block.x0, block.x1, block.coding ? coding : utr);
+        const previous = exons.at(-1);
+        // BED12 coding and UTR portions from the server may belong to one exon.
+        if (previous && previous.x1 >= block.x0)
+          previous.x1 = Math.max(previous.x1, block.x1);
+        else exons.push({ x0: block.x0, x1: block.x1 });
       }
     } else {
-      const thinWidth = Math.max(1, Math.round(laneWidth * 0.16));
-      const thickWidth = Math.max(thinWidth + 1, Math.round(laneWidth * 0.48));
-      const thinX = Math.floor(laneCenter - thinWidth / 2);
-      const thickX = Math.floor(laneCenter - thickWidth / 2);
-      ctx.fillRect(thinX, y0, thinWidth, y1 - y0);
-      const hasThickPx =
-        typeof bin.thickStartPx === "number" &&
-        Number.isFinite(bin.thickStartPx) &&
-        typeof bin.thickEndPx === "number" &&
-        Number.isFinite(bin.thickEndPx);
-      let thickY0 = y0;
-      let thickY1 = y1;
-      if (hasThickPx) {
-        const thickStartPx = Math.max(
-          0,
-          Math.min(bin.thickStartPx ?? 0, bin.thickEndPx ?? 0)
+      const start = bin.thickStartPx;
+      const end = bin.thickEndPx;
+      if (start != null && end != null) {
+        drawBlock(x0, x1, utr);
+        drawBlock(
+          Math.floor(viewport.pxToScreen(Math.min(start, end))),
+          Math.ceil(viewport.pxToScreen(Math.max(start, end))),
+          coding
         );
-        const thickEndPx = Math.max(
-          thickStartPx,
-          Math.max(
-            bin.thickStartPx ?? thickStartPx,
-            bin.thickEndPx ?? thickStartPx
-          )
-        );
-        const thickY0ByPx = Math.floor(viewport.pxToScreen(thickStartPx));
-        const thickY1ByPx = Math.max(
-          thickY0ByPx + 1,
-          Math.ceil(viewport.pxToScreen(thickEndPx))
-        );
-        thickY0 = Math.max(y0, Math.min(canvasHeight - 1, thickY0ByPx));
-        thickY1 = Math.max(thickY0 + 1, Math.min(y1, thickY1ByPx));
+      } else {
+        drawBlock(x0, x1, coding);
       }
-      ctx.fillRect(thickX, thickY0, thickWidth, Math.max(1, thickY1 - thickY0));
+      exons.push({ x0: rawStart, x1: rawEnd });
     }
-    this.drawFeatureDirectionArrowsVertical(
-      ctx,
-      bin.strand,
-      y0,
-      y1,
-      laneCenter
-    );
-    this.drawFeatureTerminalTriangleVertical(
-      ctx,
-      bin.strand,
-      y0,
-      y1,
-      laneCenter,
-      laneInnerStart,
-      laneInnerEnd
-    );
+    if (strand === "+" || strand === "-") {
+      const visible = { x0, x1 };
+      for (const run of featureChevrons(strand, exons, fill, visible)) {
+        drawChevrons(
+          ctx,
+          strand,
+          run.centres,
+          laneCenter,
+          chevronHalf,
+          run.color
+        );
+      }
+    }
+    if (x1 - x0 >= 2 * (chevronHalf + 1)) {
+      if (rawStart < x0)
+        drawClippedEdge(
+          ctx,
+          "left",
+          x0,
+          laneCenter,
+          chevronHalf,
+          fill,
+          background
+        );
+      if (rawEnd > x1)
+        drawClippedEdge(
+          ctx,
+          "right",
+          x1 - 1,
+          laneCenter,
+          chevronHalf,
+          fill,
+          background
+        );
+    }
     if (isSelectedFeature) {
       ctx.save();
       ctx.strokeStyle = "rgba(255, 218, 66, 0.98)";
       ctx.lineWidth = 2;
       ctx.strokeRect(
+        x0 + 0.5,
         laneInnerStart + 0.5,
-        y0 + 0.5,
-        Math.max(1, laneInnerEnd - laneInnerStart - 1),
-        Math.max(1, y1 - y0 - 1)
+        Math.max(1, x1 - x0 - 1),
+        Math.max(1, laneInnerEnd - laneInnerStart - 1)
       );
       ctx.restore();
     }
@@ -2147,151 +2048,43 @@ class LinearTrackManager {
       ctx.lineWidth = 2;
       ctx.setLineDash([3, 2]);
       ctx.strokeRect(
+        x0 + 0.5,
         laneInnerStart + 0.5,
-        y0 + 0.5,
-        Math.max(1, laneInnerEnd - laneInnerStart - 1),
-        Math.max(1, y1 - y0 - 1)
+        Math.max(1, x1 - x0 - 1),
+        Math.max(1, laneInnerEnd - laneInnerStart - 1)
       );
       ctx.restore();
     }
-  }
-
-  private drawFeatureDirectionArrowsHorizontal(
-    ctx: CanvasRenderingContext2D,
-    strand: string | null,
-    x0: number,
-    x1: number,
-    laneCenter: number
-  ): void {
-    if ((strand !== "+" && strand !== "-") || x1 - x0 <= 12) {
-      return;
-    }
-    const arrowSpacing = 16;
-    const arrowSize = 2.5;
-    const arrowY = Math.floor(laneCenter);
-    ctx.beginPath();
-    if (strand === "+") {
-      for (let x = x0 + 6; x < x1 - 4; x += arrowSpacing) {
-        ctx.moveTo(x - arrowSize, arrowY - arrowSize);
-        ctx.lineTo(x + arrowSize, arrowY);
-        ctx.lineTo(x - arrowSize, arrowY + arrowSize);
-      }
-    } else {
-      for (let x = x1 - 6; x > x0 + 4; x -= arrowSpacing) {
-        ctx.moveTo(x + arrowSize, arrowY - arrowSize);
-        ctx.lineTo(x - arrowSize, arrowY);
-        ctx.lineTo(x + arrowSize, arrowY + arrowSize);
-      }
-    }
-    this.strokeChevronPath(ctx);
-  }
-
-  private drawFeatureDirectionArrowsVertical(
-    ctx: CanvasRenderingContext2D,
-    strand: string | null,
-    y0: number,
-    y1: number,
-    laneCenter: number
-  ): void {
-    if ((strand !== "+" && strand !== "-") || y1 - y0 <= 12) {
-      return;
-    }
-    const arrowSpacing = 16;
-    const arrowSize = 2.5;
-    const arrowX = Math.floor(laneCenter);
-    ctx.beginPath();
-    if (strand === "+") {
-      for (let y = y0 + 6; y < y1 - 4; y += arrowSpacing) {
-        ctx.moveTo(arrowX - arrowSize, y - arrowSize);
-        ctx.lineTo(arrowX, y + arrowSize);
-        ctx.lineTo(arrowX + arrowSize, y - arrowSize);
-      }
-    } else {
-      for (let y = y1 - 6; y > y0 + 4; y -= arrowSpacing) {
-        ctx.moveTo(arrowX - arrowSize, y + arrowSize);
-        ctx.lineTo(arrowX, y - arrowSize);
-        ctx.lineTo(arrowX + arrowSize, y + arrowSize);
-      }
-    }
-    this.strokeChevronPath(ctx);
-  }
-
-  private strokeChevronPath(ctx: CanvasRenderingContext2D): void {
-    ctx.save();
-    ctx.lineJoin = "round";
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "white";
-    ctx.stroke();
-    ctx.lineWidth = 1.25;
-    ctx.strokeStyle = ctx.fillStyle;
-    ctx.stroke();
     ctx.restore();
   }
 
-  private drawFeatureTerminalTriangleHorizontal(
+  private drawTrackTitle(
     ctx: CanvasRenderingContext2D,
-    strand: string | null,
-    x0: number,
-    x1: number,
-    laneCenter: number,
-    laneInnerStart: number,
-    laneInnerEnd: number
+    title: string,
+    x: number,
+    y: number,
+    palette: TrackTextPalette,
+    strandColors?: StrandColors
   ): void {
-    if ((strand !== "+" && strand !== "-") || x1 - x0 <= 8) {
-      return;
+    this.drawOutlinedText(ctx, title, x, y, palette);
+    if (!strandColors) return;
+    const labelStart = x + ctx.measureText(title).width + 8;
+    ctx.save();
+    ctx.font = "11px HiCT Sans";
+    for (const [index, strand] of (["+", "-"] as const).entries()) {
+      const offset = labelStart + index * 23;
+      ctx.fillStyle = strandColors[strand];
+      ctx.fillRect(offset, y + 2, 9, 8);
+      ctx.fillStyle = palette.primary;
+      this.drawOutlinedText(
+        ctx,
+        strand === "-" ? "−" : strand,
+        offset + 11,
+        y,
+        palette
+      );
     }
-    const triangleSize = Math.max(
-      3,
-      Math.round((laneInnerEnd - laneInnerStart) * 0.22)
-    );
-    const y = Math.floor(laneCenter);
-    ctx.beginPath();
-    if (strand === "+") {
-      const x = x1 - 1;
-      ctx.moveTo(x, y);
-      ctx.lineTo(x - triangleSize, y - triangleSize);
-      ctx.lineTo(x - triangleSize, y + triangleSize);
-    } else {
-      const x = x0 + 1;
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + triangleSize, y - triangleSize);
-      ctx.lineTo(x + triangleSize, y + triangleSize);
-    }
-    ctx.closePath();
-    this.strokeAndFillFeaturePath(ctx);
-  }
-
-  private drawFeatureTerminalTriangleVertical(
-    ctx: CanvasRenderingContext2D,
-    strand: string | null,
-    y0: number,
-    y1: number,
-    laneCenter: number,
-    laneInnerStart: number,
-    laneInnerEnd: number
-  ): void {
-    if ((strand !== "+" && strand !== "-") || y1 - y0 <= 8) {
-      return;
-    }
-    const triangleSize = Math.max(
-      3,
-      Math.round((laneInnerEnd - laneInnerStart) * 0.22)
-    );
-    const x = Math.floor(laneCenter);
-    ctx.beginPath();
-    if (strand === "+") {
-      const y = y1 - 1;
-      ctx.moveTo(x, y);
-      ctx.lineTo(x - triangleSize, y - triangleSize);
-      ctx.lineTo(x + triangleSize, y - triangleSize);
-    } else {
-      const y = y0 + 1;
-      ctx.moveTo(x, y);
-      ctx.lineTo(x - triangleSize, y + triangleSize);
-      ctx.lineTo(x + triangleSize, y + triangleSize);
-    }
-    ctx.closePath();
-    this.strokeAndFillFeaturePath(ctx);
+    ctx.restore();
   }
 
   private isFeatureDensityBin(bin: TrackBinResponse): boolean {
@@ -2302,19 +2095,6 @@ class LinearTrackManager {
       bin.strand !== "-" &&
       (!bin.blocks || bin.blocks.length === 0)
     );
-  }
-
-  private bedRgbToCss(value?: string): string | undefined {
-    if (!value) return undefined;
-    const channels = value.split(",").map((part) => Number(part.trim()));
-    if (
-      channels.length !== 3 ||
-      channels.some(
-        (channel) => !Number.isInteger(channel) || channel < 0 || channel > 255
-      )
-    )
-      return undefined;
-    return `rgb(${channels[0]}, ${channels[1]}, ${channels[2]})`;
   }
 
   private drawHorizontalFeatureDensityBin(
@@ -2359,19 +2139,6 @@ class LinearTrackManager {
     const centerX = Math.floor((laneInnerStart + laneInnerEnd) / 2);
     ctx.fillRect(centerX - 1, y0, 2, Math.max(1, y1 - y0));
     ctx.restore();
-  }
-
-  private strokeAndFillFeaturePath(ctx: CanvasRenderingContext2D): void {
-    const fillStyle = ctx.fillStyle;
-    ctx.save();
-    ctx.strokeStyle = "rgba(255,255,255,0.95)";
-    ctx.lineWidth = 2;
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.stroke();
-    ctx.restore();
-    ctx.fillStyle = fillStyle;
-    ctx.fill();
   }
 
   private resolveFeatureBlocksIntervals(
