@@ -779,9 +779,9 @@ function openRenderingPipeline(): void {
   opacity: 0.55;
 }
 
-.signal-advanced > summary {
-  cursor: pointer;
-  font-weight: 600;
+.signal-advanced :deep(summary) {
+  font-size: 0.8125rem;
+  line-height: 1.4;
 }
 
 .signal-advanced-body {

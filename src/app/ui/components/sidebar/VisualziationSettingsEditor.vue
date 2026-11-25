@@ -1581,6 +1581,11 @@ function finiteOr(value: number, fallback: number): number {
   color: var(--hict-surface-fg, #1e293b);
   appearance: textfield;
 }
+.threshold-number-input {
+  min-height: 32px;
+  padding-block: 4px;
+  border-radius: 6px;
+}
 .threshold-number-input::-webkit-inner-spin-button {
   appearance: none;
 }
