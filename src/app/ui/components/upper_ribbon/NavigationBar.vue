@@ -51,17 +51,21 @@
             >
             <ul class="dropdown-menu">
               <li>
-                <a class="dropdown-item" href="#" @click.prevent="onOpenWizard"
-                  >Open with options…</a
+                <a
+                  class="dropdown-item menu-shortcut-row"
+                  href="#"
+                  aria-label="Open map…"
+                  aria-keyshortcuts="Control+O Meta+O"
+                  title="Open map (Ctrl+O)"
+                  @click.prevent="onOpenFile"
+                  >Open map…<span class="menu-shortcut" aria-hidden="true"
+                    >Ctrl+O</span
+                  ></a
                 >
               </li>
               <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
-                  title="Open map (Ctrl+O)"
-                  @click.prevent="onOpenFile"
-                  >Open map…</a
+                <a class="dropdown-item" href="#" @click.prevent="onOpenWizard"
+                  >Open with options…</a
                 >
               </li>
               <li>
@@ -77,37 +81,8 @@
                 <a
                   class="dropdown-item"
                   href="#"
-                  :class="{ disabled: !props.mapManager }"
-                  @click.prevent="onCloseClicked"
-                  >Close map</a
-                >
-              </li>
-              <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
-                  title="Show the map that is already open in another window or tab"
-                  @click.prevent="onAttachClicked"
-                  >Join running session</a
-                >
-              </li>
-              <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
                   @click.prevent="emit('examplesRequested')"
                   >Examples…</a
-                >
-              </li>
-              <li><hr class="dropdown-divider" /></li>
-              <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
-                  :class="{ disabled: !props.mapManager }"
-                  title="Save session (Ctrl+S)"
-                  @click.prevent="onSaveSessionClicked"
-                  >Save session…</a
                 >
               </li>
               <li>
@@ -125,15 +100,30 @@
                   hidden
                 />
               </li>
-              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a
+                  class="dropdown-item menu-shortcut-row"
+                  href="#"
+                  aria-label="Save session…"
+                  aria-keyshortcuts="Control+S Meta+S"
+                  :class="{ disabled: !props.mapManager }"
+                  title="Save session (Ctrl+S)"
+                  @click.prevent="onSaveSessionClicked"
+                  >Save session…<span class="menu-shortcut" aria-hidden="true"
+                    >Ctrl+S</span
+                  ></a
+                >
+              </li>
               <li>
                 <a
                   class="dropdown-item"
                   href="#"
-                  @click.prevent="exportedFigureOpen = true"
-                  >Open exported figure…</a
+                  title="Show the map that is already open in another window or tab"
+                  @click.prevent="onAttachClicked"
+                  >Join running session</a
                 >
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
                 <a
                   class="dropdown-item"
@@ -150,6 +140,24 @@
                   >Export matrix…</a
                 >
               </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="exportedFigureOpen = true"
+                  >Open exported figure…</a
+                >
+              </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="onCloseClicked"
+                  >Close map</a
+                >
+              </li>
               <li v-if="canQuit"><hr class="dropdown-divider" /></li>
               <li v-if="canQuit">
                 <a class="dropdown-item" href="#" @click.prevent="onQuitClicked"
@@ -164,12 +172,13 @@
               data-bs-toggle="dropdown"
               :data-bs-popper-config="navbarPopperConfig"
               href="#"
+              @click="refreshUndoLabel"
               >Edit</a
             >
             <ul class="dropdown-menu">
               <li>
                 <button
-                  class="dropdown-item"
+                  class="dropdown-item menu-shortcut-row"
                   type="button"
                   :disabled="!historyCan('undo')"
                   :title="
@@ -177,12 +186,13 @@
                   "
                   @click="editHistory('undo')"
                 >
-                  Undo
+                  {{ undoLabel
+                  }}<span class="menu-shortcut" aria-hidden="true">Ctrl+Z</span>
                 </button>
               </li>
               <li>
                 <button
-                  class="dropdown-item"
+                  class="dropdown-item menu-shortcut-row"
                   type="button"
                   :disabled="!historyCan('redo')"
                   :title="
@@ -192,7 +202,9 @@
                   "
                   @click="editHistory('redo')"
                 >
-                  Redo
+                  Redo<span class="menu-shortcut" aria-hidden="true"
+                    >Ctrl+Shift+Z</span
+                  >
                 </button>
               </li>
               <li><hr class="dropdown-divider" /></li>
@@ -1514,7 +1526,10 @@ import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { useSessionStore } from "@/app/stores/sessionStore";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
-import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
+import {
+  hasAnyOpenEscDialog,
+  useEscDismissableDialog,
+} from "@/app/ui/escapeDialogRegistry";
 import type {
   ConversionToolchainStatusResponse,
   FastaLinkResponse,
@@ -1946,6 +1961,42 @@ const canQuit = computed(() => {
   const tauri = (window as unknown as { __TAURI__?: TauriBridge }).__TAURI__;
   return !!(desktop?.quit || tauri?.core?.invoke || tauri?.invoke);
 });
+const undoEntry = ref<{ session: string; revision: number; label: string }>();
+const undoLabel = computed(() => {
+  const summary =
+    props.mapManager?.networkManager.requestManager.history.summary;
+  const entry = undoEntry.value;
+  return entry &&
+    entry.session === summary?.session &&
+    entry.revision === summary.revision
+    ? `Undo ${entry.label}`
+    : "Undo";
+});
+
+async function refreshUndoLabel(): Promise<void> {
+  const api = props.mapManager?.networkManager.requestManager;
+  const summary = api?.history.summary;
+  if (!api || !summary?.canUndo) return;
+  try {
+    const page = await api.getAssemblyHistory(summary.position);
+    if (
+      props.mapManager?.networkManager.requestManager !== api ||
+      api.history.summary !== summary
+    )
+      return;
+    const entry = page.entries.find(({ id }) => id === summary.currentId);
+    if (entry) {
+      undoEntry.value = {
+        session: summary.session,
+        revision: summary.revision,
+        label: entry.label,
+      };
+    }
+  } catch {
+    // Keep Undo available if the journal label cannot be fetched.
+  }
+}
+
 function historyCan(action: "undo" | "redo"): boolean {
   const api = props.mapManager?.networkManager.requestManager;
   return (
@@ -2179,6 +2230,28 @@ function onAttachClicked(): void {
 function onSaveSessionClicked(): void {
   emit("saveSession");
   errorMessage.value = null;
+}
+
+function fileShortcut(event: KeyboardEvent): void {
+  if (
+    event.defaultPrevented ||
+    event.repeat ||
+    event.altKey ||
+    event.shiftKey ||
+    !(event.ctrlKey || event.metaKey)
+  )
+    return;
+  const key = event.key.toLowerCase();
+  if (key !== "o" && key !== "s") return;
+  if (
+    hasAnyOpenEscDialog() ||
+    document.querySelector('.modal.show, [role="dialog"][aria-modal="true"]')
+  )
+    return;
+  if (key === "s" && !props.mapManager) return;
+  event.preventDefault();
+  if (key === "o") onOpenFile();
+  else onSaveSessionClicked();
 }
 
 const sessionFileInput = ref<HTMLInputElement | null>(null);
@@ -2619,6 +2692,7 @@ function openTrackManagerFromEvent(): void {
 }
 
 onMounted(() => {
+  window.addEventListener("keydown", fileShortcut);
   window.addEventListener("hict:open-track-manager", openTrackManagerFromEvent);
   window.addEventListener("hict:link-fasta-for-export", linkFastaForExport);
   void refreshNativeProcessingStatus();
@@ -2626,6 +2700,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("keydown", fileShortcut);
   window.removeEventListener("hict:link-fasta-for-export", linkFastaForExport);
   window.removeEventListener(
     "hict:open-track-manager",
@@ -2854,6 +2929,19 @@ function onSelectionFASTARequest() {
   max-height: min(70vh, 32rem);
   overflow-y: auto;
   border-color: var(--hict-ui-border, rgba(15, 23, 38, 0.22));
+}
+
+.menu-shortcut-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.menu-shortcut {
+  color: var(--hict-ui-muted, #64748b);
+  font-size: 0.75em;
+  white-space: nowrap;
 }
 
 .hict-navbar-brand {

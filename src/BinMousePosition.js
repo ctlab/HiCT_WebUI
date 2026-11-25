@@ -33,7 +33,7 @@ import { containsCoordinate } from "ol/extent";
 import { watch } from "vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 
-import { formatBp } from "./app/core/format/formatSignal";
+import { formatBp, formatLength } from "./app/core/format/formatSignal";
 
 function getOsdSettings() {
   try {
@@ -301,9 +301,8 @@ export default class BinMousePosition extends MousePosition {
                 "resolution",
                 guidanceDescriptor.displayGrid === "SEQUENCE_BP"
                   ? "Base scale; native bins: " +
-                      guidanceDescriptor.sourceBpResolution +
-                      " bp"
-                  : "Resolution: 1:" + formatBp(bpResolution)
+                      formatLength(guidanceDescriptor.sourceBpResolution)
+                  : "Resolution: " + formatLength(bpResolution)
               );
               if (guidanceDescriptor.sourceName) {
                 appendLine(

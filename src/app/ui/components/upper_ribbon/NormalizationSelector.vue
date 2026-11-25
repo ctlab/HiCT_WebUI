@@ -101,6 +101,7 @@
         </option>
       </select>
     </div>
+    <slot name="normalization-note" />
     <p
       v-if="choice === 'sqrt' && !preparing"
       id="normalization-help"
@@ -182,6 +183,7 @@
 
     <AdvancedSection
       dialog-id="sidebar-visualization"
+      hint="slider scale, limits, log base, pipeline"
       class="signal-advanced"
       id="signal-advanced"
     >
@@ -232,29 +234,29 @@
             </option>
           </select>
         </div>
-        <p id="scaling-help" class="small text-muted mb-0">
-          Compensates for bin size when the zoom level changes: linear divides
-          by the resolution ratio, quadratic by its square.
-        </p>
-
         <slot name="excluded-bins" />
-        <div class="d-flex gap-2 mt-1">
+        <div class="base-row">
           <button
             type="button"
-            class="btn btn-sm btn-outline-primary flex-grow-1"
+            class="link-button"
             @click="openRenderingPipeline"
           >
             Rendering pipeline…
           </button>
           <button
             type="button"
-            class="btn btn-sm btn-outline-secondary"
+            class="link-button text-danger"
             title="Log2, no scaling, no weights. Colors and thresholds are kept."
             @click="resetAttributes"
           >
             Reset
           </button>
         </div>
+        <p id="scaling-help" class="visually-hidden">
+          Linear scaling divides by the bin-size ratio and quadratic scaling
+          divides by its square.
+        </p>
+        <slot name="advanced-help" />
       </div>
     </AdvancedSection>
   </section>
@@ -794,13 +796,12 @@ function openRenderingPipeline(): void {
 }
 
 .number-input {
-  width: 6.5rem;
+  width: 3.5rem;
   max-width: 100%;
 }
 
 .scaling-select {
-  width: 11rem;
-  flex: 1 1 11rem;
+  width: 9rem;
   min-width: 0;
   max-width: 100%;
 }
@@ -810,6 +811,8 @@ function openRenderingPipeline(): void {
   flex: 1 1 13rem;
   min-width: 0;
   max-width: 100%;
+  appearance: auto;
+  padding-inline-end: 0.5rem;
 }
 
 .normalization-progress {

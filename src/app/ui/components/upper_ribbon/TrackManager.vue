@@ -347,7 +347,9 @@
                         >
                           <option value="MAX">Maximum</option>
                           <option value="MEAN">Mean (covered span)</option>
-                          <option value="SUM">Mean (gaps as zero)</option>
+                          <option value="MEAN_WITH_ZERO_GAPS">
+                            Mean (gaps as zero)
+                          </option>
                         </select>
                         <div
                           v-if="
@@ -1006,12 +1008,14 @@ const normalizeBamMode = (value: string): "COVERAGE" | "READ_DENSITY" => {
   return value === "READ_DENSITY" ? "READ_DENSITY" : "COVERAGE";
 };
 
-const normalizeBigWigAggregation = (value: string): "MAX" | "MEAN" | "SUM" => {
+const normalizeBigWigAggregation = (
+  value: string
+): "MAX" | "MEAN" | "MEAN_WITH_ZERO_GAPS" => {
   if (value === "MEAN") {
     return "MEAN";
   }
-  if (value === "SUM") {
-    return "SUM";
+  if (value === "SUM" || value === "MEAN_WITH_ZERO_GAPS") {
+    return "MEAN_WITH_ZERO_GAPS";
   }
   return "MAX";
 };
@@ -1573,8 +1577,10 @@ const onChangeBigWigAggregation = async (
     return;
   }
   try {
+    const mode = normalizeBigWigAggregation(aggregationMode);
     await props.mapManager.linearTrackManager.updateTrack(trackId, {
-      aggregationMode: normalizeBigWigAggregation(aggregationMode),
+      // The existing API and saved tracks use SUM for this zero-filled mean.
+      aggregationMode: mode === "MEAN_WITH_ZERO_GAPS" ? "SUM" : mode,
     });
     await refreshTracks();
   } catch (err) {

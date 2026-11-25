@@ -172,41 +172,32 @@
         O/E: lower color is depleted, white is 1, upper color is enriched.
         Limits must satisfy 0 &lt; lower &lt; 1 &lt; upper.
       </p>
-      <p
-        v-if="applyCoolerWeights && coolerWeightsHaveNaNs"
-        class="small mb-1"
-        :class="weightsNeedAttention ? 'text-danger' : 'text-muted'"
-        role="status"
-      >
-        {{
-          weightsNeedAttention
-            ? "Excluded bins use replacement weights."
-            : `${coolerWeightsNaNCount.toLocaleString()} bins without weights are hidden.`
-        }}
-      </p>
       <NormalizationSelector
         :map-manager="props.mapManager"
         @apply="applySettings"
       >
-        <template #advanced-top>
-          <p v-if="midpointPosition !== undefined" class="range-help">
-            Double-click the histogram to add a curve point. Drag to adjust it
-            or right-click to remove it.
-          </p>
-          <div class="range-actions">
+        <template #normalization-note>
+          <p
+            v-if="applyCoolerWeights && coolerWeightsHaveNaNs"
+            class="small text-muted mb-0"
+          >
+            <span role="status">{{
+              weightsNeedAttention
+                ? "Excluded bins use replacement weights."
+                : `${coolerWeightsNaNCount.toLocaleString()} bins without weights are hidden.`
+            }}</span>
             <button
-              v-if="
-                midpointPosition !== undefined &&
-                (colorGamma !== 1 || curveData)
-              "
               type="button"
-              class="range-text-button"
-              @click="setColorGamma(1)"
-              title="Restore a linear color transition without changing thresholds"
+              class="range-text-button ms-1"
+              @click="openExcludedBinsChoice"
             >
-              Reset curve
+              Change
             </button>
-            <div class="scale-group">
+          </p>
+        </template>
+        <template #advanced-top>
+          <div class="range-details">
+            <div class="range-option">
               <span id="slider-scale-label" class="scale-caption"
                 >Slider scale</span
               >
@@ -232,28 +223,27 @@
                 </button>
               </div>
             </div>
-            <button
-              type="button"
-              class="range-text-button"
-              @click="focusThresholds"
-              title="Expand the selected range across the slider for finer adjustment"
-            >
-              Focus range
-            </button>
-          </div>
-          <div class="range-details">
-            <div class="fw-semibold">
-              <span>Slider limits</span
-              ><span class="range-summary-value"
-                >{{ formatSignal(sliderMin) }} –
-                {{ formatSignal(sliderMax) }}</span
-              >
+            <div class="range-option">
+              <span>Slider limits</span>
+              <span class="range-summary-value">
+                {{ formatSignal(sliderMin) }} – {{ formatSignal(sliderMax) }}
+                <button
+                  type="button"
+                  class="range-text-button"
+                  aria-label="Edit slider limits"
+                  aria-controls="slider-limit-editor"
+                  :aria-expanded="editingSliderLimits"
+                  @click="editingSliderLimits = !editingSliderLimits"
+                >
+                  {{ editingSliderLimits ? "Done" : "Edit…" }}
+                </button>
+              </span>
             </div>
-            <p class="range-help">
-              Slider limits control adjustment precision. They do not change the
-              selected colors or thresholds.
-            </p>
-            <div class="domain-inputs">
+            <div
+              v-show="editingSliderLimits"
+              id="slider-limit-editor"
+              class="domain-inputs"
+            >
               <label
                 >Minimum<input
                   :value="
@@ -288,7 +278,7 @@
               /></label>
             </div>
             <button
-              v-if="!primaryDerivedSignal"
+              v-if="editingSliderLimits && !primaryDerivedSignal"
               type="button"
               class="range-text-button"
               title="Use the exact minimum and maximum of the loaded tiles, including rare extreme pixels"
@@ -296,8 +286,28 @@
             >
               Use full loaded range
             </button>
+            <div class="range-option" v-if="!percentageSignalScale">
+              <span>Exact limits</span>
+              <button
+                v-if="rangeScanning"
+                type="button"
+                class="range-text-button"
+                @click="cancelExactRange"
+              >
+                Cancel scan
+              </button>
+              <button
+                v-else
+                type="button"
+                class="range-text-button"
+                title="Reads all tiles to adjust only the slider limits"
+                @click="fetchExactRange"
+              >
+                Scan whole map
+              </button>
+            </div>
             <p
-              class="range-help"
+              class="range-help mb-0"
               role="status"
               data-testid="exact-range-status"
             >
@@ -305,76 +315,59 @@
                 percentageSignalScale ? "Percentage scale: 0–100" : rangeStatus
               }}
             </p>
+            <div class="range-option">
+              <span>Focus range</span>
+              <button
+                type="button"
+                class="range-text-button"
+                aria-label="Focus range"
+                @click="focusThresholds"
+                title="Expand the selected range across the slider for finer adjustment"
+              >
+                Focus
+              </button>
+            </div>
             <button
-              v-if="!percentageSignalScale"
+              v-if="
+                midpointPosition !== undefined &&
+                (colorGamma !== 1 || curveData)
+              "
               type="button"
               class="range-text-button"
-              :disabled="rangeScanning"
-              @click="fetchExactRange"
+              @click="setColorGamma(1)"
+              title="Restore a linear color transition without changing thresholds"
             >
-              Scan whole map
+              Reset curve
             </button>
-            <button
-              v-if="rangeScanning"
-              type="button"
-              class="range-text-button"
-              @click="cancelExactRange"
-            >
-              Cancel scan
-            </button>
-            <span v-if="!percentageSignalScale" class="range-help">
-              · Reads all tiles; may take time.</span
-            >
-            <p v-if="primaryDerivedSignal" class="range-help">
-              Whole-map Expected/O/E limits use a profile fitted across this
-              resolution, independently of the viewport profile. Scanning
-              changes slider limits only.
-            </p>
           </div>
         </template>
         <template #excluded-bins>
-          <div v-if="coolerWeightsHaveNaNs" :class="coolerWeightsHintClass">
-            <div
-              :title="
-                weightsNeedAttention
-                  ? 'Excluded-bin policy needs attention'
-                  : 'Excluded-bin settings'
-              "
+          <div v-if="coolerWeightsHaveNaNs" class="range-option">
+            <label for="cooler-weights-nan-policy">Bins without weights</label>
+            <select
+              id="cooler-weights-nan-policy"
+              ref="excludedBinsSelect"
+              v-model="coolerWeightsNaNPolicy"
+              class="form-select form-select-sm excluded-bins-choice"
+              @change="onCoolerWeightsNaNPolicyChanged"
             >
-              <i
-                v-if="weightsNeedAttention"
-                class="bi bi-exclamation-triangle-fill"
-              ></i>
-              Cooler weights
-            </div>
-            <div v-if="coolerWeightsHaveNaNs">
-              Detected {{ coolerWeightsNaNCount }} missing balancing weight{{
-                coolerWeightsNaNCount === 1 ? "" : "s"
-              }}. Selected policy: {{ coolerWeightsNaNPolicyLabel }}.
-              <label
-                class="form-label small mt-2 mb-1"
-                for="cooler-weights-nan-policy"
-              >
-                Bins without balancing weight
-              </label>
-              <select
-                id="cooler-weights-nan-policy"
-                v-model="coolerWeightsNaNPolicy"
-                class="form-select form-select-sm"
-                @change="onCoolerWeightsNaNPolicyChanged"
-              >
-                <option value="DISABLE_WEIGHTS">
-                  Show raw contacts (no balancing)
-                </option>
-                <option value="REPLACE_NANS_WITH_ONE">
-                  Treat missing weight as 1
-                </option>
-                <option value="REPLACE_NANS_WITH_ZERO">
-                  Hide bins without balancing weight (recommended)
-                </option>
-              </select>
-            </div>
+              <option value="DISABLE_WEIGHTS">
+                Show raw contacts (no balancing)
+              </option>
+              <option value="REPLACE_NANS_WITH_ONE">
+                Treat missing weight as 1
+              </option>
+              <option value="REPLACE_NANS_WITH_ZERO">
+                Hide bins without balancing weight (recommended)
+              </option>
+            </select>
           </div>
+        </template>
+        <template #advanced-help>
+          <p v-if="midpointPosition !== undefined" class="range-help mb-0">
+            Double-click to add a curve point. Drag to move it or right-click to
+            remove it.
+          </p>
         </template>
       </NormalizationSelector>
 
@@ -516,6 +509,8 @@ const rangeValidationError = computed(() => {
 const sliderLowerLimit: Ref<number> = ref(0);
 const sliderUpperLimit: Ref<number> = ref(1);
 const sliderBoundsManual: Ref<boolean> = ref(false);
+const editingSliderLimits = ref(false);
+const excludedBinsSelect = ref<HTMLSelectElement>();
 const sliderLogScale: Ref<boolean> = ref(false);
 const syncingFromColormap: Ref<boolean> = ref(false);
 const liveApplyReady: Ref<boolean> = ref(false);
@@ -601,28 +596,19 @@ const toColorFn: Ref<() => ColorTranslator> = ref(() => toColor.value) as Ref<
   () => ColorTranslator
 >;
 
-const coolerWeightsNaNPolicyLabel = computed(() => {
-  switch (coolerWeightsNaNPolicy.value) {
-    case "DISABLE_WEIGHTS":
-      return "do not use Cooler weights";
-    case "REPLACE_NANS_WITH_ZERO":
-      return "hide bins without weights";
-    case "REPLACE_NANS_WITH_ONE":
-    default:
-      return "treat missing weight as 1";
-  }
-});
-
 const weightsNeedAttention = computed(
   () =>
     applyCoolerWeights.value &&
     coolerWeightsHaveNaNs.value &&
     coolerWeightsNaNPolicy.value !== "REPLACE_NANS_WITH_ZERO"
 );
-const coolerWeightsHintClass = computed(() => ({
-  "cooler-weights-hint": true,
-  "cooler-weights-hint_error": weightsNeedAttention.value,
-}));
+function openExcludedBinsChoice() {
+  const select = excludedBinsSelect.value;
+  const advanced = select?.closest("details");
+  if (!select || !advanced) return;
+  advanced.open = true;
+  select.focus();
+}
 
 const sliderMin = computed(() =>
   Math.min(
@@ -1492,17 +1478,13 @@ function finiteOr(value: number, fallback: number): number {
   outline-offset: 1px;
   box-shadow: none;
 }
-.range-actions {
+.range-option {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-}
-.scale-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  gap: 4px 8px;
+  font-size: 0.8rem;
 }
 .scale-caption {
   font-size: 0.8rem;
@@ -1542,22 +1524,18 @@ function finiteOr(value: number, fallback: number): number {
   text-decoration: underline;
 }
 .range-details {
-  padding-top: 10px;
-  border-top: 1px solid #e2e8f0;
-  font-size: 0.8rem;
-}
-.range-details summary {
-  cursor: pointer;
-  color: #475569;
+  display: grid;
+  gap: 0.35rem;
 }
 .range-summary-value {
-  float: right;
   font-variant-numeric: tabular-nums;
   color: #64748b;
-  max-width: 46%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.excluded-bins-choice {
+  width: 11rem;
+  max-width: 100%;
+  appearance: auto;
+  padding-inline-end: 0.5rem;
 }
 .range-help {
   font-size: 0.78rem;
@@ -1588,50 +1566,6 @@ function finiteOr(value: number, fallback: number): number {
   font-size: 0.8rem;
   font-weight: 600;
 }
-.cooler-weights-hint {
-  min-width: 0;
-  margin: 0;
-  color: var(--hict-surface-fg, #343a40);
-  font-size: 0.72rem;
-  line-height: 1.2;
-}
-
-.cooler-weights-hint summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  cursor: pointer;
-  color: #8a5a05;
-  list-style: none;
-  white-space: nowrap;
-}
-
-.cooler-weights-hint_error summary {
-  color: #b02a37;
-  font-weight: 700;
-}
-
-.cooler-weights-hint summary::-webkit-details-marker {
-  display: none;
-}
-
-.cooler-weights-hint[open] {
-  padding: 0.35rem 0.45rem;
-  border-left: 3px solid #f0ad4e;
-  border-radius: 0.35rem;
-  background: rgba(240, 173, 78, 0.12);
-}
-
-.cooler-weights-hint_error[open] {
-  border-left-color: #dc3545;
-  background: rgba(220, 53, 69, 0.12);
-  color: #842029;
-}
-
-.cooler-weights-hint[open] summary {
-  margin-bottom: 0.25rem;
-}
-
 :deep(.picker_wrapper) {
   z-index: 2147483000 !important;
   max-width: min(18rem, calc(100vw - 1.5rem));
