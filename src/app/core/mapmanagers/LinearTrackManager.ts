@@ -71,6 +71,7 @@ type TrackTextPalette = {
 const DEFAULT_PREFETCH_EXTENT_SCREENS = 2;
 const CACHE_MAX_AGE_MS = 60_000;
 const MAX_PREFETCH_QUERY_WIDTH_PX = 2048;
+const MAX_SEQUENCE_TRACK_WINDOW_BP = 1_048_576;
 const MAX_CACHED_RESOLUTIONS_PER_ORIENTATION = 6;
 
 class LinearTrackManager {
@@ -1159,6 +1160,7 @@ class LinearTrackManager {
     const cacheEpoch = this.cacheEpoch;
     try {
       const prefetch = this.buildPrefetchViewport(viewport);
+      if (!prefetch) return;
       const orientationCache = this.queryCache[orientation];
       const cached = orientationCache.get(viewport.bpResolution);
       const cacheMatchesResolution =
@@ -3193,9 +3195,21 @@ class LinearTrackManager {
     prefetchStartPx: number;
     prefetchEndPx: number;
     prefetchWidthPx: number;
-  } {
+  } | null {
     const visibleSpanPx = Math.max(1, viewport.endPx - viewport.startPx);
-    const paddingPx = Math.ceil(visibleSpanPx * this.prefetchExtentScreens);
+    let paddingPx = Math.ceil(visibleSpanPx * this.prefetchExtentScreens);
+    if (
+      viewport.bpResolution === 1 &&
+      this.mapManager.getLayersManager().isSequenceScale
+    ) {
+      // A grid change can be rendered once with the previous view's extent.
+      // Wait for its base-scale extent before requesting sequence tracks.
+      if (visibleSpanPx > MAX_SEQUENCE_TRACK_WINDOW_BP) return null;
+      paddingPx = Math.min(
+        paddingPx,
+        Math.floor((MAX_SEQUENCE_TRACK_WINDOW_BP - visibleSpanPx) / 2)
+      );
+    }
     const totalPx =
       this.mapManager
         .getContigDimensionHolder()
@@ -3292,6 +3306,7 @@ class LinearTrackManager {
         continue;
       }
       const neighborPrefetch = this.buildPrefetchViewport(neighborViewport);
+      if (!neighborPrefetch) continue;
       const cached = orientationCache.get(neighborBpResolution);
       const cacheFresh =
         !!cached && Date.now() - cached.fetchedAtMs <= CACHE_MAX_AGE_MS;
