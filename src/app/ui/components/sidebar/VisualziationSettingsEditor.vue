@@ -595,6 +595,7 @@ const liveApplyReady: Ref<boolean> = ref(false);
 const percentageSignalScale: Ref<boolean> = ref(false);
 let registeredRangeMapManager: ContactMapManager | undefined;
 let optionsHydrationGeneration = 0;
+let optionsHydration: Promise<void> = Promise.resolve();
 let rangeController: AbortController | undefined;
 let exactRangeResolution: number | undefined;
 let rangeTimer: number | undefined;
@@ -1035,7 +1036,7 @@ watch(
   () => {
     if (props.mapManager && !props.mapManager.isDisposed) {
       registerSignalRangeCallback(props.mapManager);
-      void hydrateOptionsForActiveSource();
+      hydrateOptionsForActiveSource();
     }
   }
 );
@@ -1049,7 +1050,7 @@ watch(
     ] as const,
   () => {
     if (!props.mapManager || props.mapManager.isDisposed) return;
-    void hydrateOptionsForActiveSource();
+    hydrateOptionsForActiveSource();
   }
 );
 
@@ -1059,7 +1060,7 @@ onMounted(() => {
     registerSignalRangeCallback(props.mapManager);
   }
   if (!props.mapManager || props.mapManager.isDisposed) return;
-  void hydrateOptionsForActiveSource();
+  hydrateOptionsForActiveSource();
 });
 
 onBeforeUnmount(() => {
@@ -1068,6 +1069,7 @@ onBeforeUnmount(() => {
   rangeMap?.getMap().un("rendercomplete", onViewportRangeChanged);
   ++rangeGeneration;
   ++rangeProbe;
+  ++optionsHydrationGeneration;
   window.clearTimeout(rangeTimer);
   rangeController?.abort();
 });
@@ -1077,10 +1079,14 @@ function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
 }
 
 function onPipelineChanged(): void {
-  void hydrateOptionsForActiveSource();
+  hydrateOptionsForActiveSource();
 }
 
-async function hydrateOptionsForActiveSource(): Promise<void> {
+function hydrateOptionsForActiveSource(): void {
+  optionsHydration = loadOptionsForActiveSource();
+}
+
+async function loadOptionsForActiveSource(): Promise<void> {
   const manager = props.mapManager;
   if (!manager || manager.isDisposed) return;
   ++rangeProbe;
@@ -1113,12 +1119,13 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
       : activeTarget?.mode ?? "LINEAR";
     percentageSignalScale.value =
       !primaryDerivedSignal.value && activeTarget?.displayUnit === "PERCENT";
-    activeRangeExpression.value =
+    const rangeExpression =
       await manager.visualizationManager.getSourceSignalExpression(
         activeVisualizationSource.value,
         activeVisualizationTargetId.value
       );
     if (generation !== optionsHydrationGeneration || manager.isDisposed) return;
+    activeRangeExpression.value = rangeExpression;
     const domainContext = JSON.stringify([
       activeVisualizationSource.value,
       activeVisualizationTargetId.value,
@@ -1260,7 +1267,18 @@ watch(histogramContext, () => {
 
 async function fetchExactRange(): Promise<void> {
   const manager = props.mapManager;
-  if (!manager || manager.isDisposed || percentageSignalScale.value) return;
+  if (!manager || manager.isDisposed) return;
+  const optionsGeneration = optionsHydrationGeneration;
+  // The selected source is visible before its signal context finishes loading.
+  await optionsHydration;
+  if (
+    manager !== props.mapManager ||
+    manager.isDisposed ||
+    optionsGeneration !== optionsHydrationGeneration ||
+    percentageSignalScale.value ||
+    rangeScanning.value
+  )
+    return;
   const probe = ++rangeProbe,
     generation = ++rangeGeneration;
   rangeController?.abort();
