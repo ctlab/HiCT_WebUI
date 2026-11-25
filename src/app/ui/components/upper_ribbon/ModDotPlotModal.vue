@@ -3,6 +3,7 @@
     <div class="analysis-backdrop"></div>
     <section
       class="analysis-modal"
+      :class="{ 'moddotplot-modal': !alignment }"
       ref="modalFocusElement"
       role="dialog"
       aria-modal="true"
@@ -81,49 +82,6 @@
             <p v-if="resolutionError" class="small text-danger" role="alert">
               {{ resolutionError }}
             </p>
-            <div
-              v-if="cost"
-              class="analysis-estimate mb-2"
-              :class="{ 'analysis-estimate-warning': cost.limitingLevel }"
-            >
-              <div role="status">
-                <i
-                  v-if="cost.limitingLevel"
-                  class="bi bi-exclamation-triangle"
-                  aria-hidden="true"
-                ></i>
-                <span :title="`${cost.estimatedBytes.toLocaleString()} bytes`">
-                  Estimated storage · {{ formatBytes(cost.estimatedBytes) }}
-                </span>
-                <span v-if="cost.limitingLevel">
-                  · Budget exceeded at
-                  {{ cost.limitingLevel.toLocaleString() }} bp.
-                </span>
-              </div>
-              <button
-                v-if="cost.limitingLevel && resolutions.length > 1"
-                type="button"
-                class="btn btn-link analysis-estimate-action"
-                @click="useSizesThatFit"
-              >
-                Use sizes that fit
-              </button>
-            </div>
-            <p v-if="costError" class="text-danger small" role="alert">
-              {{ costError }}
-            </p>
-            <button
-              v-if="
-                (cost?.limitingLevel || costError) &&
-                currentRectangle &&
-                scope === 'assembly'
-              "
-              type="button"
-              class="btn btn-sm btn-outline-secondary"
-              @click="scope = 'selection'"
-            >
-              Use current rectangle
-            </button>
             <div v-if="availableResolutions.length > 1" class="my-3">
               <div class="small">
                 Resolution range ·
@@ -169,6 +127,56 @@
                 {{ resolution.toLocaleString() }} bp
               </label>
             </div>
+            <div
+              v-if="cost"
+              class="analysis-estimate mb-2"
+              :class="{ 'analysis-estimate-warning': cost.limitingLevel }"
+            >
+              <div role="status">
+                <i
+                  v-if="cost.limitingLevel"
+                  class="bi bi-exclamation-triangle"
+                  aria-hidden="true"
+                ></i>
+                <span :title="`${cost.estimatedBytes.toLocaleString()} bytes`">
+                  Estimated storage · {{ formatBytes(cost.estimatedBytes) }}
+                </span>
+                <span v-if="cost.limitingLevel">
+                  · Budget exceeded at
+                  {{ cost.limitingLevel.toLocaleString() }} bp.
+                </span>
+              </div>
+              <button
+                v-if="cost.limitingLevel && resolutions.length > 1"
+                type="button"
+                class="btn btn-link analysis-estimate-action"
+                @click="useSizesThatFit"
+              >
+                Use sizes that fit
+              </button>
+              <span
+                v-else-if="!cost.limitingLevel"
+                class="analysis-estimate-ok"
+              >
+                <i class="bi bi-check-circle" aria-hidden="true"></i>
+                within budget
+              </span>
+            </div>
+            <p v-if="costError" class="text-danger small" role="alert">
+              {{ costError }}
+            </p>
+            <button
+              v-if="
+                (cost?.limitingLevel || costError) &&
+                currentRectangle &&
+                scope === 'assembly'
+              "
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              @click="scope = 'selection'"
+            >
+              Use current rectangle
+            </button>
             <p v-if="scope === 'assembly'" class="form-text">
               Fine windows over a whole genome can require many comparisons.
               Select a rectangle for a shorter calculation; other regions can be
@@ -1071,6 +1079,9 @@ useModalFocus(modalFocusElement);
   width: min(850px, 96vw);
   z-index: 1070;
 }
+.moddotplot-modal {
+  width: min(760px, 96vw);
+}
 .analysis-modal .modal-body {
   max-height: 77vh;
   overflow-y: auto;
@@ -1101,11 +1112,19 @@ useModalFocus(modalFocusElement);
   font-size: inherit;
   font-weight: 600;
 }
+.analysis-estimate-ok {
+  color: var(--hict-success);
+}
 .resolution-options {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 2rem;
   padding-left: 1.5rem;
+}
+.moddotplot-modal .resolution-options {
+  gap: 6px 14px;
+  padding-left: 0;
+  font-size: 13.5px;
 }
 .analysis-logs {
   margin-top: 0.8rem;
@@ -1148,5 +1167,15 @@ useModalFocus(modalFocusElement);
 }
 .analysis-modal .form-check {
   padding-left: 1.7rem;
+}
+.moddotplot-modal .resolution-options .form-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+.moddotplot-modal .resolution-options .form-check-input {
+  margin: 0;
 }
 </style>
