@@ -116,15 +116,24 @@
         </div>
         <p
           v-if="printTextPoints !== null"
+          ref="printTextStatus"
           class="small"
-          :class="printTextPoints < 5 ? 'text-danger' : 'text-muted'"
+          :class="printTextPoints < 5 ? 'figure-print-warning' : 'text-muted'"
           role="status"
+          tabindex="-1"
         >
           Smallest export text: {{ printTextPoints.toFixed(1) }} pt at this
           width.
           <template v-if="printTextPoints < 5">
-            For larger text, capture a smaller area or use a vertical
-            comparison.
+            It may be unreadable in print.
+            <button
+              class="btn btn-link p-0 align-baseline figure-print-warning-action"
+              type="button"
+              :disabled="busy"
+              @click="useLargerLabels"
+            >
+              Use larger labels
+            </button>
           </template>
         </p>
         <p v-if="outdated && !captureError" class="alert alert-info" role="status">
@@ -382,6 +391,7 @@
 import AdvancedSection from "../common/AdvancedSection.vue";
 import {
   computed,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
@@ -464,6 +474,7 @@ const printError = computed(() => {
   return "";
 });
 const smallestTextPx = ref<number | null>(null);
+const printTextStatus = ref<HTMLParagraphElement | null>(null);
 const printTextPoints = computed(() =>
   !printError.value &&
   smallestTextPx.value !== null &&
@@ -479,6 +490,11 @@ const printTextPoints = computed(() =>
       )
     : null
 );
+async function useLargerLabels() {
+  printLabelMode.value = "auto";
+  await nextTick();
+  printTextStatus.value?.focus();
+}
 const printDimensions = computed(() =>
   !printError.value && displayed.value && widthMm.value
     ? figurePrintDimensions(displayed.value.width, displayed.value.height, {
@@ -899,6 +915,14 @@ footer {
 }
 .figure-export-options {
   margin-bottom: 0.75rem;
+}
+.figure-print-warning {
+  color: var(--hict-warning);
+}
+.figure-print-warning-action {
+  color: inherit;
+  font-size: inherit;
+  font-weight: 650;
 }
 .figure-export-preview {
   flex: 1;
