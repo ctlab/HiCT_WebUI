@@ -1383,8 +1383,8 @@ class HiCViewAndLayersManager {
       this.secondaryResolutionSet
     );
     const overzoomFactor = 1024;
-    // OpenLayers rounds this limit up to a power-of-two zoom level. Reserve
-    // one extra level so the 12-pixel nucleotide zoom remains reachable.
+    // The finest allowable resolution must remain fixed when the sequence
+    // grid changes the extent and when showing tracks changes the viewport.
     const minResolution = Math.min(
       minPixelResolution / overzoomFactor,
       ...navigationModel.pixelResolutionSet.map(
@@ -1400,9 +1400,17 @@ class HiCViewAndLayersManager {
             (extent[3] - extent[1]) / size[1]
           )
         : Math.max(maxPixelResolution, maximumScaledImageSize);
+    const coarsest = Math.max(maxResolution, this.exportMaxResolution ?? 0);
+    const finest = Math.min(minResolution, coarsest / 2);
+    // OpenLayers quantizes minResolution against maxResolution when given
+    // only bounds. Explicit levels keep both endpoints and continuous zoom.
+    const resolutions = [coarsest];
+    for (let resolution = coarsest / 2; resolution > finest; resolution /= 2)
+      resolutions.push(resolution);
+    resolutions.push(finest);
     return {
-      minResolution,
-      maxResolution: Math.max(maxResolution, this.exportMaxResolution ?? 0),
+      resolutions,
+      maxZoom: resolutions.length - 1,
       constrainResolution: false,
       smoothResolutionConstraint: false,
       zoomFactor: 2,
@@ -1922,8 +1930,25 @@ class HiCViewAndLayersManager {
   public async onViewResolutionChanged(): Promise<void> {
     if (this.changingDisplayGrid) return;
     const requested = this.view.getResolution();
-    if (requested && !this.mapManager.isExporting)
-      this.transitionDisplayGrid(requested);
+    if (requested && !this.mapManager.isExporting) {
+      const previousLimit = this.view.getMaxResolution();
+      const wasAtFullExtent =
+        Math.abs(requested - previousLimit) <= previousLimit * 1e-9;
+      if (this.transitionDisplayGrid(requested) && wasAtFullExtent) {
+        // Finish the fit after OpenLayers commits the resolution on the old grid.
+        const position = this.view.getResolution();
+        queueMicrotask(() => {
+          if (
+            !this.mapManager.isDisposed &&
+            !this.view.getAnimating() &&
+            !this.view.getInteracting() &&
+            (this.view.getResolution() === requested ||
+              this.view.getResolution() === position)
+          )
+            this.fitViewToActiveExtent();
+        });
+      }
+    }
     if (
       requested &&
       !this.mapManager.isExporting &&
