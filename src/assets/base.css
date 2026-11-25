@@ -260,6 +260,34 @@ body:has(> .assembly-context-menu, > .axis-context-menu) [data-sonner-toaster] {
   --hict-toolbar-btn: 44px;
 }
 
+.hict-source-resolutions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.hict-source-resolutions .source-placement {
+  border-radius: 4px;
+  padding-inline: 5px;
+  background: #f2f4f7;
+  color: #475467;
+  font-size: 10.5px;
+}
+.hict-source-resolutions .source-name {
+  color: #344054;
+  pointer-events: auto;
+}
+.hict-source-resolutions .source-resolution {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+.hict-source-resolutions .source-resolution.loading {
+  color: var(--hict-warning);
+  font-weight: 500;
+}
+
 /* Use the same accent in file tables, selection checkboxes, and range sliders. */
 :root {
   --primary-color: var(--bs-primary, #0d6efd);

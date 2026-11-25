@@ -57,6 +57,12 @@ import {
   selectionBorderStyle,
 } from "./selectionStyles";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
+import { useSessionStore } from "@/app/stores/sessionStore";
+import {
+  resolutionSourceName,
+  sourcePlacements,
+  type SourceResolutionInfo,
+} from "../visualization/sourceResolutionInfo";
 import ContigMouseWheelZoom from "@/ContigMouseWheelZoom";
 import BinMousePosition from "@/BinMousePosition";
 import { VersionedXYZContactMapSource } from "../VersionedXYZSource";
@@ -2542,6 +2548,56 @@ class HiCViewAndLayersManager {
     return secondary.pixelResolution < primary.pixelResolution
       ? secondary
       : primary;
+  }
+
+  public getDisplayedSourceResolutions(): SourceResolutionInfo[] {
+    const { primary, secondary } = this.getVisibleSourceResolutionDescriptors();
+    const api = this.mapManager.networkManager.requestManager;
+    const session = useSessionStore();
+    const [primaryPlacement, secondaryPlacement] = sourcePlacements(
+      api.lastRenderPipelineConfig
+    );
+    const primaryFilename =
+      session.openMapFilename || this.mapManager.getOptions().filename;
+    const sources: SourceResolutionInfo[] = [
+      {
+        name: resolutionSourceName(
+          "PRIMARY",
+          primaryFilename,
+          api.sourceCapabilities.PRIMARY
+        ),
+        filename: primaryFilename,
+        placement: primaryPlacement,
+        requestedBp: primary.sourceBpResolution ?? primary.bpResolution,
+        loading: false,
+      },
+    ];
+    if (!secondary || this.hideSecondaryDuringCapture) return sources;
+    const visible = this.layersHolder.secondaryHiCDataLayers.find(
+      (layer) => layer.getVisible() && layer.getOpacity() > 0
+    );
+    if (!visible) return sources;
+    const filename = session.secondaryMapFilename;
+    const requestedBp = secondary.sourceBpResolution ?? secondary.bpResolution;
+    const loading = this.overlayStatus.loading.value;
+    sources.push({
+      name: resolutionSourceName(
+        "SECONDARY",
+        filename,
+        api.sourceCapabilities.SECONDARY
+      ),
+      filename,
+      placement: secondaryPlacement,
+      requestedBp,
+      displayedBp:
+        loading && !this.outgoingOverlay
+          ? undefined
+          : Number(
+              visible.get("sourceBpResolution") ?? visible.get("bpResolution")
+            ),
+      loading,
+    });
+    return primaryPlacement === "lower" ? sources.reverse() : sources;
   }
 
   public getDimensionHolderForSource(

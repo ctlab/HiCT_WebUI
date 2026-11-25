@@ -34,6 +34,35 @@ import { watch } from "vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 
 import { formatBp, formatLength } from "./app/core/format/formatSignal";
+import {
+  sourceResolutionLabel,
+  sourceResolutionValue,
+} from "./app/core/visualization/sourceResolutionInfo";
+
+function resolutionRows(sources) {
+  const rows = document.createElement("div");
+  rows.className = "hict-source-resolutions";
+  for (const source of sources) {
+    const placement = document.createElement("span");
+    placement.className = "source-placement";
+    placement.textContent = source.placement;
+    const name = document.createElement("span");
+    name.className = "source-name";
+    name.title = source.filename || source.name;
+    const characters = [...source.name];
+    name.textContent =
+      characters.length > 18
+        ? characters.slice(0, 17).join("") + "…"
+        : source.name;
+    const resolution = document.createElement("span");
+    resolution.className = source.loading
+      ? "source-resolution loading"
+      : "source-resolution";
+    resolution.textContent = sourceResolutionValue(source);
+    rows.append(placement, name, resolution);
+  }
+  return rows.outerHTML;
+}
 
 function getOsdSettings() {
   try {
@@ -304,37 +333,39 @@ export default class BinMousePosition extends MousePosition {
                       formatLength(guidanceDescriptor.sourceBpResolution)
                   : "Resolution: " + formatLength(bpResolution)
               );
-              if (guidanceDescriptor.sourceName) {
+              const sources =
+                this.layersManager?.getDisplayedSourceResolutions?.() ?? [];
+              if (sources.length > 1) {
+                if (fieldEnabled("resolution")) {
+                  const key = JSON.stringify(sources);
+                  if (key !== this.sourceRowsKey) {
+                    this.sourceRowsKey = key;
+                    this.sourceRowsHTML = resolutionRows(sources);
+                  }
+                  osdLines.resolution = "Resolution" + this.sourceRowsHTML;
+                }
+                appendLine(
+                  "source",
+                  "Showing data from: " + sourceResolutionLabel(sources)
+                );
+              } else if (guidanceDescriptor.sourceName) {
                 appendLine(
                   "source",
                   "Showing data from: " +
                     guidanceDescriptor.sourceName.toLowerCase()
                 );
               }
-              if (this.layersManager?.getVisibleSourceResolutionDescriptors) {
-                const visible =
-                  this.layersManager.getVisibleSourceResolutionDescriptors();
-                const details = [
-                  visible.primary
-                    ? `Primary ${formatLength(
-                        visible.primary.sourceBpResolution ??
-                        visible.primary.bpResolution
-                      )}`
-                    : null,
-                  visible.secondary
-                    ? `Secondary ${formatLength(
-                        visible.secondary.sourceBpResolution ??
-                        visible.secondary.bpResolution
-                      )}`
-                    : null,
-                ].filter(Boolean);
-                if (details.length > 0) {
-                  appendLine(
-                    "visibleResolutions",
-                    "Available resolutions: " + details.join("; ")
-                  );
-                }
-              }
+              if (sources.length)
+                appendLine(
+                  "visibleResolutions",
+                  "Available resolutions: " +
+                    sources
+                      .map(
+                        (source) =>
+                          source.name + " " + sourceResolutionValue(source)
+                      )
+                      .join("; ")
+                );
               appendLine(
                 "pixels",
                 "Matrix cell (display): " +

@@ -516,6 +516,7 @@ class RequestManager {
   private workspaceVersion?: { session: string; revision: number };
   private pendingSessionClose?: Promise<void>;
   public renderPipelineRevision = 0;
+  public lastRenderPipelineConfig?: Readonly<Record<string, unknown>>;
   private readonly sequenceState = shallowReactive({
     revision: 0,
     linked: false,
@@ -976,6 +977,7 @@ class RequestManager {
         this.resetNormalization("PRIMARY");
         this.resetNormalization("SECONDARY");
         this.sourceCapabilities = { PRIMARY: response.capabilities };
+        this.lastRenderPipelineConfig = undefined;
         return response;
       });
   }
@@ -1096,6 +1098,7 @@ class RequestManager {
       this.resetNormalization("PRIMARY");
       this.resetNormalization("SECONDARY");
       this.sourceCapabilities = {};
+      this.lastRenderPipelineConfig = undefined;
       this.workspaceVersion = undefined;
       this.hasLinkedFasta = false;
       this.bumpSequenceRevision();
@@ -1152,6 +1155,9 @@ class RequestManager {
     this.resetNormalization("PRIMARY");
     this.resetNormalization("SECONDARY");
     this.sourceCapabilities = { PRIMARY: response.capabilities };
+    this.lastRenderPipelineConfig = json.renderPipeline as
+      | Record<string, unknown>
+      | undefined;
     return {
       filename,
       fastaFilename,
@@ -1755,26 +1761,37 @@ class RequestManager {
   }
 
   public async getRenderPipelineConfig(): Promise<Record<string, unknown>> {
-    return this.sendRequest(new GetRenderPipelineRequest()).then(
-      (response) => response.data as Record<string, unknown>
-    );
+    const revision = this.renderPipelineRevision;
+    const session = this.workspaceVersion?.session;
+    const response = await this.sendRequest(new GetRenderPipelineRequest());
+    const config = response.data as Record<string, unknown>;
+    if (
+      revision === this.renderPipelineRevision &&
+      session === this.workspaceVersion?.session
+    )
+      this.lastRenderPipelineConfig = config;
+    return config;
   }
 
   public async setRenderPipelineConfig(
     config: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    ++this.renderPipelineRevision;
+    const revision = ++this.renderPipelineRevision;
     const response = await this.sendRequest(
       new SetRenderPipelineRequest(config)
     );
+    if (revision === this.renderPipelineRevision)
+      this.lastRenderPipelineConfig = response.data as Record<string, unknown>;
     if (typeof window !== "undefined")
       window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
     return response.data as Record<string, unknown>;
   }
 
   public async resetRenderPipelineConfig(): Promise<Record<string, unknown>> {
-    ++this.renderPipelineRevision;
+    const revision = ++this.renderPipelineRevision;
     const response = await this.sendRequest(new ResetRenderPipelineRequest());
+    if (revision === this.renderPipelineRevision)
+      this.lastRenderPipelineConfig = response.data as Record<string, unknown>;
     if (typeof window !== "undefined")
       window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
     return response.data as Record<string, unknown>;
@@ -2412,7 +2429,10 @@ class RequestManager {
   ): Promise<VisualizationOptions> {
     const publishesPipeline = request.options.renderPipeline !== undefined;
     if (publishesPipeline) ++this.renderPipelineRevision;
+    const revision = this.renderPipelineRevision;
     const response = await this.sendRequest(request);
+    if (publishesPipeline && revision === this.renderPipelineRevision)
+      this.lastRenderPipelineConfig = request.options.renderPipeline;
     if (publishesPipeline && typeof window !== "undefined")
       window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
     return new VisualizationOptionsDTO(response.data).toEntity();

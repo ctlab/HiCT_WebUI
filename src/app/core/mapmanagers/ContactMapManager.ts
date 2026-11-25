@@ -5,6 +5,7 @@ import {
   visibleMapBounds,
 } from "../export/SelectionScene";
 import { FigureSnapshotLibrary } from "../export/FigureSnapshotLibrary";
+import { sourceResolutionLabel } from "../visualization/sourceResolutionInfo";
 import type { FigurePrintOptions } from "../export/FigurePrintSize";
 import { watchMapRenderCompletion } from "./mapRenderCompletion";
 /*
@@ -1549,6 +1550,11 @@ class ContactMapManager {
       const viewportBounds = this.map.getViewport().getBoundingClientRect();
       const workspaceBounds = workspace.getBoundingClientRect();
       const { captureCanvasScene } = await import("../export/CanvasScene");
+      const sourceResolutions =
+        this.viewAndLayersManager.getDisplayedSourceResolutions();
+      const provenance = options?.metadata?.provenance as
+        | (Record<string, unknown> & { notes?: readonly string[] })
+        | undefined;
       const svg = await captureCanvasScene(
         workspace,
         async () => {
@@ -1563,6 +1569,18 @@ class ContactMapManager {
         options?.metadata
           ? {
               ...options.metadata,
+              ...(provenance && sourceResolutions.length > 1
+                ? {
+                    provenance: {
+                      ...provenance,
+                      notes: [
+                        ...(Array.isArray(provenance.notes) ? provenance.notes : []),
+                        "Resolution " + sourceResolutionLabel(sourceResolutions),
+                      ],
+                      sourceResolutions,
+                    },
+                  }
+                : {}),
               renderCapture,
               renderedGrid: JSON.parse(
                 JSON.stringify(
