@@ -1696,6 +1696,9 @@ function finiteOr(value: number, fallback: number): number {
   display: none;
 }
 .gradient-apply-button {
+  position: sticky;
+  bottom: 6px;
+  z-index: 2;
   width: 100%;
   min-height: 34px;
   border-radius: 7px;

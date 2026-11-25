@@ -1162,6 +1162,7 @@ function selectVisualizationSource(source: "PRIMARY" | "SECONDARY"): void {
   flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: hidden;
+  scroll-padding-bottom: 46px;
   width: 100%;
 }
 
