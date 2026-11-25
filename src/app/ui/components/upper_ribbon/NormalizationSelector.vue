@@ -673,32 +673,28 @@ async function onChoose(value: string): Promise<void> {
 }
 
 watch(
-  () => {
-    const rm = requests();
-    return [
-      props.mapManager,
-      rm?.getNormalizationSourceRevision("PRIMARY"),
-      rm?.getNormalizationSourceRevision("SECONDARY"),
-    ] as const;
-  },
-  ([manager, primary, secondary], previous) => {
-    if (!previous || manager !== previous[0] || primary !== previous[1]) {
+  [
+    () => props.mapManager,
+    () => requests()?.getNormalizationSourceRevision("PRIMARY"),
+    () => requests()?.getNormalizationSourceRevision("SECONDARY"),
+  ],
+  ([manager, primary, secondary], [oldManager, oldPrimary, oldSecondary]) => {
+    if (manager !== oldManager || primary !== oldPrimary) {
       delete preparations.PRIMARY;
       delete errors.PRIMARY;
     }
-    if (!previous || manager !== previous[0] || secondary !== previous[2]) {
+    if (manager !== oldManager || secondary !== oldSecondary) {
       delete preparations.SECONDARY;
       delete errors.SECONDARY;
     }
   }
 );
 watch(
-  () =>
-    [
-      props.mapManager,
-      activeSource.value,
-      requests()?.getNormalizationSourceRevision(activeSource.value),
-    ] as const,
+  [
+    () => props.mapManager,
+    activeSource,
+    () => requests()?.getNormalizationSourceRevision(activeSource.value),
+  ],
   ([manager, source, revision]) => {
     if (manager && revision !== undefined)
       void refreshStatus(manager, source, revision);

@@ -1317,9 +1317,11 @@ class RequestManager {
       throw new Error(
         "The server returned normalization for a different source."
       );
+    const current = this.normalizationState[source];
     if (
-      revision === this.getNormalizationSourceRevision(source) &&
-      (mode === "FILE" || mode === "SQRT_COVERAGE")
+      revision === current.revision &&
+      (mode === "FILE" || mode === "SQRT_COVERAGE") &&
+      current.mode !== mode
     )
       this.normalizationState[source] = { mode, revision };
   }
