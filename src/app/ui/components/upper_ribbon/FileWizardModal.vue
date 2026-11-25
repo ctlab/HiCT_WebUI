@@ -1244,9 +1244,9 @@
               </template>
             </section>
           </div>
-          <div class="modal-footer">
+          <div class="modal-footer hict-modal-footer">
             <button
-              class="btn btn-secondary"
+              class="btn btn-outline-secondary"
               :disabled="runState.running"
               @click="emit('dismissed')"
             >

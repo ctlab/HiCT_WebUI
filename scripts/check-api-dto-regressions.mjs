@@ -100,7 +100,7 @@ function loadTypeScript(filename) {
   );
   return module.exports;
 }
-const { ContigDescriptorDTO, AssemblyInfoDTO, SimpleLinearGradientDTO } = loadTypeScript(
+const { ContigDescriptorDTO, AssemblyInfoDTO, SimpleLinearGradientDTO, VisualizationOptionsDTO } = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/dto/dto.ts")
 );
 const endpointPayload = {
@@ -322,6 +322,18 @@ const { HiCTAPIRequestDTO } = loadTypeScript(
 const requestClasses = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/api/request.ts")
 );
+const diagonalMask = { enabled: true, distanceBp: 150_000 };
+const visualization = new VisualizationOptionsDTO({
+  colormap: { ...endpointPayload, colormapType: "SimpleLinearGradient" },
+  diagonalMask,
+}).toEntity();
+const visualizationRequest = new requestClasses.SetVisualizationOptionsRequest({
+  options: visualization,
+  preserveRenderPipeline: true,
+});
+const serializedVisualization = HiCTAPIRequestDTO.toDTOClass(visualizationRequest).toDTO();
+assert.deepEqual(serializedVisualization.diagonalMask, diagonalMask);
+assert.equal(serializedVisualization.preserveRenderPipeline, true);
 const { SequenceAnalysisRequest } = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/api/SequenceAnalysisRequest.ts")
 );

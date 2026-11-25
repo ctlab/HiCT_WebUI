@@ -87,7 +87,7 @@
     </div>
     <div class="histogram-caption">
       <span role="status" :title="description">
-        {{ status }}<template v-if="diagonalMask?.enabled"> · Ignoring ±{{ formatLength(diagonalMask.distanceBp) }} near diagonal</template>
+        {{ status }}<template v-if="diagonalMask?.enabled"> · diagonal ±{{ formatLength(diagonalMask.distanceBp) }} ignored</template>
       </span>
       <div
         v-if="result"

@@ -335,17 +335,17 @@
             :job-id="jobId"
           />
         </div>
-        <div class="modal-footer">
+        <div class="modal-footer hict-modal-footer">
+          <span v-if="numericError" role="alert" class="text-danger small me-auto">{{
+            numericError
+          }}</span>
           <button
-            class="btn btn-secondary"
+            class="btn btn-outline-secondary"
             type="button"
             @click="emit('dismissed')"
           >
             Cancel
           </button>
-          <span v-if="numericError" role="alert" class="text-danger small">{{
-            numericError
-          }}</span>
           <button
             class="btn btn-primary"
             type="button"

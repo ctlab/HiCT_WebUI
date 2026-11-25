@@ -401,7 +401,7 @@
             </div>
           </div>
         </div>
-        <div class="modal-footer">
+        <div class="modal-footer hict-modal-footer">
           <button
             v-if="batchStep === 'select'"
             type="button"
@@ -412,7 +412,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-secondary"
+            class="btn btn-outline-secondary"
             @click="onDismissClicked"
           >
             {{ batchStep === "select" ? "Cancel" : "Close" }}

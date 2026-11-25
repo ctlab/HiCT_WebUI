@@ -58,6 +58,20 @@
   --vt-c-text-dark-2: rgba(235, 235, 235, 0.64);
 }
 
+.modal-footer.hict-modal-footer {
+  gap: 8px;
+  padding: 14px 20px;
+}
+
+.modal-footer.hict-modal-footer > * {
+  margin: 0;
+}
+
+.hict-modal-footer .btn {
+  min-height: 36px;
+  border-radius: 8px;
+}
+
 /* semantic color variables for this project */
 :root {
   --color-background: var(--vt-c-white);

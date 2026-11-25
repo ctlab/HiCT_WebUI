@@ -505,7 +505,7 @@ function toggleDiagonalMask(enabled: boolean) {
 function commitDiagonalDistance() {
   const bp = parseDistanceBp(diagonalDistance.value);
   if (bp === undefined) {
-    diagonalError.value = "Enter a distance from 1 bp to 1,000 Mb.";
+    diagonalError.value = "Enter a distance between 1 bp and 1 Gb.";
     return;
   }
   diagonalDistance.value = bp.toLocaleString("en-US");
@@ -1537,6 +1537,12 @@ function finiteOr(value: number, fallback: number): number {
   color: var(--hict-surface-fg, #334155);
   position: relative;
   z-index: 30;
+}
+@media (max-height: 799px) {
+  .threshold-compact-card {
+    gap: 8px;
+    padding-block: 10px;
+  }
 }
 .threshold-card-title {
   font-size: 0.8rem;

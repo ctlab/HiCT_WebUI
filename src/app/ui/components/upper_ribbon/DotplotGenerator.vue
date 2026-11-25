@@ -442,13 +442,7 @@
               </div>
             </div>
           </div>
-          <div class="modal-footer">
-            <button
-              class="btn btn-secondary"
-              @click="step === 'select' ? emit('dismissed') : (step = 'select')"
-            >
-              {{ step === "select" ? "Cancel" : "Back" }}
-            </button>
+          <div class="modal-footer hict-modal-footer">
             <button
               v-if="step === 'select'"
               type="button"
@@ -456,6 +450,13 @@
               @click="viewCurrentJobs"
             >
               View dotplot jobs
+            </button>
+            <button
+              type="button"
+              class="btn btn-outline-secondary"
+              @click="step === 'select' ? emit('dismissed') : (step = 'select')"
+            >
+              {{ step === "select" ? "Cancel" : "Back" }}
             </button>
             <button
               v-if="step === 'select'"
