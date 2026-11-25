@@ -58,7 +58,7 @@
             ></button>
           </div>
           <div v-show="!previewMode" class="modal-body">
-            <div class="form-check">
+            <div v-if="editorTarget === 'observed'" class="form-check">
               <input
                 id="pipeline-enabled"
                 v-model="enabled"
@@ -70,7 +70,7 @@
                 >Enable custom rendering</label
               >
             </div>
-            <p v-if="!enabled" class="small text-muted">
+            <p v-if="editorTarget === 'observed' && !enabled" class="small text-muted">
               HiCT uses the sidebar settings. Turn this on to design your own
               colouring.
             </p>
