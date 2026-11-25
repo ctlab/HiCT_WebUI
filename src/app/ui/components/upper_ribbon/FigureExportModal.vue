@@ -79,7 +79,7 @@
           {{ printError }}
         </p>
         <p v-if="error" class="text-danger" role="alert">{{ error }}</p>
-        <div class="figure-export-options">
+        <div class="figure-print-options">
           <label
             >Print width
             <select
@@ -95,6 +95,18 @@
               <option value="custom">Custom</option>
             </select>
           </label>
+          <label>
+            Label size
+            <select
+              v-model="printLabelMode"
+              class="form-select form-select-sm"
+              :disabled="busy"
+            >
+              <option value="auto">Auto (at least 6 pt)</option>
+              <option value="captured">As captured</option>
+              <option value="custom">Custom minimum</option>
+            </select>
+          </label>
           <label v-if="printWidth === 'custom'">
             Width (mm)
             <input
@@ -102,6 +114,18 @@
               type="number"
               min="10"
               max="2000"
+              step="any"
+              class="form-control form-control-sm"
+              :disabled="busy"
+            />
+          </label>
+          <label v-if="printLabelMode === 'custom'">
+            Minimum label size (pt)
+            <input
+              v-model.number="customLabelPoints"
+              type="number"
+              min="1"
+              max="36"
               step="any"
               class="form-control form-control-sm"
               :disabled="busy"
@@ -117,53 +141,45 @@
         <p
           v-if="printTextPoints !== null"
           ref="printTextStatus"
-          class="small"
-          :class="printTextPoints < 5 ? 'figure-print-warning' : 'text-muted'"
+          class="figure-print-status"
+          :class="{ 'figure-print-warning': printTextPoints < 5 }"
           role="status"
           tabindex="-1"
         >
-          Smallest export text: {{ printTextPoints.toFixed(1) }} pt at this
-          width.
-          <template v-if="printTextPoints < 5">
-            It may be unreadable in print.
-            <button
-              class="btn btn-link p-0 align-baseline figure-print-warning-action"
-              type="button"
-              :disabled="busy"
-              @click="useLargerLabels"
-            >
-              Use larger labels
-            </button>
-          </template>
+          <i
+            class="bi"
+            :class="
+              printTextPoints < 5
+                ? 'bi-exclamation-triangle'
+                : 'bi-check-circle'
+            "
+            aria-hidden="true"
+          ></i>
+          <span>
+            Smallest export text:
+            <strong>{{ printTextPoints.toFixed(1) }} pt</strong> at this width.
+            <template v-if="printTextPoints < 5">
+              It may be unreadable in print.
+              <button
+                class="btn btn-link p-0 align-baseline figure-print-warning-action"
+                type="button"
+                :disabled="busy"
+                @click="useLargerLabels"
+              >
+                Use larger labels
+              </button>
+            </template>
+            <template v-else>Most journals ask for at least 5–6 pt.</template>
+          </span>
         </p>
-        <p v-if="outdated && !captureError" class="alert alert-info" role="status">
+        <p
+          v-if="outdated && !captureError"
+          class="alert alert-info"
+          role="status"
+        >
           Update the preview to apply the changed options.
         </p>
         <AdvancedSection dialog-id="figure-export">
-          <label>
-            Label size
-            <select
-              v-model="printLabelMode"
-              class="form-select form-select-sm"
-              :disabled="busy"
-            >
-              <option value="auto">Auto (at least 6 pt)</option>
-              <option value="captured">As captured</option>
-              <option value="custom">Custom minimum</option>
-            </select>
-          </label>
-          <label v-if="printLabelMode === 'custom'">
-            Minimum label size (pt)
-            <input
-              v-model.number="customLabelPoints"
-              type="number"
-              min="1"
-              max="36"
-              step="any"
-              class="form-control form-control-sm"
-              :disabled="busy"
-            />
-          </label>
           <label
             v-if="!sequenceOnly && scope === 'whole-map'"
             class="form-check-label"
@@ -916,8 +932,51 @@ footer {
 .figure-export-options {
   margin-bottom: 0.75rem;
 }
+.figure-print-options,
+.figure-print-status {
+  width: min(100%, 386px);
+}
+.figure-print-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin-bottom: 10px;
+}
+.figure-print-options label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 600;
+}
+.figure-print-options :is(select, input) {
+  height: 36px;
+  padding-left: 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.figure-print-options [role="status"] {
+  grid-column: 1 / -1;
+}
+.figure-print-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--hict-primary-soft);
+  color: #1849a9;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.figure-print-status .bi {
+  font-size: 16px;
+}
 .figure-print-warning {
-  color: var(--hict-warning);
+  background: var(--hict-warning-soft);
+  color: #93370d;
 }
 .figure-print-warning-action {
   color: inherit;
