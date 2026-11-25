@@ -1220,8 +1220,7 @@
         <p class="about-note">{{ projectAttribution.note }}</p>
         <div class="about-versions">
           <div><strong>Backend:</strong> {{ backendVersion }}</div>
-          <div><strong>WebUI:</strong> {{ webuiVersion }}</div>
-          <div><strong>Commit:</strong> {{ webuiCommit }}</div>
+          <div><strong>WebUI revision:</strong> {{ webuiCommit }}</div>
         </div>
         <label class="form-check-label d-block mb-3">
           <input
@@ -1608,7 +1607,6 @@ const dotplotAlignerPreference = ref("auto");
 const dotplotAlignerBusy = ref(false);
 const backendVersion = ref("loading...");
 const backendRevision = ref("");
-const webuiVersion = __HICT_WEBUI_BUILD_VERSION__;
 const webuiCommit = __HICT_WEBUI_BUILD_COMMIT__;
 const citation = computed(
   () =>
