@@ -26,9 +26,11 @@
           <button role="menuitem" @click="zoomTo(item)">
             Zoom to {{ item.kind }}
           </button>
-          <button role="menuitem" @click="copyName(item)">Copy name</button>
+          <button v-if="!hasRegion" role="menuitem" @click="copyName(item)">
+            Copy name
+          </button>
           <button
-            v-if="item.kind === 'contig'"
+            v-if="!hasRegion && item.kind === 'contig'"
             role="menuitem"
             @click="copyPosition(item)"
           >
@@ -66,12 +68,7 @@
             <span class="submenu-arrow" aria-hidden="true">›</span>
           </button>
         </template>
-        <template
-          v-if="
-            item.kind !== 'selection' &&
-            (item.kind === 'scaffold' || !hasScaffold)
-          "
-        >
+        <template v-if="offersStructuralEdits(item)">
           <button
             role="menuitem"
             :disabled="item.structural === false"
@@ -93,25 +90,24 @@
           >
             Ungroup into singletons
           </button>
-          <button
-            role="menuitem"
-            :disabled="item.structural === false"
-            @click="execute(item, 'debris')"
-          >
-            Move to unplaced (debris)…
-          </button>
         </template>
       </section>
-      <p
-        v-if="items.some((item) => item.kind === 'selection')"
-        class="scope-note"
-      >
-        This region is for analysis and export. Shift-select entities for
-        assembly edits.
-      </p>
       <p v-if="hasScaffold" class="scope-note">
         Structural edits act on the whole scaffold.
       </p>
+      <section v-if="debrisTargets.length">
+        <button
+          v-for="item in debrisTargets"
+          :key="`${item.kind}-${item.id}`"
+          role="menuitem"
+          class="debris-action"
+          @click="execute(item, 'debris')"
+        >
+          {{ debrisTargets.length === 1
+            ? "Move to unplaced (debris)…"
+            : `Move ${item.name} to unplaced (debris)…` }}
+        </button>
+      </section>
       <section
         v-if="activeSubmenu"
         ref="submenuMenu"
@@ -276,6 +272,7 @@ import {
 } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { CoordinateFrame } from "@/app/core/mapmanagers/regionSelection";
+import { formatLength } from "@/app/core/format/formatSignal";
 import {
   ReverseSelectionRangeRequest,
   UngroupContigsFromScaffoldRequest,
@@ -331,6 +328,20 @@ const busy = computed(
 );
 const hasScaffold = computed(() =>
   items.value.some((item) => item.kind === "scaffold")
+);
+const hasRegion = computed(() =>
+  items.value.some((item) => item.kind === "selection")
+);
+function offersStructuralEdits(item: Item): boolean {
+  return (
+    item.kind !== "selection" &&
+    (item.kind === "scaffold" || !hasScaffold.value)
+  );
+}
+const debrisTargets = computed(() =>
+  items.value.filter(
+    (item) => offersStructuralEdits(item) && item.structural !== false
+  )
 );
 const formats = ["PNG", "SVG", "PDF"] as const;
 type ExportAction = typeof formats[number] | "clipboard";
@@ -438,7 +449,7 @@ useEscDismissableDialog({
 function close(event: Event) {
   if (!menu.value?.contains(event.target as Node)) items.value = [];
 }
-function axisHits(bp: number): AxisHit[] {
+function axisHits(bp: number, hideSingletonScaffold: boolean): AxisHit[] {
   const manager = props.mapManager;
   const holder = manager.contigDimensionHolder;
   const hits: AxisHit[] = [];
@@ -455,7 +466,14 @@ function axisHits(bp: number): AxisHit[] {
     });
   }
   const scaffold = manager.scaffoldHolder.getScaffoldLocusByBp(bp);
-  if (scaffold) {
+  const contig = hits[0];
+  if (
+    scaffold &&
+    (!hideSingletonScaffold ||
+      !contig ||
+      scaffold.startBp < contig.startBP ||
+      scaffold.endBp > contig.endBP)
+  ) {
     hits.push({
       kind: "scaffold",
       id: scaffold.scaffoldId,
@@ -467,7 +485,7 @@ function axisHits(bp: number): AxisHit[] {
   return hits;
 }
 /** Contig and scaffold under the pointer on each axis, found by coordinates so any point inside a contig works. */
-function itemsAtEvent(event: MouseEvent): Item[] {
+function itemsAtEvent(event: MouseEvent, hasActiveRegion: boolean): Item[] {
   const manager = props.mapManager;
   const holder = manager.contigDimensionHolder;
   const d = manager.viewAndLayersManager.currentViewState.resolutionDesciptor;
@@ -485,24 +503,28 @@ function itemsAtEvent(event: MouseEvent): Item[] {
   )
     return [];
   const column = axisHits(
-    Math.floor(holder.getFractionalBpOfPx(col, d.bpResolution))
+    Math.floor(holder.getFractionalBpOfPx(col, d.bpResolution)),
+    hasActiveRegion
   );
   const row = axisHits(
-    Math.floor(holder.getFractionalBpOfPx(line, d.bpResolution))
+    Math.floor(holder.getFractionalBpOfPx(line, d.bpResolution)),
+    hasActiveRegion
   );
   const result: Item[] = [];
   for (const kind of ["contig", "scaffold"] as const) {
     const label = kind === "contig" ? "Contig" : "Scaffold";
     const byColumn = column.find((hit) => hit.kind === kind);
     const byRow = row.find((hit) => hit.kind === kind);
+    const title = (hit: AxisHit, axis = "") =>
+      `${label}${axis}: ${hit.name} · ${formatLength(hit.endBP - hit.startBP)}`;
     if (byColumn && byRow && byColumn.id !== byRow.id) {
       result.push(
-        { ...byColumn, title: `${label} (column): ${byColumn.name}` },
-        { ...byRow, title: `${label} (row): ${byRow.name}` }
+        { ...byColumn, title: title(byColumn, " (column)") },
+        { ...byRow, title: title(byRow, " (row)") }
       );
     } else {
       const only = byColumn ?? byRow;
-      if (only) result.push({ ...only, title: `${label}: ${only.name}` });
+      if (only) result.push({ ...only, title: title(only) });
     }
   }
   return result;
@@ -520,26 +542,27 @@ async function open(event: MouseEvent) {
   let found: Item[] = [];
   const extent =
     manager.viewAndLayersManager.selectionInteractions.contigSelectExtent.getExtent();
-  const bounds = manager.viewAndLayersManager.currentViewState.selectionBorders;
+  const bounds = manager.viewAndLayersManager.getRegionBounds();
   if (
     extent &&
-    bounds.leftBP &&
-    bounds.rightBP &&
+    bounds &&
     containsCoordinate(extent, manager.map.getEventCoordinate(event))
   ) {
-    const startBP = Math.max(...bounds.leftBP),
-      endBP = Math.min(...bounds.rightBP);
+    const startBP = Math.max(bounds.columnStart, bounds.rowStart),
+      endBP = Math.min(bounds.columnEnd, bounds.rowEnd);
+    const rows = formatLength(bounds.rowEnd - bounds.rowStart);
+    const columns = formatLength(bounds.columnEnd - bounds.columnStart);
     found.push({
       kind: "selection",
       id: -1,
       name: "active rectangle",
-      title: "Region",
+      title: `Region · ${rows} × ${columns}`,
       startBP,
       endBP,
       structural: false,
     });
   }
-  found = [...itemsAtEvent(event), ...found];
+  found = [...itemsAtEvent(event, found.length > 0), ...found];
   if (!found.length) return;
   activeSubmenu.value = null;
   items.value = found;
@@ -818,6 +841,9 @@ useModalFocus(modalFocusElement, () => !!renaming.value);
 .assembly-context-menu button:focus-visible {
   background: #dbeafe;
   color: #172033;
+}
+.assembly-context-menu button.debris-action {
+  color: var(--bs-danger-text-emphasis, #9e1b26);
 }
 .scope-note {
   font-size: 0.8rem;
