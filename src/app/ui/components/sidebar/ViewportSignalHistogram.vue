@@ -48,6 +48,31 @@
         @keydown.delete.prevent="emit('remove', i)"
         @dblclick.stop
       ></button>
+      <button
+        v-for="point in endpoints"
+        :key="point.side"
+        type="button"
+        role="slider"
+        class="curve-endpoint"
+        :class="[point.side, { active: activeEndpoint === point.side }]"
+        :style="{ left: 100 * point.x + '%', top: 100 * (1 - point.y) + '%' }"
+        :aria-label="point.label"
+        :aria-valuenow="Math.round(point.y * 100)"
+        :aria-valuetext="Math.round(point.y * 100) + '%'"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-orientation="vertical"
+        @pointerdown.stop="beginEndpoint($event, point.side)"
+        @keydown="adjustEndpoint($event, point.side)"
+        @contextmenu.stop.prevent="
+          emit('edit-endpoint', point.side, point.side === 'lower' ? 0 : 1)
+        "
+        @dblclick.stop
+      >
+        <span class="curve-endpoint-value" aria-hidden="true">
+          {{ point.label }} {{ Math.round(point.y * 100) }}%
+        </span>
+      </button>
     </div>
     <div class="histogram-controls">
       <slot />
@@ -104,9 +129,11 @@ import {
   viewportHistogramBins,
   viewportLevels,
 } from "@/app/core/visualization/viewportHistogram";
+type Endpoint = "lower" | "upper";
 const props = defineProps<{
   transfer?: string;
   controlPoints?: { x: number; y: number }[];
+  curveEndpoints?: Readonly<Record<Endpoint, number>>;
   manager?: ContactMapManager;
   source: "PRIMARY" | "SECONDARY";
   expression?: Record<string, unknown>;
@@ -121,11 +148,25 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   (event: "edit", index: number, position: number, output: number): void;
+  (event: "edit-endpoint", endpoint: Endpoint, output: number): void;
   (event: "remove", index: number): void;
   (event: "levels", lower: number, upper: number): void;
 }>();
 const editor = ref<HTMLElement>();
-let dragging: { id: number; index: number } | undefined;
+const activeEndpoint = ref<Endpoint>();
+const endpoints = computed(() => {
+  if (!props.curveEndpoints || props.oe || props.min >= props.max) return [];
+  return (["lower", "upper"] as const).map((side) => ({
+    side,
+    x: Math.max(
+      0,
+      Math.min(1, (props[side] - props.min) / (props.max - props.min))
+    ),
+    y: props.curveEndpoints?.[side] ?? (side === "lower" ? 0 : 1),
+    label: side === "lower" ? "At and below Lower" : "At and above Upper",
+  }));
+});
+let dragging: { id: number; point: number | Endpoint } | undefined;
 function editPoint(event: MouseEvent, index: number) {
   const rect = editor.value?.getBoundingClientRect();
   if (!props.transfer || !rect || !rect.width || !rect.height) return;
@@ -142,14 +183,42 @@ function addPoint(event: MouseEvent) {
 }
 function beginPoint(event: PointerEvent, index: number) {
   if (event.button !== 0) return;
-  dragging = { id: event.pointerId, index };
+  dragging = { id: event.pointerId, point: index };
   editor.value?.setPointerCapture(event.pointerId);
 }
+function beginEndpoint(event: PointerEvent, point: Endpoint) {
+  if (event.button !== 0) return;
+  (event.currentTarget as HTMLButtonElement).focus();
+  dragging = { id: event.pointerId, point };
+  activeEndpoint.value = point;
+  editor.value?.setPointerCapture(event.pointerId);
+}
+function adjustEndpoint(event: KeyboardEvent, side: Endpoint) {
+  const up = event.key === "ArrowUp" || event.key === "ArrowRight";
+  const down = event.key === "ArrowDown" || event.key === "ArrowLeft";
+  if (!props.curveEndpoints || (!up && !down)) return;
+  event.preventDefault();
+  const percent = Math.round(100 * props.curveEndpoints[side]);
+  const next = percent + (up ? 1 : -1) * (event.shiftKey ? 10 : 1);
+  emit("edit-endpoint", side, Math.max(0, Math.min(100, next)) / 100);
+}
 function movePoint(event: PointerEvent) {
-  if (dragging?.id === event.pointerId) editPoint(event, dragging.index);
+  if (dragging?.id !== event.pointerId) return;
+  if (typeof dragging.point === "number") {
+    editPoint(event, dragging.point);
+    return;
+  }
+  const rect = editor.value?.getBoundingClientRect();
+  if (!rect?.height) return;
+  const top = event.clientY - rect.top;
+  const output =
+    top <= 4 ? 1 : top >= rect.height - 4 ? 0 : 1 - top / rect.height;
+  emit("edit-endpoint", dragging.point, output);
 }
 function endPoint(event: PointerEvent) {
-  if (dragging?.id === event.pointerId) dragging = undefined;
+  if (dragging?.id !== event.pointerId) return;
+  dragging = undefined;
+  activeEndpoint.value = undefined;
 }
 const result = shallowRef<SignalHistogram>();
 const loading = ref(false),
@@ -332,6 +401,42 @@ svg {
   box-shadow: 0 0 0 1px #075f7c;
   transform: translate(-50%, -50%);
   cursor: grab;
+}
+.curve-endpoint {
+  position: absolute;
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border: 1px solid var(--hict-surface-bg, #fff);
+  border-radius: 1px;
+  background: #075f7c;
+  transform: translate(-50%, -50%);
+  cursor: ns-resize;
+}
+.curve-endpoint-value {
+  display: none;
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: calc(100% + 6px);
+  width: max-content;
+  padding: 3px 6px;
+  transform: translateY(-50%);
+  border: 1px solid var(--hict-surface-border, #cbd5e1);
+  border-radius: 4px;
+  color: var(--hict-surface-fg, #1e293b);
+  background: var(--hict-surface-bg, #fff);
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+.curve-endpoint.upper .curve-endpoint-value {
+  inset-inline-start: auto;
+  inset-inline-end: calc(100% + 6px);
+}
+.curve-endpoint:focus-visible .curve-endpoint-value,
+.curve-endpoint.active .curve-endpoint-value,
+.curve-endpoint:hover .curve-endpoint-value {
+  display: block;
 }
 .histogram-area {
   fill: #94a3b830;

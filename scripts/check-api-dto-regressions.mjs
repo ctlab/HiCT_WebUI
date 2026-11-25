@@ -100,9 +100,22 @@ function loadTypeScript(filename) {
   );
   return module.exports;
 }
-const { ContigDescriptorDTO, AssemblyInfoDTO } = loadTypeScript(
+const { ContigDescriptorDTO, AssemblyInfoDTO, SimpleLinearGradientDTO } = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/dto/dto.ts")
 );
+const endpointPayload = {
+  startColorRGBAString: "rgba(255,255,255,0.0)",
+  endColorRGBAString: "rgba(255,0,0,1.0)",
+  minSignal: 0,
+  maxSignal: 1,
+  curve: [0, 0.25, 0.85, 1, 1, 0],
+};
+const endpointGradient = new SimpleLinearGradientDTO(endpointPayload).toEntity();
+assert.deepEqual(SimpleLinearGradientDTO.fromEntity(endpointGradient).toEntity().curve, endpointPayload.curve);
+assert.throws(() => new SimpleLinearGradientDTO({
+  ...endpointPayload,
+  curve: [1, 0, 0.85, 1],
+}).toEntity());
 const { TrackQueryResponseDTO } = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/dto/responseDTO.ts")
 );

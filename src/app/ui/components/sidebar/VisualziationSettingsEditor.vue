@@ -137,7 +137,11 @@
             :position="toHistogramPosition"
             :transfer="transferPolyline"
             :control-points="controlPoints"
+            :curve-endpoints="
+              midpointPosition === undefined ? undefined : endpointWeights
+            "
             @edit="editPoint"
+            @edit-endpoint="editEndpoint"
             @remove="removePoint"
             @levels="fitViewportLevels"
           >
@@ -366,8 +370,9 @@
         </template>
         <template #advanced-help>
           <p v-if="midpointPosition !== undefined" class="range-help mb-0">
-            Double-click to add a curve point. Drag to move it or right-click to
-            remove it.
+            Double-click the histogram to add a curve point. Drag to move it or
+            right-click to remove it. Drag the square endpoints to change the
+            color at and beyond the limits.
           </p>
         </template>
       </NormalizationSelector>
@@ -412,9 +417,12 @@ import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsS
 import { storeToRefs } from "pinia";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import {
+  buildCurve,
   midpointFraction,
   gammaFromMidpoint,
   colorFraction,
+  curveParts,
+  MAX_CURVE_POINTS,
 } from "@/app/core/visualization/colorMidpoint";
 import { ColorTranslator } from "colortranslator";
 import type { CurrentSignalRangeResponse } from "@/app/core/net/api/response";
@@ -648,29 +656,41 @@ const curveData = computed(() =>
     ? colormap.value.curve
     : undefined
 );
+const curve = computed(() => curveParts(curveData.value));
+const endpointWeights = computed(() => ({
+  lower: curve.value.start,
+  upper: curve.value.end,
+}));
 const controlPoints = computed(() => {
   if (midpointPosition.value === undefined) return [];
-  const data = curveData.value ?? [midpointFraction(colorGamma.value), 0.5];
-  const points = [];
-  for (let i = 0; i < data.length; i += 2) {
+  const data = curveData.value
+    ? curve.value.interior
+    : [{ x: midpointFraction(colorGamma.value), y: 0.5 }];
+  return data.map((p) => {
     const position = toSliderPosition(
-      lowerBound.value + data[i] * (upperBound.value - lowerBound.value)
+      lowerBound.value + p.x * (upperBound.value - lowerBound.value)
     );
-    points.push({
-      fraction: data[i],
+    return {
+      fraction: p.x,
       position,
       x:
         (position - sliderPositionMin.value) /
         (sliderPositionMax.value - sliderPositionMin.value),
-      y: data[i + 1],
-    });
-  }
-  return points;
+      y: p.y,
+    };
+  });
 });
 const transferPolyline = computed(() => {
   if (midpointPosition.value === undefined) return undefined;
   const samples = Array.from({ length: 129 }, (_, i) => i / 128)
     .concat(controlPoints.value.map((p) => p.x))
+    .concat(
+      [lowerSliderValue.value, upperSliderValue.value].map(
+        (limit) =>
+          (limit - sliderPositionMin.value) /
+          (sliderPositionMax.value - sliderPositionMin.value)
+      )
+    )
     .sort((a, b) => a - b);
   return samples
     .map((x) => {
@@ -687,40 +707,56 @@ const transferPolyline = computed(() => {
     })
     .join(" ");
 });
+function editEndpoint(side: "lower" | "upper", output: number) {
+  const { start, end, interior } = curve.value;
+  const next = buildCurve(
+    side === "lower" ? output : start,
+    side === "upper" ? output : end,
+    interior
+  );
+  if (
+    midpointPosition.value === undefined ||
+    endpointWeights.value[side] === output ||
+    (next?.length ?? 0) > MAX_CURVE_POINTS * 2
+  )
+    return;
+  setColorGamma(1, next);
+}
 function editPoint(index: number, position: number, output?: number) {
   if (midpointPosition.value === undefined) return;
   keepAdjustmentLimits();
-  const data = controlPoints.value.map((p) => [p.fraction, p.y]);
+  const { start, end } = curve.value;
+  const data = controlPoints.value.map((p) => ({ x: p.fraction, y: p.y }));
   let x =
     (fromSliderPosition(position) - lowerBound.value) /
     (upperBound.value - lowerBound.value);
   if (index < 0) {
     if (
-      data.length >= 64 ||
+      data.length + Number(start !== 0) + Number(end !== 1) >=
+        MAX_CURVE_POINTS ||
       !(x > 0 && x < 1) ||
-      data.some((p) => Math.abs(p[0] - x) < 1e-6)
+      data.some((p) => Math.abs(p.x - x) < 1e-6)
     )
       return;
-    data.push([x, output ?? 0.5]);
-    data.sort((a, b) => a[0] - b[0]);
+    data.push({ x, y: output ?? 0.5 });
+    data.sort((a, b) => a.x - b.x);
   } else {
     if (!data[index]) return;
     x = Math.max(
-      (data[index - 1]?.[0] ?? 0) + 1e-7,
-      Math.min((data[index + 1]?.[0] ?? 1) - 1e-7, x)
+      (data[index - 1]?.x ?? 0) + 1e-7,
+      Math.min((data[index + 1]?.x ?? 1) - 1e-7, x)
     );
-    data[index] = [x, output ?? data[index][1]];
+    data[index] = { x, y: output ?? data[index].y };
   }
-  setColorGamma(1, data.flat());
+  setColorGamma(1, buildCurve(start, end, data));
 }
 function removePoint(index: number) {
   if (midpointPosition.value === undefined) return;
-  setColorGamma(
-    1,
-    controlPoints.value
-      .filter((_, i) => i !== index)
-      .flatMap((p) => [p.fraction, p.y])
-  );
+  const { start, end } = curve.value;
+  const interior = controlPoints.value
+    .filter((_, i) => i !== index)
+    .map((p) => ({ x: p.fraction, y: p.y }));
+  setColorGamma(1, buildCurve(start, end, interior));
 }
 function setColorGamma(gamma: number, curve?: number[]): void {
   const current = colormap.value;

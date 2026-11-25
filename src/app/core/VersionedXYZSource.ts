@@ -37,6 +37,7 @@ import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { useStyleStore } from "@/app/stores/styleStore";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
+import { colorFraction } from "@/app/core/visualization/colorMidpoint";
 
 const PROJECTED_TILE_CACHE_BYTES = 48 * 1024 * 1024;
 
@@ -446,11 +447,15 @@ class VersionedXYZContactMapSource extends XYZ {
     const colormap = visualizationOptionsStore.colormap;
     let minSignal = 0;
     let maxSignal = 1;
+    let gamma = 1;
+    let curve: number[] | undefined;
     let start = this.parseRgba("rgba(0,255,0,0.0)");
     let end = this.parseRgba("rgba(0,96,0,1.0)");
     if (colormap instanceof SimpleLinearGradient) {
       minSignal = colormap.minSignal;
       maxSignal = colormap.maxSignal;
+      gamma = colormap.gamma;
+      curve = colormap.curve;
       start = this.parseRgba(
         colormap.startColorRGBA?.RGBA || "rgba(0,255,0,0.0)"
       );
@@ -469,7 +474,7 @@ class VersionedXYZContactMapSource extends XYZ {
         0,
         Math.min(1, (signal - minSignal) / signalRange)
       );
-      const mix = normalized;
+      const mix = colorFraction(normalized, gamma, curve);
       const alpha = (start[3] + (end[3] - start[3]) * mix) / 255.0;
       const colorR = start[0] + (end[0] - start[0]) * mix;
       const colorG = start[1] + (end[1] - start[1]) * mix;
