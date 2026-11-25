@@ -202,21 +202,27 @@ console.warn = (...args: unknown[]) => {
   );
 };
 
-window.addEventListener("error", (event) => {
-  const msg = event.error?.message ?? event.message ?? "WebUI error";
-  pushNotification("error", msg, { skipConsole: true });
-  if (errorToastStore.webuiErrorToastsEnabled) originalToastError(msg);
-});
-
-window.addEventListener("unhandledrejection", (event) => {
-  event.preventDefault();
-  const reason = event.reason;
-  const msg =
+function reportRuntimeFailure(reason: unknown, fallback: string): void {
+  const message =
     reason instanceof Error
       ? reason.message
       : typeof reason === "string"
       ? reason
-      : "Unhandled promise rejection";
-  const short = msg.split(/\r?\n/, 1)[0].slice(0, 180);
-  showFailure(`Something went wrong: ${short}`, undefined, msg);
+      : fallback;
+  const firstLine = message.split(/\r?\n/, 1)[0].trim() || fallback;
+  const title = firstLine.length > 180 ? `${firstLine.slice(0, 179)}…` : firstLine;
+  showFailure(
+    `Something went wrong: ${title}`,
+    undefined,
+    stringifyNotificationMessage(reason ?? message),
+    errorToastStore.webuiErrorToastsEnabled
+  );
+}
+
+window.addEventListener("error", (event) => {
+  reportRuntimeFailure(event.error ?? event.message, "WebUI error");
+});
+window.addEventListener("unhandledrejection", (event) => {
+  event.preventDefault();
+  reportRuntimeFailure(event.reason, "Unhandled promise rejection");
 });

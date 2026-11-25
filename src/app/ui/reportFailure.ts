@@ -43,10 +43,15 @@ export function reportFailure(operation: string, error: unknown): void {
   showFailure(http?.title ?? message, http?.description, diagnostics);
 }
 
-export function showFailure(title: string, description?: string, diagnostics?: string): void {
+export function showFailure(
+  title: string,
+  description?: string,
+  diagnostics?: string,
+  showToast = useErrorToastStore().requestErrorToastsEnabled
+): void {
   const notifications = useNotificationCenterStore();
   const entry = notifications.add("error", title, diagnostics);
-  if (!useErrorToastStore().requestErrorToastsEnabled) return;
+  if (!showToast) return;
   notify("error", title, description, {
     label: "Details",
     onClick: () => notifications.openAndExpandEntry(entry),

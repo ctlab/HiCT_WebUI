@@ -47,7 +47,7 @@
     @dismissed="finishSessionFile(null)"
   />
   <div :class="{ 'modal-notifications': hasActiveModal() }">
-    <Toaster position="bottom-center" richColors closeButton />
+    <Toaster position="bottom-center" close-button close-button-position="top-right" />
   </div>
   <!-- <button @click="() => toast.message('My first toast')">Render a toast</button> -->
   <div class="main-ui-component">

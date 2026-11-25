@@ -240,9 +240,64 @@ body:has(> .assembly-context-menu, > .axis-context-menu) [data-sonner-toaster] {
   z-index: 1049;
 }
 
+[data-sonner-toast][data-styled="true"][data-type="error"] {
+  --hict-toast-accent: var(--hict-danger);
+}
+
+[data-sonner-toast][data-styled="true"][data-type="warning"] {
+  --hict-toast-accent: var(--hict-warning);
+}
+
+[data-sonner-toast][data-styled="true"][data-type="info"] {
+  --hict-toast-accent: var(--hict-primary);
+}
+
+[data-sonner-toast][data-styled="true"][data-type="success"] {
+  --hict-toast-accent: var(--hict-success);
+}
+
 [data-sonner-toaster][data-sonner-theme="light"]
-  [data-sonner-toast][data-type="success"] {
-  --success-text: #087328;
+  [data-sonner-toast][data-styled="true"] {
+  --hict-toast-shadow: 0 8px 24px rgba(15, 23, 38, 0.12);
+  border-color: #eaecf0;
+  border-left: 4px solid var(--hict-toast-accent, var(--hict-primary));
+  border-radius: var(--hict-radius-md);
+  padding: 12px 14px;
+  gap: 10px;
+  background: #fff;
+  color: #101828;
+  box-shadow: var(--hict-toast-shadow);
+  font-size: 13.5px;
+}
+
+[data-sonner-toaster][data-sonner-theme="light"]
+  [data-sonner-toast][data-styled="true"]:focus-visible {
+  box-shadow: var(--hict-toast-shadow), var(--hict-focus-ring);
+}
+
+[data-sonner-toaster][data-sonner-theme="light"] [data-sonner-toast] [data-title] {
+  font-weight: 650;
+}
+
+[data-sonner-toaster][data-sonner-theme="light"] [data-sonner-toast] [data-description] {
+  color: #475467;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+[data-sonner-toaster][data-sonner-theme="light"] [data-sonner-toast] [data-icon] {
+  color: var(--hict-toast-accent, var(--hict-primary));
+}
+
+[data-sonner-toaster][data-sonner-theme="light"] [data-close-button-position="top-right"] {
+  top: 6px;
+  right: 6px;
+  transform: none;
+}
+
+[data-sonner-toaster][data-sonner-theme="light"]
+  [data-close-button] ~ :is([data-content], [data-button]):last-child {
+  margin-right: 20px;
 }
 
 .ol-zoom button {
