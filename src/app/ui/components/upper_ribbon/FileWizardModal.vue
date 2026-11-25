@@ -31,7 +31,7 @@
       aria-labelledby="wizard-title"
     >
       <div
-        class="modal-dialog wizard-dialog modal-dialog-centered modal-dialog-scrollable"
+        class="modal-dialog wizard-dialog modal-dialog-centered modal-dialog-scrollable hict-heavy-dialog"
       >
         <div class="modal-content wizard-content">
           <div class="modal-header">

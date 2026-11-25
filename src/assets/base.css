@@ -72,6 +72,21 @@
   border-radius: 8px;
 }
 
+.hict-heavy-dialog > .modal-content {
+  border-radius: 12px;
+  box-shadow: var(--hict-surface-shadow);
+}
+
+.hict-heavy-dialog > .modal-content > .modal-header {
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px 12px;
+}
+
+.hict-heavy-dialog > .modal-content > .modal-body {
+  padding: 16px 20px;
+}
+
 /* semantic color variables for this project */
 :root {
   --color-background: var(--vt-c-white);

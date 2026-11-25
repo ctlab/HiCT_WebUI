@@ -31,7 +31,7 @@
     tabindex="-1"
   >
     <div
-      class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable converter-dialog"
+      class="modal-dialog modal-dialog-centered modal-dialog-scrollable hict-heavy-dialog converter-dialog"
     >
       <div class="modal-content">
         <div class="modal-header">
@@ -1086,19 +1086,11 @@ function isChromSizesFilename(name: string): boolean {
 }
 
 .converter-dialog {
-  max-width: 80vw;
-  width: 80vw;
+  --bs-modal-width: 760px;
 }
 
 .converter-dialog .modal-content {
   max-height: min(92vh, 980px);
-}
-
-@media (max-width: 768px) {
-  .converter-dialog {
-    max-width: calc(100vw - 1rem);
-    width: calc(100vw - 1rem);
-  }
 }
 
 .overwrite-confirm-backdrop {

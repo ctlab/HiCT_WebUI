@@ -85,6 +85,7 @@
                   >Examples…</a
                 >
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
                 <a
                   class="dropdown-item"
@@ -158,7 +159,6 @@
                   >Close map</a
                 >
               </li>
-              <li v-if="canQuit"><hr class="dropdown-divider" /></li>
               <li v-if="canQuit">
                 <a class="dropdown-item" href="#" @click.prevent="onQuitClicked"
                   >Quit HiCT</a
@@ -186,8 +186,14 @@
                   "
                   @click="editHistory('undo')"
                 >
-                  {{ undoLabel
-                  }}<span class="menu-shortcut" aria-hidden="true">Ctrl+Z</span>
+                  <span>
+                    <i
+                      class="bi bi-arrow-counterclockwise me-2"
+                      aria-hidden="true"
+                    ></i>
+                    {{ undoLabel }}
+                  </span>
+                  <span class="menu-shortcut" aria-hidden="true">Ctrl+Z</span>
                 </button>
               </li>
               <li>
@@ -202,9 +208,11 @@
                   "
                   @click="editHistory('redo')"
                 >
-                  Redo<span class="menu-shortcut" aria-hidden="true"
-                    >Ctrl+Shift+Z</span
-                  >
+                  <span>
+                    <i class="bi bi-arrow-clockwise me-2" aria-hidden="true"></i>
+                    Redo
+                  </span>
+                  <span class="menu-shortcut" aria-hidden="true">Ctrl+Shift+Z</span>
                 </button>
               </li>
               <li><hr class="dropdown-divider" /></li>
@@ -221,17 +229,21 @@
               </li>
               <li>
                 <button
-                  class="dropdown-item"
+                  class="dropdown-item menu-shortcut-row"
                   type="button"
                   :disabled="!props.mapManager"
+                  aria-keyshortcuts="Escape"
                   title="Open a map to clear a selection"
                   @click="
                     props.mapManager?.viewAndLayersManager.clearSelections()
                   "
                 >
-                  Clear selection
+                  Clear selection<span class="menu-shortcut" aria-hidden="true"
+                    >Esc</span
+                  >
                 </button>
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
                 <button
                   class="dropdown-item"
@@ -349,6 +361,7 @@
                   >Rendering pipeline…</a
                 >
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
                 <a
                   class="dropdown-item"
@@ -366,6 +379,7 @@
                   >Restrict resolutions…</a
                 >
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
                 <button
                   class="dropdown-item"
@@ -432,7 +446,7 @@
               >Tools</a
             >
             <ul class="dropdown-menu">
-              <li><h6 class="dropdown-header">Sequence search</h6></li>
+              <li><h6 class="dropdown-header">Sequences</h6></li>
               <li>
                 <button
                   class="dropdown-item"
@@ -456,7 +470,6 @@
                   Search NCBI databases…
                 </button>
               </li>
-              <li><hr class="dropdown-divider" /></li>
               <li><h6 class="dropdown-header">Dotplots</h6></li>
               <li>
                 <a
@@ -670,16 +683,23 @@
                 >
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click.prevent="onOpenApiDocs"
-                  >API documentation…</a
-                >
-              </li>
-              <li>
                 <a
                   class="dropdown-item"
                   href="#"
                   @click.prevent="emit('examplesRequested')"
                   >Examples…</a
+                >
+              </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a
+                  class="dropdown-item menu-shortcut-row"
+                  href="#"
+                  @click.prevent="onOpenApiDocs"
+                  >API documentation…<i
+                    class="bi bi-box-arrow-up-right menu-shortcut"
+                    aria-hidden="true"
+                  ></i></a
                 >
               </li>
               <li>
@@ -690,6 +710,7 @@
                   >Connection…</a
                 >
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
                 <a class="dropdown-item" href="#" @click.prevent="openAbout"
                   >About HiCT…</a
@@ -697,11 +718,14 @@
               </li>
               <li>
                 <a
-                  class="dropdown-item"
+                  class="dropdown-item menu-shortcut-row"
                   href="https://github.com/ctlab/HiCT/issues"
                   target="_blank"
                   rel="noopener noreferrer"
-                  >Report a bug…</a
+                  >Report a bug…<i
+                    class="bi bi-box-arrow-up-right menu-shortcut"
+                    aria-hidden="true"
+                  ></i></a
                 >
               </li>
             </ul>
@@ -812,7 +836,11 @@
       </div>
     </div>
   </nav>
-  <UserGuideModal v-if="guideOpen" @dismissed="guideOpen = false" />
+  <UserGuideModal
+    v-if="guideOpen"
+    :network-manager="props.networkManager"
+    @dismissed="guideOpen = false"
+  />
   <UniversalFileSelector
     :network-manager="props.networkManager"
     v-if="openingFile"
@@ -2929,16 +2957,45 @@ function onSelectionFASTARequest() {
   border-color: var(--hict-ui-border, rgba(15, 23, 38, 0.22));
 }
 
+.navbar-bar .nav-item > .dropdown-menu:not(.p-3) {
+  min-width: min(290px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  padding: 6px;
+  border-radius: 10px;
+  box-shadow: var(--hict-surface-shadow);
+  font-size: 14px;
+}
+
+.navbar-bar .nav-item > .dropdown-menu:not(.p-3) .dropdown-item {
+  border-radius: 6px;
+  padding: 6px 12px;
+  white-space: normal;
+}
+
+.navbar-bar
+  .nav-item
+  > .dropdown-menu:not(.p-3)
+  .dropdown-item:is(.disabled, :disabled) {
+  color: var(--hict-ui-muted, #64748b) !important;
+}
+
+.navbar-bar .nav-item > .dropdown-menu:not(.p-3) .dropdown-header {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .menu-shortcut-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 8px;
 }
 
 .menu-shortcut {
   color: var(--hict-ui-muted, #64748b);
-  font-size: 0.75em;
+  font-size: 12px;
   white-space: nowrap;
 }
 

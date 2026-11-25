@@ -30,7 +30,7 @@
     aria-labelledby="matrix-export-title"
   >
     <div
-      class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"
+      class="modal-dialog modal-dialog-centered modal-dialog-scrollable hict-heavy-dialog matrix-export-dialog"
     >
       <div class="modal-content">
         <div class="modal-header">
@@ -648,6 +648,10 @@ useEscDismissableDialog({
 .export-matrix-shell {
   display: block;
   z-index: 1055;
+}
+
+.matrix-export-dialog {
+  --bs-modal-width: 560px;
 }
 
 .modal-backdrop {
