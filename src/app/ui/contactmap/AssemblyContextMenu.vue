@@ -18,7 +18,7 @@
             .selectedContigIds.length
         "
       >
-        <button role="menuitem" @click="isolate">Isolate view to region</button>
+        <button role="menuitem" @click="isolate">Isolate view to selection</button>
       </section>
       <section v-for="item in items" :key="`${item.kind}-${item.id}`">
         <div class="entity-title">{{ item.title }}</div>
