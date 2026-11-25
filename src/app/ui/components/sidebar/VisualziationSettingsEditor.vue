@@ -140,7 +140,34 @@
             @edit="editPoint"
             @remove="removePoint"
             @levels="fitViewportLevels"
-          />
+          >
+            <div class="slider-spacing">
+              <span id="slider-scale-label" class="scale-caption">
+                Slider scale
+              </span>
+              <div
+                class="scale-choice"
+                role="group"
+                aria-labelledby="slider-scale-label"
+                title="Spacing of the slider and histogram only. The map colours do not change."
+              >
+                <button
+                  type="button"
+                  :aria-pressed="!sliderLogScale"
+                  @click="sliderLogScale = false"
+                >
+                  Linear
+                </button>
+                <button
+                  type="button"
+                  :aria-pressed="sliderLogScale"
+                  @click="sliderLogScale = true"
+                >
+                  Log
+                </button>
+              </div>
+            </div>
+          </ViewportSignalHistogram>
         </template>
       </SignalRangeControl>
       <p
@@ -197,32 +224,6 @@
         </template>
         <template #advanced-top>
           <div class="range-details">
-            <div class="range-option">
-              <span id="slider-scale-label" class="scale-caption"
-                >Slider scale</span
-              >
-              <div
-                class="scale-choice"
-                role="group"
-                aria-labelledby="slider-scale-label"
-                title="Changes slider sensitivity, not matrix values"
-              >
-                <button
-                  type="button"
-                  :aria-pressed="!sliderLogScale"
-                  @click="sliderLogScale = false"
-                >
-                  Linear
-                </button>
-                <button
-                  type="button"
-                  :aria-pressed="sliderLogScale"
-                  @click="sliderLogScale = true"
-                >
-                  Log
-                </button>
-              </div>
-            </div>
             <div class="range-option">
               <span>Slider limits</span>
               <span class="range-summary-value">
@@ -1486,25 +1487,31 @@ function finiteOr(value: number, fallback: number): number {
   gap: 4px 8px;
   font-size: 0.8rem;
 }
+.slider-spacing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
 .scale-caption {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: #475569;
 }
 .scale-choice {
   display: inline-flex;
-  padding: 3px;
+  padding: 0;
   border-radius: 7px;
   background: #f1f5f9;
   border: 1px solid #e2e8f0;
 }
 .scale-choice button {
-  padding: 3px 10px;
+  padding: 2px 8px;
   background: transparent;
   border: 0;
   border-radius: 4px;
   color: #475569;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 .scale-choice button[aria-pressed="true"] {
   background: white;

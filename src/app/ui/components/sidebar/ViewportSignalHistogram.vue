@@ -49,17 +49,8 @@
         @dblclick.stop
       ></button>
     </div>
-    <div
-      v-if="result"
-      class="d-flex justify-content-between text-muted small"
-      role="group"
-      aria-label="Visible signal range"
-    >
-      <span>{{ formatSignalCompact(result.min) }}</span>
-      <span>{{ formatSignalCompact(result.max) }}</span>
-    </div>
-    <div class="histogram-caption">
-      <span role="status" :title="description">{{ status }}</span>
+    <div class="histogram-controls">
+      <slot />
       <button
         type="button"
         class="range-text-button"
@@ -68,6 +59,18 @@
       >
         Fit levels
       </button>
+    </div>
+    <div class="histogram-caption">
+      <span role="status" :title="description">{{ status }}</span>
+      <div
+        v-if="result"
+        class="histogram-range text-muted"
+        role="group"
+        aria-label="Visible signal range"
+      >
+        {{ formatSignalCompact(result.min) }} –
+        {{ formatSignalCompact(result.max) }}
+      </div>
       <button
         v-if="error"
         type="button"
@@ -303,6 +306,11 @@ svg {
   height: 54px;
   overflow: hidden;
 }
+@media (min-height: 800px) {
+  svg {
+    height: 92px;
+  }
+}
 .curve-editor {
   position: relative;
   touch-action: none;
@@ -343,6 +351,19 @@ svg {
   stroke: #94a3b8;
   stroke-dasharray: 3 2;
 }
+.histogram-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+.histogram-controls .range-text-button {
+  margin-inline-start: auto;
+  padding-inline: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
 .histogram-caption {
   display: flex;
   align-items: center;
@@ -354,6 +375,10 @@ svg {
 .histogram-caption span {
   flex: 1;
   min-width: 0;
+}
+.histogram-range {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .range-text-button {
   background: none;

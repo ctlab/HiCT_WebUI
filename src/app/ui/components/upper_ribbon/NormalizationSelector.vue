@@ -28,7 +28,7 @@
     <p
       v-if="!signalEditable"
       id="custom-signal-graph"
-      class="small text-muted mb-2"
+      class="small text-muted mb-0"
       role="status"
     >
       This layer uses a custom processing graph. Edit it in Rendering pipeline.
@@ -36,25 +36,27 @@
     <p
       v-if="contactUnavailable"
       id="contact-normalization-unavailable"
-      class="small text-muted"
+      class="small text-muted mb-0"
     >
       {{ capabilities?.contactNormalization.reason }}
     </p>
     <p
       v-if="weightsUnavailable && !contactUnavailable"
       id="imported-weights-unavailable"
-      class="small text-muted"
+      class="small text-muted mb-0"
     >
       {{ weightsAvailability?.reason }}
     </p>
 
     <div class="signal-row">
-      <span id="signal-transform-label" class="signal-label"> Signal </span>
+      <span id="signal-transform-label" class="signal-label">
+        Displayed signal
+      </span>
       <div
         class="scale-choice"
         role="group"
         aria-labelledby="signal-transform-label"
-        title="Changes the displayed matrix values: log(1 + x) / log(base)"
+        title="Values coloured on the map: Linear shows contacts as they are, Log2 shows log₂(1 + value)."
       >
         <button
           id="signal-transform-linear"
@@ -183,7 +185,7 @@
 
     <AdvancedSection
       dialog-id="sidebar-visualization"
-      hint="slider scale, limits, log base, pipeline"
+      hint="slider limits, log base, pipeline"
       class="signal-advanced"
       id="signal-advanced"
     >

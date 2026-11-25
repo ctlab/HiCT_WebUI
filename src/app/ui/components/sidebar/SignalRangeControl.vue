@@ -4,7 +4,6 @@
     class="signal-range"
     :class="{
       'handles-close': close,
-      'has-histogram': !!$slots.histogram,
       'has-midpoint': midpoint !== undefined,
     }"
     :style="colors"
@@ -66,9 +65,9 @@
       @keydown.right.prevent="emit('point', index, point + (max - min) / 100)"
       @pointerdown.stop="startPoint($event, index)"
     ></button>
-    <div v-if="$slots.histogram" class="range-histogram" @pointerdown.stop>
-      <slot name="histogram" />
-    </div>
+  </div>
+  <div v-if="$slots.histogram" class="range-histogram">
+    <slot name="histogram" />
   </div>
 </template>
 <script setup lang="ts">
@@ -245,14 +244,8 @@ onBeforeUnmount(() => observer?.disconnect());
   border-radius: 4px;
   pointer-events: none;
 }
-.signal-range.has-histogram {
-  height: 122px;
-}
 .range-histogram {
-  position: absolute;
-  top: 42px;
-  left: 0;
-  right: 0;
+  margin: -10px 10px 0;
 }
 .range-rail {
   left: 0;
