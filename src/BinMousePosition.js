@@ -316,16 +316,16 @@ export default class BinMousePosition extends MousePosition {
                   this.layersManager.getVisibleSourceResolutionDescriptors();
                 const details = [
                   visible.primary
-                    ? `Primary 1:${
+                    ? `Primary ${formatLength(
                         visible.primary.sourceBpResolution ??
                         visible.primary.bpResolution
-                      }`
+                      )}`
                     : null,
                   visible.secondary
-                    ? `Secondary 1:${
+                    ? `Secondary ${formatLength(
                         visible.secondary.sourceBpResolution ??
                         visible.secondary.bpResolution
-                      }`
+                      )}`
                     : null,
                 ].filter(Boolean);
                 if (details.length > 0) {
@@ -429,10 +429,7 @@ export default class BinMousePosition extends MousePosition {
             const mainFields = new Set(["global", "resolution"]);
             const base = orderedFields.filter((field) => mainFields.has(field));
             const extra = orderedFields.filter(
-              (field) =>
-                !mainFields.has(field) &&
-                field !== "visibleResolutions" &&
-                osdLines[field]
+              (field) => !mainFields.has(field) && osdLines[field]
             );
             html += base
               .map((field) => osdLines[field])
