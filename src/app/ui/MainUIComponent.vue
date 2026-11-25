@@ -2311,7 +2311,7 @@ function onFileSelected(newFilename: string) {
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: 5px;
   color: #667085;
   font-size: 0.8125rem;
 }
