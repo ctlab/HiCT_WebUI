@@ -3,6 +3,9 @@ import fs from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import { Collection } from "ol";
+import { createRequire } from "node:module";
+import * as vue from "vue";
+import { hiddenContigDescriptors, hiddenContigResolutions } from "./hidden-contig-fixture.mjs";
 
 function load(file, imports = {}) {
   const exports = {};
@@ -270,4 +273,31 @@ for (const frame of ["assembly", "scaffold", "contig"]) {
       model.parseCopiedRegion(text + "\textra", references, domain)
     );
   }
+}
+
+const require = createRequire(import.meta.url);
+const Holder = load("../src/app/core/mapmanagers/ContigDimensionHolder.ts", {
+  "binary-search": { default: require("binary-search") },
+  "binary-search-bounds": { default: require("binary-search-bounds") },
+  "@/CommonUtils": { default: { clamp: (value, lo, hi) => Math.max(lo, Math.min(value, hi)) } },
+  "../domain/common": load("../src/app/core/domain/common.ts"),
+  vue,
+}).default;
+const hidden = new Holder(hiddenContigDescriptors());
+layers.mapManager.contigDimensionHolder = hidden;
+for (const bpResolution of hiddenContigResolutions) {
+  const pixelResolution = 1.3;
+  layers.currentViewState.resolutionDesciptor = { bpResolution, pixelResolution };
+  const [, start, end] = hidden.prefix_sum_px.get(bpResolution);
+  const a = start * pixelResolution, b = end * pixelResolution;
+  const region = layers.regionFromExtent([a, -b, b, -a]);
+  assert.deepEqual(plain(region), {
+    rowStart: 1_000_000, rowEnd: 1_300_000,
+    columnStart: 1_000_000, columnEnd: 1_300_000,
+  });
+  const selected = hidden.contigDescriptors.filter((_, i) =>
+    hidden.prefix_sum_bp[i] < region.columnEnd &&
+    hidden.prefix_sum_bp[i + 1] > region.columnStart
+  );
+  assert.equal(selected.length, 1);
 }

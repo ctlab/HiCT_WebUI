@@ -293,12 +293,20 @@ class HiCViewAndLayersManager {
       : undefined;
   }
 
-  public regionFromExtent(extent: number[]): RegionBounds | undefined {
+  private displayExtentToBp(extent: number[]): number[] {
     const d = this.currentViewState.resolutionDesciptor,
       holder = this.mapManager.contigDimensionHolder;
-    const values = [extent[0], -extent[3], extent[2], -extent[1]].map((value) =>
-      holder.getFractionalBpOfPx(value / d.pixelResolution, d.bpResolution)
+    return [extent[0], -extent[3], extent[2], -extent[1]].map((value, i) =>
+      holder.getFractionalBpOfPx(
+        value / d.pixelResolution,
+        d.bpResolution,
+        i < 2 ? "start" : "end"
+      )
     );
+  }
+
+  public regionFromExtent(extent: number[]): RegionBounds | undefined {
+    const values = this.displayExtentToBp(extent);
     const domain = this.getRegionDomain();
     const region = {
       columnStart: Math.max(
@@ -790,21 +798,11 @@ class HiCViewAndLayersManager {
     extent: number[],
     source: MatrixSourceName = "PRIMARY"
   ) {
-    const display = this.currentViewState.resolutionDesciptor;
     const native = this.getNativeResolutionDescriptor(source);
     const holder = this.mapManager.contigDimensionHolder.getNativeCoordinates();
     const totalBp = holder.prefix_sum_bp[holder.contig_count] ?? 0;
-    const bp = [extent[0], -extent[3], extent[2], -extent[1]].map((value) =>
-      Math.max(
-        0,
-        Math.min(
-          totalBp,
-          this.mapManager.contigDimensionHolder.getFractionalBpOfPx(
-            value / display.pixelResolution,
-            display.bpResolution
-          )
-        )
-      )
+    const bp = this.displayExtentToBp(extent).map((value) =>
+      Math.max(0, Math.min(totalBp, value))
     );
     const start = (value: number) =>
       holder.getBinContainingBp(

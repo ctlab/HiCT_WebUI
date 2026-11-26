@@ -571,13 +571,18 @@ export default class ContigDimensionHolder {
   }
 
   protected getStartBpOfPx_internal(px: number, resolution: number): number {
-    const contig_ord = this.getContigOrderByPx(px, resolution);
+    const order = this.getContigOrderByPx(px, resolution);
+    const startPx = this.prefix_sum_px.get(resolution)?.[order] ?? 0;
+    return this.getStartBpOfContigPixel(order, px - startPx, resolution);
+  }
+
+  private getStartBpOfContigPixel(
+    contig_ord: number,
+    in_contig_offset_bins: number,
+    resolution: number
+  ): number {
     const contig_direction = this.contigDescriptors[contig_ord].direction;
     const contig_start_bp = this.prefix_sum_bp[contig_ord];
-    const contig_start_px = (this.prefix_sum_px.get(resolution) ?? [])[
-      contig_ord
-    ];
-    const in_contig_offset_bins = px - contig_start_px;
     const fragmentStart = this.fragmentBinStart(
       contig_ord,
       in_contig_offset_bins,
@@ -706,9 +711,11 @@ export default class ContigDimensionHolder {
     );
   }
 
-  protected getPxContainingBp_internal(bp: number, resolution: number): number {
-    const contig_ord = this.getContigOrderByBp_internal(bp);
-
+  protected getPxContainingBp_internal(
+    bp: number,
+    resolution: number,
+    contig_ord = this.getContigOrderByBp_internal(bp)
+  ): number {
     const contig_start_px = (this.prefix_sum_px.get(resolution) ?? [])[
       contig_ord
     ];
@@ -762,27 +769,69 @@ export default class ContigDimensionHolder {
     );
   }
 
-  public getFractionalBpOfPx(px: number, resolution: number): number {
-    const total = this.prefix_sum_px.get(resolution)?.[this.contig_count] ?? 0;
-    if (px >= total) return this.prefix_sum_bp[this.contig_count];
-    const bin = Math.max(0, Math.floor(px));
+  private getContigPixelBpBounds(
+    order: number,
+    localBin: number,
+    resolution: number,
+    pixelCount: number
+  ): [number, number] {
+    const start =
+      localBin === 0
+        ? this.prefix_sum_bp[order]
+        : this.getStartBpOfContigPixel(order, localBin, resolution);
+    const end =
+      localBin + 1 === pixelCount
+        ? this.prefix_sum_bp[order + 1]
+        : this.getStartBpOfContigPixel(order, localBin + 1, resolution);
+    return [start, end];
+  }
+
+  public getFractionalBpOfPx(
+    px: number,
+    resolution: number,
+    edge: "start" | "end" = "start"
+  ): number {
+    const pixels = this.prefix_sum_px.get(resolution);
+    const total = pixels?.[this.contig_count] ?? 0;
+    // Map coordinates can incur rounding when divided by the pixel scale.
+    const nearest = Math.round(px);
+    if (Math.abs(px - nearest) <= 2 * Number.EPSILON * Math.max(1, Math.abs(px))) {
+      px = nearest;
+    }
+    if (edge === "start" && px >= total)
+      return this.prefix_sum_bp[this.contig_count] ?? 0;
+    if (!pixels || total === 0 || (edge === "end" && px <= 0)) return 0;
+
+    const position = Math.max(0, Math.min(px, total));
+    // An exclusive end on a shared boundary belongs to the pixel on its left.
+    const bin = edge === "end" ? Math.ceil(position) - 1 : Math.floor(position);
     const order = this.getContigOrderByPx(bin, resolution);
-    const start = this.getStartBpOfPx(bin, resolution);
-    const end = Math.min(
-      start + resolution,
-      this.prefix_sum_bp[order + 1],
-      bin + 1 < total ? this.getStartBpOfPx(bin + 1, resolution) : Infinity
+    const [start, end] = this.getContigPixelBpBounds(
+      order,
+      bin - pixels[order],
+      resolution,
+      pixels[order + 1] - pixels[order]
     );
-    return start + Math.max(0, px - bin) * (end - start);
+    return start + (position - bin) * (end - start);
   }
 
   public getFractionalPxOfBp(bp: number, resolution: number): number {
-    const bin = this.getPxContainingBp(bp, resolution);
-    const start = this.getFractionalBpOfPx(bin, resolution);
-    const order = this.getContigOrderByPx(bin, resolution);
-    const end = Math.min(
-      this.getFractionalBpOfPx(bin + 1, resolution),
-      this.prefix_sum_bp[order + 1]
+    const pixels = this.prefix_sum_px.get(resolution);
+    if (bp <= 0 || !pixels) return 0;
+    if (bp >= this.prefix_sum_bp[this.contig_count])
+      return pixels[this.contig_count];
+
+    const order = this.getContigOrderByBp_internal(bp);
+    const startPx = pixels[order];
+    const pixelCount = pixels[order + 1] - startPx;
+    if (bp === this.prefix_sum_bp[order] || pixelCount === 0) return startPx;
+
+    const bin = this.getPxContainingBp_internal(bp, resolution, order);
+    const [start, end] = this.getContigPixelBpBounds(
+      order,
+      bin - startPx,
+      resolution,
+      pixelCount
     );
     return bin + (bp - start) / Math.max(1, end - start);
   }

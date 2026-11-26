@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import ts from "typescript";
 import { reactive, computed } from "vue";
+import { hiddenContigDescriptors, hiddenContigResolutions } from "./hidden-contig-fixture.mjs";
 
 const require = createRequire(import.meta.url);
 const root =
@@ -217,3 +218,44 @@ assert.equal(huge.getNativeCoordinates().resolutions.includes(1), false);
 console.log(
   "Sequence coordinates: clipped widths, stable listeners, stored 1 bp conflicts, immutable native snapshots and long offsets pass."
 );
+
+const descriptors = hiddenContigDescriptors();
+const hidden = new Holder(descriptors);
+for (const arrangement of [
+  descriptors,
+  // Moving and reversing visible contigs can leave hidden runs at either end.
+  [descriptors[2], { ...descriptors[1], direction: 0 }, descriptors[0],
+    descriptors.at(-1), ...descriptors.slice(3, -1)],
+]) {
+  hidden.updateContigData(arrangement);
+  const positions = hidden.prefix_sum_bp;
+  for (const r of hiddenContigResolutions) {
+    const pixels = hidden.prefix_sum_px.get(r);
+    for (const [i, bp] of positions.entries()) {
+      assert.equal(hidden.getFractionalPxOfBp(bp, r), pixels[i], `${r} bp, boundary ${i}`);
+    }
+    let last = 0;
+    for (let i = 0; i <= 2000; i++) {
+      const px = hidden.getFractionalPxOfBp((positions.at(-1) * i) / 2000, r);
+      assert.ok(px >= last, `${r} bp, sample ${i} must be monotonic`);
+      last = px;
+    }
+    for (let i = 0; i < hidden.contig_count; i++) {
+      if (pixels[i] === pixels[i + 1]) continue;
+      const a = hidden.getFractionalPxOfBp(positions[i], r);
+      const b = hidden.getFractionalPxOfBp(positions[i + 1], r);
+      assert.ok(b > a, `visible contig ${i} must have a positive extent`);
+      assert.equal(hidden.getFractionalBpOfPx(a, r), positions[i]);
+      assert.equal(hidden.getFractionalBpOfPx(b, r, "end"), positions[i + 1]);
+      const midpoint = (a + b) / 2;
+      const bp = hidden.getFractionalBpOfPx(midpoint, r);
+      assert.equal(hidden.getFractionalPxOfBp(bp, r), midpoint);
+    }
+  }
+}
+hidden.updateContigData(descriptors);
+for (const r of [200_000, 100_000]) {
+  const boundary = hidden.prefix_sum_px.get(r)[2];
+  assert.equal(hidden.getFractionalBpOfPx(boundary, r, "end"), hidden.prefix_sum_bp[2]);
+  assert.equal(hidden.getFractionalBpOfPx(boundary, r), hidden.prefix_sum_bp[42]);
+}

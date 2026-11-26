@@ -96,8 +96,8 @@ export class AlignmentDetailLayer {
       descriptor.bpResolution
     );
     const holder = manager.contigDimensionHolder;
-    const bp = (coordinate: number) =>
-      holder.getFractionalBpOfPx(coordinate, descriptor.bpResolution);
+    const bp = (coordinate: number, edge: "start" | "end" = "start") =>
+      holder.getFractionalBpOfPx(coordinate, descriptor.bpResolution, edge);
     const rowStart = Math.max(
       0,
       Math.floor(
@@ -105,7 +105,10 @@ export class AlignmentDetailLayer {
       )
     );
     const rowEnd = Math.ceil(
-      bp(Math.min(bounds.rowEndPx, -extent[1] / descriptor.pixelResolution))
+      bp(
+        Math.min(bounds.rowEndPx, -extent[1] / descriptor.pixelResolution),
+        "end"
+      )
     );
     const columnStart = Math.max(
       0,
@@ -114,7 +117,10 @@ export class AlignmentDetailLayer {
       )
     );
     const columnEnd = Math.ceil(
-      bp(Math.min(bounds.colEndPx, extent[2] / descriptor.pixelResolution))
+      bp(
+        Math.min(bounds.colEndPx, extent[2] / descriptor.pixelResolution),
+        "end"
+      )
     );
     const windows = { rowStart, rowEnd, columnStart, columnEnd };
     if (

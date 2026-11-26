@@ -696,7 +696,7 @@ async function render(id: number, allowFetch = true) {
   );
   const holder = manager.getContigDimensionHolder();
   const start = Math.floor(holder.getFractionalBpOfPx(first, resolution));
-  const end = Math.ceil(holder.getFractionalBpOfPx(last, resolution));
+  const end = Math.ceil(holder.getFractionalBpOfPx(last, resolution, "end"));
   if (
     !Number.isFinite(start) ||
     !Number.isFinite(end) ||
