@@ -303,7 +303,7 @@
 import { reportFailure } from "@/app/ui/reportFailure";
 import RegionSelectionDialog from "@/app/ui/components/common/RegionSelectionDialog.vue";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
-import { useModalFocus } from "@/app/ui/modalFocus";
+import { hasActiveModal, useModalFocus } from "@/app/ui/modalFocus";
 import {
   computed,
   nextTick,
@@ -520,6 +520,15 @@ const activeSubmenuLabel = computed(() =>
 const submenuMenu = ref<HTMLElement>();
 const submenuPosition = ref({ left: "0px", top: "0px" });
 const regionCoordinatesOpen = ref(false);
+const contextDialogOpen = computed(() =>
+  Boolean(regionCoordinatesOpen.value || analysis.value || histogramOpen.value || renaming.value)
+);
+function focusMap(): void {
+  if (!hasActiveModal()) props.mapManager.getMap().getTargetElement()?.focus({ preventScroll: true });
+}
+watch(contextDialogOpen, (open, wasOpen) => {
+  if (!open && wasOpen) focusMap();
+}, { flush: "post" });
 const contextContig = computed(() =>
   items.value.find((item) => item.kind === "contig")
 );
@@ -861,9 +870,13 @@ function openAnalysis(kind: "moddotplot" | "dotplot" | "search") {
   items.value = [];
   analysis.value = kind;
 }
-function exportFasta() {
+async function exportFasta() {
   items.value = [];
-  props.mapManager.eventManager.onExportFASTAForSelectionClicked();
+  try {
+    await props.mapManager.eventManager.onExportFASTAForSelectionClicked();
+  } finally {
+    focusMap();
+  }
 }
 function copyCoordinates(frame: CoordinateFrame) {
   items.value = [];
@@ -879,6 +892,8 @@ async function requestExport(format: ExportAction) {
     await performExport(format);
   } catch (failure) {
     reportFailure("Export selection", failure);
+  } finally {
+    focusMap();
   }
 }
 async function performExport(format: (typeof formats)[number]) {

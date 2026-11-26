@@ -61,6 +61,10 @@
           </label>
         </div>
         <p role="status" class="small text-muted mb-2">{{ previewStatus }}</p>
+        <p v-if="refreshNotice" class="alert alert-info" role="status">
+          <i class="bi bi-arrow-repeat me-2" aria-hidden="true"></i>
+          The assembly was changed in another window. HiCT reloaded it and is making the preview again.
+        </p>
         <p v-if="capturing" aria-hidden="true" class="small text-muted">
           {{ Math.round(progress * 100) }}%
         </p>
@@ -535,6 +539,7 @@ const capturing = ref(false),
   progress = ref(0),
   error = ref("");
 const captureError = ref("");
+const refreshNotice = ref(false);
 const saving = ref<"svg" | "png" | "pdf" | null>(null);
 const busy = computed(
   () => capturing.value || comparing.value || storing.value || !!saving.value
@@ -728,6 +733,7 @@ watch(
     capturing.value = false;
     outdated.value = false;
     captureError.value = "";
+    refreshNotice.value = false;
   }
 );
 async function capture() {
@@ -741,8 +747,16 @@ async function capture() {
   capturing.value = true;
   progress.value = 0;
   error.value = "";
+  const historyConflict = /^Assembly history changed\b/i.test(captureError.value);
+  const captureConflict = /changed during figure capture/i.test(captureError.value);
   captureError.value = "";
+  refreshNotice.value = false;
   try {
+    if (historyConflict || captureConflict) {
+      const refreshed = await manager.networkManager.requestManager.refreshDisplayedAssembly(!historyConflict);
+      if (disposed || current !== generation || signal.aborted) return;
+      refreshNotice.value = refreshed;
+    }
     const result = await manager.captureCurrentFigure(
       {
         scope: scope.value,
@@ -769,7 +783,10 @@ async function capture() {
       captureError.value = extractErrorMessage(failure);
     }
   } finally {
-    if (!disposed && current === generation) capturing.value = false;
+    if (!disposed && current === generation) {
+      capturing.value = false;
+      refreshNotice.value = false;
+    }
   }
 }
 async function save(format: "svg" | "png" | "pdf") {

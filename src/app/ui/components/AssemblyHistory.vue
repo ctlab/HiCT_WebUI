@@ -27,7 +27,7 @@
       class="btn btn-sm btn-warning"
       :disabled="busy"
       title="The server assembly changed in another client"
-      @click="restore('restore', summary?.currentId)"
+      @click="refreshAssembly"
     >
       Refresh assembly
     </button>
@@ -139,6 +139,14 @@ async function load(start?: number) {
 async function restore(action: "undo" | "redo" | "restore", id?: number) {
   try {
     await manager.restoreAssemblyHistory(action, id);
+    error.value = "";
+  } catch (err) {
+    error.value = String(err);
+  }
+}
+async function refreshAssembly() {
+  try {
+    await manager.refreshDisplayedAssembly();
     error.value = "";
   } catch (err) {
     error.value = String(err);

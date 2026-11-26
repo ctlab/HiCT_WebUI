@@ -61,14 +61,16 @@
         style="display: block"
         tabindex="-1"
         role="dialog"
+        aria-labelledby="open-progress-title"
       >
         <div class="modal-dialog modal-dialog-centered">
           <div class="modal-content">
             <div class="modal-header">
-              <h5 class="modal-title">Opening file</h5>
+              <h5 id="open-progress-title" class="modal-title">Opening file</h5>
               <button
                 type="button"
                 class="btn-close"
+                aria-label="Close"
                 @click="closeOpenProgress"
               ></button>
             </div>
@@ -78,6 +80,7 @@
                 <div
                   class="progress-bar"
                   role="progressbar"
+                  aria-label="Opening map"
                   :style="{ width: `${openProgressPct}%` }"
                   :aria-valuenow="openProgressPct"
                   aria-valuemin="0"

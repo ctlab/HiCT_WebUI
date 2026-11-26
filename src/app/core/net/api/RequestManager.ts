@@ -631,6 +631,18 @@ class RequestManager {
     return response.data as HistoryPage;
   }
 
+  public async refreshDisplayedAssembly(onlyIfChanged = false): Promise<boolean> {
+    const { summary } = await this.getAssemblyHistory();
+    if (!summary) throw new Error("No assembly is open.");
+    const applied = this.history.applied;
+    if (onlyIfChanged && summary.session === applied?.session && summary.revision === applied.revision) {
+      return false;
+    }
+    if (this.history.busy) throw new Error("Wait for the current assembly edit to finish, then try again.");
+    await this.restoreAssemblyHistory("restore", summary.currentId);
+    return true;
+  }
+
   public async restoreAssemblyHistory(
     action: "undo" | "redo" | "restore",
     id?: number

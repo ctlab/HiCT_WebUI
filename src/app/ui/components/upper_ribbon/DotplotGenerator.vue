@@ -57,7 +57,12 @@
             </div>
             <div v-if="step === 'select'">
               <div class="d-flex gap-2 mb-2">
-                <button type="button" class="btn btn-outline-primary btn-sm" @click="fastaSelectorOpen = true">
+                <button
+                  v-if="!fastaDiscoveryError"
+                  type="button"
+                  class="btn btn-outline-primary btn-sm"
+                  @click="fastaSelectorOpen = true"
+                >
                   Browse for FASTA…
                 </button>
                 <div class="dropdown">
@@ -103,11 +108,17 @@
                 <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
                 Looking for FASTA files in the data directory…
               </div>
-              <p v-else-if="fastaDiscoveryFailed" class="small text-muted mb-2" role="status">
-                The file search could not finish. Use Browse for FASTA to choose a file.
-              </p>
+              <div v-else-if="fastaDiscoveryError" class="alert alert-danger mb-2" role="alert">
+                <i class="bi bi-exclamation-circle me-2" aria-hidden="true"></i>
+                <strong>Could not list FASTA files.</strong>
+                {{ fastaDiscoveryError }} Choose a file with Browse…, or try again.
+              </div>
+              <div v-if="fastaDiscoveryError" class="d-flex gap-2 mb-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" @click="fastaSelectorOpen = true">Browse…</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @click="discoverFastaFiles">Try again</button>
+              </div>
               <FileSelectionTable
-                v-if="!loadingFasta || fastaEntries.length"
+                v-if="fastaEntries.length || (!loadingFasta && !fastaDiscoveryError)"
                 :entries="fastaEntries"
                 :multi-select="true"
                 :selected-path="null"
@@ -595,7 +606,7 @@ const step: Ref<"select" | "progress"> = ref("select");
 const initialFasta = props.initialFastaFilename;
 const fastaFiles: Ref<string[]> = ref(initialFasta ? [initialFasta] : []);
 const loadingFasta = ref(true);
-const fastaDiscoveryFailed = ref(false);
+const fastaDiscoveryError = ref("");
 const fastaSelectorOpen = ref(false);
 const plotName = computed(() => props.modDotPlot ? "ModDotPlot" : "dotplot");
 const jobsUi = useBackgroundJobsUiStore();
@@ -1093,13 +1104,11 @@ watch(
   { immediate: true }
 );
 
-onMounted(() => {
+async function discoverFastaFiles(): Promise<void> {
   const api = props.networkManager.requestManager;
-  void api.listFASTAFiles().then(mergeFastaFiles).catch(() => {
-    fastaDiscoveryFailed.value = true;
-  }).finally(() => {
-    loadingFasta.value = false;
-  });
+  fastaDiscoveryError.value = "";
+  loadingFasta.value = true;
+  const search = api.listFASTAFiles();
   const directories = new Set(
     [initialFasta, props.initialReferenceMapFilename].filter((path): path is string => !!path)
       .map((path) => fastaPathKey(path).split("/").slice(0, -1).join("/"))
@@ -1109,6 +1118,21 @@ onMounted(() => {
       mergeFastaFiles(entries.filter((entry) => entry.type === "file").map((entry) => entry.path));
     }).catch(() => { /* The wider search and file browser are still available. */ });
   }
+  try {
+    mergeFastaFiles(await search);
+  } catch (error) {
+    const status = (error as { response?: { status?: number } })?.response?.status;
+    fastaDiscoveryError.value = status
+      ? `The server did not answer (HTTP ${status}).`
+      : "The server did not answer.";
+  } finally {
+    loadingFasta.value = false;
+  }
+}
+
+onMounted(() => {
+  const api = props.networkManager.requestManager;
+  void discoverFastaFiles();
   if (props.modDotPlot) return;
   void api.getConversionToolchainStatus().then((status) => {
     toolchainStatus.value = status;

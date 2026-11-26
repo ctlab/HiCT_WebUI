@@ -500,6 +500,9 @@ const formatTimestamp = (timestampMs: number): string => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.file-path-cell {
+  color: #475467;
+}
 
 .file-link-badge {
   border: 1px solid #94a3b8;
