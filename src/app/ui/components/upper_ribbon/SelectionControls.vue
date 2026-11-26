@@ -12,24 +12,15 @@
     </button>
     <ul class="dropdown-menu selection-menu">
       <li class="px-3 py-2 small">
-        <span role="status">{{ summary }}</span>
+        <span role="status">{{ state?.entitySelectionStatus ?? summary }}</span>
       </li>
       <li class="px-3 pb-2 small text-muted">
-        Shift-click/drag selects entities. Ctrl-drag (⌘ on macOS) selects a
-        persistent region. Esc clears.
+        Shift-click or Shift-drag on the diagonal selects contigs. A scaffold
+        that is touched is selected whole. Ctrl-drag (⌘ on macOS) selects a
+        region. Esc clears.
       </li>
-      <li><hr class="dropdown-divider" /></li>
-      <li class="dropdown-header">Shift-drag selects</li>
-      <li v-for="kind in ['contig','scaffold'] as const" :key="kind">
-        <button
-          class="dropdown-item"
-          :aria-pressed="state?.entitySelectionKind === kind"
-          :disabled="!mapManager"
-          @click="mapManager?.viewAndLayersManager.setEntitySelectionKind(kind)"
-        >
-          {{ state?.entitySelectionKind === kind ? "✓ " : ""
-          }}{{ kind === "contig" ? "Contigs" : "Scaffolds" }}
-        </button>
+      <li class="px-3 pb-2 small text-muted">
+        To change one contig inside a scaffold, right-click it.
       </li>
       <li><hr class="dropdown-divider" /></li>
       <li>
@@ -135,14 +126,15 @@ const summary = computed(() => {
     ).toLocaleString()}–${r.rowEnd.toLocaleString()}, columns ${(
       r.columnStart + 1
     ).toLocaleString()}–${r.columnEnd.toLocaleString()} bp (1-based inclusive).`;
-  const n = state.value?.selectedScaffoldIds.length ?? 0;
-  return count.value
-    ? `${n ? n + (n === 1 ? " scaffold; " : " scaffolds; ") : ""}${
-        count.value
-      } ${
-        count.value === 1 ? "contig" : "contigs"
-      } selected for assembly editing.`
+  const range = props.mapManager?.viewAndLayersManager.getSelectedEntityRange();
+  return range
+    ? `${entityLabel.value} · ${range.startBP.toLocaleString()}–${range.endBP.toLocaleString()} bp`
     : "No selection.";
+});
+const entityLabel = computed(() => {
+  const n = count.value;
+  const m = state.value?.selectedScaffoldIds.length ?? 0;
+  return `${n} ${n === 1 ? "contig" : "contigs"}${m ? ` in ${m} ${m === 1 ? "scaffold" : "scaffolds"}` : ""}`;
 });
 const label = computed(() => {
   const r = region.value;
@@ -151,8 +143,7 @@ const label = computed(() => {
       r.rowEnd - r.rowStart
     )} × ${formatSelectionLength(r.columnEnd - r.columnStart)}`;
   }
-  const n = count.value;
-  return n ? `Selection · ${n} ${n === 1 ? "contig" : "contigs"}` : "Selection";
+  return count.value ? `Selection · ${entityLabel.value}` : "Selection";
 });
 function formatSelectionLength(bp: number): string {
   return bp >= 1000 && bp < 1e6

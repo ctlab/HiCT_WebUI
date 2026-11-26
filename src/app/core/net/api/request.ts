@@ -554,6 +554,7 @@ class MoveSelectionRangeRequest implements HiCTAPIRequest {
       readonly startBP: number;
       readonly endBP: number;
       readonly targetStartBP: number;
+      readonly exactContig?: boolean;
     }
   ) {}
 }

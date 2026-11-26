@@ -50,6 +50,14 @@ import TileGrid from "ol/tilegrid/TileGrid";
 import { asString, type Color } from "ol/color";
 import type { ColorLike } from "ol/colorlike";
 import { type Ref, ref, markRaw, shallowRef, shallowReactive } from "vue";
+import {
+  expandRangeToUnits,
+  reconcileSelectedContigs,
+  resolveShiftSelection,
+  type Layout,
+  type Gesture,
+  type ShiftSelection,
+} from "./shiftSelection";
 import { installTopLeftAnchor } from "./mapAnchor";
 import {
   selectionAreaStyle,
@@ -154,7 +162,8 @@ interface CurrentHiCViewState {
   resolutionDesciptor: LayerResolutionDescriptor;
   selectionBorders: SelectionBorders;
   activeTool?: ActiveTool;
-  entitySelectionKind: "contig" | "scaffold";
+  entitySelectionKind: "scaffold";
+  entitySelectionStatus?: string;
   selectedContigIds: number[];
   selectedScaffoldIds: number[];
   hideScopedBorders: boolean;
@@ -450,6 +459,7 @@ class HiCViewAndLayersManager {
   public clearEntitySelection(): void {
     this.selectedContigIds.clear();
     this.selectedScaffoldIds.clear();
+    this.currentViewState.entitySelectionStatus = undefined;
     this.currentViewState.selectedContigIds = [];
     this.currentViewState.selectedScaffoldIds = [];
     this.selectionCollections.selectedContigFeatures.clear();
@@ -467,37 +477,87 @@ class HiCViewAndLayersManager {
     this.clearEntitySelection();
   }
 
+  private shiftSelectionLayout(): Layout {
+    const holder = this.mapManager.contigDimensionHolder;
+    const resolution = this.currentViewState.resolutionDesciptor.bpResolution;
+    const totalPx = holder.prefix_sum_px.get(resolution)?.[holder.contig_count] ?? 0;
+    const scaffolds = this.mapManager.scaffoldHolder.scaffoldBordersSorted.map(
+      ([borders, id]) => ({
+        ...borders,
+        id,
+        contigCount: 1 +
+          holder.contigIdToOrd[holder.getContigIdByBp(borders.endBP - 1)] -
+          holder.contigIdToOrd[holder.getContigIdByBp(borders.startBP)],
+      })
+    );
+    return {
+      prefixSumBp: holder.prefix_sum_bp,
+      contigIds: holder.contigDescriptors.map(({ contigId }) => contigId),
+      scaffolds,
+      shownEndBp: holder.getFractionalBpOfPx(totalPx, resolution, "end"),
+    };
+  }
+
+  private applyEntitySelection(result: ShiftSelection): void {
+    this.clearRegionSelection();
+    this.clearEntitySelection();
+    this.currentViewState.entitySelectionStatus = result.status;
+    this.currentViewState.selectedContigIds = result.contigIds;
+    this.currentViewState.selectedScaffoldIds = result.scaffoldIds;
+    this.selectedContigIds = new Set(result.contigIds);
+    this.selectedScaffoldIds = new Set(result.scaffoldIds);
+    this.refreshEntityHighlights();
+  }
+
   public selectEntityRangeByBp(
     start: number,
     end: number,
-    kind = this.currentViewState.entitySelectionKind
+    { expand = true }: { expand?: boolean } = {}
   ): void {
-    this.clearRegionSelection();
-    this.clearEntitySelection();
-    if (!(end > start)) return;
-    const holder = this.mapManager.contigDimensionHolder;
-    let scaffoldIds: number[] = [];
-    if (kind === "scaffold") {
-      const selected =
-        this.mapManager.scaffoldHolder.scaffoldBordersSorted.filter(
-          ([bounds]) => bounds.startBP < end && bounds.endBP > start
-        );
-      if (!selected.length) return;
-      start = selected[0][0].startBP;
-      end = selected[selected.length - 1][0].endBP;
-      scaffoldIds = selected.map(([, id]) => id);
+    const layout = this.shiftSelectionLayout();
+    if (expand) {
+      this.applyEntitySelection(expandRangeToUnits(layout, start, end));
+      return;
     }
-    const ids = holder.contigDescriptors
-      .filter(
-        (_, i) =>
-          holder.prefix_sum_bp[i] < end && holder.prefix_sum_bp[i + 1] > start
-      )
-      .map((d) => d.contigId);
-    this.currentViewState.selectedContigIds = ids;
-    this.currentViewState.selectedScaffoldIds = scaffoldIds;
-    this.selectedContigIds = new Set(ids);
-    this.selectedScaffoldIds = new Set(scaffoldIds);
-    this.refreshEntityHighlights();
+    const ids = end > start ? layout.contigIds.filter((_, index) =>
+      layout.prefixSumBp[index] < end && layout.prefixSumBp[index + 1] > start
+    ) : [];
+    this.applyEntitySelection({ startBP: start, endBP: end, contigIds: ids, scaffoldIds: [] });
+  }
+
+  public reconcileSelectionAfterAssemblyChange(
+    kind: "reverse" | "move" | "undo" | "redo" | "group" | "ungroup" | "clear",
+    previousIds = this.currentViewState.selectedContigIds
+  ): void {
+    this.clearSelections();
+    if (kind === "clear" || !previousIds.length) return;
+    const result = reconcileSelectedContigs(this.shiftSelectionLayout(), previousIds);
+    if (result.contigIds.length) this.applyEntitySelection(result);
+  }
+
+  private canShiftSelect(): boolean {
+    if (!this.canSelect()) return false;
+    if (this.mapManager.networkManager.requestManager.history.busy > 0) {
+      this.currentViewState.entitySelectionStatus = "Wait for the edit to finish";
+      return false;
+    }
+    return true;
+  }
+
+  private resolveShiftGesture(gesture: Gesture): void {
+    const holder = this.mapManager.contigDimensionHolder;
+    const { bpResolution, pixelResolution } = this.currentViewState.resolutionDesciptor;
+    const snap = (bp: number, edge: "start" | "end") => {
+      const px = holder.getFractionalPxOfBp(bp, bpResolution);
+      const visible = holder.getFractionalBpOfPx(px, bpResolution, edge);
+      return Math.abs(visible - bp) <= Number.EPSILON * 8 * Math.max(1, Math.abs(bp))
+        ? bp : visible;
+    };
+    this.applyEntitySelection(resolveShiftSelection(this.shiftSelectionLayout(), gesture, {
+      toVisibleStart: (bp) => snap(bp, "start"),
+      toVisibleEnd: (bp) => snap(bp, "end"),
+      toleranceBp: 3 * (this.view.getResolution() ?? 0) * bpResolution / pixelResolution,
+    }));
   }
 
   public getSelectedEntityRange(): { startBP: number; endBP: number } | null {
@@ -519,9 +579,9 @@ class HiCViewAndLayersManager {
     };
   }
 
-  public setEntitySelectionKind(kind: "contig" | "scaffold"): void {
+  /** @deprecated Shift selection always uses whole scaffolds. */
+  public setEntitySelectionKind(_kind: "contig" | "scaffold"): void {
     this.clearEntitySelection();
-    this.currentViewState.entitySelectionKind = kind;
   }
 
   /** OL 9.1 Extent has two private presentation layers; isolate this pinned API access here. */
@@ -562,9 +622,11 @@ class HiCViewAndLayersManager {
       )
         continue;
       contigs.push(feature);
-      if (!this.selectedScaffoldIds.size) {
-        const i = holder.contigIdToOrd[cd.contigId];
-        append(holder.prefix_sum_bp[i], holder.prefix_sum_bp[i + 1]);
+      const i = holder.contigIdToOrd[cd.contigId];
+      const start = holder.prefix_sum_bp[i];
+      const scaffold = this.mapManager.scaffoldHolder.getScaffoldLocusByBp(start);
+      if (!scaffold || !this.selectedScaffoldIds.has(scaffold.scaffoldId)) {
+        append(start, holder.prefix_sum_bp[i + 1]);
       }
     }
     for (const feature of this.track2DHolder.scaffoldBordersTrack.features.get(
@@ -1080,7 +1142,7 @@ class HiCViewAndLayersManager {
         rightContigDescriptorInclusive: undefined,
         rightContigOrderInclusive: undefined,
       },
-      entitySelectionKind: "contig",
+      entitySelectionKind: "scaffold",
       selectedContigIds: [],
       selectedScaffoldIds: [],
       hideScopedBorders: false,
@@ -1172,7 +1234,7 @@ class HiCViewAndLayersManager {
         () => this.canSelect()
       ),
       entityDragBox: new EntityDragBox({
-        condition: (event) => shiftKeyOnly(event) && this.canSelect(),
+        condition: (event) => shiftKeyOnly(event) && this.canShiftSelect(),
         minArea: 0,
         className: "hict-entity-drag",
       }),
@@ -3089,60 +3151,33 @@ class HiCViewAndLayersManager {
       if (region) this.setRegionBounds(region);
     });
     const box = this.selectionInteractions.entityDragBox;
-    box.on("boxstart", () => {
-      this.clearRegionSelection();
-      this.clearEntitySelection();
-    });
     box.on("boxend", () => {
+      if (!this.canShiftSelect()) return;
       const region = this.regionFromExtent(box.getGeometry().getExtent());
-      if (!region) return;
-      this.selectEntityRangeByBp(
-        Math.max(region.rowStart, region.columnStart),
-        Math.min(region.rowEnd, region.columnEnd)
-      );
+      const start = region ? Math.max(region.rowStart, region.columnStart) : 0;
+      const end = region ? Math.max(start, Math.min(region.rowEnd, region.columnEnd)) : start;
+      this.resolveShiftGesture({ kind: "drag", aBp: start, bBp: end });
     });
     this.mapManager.map.addInteraction(box);
     this.selectionEventKeys.push(
       this.mapManager.map.on("singleclick", (event) => {
         if (!this.canSelect()) return;
         if (shiftKeyOnly(event)) {
-          const d = this.currentViewState.resolutionDesciptor,
-            holder = this.mapManager.contigDimensionHolder;
-          const bp = [event.coordinate[0], -event.coordinate[1]].map((value) =>
-            holder.getFractionalBpOfPx(
-              value / d.pixelResolution,
-              d.bpResolution
-            )
-          );
-          const region = this.getRegionDomain();
-          if (
-            bp[0] < region.columnStart ||
-            bp[0] >= region.columnEnd ||
-            bp[1] < region.rowStart ||
-            bp[1] >= region.rowEnd
-          )
-            return;
-          const start = Math.max(...bp),
-            end = Math.min(...bp);
-          const kind = this.currentViewState.entitySelectionKind;
-          const first =
-            kind === "contig"
-              ? holder.getContigLocusByBp(Math.floor(bp[0])).contigId
-              : this.mapManager.scaffoldHolder.getScaffoldLocusByBp(
-                  Math.floor(bp[0])
-                )?.scaffoldId;
-          const last =
-            kind === "contig"
-              ? holder.getContigLocusByBp(Math.floor(bp[1])).contigId
-              : this.mapManager.scaffoldHolder.getScaffoldLocusByBp(
-                  Math.floor(bp[1])
-                )?.scaffoldId;
-          if (first !== undefined && first === last)
-            this.selectEntityRangeByBp(Math.floor(end), Math.floor(start) + 1);
-          else {
-            this.clearRegionSelection();
-            this.clearEntitySelection();
-          }
+          if (!this.canShiftSelect()) return;
+          const d = this.currentViewState.resolutionDesciptor;
+          const holder = this.mapManager.contigDimensionHolder;
+          const [x, y] = event.coordinate;
+          const column = holder.getFractionalBpOfPx(x / d.pixelResolution, d.bpResolution);
+          const row = holder.getFractionalBpOfPx(-y / d.pixelResolution, d.bpResolution);
+          const domain = this.getRegionDomain();
+          const inside = x >= 0 && y <= 0 &&
+            column >= domain.columnStart && column < domain.columnEnd &&
+            row >= domain.rowStart && row < domain.rowEnd;
+          this.resolveShiftGesture({
+            kind: "click",
+            colBp: inside ? column : -1,
+            rowBp: inside ? row : -1,
+          });
         } else if (
           !event.originalEvent.ctrlKey &&
           !event.originalEvent.metaKey &&

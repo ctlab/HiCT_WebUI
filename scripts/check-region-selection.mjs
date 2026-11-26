@@ -156,7 +156,10 @@ assert.equal(model.snapRegionBoundary(30.2, true), 31);
 
 const { HiCViewAndLayersManager } = load(
   "../src/app/core/mapmanagers/HiCViewAndLayersManager.ts",
-  { "./regionSelection": model }
+  {
+    "./regionSelection": model,
+    "./shiftSelection": load("../src/app/core/mapmanagers/shiftSelection.ts"),
+  }
 );
 const layers = Object.create(HiCViewAndLayersManager.prototype);
 layers.currentViewState = {
@@ -164,7 +167,7 @@ layers.currentViewState = {
   selectionBorders: {},
   selectedContigIds: [],
   selectedScaffoldIds: [],
-  entitySelectionKind: "contig",
+  entitySelectionKind: "scaffold",
 };
 layers.activeAxisScopes = { row: { kind: "all" }, column: { kind: "all" } };
 layers.selectedContigIds = new Set();
@@ -192,6 +195,8 @@ const holder = {
     { contigId: 8, contigLengthBp: 300 },
   ],
   contigIdToOrd: { 7: 0, 8: 1 },
+  prefix_sum_px: new Map([[100, [0, 1, 4]], [1, [0, 100, 400]]]),
+  getContigIdByBp: (bp) => bp < 100 ? 7 : 8,
   getFractionalPxOfBp: (bp, res) => bp / res,
   getFractionalBpOfPx: (px, res) => px * res,
 };
@@ -236,8 +241,12 @@ assert.deepEqual(plain(layers.getSelectedEntityRange()), {
   startBP: 0,
   endBP: 400,
 });
-layers.selectEntityRangeByBp(101, 102, "scaffold");
+layers.selectEntityRangeByBp(101, 102);
+assert.deepEqual(Array.from(layers.currentViewState.selectedContigIds), [7, 8]);
 assert.deepEqual(Array.from(layers.currentViewState.selectedScaffoldIds), [42]);
+layers.selectEntityRangeByBp(101, 102, { expand: false });
+assert.deepEqual(Array.from(layers.currentViewState.selectedContigIds), [8]);
+assert.deepEqual(Array.from(layers.currentViewState.selectedScaffoldIds), []);
 layers.setRegionBounds(exact);
 assert.equal(layers.currentViewState.selectedContigIds.length, 0);
 assert.equal(layers.selectionCollections.selectedContigFeatures.getLength(), 0);

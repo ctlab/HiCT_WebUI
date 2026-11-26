@@ -81,8 +81,7 @@ function fixture() {
     },
   };
   const events = new CommonEventManager(map);
-  events.applyAssemblyInfo = (response) => calls.push(response);
-  events.resetSelection = () => calls.push("reset");
+  events.applyAssemblyInfo = (response, selection = "clear") => calls.push(response, selection);
   map.eventManager = events;
   return { map, events, api, calls };
 }
@@ -106,7 +105,7 @@ function fixture() {
   assert.deepEqual(calls[0], [7, 3]);
   assert.deepEqual(calls.slice(1), [
     { assembly: "updated" },
-    "reset",
+    "clear",
     "reload",
     { centerBp: [15, 16], resolution: 0.01 },
   ]);

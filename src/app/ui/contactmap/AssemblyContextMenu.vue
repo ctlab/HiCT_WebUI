@@ -394,6 +394,7 @@ const regionScopeActive = computed(() => {
 const inlineContig = computed(() =>
   !region.value &&
   contigs.value.length === 1 &&
+  offersStructuralEdits(contigs.value[0]) &&
   !(regionScopeActive.value && hasEntitySelection.value)
     ? contigs.value[0]
     : undefined
@@ -433,6 +434,13 @@ function entityActions(item: Item): ContextMenuItem[] {
         label: "Ungroup into singletons",
         run: () => execute(item, "ungroup"),
       });
+  }
+  if (item.kind === "contig" && !offersStructuralEdits(item)) {
+    actions.push({
+      label: "Move…",
+      disabled: item.structural === false,
+      run: () => move(item),
+    });
   }
   actions.push({ label: "Copy name", run: () => copyName(item) });
   if (item.kind === "contig")
@@ -829,8 +837,7 @@ async function execute(item: Item, action: "reverse" | "ungroup" | "debris") {
           new UngroupContigsFromScaffoldRequest(item)
         )
       : api.moveSelectionToDebris(new MoveSelectionToDebrisRequest(item)));
-    manager.eventManager.applyAssemblyInfo(assembly);
-    manager.eventManager.resetSelection();
+    manager.eventManager.applyAssemblyInfo(assembly, action === "debris" ? "clear" : action);
     await manager.reloadVisuals();
   } catch (error) {
     reportFailure("Edit assembly", error);
@@ -846,9 +853,9 @@ function move(item: Item) {
   manager.viewAndLayersManager.selectEntityRangeByBp(
     item.startBP,
     item.endBP,
-    item.kind === "scaffold" ? "scaffold" : "contig"
+    { expand: item.kind !== "contig" }
   );
-  manager.eventManager.onMoveSelectionClicked();
+  manager.eventManager.onMoveSelectionClicked(item.kind === "contig");
 }
 function openAnalysis(kind: "moddotplot" | "dotplot" | "search") {
   items.value = [];

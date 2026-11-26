@@ -782,6 +782,7 @@ class MoveSelectionRangeRequestDTO extends HiCTAPIRequestDTO<MoveSelectionRangeR
       startBP: this.entity.options.startBP,
       endBP: this.entity.options.endBP,
       targetStartBP: this.entity.options.targetStartBP,
+      ...(this.entity.options.exactContig ? { exactContig: true } : {}),
     };
   }
 }

@@ -652,11 +652,7 @@ class RequestManager {
     if (!manager) return;
     manager.deactivateTranslocation();
     manager.viewAndLayersManager.currentViewState.activeTool = undefined;
-    manager.eventManager.resetSelection();
-    manager.contigDimensionHolder.updateContigData(assembly.contigDescriptors);
-    manager.scaffoldHolder.updateScaffoldData(assembly.scaffoldDescriptors);
-    manager.getLayersManager().reapplyAxisScopes();
-    manager.refreshOverviewMinimap();
+    manager.eventManager.applyAssemblyInfo(assembly, action === "restore" ? "clear" : action);
     manager.reloadVisuals();
   }
 

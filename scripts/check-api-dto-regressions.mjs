@@ -377,6 +377,13 @@ for (const approximateRebin of [undefined, false, true]) {
     approximateRebin
   );
 }
+for (const exactContig of [undefined, false, true]) {
+  const request = new requestClasses.MoveSelectionRangeRequest({
+    startBP: 10, endBP: 20, targetStartBP: 0, exactContig,
+  });
+  assert.equal(HiCTAPIRequestDTO.toDTOClass(request).toDTO().exactContig,
+    exactContig || undefined);
+}
 for (const name of [
   "ReverseSelectionRangeRequest",
   "MoveSelectionRangeRequest",

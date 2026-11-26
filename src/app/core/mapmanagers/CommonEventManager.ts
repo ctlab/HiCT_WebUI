@@ -53,18 +53,24 @@ import { showTranslocationStatus } from "./TranslocationStatusToast";
 class CommonEventManager {
   public constructor(public readonly mapManager: ContactMapManager) {}
 
-  public applyAssemblyInfo(asmInfo: {
-    contigDescriptors: ContigDescriptor[];
-    scaffoldDescriptors: ScaffoldDescriptor[];
-  }): void {
-    this.mapManager.viewAndLayersManager.clearSelections();
+  public applyAssemblyInfo(
+    asmInfo: {
+      contigDescriptors: ContigDescriptor[];
+      scaffoldDescriptors: ScaffoldDescriptor[];
+    },
+    selection: Parameters<ContactMapManager["viewAndLayersManager"]["reconcileSelectionAfterAssemblyChange"]>[0] = "clear"
+  ): void {
+    const layers = this.mapManager.viewAndLayersManager;
+    const previousIds = layers.currentViewState.selectedContigIds;
+    layers.clearSelections();
     this.mapManager.contigDimensionHolder.updateContigData(
       asmInfo.contigDescriptors
     );
     this.mapManager.scaffoldHolder.updateScaffoldData(
       asmInfo.scaffoldDescriptors
     );
-    this.mapManager.viewAndLayersManager.reapplyAxisScopes();
+    layers.reapplyAxisScopes();
+    layers.reconcileSelectionAfterAssemblyChange(selection, previousIds);
     this.mapManager.refreshOverviewMinimap();
   }
 
@@ -338,9 +344,8 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.applyAssemblyInfo(asmInfo);
+        this.applyAssemblyInfo(asmInfo, "group");
         void this.mapManager.linearTrackManager.clearCachesAndRender();
-        this.resetSelection();
         this.reloadTracks();
       })
       .catch((error) =>
@@ -362,9 +367,8 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.applyAssemblyInfo(asmInfo);
+        this.applyAssemblyInfo(asmInfo, "ungroup");
         void this.mapManager.linearTrackManager.clearCachesAndRender();
-        this.resetSelection();
         this.reloadTracks();
       })
       .catch((error) => reportFailure("Ungroup selection", error));
@@ -374,7 +378,6 @@ class CommonEventManager {
     const assembly =
       await this.mapManager.networkManager.requestManager.unscaffoldAll();
     this.applyAssemblyInfo(assembly);
-    this.resetSelection();
     await this.mapManager.reloadVisuals();
   }
 
@@ -396,7 +399,6 @@ class CommonEventManager {
       .then((asmInfo) => {
         this.applyAssemblyInfo(asmInfo);
         void this.mapManager.linearTrackManager.clearCachesAndRender();
-        this.resetSelection();
         this.reloadTracks();
       })
       .catch((error) => reportFailure("Move to unplaced (debris)", error));
@@ -438,14 +440,13 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.applyAssemblyInfo(asmInfo);
-        this.resetSelection();
+        this.applyAssemblyInfo(asmInfo, "reverse");
         this.mapManager.reloadVisuals();
       })
       .catch((error) => reportFailure("Reverse selection", error));
   }
 
-  public onMoveSelectionClicked(): void {
+  public onMoveSelectionClicked(exactContig = false): void {
     const activeTool =
       this.mapManager.viewAndLayersManager.currentViewState.activeTool;
     if (activeTool === ActiveTool.TRANSLOCATION) {
@@ -481,6 +482,10 @@ class CommonEventManager {
       this.mapManager.viewAndLayersManager.selectionInteractions.translocationArrowSelectionInteraction.set(
         "endBP",
         range.endBP
+      );
+      this.mapManager.viewAndLayersManager.selectionInteractions.translocationArrowSelectionInteraction.set(
+        "exactContig",
+        exactContig
       );
     }
 
@@ -566,15 +571,16 @@ class CommonEventManager {
           startBP: startBP,
           endBP: endBP,
           targetStartBP: targetBP,
+          exactContig: interaction.get("exactContig") === true,
         })
       )
       .then((asmInfo) => {
-        this.applyAssemblyInfo(asmInfo);
+        this.applyAssemblyInfo(asmInfo, "move");
       })
       .catch((error) => reportFailure("Move selection", error))
       .finally(() => {
-        this.onMoveSelectionClicked();
-        this.resetSelection();
+        showTranslocationStatus(false);
+        this.mapManager.deactivateTranslocation();
         this.mapManager.reloadVisuals();
       });
   }
@@ -651,7 +657,6 @@ class CommonEventManager {
       const layers = this.mapManager.viewAndLayersManager;
       const position = layers.captureViewPosition();
       this.applyAssemblyInfo(response);
-      this.resetSelection();
       this.mapManager.reloadVisuals();
       layers.restoreViewPosition(position);
       return true;
@@ -690,7 +695,6 @@ class CommonEventManager {
     void operation
       .then((response) => {
         this.applyAssemblyInfo(response);
-        this.resetSelection();
         this.mapManager.reloadVisuals();
       })
       .catch(() => {
