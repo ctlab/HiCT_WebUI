@@ -1215,11 +1215,11 @@
       class="settings-modal"
       role="dialog"
       aria-modal="true"
-      aria-label="Connection settings"
+      :aria-label="joiningSession ? 'Join running session' : 'Connection settings'"
       @submit.prevent="onGatewayChanged"
     >
       <div class="settings-header">
-        <h2>Connection</h2>
+        <h2>{{ joiningSession ? "Join running session" : "Connection" }}</h2>
         <button
           type="button"
           class="btn-close"
@@ -1234,6 +1234,7 @@
             id="api-gateway-input"
             class="form-control"
             type="url"
+            pattern="https?://.+"
             required
             v-model="gatewayAddress"
           />
@@ -1651,6 +1652,7 @@ const aboutOpen = ref(false);
 const osdSettingsOpen = ref(false);
 const guideOpen = ref(false);
 const connectionOpen = ref(false);
+const joiningSession = ref(false);
 const resolutionSettingsOpen = ref(false);
 const aboutActiveTab = ref<"about" | "attribution" | "changelog">("about");
 const changelogText = ref("Changelog for this build was not detected");
@@ -1767,7 +1769,7 @@ const emit = defineEmits<{
   (e: "jobResult", request: JobOpenRequest): void;
   (e: "selected", filename: string): void;
   (e: "closed"): void;
-  (e: "attached"): void;
+  (e: "attached", address: string): void;
   (e: "saveSession"): void;
   (e: "openSession", file: File): void;
   (e: "agpLoaded", filename: string): void;
@@ -2308,7 +2310,9 @@ function onCloseClicked(): void {
 }
 
 function onAttachClicked(): void {
-  emit("attached");
+  gatewayAddress.value = props.networkManager.host;
+  joiningSession.value = true;
+  connectionOpen.value = true;
   errorMessage.value = null;
 }
 
@@ -2473,12 +2477,18 @@ function onFASTAFileDismissed() {
 
 function openConnection(): void {
   gatewayAddress.value = props.networkManager.host;
+  joiningSession.value = false;
   connectionOpen.value = true;
 }
 function onGatewayChanged(): void {
-  props.networkManager.onHostChanged(gatewayAddress.value.trim());
+  const address = gatewayAddress.value.trim().replace(/\/+$/, "");
   connectionOpen.value = false;
-  toast.success("Server connection updated");
+  if (joiningSession.value) {
+    emit("attached", address);
+  } else {
+    props.networkManager.onHostChanged(address);
+    toast.success("Server connection updated");
+  }
 }
 async function onReloadTiles(): Promise<void> {
   try {

@@ -52,7 +52,7 @@ const emit = defineEmits<{
   (e: "jobResult", output: JobOpenRequest): void;
   (e: "selected", filename: string): void;
   (e: "closed"): void;
-  (e: "attached"): void;
+  (e: "attached", address: string): void;
   (e: "saveSession"): void;
   (e: "openSession", file: File): void;
   (e: "agpLoaded", filename: string): void;
@@ -82,8 +82,8 @@ function onClosed(): void {
   emit("closed");
 }
 
-function onAttached(): void {
-  emit("attached");
+function onAttached(address: string): void {
+  emit("attached", address);
 }
 
 function onSaveSession(): void {

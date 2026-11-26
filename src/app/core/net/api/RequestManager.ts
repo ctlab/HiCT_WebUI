@@ -870,7 +870,8 @@ class RequestManager {
 
   public async sendRequest(
     request: HiCTAPIRequest,
-    axiosConfig?: AxiosRequestConfig | undefined
+    axiosConfig?: AxiosRequestConfig,
+    address = this.networkManager.host
   ): Promise<AxiosResponse> {
     if (
       this.pendingSessionClose &&
@@ -881,7 +882,7 @@ class RequestManager {
     ) {
       await this.pendingSessionClose.catch(() => undefined);
     }
-    const host = this.networkManager.host.replace(/\/+$/, "");
+    const host = address.replace(/\/+$/, "");
     const path = request.requestPath.replace(/^\/+/, "");
     const mutation = assemblyMutationPaths.has(request.requestPath);
     if (
@@ -1144,15 +1145,15 @@ class RequestManager {
     return this.pendingSessionClose;
   }
 
-  public async canJoinSession(): Promise<boolean> {
-    const reply = await this.sendRequest(new SessionAvailabilityRequest(), {
-      method: "GET",
-    });
+  public async canJoinSession(address?: string): Promise<boolean> {
+    const reply = await this.sendRequest(
+      new SessionAvailabilityRequest(), { method: "GET" }, address
+    );
     return reply.data?.available === true;
   }
 
-  public async attachSession(): Promise<AttachedSession> {
-    return this.sendRequest(new AttachSessionRequest())
+  public async attachSession(address?: string): Promise<AttachedSession> {
+    return this.sendRequest(new AttachSessionRequest(), undefined, address)
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => this.adoptSessionPayload(json));
   }

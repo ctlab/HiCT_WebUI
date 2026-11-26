@@ -350,7 +350,7 @@
         <button
           type="button"
           class="btn btn-link btn-sm p-0"
-          @click="onAttached"
+          @click="onAttached()"
           title="Show the map that is already open in another window or tab"
         >
           Join running session
@@ -949,24 +949,31 @@ async function adoptSession(
   return newManager;
 }
 
-async function onAttached() {
-  await persistWorkspace();
-  workspaceRestoring = true;
+let joinSessionInFlight = false;
+
+async function onAttached(address = networkManager.host) {
+  if (joinSessionInFlight) return;
+  joinSessionInFlight = true;
+  const changedServer = address !== networkManager.host;
   try {
-    if (!(await networkManager.requestManager.canJoinSession())) {
+    await persistWorkspace();
+    workspaceRestoring = true;
+    if (!(await networkManager.requestManager.canJoinSession(address))) {
       toast.message("Open a map first");
       return;
     }
-    const attached = await networkManager.requestManager.attachSession();
+    const attached = await networkManager.requestManager.attachSession(address);
     if (!attached.filename) {
       toast.error("No active session to attach");
       return;
     }
-    await adoptSession(attached, { fresh: false });
+    networkManager.onHostChanged(address);
+    await adoptSession(attached, { fresh: changedServer });
     toast.success("Attached to session " + attached.filename);
   } catch (error) {
     reportFailure("Join running session", error);
   } finally {
+    joinSessionInFlight = false;
     workspaceRestoring = false;
   }
 }
