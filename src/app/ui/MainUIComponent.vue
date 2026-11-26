@@ -377,6 +377,7 @@
 </template>
 
 <script setup lang="ts">
+import { resolveApiBase } from "@/app/core/net/apiBase";
 import ConfirmActionDialog from "./components/common/ConfirmActionDialog.vue";
 import UniversalFileSelector from "./components/upper_ribbon/UniversalFileSelector.vue";
 import {
@@ -523,7 +524,7 @@ async function reconnectDesktop(): Promise<void> {
   }
 }
 const networkManager: NetworkManager = new NetworkManager(
-  "http://localhost:5000/",
+  resolveApiBase(window.location, import.meta.env),
   undefined
 );
 // Opt-in automation access. Opening, editing and rendering use native handlers.

@@ -168,7 +168,9 @@ function loadApplication(
       );
       try {
         status = 0;
-        await window.loadURL(await bundled.url());
+        const recoveryUrl = new URL(await bundled.url());
+        recoveryUrl.searchParams.set("api", baseUrl.origin);
+        await window.loadURL(recoveryUrl.href);
         if (status >= 400)
           throw new Error("The bundled HiCT interface could not be loaded.");
       } catch (fallbackError) {

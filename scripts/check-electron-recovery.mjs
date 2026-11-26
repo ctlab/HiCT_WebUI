@@ -138,9 +138,11 @@ try {
     base = new URL("http://localhost:8187/");
   const { bundledUiRoot, BundledUiServer } = loadElectronSource("BundledUi");
   assert.equal(bundledUiRoot(dev), path.resolve(dev, "../.."));
-  const fallback = "http://127.0.0.1:9901/index.html";
+  const fallback = new URL("http://127.0.0.1:9901/index.html");
+  const recovery = new URL(fallback);
+  recovery.searchParams.set("api", base.origin);
   const bundled = {
-    url: async () => fallback,
+    url: async () => fallback.href,
     isPageUrl: (raw) => {
       try {
         const u = new URL(raw);
@@ -155,12 +157,12 @@ try {
   assert.equal(bundledUiRoot(portable), path.resolve(portable, ".."));
   const window = new Window();
   assert.equal(await packaged.loadApplication(window, base, bundled), false);
-  assert.deepEqual(window.calls, [base.href, fallback]);
-  assert.equal(window.url, fallback);
+  assert.deepEqual(window.calls, [base.href, recovery.href]);
+  assert.equal(window.url, recovery.href);
   assert.equal(window.webContents.listenerCount("did-navigate"), 0);
   window.mode = "http-error";
   assert.equal(await packaged.loadApplication(window, base, bundled), false);
-  assert.equal(window.url, fallback);
+  assert.equal(window.url, recovery.href);
   window.mode = "cancelled";
   const before = window.calls.length;
   assert.equal(await packaged.loadApplication(window, base, bundled), false);

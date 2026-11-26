@@ -498,6 +498,7 @@ let sentTimeout;
 let sentPayload;
 let requestsSent = 0;
 let serializationFailure = false;
+let transportFailure;
 let pendingWorkspace;
 let observeCloseOrder;
 let fetched;
@@ -525,7 +526,9 @@ vm.runInNewContext(adapterSource, {
       return { SequenceAnalysisRequest };
     if (name === "axios")
       return {
+        ...createRequire(import.meta.url)("axios"),
         post: async (url, payload, config) => {
+          if (transportFailure) throw transportFailure;
           requestsSent++;
           sentPayload = payload;
           sentTimeout = config?.timeout;
@@ -791,6 +794,22 @@ assert.equal(
 console.log(
   "Synchronous serialization failures release the edit guard and reject to the caller."
 );
+
+serializationFailure = false;
+const axios = createRequire(import.meta.url)("axios");
+transportFailure = new axios.AxiosError("Network Error", "ERR_NETWORK");
+await assert.rejects(
+  adapter.sendRequest({ requestPath: "/list_fasta_files" }),
+  (error) => error.message ===
+    "Can't reach the HiCT server at http://example.test. Start HiCT, or check the address in File → Join running session."
+    && error.cause === transportFailure
+);
+transportFailure = new axios.CanceledError();
+await assert.rejects(
+  adapter.sendRequest({ requestPath: "/list_fasta_files" }),
+  (error) => error === transportFailure
+);
+transportFailure = undefined;
 
 const originalVersion = { session: "workspace-a", revision: 0 };
 adapter.workspaceVersion = originalVersion;

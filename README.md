@@ -43,10 +43,13 @@ About. Run ESLint without automatic edits when reviewing changes.
 npx eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --ignore-path .gitignore
 ```
 
-The development UI connects to `http://localhost:5000`. Start the JVM server
-with disposable data for integration testing. The backend serves its offline
-API reference at `http://localhost:5000/api/v1/`. Remote use requires forwarding
-both service ports or configuring the API address. Running `start-server`
+The production UI uses the same address as the server that serves the page.
+The JVM server serves both the UI and its offline API reference at
+`http://localhost:8080/` and `http://localhost:8080/api/v1/`. Remote use needs
+one forwarded port. For local frontend development, Vite uses 8080 and the
+development UI connects to `http://localhost:5000` by default. Start a JVM
+server with `HICT_PORT=5000` and disposable data, or set `VITE_HICT_API` to the
+address of the chosen development server. Running `start-server`
 directly binds to `0.0.0.0` by default. Set `HICT_BIND_HOST=127.0.0.1` for
 local-only connections. Portable launchers already default to loopback.
 

@@ -275,6 +275,7 @@
 </template>
 
 <script setup lang="ts">
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import type { FileEntryResponse } from "@/app/core/net/api/response";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
@@ -554,7 +555,7 @@ const loadDirectory = async (directory: string): Promise<boolean> => {
     treeSelectionKeys.value = {};
     return true;
   } catch (error: unknown) {
-    if (request === directoryRequest) errorMessage.value = String(error);
+    if (request === directoryRequest) errorMessage.value = extractErrorMessage(error);
     return false;
   } finally {
     if (request === directoryRequest) loading.value = false;

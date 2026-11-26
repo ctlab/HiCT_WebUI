@@ -161,8 +161,7 @@
                     <div class="mt-2">
                       If you have access to a Linux-powered cluster with enough
                       resources, you can run HiCT in remote server mode and
-                      connect to it with SSH port forwarding for HTTP 5000 and
-                      8080.
+                      connect to it with SSH port forwarding for port 8080.
                     </div>
                   </details>
                 </div>

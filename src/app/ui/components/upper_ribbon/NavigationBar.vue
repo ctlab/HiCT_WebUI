@@ -1228,7 +1228,7 @@
         ></button>
       </div>
       <div class="settings-body">
-        <label class="form-label" for="api-gateway-input">Server address</label>
+        <label class="form-label" for="api-gateway-input">HiCT server address</label>
         <div id="connection-settings-input-group" class="input-group">
           <input
             id="api-gateway-input"
@@ -1244,6 +1244,10 @@
           >
             Connect
           </button>
+        </div>
+        <div class="form-text">
+          Pre-filled with the server that served this page. Change it only to join
+          a HiCT running on another computer.
         </div>
       </div>
     </form>
@@ -1555,6 +1559,7 @@
 </template>
 
 <script setup lang="ts">
+import { resolveApiBase } from "@/app/core/net/apiBase";
 import AdvancedSection from "../common/AdvancedSection.vue";
 import UserGuideModal from "./UserGuideModal.vue";
 import RegionSelectionDialog from "../common/RegionSelectionDialog.vue";
@@ -1639,7 +1644,9 @@ const renderingPipelineOpen = ref(false);
 const workerDiagnosticsOpen = ref(false);
 const serverStatisticsOpen = ref(false);
 const processedStorageOpen = ref(false);
-const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
+const gatewayAddress: Ref<string> = ref(
+  resolveApiBase(window.location, import.meta.env)
+);
 const aboutOpen = ref(false);
 const osdSettingsOpen = ref(false);
 const guideOpen = ref(false);

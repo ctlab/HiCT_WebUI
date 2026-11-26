@@ -982,6 +982,12 @@ class RequestManager {
       .catch((err) => {
         // A failed/conflicting command can leave another client's newer journal.
         if (tracked) void this.getAssemblyHistory().catch(() => undefined);
+        if (axios.isAxiosError(err) && !err.response && !axios.isCancel(err)) {
+          throw new Error(
+            `Can't reach the HiCT server at ${host}. Start HiCT, or check the address in File → Join running session.`,
+            { cause: err }
+          );
+        }
         throw err;
       })
       .finally(() => {
