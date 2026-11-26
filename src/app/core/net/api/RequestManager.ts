@@ -80,6 +80,8 @@ import {
   ListFilesRequest,
   ResolveMatrixSourceRequest,
   DropAllCachesRequest,
+  CleanupProcessedStorageRequest,
+  type ProcessedStorageAction,
   LoadAGPRequest,
   MoveSelectionRangeRequest,
   OpenFileRequest,
@@ -511,6 +513,33 @@ const journalResetPaths = new Set([
   "/secondary/close",
   "/secondary/set_assembly_source",
 ]);
+
+export type ProcessedStorageCategory = "cache" | "maps" | "scratch" | "sequence" | "metadata" | "other";
+
+export type ProcessedStorageFile = {
+  id: string;
+  path: string;
+  category: ProcessedStorageCategory;
+  bytes: number;
+  modifiedAtMs: number;
+  action: ProcessedStorageAction | null;
+  protectedReason: string | null;
+};
+
+export type ProcessedStorage = {
+  roots: string[];
+  files: ProcessedStorageFile[];
+  jobsActive: boolean;
+  oldDays: number;
+  unreadable: number;
+};
+
+export type ProcessedStorageCleanup = {
+  deleted: number;
+  bytes: number;
+  changedOrMissing: number;
+  skipped: { path: string; reason: string }[];
+};
 
 class RequestManager {
   private workspaceVersion?: { session: string; revision: number };
@@ -1274,6 +1303,22 @@ class RequestManager {
         matrixMetadataDeleted: Number(json.matrixMetadataDeleted ?? 0),
         trackCacheEntriesDeleted: Number(json.trackCacheEntriesDeleted ?? 0),
       }));
+  }
+
+  public async getProcessedStorage(): Promise<ProcessedStorage> {
+    const response = await this.sendRequest(
+      { requestPath: "/storage/processed" },
+      { method: "GET" }
+    );
+    return response.data;
+  }
+
+  public async cleanupProcessedStorage(
+    action: ProcessedStorageAction,
+    ids: string[]
+  ): Promise<ProcessedStorageCleanup> {
+    const response = await this.sendRequest(new CleanupProcessedStorageRequest(action, ids));
+    return response.data;
   }
 
   public async openTrack(

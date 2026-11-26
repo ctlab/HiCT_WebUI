@@ -134,6 +134,15 @@
                 >
               </li>
               <li>
+                <button
+                  type="button"
+                  class="dropdown-item"
+                  @click="processedStorageOpen = true"
+                >
+                  Processed data manager…
+                </button>
+              </li>
+              <li>
                 <a
                   class="dropdown-item"
                   href="#"
@@ -1000,6 +1009,11 @@
     :network-manager="props.networkManager"
     @dismissed="serverStatisticsOpen = false"
   />
+  <ProcessedStorageModal
+    v-if="processedStorageOpen"
+    :requests="props.networkManager.requestManager"
+    @dismissed="processedStorageOpen = false"
+  />
   <FastaLinkWarningModal
     v-if="fastaLinkReport"
     :report="fastaLinkReport"
@@ -1624,6 +1638,7 @@ const trackManagerOpen = ref<"tracks" | "sources" | null>(null);
 const renderingPipelineOpen = ref(false);
 const workerDiagnosticsOpen = ref(false);
 const serverStatisticsOpen = ref(false);
+const processedStorageOpen = ref(false);
 const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
 const aboutOpen = ref(false);
 const osdSettingsOpen = ref(false);
@@ -1692,6 +1707,9 @@ const ModDotPlotModal = defineAsyncComponent(
 );
 const DotplotGenerator = defineAsyncComponent(
   () => import("./DotplotGenerator.vue")
+);
+const ProcessedStorageModal = defineAsyncComponent(
+  () => import("./ProcessedStorageModal.vue")
 );
 const SequenceSearchModal = defineAsyncComponent(
   () => import("./SequenceSearchModal.vue")

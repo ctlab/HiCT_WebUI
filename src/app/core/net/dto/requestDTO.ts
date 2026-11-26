@@ -78,6 +78,7 @@ import {
   ListTrackFilesRequest,
   ResolveMatrixSourceRequest,
   DropAllCachesRequest,
+  CleanupProcessedStorageRequest,
   OpenTrackRequest,
   OpenCoolerWeightsTrackRequest,
   ProbeTrackCompatibilityRequest,
@@ -234,6 +235,8 @@ abstract class HiCTAPIRequestDTO<
         );
       case entity instanceof DropAllCachesRequest:
         return new DropAllCachesRequestDTO(entity as DropAllCachesRequest);
+      case entity instanceof CleanupProcessedStorageRequest:
+        return new CleanupProcessedStorageRequestDTO(entity as CleanupProcessedStorageRequest);
       case entity instanceof OpenTrackRequest:
         return new OpenTrackRequestDTO(entity as OpenTrackRequest);
       case entity instanceof OpenCoolerWeightsTrackRequest:
@@ -944,6 +947,12 @@ class ResolveMatrixSourceRequestDTO extends HiCTAPIRequestDTO<ResolveMatrixSourc
 class DropAllCachesRequestDTO extends HiCTAPIRequestDTO<DropAllCachesRequest> {
   toDTO(): Record<string, unknown> {
     return {};
+  }
+}
+
+class CleanupProcessedStorageRequestDTO extends HiCTAPIRequestDTO<CleanupProcessedStorageRequest> {
+  toDTO(): Record<string, unknown> {
+    return { action: this.entity.action, ids: this.entity.ids };
   }
 }
 

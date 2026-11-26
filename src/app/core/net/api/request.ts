@@ -178,6 +178,17 @@ class DropAllCachesRequest implements HiCTAPIRequest {
   requestPath = "/cache/drop_all";
 }
 
+export type ProcessedStorageAction = "cache" | "old" | "maps";
+
+export class CleanupProcessedStorageRequest implements HiCTAPIRequest {
+  requestPath = "/storage/processed/cleanup";
+
+  constructor(
+    public readonly action: ProcessedStorageAction,
+    public readonly ids: string[]
+  ) {}
+}
+
 class CloseFileRequest implements HiCTAPIRequest {
   requestPath = "/close";
 }
