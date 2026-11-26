@@ -548,38 +548,13 @@ class CommonEventManager {
       "rightContigDescriptor",
     ].map((key) => clickedArrow.get(key) as ContigDescriptor | undefined);
 
-    let targetOrder: number;
-    let targetBP: number;
-    if (leftContigDescriptor && rightContigDescriptor) {
-      targetOrder = idToOrder[leftContigDescriptor.contigId];
-      targetBP = prefixSumBp[1 + targetOrder];
-    } else if (rightContigDescriptor) {
-      targetOrder = 0;
-      targetBP = -1;
-    } else {
-      targetOrder = this.mapManager.contigDimensionHolder.contig_count;
-      targetBP = prefixSumBp[prefixSumBp.length - 1] + 1;
-    }
-
-    console.log(
-      "Click in Translocation mode:",
-      "leftContigDescriptor:",
-      leftContigDescriptor,
-      "left contig order: ",
-      idToOrder[leftContigDescriptor?.contigId ?? 0],
-      "left contig start bp: ",
-      prefixSumBp[idToOrder[leftContigDescriptor?.contigId ?? 0]],
-      "rightContigDescirptor:",
-      rightContigDescriptor,
-      "right contig order: ",
-      idToOrder[rightContigDescriptor?.contigId ?? 0],
-      "right contig start bp: ",
-      prefixSumBp[idToOrder[rightContigDescriptor?.contigId ?? 0]],
-      "targetOrder:",
-      targetOrder,
-      "targetBP:",
-      targetBP
-    );
+    // The outermost visible arrows represent the assembly boundaries,
+    // even when the first or last contigs are hidden at this resolution.
+    const targetBP = !leftContigDescriptor
+      ? 0
+      : !rightContigDescriptor
+      ? prefixSumBp[prefixSumBp.length - 1]
+      : prefixSumBp[1 + idToOrder[leftContigDescriptor.contigId]];
 
     const [startBP, endBP] = ["startBP", "endBP"].map(
       (key) => interaction.get(key) as number

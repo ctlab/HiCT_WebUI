@@ -434,6 +434,22 @@
                   >Show reverse strand of FASTA</a
                 >
               </li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  role="menuitemcheckbox"
+                  :aria-checked="uiSettingsStore.scrollTracksWithWheel"
+                  @click="uiSettingsStore.scrollTracksWithWheel = !uiSettingsStore.scrollTracksWithWheel"
+                >
+                  <i
+                    class="bi me-1"
+                    :class="uiSettingsStore.scrollTracksWithWheel ? 'bi-check-square' : 'bi-square'"
+                    aria-hidden="true"
+                  ></i>
+                  Scroll 1D tracks with mouse wheel
+                </button>
+              </li>
             </ul>
           </li>
           <!-- Tools -->
@@ -478,6 +494,15 @@
                   @click.prevent="onGenerateDotplotClicked"
                   >Dotplot from FASTA files…</a
                 >
+              </li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  @click="generatingFastaModDotPlots = true"
+                >
+                  ModDotPlot from FASTA files…
+                </button>
               </li>
               <li>
                 <button
@@ -916,10 +941,19 @@
   <DotplotGenerator
     v-if="generatingDotplots"
     :network-manager="networkManager"
-    :initial-fasta-filename="lastLinkedFastaFilename"
+    :initial-fasta-filename="linkedFastaFilename || undefined"
     :initial-reference-map-filename="currentPrimaryHictFilename"
     :initial-resolutions="defaultDotplotResolutions()"
     @dismissed="onGenerateDotplotDismissed"
+  />
+  <DotplotGenerator
+    v-if="generatingFastaModDotPlots"
+    mod-dot-plot
+    :network-manager="networkManager"
+    :initial-reference-map-filename="currentPrimaryHictFilename"
+    :initial-fasta-filename="linkedFastaFilename || undefined"
+    :initial-resolutions="props.mapManager?.viewAndLayersManager.resolutions"
+    @dismissed="generatingFastaModDotPlots = false"
   />
   <ModDotPlotModal
     v-if="assemblyDotPlotOpen && props.mapManager"
@@ -1582,10 +1616,10 @@ const exportedFigureOpen = ref(false);
 const generatingDotplots = ref(false);
 const sequenceSearchOpen = ref(false);
 const sequenceSearchRemote = ref(false);
+const generatingFastaModDotPlots = ref(false);
 const modDotPlotOpen = ref(false);
 const assemblyDotPlotOpen = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
-const lastLinkedFastaFilename = ref<string | undefined>(undefined);
 const trackManagerOpen = ref<"tracks" | "sources" | null>(null);
 const renderingPipelineOpen = ref(false);
 const workerDiagnosticsOpen = ref(false);
@@ -2676,7 +2710,6 @@ function linkFASTA(filename: string, allowMismatch = false) {
       openingFile.value = false;
       openingFASTAFile.value = false;
       errorMessage.value = null;
-      lastLinkedFastaFilename.value = filename;
       emit("fastaLinked", filename);
       response.warnings.forEach((warning) =>
         toast.message(warning, {

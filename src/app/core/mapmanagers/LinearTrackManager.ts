@@ -150,8 +150,7 @@ class LinearTrackManager {
       tracks: TrackRenderResponse[];
       featureHits: RenderedFeatureHit[];
       viewport: ViewportGeometry;
-      canvasWidth: number;
-      canvasHeight: number;
+      laneBounds: TrackLaneBounds[];
       renderedAtMs: number;
     } | null
   > = {
@@ -658,8 +657,7 @@ class LinearTrackManager {
       tracks,
       featureHits,
       viewport,
-      canvasWidth: canvas.width,
-      canvasHeight: canvas.height,
+      laneBounds: this.trackLanePixels(canvas, drawOrientation, tracks),
       renderedAtMs: Date.now(),
     };
     return {
@@ -760,23 +758,13 @@ class LinearTrackManager {
     if (!snapshot || snapshot.tracks.length === 0) {
       return null;
     }
-    const laneSize =
-      orientation === "horizontal"
-        ? snapshot.canvasHeight / snapshot.tracks.length
-        : snapshot.canvasWidth / snapshot.tracks.length;
-    if (!Number.isFinite(laneSize) || laneSize <= 0) {
-      return null;
-    }
-    const laneIndex = Math.floor(crossOffsetPx / laneSize);
-    if (laneIndex < 0 || laneIndex >= snapshot.tracks.length) {
-      return null;
-    }
+    const laneIndex = snapshot.laneBounds.findIndex(
+      ({ start, end }) => crossOffsetPx >= start && crossOffsetPx < end
+    );
+    if (laneIndex < 0) return null;
     const track = snapshot.tracks[laneIndex];
-    const laneStart = laneIndex * laneSize;
-    const laneEnd = laneStart + laneSize;
-    if (crossOffsetPx < laneStart || crossOffsetPx > laneEnd) {
-      return null;
-    }
+    const { start: laneStart, end: laneEnd } = snapshot.laneBounds[laneIndex];
+    const laneSize = laneEnd - laneStart;
     const renderStyle = (track.renderStyle ?? "SIGNAL").toUpperCase();
     const bins =
       renderStyle === "FEATURE"
@@ -954,14 +942,10 @@ class LinearTrackManager {
     if (!snapshot || snapshot.tracks.length === 0) {
       return null;
     }
-    const laneSize =
-      orientation === "horizontal"
-        ? snapshot.canvasHeight / snapshot.tracks.length
-        : snapshot.canvasWidth / snapshot.tracks.length;
-    if (!Number.isFinite(laneSize) || laneSize <= 0) {
-      return null;
-    }
-    const track = snapshot.tracks[Math.floor(crossOffsetPx / laneSize)];
+    const index = snapshot.laneBounds.findIndex(
+      ({ start, end }) => crossOffsetPx >= start && crossOffsetPx < end
+    );
+    const track = snapshot.tracks[index];
     return track ? { trackId: track.trackId, trackName: track.name } : null;
   }
 
@@ -1306,6 +1290,38 @@ class LinearTrackManager {
     vertical: new Map<string, number>(),
   };
 
+  private readonly laneWeights = {
+    horizontal: new Map<string, number>(),
+    vertical: new Map<string, number>(),
+  };
+
+  public getTrackLaneBounds(
+    orientation: Orientation,
+    trackIds: readonly string[]
+  ): TrackLaneBounds[] {
+    const weights = trackIds.map((id) => this.laneWeights[orientation].get(id) ?? 1);
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    let position = 0;
+    return weights.map((weight) => {
+      const start = position;
+      position += weight / total;
+      return { start, end: position };
+    });
+  }
+
+  public resizeTrackLanePair(
+    orientation: Orientation,
+    firstId: string,
+    secondId: string,
+    firstShare: number
+  ): void {
+    const weights = this.laneWeights[orientation];
+    const total = (weights.get(firstId) ?? 1) + (weights.get(secondId) ?? 1);
+    weights.set(firstId, total * firstShare);
+    weights.set(secondId, total * (1 - firstShare));
+    this.scheduleTrackRedraw(orientation);
+  }
+
   private readonly scrollFrames = new Set<Orientation>();
   public scrollTrack(
     orientation: Orientation,
@@ -1313,6 +1329,10 @@ class LinearTrackManager {
     offset: number
   ): void {
     this.scrollOffsets[orientation].set(trackId, offset);
+    this.scheduleTrackRedraw(orientation);
+  }
+
+  private scheduleTrackRedraw(orientation: Orientation): void {
     if (this.scrollFrames.has(orientation)) return;
     this.scrollFrames.add(orientation);
     requestAnimationFrame(() => {
@@ -1343,6 +1363,22 @@ class LinearTrackManager {
     for (const [bin, lane] of packed.lanes) rows[lane].push(bin);
     this.featureRows.set(bins, rows);
     return rows;
+  }
+
+  private trackLanePixels(
+    canvas: HTMLCanvasElement,
+    orientation: Orientation,
+    tracks: readonly TrackRenderResponse[],
+    useInteractiveSizes = false
+  ): TrackLaneBounds[] {
+    const depth = orientation === "horizontal" ? canvas.height : canvas.width;
+    const bounds = useInteractiveSizes
+      ? this.getTrackLaneBounds(orientation, tracks.map(({ trackId }) => trackId))
+      : tracks.map((_, index) => ({
+          start: index / tracks.length,
+          end: (index + 1) / tracks.length,
+        }));
+    return bounds.map(({ start, end }) => ({ start: start * depth, end: end * depth }));
   }
 
   private drawTrackCanvas(
@@ -1387,13 +1423,13 @@ class LinearTrackManager {
     const tracks: TrackRenderResponse[] =
       responseTracks.length > 0 ? responseTracks : fallbackTracks;
     const featureHits: RenderedFeatureHit[] = [];
+    const laneBounds = this.trackLanePixels(canvas, orientation, tracks, publishState);
     if (publishState)
       this.lastRenderedSnapshot[orientation] = {
         tracks,
         featureHits,
         viewport,
-        canvasWidth: canvas.width,
-        canvasHeight: canvas.height,
+        laneBounds,
         renderedAtMs: Date.now(),
       };
     const textPalette = this.resolveTrackTextPalette();
@@ -1427,16 +1463,12 @@ class LinearTrackManager {
         style.getPropertyValue("--hict-strand-minus").trim() ||
         DEFAULT_STRAND_COLORS["-"],
     };
-    const laneSize =
-      orientation === "horizontal"
-        ? canvas.height / tracks.length
-        : canvas.width / tracks.length;
     const labelLeft = (this.exportLabelBounds?.left ?? 0) * canvas.width;
     const labelBottom = (this.exportLabelBounds?.bottom ?? 1) * canvas.height;
     const scrollSizes: Record<string, number> = {};
     tracks.forEach((track, trackIndex) => {
-      const laneStart = laneSize * trackIndex;
-      const laneEnd = laneStart + laneSize;
+      const { start: laneStart, end: laneEnd } = laneBounds[trackIndex];
+      const laneSize = laneEnd - laneStart;
       const titleSpace = Math.min(16, laneSize * 0.3);
       const laneInnerStart = laneStart + titleSpace + 2;
       const laneInnerEnd = laneEnd - 2;
@@ -3245,6 +3277,8 @@ class LinearTrackManager {
 }
 
 export { LinearTrackManager, type Orientation };
+
+type TrackLaneBounds = { start: number; end: number };
 
 type RenderState = {
   scrollSizes?: Record<string, number>;

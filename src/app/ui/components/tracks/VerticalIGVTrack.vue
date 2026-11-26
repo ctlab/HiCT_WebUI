@@ -45,8 +45,8 @@
       role="region"
       :aria-label="track.name + ' feature rows'"
       :style="{
-        left: (index * 100) / axisTracks.length + '%',
-        width: 100 / axisTracks.length + '%',
+        left: laneBounds[index].start * 100 + '%',
+        width: (laneBounds[index].end - laneBounds[index].start) * 100 + '%',
       }"
       @scroll="
         props.mapManager?.linearTrackManager.scrollTrack(
@@ -69,7 +69,7 @@
       type="button"
       class="track-close-button"
       :style="{
-        left: `calc(${((index + 0.5) * 100) / axisTracks.length}% - 10px)`,
+        left: `calc(${(laneBounds[index].start + laneBounds[index].end) * 50}% - 10px)`,
       }"
       :title="`Hide ${track.name} vertically`"
       :aria-label="`Hide ${track.name} vertically`"
@@ -78,6 +78,16 @@
     >
       <i class="bi bi-x"></i>
     </button>
+    <TrackLaneDivider
+      v-for="(track, index) in axisTracks.slice(0, -1)"
+      :key="'divider-' + track.trackId"
+      orientation="vertical"
+      :label="`Resize ${track.name} and ${axisTracks[index + 1].name}`"
+      :style="{ left: laneBounds[index].end * 100 + '%' }"
+      :pair-size="pairSize(index)"
+      :share="(laneBounds[index].end - laneBounds[index].start) / pairFraction(index)"
+      @resize="resizeLanePair(index, $event)"
+    />
     <div ref="statusOverlay" class="track-status-overlay"></div>
     <FloatingTrackTooltip
       :open="featureTooltipVisible"
@@ -121,6 +131,7 @@
 </template>
 
 <script setup lang="ts">
+import TrackLaneDivider from "./TrackLaneDivider.vue";
 import FloatingTrackTooltip from "./FloatingTrackTooltip.vue";
 import AxisContextMenu from "../common/AxisContextMenu.vue";
 import { buildTrackContextMenu } from "./trackContextMenu";
@@ -141,6 +152,24 @@ const trackHost = ref<HTMLDivElement | null>(null);
 const axisTracks = ref(
   props.mapManager?.linearTrackManager.getVisibleTracksForAxis("vertical") ?? []
 );
+const layoutRevision = ref(0);
+const laneBounds = computed(() => {
+  void layoutRevision.value;
+  return props.mapManager?.linearTrackManager.getTrackLaneBounds(
+    "vertical",
+    axisTracks.value.map((track) => track.trackId)
+  ) ?? [];
+});
+const pairFraction = (index: number) =>
+  laneBounds.value[index + 1].end - laneBounds.value[index].start;
+const trackDepth = ref(0);
+const pairSize = (index: number) => trackDepth.value * pairFraction(index);
+function resizeLanePair(index: number, share: number) {
+  props.mapManager?.linearTrackManager.resizeTrackLanePair(
+    "vertical", axisTracks.value[index].trackId, axisTracks.value[index + 1].trackId, share
+  );
+  layoutRevision.value++;
+}
 let unsubscribeRenderState: (() => void) | undefined;
 let unsubscribeTrackList: (() => void) | undefined;
 let draggingPointerId: number | null = null;
@@ -180,7 +209,6 @@ const { mapBackgroundColor } = storeToRefs(styleStore);
 const { inheritTrackBackgroundFromMap, trackBackgroundColor } =
   storeToRefs(uiSettingsStore);
 const trackHostStyle = computed(() => ({
-  minWidth: axisTracks.value.length * 52 + "px",
   background: inheritTrackBackgroundFromMap.value
     ? mapBackgroundColor.value.RGB
     : trackBackgroundColor.value,
@@ -196,6 +224,7 @@ const bindCanvas = () => {
 const bindSubscriptions = () => {
   unsubscribeRenderState?.();
   unsubscribeTrackList?.();
+  axisTracks.value = props.mapManager?.linearTrackManager.getVisibleTracksForAxis("vertical") ?? [];
   if (statusOverlay.value) {
     statusOverlay.value.textContent = props.mapManager
       ? "No tracks loaded"
@@ -208,6 +237,7 @@ const bindSubscriptions = () => {
     props.mapManager.linearTrackManager.subscribeRenderState(
       "vertical",
       (state) => {
+        trackDepth.value = trackHost.value?.clientWidth ?? 0;
         if (state.scrollSizes) scrollSizes.value = state.scrollSizes;
         if (statusOverlay.value) {
           statusOverlay.value.textContent = state.statusMessage ?? "";
@@ -268,7 +298,12 @@ const hideFeatureTooltip = (): void => {
 
 const onMouseMoveFeature = (event: MouseEvent): void => {
   cancelTooltipHide();
-  if (!props.mapManager || draggingPointerId !== null || contextMenu.value) {
+  if (
+    !props.mapManager ||
+    draggingPointerId !== null ||
+    contextMenu.value ||
+    (event.target as Element).closest(".track-lane-divider")
+  ) {
     hideFeatureTooltip();
     return;
   }
@@ -454,10 +489,12 @@ const stopPointerDrag = (event: PointerEvent): void => {
 const onWheelForward = (event: WheelEvent): void => {
   hideFeatureTooltip();
   const rows = (event.target as Element).closest<HTMLElement>(".track-scroll");
-  if (!event.ctrlKey && !event.metaKey && rows && rows.scrollWidth > rows.clientWidth) {
-    const delta = event.deltaX || event.deltaY;
-    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rows.clientWidth : 1;
-    rows.scrollLeft += delta * unit;
+  if (uiSettingsStore.scrollTracksWithWheel && !event.ctrlKey && !event.metaKey) {
+    if (rows) {
+      const delta = event.deltaX || event.deltaY;
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rows.clientWidth : 1;
+      rows.scrollLeft += delta * unit;
+    }
     return;
   }
   if (!props.mapManager || !trackHost.value) {

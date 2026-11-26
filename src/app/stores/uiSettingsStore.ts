@@ -105,6 +105,8 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
     readStored("hict.sequence.showReverseStrand", false)
   );
   persistRef("hict.sequence.showReverseStrand", sequenceShowReverseStrand);
+  const scrollTracksWithWheel = ref(readStored("hict.tracks.scrollWithWheel", false));
+  persistRef("hict.tracks.scrollWithWheel", scrollTracksWithWheel);
   const squareSelection = ref(readStored("hict.ui.squareSelection", false));
   persistRef("hict.ui.squareSelection", squareSelection);
   const alignmentMinimumLength = ref(
@@ -191,6 +193,7 @@ export const useUiSettingsStore = defineStore("uiSettings", () => {
     sequenceGapLengthBp,
     sequenceForwardColor,
     sequenceShowReverseStrand,
+    scrollTracksWithWheel,
     sequenceReverseColor,
     modDotPlotThreads,
     mapAnchorTopLeft,

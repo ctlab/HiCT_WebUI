@@ -722,24 +722,43 @@ const verticalRulerCssSize = computed(() => {
 .interactive-workspace_resize_handle {
   position: absolute;
   z-index: 26;
-  background: transparent;
+  display: grid;
+  place-items: center;
+}
+
+.interactive-workspace_resize_handle::before {
+  content: "";
+  background: #727e8c;
+}
+
+.interactive-workspace_resize_handle:hover::before,
+.interactive-workspace_resize_handle:focus-visible::before {
+  background: #2563eb;
 }
 
 .interactive-workspace_resize_handle_horizontal {
-  left: 0;
+  left: calc(v-bind(verticalTrackPanelCssSize) + v-bind(verticalRulerCssSize));
   right: 0;
   top: v-bind(horizontalTrackPanelCssSize);
-  height: 8px;
-  transform: translateY(-4px);
+  height: 10px;
+  transform: translateY(-5px);
   cursor: row-resize;
 }
 
 .interactive-workspace_resize_handle_vertical {
-  top: 0;
+  top: calc(v-bind(horizontalTrackPanelCssSize) + v-bind(horizontalRulerCssSize));
   bottom: 0;
   left: v-bind(verticalTrackPanelCssSize);
-  width: 8px;
-  transform: translateX(-4px);
+  width: 10px;
+  transform: translateX(-5px);
   cursor: col-resize;
+}
+.interactive-workspace_resize_handle_horizontal::before {
+  width: 100%;
+  height: 3px;
+}
+.interactive-workspace_resize_handle_vertical::before {
+  width: 3px;
+  height: 100%;
 }
 </style>
