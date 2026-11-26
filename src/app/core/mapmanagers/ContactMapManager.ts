@@ -36,7 +36,8 @@ import {
   type FileSaveResult,
 } from "../export/FileSave";
 import { ZoomSlider } from "ol/control";
-import { DoubleClickZoom, DragPan } from "ol/interaction";
+import { DoubleClickZoom, DragPan, Interaction, KeyboardPan } from "ol/interaction";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
 import VectorSource from "ol/source/Vector";
@@ -189,6 +190,23 @@ class ContactMapManager {
   public initializeMapInteractions(): void {
     this.map.addInteraction(new DoubleClickZoom());
     this.map.addInteraction(new DragPan());
+    const settings = useUiSettingsStore();
+    this.map.addInteraction(new Interaction({
+      handleEvent: (event) => {
+        if (event.type !== "keydown" || settings.mapAnchorTopLeft) return true;
+        const key = event.originalEvent as KeyboardEvent;
+        const target = this.map.getTargetElement();
+        if (key.target !== target || target !== document.activeElement ||
+            key.altKey || key.ctrlKey || key.metaKey) return true;
+        const horizontal = key.key === "ArrowLeft" || key.key === "ArrowRight";
+        const vertical = key.key === "ArrowUp" || key.key === "ArrowDown";
+        const size = this.map.getSize();
+        if (!size || (!horizontal && !vertical)) return true;
+        const pixels = size[horizontal ? 0 : 1] * (key.shiftKey ? 1 / 2 : 1 / 8);
+        // OpenLayers handles the pan and prevents page scrolling.
+        return new KeyboardPan({ pixelDelta: pixels, condition: () => true }).handleEvent(event);
+      },
+    }));
     this.viewAndLayersManager.initializeMapInteractions();
   }
 

@@ -334,7 +334,11 @@
 
         <template v-else-if="activeSidebarPanel === 'entities'">
           <div id="saved-locations">
-            <SavedLocations :map-manager="props.mapManager"></SavedLocations>
+            <SavedLocations
+              :map-manager="props.mapManager"
+              :bookmark-request="bookmarkRequest"
+              @bookmark-revealed="bookmarkRequest = undefined"
+            />
           </div>
         </template>
       </div>
@@ -377,6 +381,7 @@ const matrixViewStore = useMatrixViewStore();
 const activeSidebarPanel = ref<"visualization" | "entities" | "history">(
   "visualization"
 );
+const bookmarkRequest = ref<{ locationId: number }>();
 
 // Per-viewer layout conveniences; storage can be unavailable (private mode).
 function readLayoutFlag(key: string, fallback: boolean): boolean {
@@ -409,6 +414,13 @@ function showEditHistory(): void {
   sidebarCollapsed.value = false;
   activeSidebarPanel.value = "history";
 }
+function showBookmark(event: Event): void {
+  sidebarCollapsed.value = false;
+  activeSidebarPanel.value = "entities";
+  bookmarkRequest.value = { locationId: (event as CustomEvent<number>).detail };
+}
+onMounted(() => window.addEventListener("hict:show-bookmark", showBookmark));
+onUnmounted(() => window.removeEventListener("hict:show-bookmark", showBookmark));
 onMounted(() =>
   window.addEventListener("hict:show-edit-history", showEditHistory)
 );

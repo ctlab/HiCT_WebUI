@@ -65,15 +65,18 @@ function saveCurrentLocation() {
   const resolution = view?.getResolution();
   if (!view || !center || resolution === undefined) return;
   const existing = sessionStore.savedLocations;
+  const locationId = existing.length;
   sessionStore.setSavedLocations([
     ...existing,
     {
-      location_id: existing.length,
+      location_id: locationId,
+      name: `Location ${locationId + 1}`,
       center_point: [center[0], center[1]],
       resolution,
       rotation: view.getRotation(),
     },
   ]);
+  window.dispatchEvent(new CustomEvent("hict:show-bookmark", { detail: locationId }));
   toast.success(
     `Location ${existing.length + 1} bookmarked (Entities → Bookmarks)`
   );
