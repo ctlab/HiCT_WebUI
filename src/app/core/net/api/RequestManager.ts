@@ -172,7 +172,8 @@ import {
   WorkerSchedulerDiagnosticsResponse,
 } from "./response";
 import { toast } from "vue-sonner";
-import { SequenceAnalysisRequest } from "./SequenceAnalysisRequest";
+import { SequenceAnalysisRequest, type SequenceAnalysisEstimate } from "./SequenceAnalysisRequest";
+import { EstimateFastaDotplotRequest, SequenceOverlayRequest, type SequenceOverlayOptions } from "./request";
 import { useSessionStore } from "@/app/stores/sessionStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 import { extractErrorMessage } from "./errorMessage";
@@ -1896,10 +1897,25 @@ class RequestManager {
     return this.sendRequest(request).then((response) => response.data);
   }
 
+  public async estimateSequenceOverlay(
+    kind: "dotplot" | "moddotplot",
+    options: SequenceOverlayOptions
+  ): Promise<SequenceAnalysisEstimate> {
+    const response = await this.sendRequest(new SequenceOverlayRequest(kind, "estimate", options));
+    return response.data;
+  }
+
   public async startDotplotJobs(
     request: StartDotplotJobsRequest
   ): Promise<{ status: string; groupId: string; jobIds: string[] }> {
     return this.sendRequest(request).then((response) => response.data);
+  }
+
+  public async estimateFastaDotplot(
+    options: StartDotplotJobsRequest["options"]
+  ): Promise<SequenceAnalysisEstimate> {
+    const result = await this.sendRequest(new EstimateFastaDotplotRequest(options));
+    return result.data;
   }
 
   public async listDotplotJobs(): Promise<ConversionJobResponse[]> {

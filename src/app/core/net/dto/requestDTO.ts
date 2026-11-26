@@ -119,6 +119,7 @@ import { ColormapDTO, OutboundDTO, VisualizationOptionsDTO } from "./dto";
 import {
   AssemblyHistoryRequest,
   RestoreAssemblyHistoryRequest,
+  SequenceOverlayRequest,
 } from "../api/request";
 import { SequenceAnalysisRequest } from "../api/SequenceAnalysisRequest";
 
@@ -146,6 +147,8 @@ abstract class HiCTAPIRequestDTO<
         return new RemoteBlastRetrievalRequestDTO(
           entity as RemoteBlastRetrievalRequest
         );
+      case entity instanceof SequenceOverlayRequest:
+        return { toDTO: () => ({ ...(entity as SequenceOverlayRequest).options }) };
       case entity instanceof SequenceAnalysisRequest:
         return { toDTO: () => (entity as SequenceAnalysisRequest).options };
       case entity instanceof AssemblyHistoryRequest:
@@ -694,6 +697,7 @@ class StartDotplotJobsRequestDTO extends HiCTAPIRequestDTO<StartDotplotJobsReque
       alignmentThreads: this.entity.options.alignmentThreads,
       conversionThreads: this.entity.options.conversionThreads,
       overwrite: this.entity.options.overwrite,
+      acceptLargeOutput: this.entity.options.acceptLargeOutput,
     };
   }
 }

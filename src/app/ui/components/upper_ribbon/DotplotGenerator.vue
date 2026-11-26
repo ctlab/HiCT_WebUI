@@ -411,6 +411,13 @@
                   <code>load</code>/<code>zoomify</code>.
                 </div>
               </AdvancedSection>
+              <SequenceEstimateCallout
+                v-if="cost"
+                v-model:accept-large-output="acceptLargeOutput"
+                :estimate="cost"
+                class="mt-3"
+              />
+              <p v-if="costError" class="mt-3 mb-0 text-danger small" role="alert">{{ costError }}</p>
             </div>
 
             <div v-else>
@@ -505,7 +512,8 @@
               v-if="step === 'select'"
               type="button"
               class="btn btn-primary"
-              :disabled="submitting || !selection.size || (props.modDotPlot && !modSelectedLevels.length)"
+              :disabled="!!generateDisabledReason"
+              :title="generateDisabledReason || undefined"
               @click="startDotplots"
             >
               Generate {{ selection.size }}
@@ -544,10 +552,12 @@
 </template>
 
 <script setup lang="ts">
+import SequenceEstimateCallout from "./SequenceEstimateCallout.vue";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
 import Slider from "primevue/slider";
 import { useBackgroundJobsUiStore } from "@/app/stores/backgroundJobsUiStore";
-import { SequenceAnalysisRequest, type SequenceAnalysisJob } from "@/app/core/net/api/SequenceAnalysisRequest";
+import { type SequenceAnalysisEstimate, type SequenceAnalysisJob } from "@/app/core/net/api/SequenceAnalysisRequest";
 import { defaultSequenceResolutions, dotplotResolutionLevels } from "@/app/core/sequence/generationDefaults";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import {
@@ -559,7 +569,7 @@ import {
   type Ref,
 } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
-import { StartDotplotJobsRequest } from "@/app/core/net/api/request";
+import { SequenceOverlayRequest, StartDotplotJobsRequest, type SequenceOverlayOptions } from "@/app/core/net/api/request";
 import type {
   ConversionJobResponse,
   ConversionToolchainStatusResponse,
@@ -822,25 +832,119 @@ async function viewCurrentJobs(): Promise<void> {
   syncAutoRefresh();
 }
 
+const legacyOptions = computed<StartDotplotJobsRequest["options"]>(() => ({
+  fastaFiles: Array.from(selection.value),
+  binSize: Math.max(1, Math.trunc(binSize.value || 1000)),
+  resolutions: resolutions.value.trim() || undefined,
+  referenceMapFilename: referenceMapFilename.value || undefined,
+  assemblyAgpFilename: assemblyAgpFilename.value || undefined,
+  minimizerK: Math.max(1, Math.trunc(minimizerK.value || 17)),
+  minimizerWindow: Math.max(1, Math.trunc(minimizerWindow.value || 5)),
+  minChainScore: Math.max(0, Math.trunc(minChainScore.value || 40)),
+  skipDiagonal: skipDiagonal.value,
+  dropNearDiagonalBins: Math.max(
+    0,
+    Math.trunc(dropNearDiagonalBins.value || 0)
+  ),
+  sampleBp: Math.max(1, Math.trunc(sampleBp.value || 250)),
+  minAlignmentLength: Math.max(
+    0,
+    Math.trunc(minAlignmentLength.value || 50)
+  ),
+  extraMinimap2Args: extraMinimap2Args.value.trim() || undefined,
+  alignerPreference: alignerPreference.value,
+  alignmentThreads:
+    alignmentThreads.value > 0 ? Math.trunc(alignmentThreads.value) : -1,
+  conversionThreads:
+    conversionThreads.value > 0
+      ? Math.trunc(conversionThreads.value)
+      : -1,
+  overwrite: overwrite.value,
+}));
+const modOptions = computed<SequenceOverlayOptions>(() => ({
+  scope: "assembly",
+  mergeCompatible: false,
+  resolutions: modSelectedLevels.value,
+  k: modDotPlotK.value,
+}));
+const cost = ref<SequenceAnalysisEstimate | null>(null);
+const costError = ref("");
+const acceptLargeOutput = ref(false);
+const invalidK = computed(() => props.modDotPlot &&
+  (!Number.isSafeInteger(modDotPlotK.value) || modDotPlotK.value < 1 || modDotPlotK.value > 65535));
+const costInput = computed(() => props.modDotPlot
+  ? { files: selectedFastaPaths.value, mod: modOptions.value }
+  : { files: selectedFastaPaths.value, legacy: legacyOptions.value });
+watch([costInput, step, submitting], ([input, currentStep, submittingNow], _, cleanup) => {
+  cost.value = null;
+  costError.value = "";
+  acceptLargeOutput.value = false;
+  if (submittingNow || currentStep !== "select" || !input.files.length ||
+      invalidK.value || (!input.legacy && !input.mod?.resolutions.length))
+    return;
+  let active = true;
+  const timer = window.setTimeout(async () => {
+    const api = props.networkManager.requestManager;
+    try {
+      if (input.legacy) {
+        const estimate = await api.estimateFastaDotplot(input.legacy);
+        if (active) cost.value = estimate;
+        return;
+      }
+      if (!input.mod) return;
+      let combined: SequenceAnalysisEstimate | undefined;
+      for (const sourceFastaFilename of input.files) {
+        if (!active) return;
+        const estimate = await api.estimateSequenceOverlay("moddotplot", { ...input.mod, sourceFastaFilename });
+        if (!combined) combined = { ...estimate };
+        else {
+          combined.expectedBytes += estimate.expectedBytes;
+          combined.worstCaseBytes += estimate.worstCaseBytes;
+          combined.warningLevel ??= estimate.warningLevel;
+          if (!combined.limitingLevel && estimate.limitingLevel) {
+            combined.limitingLevel = estimate.limitingLevel;
+            combined.hardLimitReason = estimate.hardLimitReason;
+          }
+        }
+      }
+      if (active && combined) {
+        if (combined.worstCaseBytes > combined.diskBudgetBytes) combined.warningLevel ??= combined.requestedLevels[0];
+        cost.value = combined;
+      }
+    } catch (error) {
+      if (active) costError.value = extractErrorMessage(error);
+    }
+  }, 250);
+  cleanup(() => {
+    active = false;
+    window.clearTimeout(timer);
+  });
+}, { immediate: true });
+const generateDisabledReason = computed(() => {
+  if (submitting.value) return "Analysis is in progress.";
+  if (!selection.value.size) return "Choose a FASTA file.";
+  if (invalidK.value) return "Enter a k-mer size between 1 and 65,535.";
+  if (props.modDotPlot && !modSelectedLevels.value.length) return "Choose at least one resolution.";
+  if (costError.value) return costError.value;
+  if (!cost.value) return "Estimating analysis size…";
+  if (cost.value.limitingLevel) return cost.value.hardLimitReason ?? "This size cannot run here.";
+  if (cost.value.warningLevel && !acceptLargeOutput.value)
+    return "Tick Generate anyway to accept the large worst case";
+  return "";
+});
+
 async function startDotplots(): Promise<void> {
+  if (generateDisabledReason.value) return;
+  const accepted = acceptLargeOutput.value ? { acceptLargeOutput: true } : {};
   submitting.value = true;
   errorMessage.value = "";
   try {
     if (props.modDotPlot) {
-      const k = modDotPlotK.value;
-      if (!Number.isSafeInteger(k) || k < 1 || k > 65535) {
-        throw new Error("Enter a k-mer size between 1 and 65,535.");
-      }
+      const options = modOptions.value;
       let jobId: string | null = null;
-      for (const sourceFastaFilename of selection.value) {
+      for (const sourceFastaFilename of selectedFastaPaths.value) {
         const response = await props.networkManager.requestManager.sendRequest(
-          new SequenceAnalysisRequest("/sequence/moddotplot/jobs", {
-            sourceFastaFilename,
-            scope: "assembly",
-            mergeCompatible: false,
-            resolutions: modSelectedLevels.value,
-            k,
-          })
+          new SequenceOverlayRequest("moddotplot", "jobs", { ...options, ...accepted, sourceFastaFilename })
         );
         jobId = (response.data as SequenceAnalysisJob).jobId;
         selection.value.delete(sourceFastaFilename);
@@ -850,35 +954,7 @@ async function startDotplots(): Promise<void> {
       return;
     }
     await props.networkManager.requestManager.startDotplotJobs(
-      new StartDotplotJobsRequest({
-        fastaFiles: Array.from(selection.value),
-        binSize: Math.max(1, Math.trunc(binSize.value || 1000)),
-        resolutions: resolutions.value.trim() || undefined,
-        referenceMapFilename: referenceMapFilename.value || undefined,
-        assemblyAgpFilename: assemblyAgpFilename.value || undefined,
-        minimizerK: Math.max(1, Math.trunc(minimizerK.value || 17)),
-        minimizerWindow: Math.max(1, Math.trunc(minimizerWindow.value || 5)),
-        minChainScore: Math.max(0, Math.trunc(minChainScore.value || 40)),
-        skipDiagonal: skipDiagonal.value,
-        dropNearDiagonalBins: Math.max(
-          0,
-          Math.trunc(dropNearDiagonalBins.value || 0)
-        ),
-        sampleBp: Math.max(1, Math.trunc(sampleBp.value || 250)),
-        minAlignmentLength: Math.max(
-          0,
-          Math.trunc(minAlignmentLength.value || 50)
-        ),
-        extraMinimap2Args: extraMinimap2Args.value.trim() || undefined,
-        alignerPreference: alignerPreference.value,
-        alignmentThreads:
-          alignmentThreads.value > 0 ? Math.trunc(alignmentThreads.value) : -1,
-        conversionThreads:
-          conversionThreads.value > 0
-            ? Math.trunc(conversionThreads.value)
-            : -1,
-        overwrite: overwrite.value,
-      })
+      new StartDotplotJobsRequest({ ...legacyOptions.value, ...accepted })
     );
     await refreshJobs();
     step.value = "progress";

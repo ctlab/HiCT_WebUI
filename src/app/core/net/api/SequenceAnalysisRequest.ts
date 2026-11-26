@@ -23,6 +23,20 @@ export interface SequenceSearchSettings {
   overwrite?: boolean;
 }
 
+export interface SequenceAnalysisEstimate {
+  rowBp: number;
+  columnBp: number;
+  requestedLevels: number[];
+  overviewLevels: number[];
+  expectedBytes: number;
+  worstCaseBytes: number;
+  estimatedBytes: number;
+  diskBudgetBytes: number;
+  warningLevel?: number;
+  limitingLevel?: number;
+  hardLimitReason?: string;
+}
+
 export interface SequenceAnalysisJob {
   jobId: string;
   kind:

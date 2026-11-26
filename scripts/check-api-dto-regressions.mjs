@@ -882,6 +882,31 @@ const retrievalRequests = loadTypeScript(
 const retrievalDtos = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/dto/requestDTO.ts")
 );
+const overlayOptions = {
+  scope: "selection",
+  mergeCompatible: false,
+  resolutions: [100, 1000],
+  region: { rowStart: 50, rowEnd: 500, columnStart: 150, columnEnd: 800 },
+  acceptLargeOutput: true,
+};
+for (const kind of ["dotplot", "moddotplot"]) {
+  for (const action of ["estimate", "jobs"]) {
+    const request = new retrievalRequests.SequenceOverlayRequest(kind, action, overlayOptions);
+    assert.equal(request.requestPath, `/sequence/${kind}/${action}`);
+    assert.deepEqual(retrievalDtos.HiCTAPIRequestDTO.toDTOClass(request).toDTO(), overlayOptions);
+  }
+}
+const legacyEstimate = new retrievalRequests.EstimateFastaDotplotRequest({
+  fastaFiles: ["assembly.fa"],
+  binSize: 100,
+  acceptLargeOutput: true,
+});
+assert.equal(legacyEstimate.requestPath, "/dotplot/estimate");
+const legacyEstimateDto = retrievalDtos.HiCTAPIRequestDTO.toDTOClass(legacyEstimate).toDTO();
+assert.deepEqual(legacyEstimateDto.fastaFiles, ["assembly.fa"]);
+assert.equal(legacyEstimateDto.binSize, 100);
+assert.equal(legacyEstimateDto.acceptLargeOutput, true);
+
 for (const [name, options] of [
   ["PrepareCoverageNormalizationRequest", { source: "SECONDARY" }],
   ["CoverageNormalizationStatusRequest", { source: "SECONDARY" }],

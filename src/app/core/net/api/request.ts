@@ -24,10 +24,30 @@ import {
   NormalizationSettings,
 } from "@/app/ui/components/ComponentCommon";
 import assert from "assert";
-import type { SequenceSearchSettings } from "./SequenceAnalysisRequest";
+import { SequenceAnalysisRequest, type SequenceSearchSettings } from "./SequenceAnalysisRequest";
 import { ImageTile, Tile } from "ol";
 import { VisualizationOptionsDTO } from "../dto/dto";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
+
+export interface SequenceOverlayOptions {
+  scope: "assembly" | "selection";
+  resolutions: number[];
+  mergeCompatible: boolean;
+  region?: { rowStart: number; rowEnd: number; columnStart: number; columnEnd: number };
+  sourceFastaFilename?: string;
+  acceptLargeOutput?: boolean;
+  [setting: string]: unknown;
+}
+
+export class SequenceOverlayRequest extends SequenceAnalysisRequest {
+  constructor(
+    kind: "dotplot" | "moddotplot",
+    action: "estimate" | "jobs",
+    public override readonly options: SequenceOverlayOptions
+  ) {
+    super(`/sequence/${kind}/${action}`, options);
+  }
+}
 interface HiCTAPIRequest {
   requestPath: string;
 }
@@ -474,8 +494,13 @@ class StartDotplotJobsRequest implements HiCTAPIRequest {
       readonly alignmentThreads: number;
       readonly conversionThreads: number;
       readonly overwrite?: boolean;
+      readonly acceptLargeOutput?: boolean;
     }
   ) {}
+}
+
+export class EstimateFastaDotplotRequest extends StartDotplotJobsRequest {
+  override requestPath = "/dotplot/estimate";
 }
 
 class ListDotplotJobsRequest implements HiCTAPIRequest {

@@ -57,130 +57,51 @@
               class="form-select mb-3"
             >
               <option value="assembly">Whole active assembly</option>
-              <option value="selection" :disabled="!currentRectangle">
-                {{
-                  selection
-                    ? "Selected rectangle"
-                    : "Current viewport rectangle"
-                }}
+              <option v-if="selection" value="selection">
+                Selected region · {{ regionDimensions(selection) }}
               </option>
+              <option value="view" :disabled="!currentView">Current view</option>
             </select>
-            <p v-if="scope === 'selection' && currentRectangle" class="small">
-              Region ·
-              {{
-                formatLength(
-                  currentRectangle.rowEnd - currentRectangle.rowStart
-                )
-              }}
-              ×
-              {{
-                formatLength(
-                  currentRectangle.columnEnd - currentRectangle.columnStart
-                )
-              }}
+            <label for="sequence-overlay-detail" class="form-label">Finest detail</label>
+            <select
+              id="sequence-overlay-detail"
+              v-model="detail"
+              class="form-select"
+              @focus="loadDetailEstimates"
+              @pointerdown="loadDetailEstimates"
+            >
+              <option
+                v-for="size in suggested"
+                :key="size"
+                :value="size"
+                :disabled="!!detailEstimate(size)?.limitingLevel"
+                :title="detailEstimate(size)?.hardLimitReason"
+              >
+                {{ detailLabel(size) }}
+              </option>
+              <option value="custom">Custom sizes…</option>
+            </select>
+            <div v-if="detail === 'custom'" class="mt-3">
+              <label for="sequence-overlay-resolutions" class="form-label">
+                Sizes in bp, separated by commas or spaces
+              </label>
+              <input
+                id="sequence-overlay-resolutions"
+                v-model="resolutionList"
+                type="text"
+                class="form-control"
+                :class="{ 'is-invalid': resolutionError }"
+                :aria-invalid="!!resolutionError"
+              />
+            </div>
+            <p v-if="cost?.overviewLevels.length" class="form-text">
+              {{ detail === "custom"
+                ? "These sizes are generated. Overview levels reported by the server are added:"
+                : "Coarser overview levels are added automatically:" }}
+              {{ overviewLabel }}.
             </p>
             <p v-if="resolutionError" class="small text-danger" role="alert">
               {{ resolutionError }}
-            </p>
-            <div v-if="availableResolutions.length > 1" class="my-3">
-              <div class="small">
-                Resolution range ·
-                {{ availableResolutions[range[0]].toLocaleString() }}–{{
-                  availableResolutions[range[1]].toLocaleString()
-                }}
-                bp
-              </div>
-              <Slider
-                class="mx-2 my-3"
-                range
-                :model-value="range"
-                :min="0"
-                :max="availableResolutions.length - 1"
-                :step="1"
-                :disabled="busy"
-                :pt="{
-                  startHandler: {
-                    'aria-label': 'Finest resolution',
-                    'aria-valuetext': availableResolutions[range[0]] + ' bp',
-                  },
-                  endHandler: {
-                    'aria-label': 'Coarsest resolution',
-                    'aria-valuetext': availableResolutions[range[1]] + ' bp',
-                  },
-                }"
-                @update:model-value="changeRange"
-              />
-            </div>
-            <div class="resolution-options mb-3">
-              <label
-                v-for="resolution in availableResolutions"
-                :key="resolution"
-                class="form-check"
-              >
-                <input
-                  class="form-check-input"
-                  type="checkbox"
-                  :value="resolution"
-                  :checked="resolutions.includes(resolution)"
-                  @change="toggleResolution(resolution, $event)"
-                />
-                {{ resolution.toLocaleString() }} bp
-              </label>
-            </div>
-            <div
-              v-if="cost"
-              class="analysis-estimate mb-2"
-              :class="{ 'analysis-estimate-warning': cost.limitingLevel }"
-            >
-              <div role="status">
-                <i
-                  v-if="cost.limitingLevel"
-                  class="bi bi-exclamation-triangle"
-                  aria-hidden="true"
-                ></i>
-                <span :title="`${cost.estimatedBytes.toLocaleString()} bytes`">
-                  Estimated storage · {{ formatBytes(cost.estimatedBytes) }}
-                </span>
-                <span v-if="cost.limitingLevel">
-                  · Budget exceeded at
-                  {{ cost.limitingLevel.toLocaleString() }} bp.
-                </span>
-              </div>
-              <button
-                v-if="cost.limitingLevel && resolutions.length > 1"
-                type="button"
-                class="btn btn-link analysis-estimate-action"
-                @click="useSizesThatFit"
-              >
-                Use sizes that fit
-              </button>
-              <span
-                v-else-if="!cost.limitingLevel"
-                class="analysis-estimate-ok"
-              >
-                <i class="bi bi-check-circle" aria-hidden="true"></i>
-                within budget
-              </span>
-            </div>
-            <p v-if="costError" class="text-danger small" role="alert">
-              {{ costError }}
-            </p>
-            <button
-              v-if="
-                (cost?.limitingLevel || costError) &&
-                currentRectangle &&
-                scope === 'assembly'
-              "
-              type="button"
-              class="btn btn-sm btn-outline-secondary"
-              @click="scope = 'selection'"
-            >
-              Use current rectangle
-            </button>
-            <p v-if="scope === 'assembly'" class="form-text">
-              Fine windows over a whole genome can require many comparisons.
-              Select a rectangle for a shorter calculation; other regions can be
-              added later.
             </p>
             <label for="dotplot-display" class="form-label"
               >Show result as</label
@@ -195,30 +116,23 @@
               <option value="below">Below diagonal</option>
               <option value="none">Don’t link</option>
             </select>
+            <SequenceEstimateCallout
+              v-if="cost"
+              v-model:accept-large-output="acceptLargeOutput"
+              :estimate="cost"
+              class="mb-3"
+            >
+              <template #recovery>
+                <button type="button" class="btn btn-link analysis-estimate-action" @click="useSizesThatFit">
+                  Use sizes that fit
+                </button>
+              </template>
+            </SequenceEstimateCallout>
+            <p v-if="costError" class="text-danger small" role="alert">{{ costError }}</p>
             <AdvancedSection
               dialog-id="moddotplot"
-              hint="custom sizes, tuning and output"
+              hint="k-mer, window, identity, output"
             >
-              <label for="sequence-overlay-resolutions" class="form-label">
-                {{
-                  alignment
-                    ? "Dotplot resolutions (bp/bin)"
-                    : "ModDotPlot window sizes (bp)"
-                }}
-              </label>
-              <input
-                id="sequence-overlay-resolutions"
-                v-model="resolutionList"
-                type="text"
-                class="form-control"
-                :class="{ 'is-invalid': resolutionError }"
-                :aria-invalid="!!resolutionError"
-                aria-describedby="sequence-overlay-resolution-help"
-              />
-              <p id="sequence-overlay-resolution-help" class="form-text">
-                Enter sizes separated by commas or spaces, for example 50, 250,
-                1000.
-              </p>
               <dl v-if="cost" class="small">
                 <dt>Requested analysis levels</dt>
                 <dd>{{ cost.requestedLevels.join(", ") }} bp</dd>
@@ -561,6 +475,7 @@
   </Teleport>
 </template>
 <script setup lang="ts">
+import SequenceEstimateCallout from "./SequenceEstimateCallout.vue";
 import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
@@ -573,9 +488,11 @@ import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager
 import {
   SequenceAnalysisRequest,
   type SequenceAnalysisJob,
+  type SequenceAnalysisEstimate,
 } from "@/app/core/net/api/SequenceAnalysisRequest";
 import type { SecondarySourceStatusResponse } from "@/app/core/net/api/RequestManager";
-import Slider from "primevue/slider";
+import { SequenceOverlayRequest, type SequenceOverlayOptions } from "@/app/core/net/api/request";
+import { formatEstimateBytes } from "@/app/core/sequence/formatEstimateBytes";
 import { dotplotResolutionLevels } from "@/app/core/sequence/generationDefaults";
 import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
@@ -631,23 +548,19 @@ const unavailableReason = computed(() =>
 );
 // eslint-disable-next-line vue/no-setup-props-destructure
 const view = props.mapManager.viewAndLayersManager;
-const borders = view.currentViewState.selectionBorders;
-const selection =
-  borders.leftBP && borders.rightBP
-    ? {
-        rowStart: Math.min(borders.leftBP[1], borders.rightBP[1]),
-        rowEnd: Math.max(borders.leftBP[1], borders.rightBP[1]),
-        columnStart: Math.min(borders.leftBP[0], borders.rightBP[0]),
-        columnEnd: Math.max(borders.leftBP[0], borders.rightBP[0]),
-      }
-    : null;
-const currentRectangle =
-  selection ??
-  view.regionFromExtent(
-    props.mapManager
-      .getView()
-      .calculateExtent(props.mapManager.getMap().getSize())
-  );
+const entityRange = view.getSelectedEntityRange();
+const selection = view.getRegionBounds() ?? (entityRange ? {
+  rowStart: entityRange.startBP,
+  rowEnd: entityRange.endBP,
+  columnStart: entityRange.startBP,
+  columnEnd: entityRange.endBP,
+} : null);
+const currentView = view.regionFromExtent(
+  props.mapManager.getView().calculateExtent(props.mapManager.getMap().getSize())
+);
+function regionDimensions(region: NonNullable<typeof selection>): string {
+  return `${formatLength(region.rowEnd - region.rowStart)} × ${formatLength(region.columnEnd - region.columnStart)}`;
+}
 const k = ref(21);
 const suggested = computed(() =>
   dotplotResolutionLevels(
@@ -656,80 +569,32 @@ const suggested = computed(() =>
     alignment ? 1 : k.value
   )
 );
-const resolutionList = ref(suggested.value.join(", "));
-watch(suggested, (next, previous) => {
-  if (resolutions.value.join(",") === previous.join(","))
-    resolutionList.value = next.join(", ");
+const initialResolution = view.currentViewState.resolutionDesciptor.bpResolution;
+function closestDetail(levels: number[]): number {
+  return levels.reduce((best, next) =>
+    Math.abs(next - initialResolution) < Math.abs(best - initialResolution) ? next : best,
+    levels[0] ?? 1000
+  );
+}
+const detail = ref<number | "custom">(closestDetail(suggested.value));
+const resolutionList = ref(String(detail.value));
+watch(suggested, (levels) => {
+  if (detail.value !== "custom" && !levels.includes(detail.value))
+    detail.value = closestDetail(levels);
 });
-const resolutionTokens = computed(() =>
-  resolutionList.value.split(/[,\s]+/).filter(Boolean)
-);
+watch(detail, (size) => {
+  if (size !== "custom") resolutionList.value = String(size);
+});
+const resolutionTokens = computed(() => resolutionList.value.split(/[,\s]+/).filter(Boolean));
 function asResolution(token: string): number {
   const value = Number(token);
-  return /^\d+$/.test(token) && Number.isSafeInteger(value) && value > 0
-    ? value
-    : NaN;
+  return /^\d+$/.test(token) && Number.isSafeInteger(value) && value > 0 ? value : NaN;
 }
-const resolutions = computed(() =>
-  [
-    ...new Set(
-      resolutionTokens.value.map(asResolution).filter(Number.isFinite)
-    ),
-  ].sort((a, b) => a - b)
-);
-const customLevels = ref<number[]>([]);
-const availableResolutions = computed(() =>
-  [
-    ...new Set([
-      ...suggested.value,
-      ...customLevels.value,
-      ...resolutions.value,
-    ]),
-  ].sort((a, b) => a - b)
-);
-const range = computed(() => {
-  const levels = availableResolutions.value;
-  return resolutions.value.length
-    ? [
-        levels.indexOf(resolutions.value[0]),
-        levels.indexOf(resolutions.value[resolutions.value.length - 1]),
-      ]
-    : [0, Math.max(0, levels.length - 1)];
+const resolutions = computed(() => {
+  if (detail.value !== "custom") return [detail.value];
+  return [...new Set(resolutionTokens.value.map(asResolution).filter(Number.isFinite))].sort((a, b) => a - b);
 });
-function changeRange(bounds: number | number[]) {
-  if (!Array.isArray(bounds)) return;
-  const [oldLow, oldHigh] = range.value;
-  customLevels.value = availableResolutions.value.filter(
-    (level) => !suggested.value.includes(level)
-  );
-  resolutionList.value = availableResolutions.value
-    .filter(
-      (level, index) =>
-        index >= bounds[0] &&
-        index <= bounds[1] &&
-        (!resolutions.value.length ||
-          index <= oldLow ||
-          index >= oldHigh ||
-          resolutions.value.includes(level) ||
-          index === bounds[0] ||
-          index === bounds[1])
-    )
-    .join(", ");
-}
-function toggleResolution(resolution: number, event: Event): void {
-  if (
-    !suggested.value.includes(resolution) &&
-    !customLevels.value.includes(resolution)
-  )
-    customLevels.value.push(resolution);
-  const checked = (event.target as HTMLInputElement).checked;
-  const tokens = resolutionTokens.value.filter(
-    (token) => asResolution(token) !== resolution
-  );
-  if (checked) tokens.push(String(resolution));
-  resolutionList.value = tokens.join(", ");
-}
-const scope = ref(selection ? "selection" : "assembly");
+const scope = ref<"assembly" | "selection" | "view">(selection ? "selection" : "assembly");
 const identity = ref(80),
   sketchSize = ref(1000),
   delta = ref(0.5);
@@ -752,15 +617,15 @@ const saveReusable = ref(false),
 const defaultOutputFilename = `sequence-analysis/${kind}.hict.hdf5`;
 const mergeCompatible = ref(true),
   displayMode = ref<"overlay" | "below" | "above" | "none">(
-    scope.value === "selection" ? "overlay" : "below"
+    scope.value === "assembly" ? "below" : "overlay"
   ),
   submitting = ref(false),
   error = ref("");
-const jobOptions = computed(() => ({
+const jobOptions = computed<SequenceOverlayOptions>(() => ({
   gapLengthBp: uiSettings.sequenceGapLengthBp,
-  scope: scope.value,
+  scope: scope.value === "assembly" ? "assembly" : "selection",
   displayMode: displayMode.value,
-  region: scope.value === "selection" ? currentRectangle : undefined,
+  region: (scope.value === "view" ? currentView : scope.value === "selection" ? selection : null) ?? undefined,
   resolutions: resolutions.value,
   mergeCompatible: mergeCompatible.value,
   ...(alignment
@@ -779,65 +644,105 @@ const jobOptions = computed(() => ({
       }
     : {}),
 }));
-type GenerationCost = {
-  requestedLevels: number[];
-  overviewLevels: number[];
-  estimatedBytes: number;
-  limitingLevel?: number;
-};
-function formatBytes(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let unit = 0;
-  while (bytes >= 1000 && unit < units.length - 1) {
-    bytes /= 1000;
-    unit++;
-  }
-  return `${bytes.toLocaleString(undefined, { maximumSignificantDigits: 3 })} ${
-    units[unit]
-  }`;
-}
-const cost = ref<GenerationCost | null>(null);
+const cost = ref<SequenceAnalysisEstimate | null>(null);
 const costError = ref("");
+const acceptLargeOutput = ref(false);
 const findingFittingSizes = ref(false);
-async function estimateCost(
-  options: typeof jobOptions.value
-): Promise<GenerationCost> {
-  const response = await api.sendRequest(
-    new SequenceAnalysisRequest(`/sequence/${kind}/estimate`, options)
-  );
-  return response.data;
+const estimates = ref(new Map<string, SequenceAnalysisEstimate>());
+const pendingEstimates = new Map<string, Promise<SequenceAnalysisEstimate>>();
+const estimateContext = computed(() => JSON.stringify([
+  scope.value, jobOptions.value.region, uiSettings.sequenceGapLengthBp,
+  alignmentSettings.value, k.value, identity.value, sketchSize.value, delta.value,
+]));
+function estimateKey(context: string, sizes: number[]): string {
+  return `${context}:${sizes.join(",")}`;
+}
+function detailEstimate(size: number): SequenceAnalysisEstimate | undefined {
+  return estimates.value.get(estimateKey(estimateContext.value, [size]));
+}
+function detailLabel(size: number): string {
+  const estimate = detailEstimate(size);
+  return `${size.toLocaleString()} bp${estimate
+    ? ` · ≈ ${formatEstimateBytes(estimate.expectedBytes)}${estimate.warningLevel ? " ⚠" : ""}`
+    : ""}`;
+}
+const overviewLabel = computed(() => {
+  const levels = cost.value?.overviewLevels ?? [];
+  return levels.length <= 3
+    ? levels.map(formatLength).join(", ")
+    : `${formatLength(levels[0])} … ${formatLength(levels[levels.length - 1])}`;
+});
+function estimateCost(
+  context: string,
+  options: SequenceOverlayOptions
+): Promise<SequenceAnalysisEstimate> {
+  const key = estimateKey(context, options.resolutions);
+  const cached = estimates.value.get(key);
+  if (cached) return Promise.resolve(cached);
+  const pending = pendingEstimates.get(key);
+  if (pending) return pending;
+  const requested = api.estimateSequenceOverlay(kind, options).then((estimate) => {
+    estimates.value.set(key, estimate);
+    return estimate;
+  }).finally(() => pendingEstimates.delete(key));
+  pendingEstimates.set(key, requested);
+  return requested;
+}
+let loadingContext = "";
+async function loadDetailEstimates(): Promise<void> {
+  const context = estimateContext.value;
+  if (loadingContext === context || unavailableReason.value) return;
+  loadingContext = context;
+  const options = jobOptions.value;
+  try {
+    for (const size of suggested.value) {
+      if (disposed || estimateContext.value !== context) return;
+      await estimateCost(context, { ...options, resolutions: [size] }).catch(() => undefined);
+    }
+  } finally {
+    if (loadingContext === context) loadingContext = "";
+  }
 }
 async function useSizesThatFit(): Promise<void> {
+  const context = estimateContext.value;
   const options = jobOptions.value;
   findingFittingSizes.value = true;
   costError.value = "";
   try {
-    for (let start = 1; start < options.resolutions.length; start++) {
-      const sizes = options.resolutions.slice(start);
-      const estimate = await estimateCost({ ...options, resolutions: sizes });
-      if (disposed || jobOptions.value !== options) return;
-      if (estimate.limitingLevel) continue;
-      resolutionList.value = sizes.join(", ");
+    const minSize = options.resolutions[0];
+    const candidates = [...new Set([...options.resolutions, ...suggested.value])]
+      .sort((a, b) => a - b)
+      .filter((size) => size > minSize);
+    for (const size of candidates) {
+      const estimate = await estimateCost(context, { ...options, resolutions: [size] });
+      if (disposed || estimateContext.value !== context) return;
+      if (estimate.limitingLevel || estimate.warningLevel) continue;
+      if (suggested.value.includes(size)) detail.value = size;
+      else {
+        detail.value = "custom";
+        resolutionList.value = String(size);
+      }
       return;
     }
     costError.value = "Select a smaller region or choose a coarser resolution.";
   } catch (failure) {
-    if (!disposed && jobOptions.value === options)
-      costError.value = extractErrorMessage(failure);
+    if (!disposed && estimateContext.value === context) costError.value = extractErrorMessage(failure);
   } finally {
     findingFittingSizes.value = false;
   }
 }
 watch(
-  [jobOptions, resolutionError, unavailableReason],
-  ([options, invalid, unavailable], _, cleanup) => {
+  [estimateContext, resolutions, resolutionError, unavailableReason],
+  ([context, sizes, invalid, unavailable], _, cleanup) => {
     cost.value = null;
     costError.value = "";
-    if (invalid || unavailable || !options.resolutions.length) return;
+    acceptLargeOutput.value = false;
+    if (invalid || unavailable || !sizes.length) return;
+    const options = jobOptions.value;
     let active = true;
     const timer = window.setTimeout(async () => {
       try {
-        const estimate = await estimateCost(options);
+        const estimate = await estimateCost(context, options);
         if (active) cost.value = estimate;
       } catch (failure) {
         if (active) costError.value = extractErrorMessage(failure);
@@ -851,7 +756,7 @@ watch(
   { immediate: true, flush: "sync" }
 );
 watch(scope, (value) => {
-  displayMode.value = value === "selection" ? "overlay" : "below";
+  displayMode.value = value === "assembly" ? "below" : "overlay";
 });
 const job = ref<SequenceAnalysisJob | null>(null);
 let delivered = false;
@@ -892,8 +797,9 @@ const generateDisabledReason = computed(() => {
   if (!resolutions.value.length) return "Choose at least one resolution.";
   if (costError.value) return costError.value;
   if (!cost.value) return "Estimating analysis size…";
-  if (cost.value.limitingLevel)
-    return `Budget exceeded at ${cost.value.limitingLevel.toLocaleString()} bp. Choose coarser resolutions or select a smaller region.`;
+  if (cost.value.limitingLevel) return cost.value.hardLimitReason ?? "This size cannot run here.";
+  if (cost.value.warningLevel && !acceptLargeOutput.value)
+    return "Tick Generate anyway to accept the large worst case";
   return "";
 });
 let disposed = false,
@@ -911,15 +817,7 @@ onBeforeUnmount(() => {
   deferResult();
 });
 async function start() {
-  if (
-    busy.value ||
-    unavailableReason.value ||
-    !cost.value ||
-    cost.value.limitingLevel ||
-    resolutionError.value ||
-    !resolutions.value.length
-  )
-    return;
+  if (generateDisabledReason.value) return;
   submitting.value = true;
   error.value = "";
   pendingCompatibility.value = null;
@@ -929,7 +827,10 @@ async function start() {
   try {
     job.value = (
       await api.sendRequest(
-        new SequenceAnalysisRequest(`/sequence/${kind}/jobs`, jobOptions.value)
+        new SequenceOverlayRequest(kind, "jobs", {
+          ...jobOptions.value,
+          ...(acceptLargeOutput.value ? { acceptLargeOutput: true } : {}),
+        })
       )
     ).data;
     if (disposed) deferResult();
@@ -973,8 +874,9 @@ async function poll() {
       const title = alignment
         ? "The dotplot could not finish."
         : "ModDotPlot could not finish.";
-      const description = "The bundled tool reported an error.";
-      error.value = `${title} ${description}`;
+      const stopped = current.error?.startsWith("Stopped:") ? current.error : undefined;
+      const description = stopped ?? "The bundled tool reported an error.";
+      error.value = stopped ?? `${title} ${description}`;
       showFailure(title, description, current.logs.slice(-40).join("\n"));
       return;
     }
@@ -1086,45 +988,11 @@ useModalFocus(modalFocusElement);
   max-height: 77vh;
   overflow-y: auto;
 }
-.analysis-estimate {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px 12px;
-  padding: 8px 12px;
-  border: 1px solid #eaecf0;
-  border-radius: 8px;
-  background: #f9fafb;
-  font-size: 13px;
-}
-.analysis-estimate-warning {
-  border-color: #fedf89;
-  background: var(--hict-warning-soft);
-}
-.analysis-estimate-warning .bi {
-  margin-inline-end: 4px;
-  color: var(--hict-warning);
-}
 .analysis-estimate-action {
-  margin-inline-start: auto;
   padding: 0;
+  margin-inline-start: 6px;
   font-size: inherit;
   font-weight: 600;
-}
-.analysis-estimate-ok {
-  color: var(--hict-success);
-}
-.resolution-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 2rem;
-  padding-left: 1.5rem;
-}
-.moddotplot-modal .resolution-options {
-  gap: 6px 14px;
-  padding-left: 0;
-  font-size: 13.5px;
 }
 .analysis-logs {
   margin-top: 0.8rem;
@@ -1167,15 +1035,5 @@ useModalFocus(modalFocusElement);
 }
 .analysis-modal .form-check {
   padding-left: 1.7rem;
-}
-.moddotplot-modal .resolution-options .form-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-}
-.moddotplot-modal .resolution-options .form-check-input {
-  margin: 0;
 }
 </style>
