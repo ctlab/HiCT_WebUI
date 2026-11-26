@@ -388,6 +388,22 @@
                   >Restrict resolutions…</a
                 >
               </li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  role="menuitemcheckbox"
+                  :aria-checked="uiSettingsStore.showMapZoomControls"
+                  @click="uiSettingsStore.showMapZoomControls = !uiSettingsStore.showMapZoomControls"
+                >
+                  <i
+                    class="bi me-1"
+                    :class="uiSettingsStore.showMapZoomControls ? 'bi-check-square' : 'bi-square'"
+                    aria-hidden="true"
+                  ></i>
+                  Show zoom controls
+                </button>
+              </li>
               <li><hr class="dropdown-divider" /></li>
               <li>
                 <button

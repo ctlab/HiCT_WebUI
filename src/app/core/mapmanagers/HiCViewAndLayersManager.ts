@@ -164,6 +164,7 @@ interface CurrentHiCViewState {
   activeTool?: ActiveTool;
   entitySelectionKind: "scaffold";
   entitySelectionStatus?: string;
+  translocationTarget?: { left?: string; right?: string };
   selectedContigIds: number[];
   selectedScaffoldIds: number[];
   hideScopedBorders: boolean;
@@ -984,6 +985,7 @@ class HiCViewAndLayersManager {
     extent: number[];
     bucket: number;
     bpResolution: number;
+    resolution: number;
   };
   private vectorExactKey = "";
   private vectorViewportListener?: () => void;
@@ -1195,6 +1197,7 @@ class HiCViewAndLayersManager {
         multi: false,
         layers: this.layersHolder.contigTranslocationArrowsLayers,
         style: new Style({
+          zIndex: 100,
           fill: new Fill({
             color: "rgba(184, 96, 255, 0.68)",
           }),
@@ -1204,7 +1207,7 @@ class HiCViewAndLayersManager {
           }),
         }),
         condition: pointerMove,
-        hitTolerance: 8,
+        hitTolerance: 6,
         // filter: (feature, layer) => {
         //   console.log("Hover over", feature, layer);
         //   return true;
@@ -1214,6 +1217,7 @@ class HiCViewAndLayersManager {
         multi: false,
         layers: this.layersHolder.contigTranslocationArrowsLayers,
         style: new Style({
+          zIndex: 100,
           fill: new Fill({
             color: "rgba(208, 120, 255, 0.76)",
           }),
@@ -1222,7 +1226,7 @@ class HiCViewAndLayersManager {
             width: 5,
           }),
         }),
-        hitTolerance: 8,
+        hitTolerance: 6,
         features: this.selectionCollections.selectedTranslocationArrowsFeatures,
         condition: singleClick,
       }),
@@ -2822,6 +2826,8 @@ class HiCViewAndLayersManager {
       // Panning inside the padded extent and zooming inside one bucket reuse the built features.
       if (
         built &&
+        (this.currentViewState.activeTool !== ActiveTool.TRANSLOCATION ||
+          built.resolution === viewport.resolution) &&
         built.bucket ===
           HiCViewAndLayersManager.resolutionBucket(viewport.resolution) &&
         built.bpResolution ===
@@ -2873,6 +2879,7 @@ class HiCViewAndLayersManager {
     this.vectorBuilt = viewport
       ? {
           extent: viewport.extent,
+          resolution: viewport.resolution,
           bucket: HiCViewAndLayersManager.resolutionBucket(viewport.resolution),
           bpResolution: this.getActiveVectorResolutionDescriptor().bpResolution,
         }
@@ -3132,6 +3139,16 @@ class HiCViewAndLayersManager {
     this.deferredInitializationInteractions.scissorsGuideInteraction.setActive(
       false
     );
+    const hoveredArrows = this.selectionInteractions.translocationArrowHoverInteraction.getFeatures();
+    hoveredArrows.on("add", ({ element }) => {
+      this.currentViewState.translocationTarget = {
+        left: element.get("leftContigDescriptor")?.contigName,
+        right: element.get("rightContigDescriptor")?.contigName,
+      };
+    });
+    hoveredArrows.on("remove", () => {
+      this.currentViewState.translocationTarget = undefined;
+    });
     this.selectionInteractions.translocationArrowSelectionInteraction
       .getFeatures()
       .on("add", () => {
@@ -3494,6 +3511,10 @@ class HiCViewAndLayersManager {
   }
 
   public refreshTranslocationArrows(): void {
+    if (this.currentViewState.activeTool !== ActiveTool.TRANSLOCATION) {
+      this.selectionInteractions.translocationArrowHoverInteraction.getFeatures().clear();
+      this.currentViewState.translocationTarget = undefined;
+    }
     const activeResolution =
       this.getActiveVectorResolutionDescriptor().bpResolution;
     for (const layer of this.layersHolder.contigTranslocationArrowsLayers) {

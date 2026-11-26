@@ -1,3 +1,11 @@
 body.custom-zoomslider-enabled .ol-zoomslider:not(.custom-zoomslider) {
   display: none;
 }
+
+
+.map-shell .custom-zoomslider {
+  top: auto;
+  bottom: calc(.5em + 60px);
+  left: .5em;
+  height: 120px;
+}

@@ -181,6 +181,14 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => uiSettingsStore.showMapZoomControls,
+  (enabled) => {
+    document.body.classList.toggle("map-zoom-controls-hidden", !enabled);
+  },
+  { immediate: true }
+);
+
 console.error = (...args: unknown[]) => {
   originalConsoleError(...args);
   try {

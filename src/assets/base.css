@@ -300,6 +300,25 @@ body:has(> .assembly-context-menu, > .axis-context-menu) [data-sonner-toaster] {
   margin-right: 20px;
 }
 
+.ol-viewport > .ol-overlaycontainer-stopevent .ol-zoom,
+.map-shell .ol-zoom {
+  top: auto;
+  bottom: .5em;
+  left: .5em;
+}
+
+.map-shell .ol-zoomslider {
+  top: auto;
+  bottom: calc(.5em + 60px);
+  left: .5em;
+  height: 120px;
+}
+
+body.map-zoom-controls-hidden .ol-zoom,
+body.map-zoom-controls-hidden .ol-zoomslider {
+  display: none;
+}
+
 .ol-zoom button {
   min-width: 24px;
   min-height: 24px;

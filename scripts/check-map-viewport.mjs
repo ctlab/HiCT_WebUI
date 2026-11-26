@@ -63,7 +63,6 @@ class Request {
   }
 }
 const { CommonEventManager } = loadManager("CommonEventManager", {
-  "./TranslocationStatusToast": { showTranslocationStatus() {} },
   "../net/api/request": {
     ReverseSelectionRangeRequest: Request,
     MoveSelectionRangeRequest: Request,

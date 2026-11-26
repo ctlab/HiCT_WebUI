@@ -102,6 +102,15 @@
         {{ props.mapManager.alignmentDetail.state.message.value }}
       </p>
     </aside>
+    <div v-if="translocationActive" class="tl-hint" role="status">
+      <b>Translocation mode.</b> Click a triangle to move the selection there. Esc leaves.
+      <template v-if="translocationTarget">
+        <br />Target:
+        <template v-if="translocationTarget.left">after <b>{{ translocationTarget.left }}</b></template>
+        <template v-if="translocationTarget.left && translocationTarget.right">, </template>
+        <template v-if="translocationTarget.right">before <b>{{ translocationTarget.right }}</b></template>
+      </template>
+    </div>
     <div
       id="hic-contact-map"
       :style="mapContainerStyle"
@@ -121,6 +130,7 @@
 </template>
 
 <script setup lang="ts">
+import { ActiveTool } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
 import "ol/ol.css";
 import { useSessionStore } from "@/app/stores/sessionStore";
 import { useBackgroundJobsUiStore } from "@/app/stores/backgroundJobsUiStore";
@@ -206,6 +216,12 @@ watch(
   { immediate: true }
 );
 const uiSettingsStore = useUiSettingsStore();
+const translocationActive = computed(() =>
+  props.mapManager?.viewAndLayersManager.currentViewState.activeTool === ActiveTool.TRANSLOCATION
+);
+const translocationTarget = computed(() =>
+  props.mapManager?.viewAndLayersManager.currentViewState.translocationTarget
+);
 const { customZoomSliderEnabled } = storeToRefs(uiSettingsStore);
 
 // The context menu binds to its map's viewport once, when it is created. Replacing the manager
@@ -225,6 +241,25 @@ const managerKey = computed(() => {
 </script>
 
 <style scoped>
+.tl-hint {
+  position: absolute;
+  left: 48px;
+  bottom: .5em;
+  max-width: min(430px, calc(100% - 56px));
+  z-index: 2;
+  background: rgba(16, 24, 40, .78);
+  color: #fff;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.tl-hint b {
+  color: #d1e9ff;
+}
+
 #hic-contact-map:focus-visible {
   outline: 2px solid var(--bs-primary);
   outline-offset: -2px;
@@ -305,9 +340,8 @@ const managerKey = computed(() => {
 
 .zoom-slider-overlay {
   position: absolute;
-  left: 8px;
-  top: 140px;
+  inset: 0;
   z-index: 20;
-  pointer-events: auto;
+  pointer-events: none;
 }
 </style>

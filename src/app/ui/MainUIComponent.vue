@@ -46,7 +46,10 @@
     @selected="finishSessionFile"
     @dismissed="finishSessionFile(null)"
   />
-  <div :class="{ 'modal-notifications': hasActiveModal() }">
+  <div
+    v-show="mapManager?.viewAndLayersManager.currentViewState.activeTool !== ActiveTool.TRANSLOCATION"
+    :class="{ 'modal-notifications': hasActiveModal() }"
+  >
     <Toaster position="bottom-center" close-button close-button-position="top-right" />
   </div>
   <!-- <button @click="() => toast.message('My first toast')">Render a toast</button> -->
@@ -419,7 +422,6 @@ import {
 import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
 import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
 import { ActiveTool } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
-import { showTranslocationStatus } from "@/app/core/mapmanagers/TranslocationStatusToast";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import UnsavedEditsDialog from "@/app/ui/components/common/UnsavedEditsDialog.vue";
 import FastaOnlyDialog from "@/app/ui/components/common/FastaOnlyDialog.vue";
@@ -722,7 +724,6 @@ function handleGlobalEscape(event: KeyboardEvent): void {
     if (tool === ActiveTool.SCISSORS) manager?.deactivateScissors();
     else if (tool === ActiveTool.TRANSLOCATION) {
       manager?.deactivateTranslocation();
-      showTranslocationStatus(false);
     }
     manager?.eventManager.resetSelection();
     event.preventDefault();

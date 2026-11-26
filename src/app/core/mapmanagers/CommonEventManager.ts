@@ -48,7 +48,6 @@ import { ActiveTool } from "./HiCViewAndLayersManager";
 import { BorderStyle, NamePlacement } from "@/app/core/tracks/Track2DSymmetric";
 import { Coordinate } from "ol/coordinate";
 import { toast } from "vue-sonner";
-import { showTranslocationStatus } from "./TranslocationStatusToast";
 
 class CommonEventManager {
   public constructor(public readonly mapManager: ContactMapManager) {}
@@ -450,14 +449,12 @@ class CommonEventManager {
     const activeTool =
       this.mapManager.viewAndLayersManager.currentViewState.activeTool;
     if (activeTool === ActiveTool.TRANSLOCATION) {
-      showTranslocationStatus(false);
       this.mapManager.deactivateTranslocation();
     } else {
       const range = this.getSelectedContigBpRange();
       if (!range) {
         return;
       }
-      showTranslocationStatus(true);
       this.mapManager.viewAndLayersManager.currentViewState.activeTool =
         ActiveTool.TRANSLOCATION;
       this.mapManager.viewAndLayersManager.selectionInteractions.contigSelectionInteraction.setActive(
@@ -579,7 +576,6 @@ class CommonEventManager {
       })
       .catch((error) => reportFailure("Move selection", error))
       .finally(() => {
-        showTranslocationStatus(false);
         this.mapManager.deactivateTranslocation();
         this.mapManager.reloadVisuals();
       });
