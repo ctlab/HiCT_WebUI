@@ -25,22 +25,6 @@
     :class="{ 'header-ribbon--empty': !props.mapManager }"
   >
     <div id="left-header-block" class="header-block">
-      <div class="selection-tools">
-        <SelectionControls :map-manager="props.mapManager" />
-        <label
-          ><input
-            v-model="uiSettingsStore.squareSelection"
-            type="checkbox"
-            :disabled="!props.mapManager"
-            :title="
-              props.mapManager
-                ? 'Constrain new selections to a square'
-                : 'Open a map to select'
-            "
-          />
-          Square selection</label
-        >
-      </div>
       <div id="search-container">
         <div id="search-input-group" class="input-group input-group-sm mb-3">
           <input
@@ -197,6 +181,13 @@
           </div>
         </div>
       </div>
+      <span
+        v-if="sequenceScaleStatus"
+        class="sequence-scale-status small text-dark bg-light rounded px-2 py-1 mb-3"
+        data-testid="sequence-scale-status"
+        :title="`${sequenceScaleStatus}. Display coordinates follow individual bases. Matrix values retain their stored bin resolution.`"
+        >{{ sequenceScaleStatus }}</span
+      >
       <div class="mb-3">
         <select
           :value="signalDisplayMode"
@@ -215,13 +206,22 @@
           <option value="OBSERVED_OVER_EXPECTED">Observed/Expected</option>
         </select>
       </div>
-      <span
-        v-if="sequenceScaleStatus"
-        class="sequence-scale-status small text-dark bg-light rounded px-2 py-1 mb-3"
-        data-testid="sequence-scale-status"
-        :title="`${sequenceScaleStatus}. Display coordinates follow individual bases. Matrix values retain their stored bin resolution.`"
-        >{{ sequenceScaleStatus }}</span
-      >
+      <div class="selection-tools">
+        <SelectionControls :map-manager="props.mapManager" />
+        <label
+          ><input
+            v-model="uiSettingsStore.squareSelection"
+            type="checkbox"
+            :disabled="!props.mapManager"
+            :title="
+              props.mapManager
+                ? 'Constrain new selections to a square'
+                : 'Open a map to select'
+            "
+          />
+          Square selection</label
+        >
+      </div>
     </div>
     <div id="right-header-block" class="header-block">
       <div class="export-group">
@@ -1224,16 +1224,11 @@ async function onSignalDisplayModeChanged(event: Event) {
 
   #search-container {
     flex: 0 1 200px;
-    min-width: 144px;
+    min-width: 120px;
   }
 
   #search-input-group {
     width: 100%;
-  }
-
-  .scope-picker {
-    flex: 0 1 120px;
-    min-width: 96px;
   }
 }
 
@@ -1243,15 +1238,12 @@ async function onSignalDisplayModeChanged(event: Event) {
   }
 
   #left-header-block:has(.sequence-scale-status) #search-container {
-    flex-basis: 144px;
-  }
-
-  #left-header-block:has(.sequence-scale-status) .scope-picker {
-    flex-basis: 96px;
+    flex-basis: 120px;
   }
 
   .sequence-scale-status {
-    max-width: 112px;
+    flex: 0 1 112px;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

@@ -6,7 +6,8 @@
       data-bs-toggle="dropdown"
       :data-bs-popper-config="navbarPopperConfig"
       :disabled="!mapManager"
-      :title="mapManager ? summary : 'Open a map to select a region'"
+      :title="mapManager ? fullLabel : 'Open a map to select a region'"
+      :aria-label="fullLabel"
     >
       <span>{{ label }}</span>
     </button>
@@ -145,6 +146,12 @@ const label = computed(() => {
   }
   return count.value ? `Selection · ${entityLabel.value}` : "Selection";
 });
+const fullLabel = computed(() => {
+  const r = region.value;
+  if (r)
+    return `Region · rows ${(r.rowStart + 1).toLocaleString()}–${r.rowEnd.toLocaleString()} bp × columns ${(r.columnStart + 1).toLocaleString()}–${r.columnEnd.toLocaleString()} bp`;
+  return count.value ? `Selection · ${summary.value}` : "Selection";
+});
 function formatSelectionLength(bp: number): string {
   return bp >= 1000 && bp < 1e6
     ? `${Math.round(bp / 1000)} kb`
@@ -173,9 +180,14 @@ function copyPng() {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  width: 120px;
+  width: 13rem;
+  justify-content: space-between;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .selection-label span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -184,14 +196,9 @@ function copyPng() {
   flex: none;
   margin-left: 0;
 }
-@media (min-width: 1280px) {
-  .selection-label:enabled {
-    width: clamp(190px, calc(50vw - 450px), 260px);
-  }
-}
 .selection-menu {
-  min-width: min(25rem, 90vw);
-  max-width: 90vw;
+  width: min(360px, 90vw);
+  white-space: normal;
   max-height: min(25rem, calc(100dvh - 8rem));
   overflow-y: auto;
   overscroll-behavior: contain;
