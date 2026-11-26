@@ -1685,14 +1685,13 @@ class LinearTrackManager {
               orientation === "horizontal" ? canvas.width : canvas.height,
               viewport.pxToScreen(endPx)
             );
-            if (bin.label && (start - previousEnd >= 16 || end - start >= 22)) {
+            if (bin.label && start - previousEnd >= 8) {
               this.drawFeatureLabel(
                 ctx,
                 orientation,
                 bin.label,
                 previousEnd,
                 start,
-                end,
                 packedStart,
                 textPalette
               );
@@ -1909,27 +1908,29 @@ class LinearTrackManager {
     label: string,
     previousEnd: number,
     start: number,
-    end: number,
     rowStart: number,
     palette: TrackTextPalette
   ): void {
     ctx.font = "10px HiCT Sans";
     ctx.textAlign = "left";
-    const width = ctx.measureText(label).width;
-    const beside = start - previousEnd >= width + 8;
-    if (!beside && end - start < width + 4) return;
-    const axis = beside ? start - width - 4 : start + 2;
-    const cross = rowStart + (beside ? 9 : 0);
-    ctx.fillStyle = palette.primary;
-    if (orientation === "horizontal")
-      this.drawOutlinedText(ctx, label, axis, cross, palette);
-    else {
-      ctx.save();
-      ctx.translate(cross, axis + width);
-      ctx.rotate(-Math.PI / 2);
-      this.drawOutlinedText(ctx, label, 0, 0, palette);
-      ctx.restore();
+    const metrics = ctx.measureText(label);
+    const leftOverhang = Math.max(0, metrics.actualBoundingBoxLeft);
+    const rightExtent = Math.max(metrics.width, metrics.actualBoundingBoxRight);
+    // The packed row has no room above a full-height block for outlined text.
+    if (start - previousEnd < leftOverhang + rightExtent + 8) {
+      return;
     }
+    const cross = rowStart + 9;
+    ctx.fillStyle = palette.primary;
+    if (orientation === "horizontal") {
+      this.drawOutlinedText(ctx, label, start - rightExtent - 4, cross, palette);
+      return;
+    }
+    ctx.save();
+    ctx.translate(cross, start - leftOverhang - 4);
+    ctx.rotate(-Math.PI / 2);
+    this.drawOutlinedText(ctx, label, 0, 0, palette);
+    ctx.restore();
   }
 
   private drawFeatureBin(
