@@ -951,6 +951,7 @@
     :initial-cooler-filename="coolerToConvert"
     v-if="convertingCoolers"
     @dismissed="onConvertCoolersDismissed"
+    @open-map="emit('selected', $event, true)"
   >
   </CoolerConverter>
   <MatrixExportModal
@@ -1783,7 +1784,7 @@ useModalFocus(juiceboxFastaPromptElement, () => juiceboxFastaPromptOpen.value);
 
 const emit = defineEmits<{
   (e: "jobResult", request: JobOpenRequest): void;
-  (e: "selected", filename: string): void;
+  (e: "selected", filename: string, converted?: boolean): void;
   (e: "closed"): void;
   (e: "attached", address: string): void;
   (e: "saveSession"): void;

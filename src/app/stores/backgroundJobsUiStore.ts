@@ -13,6 +13,7 @@ export const useBackgroundJobsUiStore = defineStore("backgroundJobsUi", () => {
   const focusedJobId = ref<string | null>(null);
   const autoOpenJobId = ref<string | null>(null);
   const focusRequest = ref(0);
+  const closedConverterJobs = new Set<string>();
   const exampleToResumeId = ref<string | null>(null);
   function open(jobId: string | null = null, openWhenReady = false): void {
     focusedJobId.value = jobId;
@@ -30,6 +31,7 @@ export const useBackgroundJobsUiStore = defineStore("backgroundJobsUi", () => {
     autoOpenJobId,
     focusRequest,
     exampleToResumeId,
+    closedConverterJobs,
     open,
     dismiss,
   };

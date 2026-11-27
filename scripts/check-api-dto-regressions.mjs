@@ -116,9 +116,27 @@ assert.throws(() => new SimpleLinearGradientDTO({
   ...endpointPayload,
   curve: [1, 0, 0.85, 1],
 }).toEntity());
-const { TrackQueryResponseDTO } = loadTypeScript(
+const { ConversionJobResponseDTO, TrackQueryResponseDTO } = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/dto/responseDTO.ts")
 );
+const runningConversion = new ConversionJobResponseDTO({
+  elapsedMillis: 7380,
+  etaMillis: -1,
+  resolutionElapsedMillis: 1390,
+  resolutionEtaMillis: -1,
+  stageIndex: 2,
+  stageCount: 5,
+}).toEntity();
+assert.equal(runningConversion.elapsedMillis, 7380);
+assert.equal(runningConversion.etaMillis, -1);
+assert.equal(runningConversion.resolutionElapsedMillis, 1390);
+assert.equal(runningConversion.resolutionEtaMillis, -1);
+assert.equal(runningConversion.stageIndex, 2);
+assert.equal(runningConversion.stageCount, 5);
+const legacyConversion = new ConversionJobResponseDTO({ etaMillis: 0 }).toEntity();
+assert.equal(legacyConversion.etaMillis, 0);
+assert.equal(legacyConversion.stageIndex, undefined);
+assert.equal(legacyConversion.stageCount, undefined);
 const baseQuery = new TrackQueryResponseDTO({
   startBp: 3,
   endBp: 6,

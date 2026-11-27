@@ -379,33 +379,46 @@
               </p>
             </div>
             <div v-if="batchStep === 'progress'">
-              <h6>Batch progress</h6>
               <p v-if="batchJobIds.length === 0" class="text-muted">
                 No active conversion jobs.
               </p>
-              <div v-else class="overall-status">
-                <span class="status-pill" :class="overallBatchStatusClass">
-                  {{ overallBatchStatusLabel }}
-                </span>
-              </div>
               <div class="batch-progress-list">
                 <ConverterStatusChecker
-                  v-for="job in batchJobIds"
-                  :key="job"
+                  v-for="jobId in batchJobIds"
+                  :key="jobId"
                   :network-manager="networkManager"
-                  :job-id="job"
-                  :show-stop="true"
+                  :job-id="jobId"
+                  :show-tool-info="false"
                   @status-update="onBatchStatusUpdate"
-                />
+                >
+                  <template #result="{ job }">
+                    <button
+                      v-if="batchJobIds.length > 1 && isMap(job)"
+                      type="button"
+                      class="btn btn-link align-self-end p-0"
+                      @click="openConvertedMap(job)"
+                    >
+                      Open
+                    </button>
+                  </template>
+                </ConverterStatusChecker>
               </div>
+              <details v-if="batchToolInfo.length" class="batch-tool-info">
+                <summary>About the bundled tools (hictk, licences and citations)</summary>
+                <p v-for="line in batchToolInfo" :key="line">{{ line }}</p>
+              </details>
             </div>
           </div>
         </div>
         <div class="modal-footer hict-modal-footer">
+          <label class="open-on-ready me-auto">
+            <input v-model="openWhenReady" class="form-check-input" type="checkbox" />
+            Open the map when it is ready
+          </label>
           <button
             v-if="batchStep === 'select'"
             type="button"
-            class="btn btn-link me-auto"
+            class="btn btn-link"
             @click="viewCurrentJobs"
           >
             View conversion jobs
@@ -416,6 +429,14 @@
             @click="onDismissClicked"
           >
             {{ batchStep === "select" ? "Cancel" : "Close" }}
+          </button>
+          <button
+            v-if="finishedMap"
+            type="button"
+            class="btn btn-success open-converted-map"
+            @click="openConvertedMap(finishedMap)"
+          >
+            <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Open map
           </button>
           <button
             v-if="batchStep === 'select'"
@@ -498,11 +519,12 @@
 
 <script setup lang="ts">
 import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
-import { type Ref, ref, onBeforeUnmount, onMounted, computed } from "vue";
+import { type Ref, ref, onBeforeUnmount, onMounted, computed, watch } from "vue";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { StartBatchConversionJobsRequest } from "@/app/core/net/api/request";
-import { ConversionToolchainStatusResponse } from "@/app/core/net/api/response";
+import type { ConversionJobResponse, ConversionToolchainStatusResponse } from "@/app/core/net/api/response";
+import { useBackgroundJobsUiStore } from "@/app/stores/backgroundJobsUiStore";
 import ConverterStatusChecker from "./converter/ConverterStatusChecker.vue";
 import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
 import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
@@ -511,6 +533,7 @@ import UniversalFileSelector from "./UniversalFileSelector.vue";
 
 const emit = defineEmits<{
   (e: "dismissed"): void;
+  (e: "open-map", filename: string): void;
 }>();
 
 const props = defineProps<{
@@ -558,8 +581,24 @@ const sidecarSelectorKind: Ref<"bin-table" | "chrom-sizes" | null> = ref(null);
 const batchParallelJobs: Ref<number> = ref(2);
 const batchParallelism: Ref<number> = ref(-1);
 const batchJobIds: Ref<string[]> = ref([]);
-const batchStatusMap: Ref<Map<string, string>> = ref(new Map());
-const batchProgressMap: Ref<Map<string, number>> = ref(new Map());
+const batchJobs = ref(new Map<string, ConversionJobResponse>());
+const jobsUi = useBackgroundJobsUiStore();
+let disposed = false;
+let submittedBatch = false;
+const OPEN_WHEN_READY_KEY = "hict.ui.converter.openWhenReady";
+const openWhenReady = ref(true);
+try {
+  openWhenReady.value = localStorage.getItem(OPEN_WHEN_READY_KEY) !== "false";
+} catch {
+  // Keep the default if this browser denies storage.
+}
+watch(openWhenReady, (value) => {
+  try {
+    localStorage.setItem(OPEN_WHEN_READY_KEY, String(value));
+  } catch {
+    // The choice still applies to the current dialog.
+  }
+});
 const existingOutputs: Ref<Set<string>> = ref(new Set<string>());
 const overwriteConfirmVisible: Ref<boolean> = ref(false);
 const overwriteConfirmMessage: Ref<string> = ref("");
@@ -612,6 +651,8 @@ function resolveOverwriteConfirm(approved: boolean): void {
 }
 
 onBeforeUnmount(() => {
+  disposed = true;
+  if (submittedBatch) trackPendingJobs(batchJobIds.value);
   cancelPendingOverwriteConfirm();
   listingRequest++;
 });
@@ -817,8 +858,8 @@ async function startBatchConversion(): Promise<void> {
       return;
     }
   }
-  batchStatusMap.value.clear();
-  batchProgressMap.value.clear();
+  if (disposed) return;
+  batchJobs.value.clear();
   props.networkManager.requestManager
     .startBatchConversionJobs(
       new StartBatchConversionJobsRequest({
@@ -836,6 +877,11 @@ async function startBatchConversion(): Promise<void> {
       })
     )
     .then((resp) => {
+      if (disposed) {
+        trackPendingJobs(resp.jobIds);
+        return;
+      }
+      submittedBatch = true;
       batchJobIds.value = resp.jobIds;
       batchStep.value = "progress";
     })
@@ -847,40 +893,47 @@ async function startBatchConversion(): Promise<void> {
     });
 }
 
-function onBatchStatusUpdate(payload: {
-  jobId: string;
-  status: string;
-  overallProgress: number;
-}): void {
-  batchStatusMap.value.set(payload.jobId, payload.status);
-  batchProgressMap.value.set(payload.jobId, payload.overallProgress);
+function trackPendingJobs(ids: string[]): void {
+  for (const id of ids) {
+    const status = batchJobs.value.get(id)?.status;
+    if (!status || status === "queued" || status === "running") {
+      jobsUi.closedConverterJobs.add(`conversion/${id}`);
+    }
+  }
 }
 
-const overallBatchStatusLabel = computed(() => {
-  const statuses = Array.from(batchStatusMap.value.values());
-  if (!statuses.length) return "Running";
-  if (statuses.some((s) => s === "failed")) return "Failed";
-  if (statuses.some((s) => s === "cancelled")) return "Cancelled";
-  if (statuses.every((s) => s === "finished")) return "Finished";
-  if (statuses.some((s) => s === "running")) return "Running";
-  if (statuses.some((s) => s === "queued")) return "Queued";
-  return "Running";
+function isMap(job: ConversionJobResponse): boolean {
+  return job.outputFilename.toLowerCase().endsWith(".hict.hdf5");
+}
+
+const finishedMap = computed(() => {
+  if (batchJobIds.value.length !== 1) return undefined;
+  const job = batchJobs.value.get(batchJobIds.value[0]);
+  return job?.status === "finished" && isMap(job) ? job : undefined;
 });
 
-const overallBatchStatusClass = computed(() => {
-  switch (overallBatchStatusLabel.value) {
-    case "Finished":
-      return "finished";
-    case "Failed":
-      return "failed";
-    case "Cancelled":
-      return "cancelled";
-    case "Queued":
-      return "queued";
-    default:
-      return "running";
+const batchToolInfo = computed(() =>
+  Array.from(new Set(Array.from(batchJobs.value.values()).flatMap((job) => [
+    ...job.toolchainNotices,
+    ...job.toolchainCitations,
+  ])))
+);
+
+function openConvertedMap(job: ConversionJobResponse): void {
+  disposed = true;
+  jobsUi.closedConverterJobs.delete(`conversion/${job.jobId}`);
+  emit("dismissed");
+  emit("open-map", job.outputFilename);
+}
+
+function onBatchStatusUpdate(job: ConversionJobResponse): void {
+  if (disposed) return;
+  const wasFinished = batchJobs.value.get(job.jobId)?.status === "finished";
+  batchJobs.value.set(job.jobId, job);
+  if (submittedBatch && !wasFinished && openWhenReady.value && finishedMap.value) {
+    openConvertedMap(finishedMap.value);
   }
-});
+}
 
 const batchBlockedMessage = computed(() => {
   if (
@@ -1052,35 +1105,20 @@ function isChromSizesFilename(name: string): boolean {
   padding-right: 6px;
 }
 
-.overall-status {
-  margin-bottom: 8px;
+.batch-tool-info {
+  margin-top: 12px;
+  color: #475467;
+  font-size: 13px;
 }
-
-.status-pill.finished {
-  background: #d1fae5;
-  color: #065f46;
+.batch-tool-info summary { cursor: pointer; }
+.open-on-ready {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
 }
-.status-pill.running {
-  background: #bfdbfe;
-  color: #1e3a8a;
-}
-.status-pill.queued {
-  background: #fef3c7;
-  color: #92400e;
-}
-.status-pill.failed {
-  background: #fee2e2;
-  color: #991b1b;
-}
-.status-pill.cancelled {
-  background: #e5e7eb;
-  color: #374151;
-}
-
-.modal-content {
-  position: relative;
-}
-
+.open-on-ready input { margin: 0; }
+.open-converted-map { font-weight: 600; }
 .converter-shell {
   display: block;
 }
@@ -1090,7 +1128,9 @@ function isChromSizesFilename(name: string): boolean {
 }
 
 .converter-dialog .modal-content {
+  position: relative;
   max-height: min(92vh, 980px);
+  --hict-surface-bg: #fff;
 }
 
 .overwrite-confirm-backdrop {

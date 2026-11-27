@@ -185,6 +185,7 @@ import {
   watch,
 } from "vue";
 import { storeToRefs } from "pinia";
+import { toast } from "vue-sonner";
 import { useBackgroundJobsUiStore } from "@/app/stores/backgroundJobsUiStore";
 import type {
   BackgroundJob,
@@ -270,6 +271,16 @@ async function refresh(): Promise<void> {
     if (disposed || requestGeneration !== generation) return;
     jobs.value = next;
     statusError.value = "";
+    for (const job of next) {
+      if (!["finished", "failed", "cancelled"].includes(job.state) ||
+          !ui.closedConverterJobs.delete(job.id)) continue;
+      const result = job.outputs.find((output) => output.action === "open_map");
+      if (result) {
+        toast.success(`Converted ${result.filename.split(/[\\/]/).pop()}`, {
+          action: { label: "Open", onClick: () => open(result) },
+        });
+      }
+    }
     for (const id of cancelling.value)
       if (!next.some((job) => job.id === id && job.canCancel))
         cancelling.value.delete(id);
@@ -339,6 +350,7 @@ watch(
   () => {
     ++generation;
     jobs.value = [];
+    ui.closedConverterJobs.clear();
     ui.dismiss();
     void refresh();
   }

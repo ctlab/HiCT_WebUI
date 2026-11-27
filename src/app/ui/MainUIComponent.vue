@@ -1352,7 +1352,7 @@ async function openPrimaryDatasetFromWizard(
   await openFileWithOptions(fname, ffname, options);
 }
 
-function displayNewMap(fname: string, ffname?: string) {
+function displayNewMap(fname: string, ffname?: string, converted = false) {
   if (!fname) {
     const message =
       "Cannot open non-specified files: filename=" +
@@ -1366,7 +1366,9 @@ function displayNewMap(fname: string, ffname?: string) {
     .then((proceed) =>
       proceed
         ? openFileWithOptions(fname, ffname).then(() => {
-            toast.success("Opened file " + fname);
+            toast.success(
+              converted ? `Opened ${fname.split(/[\\/]/).pop()}` : "Opened file " + fname
+            );
           })
         : undefined
     )
@@ -2222,7 +2224,7 @@ onUnmounted(() => {
   stopOpenProgress();
 });
 
-function onFileSelected(newFilename: string) {
+function onFileSelected(newFilename: string, converted = false) {
   if (newFilename === filename.value && newFilename) {
     toast.message(
       "This file is already open. Use File > Close, then open it again to reset the assembly."
@@ -2232,7 +2234,7 @@ function onFileSelected(newFilename: string) {
   if (newFilename !== filename.value) {
     if (newFilename.trim() !== "") {
       // Keep the current manager and source names until the server accepts the replacement.
-      displayNewMap(newFilename);
+      displayNewMap(newFilename, undefined, converted);
     }
   }
 }

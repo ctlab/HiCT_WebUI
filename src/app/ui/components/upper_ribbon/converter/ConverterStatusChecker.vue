@@ -20,369 +20,385 @@
  -->
 
 <template>
-  <div class="d-flex align-items-center" v-if="errorMessage">
-    <p class="error-message">Error: {{ errorMessage }}</p>
-  </div>
-  <div v-if="job">
-    <div class="status-header">
-      <div>
-        <p>
-          <strong>Status:</strong>
-          <span class="status-pill" :class="statusClass">{{
-            statusLabel
-          }}</span>
-        </p>
-        <p>
-          <strong>Input:</strong> {{ job.sourceFilename }} ({{
-            formatBytes(job.inputSizeBytes)
-          }})
-        </p>
-        <p>
-          <strong>Output:</strong> {{ job.outputFilename }} ({{
-            formatBytes(job.outputSizeBytes)
-          }})
-        </p>
-        <p v-if="job.currentStageLabel">
-          <strong>Current stage:</strong> {{ job.currentStageLabel }}
-          <span v-if="job.stageDetail" class="stage-detail">
-            {{ job.stageDetail }}
-          </span>
-        </p>
-        <p v-if="job.currentResolution">
-          <strong>Current resolution:</strong> {{ job.currentResolution }}
-        </p>
-        <p v-if="job.toolchainSummary">
-          <strong>Toolchain:</strong> {{ job.toolchainSummary }}
-        </p>
+  <p v-if="errorMessage" role="alert" class="conversion-error">
+    {{ errorMessage }}
+  </p>
+  <article v-if="job" class="conversion-job">
+    <div class="job-header">
+      <div
+        class="job-name"
+        :title="job.sourceFilename + ' → ' + job.outputFilename"
+      >
+        {{ basename(job.sourceFilename)
+        }}<span class="job-arrow" aria-hidden="true">→</span
+        >{{ basename(job.outputFilename) }}
       </div>
-      <div class="actions">
-        <button
-          v-if="showStop && isRunning"
-          type="button"
-          class="btn btn-danger"
-          @click="onStopClicked"
-        >
-          Stop
-        </button>
-      </div>
+      <span class="status-pill" :class="job.status">{{ job.status }}</span>
+      <button
+        v-if="showStop && active(job)"
+        type="button"
+        class="job-stop ms-auto"
+        @click="stopJob"
+      >
+        Stop
+      </button>
     </div>
-
-    <div class="progress-wrapper">
-      <div class="some-progress">
-        <p>
-          {{ primaryProgressLabel }}:
-          {{ formatPercent(primaryProgressValue) }}
-          <span class="progress-meta" v-if="primaryProgressMeta">
-            {{ primaryProgressMeta }}
-          </span>
-        </p>
-        <div class="progress hict-progress">
-          <div
-            class="progress-bar bg-info"
-            role="progressbar"
-            :style="{ width: formatPercent(primaryProgressValue) }"
-          ></div>
-        </div>
-      </div>
-      <div class="some-progress">
-        <p>
-          Total progress:
-          {{ formatPercent(overallProgressValue) }}
-          <span class="progress-meta">
-            (elapsed {{ formatDuration(job.elapsedMillis) }}, eta
-            {{ formatDuration(job.etaMillis) }})
-          </span>
-        </p>
-        <div class="progress hict-progress">
-          <div
-            class="progress-bar bg-success"
-            role="progressbar"
-            :style="{ width: formatPercent(overallProgressValue) }"
-          ></div>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="job.error" class="error-message">Error: {{ job.error }}</div>
+    <p v-if="stage" class="job-stage">{{ stage }}</p>
     <div
-      v-if="job.toolchainNotices.length || job.toolchainCitations.length"
-      class="toolchain-meta"
+      class="job-progress"
+      :class="job.status"
+      role="progressbar"
+      aria-label="Overall conversion progress"
+      :aria-valuenow="progress"
+      aria-valuemin="0"
+      aria-valuemax="100"
     >
-      <p
-        v-for="(notice, index) in job.toolchainNotices"
-        :key="'notice-' + index"
-      >
-        <strong>Notice:</strong> {{ notice }}
-      </p>
-      <p
-        v-for="(citation, index) in job.toolchainCitations"
-        :key="'citation-' + index"
-      >
-        <strong>Citation:</strong> {{ citation }}
-      </p>
+      <span :style="{ width: progress + '%' }"></span>
     </div>
-  </div>
+    <div v-if="job.status === 'finished'" class="job-meta">
+      <span
+        >{{ basename(job.outputFilename) }} ·
+        {{ formatBytes(job.outputSizeBytes) }}</span
+      >
+      <span>Took {{ formatDuration(job.elapsedMillis) }}</span>
+    </div>
+    <p v-else-if="job.error" class="conversion-error" role="alert">
+      <i class="bi bi-exclamation-circle" aria-hidden="true"></i> {{ jobError }}
+    </p>
+    <div v-else class="job-meta">
+      <span>{{ progress }}% overall</span>
+      <span v-if="job.status === 'running'">
+        Elapsed {{ formatDuration(job.elapsedMillis) }} ·
+        {{
+          job.etaMillis >= 0
+            ? "about " + formatDuration(job.etaMillis) + " left"
+            : "estimating time left…"
+        }}
+      </span>
+    </div>
+    <details
+      v-if="job.logs.length"
+      class="analysis-log-details"
+      :open="logOpen"
+    >
+      <summary @click.prevent="toggleLog">
+        {{ logOpen ? "Hide log" : "Show log" }}
+      </summary>
+      <pre
+        ref="logElement"
+        class="analysis-logs"
+        aria-label="Conversion log"
+        tabindex="0"
+        @scroll="onLogScroll"
+        >{{ log }}</pre
+      >
+      <button type="button" class="btn btn-link copy-log" @click="copyLog">
+        <i class="bi bi-clipboard" aria-hidden="true"></i> Copy log
+      </button>
+    </details>
+    <slot v-if="job.status === 'finished'" name="result" :job="job"></slot>
+    <details v-if="showToolInfo && toolInfo.length" class="about-tools">
+      <summary>About the bundled tools (hictk, licences and citations)</summary>
+      <p v-for="line in toolInfo" :key="line">{{ line }}</p>
+    </details>
+  </article>
 </template>
 
 <script setup lang="ts">
 import {
-  type Ref,
-  ref,
-  onMounted,
-  onBeforeUnmount,
   computed,
-  withDefaults,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
 } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
-import { ConversionJobResponse } from "@/app/core/net/api/response";
+import type { ConversionJobResponse } from "@/app/core/net/api/response";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 
 const props = withDefaults(
   defineProps<{
     networkManager: NetworkManager;
     jobId: string;
     showStop?: boolean;
+    showToolInfo?: boolean;
   }>(),
-  { showStop: true }
+  { showStop: true, showToolInfo: true }
 );
-
 const emit = defineEmits<{
-  (
-    e: "status-update",
-    payload: { jobId: string; status: string; overallProgress: number }
-  ): void;
+  (e: "status-update", job: ConversionJobResponse): void;
 }>();
 
-const job: Ref<ConversionJobResponse | undefined> = ref(undefined);
-const errorMessage: Ref<unknown | undefined> = ref(undefined);
-const timerId: Ref<string | number | undefined> = ref(undefined);
-const missedRequestCount: Ref<number> = ref(0);
-const MISSED_THRESHOLD = 10;
+const job = ref<ConversionJobResponse>();
+const errorMessage = ref("");
+const logElement = ref<HTMLElement>();
+const logOpen = ref(false);
+let followsLog = true;
+let disposed = false;
+let timer: number | undefined;
+let missedRequests = 0;
 
-function updateState(): void {
-  props.networkManager.requestManager
-    .getConversionJob(props.jobId)
-    .then((resp) => {
-      missedRequestCount.value = 0;
-      job.value = resp;
-      emit("status-update", {
-        jobId: props.jobId,
-        status: resp.status ?? "unknown",
-        overallProgress: resp.overallProgress ?? 0,
-      });
-      if (!isRunning.value) {
-        stopTimer();
-      }
-    })
-    .catch((err) => {
-      if (err.code === "ECONNABORTED") {
-        missedRequestCount.value++;
-        if (missedRequestCount.value > MISSED_THRESHOLD) {
-          errorMessage.value =
-            "More than " +
-            String(MISSED_THRESHOLD) +
-            " status checks were timed out. Probably, converter has failed.";
-        }
-      } else {
-        errorMessage.value = err;
-      }
-    });
+function active(result: ConversionJobResponse): boolean {
+  return result.status === "running" || result.status === "queued";
 }
 
-function onStopClicked(): void {
-  props.networkManager.requestManager
-    .stopConversionJob(props.jobId)
-    .catch((e) => {
-      errorMessage.value = e;
-    });
-}
-
-function stopTimer(): void {
-  if (timerId.value) {
-    clearInterval(timerId.value);
-    timerId.value = undefined;
+async function updateState(): Promise<void> {
+  try {
+    const response = await props.networkManager.requestManager.getConversionJob(
+      props.jobId
+    );
+    if (disposed) return;
+    missedRequests = 0;
+    errorMessage.value = "";
+    const newlyFailed =
+      response.status === "failed" && job.value?.status !== "failed";
+    job.value = response;
+    if (newlyFailed) {
+      followsLog = true;
+      logOpen.value = true;
+    }
+    emit("status-update", response);
+  } catch (error) {
+    const timedOut =
+      (error as { code?: string } | null)?.code === "ECONNABORTED";
+    if (!timedOut || ++missedRequests > 10)
+      errorMessage.value = extractErrorMessage(error);
+  } finally {
+    if (!disposed && (!job.value || active(job.value)))
+      timer = window.setTimeout(updateState, 1000);
   }
 }
 
-const isRunning = computed(() => {
-  return job.value?.status === "running" || job.value?.status === "queued";
-});
-
-const statusLabel = computed(() => {
-  return job.value?.status ?? "unknown";
-});
-
-const statusClass = computed(() => {
-  switch (job.value?.status) {
-    case "finished":
-      return "finished";
-    case "failed":
-      return "failed";
-    case "cancelled":
-      return "cancelled";
-    case "running":
-      return "running";
-    case "queued":
-      return "queued";
-    default:
-      return "unknown";
+async function stopJob(): Promise<void> {
+  try {
+    await props.networkManager.requestManager.stopConversionJob(props.jobId);
+  } catch (error) {
+    errorMessage.value = extractErrorMessage(error);
   }
-});
-
-const overallProgressValue = computed(() => {
-  if (job.value?.status === "finished") return 1;
-  return job.value?.overallProgress ?? 0;
-});
-
-const resolutionProgressValue = computed(() => {
-  if (job.value?.status === "finished") return 1;
-  return job.value?.resolutionProgress ?? 0;
-});
-
-const primaryProgressValue = computed(() => {
-  if (job.value?.currentStageLabel) {
-    return job.value?.stageProgress ?? 0;
-  }
-  return resolutionProgressValue.value;
-});
-
-const primaryProgressLabel = computed(() => {
-  if (job.value?.currentStageLabel) {
-    return `Progress in ${job.value.currentStageLabel}`;
-  }
-  return "Progress in current resolution";
-});
-
-const primaryProgressMeta = computed(() => {
-  if (job.value?.currentStageLabel && job.value?.stageDetail) {
-    return `(${job.value.stageDetail})`;
-  }
-  return `(elapsed ${formatDuration(
-    job.value?.resolutionElapsedMillis
-  )}, eta ${formatDuration(job.value?.resolutionEtaMillis)})`;
-});
-
-function formatPercent(value: number | undefined): string {
-  if (value === undefined || Number.isNaN(value)) {
-    return "0%";
-  }
-  return `${Math.round(value * 100)}%`;
 }
 
-function formatDuration(millis: number | undefined): string {
-  if (!millis || millis <= 0) {
-    return "00:00";
+const progress = computed(() =>
+  job.value?.status === "finished"
+    ? 100
+    : Math.round((job.value?.overallProgress ?? 0) * 100)
+);
+const stage = computed(() => {
+  const current = job.value;
+  if (current?.status !== "running" || !current.currentStageLabel) return "";
+  return [
+    current.stageIndex && current.stageCount
+      ? `Step ${current.stageIndex} of ${current.stageCount}`
+      : "",
+    current.currentStageLabel,
+    current.currentResolution
+      ? `resolution ${current.currentResolution.toLocaleString("en-US")} bp`
+      : "",
+    current.stageCount || current.stageProgress > 0
+      ? Math.round(current.stageProgress * 100) + "%"
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+});
+const log = computed(() => job.value?.logs.slice(-200).join("\n") ?? "");
+const jobError = computed(() => {
+  const message = job.value?.error ?? "";
+  if (/\b(?:truncated file|file is truncated|truncated input|input is truncated|file truncation)\b/i.test(message)) {
+    const resolution = job.value?.currentResolution;
+    return resolution
+      ? `hictk could not read resolution ${resolution.toLocaleString(
+          "en-US"
+        )}: the file is truncated.`
+      : "hictk could not read the input: the file is truncated.";
   }
-  const totalSeconds = Math.floor(millis / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
-      2,
-      "0"
-    )}:${String(seconds).padStart(2, "0")}`;
+  if (message.startsWith("External command failed") || message.includes("\n")) {
+    return "Conversion could not finish. See the log for details.";
   }
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
-    2,
-    "0"
-  )}`;
+  return message;
+});
+const toolInfo = computed(() =>
+  Array.from(
+    new Set([
+      ...(job.value?.toolchainNotices ?? []),
+      ...(job.value?.toolchainCitations ?? []),
+    ])
+  )
+);
+
+watch([log, logOpen], async () => {
+  await nextTick();
+  if (logOpen.value && followsLog && logElement.value)
+    logElement.value.scrollTop = logElement.value.scrollHeight;
+});
+
+function toggleLog(): void {
+  logOpen.value = !logOpen.value;
+  if (logOpen.value) followsLog = true;
 }
 
-function formatBytes(bytes: number | undefined): string {
-  if (!bytes || bytes <= 0) {
-    return "0 B";
+function onLogScroll(): void {
+  const element = logElement.value;
+  if (logOpen.value && element) {
+    followsLog =
+      element.scrollHeight - element.clientHeight - element.scrollTop <= 4;
   }
+}
+
+async function copyLog(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(log.value);
+  } catch (error) {
+    errorMessage.value = extractErrorMessage(error);
+  }
+}
+
+function basename(path: string): string {
+  return path.split(/[\\/]/).pop() || path;
+}
+
+function formatDuration(millis: number): string {
+  const seconds = Math.floor(Math.max(0, millis) / 1000);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`;
+}
+
+function formatBytes(bytes: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
-  let size = bytes;
   let unit = 0;
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024;
-    unit++;
+  while (bytes >= 1024 && unit < units.length - 1) {
+    bytes /= 1024;
+    ++unit;
   }
-  return `${size.toFixed(1)} ${units[unit]}`;
+  return `${Number(bytes.toFixed(1))} ${units[unit]}`;
 }
 
-onMounted(() => {
-  // @ts-expect-error "Using default JS-style timer instead of NodeJS"
-  timerId.value = setInterval(updateState, 3000);
-  updateState();
-});
-
+onMounted(updateState);
 onBeforeUnmount(() => {
-  stopTimer();
+  disposed = true;
+  window.clearTimeout(timer);
 });
 </script>
 
 <style scoped>
-.error-message {
-  color: red;
-}
-
-.progress-wrapper {
-  width: 100%;
-}
-.stage-detail {
-  display: inline-block;
-  margin-left: 0.5rem;
-  color: #6b7280;
-}
-.some-progress {
-  width: 100%;
-  margin-top: 10px;
-  margin-bottom: 10px;
-}
-
-.hict-progress {
-  width: 100%;
-}
-.status-header {
+.conversion-job {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fff;
 }
-.actions {
+.job-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  gap: 10px;
+}
+.job-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: #1f2937;
+}
+.job-arrow {
+  margin: 0 6px;
+  color: #667085;
 }
 .status-pill {
-  padding: 2px 8px;
-  border-radius: 999px;
   font-size: 12px;
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-weight: 600;
+  white-space: nowrap;
   text-transform: capitalize;
-}
-.status-pill.finished {
-  background: #d1fae5;
-  color: #065f46;
+  background: #eaecf0;
+  color: #475467;
 }
 .status-pill.running {
-  background: #bfdbfe;
-  color: #1e3a8a;
+  background: #d1e9ff;
+  color: #175cd3;
 }
-.status-pill.queued {
-  background: #fef3c7;
-  color: #92400e;
+.status-pill.finished {
+  background: var(--hict-success-soft, #d1fae5);
+  color: var(--hict-success, #027a48);
 }
 .status-pill.failed {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--hict-danger-soft, #fee2e2);
+  color: #b42318;
 }
-.status-pill.cancelled {
-  background: #e5e7eb;
-  color: #374151;
+.job-stop {
+  border: 1px solid #fda29b;
+  color: #b42318;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 13px;
+  background: #fff;
 }
-.status-pill.unknown {
-  background: #e5e7eb;
-  color: #374151;
+.job-stage,
+.conversion-error {
+  margin: 0;
+  font-size: 13px;
 }
-.progress-meta {
-  color: #6c757d;
-  font-size: 0.85em;
-  margin-left: 6px;
+.job-stage {
+  color: #344054;
 }
-.toolchain-meta {
-  margin-top: 1rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid #e5e7eb;
+.conversion-error {
+  color: #b42318;
+}
+.job-progress {
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #eaecf0;
+}
+.job-progress span {
+  display: block;
+  height: 100%;
+  background: var(--hict-primary, #0d6efd);
+}
+.job-progress.finished span {
+  background: var(--hict-success, #027a48);
+}
+.job-progress.failed span {
+  background: #f04438;
+}
+.job-meta {
+  display: flex;
+  justify-content: space-between;
+  column-gap: 8px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: #475467;
+}
+.analysis-log-details summary,
+.about-tools summary {
+  color: var(--hict-primary, #0d6efd);
+  cursor: pointer;
+  font-size: 13px;
+}
+.analysis-logs {
+  max-height: 150px;
+  margin: 6px 0 0;
+  overflow: auto;
+  background: #101828;
+  color: #e4e7ec;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.copy-log {
+  float: right;
+  margin-top: 4px;
+  padding: 0;
+  font-size: 12px;
+  text-decoration: none;
+}
+.about-tools summary {
+  color: #475467;
 }
 </style>

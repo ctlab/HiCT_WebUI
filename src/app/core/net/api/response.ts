@@ -60,7 +60,9 @@ class ConversionJobResponse {
     public readonly toolchainNotices: string[],
     public readonly toolchainCitations: string[],
     public readonly logs: string[],
-    public readonly error: string
+    public readonly error: string,
+    public readonly stageIndex?: number,
+    public readonly stageCount?: number
   ) {}
 }
 
