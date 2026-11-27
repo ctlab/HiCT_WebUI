@@ -172,7 +172,7 @@ import {
   WorkerSchedulerDiagnosticsResponse,
 } from "./response";
 import { toast } from "vue-sonner";
-import { SequenceAnalysisRequest, type SequenceAnalysisEstimate } from "./SequenceAnalysisRequest";
+import { SequenceAnalysisRequest, type SequenceAnalysisEstimate, type SequenceAnalysisJob } from "./SequenceAnalysisRequest";
 import { EstimateFastaDotplotRequest, SequenceOverlayRequest, type SequenceOverlayOptions } from "./request";
 import { useSessionStore } from "@/app/stores/sessionStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
@@ -1914,6 +1914,11 @@ class RequestManager {
     options: SequenceOverlayOptions
   ): Promise<SequenceAnalysisEstimate> {
     const response = await this.sendRequest(new SequenceOverlayRequest(kind, "estimate", options));
+    return response.data;
+  }
+
+  public async listSequenceJobs(): Promise<SequenceAnalysisJob[]> {
+    const response = await this.sendRequest(new SequenceAnalysisRequest("/sequence/jobs/list"));
     return response.data;
   }
 

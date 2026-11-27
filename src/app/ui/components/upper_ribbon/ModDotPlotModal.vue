@@ -47,7 +47,7 @@
               Check again
             </button>
           </div>
-          <fieldset :disabled="busy">
+          <fieldset v-if="!delivered" :disabled="busy">
             <label for="moddotplot-scope" class="form-label"
               >Analysis scope</label
             >
@@ -320,8 +320,7 @@
                   v-model="mergeCompatible"
                   type="checkbox"
                   class="form-check-input"
-                />Accumulate compatible regions; replace scores within this
-                rectangle</label
+                />Add to compatible results</label
               >
               <p class="small">
                 Different settings create a separate overlay. After a successful
@@ -370,7 +369,22 @@
             </AdvancedSection>
           </fieldset>
           <div
-            v-if="job?.status === 'finished' && job.outputFile"
+            v-if="delivered && job?.resultSet"
+            class="dotplot-result-ready"
+            role="status"
+          >
+            <strong>
+              <i class="bi bi-check-circle" aria-hidden="true"></i>
+              Added region {{ job.resultSet.regionCount }} to “{{ job.resultSet.name }}”.
+            </strong>
+            <div>
+              The result set now has {{ job.resultSet.regionCount }}
+              {{ job.resultSet.regionCount === 1 ? "region" : "regions" }}
+              ({{ formatEstimateBytes(job.resultSet.bytes) }}) and {{ resultDisplayText }}.
+            </div>
+          </div>
+          <div
+            v-else-if="job?.status === 'finished' && job.outputFile"
             class="alert alert-success mt-3"
             role="status"
           >
@@ -409,7 +423,7 @@
               Attach despite differences
             </button>
           </div>
-          <div v-if="job" class="mt-3" role="status" aria-live="polite">
+          <div v-if="job && !delivered" class="mt-3" role="status" aria-live="polite">
             <span
               v-if="busy"
               class="spinner-border spinner-border-sm me-2"
@@ -448,6 +462,7 @@
             v-if="
               job?.status === 'finished' &&
               job.outputFile &&
+              !delivered &&
               !pendingCompatibility
             "
             type="button"
@@ -462,6 +477,15 @@
             }}
           </button>
           <button
+            v-if="delivered"
+            type="button"
+            class="btn btn-primary"
+            @click="emit('dismissed')"
+          >
+            Generate another region
+          </button>
+          <button
+            v-else
             type="submit"
             class="btn btn-primary"
             :disabled="!!generateDisabledReason"
@@ -759,19 +783,21 @@ watch(scope, (value) => {
   displayMode.value = value === "assembly" ? "below" : "overlay";
 });
 const job = ref<SequenceAnalysisJob | null>(null);
-let delivered = false;
+const delivered = ref(false);
+const resultDisplayText = computed(() => ({
+  below: "is shown below the diagonal",
+  above: "is shown above the diagonal",
+  overlay: "is shown over the map",
+  none: "is saved",
+}[displayMode.value]));
 function deferResult(): void {
-  if (!job.value || delivered || displayMode.value === "none") return;
+  if (!job.value || delivered.value || displayMode.value === "none") return;
   const id = job.value.jobId;
   api.backgroundResultDelivery.defer(
     "sequence/" + id,
-    () => !props.mapManager.isDisposed && !delivered,
+    () => !props.mapManager.isDisposed && !delivered.value,
     async () => {
-      const jobs: SequenceAnalysisJob[] = (
-        await api.sendRequest(
-          new SequenceAnalysisRequest("/sequence/jobs/list")
-        )
-      ).data;
+      const jobs = await api.listSequenceJobs();
       const current = jobs.find((item) => item.jobId === id);
       if (!current) return;
       job.value = current;
@@ -822,7 +848,7 @@ async function start() {
   error.value = "";
   pendingCompatibility.value = null;
   openingResult = false;
-  delivered = false;
+  delivered.value = false;
   session = api.history.applied?.session;
   try {
     job.value = (
@@ -850,9 +876,7 @@ async function start() {
 async function poll() {
   if (disposed || !job.value) return;
   try {
-    const jobs: SequenceAnalysisJob[] = (
-      await api.sendRequest(new SequenceAnalysisRequest("/sequence/jobs/list"))
-    ).data;
+    const jobs = await api.listSequenceJobs();
     const current = jobs.find((item) => item.jobId === job.value?.jobId);
     if (!current) {
       error.value =
@@ -941,9 +965,11 @@ async function displaySavedResult(allowMismatch = false) {
         )}`
       );
     }
-    delivered = true;
-    notifications.add("success", `${title} completed: ${current.outputFile}.`);
-    emit("dismissed");
+    delivered.value = true;
+    if (disposed || !current.resultSet) {
+      notifications.add("success", `${title} completed: ${current.outputFile}.`);
+      if (!disposed) emit("dismissed");
+    }
   } catch (failure) {
     error.value = `The overlay was saved, but could not be displayed: ${extractErrorMessage(
       failure
@@ -968,6 +994,15 @@ const modalFocusElement = ref<HTMLElement | null>(null);
 useModalFocus(modalFocusElement);
 </script>
 <style scoped>
+.dotplot-result-ready {
+  background: var(--hict-success-soft, #ecfdf3);
+  border: 1px solid #abefc6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #054f31;
+}
+
 .analysis-backdrop {
   position: fixed;
   inset: 0;

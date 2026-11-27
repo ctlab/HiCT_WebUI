@@ -900,6 +900,17 @@ const retrievalRequests = loadTypeScript(
 const retrievalDtos = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/dto/requestDTO.ts")
 );
+const sequenceAdapter = new adapterExports.RequestManager({ host: "http://example.test" });
+const resultSet = { id: "set-1", name: "ModDotPlot · k 21 · identity 80%", regionCount: 2, bytes: 8192 };
+sequenceAdapter.sendRequest = async (request) => {
+  assert.equal(request.requestPath, "/sequence/jobs/list");
+  assert.deepEqual(retrievalDtos.HiCTAPIRequestDTO.toDTOClass(request).toDTO(), {});
+  return { data: [{ jobId: "current", resultSet }, { jobId: "older" }] };
+};
+assert.deepEqual(await sequenceAdapter.listSequenceJobs(), [
+  { jobId: "current", resultSet },
+  { jobId: "older" },
+]);
 const overlayOptions = {
   scope: "selection",
   mergeCompatible: false,

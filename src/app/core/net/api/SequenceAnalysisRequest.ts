@@ -58,6 +58,7 @@ export interface SequenceAnalysisJob {
     | "failed"
     | "cancelled";
   outputFile?: string;
+  resultSet?: { id: string; name: string; regionCount: number; bytes: number } | null;
   error?: string;
   logs: string[];
   hits: number;

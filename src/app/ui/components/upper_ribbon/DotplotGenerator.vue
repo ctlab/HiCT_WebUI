@@ -874,7 +874,7 @@ const legacyOptions = computed<StartDotplotJobsRequest["options"]>(() => ({
 }));
 const modOptions = computed<SequenceOverlayOptions>(() => ({
   scope: "assembly",
-  mergeCompatible: false,
+  mergeCompatible: true,
   resolutions: modSelectedLevels.value,
   k: modDotPlotK.value,
 }));
