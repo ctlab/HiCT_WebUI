@@ -515,7 +515,7 @@ const journalResetPaths = new Set([
   "/secondary/set_assembly_source",
 ]);
 
-export type ProcessedStorageCategory = "cache" | "maps" | "scratch" | "sequence" | "metadata" | "other";
+export type ProcessedStorageCategory = "cache" | "coverage" | "maps" | "scratch" | "sequence" | "metadata" | "other";
 
 export type ProcessedStorageFile = {
   id: string;

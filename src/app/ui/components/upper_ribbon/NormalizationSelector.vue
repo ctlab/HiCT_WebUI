@@ -104,6 +104,40 @@
       </select>
     </div>
     <slot name="normalization-note" />
+    <div
+      v-if="preparing || choice === 'sqrt'"
+      :id="preparing ? 'normalization-progress' : 'normalization-coverage-ready'"
+      class="normalization-progress"
+      role="status"
+      aria-live="polite"
+    >
+      <div>
+        <strong>Square-root coverage</strong> ·
+        <span v-if="preparing">preparing {{ Math.round(prepareProgress * 100) }}%</span>
+        <span v-else class="coverage-ready">
+          <i class="bi bi-check-circle" aria-hidden="true"></i>
+          {{ savedCoverage[activeSource] ? "ready (saved for this map)" : "ready" }}
+        </span>
+      </div>
+      <template v-if="preparing">
+        <progress
+          :value="prepareProgress"
+          max="1"
+          aria-labelledby="normalization-mode-label"
+        ></progress>
+        <div class="coverage-note">
+          You can keep working. Prepared once per map file and reused next time.
+          <button
+            id="normalization-cancel"
+            type="button"
+            class="btn btn-link p-0"
+            @click="cancelPreparation"
+          >
+            Cancel
+          </button>
+        </div>
+      </template>
+    </div>
     <p
       v-if="choice === 'sqrt' && !preparing"
       id="normalization-help"
@@ -131,30 +165,6 @@
         transforms also contribute to the displayed values.
       </p>
     </details>
-    <div
-      v-if="preparing"
-      id="normalization-progress"
-      class="normalization-progress"
-      role="status"
-      aria-live="polite"
-    >
-      <progress
-        :value="prepareProgress"
-        max="1"
-        aria-labelledby="normalization-mode-label"
-      ></progress>
-      <span class="small"
-        >{{ prepareMessage }} {{ Math.round(prepareProgress * 100) }}%</span
-      >
-      <button
-        id="normalization-cancel"
-        type="button"
-        class="btn btn-sm btn-outline-secondary"
-        @click="cancelPreparation"
-      >
-        Cancel
-      </button>
-    </div>
     <p
       v-if="prepareError"
       id="normalization-error"
@@ -466,17 +476,15 @@ const activeSource = computed(() => matrixViewStore.activeVisualizationSource);
 const requests = () => props.mapManager?.networkManager.requestManager;
 const normalizationSelect = ref<HTMLSelectElement>();
 const preparations = reactive<
-  Partial<Record<NormalizationSource, { progress: number; message: string }>>
+  Partial<Record<NormalizationSource, { progress: number }>>
 >({});
+const savedCoverage = reactive<Partial<Record<NormalizationSource, boolean>>>({});
 const errors = reactive<Partial<Record<NormalizationSource, string>>>({});
 const preparing = computed(
   () => preparations[activeSource.value] !== undefined
 );
 const prepareProgress = computed(
   () => preparations[activeSource.value]?.progress ?? 0
-);
-const prepareMessage = computed(
-  () => preparations[activeSource.value]?.message ?? ""
 );
 const prepareError = computed(() => errors[activeSource.value] ?? "");
 let disposed = false;
@@ -550,7 +558,7 @@ async function waitForPreparation(
   start: boolean,
   current: () => boolean
 ): Promise<boolean> {
-  const entry = reactive({ progress: 0, message: "Preparing coverage" });
+  const entry = reactive({ progress: 0 });
   preparations[source] = entry;
   errors[source] = "";
   try {
@@ -558,7 +566,8 @@ async function waitForPreparation(
       manager.networkManager.requestManager,
       (status) => {
         entry.progress = status.progress;
-        entry.message = status.message || "Preparing coverage";
+        if (current() && status.state === "READY")
+          setCoverageStatus(source, status.message);
       },
       { source, start, shouldStop: () => !current() }
     );
@@ -570,6 +579,10 @@ async function waitForPreparation(
   }
 }
 
+function setCoverageStatus(source: NormalizationSource, message: string): void {
+  savedCoverage[source] = message === "Saved coverage" || message === "Loaded saved coverage";
+}
+
 async function refreshStatus(
   manager: ContactMapManager,
   source: NormalizationSource,
@@ -579,7 +592,9 @@ async function refreshStatus(
   const current = () => sourceCurrent(manager, source, revision);
   try {
     const status = await rm.coverageNormalizationStatus(source);
-    if (current() && status.state === "RUNNING" && !preparations[source])
+    if (!current()) return;
+    if (status.state === "READY") setCoverageStatus(source, status.message);
+    if (status.state === "RUNNING" && !preparations[source])
       await waitForPreparation(manager, source, false, current);
   } catch (error) {
     console.debug("Normalization status unavailable", error);
@@ -684,10 +699,12 @@ watch(
     if (manager !== oldManager || primary !== oldPrimary) {
       delete preparations.PRIMARY;
       delete errors.PRIMARY;
+      delete savedCoverage.PRIMARY;
     }
     if (manager !== oldManager || secondary !== oldSecondary) {
       delete preparations.SECONDARY;
       delete errors.SECONDARY;
+      delete savedCoverage.SECONDARY;
     }
   }
 );
@@ -696,6 +713,7 @@ watch(
     () => props.mapManager,
     activeSource,
     () => requests()?.getNormalizationSourceRevision(activeSource.value),
+    () => requests()?.getNormalizationWeightsMode(activeSource.value),
   ],
   ([manager, source, revision]) => {
     if (manager && revision !== undefined)
@@ -819,14 +837,23 @@ function openRenderingPipeline(): void {
 
 .normalization-progress {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
 }
 
 .normalization-progress progress {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
+  height: 6px;
+  accent-color: var(--hict-primary, #0d6efd);
 }
+
+.coverage-ready { color: var(--hict-success, #027a48); }
+.coverage-note, .coverage-note button { font-size: inherit; }
+.coverage-note { color: #667085; }
 
 .legacy-summary {
   margin: 0;

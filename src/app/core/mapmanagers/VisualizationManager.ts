@@ -495,8 +495,9 @@ class VisualizationManager {
   private readonly manualCoverageLimits = new Set<string>();
   private readonly coverageFits = new Map<
     SourceName,
-    { resolution: number; sourceRevision: number; controller: AbortController }
+    { key: string; controller: AbortController }
   >();
+  private readonly savedCoverageFits = new Map<string, { lower: number; upper: number }>();
 
   // Opening fits contrast once. Navigation may update the slider domain, but
   // must not refit thresholds, publish a pipeline or invalidate decoded tiles.
@@ -515,6 +516,7 @@ class VisualizationManager {
     this.normalizationFits.clear();
     for (const fit of this.coverageFits.values()) fit.controller.abort();
     this.coverageFits.clear();
+    this.savedCoverageFits.clear();
     for (const { timer } of this.draftTimers.values())
       window.clearTimeout(timer);
     this.draftTimers.clear();
@@ -2011,6 +2013,15 @@ class VisualizationManager {
     });
   }
 
+  private rememberCoverageFit(key: string, limits: { lower: number; upper: number }): void {
+    this.savedCoverageFits.delete(key);
+    this.savedCoverageFits.set(key, limits);
+    if (this.savedCoverageFits.size > 64) {
+      const oldest = this.savedCoverageFits.keys().next();
+      if (!oldest.done) this.savedCoverageFits.delete(oldest.value);
+    }
+  }
+
   private async refitCoverageOnResolutionChange(
     source: SourceName
   ): Promise<void> {
@@ -2031,7 +2042,7 @@ class VisualizationManager {
     )
       return;
     const key = visualizationContextKey(context);
-    if (this.manualCoverageLimits.has(key)) return;
+    if (this.manualCoverageLimits.has(key) || this.normalizationFits.has(key)) return;
     const resolutionForSource = () => {
       const levels = layers.getVisibleSourceResolutionDescriptors();
       return (source === "PRIMARY" ? levels.primary : levels.secondary)
@@ -2039,29 +2050,26 @@ class VisualizationManager {
     };
     const resolution = resolutionForSource();
     const sourceRevision = request.getNormalizationSourceRevision(source);
-    if (
-      resolution === undefined ||
-      (previous?.resolution === resolution &&
-        previous.sourceRevision === sourceRevision)
-    )
-      return;
+    if (resolution === undefined) return;
+    const fitKey = JSON.stringify([key, resolution, sourceRevision]);
+    if (previous?.key === fitKey) return;
     previous?.controller.abort();
     const controller = new AbortController();
-    const fit = { resolution, sourceRevision, controller };
+    const fit = { key: fitKey, controller };
     this.coverageFits.set(source, fit);
     const current = () =>
       !controller.signal.aborted &&
       !manager.isDisposed &&
       !this.manualCoverageLimits.has(key) &&
+      visualizationContextKey(this.captureVisualizationContext(source, null)) === key &&
       request.getNormalizationSourceRevision(source) === sourceRevision &&
       request.getNormalizationWeightsMode(source) === "SQRT_COVERAGE" &&
       resolutionForSource() === resolution;
     try {
-      const expression = await this.getSourceSignalExpression(source);
-      const sample = await querySignalHistogram(
-        manager,
-        diagnosticBounds(manager),
-        {
+      let levels = this.savedCoverageFits.get(fitKey);
+      if (!levels) {
+        const expression = await this.getSourceSignalExpression(source);
+        const sample = await querySignalHistogram(manager, diagnosticBounds(manager), {
           source: expression ? "PRIMARY" : source,
           signalMode: expression ? "PIPELINE_SIGNAL" : "TRADITIONAL_NORMALIZED",
           expression,
@@ -2069,10 +2077,11 @@ class VisualizationManager {
           domain: "matrix",
           tileEdge: 64,
           concurrency: 4,
-        }
-      );
+        });
+        levels = viewportLevels(sample.values, false);
+      }
       if (!current()) return;
-      const levels = viewportLevels(sample.values, false);
+      const fitLevels = levels;
       await this.runVisualizationMutation(context, async () => {
         const options = await this.freshVisualizationOptions(context);
         if (
@@ -2084,10 +2093,11 @@ class VisualizationManager {
         await this.applyVisualizationSnapshot(
           context,
           applyVisualizationDraft(options, {
-            minSignal: levels.lower,
-            maxSignal: levels.upper,
+            minSignal: fitLevels.lower,
+            maxSignal: fitLevels.upper,
           })
         );
+        if (current()) this.rememberCoverageFit(fitKey, fitLevels);
       });
     } catch {
       if (this.coverageFits.get(source) === fit)
@@ -2100,6 +2110,14 @@ class VisualizationManager {
     quantile: number,
     revision: number
   ): Promise<void> {
+    const request = this.mapManager.networkManager.requestManager;
+    const layers = this.mapManager.viewAndLayersManager;
+    const resolutionForSource = () => {
+      const levels = layers.getVisibleSourceResolutionDescriptors();
+      return (context.source === "PRIMARY" ? levels.primary : levels.secondary)?.bpResolution;
+    };
+    const resolution = resolutionForSource();
+    const sourceRevision = request.getNormalizationSourceRevision(context.source);
     const options = await this.freshVisualizationOptions(context);
     if (
       context.source === "PRIMARY" &&
@@ -2149,6 +2167,13 @@ class VisualizationManager {
       context,
       applyVisualizationDraft(options, { maxSignal: next })
     );
+    if (resolution !== undefined && resolution === resolutionForSource() &&
+        sourceRevision === request.getNormalizationSourceRevision(context.source) &&
+        request.getNormalizationWeightsMode(context.source) === "SQRT_COVERAGE" &&
+        this.drafts.revision(context) === revision) {
+      const key = JSON.stringify([visualizationContextKey(context), resolution, sourceRevision]);
+      this.rememberCoverageFit(key, { lower: options.colormap.minSignal, upper: next });
+    }
   }
 
   /** Swaps the top/bottom layers of every pixel blend; false when no blend exists. */

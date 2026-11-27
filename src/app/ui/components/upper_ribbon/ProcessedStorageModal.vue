@@ -178,6 +178,7 @@ const emit = defineEmits<{ (event: "dismissed"): void }>();
 const categories = {
   maps: { label: "Processed maps", color: "#2563eb" },
   cache: { label: "Regenerable caches", color: "#0e7490" },
+  coverage: { label: "Square-root coverage", color: "#047857" },
   scratch: { label: "Temporary files", color: "#9a530b" },
   sequence: { label: "Sequence analysis files", color: "#6d28d9" },
   metadata: { label: "Job and conversion records", color: "#3f6212" },

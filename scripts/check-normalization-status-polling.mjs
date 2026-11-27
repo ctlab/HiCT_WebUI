@@ -24,7 +24,8 @@ const ast = ts.createSourceFile(
 );
 const refresh = ast.statements.filter(
   (node) =>
-    ts.isFunctionDeclaration(node) && node.name?.text === "refreshStatus"
+    ts.isFunctionDeclaration(node) &&
+    ["refreshStatus", "setCoverageStatus"].includes(node.name?.text)
 );
 const observers = ast.statements.filter(
   (node) =>
@@ -33,21 +34,26 @@ const observers = ast.statements.filter(
     node.expression.expression.getText(ast) === "watch" &&
     node.expression.arguments[1]?.getText(ast).includes("refreshStatus(")
 );
-assert.equal(refresh.length, 1);
+assert.equal(refresh.length, 2);
 assert.equal(observers.length, 1);
 
 const calls = [];
-const sources = ref({ PRIMARY: { revision: 1 }, SECONDARY: { revision: 3 } });
+const sources = ref({
+  PRIMARY: { revision: 1, mode: "FILE" },
+  SECONDARY: { revision: 3, mode: "FILE" },
+});
 const activeSource = ref("PRIMARY");
+const savedCoverage = {};
 let followCalls = 0;
 const requestManager = {
   getNormalizationSourceRevision: (source) => sources.value[source].revision,
+  getNormalizationWeightsMode: (source) => sources.value[source].mode,
   async coverageNormalizationStatus(source) {
     calls.push({ source, revision: sources.value[source].revision });
     // Simulate a status reply invalidating reactive state with the same revision.
     // Bound the feedback so a broken watch fails by count without starving timers.
     if (calls.length < 10) sources.value[source] = { ...sources.value[source] };
-    return { state: "READY" };
+    return { state: "READY", message: "Loaded saved coverage" };
   },
 };
 const mapManager = shallowRef({ networkManager: { requestManager } });
@@ -65,6 +71,7 @@ const context = createContext({
     manager === mapManager.value &&
     requestManager.getNormalizationSourceRevision(source) === revision,
   preparations: {},
+  savedCoverage,
   waitForPreparation: async () => {
     ++followCalls;
   },
@@ -82,6 +89,7 @@ try {
     await wait(1000);
   }
   assert.deepEqual(calls, [{ source: "PRIMARY", revision: 1 }]);
+  assert.equal(savedCoverage.PRIMARY, true);
   assert.equal(
     followCalls,
     0,
@@ -90,10 +98,13 @@ try {
 
   activeSource.value = "SECONDARY";
   await nextTick();
-  sources.value.SECONDARY = { revision: 4 };
+  sources.value.SECONDARY = { revision: 4, mode: "FILE" };
+  await nextTick();
+  sources.value.SECONDARY.mode = "SQRT_COVERAGE";
   await nextTick();
   assert.deepEqual(calls.slice(1), [
     { source: "SECONDARY", revision: 3 },
+    { source: "SECONDARY", revision: 4 },
     { source: "SECONDARY", revision: 4 },
   ]);
 } finally {
