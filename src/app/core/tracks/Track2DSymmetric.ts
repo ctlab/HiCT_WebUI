@@ -1129,8 +1129,8 @@ class ScaffoldBordersTrack2D extends WithRing {
 }
 
 class TranslocationArrowsTrack2D extends Track2DSymmetric {
-  private static readonly MAX_ARROW_SIZE_PX = 56;
-  private static readonly MIN_ARROW_SIZE_PX = 12;
+  private static readonly MAX_ARROW_SIZE_PX = 96;
+  private static readonly MIN_ARROW_SIZE_PX = 24;
 
   public constructor(public readonly mapManager: ContactMapManager) {
     super(
@@ -1148,59 +1148,27 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
     );
   }
 
-  private getArrowSizePx(fromPx: number, toPx: number): number {
-    const spanPx = Math.max(0, toPx - fromPx);
-    if (spanPx <= 0) {
-      return 0;
-    }
-    return Math.min(
+  private getArrowSizePx(span: number, nativePixelsPerScreenPixel: number): number {
+    const size = Math.min(
       TranslocationArrowsTrack2D.MAX_ARROW_SIZE_PX,
-      Math.max(TranslocationArrowsTrack2D.MIN_ARROW_SIZE_PX, spanPx * 0.5)
+      Math.max(TranslocationArrowsTrack2D.MIN_ARROW_SIZE_PX, span * 0.5 / nativePixelsPerScreenPixel)
     );
+    return size * nativePixelsPerScreenPixel;
   }
 
-  private scaleRing(ring: number[][], pixelResolution: number): number[][] {
-    return ring.map(([x, y]) => [x * pixelResolution, y * pixelResolution]);
-  }
-
-  private createLeftContigInsertionTriangle(
-    fromPx: number,
-    toPx: number,
-    pixelResolution: number
-  ): number[][] | undefined {
-    const arrowSize = this.getArrowSizePx(fromPx, toPx);
-    if (arrowSize <= 0) {
-      return undefined;
-    }
-    return this.scaleRing(
-      [
-        [toPx, -toPx],
-        [toPx, -toPx + arrowSize],
-        [toPx - arrowSize, -toPx],
-        [toPx, -toPx],
-      ],
-      pixelResolution
-    );
-  }
-
-  private createRightContigInsertionTriangle(
-    fromPx: number,
-    toPx: number,
-    pixelResolution: number
-  ): number[][] | undefined {
-    const arrowSize = this.getArrowSizePx(fromPx, toPx);
-    if (arrowSize <= 0) {
-      return undefined;
-    }
-    return this.scaleRing(
-      [
-        [fromPx, -fromPx],
-        [fromPx + arrowSize, -fromPx],
-        [fromPx, -fromPx - arrowSize],
-        [fromPx, -fromPx],
-      ],
-      pixelResolution
-    );
+  private insertionTriangle(
+    pivot: number,
+    size: number,
+    pixelResolution: number,
+    side: "before" | "after"
+  ): number[][] {
+    const edge = side === "before" ? size : -size;
+    return [
+      [pivot, -pivot],
+      [pivot - edge, -pivot],
+      [pivot, -pivot + edge],
+      [pivot, -pivot],
+    ].map(([x, y]) => [x * pixelResolution, y * pixelResolution]);
   }
 
   public recalculateBorders(
@@ -1237,12 +1205,15 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
       const rangePrefixSum = holder.prefix_sum_px.get(resolution);
       const rangePixelResolution =
         viewAndLayersManager.getPixelResolutionForBpResolution(resolution);
+      const nativePixelsPerScreenPixel = rangePixelResolution && viewport
+        ? viewport.resolution / rangePixelResolution
+        : 1;
       if (viewport && rangePrefixSum && rangePixelResolution) {
         [firstOrder, endOrder] = this.visibleContigOrderRange(
           rangePrefixSum,
           rangePixelResolution,
           viewport,
-          TranslocationArrowsTrack2D.MAX_ARROW_SIZE_PX
+          TranslocationArrowsTrack2D.MAX_ARROW_SIZE_PX * nativePixelsPerScreenPixel
         );
         for (let order = firstOrder - 1; order >= 0; order -= 1) {
           const presence = holder.getPresenceAtResolution(order, resolution);
@@ -1293,40 +1264,18 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
               );
             }
 
-            if (previousShown) {
-              const [fromPxL, toPxL] = [
-                prefixSum[previousShown.contigOrder],
-                prefixSum[1 + previousShown.contigOrder],
-              ];
-
-              const ringL = this.createLeftContigInsertionTriangle(
-                fromPxL,
-                toPxL,
-                pixelResolution
-              );
-              if (ringL) {
-                multiPolygonRings.push([ringL]);
-              }
-            } else {
-              previousShown = {
-                contigDescriptor: cd,
-                contigOrder: contigOrder,
-              };
-            }
-
-            const [fromPxR, toPxR] = [
-              prefixSum[contigOrder],
-              prefixSum[1 + contigOrder],
-            ];
-
-            const ringR = this.createRightContigInsertionTriangle(
-              fromPxR,
-              toPxR,
-              pixelResolution
+            const leftNeighbor = previousShown?.contigDescriptor;
+            const preceding = previousShown?.contigOrder ?? contigOrder;
+            const precedingEnd = prefixSum[preceding + 1];
+            const size = this.getArrowSizePx(
+              precedingEnd - prefixSum[preceding],
+              nativePixelsPerScreenPixel
             );
-            if (ringR) {
-              multiPolygonRings.push([ringR]);
+            if (leftNeighbor) {
+              multiPolygonRings.push([this.insertionTriangle(precedingEnd, size, pixelResolution, "before")]);
             }
+            // At the assembly start the target points inward, so its complete hit area is visible.
+            multiPolygonRings.push([this.insertionTriangle(prefixSum[contigOrder], size, pixelResolution, "after")]);
 
             if (
               !viewport ||
@@ -1337,9 +1286,7 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
               const lrArrow = new MultiPolygon(multiPolygonRings);
               const multiPolygonFeature = new Feature({
                 name: `Arrow-between-${
-                  previousShown.contigDescriptor === cd
-                    ? "left-border-"
-                    : previousShown.contigDescriptor.contigName
+                  leftNeighbor?.contigName ?? "left-border-"
                 }-and-${cd.contigName}-at-bp${resolution}`,
                 geometry: lrArrow,
               });
@@ -1349,9 +1296,7 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
               multiPolygonFeature.set("pixelResolution", pixelResolution);
               multiPolygonFeature.set(
                 "leftContigDescriptor",
-                previousShown.contigDescriptor === cd
-                  ? undefined
-                  : previousShown.contigDescriptor
+                leftNeighbor
               );
               multiPolygonFeature.set("rightContigDescriptor", cd);
 
@@ -1390,14 +1335,8 @@ class TranslocationArrowsTrack2D extends Track2DSymmetric {
           prefixSum[1 + previousShown.contigOrder],
         ];
 
-        const ringR = this.createLeftContigInsertionTriangle(
-          fromPxR,
-          toPxR,
-          pixelResolution
-        );
-        if (ringR) {
-          multiPolygonRings.push([ringR]);
-        }
+        const size = this.getArrowSizePx(toPxR - fromPxR, nativePixelsPerScreenPixel);
+        multiPolygonRings.push([this.insertionTriangle(toPxR, size, pixelResolution, "before")]);
 
         if (
           !viewport ||

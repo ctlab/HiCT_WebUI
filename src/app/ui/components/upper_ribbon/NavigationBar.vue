@@ -20,6 +20,11 @@
  -->
 
 <template>
+  <RegionSelectionDialog
+    v-if="regionByCoordinates && props.mapManager"
+    :map-manager="props.mapManager"
+    @dismissed="regionByCoordinates = false"
+  />
   <nav class="navbar-bar navbar navbar-expand">
     <div class="container-fluid">
       <!-- Logo -->
@@ -46,13 +51,21 @@
             >
             <ul class="dropdown-menu">
               <li>
-                <a class="dropdown-item" href="#" @click.prevent="onOpenWizard"
-                  >Open with options…</a
+                <a
+                  class="dropdown-item menu-shortcut-row"
+                  href="#"
+                  aria-label="Open map…"
+                  aria-keyshortcuts="Control+O Meta+O"
+                  title="Open map (Ctrl+O)"
+                  @click.prevent="onOpenFile"
+                  >Open map…<span class="menu-shortcut" aria-hidden="true"
+                    >Ctrl+O</span
+                  ></a
                 >
               </li>
               <li>
-                <a class="dropdown-item" href="#" @click.prevent="onOpenFile"
-                  >Open…</a
+                <a class="dropdown-item" href="#" @click.prevent="onOpenWizard"
+                  >Open with options…</a
                 >
               </li>
               <li>
@@ -68,25 +81,8 @@
                 <a
                   class="dropdown-item"
                   href="#"
-                  :class="{ disabled: !props.mapManager }"
-                  @click.prevent="onCloseClicked"
-                  >Close</a
-                >
-              </li>
-              <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
-                  @click.prevent="onAttachClicked"
-                  >Attach</a
-                >
-              </li>
-              <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
                   @click.prevent="emit('examplesRequested')"
-                  >Open Examples…</a
+                  >Examples…</a
                 >
               </li>
               <li><hr class="dropdown-divider" /></li>
@@ -94,17 +90,8 @@
                 <a
                   class="dropdown-item"
                   href="#"
-                  :class="{ disabled: !props.mapManager }"
-                  @click.prevent="onSaveSessionClicked"
-                  >Save session</a
-                >
-              </li>
-              <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
                   @click.prevent="onOpenSessionClicked"
-                  >Open session</a
+                  >Open session…</a
                 >
                 <input
                   ref="sessionFileInput"
@@ -114,7 +101,55 @@
                   hidden
                 />
               </li>
+              <li>
+                <a
+                  class="dropdown-item menu-shortcut-row"
+                  href="#"
+                  aria-label="Save session…"
+                  aria-keyshortcuts="Control+S Meta+S"
+                  :class="{ disabled: !props.mapManager }"
+                  title="Save session (Ctrl+S)"
+                  @click.prevent="onSaveSessionClicked"
+                  >Save session…<span class="menu-shortcut" aria-hidden="true"
+                    >Ctrl+S</span
+                  ></a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  title="Show the map that is already open in another window or tab"
+                  @click.prevent="onAttachClicked"
+                  >Join running session</a
+                >
+              </li>
               <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="onConvertCoolersClicked"
+                  >Convert matrices…</a
+                >
+              </li>
+              <li>
+                <button
+                  type="button"
+                  class="dropdown-item"
+                  @click="processedStorageOpen = true"
+                >
+                  Processed data manager…
+                </button>
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  @click.prevent="exportingMatrix = true"
+                  >Export matrix…</a
+                >
+              </li>
               <li>
                 <a
                   class="dropdown-item"
@@ -123,27 +158,111 @@
                   >Open exported figure…</a
                 >
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
                 <a
                   class="dropdown-item"
                   href="#"
-                  @click.prevent="onConvertCoolersClicked"
-                  >Convert matrices</a
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="onCloseClicked"
+                  >Close map</a
                 >
               </li>
-              <li>
-                <a
-                  class="dropdown-item"
-                  href="#"
-                  @click.prevent="exportingMatrix = true"
-                  >Export matrix</a
+              <li v-if="canQuit">
+                <a class="dropdown-item" href="#" @click.prevent="onQuitClicked"
+                  >Quit HiCT</a
                 >
+              </li>
+            </ul>
+          </li>
+          <li class="nav-item dropdown">
+            <a
+              class="nav-link active dropdown-toggle"
+              data-bs-toggle="dropdown"
+              :data-bs-popper-config="navbarPopperConfig"
+              href="#"
+              @click="refreshUndoLabel"
+              >Edit</a
+            >
+            <ul class="dropdown-menu">
+              <li>
+                <button
+                  class="dropdown-item menu-shortcut-row"
+                  type="button"
+                  :disabled="!historyCan('undo')"
+                  :title="
+                    props.mapManager ? 'Undo (Ctrl+Z)' : 'Open a map to edit'
+                  "
+                  @click="editHistory('undo')"
+                >
+                  <span>
+                    <i
+                      class="bi bi-arrow-counterclockwise me-2"
+                      aria-hidden="true"
+                    ></i>
+                    {{ undoLabel }}
+                  </span>
+                  <span class="menu-shortcut" aria-hidden="true">Ctrl+Z</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  class="dropdown-item menu-shortcut-row"
+                  type="button"
+                  :disabled="!historyCan('redo')"
+                  :title="
+                    props.mapManager
+                      ? 'Redo (Ctrl+Shift+Z)'
+                      : 'Open a map to edit'
+                  "
+                  @click="editHistory('redo')"
+                >
+                  <span>
+                    <i class="bi bi-arrow-clockwise me-2" aria-hidden="true"></i>
+                    Redo
+                  </span>
+                  <span class="menu-shortcut" aria-hidden="true">Ctrl+Shift+Z</span>
+                </button>
               </li>
               <li><hr class="dropdown-divider" /></li>
               <li>
-                <a class="dropdown-item" href="#" @click.prevent="onQuitClicked"
-                  >Quit</a
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  :disabled="!props.mapManager"
+                  title="Open a map to select a region"
+                  @click="regionByCoordinates = true"
                 >
+                  Select region by coordinates…
+                </button>
+              </li>
+              <li>
+                <button
+                  class="dropdown-item menu-shortcut-row"
+                  type="button"
+                  :disabled="!props.mapManager"
+                  aria-keyshortcuts="Escape"
+                  title="Open a map to clear a selection"
+                  @click="
+                    props.mapManager?.viewAndLayersManager.clearSelections()
+                  "
+                >
+                  Clear selection<span class="menu-shortcut" aria-hidden="true"
+                    >Esc</span
+                  >
+                </button>
+              </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  :disabled="!props.mapManager"
+                  title="Open a map to view edit history"
+                  @click="showEditHistory"
+                >
+                  Edit history…
+                </button>
               </li>
             </ul>
           </li>
@@ -163,7 +282,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onOpenFASTAFile"
-                  >Link FASTA</a
+                  >Link FASTA…</a
                 >
               </li>
               <li>
@@ -172,7 +291,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onLoadAGP"
-                  >Load AGP</a
+                  >Load AGP…</a
                 >
               </li>
               <li>
@@ -200,7 +319,7 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onSelectionFASTARequest"
-                  >Export FASTA for selection</a
+                  >Export FASTA for selection…</a
                 >
               </li>
               <li>
@@ -209,15 +328,11 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="onAssemblyAGPRequest"
-                  >Export to AGP</a
+                  >Export AGP…</a
                 >
               </li>
             </ul>
           </li>
-          <SelectionControls
-            :map-manager="props.mapManager"
-            :popper-config="navbarPopperConfig"
-          />
           <!-- View -->
           <li class="nav-item dropdown">
             <a
@@ -233,8 +348,17 @@
                   class="dropdown-item"
                   href="#"
                   :class="{ disabled: !props.mapManager }"
-                  @click.prevent="onOpenTrackManager"
-                  >Tracks and layers…</a
+                  @click.prevent="trackManagerOpen = 'tracks'"
+                  >1D tracks…</a
+                >
+              </li>
+              <li>
+                <a
+                  class="dropdown-item"
+                  href="#"
+                  :class="{ disabled: !props.mapManager }"
+                  @click.prevent="trackManagerOpen = 'sources'"
+                  >Sources and layers…</a
                 >
               </li>
               <li>
@@ -246,6 +370,7 @@
                   >Rendering pipeline…</a
                 >
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
                 <a
                   class="dropdown-item"
@@ -260,9 +385,26 @@
                   href="#"
                   :class="{ disabled: !props.mapManager }"
                   @click.prevent="openResolutionSettings"
-                  >Restrict Resolutions…</a
+                  >Restrict resolutions…</a
                 >
               </li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  role="menuitemcheckbox"
+                  :aria-checked="uiSettingsStore.showMapZoomControls"
+                  @click="uiSettingsStore.showMapZoomControls = !uiSettingsStore.showMapZoomControls"
+                >
+                  <i
+                    class="bi me-1"
+                    :class="uiSettingsStore.showMapZoomControls ? 'bi-check-square' : 'bi-square'"
+                    aria-hidden="true"
+                  ></i>
+                  Show zoom controls
+                </button>
+              </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
                 <button
                   class="dropdown-item"
@@ -283,7 +425,7 @@
                     "
                     aria-hidden="true"
                   ></i>
-                  Automatically align visible FASTA
+                  Align visible FASTA automatically
                 </button>
                 <small
                   id="automatic-alignment-description"
@@ -314,8 +456,24 @@
                     "
                     aria-hidden="true"
                   ></i
-                  >FASTA: show reverse strand</a
+                  >Show reverse strand of FASTA</a
                 >
+              </li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  role="menuitemcheckbox"
+                  :aria-checked="uiSettingsStore.scrollTracksWithWheel"
+                  @click="uiSettingsStore.scrollTracksWithWheel = !uiSettingsStore.scrollTracksWithWheel"
+                >
+                  <i
+                    class="bi me-1"
+                    :class="uiSettingsStore.scrollTracksWithWheel ? 'bi-check-square' : 'bi-square'"
+                    aria-hidden="true"
+                  ></i>
+                  Scroll 1D tracks with mouse wheel
+                </button>
               </li>
             </ul>
           </li>
@@ -329,7 +487,7 @@
               >Tools</a
             >
             <ul class="dropdown-menu">
-              <li><h6 class="dropdown-header">Sequence search</h6></li>
+              <li><h6 class="dropdown-header">Sequences</h6></li>
               <li>
                 <button
                   class="dropdown-item"
@@ -353,15 +511,23 @@
                   Search NCBI databases…
                 </button>
               </li>
-              <li><hr class="dropdown-divider" /></li>
               <li><h6 class="dropdown-header">Dotplots</h6></li>
               <li>
                 <a
                   class="dropdown-item"
                   href="#"
                   @click.prevent="onGenerateDotplotClicked"
-                  >Generate dotplot from FASTA files…</a
+                  >Dotplot from FASTA files…</a
                 >
+              </li>
+              <li>
+                <button
+                  class="dropdown-item"
+                  type="button"
+                  @click="generatingFastaModDotPlots = true"
+                >
+                  ModDotPlot from FASTA files…
+                </button>
               </li>
               <li>
                 <button
@@ -369,7 +535,7 @@
                   :disabled="!props.mapManager"
                   @click="assemblyDotPlotOpen = true"
                 >
-                  Generate dotplot from active assembly…
+                  Dotplot from current assembly…
                 </button>
               </li>
               <li>
@@ -378,7 +544,12 @@
                   :disabled="!props.mapManager"
                   @click="modDotPlotOpen = true"
                 >
-                  Generate ModDotPlot…
+                  ModDotPlot…
+                </button>
+              </li>
+              <li>
+                <button type="button" class="dropdown-item" :disabled="!props.mapManager" @click="dotplotResults.dialogOpen = true">
+                  <i class="bi bi-collection" aria-hidden="true"></i> Dotplot results…
                 </button>
               </li>
             </ul>
@@ -561,15 +732,9 @@
               <li>
                 <a
                   class="dropdown-item"
-                  href="https://github.com/ctlab/HiCT_JVM/blob/jvm-sfx-native/docs/user-guide.md"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  >User guide and shortcuts</a
-                >
-              </li>
-              <li>
-                <a class="dropdown-item" href="#" @click.prevent="onOpenApiDocs"
-                  >API docs…</a
+                  href="#"
+                  @click.prevent="guideOpen = true"
+                  >User guide and shortcuts…</a
                 >
               </li>
               <li>
@@ -580,6 +745,18 @@
                   >Examples…</a
                 >
               </li>
+              <li><hr class="dropdown-divider" /></li>
+              <li>
+                <a
+                  class="dropdown-item menu-shortcut-row"
+                  href="#"
+                  @click.prevent="onOpenApiDocs"
+                  >API documentation…<i
+                    class="bi bi-box-arrow-up-right menu-shortcut"
+                    aria-hidden="true"
+                  ></i></a
+                >
+              </li>
               <li>
                 <a
                   class="dropdown-item"
@@ -588,89 +765,123 @@
                   >Connection…</a
                 >
               </li>
+              <li><hr class="dropdown-divider" /></li>
               <li>
                 <a class="dropdown-item" href="#" @click.prevent="openAbout"
-                  >About</a
+                  >About HiCT…</a
                 >
               </li>
               <li>
                 <a
-                  class="dropdown-item"
+                  class="dropdown-item menu-shortcut-row"
                   href="https://github.com/ctlab/HiCT/issues"
                   target="_blank"
                   rel="noopener noreferrer"
-                  >Report a bug</a
+                  >Report a bug…<i
+                    class="bi bi-box-arrow-up-right menu-shortcut"
+                    aria-hidden="true"
+                  ></i></a
                 >
               </li>
             </ul>
           </li>
         </ul>
-        <div class="file-chips ms-auto d-flex align-items-center gap-2">
-          <span
-            v-if="props.mapManager && openMapFilename"
-            class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
-            :title="
-              primaryApproximation
-                ? `${openMapFilename}\n${primaryApproximation.description}\nMethod: ${primaryApproximation.method}`
-                : openMapFilename
-            "
-          >
-            {{
-              primaryApproximation
-                ? "Estimated"
-                : noContactData
-                ? "Assembly"
-                : "Hi-C"
-            }}:
-            {{ shortFileLabel(openMapFilename, MAP_CHIP_LIMIT) }}
-          </span>
-          <span
-            v-if="props.mapManager && secondaryMapFilename"
-            class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
-            :title="
-              secondaryApproximation
-                ? `${secondaryMapFilename}\n${secondaryApproximation.description}\nMethod: ${secondaryApproximation.method}`
-                : secondaryMapFilename
-            "
-          >
-            {{
-              secondaryApproximation ? "Secondary (estimated)" : "Secondary"
-            }}:
-            {{ shortFileLabel(secondaryMapFilename, MAP_CHIP_LIMIT) }}
-          </span>
+        <div class="file-chips ms-auto" data-escape-disclosure @keydown.esc="closeSourceDetails">
           <button
             v-if="props.mapManager"
+            ref="sourceDetailsToggle"
             type="button"
-            class="btn btn-sm file-chip"
-            :class="
-              linkedFastaFilename
-                ? 'btn-outline-secondary'
-                : 'btn-outline-warning'
-            "
-            :title="
-              linkedFastaFilename || 'No FASTA linked. Click to link one.'
-            "
-            :aria-label="linkedFastaFilename ? 'Relink FASTA' : 'Link FASTA'"
-            @click="onOpenFASTAFile"
+            class="btn btn-sm btn-outline-secondary source-details-toggle"
+            aria-controls="hict-source-details"
+            :aria-expanded="sourceDetailsOpen"
+            @click="sourceDetailsOpen = !sourceDetailsOpen"
           >
-            <i class="bi bi-link-45deg" aria-hidden="true"></i>
-            FASTA:
-            {{
-              linkedFastaFilename
-                ? shortFileLabel(linkedFastaFilename)
-                : "not linked"
-            }}
+            Sources
           </button>
-          <button
+          <div
             v-if="props.mapManager"
-            type="button"
-            class="btn btn-sm file-chip btn-outline-secondary"
-            :title="lastAgpFilename || 'No AGP loaded. Click to load one.'"
-            @click="onLoadAGP"
+            id="hict-source-details"
+            class="source-details"
+            :class="{ 'source-details--open': sourceDetailsOpen }"
           >
-            AGP:
-            {{ lastAgpFilename ? shortFileLabel(lastAgpFilename) : "none" }}
-          </button>
+            <p class="source-details-active">
+              Visualization options apply to
+              {{ activeVisualizationSource === "SECONDARY" && secondaryMapFilename ? "the secondary map" : "the primary map" }}.
+            </p>
+            <span
+              v-if="openMapFilename"
+              class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
+              :title="
+                primaryApproximation
+                  ? `${openMapFilename}\n${primaryApproximation.description}\nMethod: ${primaryApproximation.method}`
+                  : openMapFilename
+              "
+            >
+              {{
+                primaryApproximation
+                  ? "Estimated"
+                  : noContactData
+                  ? "Assembly"
+                  : "Hi-C"
+              }}:
+              <span class="file-chip-short">{{ shortFileLabel(openMapFilename, MAP_CHIP_LIMIT) }}</span>
+              <span class="file-chip-full">{{ openMapFilename }}</span>
+            </span>
+            <span
+              v-if="secondaryMapFilename"
+              class="btn btn-sm btn-outline-secondary file-chip file-chip--static"
+              :title="
+                secondaryApproximation
+                  ? `${secondaryMapFilename}\n${secondaryApproximation.description}\nMethod: ${secondaryApproximation.method}`
+                  : secondaryMapFilename
+              "
+            >
+              {{
+                secondaryApproximation ? "Secondary (estimated)" : "Secondary"
+              }}:
+              <span class="file-chip-short">{{ shortFileLabel(secondaryMapFilename, MAP_CHIP_LIMIT) }}</span>
+              <span class="file-chip-full">{{ secondaryMapFilename }}</span>
+            </span>
+            <button
+              type="button"
+              class="btn btn-sm file-chip"
+              :class="
+                linkedFastaFilename
+                  ? 'btn-outline-secondary'
+                  : 'btn-outline-warning'
+              "
+              :title="
+                linkedFastaFilename || 'Link the FASTA that matches this map'
+              "
+              :aria-label="linkedFastaFilename ? 'Relink FASTA' : 'Link FASTA…'"
+              @click="onOpenFASTAFile"
+            >
+              <i
+                class="bi"
+                :class="linkedFastaFilename ? 'bi-check2' : 'bi-link-45deg'"
+                aria-hidden="true"
+              ></i>
+              {{
+                linkedFastaFilename
+                  ? "FASTA:"
+                  : "Link FASTA…"
+              }}
+              <template v-if="linkedFastaFilename">
+                <span class="file-chip-short">{{ linkedFastaFilename.split(/[\\/]/).pop() }}</span>
+                <span class="file-chip-full">{{ linkedFastaFilename }}</span>
+              </template>
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm file-chip btn-outline-secondary"
+              :title="lastAgpFilename || 'No AGP loaded. Click to load one.'"
+              @click="onLoadAGP"
+            >
+              AGP:
+              <span class="file-chip-short">{{ lastAgpFilename ? shortFileLabel(lastAgpFilename) : "none" }}</span>
+              <span class="file-chip-full">{{ lastAgpFilename || "none" }}</span>
+            </button>
+          </div>
           <BackgroundJobsPanel
             :requests="props.networkManager.requestManager"
             @open="emit('jobResult', $event)"
@@ -680,12 +891,11 @@
       </div>
     </div>
   </nav>
-  <!-- <OpenFileSelector
+  <UserGuideModal
+    v-if="guideOpen"
     :network-manager="props.networkManager"
-    v-if="openingFile"
-    @selected="onFileSelected"
-    @dismissed="onFileDismissed"
-  ></OpenFileSelector> -->
+    @dismissed="guideOpen = false"
+  />
   <UniversalFileSelector
     :network-manager="props.networkManager"
     v-if="openingFile"
@@ -746,6 +956,7 @@
     :initial-cooler-filename="coolerToConvert"
     v-if="convertingCoolers"
     @dismissed="onConvertCoolersDismissed"
+    @open-map="emit('selected', $event, true)"
   >
   </CoolerConverter>
   <MatrixExportModal
@@ -761,10 +972,19 @@
   <DotplotGenerator
     v-if="generatingDotplots"
     :network-manager="networkManager"
-    :initial-fasta-filename="lastLinkedFastaFilename"
+    :initial-fasta-filename="linkedFastaFilename || undefined"
     :initial-reference-map-filename="currentPrimaryHictFilename"
     :initial-resolutions="defaultDotplotResolutions()"
     @dismissed="onGenerateDotplotDismissed"
+  />
+  <DotplotGenerator
+    v-if="generatingFastaModDotPlots"
+    mod-dot-plot
+    :network-manager="networkManager"
+    :initial-reference-map-filename="currentPrimaryHictFilename"
+    :initial-fasta-filename="linkedFastaFilename || undefined"
+    :initial-resolutions="props.mapManager?.viewAndLayersManager.resolutions"
+    @dismissed="generatingFastaModDotPlots = false"
   />
   <ModDotPlotModal
     v-if="assemblyDotPlotOpen && props.mapManager"
@@ -779,6 +999,8 @@
     @dismissed="modDotPlotOpen = false"
     @link-fasta="startLinkFastaForTool('moddotplot')"
   />
+  <DotplotResultsModal v-if="dotplotResults.dialogOpen && props.mapManager" :map-manager="props.mapManager"
+    @dismissed="dotplotResults.dialogOpen = false" />
   <SequenceSearchModal
     v-if="sequenceSearchOpen && (props.mapManager || sequenceSearchRemote)"
     :map-manager="props.mapManager"
@@ -792,8 +1014,9 @@
   />
   <TrackManager
     v-if="trackManagerOpen"
+    :section="trackManagerOpen"
     :map-manager="props.mapManager"
-    @dismissed="trackManagerOpen = false"
+    @dismissed="trackManagerOpen = null"
   />
   <RenderingPipelineModal
     v-if="renderingPipelineOpen"
@@ -809,6 +1032,11 @@
     v-if="serverStatisticsOpen"
     :network-manager="props.networkManager"
     @dismissed="serverStatisticsOpen = false"
+  />
+  <ProcessedStorageModal
+    v-if="processedStorageOpen"
+    :requests="props.networkManager.requestManager"
+    @dismissed="processedStorageOpen = false"
   />
   <FastaLinkWarningModal
     v-if="fastaLinkReport"
@@ -881,7 +1109,7 @@
       class="settings-modal osd-settings-modal"
       role="dialog"
       aria-modal="true"
-      aria-label="On-screen display settings"
+      aria-label="Info settings"
     >
       <div class="settings-header">
         <h2>Info settings</h2>
@@ -902,7 +1130,7 @@
             role="switch"
           />
           <label class="form-check-label" for="toggle-osd-visible">
-            Show overlay
+            Show Info overlay
           </label>
         </div>
         <label class="form-label" for="osd-position-select">Position</label>
@@ -915,7 +1143,11 @@
           <option value="bottom-left">Bottom left</option>
         </select>
         <div class="fw-semibold mb-2">Fields</div>
-        <div v-for="field in osdFieldOrder" :key="field" class="osd-field-row">
+        <div
+          v-for="field in primaryOsdFields"
+          :key="field"
+          class="osd-field-row"
+        >
           <div class="form-check form-switch">
             <input
               :id="`osd-field-${field}`"
@@ -945,6 +1177,46 @@
             </button>
           </div>
         </div>
+        <AdvancedSection dialog-id="info-settings" class="mt-3">
+          <div
+            v-for="field in additionalOsdFields"
+            :key="field"
+            class="osd-field-row"
+          >
+            <div class="form-check form-switch">
+              <input
+                :id="`osd-field-${field}`"
+                v-model="osdOverlayFields[field]"
+                class="form-check-input"
+                type="checkbox"
+                role="switch"
+              />
+              <label
+                class="form-check-label"
+                :for="`osd-field-${field}`"
+                :title="osdFieldDescriptions[field]"
+              >
+                {{ osdFieldLabels[field] ?? field }}
+              </label>
+            </div>
+            <div class="btn-group btn-group-sm">
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                @click="moveOsdField(field, -1)"
+              >
+                Up
+              </button>
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                @click="moveOsdField(field, 1)"
+              >
+                Down
+              </button>
+            </div>
+          </div>
+        </AdvancedSection>
       </div>
       <div class="settings-footer">
         <button
@@ -967,11 +1239,11 @@
       class="settings-modal"
       role="dialog"
       aria-modal="true"
-      aria-label="Connection settings"
+      :aria-label="joiningSession ? 'Join running session' : 'Connection settings'"
       @submit.prevent="onGatewayChanged"
     >
       <div class="settings-header">
-        <h2>Connection</h2>
+        <h2>{{ joiningSession ? "Join running session" : "Connection" }}</h2>
         <button
           type="button"
           class="btn-close"
@@ -980,12 +1252,13 @@
         ></button>
       </div>
       <div class="settings-body">
-        <label class="form-label" for="api-gateway-input">Server address</label>
+        <label class="form-label" for="api-gateway-input">HiCT server address</label>
         <div id="connection-settings-input-group" class="input-group">
           <input
             id="api-gateway-input"
             class="form-control"
             type="url"
+            pattern="https?://.+"
             required
             v-model="gatewayAddress"
           />
@@ -996,6 +1269,10 @@
           >
             Connect
           </button>
+        </div>
+        <div class="form-text">
+          Pre-filled with the server that served this page. Change it only to join
+          a HiCT running on another computer.
         </div>
       </div>
     </form>
@@ -1048,8 +1325,7 @@
         <p class="about-note">{{ projectAttribution.note }}</p>
         <div class="about-versions">
           <div><strong>Backend:</strong> {{ backendVersion }}</div>
-          <div><strong>WebUI:</strong> {{ webuiVersion }}</div>
-          <div><strong>Commit:</strong> {{ webuiCommit }}</div>
+          <div><strong>WebUI revision:</strong> {{ webuiCommit }}</div>
         </div>
         <label class="form-check-label d-block mb-3">
           <input
@@ -1061,12 +1337,17 @@
         </label>
         <section class="how-to-cite">
           <h3>How to cite</h3>
-          <p>
-            {{ projectAttribution.authors }} HiCT {{ webuiVersion }}.
-            https://github.com/ctlab/HiCT_JVM. WebUI revision {{ webuiCommit }}.
-          </p>
+          <p>{{ citation }}</p>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary me-2"
+            :disabled="!backendRevision || backendVersion === 'loading...'"
+            @click="copyText(citation, 'Citation')"
+          >
+            Copy citation
+          </button>
           <a
-            href="https://github.com/ctlab/HiCT_JVM/blob/jvm-sfx-native/CITATION.cff"
+            href="./docs/CITATION.cff"
             target="_blank"
             rel="noopener noreferrer"
             >Machine-readable software citation</a
@@ -1210,7 +1491,7 @@
       aria-modal="true"
     >
       <div class="settings-header">
-        <h2 id="resolution-settings-title">Restrict Resolutions</h2>
+        <h2 id="resolution-settings-title">Restrict resolutions</h2>
         <button
           type="button"
           class="btn-close"
@@ -1303,7 +1584,13 @@
 </template>
 
 <script setup lang="ts">
-import SelectionControls from "./SelectionControls.vue";
+import { resolveApiBase } from "@/app/core/net/apiBase";
+import AdvancedSection from "../common/AdvancedSection.vue";
+import UserGuideModal from "./UserGuideModal.vue";
+import RegionSelectionDialog from "../common/RegionSelectionDialog.vue";
+import { offerFastaLink } from "@/app/ui/fastaExportPrerequisite";
+import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
+
 import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
 /* global __HICT_WEBUI_BUILD_VERSION__, __HICT_WEBUI_BUILD_COMMIT__ */
 import BackgroundJobsPanel from "./BackgroundJobsPanel.vue";
@@ -1343,7 +1630,12 @@ import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { useSessionStore } from "@/app/stores/sessionStore";
-import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
+import { useDotplotResultsStore } from "@/app/stores/dotplotResultsStore";
+import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import {
+  hasAnyOpenEscDialog,
+  useEscDismissableDialog,
+} from "@/app/ui/escapeDialogRegistry";
 import type {
   ConversionToolchainStatusResponse,
   FastaLinkResponse,
@@ -1369,19 +1661,23 @@ const exportedFigureOpen = ref(false);
 const generatingDotplots = ref(false);
 const sequenceSearchOpen = ref(false);
 const sequenceSearchRemote = ref(false);
+const generatingFastaModDotPlots = ref(false);
 const modDotPlotOpen = ref(false);
 const assemblyDotPlotOpen = ref(false);
 const coolerToConvert = ref<string | undefined>(undefined);
-const lastLinkedFastaFilename = ref<string | undefined>(undefined);
-const trackManagerOpen = ref(false);
+const trackManagerOpen = ref<"tracks" | "sources" | null>(null);
 const renderingPipelineOpen = ref(false);
 const workerDiagnosticsOpen = ref(false);
 const serverStatisticsOpen = ref(false);
-const saving = ref(false);
-const gatewayAddress: Ref<string> = ref("http://localhost:5000/");
+const processedStorageOpen = ref(false);
+const gatewayAddress: Ref<string> = ref(
+  resolveApiBase(window.location, import.meta.env)
+);
 const aboutOpen = ref(false);
 const osdSettingsOpen = ref(false);
+const guideOpen = ref(false);
 const connectionOpen = ref(false);
+const joiningSession = ref(false);
 const resolutionSettingsOpen = ref(false);
 const aboutActiveTab = ref<"about" | "attribution" | "changelog">("about");
 const changelogText = ref("Changelog for this build was not detected");
@@ -1390,6 +1686,17 @@ const renderedChangelog = computed(() => renderMarkdown(changelogText.value));
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
 const sessionStore = useSessionStore();
+const dotplotResults = useDotplotResultsStore();
+const { activeVisualizationSource } = storeToRefs(useMatrixViewStore());
+const sourceDetailsOpen = ref(false);
+const sourceDetailsToggle = ref<HTMLButtonElement>();
+
+function closeSourceDetails(event: KeyboardEvent): void {
+  if (!sourceDetailsOpen.value || !sourceDetailsToggle.value?.getClientRects().length) return;
+  event.stopPropagation();
+  sourceDetailsOpen.value = false;
+  sourceDetailsToggle.value.focus();
+}
 const {
   linkedFastaFilename,
   lastAgpFilename,
@@ -1411,8 +1718,16 @@ const toolchainStatus = ref<ConversionToolchainStatusResponse | null>(null);
 const dotplotAlignerPreference = ref("auto");
 const dotplotAlignerBusy = ref(false);
 const backendVersion = ref("loading...");
-const webuiVersion = __HICT_WEBUI_BUILD_VERSION__;
+const backendRevision = ref("");
 const webuiCommit = __HICT_WEBUI_BUILD_COMMIT__;
+const citation = computed(
+  () =>
+    `${projectAttribution.authors} HiCT ${
+      backendVersion.value
+    }. https://github.com/ctlab/HiCT_JVM. JVM revision ${
+      backendRevision.value || "unknown"
+    }. WebUI revision ${webuiCommit}.`
+);
 const CoolerConverter = defineAsyncComponent(
   () => import("./CoolerConverter.vue")
 );
@@ -1425,8 +1740,12 @@ const ExportedFigureModal = defineAsyncComponent(
 const ModDotPlotModal = defineAsyncComponent(
   () => import("./ModDotPlotModal.vue")
 );
+const DotplotResultsModal = defineAsyncComponent(() => import("./DotplotResultsModal.vue"));
 const DotplotGenerator = defineAsyncComponent(
   () => import("./DotplotGenerator.vue")
+);
+const ProcessedStorageModal = defineAsyncComponent(
+  () => import("./ProcessedStorageModal.vue")
 );
 const SequenceSearchModal = defineAsyncComponent(
   () => import("./SequenceSearchModal.vue")
@@ -1475,9 +1794,9 @@ useModalFocus(juiceboxFastaPromptElement, () => juiceboxFastaPromptOpen.value);
 
 const emit = defineEmits<{
   (e: "jobResult", request: JobOpenRequest): void;
-  (e: "selected", filename: string): void;
+  (e: "selected", filename: string, converted?: boolean): void;
   (e: "closed"): void;
-  (e: "attached"): void;
+  (e: "attached", address: string): void;
   (e: "saveSession"): void;
   (e: "openSession", file: File): void;
   (e: "agpLoaded", filename: string): void;
@@ -1561,22 +1880,38 @@ const {
 } = storeToRefs(uiSettingsStore);
 
 const osdFieldLabels: Record<string, string> = {
-  global: "Global coordinates",
+  global: "Position",
   resolution: "Resolution",
-  source: "Guidance source",
-  visibleResolutions: "Visible source resolutions",
-  pixels: "Pixel position",
-  bins: "Bin position",
-  basePairs: "Genome bp position",
+  source: "Showing data from",
+  visibleResolutions: "Available resolutions",
+  pixels: "Matrix cell (display)",
+  bins: "Matrix cell (stored)",
+  basePairs: "Map position",
   contigs: "Contigs",
-  inContig: "In-contig bp",
+  inContig: "Position in contig",
   scaffolds: "Scaffolds",
-  inScaffold: "In-scaffold bp",
+  inScaffold: "Position in scaffold",
 };
 
 const osdFieldOrder = computed(() =>
   osdOverlayFieldOrder.value.filter((field) => field in osdFieldLabels)
 );
+const primaryOsdFields = computed(() =>
+  osdFieldOrder.value.filter(
+    (field) => field === "global" || field === "resolution"
+  )
+);
+const additionalOsdFields = computed(() =>
+  osdFieldOrder.value.filter(
+    (field) => field !== "global" && field !== "resolution"
+  )
+);
+const osdFieldDescriptions: Record<string, string> = {
+  source: "Which map supplies the displayed data at the pointer.",
+  pixels: "The displayed cell at the current zoom level.",
+  bins: "The stored contact bin containing the pointer.",
+  visibleResolutions: "The available detail levels for visible sources.",
+};
 const enabledResolutions = ref<number[]>([]);
 const resolutionFinestLimit = ref<number | null>(null);
 const resolutionCoarsestLimit = ref<number | null>(null);
@@ -1733,6 +2068,81 @@ type TauriBridge = {
   ) => Promise<unknown>;
 };
 
+const regionByCoordinates = ref(false);
+const canQuit = computed(() => {
+  const desktop = (window as unknown as { hictDesktop?: HictDesktopBridge })
+    .hictDesktop;
+  const tauri = (window as unknown as { __TAURI__?: TauriBridge }).__TAURI__;
+  return !!(desktop?.quit || tauri?.core?.invoke || tauri?.invoke);
+});
+const undoEntry = ref<{ session: string; revision: number; label: string }>();
+const undoLabel = computed(() => {
+  const summary =
+    props.mapManager?.networkManager.requestManager.history.summary;
+  const entry = undoEntry.value;
+  return entry &&
+    entry.session === summary?.session &&
+    entry.revision === summary.revision
+    ? `Undo ${entry.label}`
+    : "Undo";
+});
+
+async function refreshUndoLabel(): Promise<void> {
+  const api = props.mapManager?.networkManager.requestManager;
+  const summary = api?.history.summary;
+  if (!api || !summary?.canUndo) return;
+  try {
+    const page = await api.getAssemblyHistory(summary.position);
+    if (
+      props.mapManager?.networkManager.requestManager !== api ||
+      api.history.summary !== summary
+    )
+      return;
+    const entry = page.entries.find(({ id }) => id === summary.currentId);
+    if (entry) {
+      undoEntry.value = {
+        session: summary.session,
+        revision: summary.revision,
+        label: entry.label,
+      };
+    }
+  } catch {
+    // Keep Undo available if the journal label cannot be fetched.
+  }
+}
+
+function historyCan(action: "undo" | "redo"): boolean {
+  const api = props.mapManager?.networkManager.requestManager;
+  return (
+    !!api &&
+    !api.history.busy &&
+    !api.sequenceViewReadOnly &&
+    !!(action === "undo"
+      ? api.history.summary?.canUndo
+      : api.history.summary?.canRedo)
+  );
+}
+function editHistory(action: "undo" | "redo"): void {
+  if (!historyCan(action)) return;
+  void props.networkManager.requestManager
+    .restoreAssemblyHistory(action)
+    .catch((error) =>
+      reportFailure(action === "undo" ? "Undo" : "Redo", error)
+    );
+}
+function showEditHistory(): void {
+  window.dispatchEvent(new Event("hict:show-edit-history"));
+}
+let pendingFastaExport:
+  | { manager: ContactMapManager; resume: () => void }
+  | undefined;
+function linkFastaForExport(event: Event): void {
+  const detail = (event as CustomEvent<typeof pendingFastaExport>).detail;
+  if (!detail || detail.manager !== props.mapManager) return;
+  pendingFastaExport = detail;
+  onOpenFASTAFile();
+}
+
 function onOpenFile() {
   openingFile.value = true;
 }
@@ -1759,10 +2169,6 @@ function onGenerateDotplotClicked(): void {
 
 function onGenerateDotplotDismissed(): void {
   generatingDotplots.value = false;
-}
-
-function onOpenTrackManager() {
-  trackManagerOpen.value = true;
 }
 
 function onOpenRenderingPipeline() {
@@ -1925,26 +2331,43 @@ function onFileDismissed() {
   errorMessage.value = null;
 }
 
-function onSaveClicked(): void {
-  saving.value = true;
-  props.networkManager.requestManager.save().finally(() => {
-    saving.value = false;
-  });
-}
-
 function onCloseClicked(): void {
   emit("closed");
   errorMessage.value = null;
 }
 
 function onAttachClicked(): void {
-  emit("attached");
+  gatewayAddress.value = props.networkManager.host;
+  joiningSession.value = true;
+  connectionOpen.value = true;
   errorMessage.value = null;
 }
 
 function onSaveSessionClicked(): void {
   emit("saveSession");
   errorMessage.value = null;
+}
+
+function fileShortcut(event: KeyboardEvent): void {
+  if (
+    event.defaultPrevented ||
+    event.repeat ||
+    event.altKey ||
+    event.shiftKey ||
+    !(event.ctrlKey || event.metaKey)
+  )
+    return;
+  const key = event.key.toLowerCase();
+  if (key !== "o" && key !== "s") return;
+  if (
+    hasAnyOpenEscDialog() ||
+    document.querySelector('.modal.show, [role="dialog"][aria-modal="true"]')
+  )
+    return;
+  if (key === "s" && !props.mapManager) return;
+  event.preventDefault();
+  if (key === "o") onOpenFile();
+  else onSaveSessionClicked();
 }
 
 const sessionFileInput = ref<HTMLInputElement | null>(null);
@@ -1996,6 +2419,7 @@ function openAbout(): void {
   aboutOpen.value = true;
   aboutActiveTab.value = "about";
   backendVersion.value = "loading...";
+  backendRevision.value = "";
   loadChangelog();
   props.networkManager.requestManager
     .getBackendVersion()
@@ -2003,6 +2427,8 @@ function openAbout(): void {
       if (typeof v === "string") {
         backendVersion.value = v;
       } else {
+        backendRevision.value =
+          v.backendRevision === "unknown" ? "" : v.backendRevision ?? "";
         backendVersion.value = v.version ?? "unknown";
       }
     })
@@ -2069,6 +2495,7 @@ function onOpenFASTAFile() {
 }
 
 function onFASTAFileDismissed() {
+  pendingFastaExport = undefined;
   openingFASTAFile.value = false;
   toolAfterFastaLink.value = null;
   pendingFastaFilename.value = null;
@@ -2077,12 +2504,18 @@ function onFASTAFileDismissed() {
 
 function openConnection(): void {
   gatewayAddress.value = props.networkManager.host;
+  joiningSession.value = false;
   connectionOpen.value = true;
 }
 function onGatewayChanged(): void {
-  props.networkManager.onHostChanged(gatewayAddress.value.trim());
+  const address = gatewayAddress.value.trim().replace(/\/+$/, "");
   connectionOpen.value = false;
-  toast.success("Server connection updated");
+  if (joiningSession.value) {
+    emit("attached", address);
+  } else {
+    props.networkManager.onHostChanged(address);
+    toast.success("Server connection updated");
+  }
 }
 async function onReloadTiles(): Promise<void> {
   try {
@@ -2231,6 +2664,7 @@ function openAGP(filename: string) {
         return;
       }
       errorMessage.value = e;
+      reportFailure("Load AGP", e);
     })
     .finally(() => {
       agpLoading.value = false;
@@ -2306,6 +2740,7 @@ function isFastaFilename(name: string): boolean {
 }
 
 function cancelFastaLinkWarning(): void {
+  pendingFastaExport = undefined;
   pendingFastaFilename.value = null;
   fastaLinkReport.value = null;
   toolAfterFastaLink.value = null;
@@ -2337,7 +2772,6 @@ function linkFASTA(filename: string, allowMismatch = false) {
       openingFile.value = false;
       openingFASTAFile.value = false;
       errorMessage.value = null;
-      lastLinkedFastaFilename.value = filename;
       emit("fastaLinked", filename);
       response.warnings.forEach((warning) =>
         toast.message(warning, {
@@ -2349,6 +2783,15 @@ function linkFASTA(filename: string, allowMismatch = false) {
       );
       toast.message("Linked FASTA file " + filename);
       reopenToolAfterFastaLink();
+      const pendingExport = pendingFastaExport;
+      pendingFastaExport = undefined;
+      if (
+        pendingExport &&
+        pendingExport.manager === props.mapManager &&
+        !pendingExport.manager.isDisposed
+      ) {
+        pendingExport.resume();
+      }
     })
     .catch((e) => {
       reportFailure("Link FASTA", e);
@@ -2366,16 +2809,20 @@ watch(
 );
 
 function openTrackManagerFromEvent(): void {
-  trackManagerOpen.value = true;
+  trackManagerOpen.value = "tracks";
 }
 
 onMounted(() => {
+  window.addEventListener("keydown", fileShortcut);
   window.addEventListener("hict:open-track-manager", openTrackManagerFromEvent);
+  window.addEventListener("hict:link-fasta-for-export", linkFastaForExport);
   void refreshNativeProcessingStatus();
   void refreshConversionToolchainStatus();
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("keydown", fileShortcut);
+  window.removeEventListener("hict:link-fasta-for-export", linkFastaForExport);
   window.removeEventListener(
     "hict:open-track-manager",
     openTrackManagerFromEvent
@@ -2394,6 +2841,13 @@ const assemblyExportBusy = ref(false);
 async function exportAssemblyFile(kind: "fasta" | "agp") {
   if (!props.mapManager || assemblyExportBusy.value) return;
   const api = props.networkManager.requestManager;
+  if (kind === "fasta" && !api.hasLinkedFasta) {
+    await offerFastaLink(
+      props.mapManager,
+      () => void exportAssemblyFile("fasta")
+    );
+    return;
+  }
   const version = api.history.applied ? { ...api.history.applied } : null;
   assemblyExportBusy.value = true;
   try {
@@ -2440,6 +2894,13 @@ function onSelectionFASTARequest() {
   .navbar-bar .nav-link {
     padding: 0.25rem 0.5rem;
   }
+}
+
+.file-chip {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .navbar-bar {
@@ -2505,7 +2966,11 @@ function onSelectionFASTARequest() {
   max-width: 100%;
   flex-wrap: wrap;
 }
-.navbar-bar .file-chips {
+.navbar-bar .file-chips,
+.source-details {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   min-width: 0;
   max-width: 100%;
   flex-wrap: wrap;
@@ -2514,9 +2979,59 @@ function onSelectionFASTARequest() {
 .navbar-bar :deep(.jobs-button) {
   flex-shrink: 0;
 }
+.file-chip-full,
+.source-details-active,
+.source-details-toggle {
+  display: none;
+}
+
 @media (max-width: 700px) {
+  .navbar-bar {
+    position: relative;
+  }
   .navbar-bar .file-chips {
     flex-wrap: nowrap;
+  }
+  .source-details-toggle {
+    display: inline-block;
+  }
+  .source-details {
+    display: none;
+    position: absolute;
+    z-index: 1030;
+    top: 100%;
+    right: 0.5rem;
+    width: min(25rem, calc(100% - 1rem));
+    max-height: 50vh;
+    overflow: auto;
+    padding: 0.5rem;
+    align-items: stretch;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    background: var(--hict-ui-bg, #f8f9fa);
+    border: 1px solid var(--hict-ui-border, #b6c1cf);
+    border-radius: 0.25rem;
+  }
+  .source-details--open {
+    display: flex;
+  }
+  .source-details-active {
+    display: block;
+    margin: 0 0 0.25rem;
+    font-size: 0.875rem;
+  }
+  .source-details .file-chip {
+    max-width: none;
+    text-align: start;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    flex-shrink: 0;
+  }
+  .file-chip-full {
+    display: inline;
+  }
+  .file-chip-short {
+    display: none;
   }
 }
 
@@ -2535,6 +3050,48 @@ function onSelectionFASTARequest() {
   max-height: min(70vh, 32rem);
   overflow-y: auto;
   border-color: var(--hict-ui-border, rgba(15, 23, 38, 0.22));
+}
+
+.navbar-bar .nav-item > .dropdown-menu:not(.p-3) {
+  min-width: min(290px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  padding: 6px;
+  border-radius: 10px;
+  box-shadow: var(--hict-surface-shadow);
+  font-size: 14px;
+}
+
+.navbar-bar .nav-item > .dropdown-menu:not(.p-3) .dropdown-item {
+  border-radius: 6px;
+  padding: 6px 12px;
+  white-space: normal;
+}
+
+.navbar-bar
+  .nav-item
+  > .dropdown-menu:not(.p-3)
+  .dropdown-item:is(.disabled, :disabled) {
+  color: var(--hict-ui-muted, #64748b) !important;
+}
+
+.navbar-bar .nav-item > .dropdown-menu:not(.p-3) .dropdown-header {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.menu-shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.menu-shortcut {
+  color: var(--hict-ui-muted, #64748b);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .hict-navbar-brand {

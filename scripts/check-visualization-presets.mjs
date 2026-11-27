@@ -145,8 +145,8 @@ assert.match(
 );
 assert.match(
   settingsEditorSource,
-  /if \(percentageSignalScale\.value\) \{[\s\S]*sliderLowerLimit\.value = 0;[\s\S]*sliderUpperLimit\.value = 100;/,
-  "percentage identity targets must keep the threshold slider on a 0-100 scale"
+  /if \(percentageSignalScale\.value\) \{[\s\S]*?autoDataRange\.value = \{ from: 0, to: 100 \};/,
+  "percentage identity targets must use a 0-100 automatic histogram view"
 );
 const tileSource = fs.readFileSync(tileSourcePath, "utf8");
 assert.match(

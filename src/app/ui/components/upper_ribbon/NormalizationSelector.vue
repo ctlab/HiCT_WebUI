@@ -28,7 +28,7 @@
     <p
       v-if="!signalEditable"
       id="custom-signal-graph"
-      class="small text-muted mb-2"
+      class="small text-muted mb-0"
       role="status"
     >
       This layer uses a custom processing graph. Edit it in Rendering pipeline.
@@ -36,27 +36,27 @@
     <p
       v-if="contactUnavailable"
       id="contact-normalization-unavailable"
-      class="small text-muted"
+      class="small text-muted mb-0"
     >
       {{ capabilities?.contactNormalization.reason }}
     </p>
     <p
       v-if="weightsUnavailable && !contactUnavailable"
       id="imported-weights-unavailable"
-      class="small text-muted"
+      class="small text-muted mb-0"
     >
       {{ weightsAvailability?.reason }}
     </p>
 
     <div class="signal-row">
       <span id="signal-transform-label" class="signal-label">
-        Signal transform
+        Displayed signal
       </span>
       <div
         class="scale-choice"
         role="group"
         aria-labelledby="signal-transform-label"
-        title="Changes the displayed matrix values: log(1 + x) / log(base)"
+        title="Values coloured on the map: Linear shows contacts as they are, Log2 shows log₂(1 + value)."
       >
         <button
           id="signal-transform-linear"
@@ -79,7 +79,7 @@
       </div>
     </div>
 
-    <div class="signal-row">
+    <div class="normalization-field">
       <label
         id="normalization-mode-label"
         for="normalization-mode"
@@ -89,6 +89,7 @@
       </label>
       <select
         id="normalization-mode"
+        ref="normalizationSelect"
         class="form-select form-select-sm normalization-select"
         :value="choice"
         :disabled="preparing || contactUnavailable || !signalEditable"
@@ -101,6 +102,41 @@
           Weights from file
         </option>
       </select>
+    </div>
+    <slot name="normalization-note" />
+    <div
+      v-if="preparing || choice === 'sqrt'"
+      :id="preparing ? 'normalization-progress' : 'normalization-coverage-ready'"
+      class="normalization-progress"
+      role="status"
+      aria-live="polite"
+    >
+      <div>
+        <strong>Square-root coverage</strong> ·
+        <span v-if="preparing">preparing {{ Math.round(prepareProgress * 100) }}%</span>
+        <span v-else class="coverage-ready">
+          <i class="bi bi-check-circle" aria-hidden="true"></i>
+          {{ savedCoverage[activeSource] ? "ready (saved for this map)" : "ready" }}
+        </span>
+      </div>
+      <template v-if="preparing">
+        <progress
+          :value="prepareProgress"
+          max="1"
+          aria-labelledby="normalization-mode-label"
+        ></progress>
+        <div class="coverage-note">
+          You can keep working. Prepared once per map file and reused next time.
+          <button
+            id="normalization-cancel"
+            type="button"
+            class="btn btn-link p-0"
+            @click="cancelPreparation"
+          >
+            Cancel
+          </button>
+        </div>
+      </template>
     </div>
     <p
       v-if="choice === 'sqrt' && !preparing"
@@ -129,30 +165,6 @@
         transforms also contribute to the displayed values.
       </p>
     </details>
-    <div
-      v-if="preparing"
-      id="normalization-progress"
-      class="normalization-progress"
-      role="status"
-      aria-live="polite"
-    >
-      <progress
-        :value="prepareProgress"
-        max="1"
-        aria-labelledby="normalization-mode-label"
-      ></progress>
-      <span class="small"
-        >{{ prepareMessage }} {{ Math.round(prepareProgress * 100) }}%</span
-      >
-      <button
-        id="normalization-cancel"
-        type="button"
-        class="btn btn-sm btn-outline-secondary"
-        @click="cancelPreparation"
-      >
-        Cancel
-      </button>
-    </div>
     <p
       v-if="prepareError"
       id="normalization-error"
@@ -161,18 +173,6 @@
     >
       {{ prepareError }}
     </p>
-    <p
-      v-if="choice === 'sqrt' && status && !status.consistent"
-      id="normalization-inconsistent"
-      class="small text-warning-emphasis mb-0"
-      role="status"
-    >
-      A source was attached after this was chosen and still uses file weights.
-      <button type="button" class="link-button" @click="reapplyCoverage">
-        Apply to both sources
-      </button>
-    </p>
-
     <p
       v-if="signalEditable && (legacyPreLog || autoThresholdEnabled)"
       id="legacy-signal-summary"
@@ -193,8 +193,13 @@
       </template>
     </p>
 
-    <details class="signal-advanced" id="signal-advanced">
-      <summary>Advanced</summary>
+    <AdvancedSection
+      dialog-id="sidebar-visualization"
+      hint="diagonal, data range, log base, pipeline"
+      class="signal-advanced"
+      id="signal-advanced"
+    >
+      <slot name="advanced-top" />
       <div class="signal-advanced-body">
         <div class="base-row">
           <label for="normalization-post-log-base">Log base</label>
@@ -241,31 +246,31 @@
             </option>
           </select>
         </div>
-        <p id="scaling-help" class="small text-muted mb-0">
-          Compensates for bin size when the zoom level changes: linear divides
-          by the resolution ratio, quadratic by its square.
-        </p>
-
         <slot name="excluded-bins" />
-        <div class="d-flex gap-2 mt-1">
+        <div class="base-row">
           <button
             type="button"
-            class="btn btn-sm btn-outline-primary flex-grow-1"
+            class="link-button"
             @click="openRenderingPipeline"
           >
-            Rendering pipeline...
+            Rendering pipeline…
           </button>
           <button
             type="button"
-            class="btn btn-sm btn-outline-secondary"
+            class="link-button text-danger"
             title="Log2, no scaling, no weights. Colors and thresholds are kept."
             @click="resetAttributes"
           >
             Reset
           </button>
         </div>
+        <p id="scaling-help" class="visually-hidden">
+          Linear scaling divides by the bin-size ratio and quadratic scaling
+          divides by its square.
+        </p>
+        <slot name="advanced-help" />
       </div>
-    </details>
+    </AdvancedSection>
   </section>
   <RenderingPipelineModal
     v-if="pipelineModalOpen"
@@ -275,19 +280,23 @@
 </template>
 
 <script setup lang="ts">
+import AdvancedSection from "../common/AdvancedSection.vue";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import {
   computed,
   defineAsyncComponent,
   onBeforeUnmount,
-  onMounted,
+  reactive,
   ref,
   watch,
 } from "vue";
-import { toast } from "vue-sonner";
 import type { CoolerWeightsNaNPolicy } from "@/app/core/visualization/VisualizationOptions";
 import { prepareCoverage } from "@/app/core/visualization/coverageNormalization";
-import type { CoverageNormalizationStatus } from "@/app/core/net/api/RequestManager";
+import type {
+  NormalizationSource,
+  NormalizationWeightMode,
+} from "@/app/core/net/api/RequestManager";
+import type { VisualizationContext } from "@/app/core/visualization/visualizationDrafts";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 import { importedWeightsAvailability } from "@/app/core/net/SourceCapabilities";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
@@ -463,21 +472,31 @@ function resetAttributes(): void {
   emit("apply");
 }
 
-// ---- Normalization --------------------------------------------------------------------------
-const status = ref<CoverageNormalizationStatus | null>(null);
-const preparing = ref(false);
-const prepareProgress = ref(0);
-const prepareMessage = ref("");
-const prepareError = ref("");
+const activeSource = computed(() => matrixViewStore.activeVisualizationSource);
+const requests = () => props.mapManager?.networkManager.requestManager;
+const normalizationSelect = ref<HTMLSelectElement>();
+const preparations = reactive<
+  Partial<Record<NormalizationSource, { progress: number }>>
+>({});
+const savedCoverage = reactive<Partial<Record<NormalizationSource, boolean>>>({});
+const errors = reactive<Partial<Record<NormalizationSource, string>>>({});
+const preparing = computed(
+  () => preparations[activeSource.value] !== undefined
+);
+const prepareProgress = computed(
+  () => preparations[activeSource.value]?.progress ?? 0
+);
+const prepareError = computed(() => errors[activeSource.value] ?? "");
 let disposed = false;
 
 type NormalizationChoice = "none" | "sqrt" | "file";
-/** What is shown is what tiles use: weights off, the file's weights, or computed coverage. */
 const choice = computed<NormalizationChoice>(() =>
   !applyCoolerWeights.value ||
-  coolerWeightsNaNPolicy.value === "DISABLE_WEIGHTS"
+  coolerWeightsNaNPolicy.value === "DISABLE_WEIGHTS" ||
+  contactUnavailable.value
     ? "none"
-    : requests()?.normalizationWeightsMode === "SQRT_COVERAGE"
+    : requests()?.getNormalizationWeightsMode(activeSource.value) ===
+      "SQRT_COVERAGE"
     ? "sqrt"
     : "file"
 );
@@ -491,140 +510,138 @@ const normalizationHelpId = computed(() =>
 
 type ChoiceAttempt = {
   manager: ContactMapManager;
-  context: import("@/app/core/visualization/visualizationDrafts").VisualizationContext;
+  context: VisualizationContext;
+  policy: CoolerWeightsNaNPolicy;
   current: () => boolean;
 };
-const choiceGenerations = new Map<string, number>();
-let vectorGeneration = 0;
-let statusGeneration = 0;
-function beginChoice(next: NormalizationChoice): ChoiceAttempt | undefined {
+const choiceGenerations = { PRIMARY: 0, SECONDARY: 0 };
+
+function sourceCurrent(
+  manager: ContactMapManager,
+  source: NormalizationSource,
+  revision: number
+): boolean {
+  return (
+    !disposed &&
+    !manager.isDisposed &&
+    props.mapManager?.getMap() === manager.getMap() &&
+    manager.networkManager.requestManager.getNormalizationSourceRevision(
+      source
+    ) === revision
+  );
+}
+
+function beginChoice(): ChoiceAttempt | undefined {
   const manager = props.mapManager;
   if (!manager || manager.isDisposed) return;
   const context = manager.visualizationManager.captureVisualizationContext();
-  const key = JSON.stringify([
-    context.source,
-    context.targetId,
-    context.source === "PRIMARY" ? context.mode : "OBSERVED",
-  ]);
-  const generation = (choiceGenerations.get(key) ?? 0) + 1;
-  choiceGenerations.set(key, generation);
-  if (next !== "none") ++vectorGeneration;
-  const vectors = vectorGeneration;
+  const source = context.source;
+  const generation = ++choiceGenerations[source];
+  const revision =
+    manager.networkManager.requestManager.getNormalizationSourceRevision(
+      source
+    );
   return {
     manager,
     context,
+    policy: coolerWeightsNaNPolicy.value,
     current: () =>
-      !disposed &&
-      !manager.isDisposed &&
-      props.mapManager?.getMap() === manager.getMap() &&
-      choiceGenerations.get(key) === generation &&
-      (next === "none" || vectors === vectorGeneration),
+      sourceCurrent(manager, source, revision) &&
+      choiceGenerations[source] === generation,
   };
 }
 
-const requests = () => props.mapManager?.networkManager.requestManager;
-
-async function refreshStatus(): Promise<void> {
-  const manager = props.mapManager;
-  const generation = ++statusGeneration;
-  const rm = manager?.networkManager.requestManager;
-  if (!rm) {
-    status.value = null;
-    return;
-  }
+/** Follows only the selected source's job, even when the source selector changes while it runs. */
+async function waitForPreparation(
+  manager: ContactMapManager,
+  source: NormalizationSource,
+  start: boolean,
+  current: () => boolean
+): Promise<boolean> {
+  const entry = reactive({ progress: 0 });
+  preparations[source] = entry;
+  errors[source] = "";
   try {
-    const response = await rm.coverageNormalizationStatus();
-    if (
-      generation !== statusGeneration ||
-      manager?.getMap() !== props.mapManager?.getMap()
-    )
-      return;
-    status.value = response;
-    if (status.value.state === "RUNNING" && !preparing.value)
-      void waitForPreparation(false);
-  } catch (error) {
-    console.debug("Normalization status unavailable", error);
-    if (generation === statusGeneration) status.value = null;
+    const outcome = await prepareCoverage(
+      manager.networkManager.requestManager,
+      (status) => {
+        entry.progress = status.progress;
+        if (current() && status.state === "READY")
+          setCoverageStatus(source, status.message);
+      },
+      { source, start, shouldStop: () => !current() }
+    );
+    if (!current()) return false;
+    if (!outcome.ok && !outcome.cancelled) errors[source] = outcome.message;
+    return outcome.ok;
+  } finally {
+    if (preparations[source] === entry) delete preparations[source];
   }
 }
 
-/** Follows the background job until it ends. Returns true when the vectors are ready. */
-async function waitForPreparation(
-  start: boolean,
-  attempt?: ChoiceAttempt
-): Promise<boolean> {
-  const rm = attempt?.manager.networkManager.requestManager ?? requests();
-  if (!rm) return false;
-  preparing.value = true;
-  prepareError.value = "";
+function setCoverageStatus(source: NormalizationSource, message: string): void {
+  savedCoverage[source] = message === "Saved coverage" || message === "Loaded saved coverage";
+}
+
+async function refreshStatus(
+  manager: ContactMapManager,
+  source: NormalizationSource,
+  revision: number
+): Promise<void> {
+  const rm = manager.networkManager.requestManager;
+  const current = () => sourceCurrent(manager, source, revision);
   try {
-    const outcome = await prepareCoverage(
-      rm,
-      (current) => {
-        if (attempt && !attempt.current()) return;
-        status.value = current;
-        prepareProgress.value = current.progress;
-        prepareMessage.value = current.message || "Preparing";
-      },
-      {
-        start,
-        shouldStop: () => disposed || Boolean(attempt && !attempt.current()),
-      }
-    );
-    if (attempt && !attempt.current()) return false;
-    if (!outcome.ok && !outcome.cancelled) prepareError.value = outcome.message;
-    return outcome.ok;
-  } finally {
-    preparing.value = false;
+    const status = await rm.coverageNormalizationStatus(source);
+    if (!current()) return;
+    if (status.state === "READY") setCoverageStatus(source, status.message);
+    if (status.state === "RUNNING" && !preparations[source])
+      await waitForPreparation(manager, source, false, current);
+  } catch (error) {
+    console.debug("Normalization status unavailable", error);
   }
 }
 
 async function cancelPreparation(): Promise<void> {
   try {
-    await requests()?.cancelCoverageNormalization();
+    await requests()?.cancelCoverageNormalization(activeSource.value);
   } catch (error) {
     console.debug("Cancel failed", error);
   }
 }
 
 async function switchWeights(
-  mode: "FILE" | "SQRT_COVERAGE",
+  mode: NormalizationWeightMode,
   attempt: ChoiceAttempt
 ): Promise<boolean> {
   if (!attempt.current()) return false;
-  const rm = attempt.manager.networkManager.requestManager;
-  if (!rm) return false;
+  const source = attempt.context.source;
   try {
-    await rm.selectNormalizationWeights(mode);
-    if (!attempt.current()) return false;
-    await refreshStatus();
-    return true;
+    await attempt.manager.networkManager.requestManager.selectNormalizationWeights(
+      mode,
+      source
+    );
+    return attempt.current();
   } catch (error) {
     console.debug("Switching weights failed", error);
-    prepareError.value =
-      "The weights could not be switched. Nothing was changed.";
+    if (attempt.current())
+      errors[source] = "The weights could not be switched.";
     return false;
   }
 }
 
-/**
- * Applies the choice through the one routine that rewrites the pipeline, the options and the color
- * range together. A change of normalization changes the scale of the values, so the range is refitted;
- * keeping the old one would leave the map blank or saturated.
- */
+/** Applies and refits the graph for the same source that owns the normalization vectors. */
 async function applyChoice(
   useWeights: boolean,
   attempt: ChoiceAttempt
 ): Promise<void> {
   if (!attempt.current()) return;
-  const manager = attempt.manager;
-  const policy: CoolerWeightsNaNPolicy = !useWeights
+  const policy = !useWeights
     ? "DISABLE_WEIGHTS"
-    : coolerWeightsNaNPolicy.value === "DISABLE_WEIGHTS"
+    : attempt.policy === "DISABLE_WEIGHTS"
     ? "REPLACE_NANS_WITH_ZERO"
-    : coolerWeightsNaNPolicy.value;
+    : attempt.policy;
   try {
-    await manager.visualizationManager.applyCoolerWeightsPolicy(
+    await attempt.manager.visualizationManager.applyCoolerWeightsPolicy(
       policy,
       useWeights,
       attempt.context
@@ -632,52 +649,77 @@ async function applyChoice(
   } catch (error) {
     console.debug("Applying the normalization failed", error);
     if (attempt.current())
-      prepareError.value = "The normalization could not be applied.";
+      errors[attempt.context.source] =
+        "The normalization could not be applied.";
   }
-}
-
-async function useCoverage(attempt: ChoiceAttempt): Promise<void> {
-  if (!(await waitForPreparation(true, attempt)) || !attempt.current()) return;
-  if (!(await switchWeights("SQRT_COVERAGE", attempt))) return;
-  await applyChoice(true, attempt);
 }
 
 async function onChoose(value: string): Promise<void> {
-  prepareError.value = "";
-  const next = value as NormalizationChoice;
-  if (next === choice.value) return;
-  const attempt = beginChoice(next);
+  const attempt = beginChoice();
   if (!attempt) return;
-  if (next === "none") {
-    await applyChoice(false, attempt);
-  } else if (next === "file") {
-    if (!(await switchWeights("FILE", attempt))) return;
-    await applyChoice(true, attempt);
-  } else {
-    await useCoverage(attempt);
+  const source = attempt.context.source;
+  errors[source] = "";
+  try {
+    if (value === choice.value) return;
+    if (value === "none") {
+      await applyChoice(false, attempt);
+      return;
+    }
+    if (
+      value === "sqrt" &&
+      !(await waitForPreparation(
+        attempt.manager,
+        source,
+        true,
+        attempt.current
+      ))
+    )
+      return;
+    if (
+      await switchWeights(value === "sqrt" ? "SQRT_COVERAGE" : "FILE", attempt)
+    )
+      await applyChoice(true, attempt);
+  } finally {
+    if (
+      attempt.current() &&
+      source === activeSource.value &&
+      normalizationSelect.value
+    )
+      normalizationSelect.value.value = choice.value;
   }
-  if (!attempt.current()) return;
-  // A refused or cancelled change leaves the control showing what is really in use.
-  const element = document.getElementById(
-    "normalization-mode"
-  ) as HTMLSelectElement | null;
-  if (element) element.value = choice.value;
 }
 
-async function reapplyCoverage(): Promise<void> {
-  toast.message("Preparing square-root coverage for the attached source…");
-  const attempt = beginChoice("sqrt");
-  if (attempt) await useCoverage(attempt);
-}
-
-onMounted(() => void refreshStatus());
 watch(
-  () => props.mapManager,
-  () => {
-    choiceGenerations.clear();
-    ++vectorGeneration;
-    void refreshStatus();
+  [
+    () => props.mapManager,
+    () => requests()?.getNormalizationSourceRevision("PRIMARY"),
+    () => requests()?.getNormalizationSourceRevision("SECONDARY"),
+  ],
+  ([manager, primary, secondary], [oldManager, oldPrimary, oldSecondary]) => {
+    if (manager !== oldManager || primary !== oldPrimary) {
+      delete preparations.PRIMARY;
+      delete errors.PRIMARY;
+      delete savedCoverage.PRIMARY;
+    }
+    if (manager !== oldManager || secondary !== oldSecondary) {
+      delete preparations.SECONDARY;
+      delete errors.SECONDARY;
+      delete savedCoverage.SECONDARY;
+    }
   }
+);
+watch(
+  [
+    () => props.mapManager,
+    activeSource,
+    () => requests()?.getNormalizationSourceRevision(activeSource.value),
+    () => requests()?.getNormalizationWeightsMode(activeSource.value),
+  ],
+  ([manager, source, revision]) => {
+    if (manager && revision !== undefined)
+      void refreshStatus(manager, source, revision);
+  },
+  { immediate: true }
 );
 onBeforeUnmount(() => {
   disposed = true;
@@ -721,6 +763,12 @@ function openRenderingPipeline(): void {
   font-weight: 600;
 }
 
+.normalization-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
 .scale-choice {
   display: inline-flex;
   padding: 3px;
@@ -749,9 +797,9 @@ function openRenderingPipeline(): void {
   opacity: 0.55;
 }
 
-.signal-advanced > summary {
-  cursor: pointer;
-  font-weight: 600;
+.signal-advanced :deep(summary) {
+  font-size: 0.8125rem;
+  line-height: 1.4;
 }
 
 .signal-advanced-body {
@@ -770,34 +818,42 @@ function openRenderingPipeline(): void {
 }
 
 .number-input {
-  width: 6.5rem;
+  width: 3.5rem;
   max-width: 100%;
 }
 
 .scaling-select {
-  width: 11rem;
-  flex: 1 1 11rem;
+  width: 9rem;
   min-width: 0;
   max-width: 100%;
 }
 
 .normalization-select {
-  width: 13rem;
-  flex: 1 1 13rem;
+  width: 100%;
   min-width: 0;
-  max-width: 100%;
+  appearance: auto;
+  padding-inline-end: 0.5rem;
 }
 
 .normalization-progress {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
 }
 
 .normalization-progress progress {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
+  height: 6px;
+  accent-color: var(--hict-primary, #0d6efd);
 }
+
+.coverage-ready { color: var(--hict-success, #027a48); }
+.coverage-note, .coverage-note button { font-size: inherit; }
+.coverage-note { color: #667085; }
 
 .legacy-summary {
   margin: 0;

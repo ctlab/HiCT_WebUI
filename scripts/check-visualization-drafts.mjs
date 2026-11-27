@@ -142,11 +142,12 @@ console.log(
 const { visualizationOptionsDraft } = load(
   new URL("visualizationDrafts.ts", root)
 );
-const presetRevision = drafts.note(primary, visualizationOptionsDraft(base));
+const priorPrimary = drafts.read(primary);
+const presetRevision = drafts.checkpoint();
+assert.deepEqual(drafts.read(primary), priorPrimary);
 drafts.note(secondary, { maxSignal: 77 });
 drafts.discardBefore(presetRevision);
-assert.equal(drafts.read(primary).maxSignal, 11);
-assert.equal(drafts.read(primary).minSignal, 0);
+assert.equal(Object.keys(drafts.read(primary)).length, 0);
 assert.equal(
   drafts.read(secondary).maxSignal,
   77,

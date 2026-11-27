@@ -20,8 +20,36 @@
  -->
 
 <template>
-  <div class="toolbar-outer">
-    <div class="toolbar-upper">
+  <div
+    class="toolbar-outer"
+    data-escape-disclosure
+    @keydown.esc="closeCompactTools"
+  >
+    <button
+      ref="compactToggle"
+      type="button"
+      class="btn btn-sm btn-outline-primary compact-tools-toggle"
+      aria-controls="workspace-map-tools"
+      :aria-expanded="compactOpen"
+      :disabled="!props.mapManager"
+      @click="compactOpen = !compactOpen"
+    >
+      Map tools
+    </button>
+    <div
+      id="workspace-map-tools"
+      ref="toolbarUpper"
+      class="toolbar-upper"
+      :class="{
+        'toolbar-upper--open': compactOpen,
+        'toolbar-upper--more-below': moreToolsBelow,
+      }"
+      role="region"
+      aria-label="Map tools"
+      tabindex="0"
+      @scroll.passive="updateToolbarOverflow"
+    >
+      <HistoryButtons :map-manager="props.mapManager" />
       <FirstBlock :map-manager="props.mapManager"></FirstBlock>
       <RearrangementButtons
         :map-manager="props.mapManager"
@@ -36,6 +64,8 @@
 </template>
 
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import HistoryButtons from "./upper_blocks/HistoryButtons.vue";
 import FirstBlock from "@/app/ui/components/toolbar/upper_blocks/FirstBlock.vue";
 import ThirdBlock from "@/app/ui/components/toolbar/upper_blocks/ThirdBlock.vue";
 import BottomButtons from "@/app/ui/components/toolbar/bottom_blocks/BottomButtons.vue";
@@ -46,26 +76,47 @@ import ScaffoldingButtons from "./upper_blocks/ScaffoldingButtons.vue";
 const props = defineProps<{
   readonly mapManager?: ContactMapManager | undefined;
 }>();
+const compactOpen = ref(false);
+const compactToggle = ref<HTMLButtonElement>();
+const toolbarUpper = ref<HTMLElement>();
+const moreToolsBelow = ref(false);
+let toolbarObserver: ResizeObserver | undefined;
+
+function updateToolbarOverflow(): void {
+  const pane = toolbarUpper.value;
+  moreToolsBelow.value =
+    !!pane && pane.scrollTop + pane.clientHeight < pane.scrollHeight - 1;
+}
+
+onMounted(() => {
+  const pane = toolbarUpper.value;
+  if (!pane) return;
+  toolbarObserver = new ResizeObserver(updateToolbarOverflow);
+  toolbarObserver.observe(pane);
+  for (const group of Array.from(pane.children)) toolbarObserver.observe(group);
+});
+onBeforeUnmount(() => toolbarObserver?.disconnect());
+
+function closeCompactTools(event: KeyboardEvent): void {
+  if (!compactOpen.value || !compactToggle.value?.getClientRects().length)
+    return;
+  event.stopPropagation();
+  compactOpen.value = false;
+  compactToggle.value.focus();
+}
 </script>
 
 <style scoped>
 .toolbar-outer {
-  /* Auto layout */
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* justify-content: space-between;  c  */
   padding: 12px 4px;
   gap: 6px;
 
   width: 60px;
   flex: 0 0 60px;
   min-height: 0;
-  /* Short windows: scroll the tool column instead of clipping buttons. */
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
-  /* height: 100%; TODO: сделать иначе  */
 
   background: var(--hict-ui-bg, #f8f9fa);
   color: var(--hict-ui-fg, #1f2937);
@@ -79,20 +130,69 @@ const props = defineProps<{
 }
 
 .toolbar-upper {
-  /* upper block */
-
-  /* Auto layout */
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  padding: 0px;
-  gap: clamp(10px, 2.2vh, 24px);
+  align-items: center;
+  gap: clamp(6px, 1.4vh, 24px);
+  flex: 1 1 0;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  overscroll-behavior-y: contain;
+}
 
-  width: 44px;
+.toolbar-upper::-webkit-scrollbar {
+  width: 4px;
+}
+
+.toolbar-upper--more-below {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 10px), #0005);
+}
+
+.toolbar-upper:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
 }
 
 .toolbar-bottom {
-  margin-top: auto;
+  flex: 0 0 auto;
+}
+
+.compact-tools-toggle {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .toolbar-outer {
+    position: relative;
+    flex-direction: row;
+    justify-content: space-between;
+    width: auto;
+    padding: 4px 8px;
+    box-shadow: inset 0 -1px 0 var(--hict-ui-border, #b6c1cf);
+  }
+
+  .compact-tools-toggle {
+    display: inline-block;
+  }
+
+  .toolbar-upper {
+    display: none;
+    position: absolute;
+    z-index: 20;
+    top: 100%;
+    left: 0;
+    width: 56px;
+    max-height: min(52vh, 32rem);
+    padding: 8px 4px;
+    background: inherit;
+    border: 1px solid var(--hict-ui-border, #b6c1cf);
+  }
+
+  .toolbar-upper--open {
+    display: flex;
+  }
 }
 
 @media (max-height: 820px) {
@@ -105,8 +205,4 @@ const props = defineProps<{
     line-height: 1.2;
   }
 }
-
-/* .toolbar-bottom {
-  background-color: green;
-} */
 </style>

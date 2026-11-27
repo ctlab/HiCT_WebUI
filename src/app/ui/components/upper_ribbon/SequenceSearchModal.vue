@@ -11,11 +11,7 @@
       <form class="modal-content" @submit.prevent="start">
         <header class="modal-header">
           <h5 id="sequence-search-title" class="modal-title">
-            {{
-              isRemote
-                ? "Search NCBI databases"
-                : "Find sequences in the linked FASTA"
-            }}
+            {{ isRemote ? "Search NCBI databases" : "Find sequences" }}
           </h5>
           <button
             type="button"
@@ -25,25 +21,6 @@
           ></button>
         </header>
         <div class="modal-body">
-          <details class="small mb-3">
-            <summary>How this works</summary>
-            <p v-if="isRetrieval" class="mt-2">
-              Only the existing RID is sent to NCBI. Pasted queries are checked
-              on the HiCT server against returned labels, lengths and available
-              aligned bases. Results keep external database coordinates.
-            </p>
-            <p v-else-if="isRemote" class="mt-2">
-              Only the pasted query sequences and generated query IDs are sent
-              to NCBI. Results use external database coordinates. Your linked
-              FASTA and assembly are not uploaded.
-            </p>
-            <p v-else class="mt-2">
-              The active assembly is searched in its current order and
-              orientation, preserving AGP gaps and using the configured default
-              between scaffolds. Excluded regions and debris are omitted.
-              Searches do not cross positive-length gaps.
-            </p>
-          </details>
           <p v-if="error" class="alert alert-danger" role="alert">
             {{ error }}
           </p>
@@ -72,7 +49,6 @@
             </button>
           </div>
           <fieldset :disabled="busy">
-            <SequenceGapSettings v-if="!isRemote" :request-manager="manager" />
             <label class="form-label" for="search-sequences"
               >FASTA records, or one DNA sequence per line</label
             >
@@ -303,6 +279,11 @@
                     >
                   </div>
                 </template>
+              </template>
+            </div>
+            <AdvancedSection dialog-id="sequence-search">
+              <SequenceGapSettings v-if="!isRemote" :request-manager="manager" />
+              <div v-if="mode === 'blast'" class="row g-3">
                 <div class="col-sm-6">
                   <label class="form-label"
                     >Maximum E-value<input
@@ -361,70 +342,89 @@
                   subject records per query; a subject can have multiple
                   alignments.</small
                 >
+              </div>
+              <template v-if="!isRemote">
+                <div class="row g-3 mt-0">
+                  <div class="col-sm-6">
+                    <label for="search-forward-color" class="form-label"
+                      >Forward strand color</label
+                    >
+                    <input
+                      id="search-forward-color"
+                      v-model="forwardColor"
+                      type="color"
+                      class="form-control form-control-color"
+                    />
+                  </div>
+                  <div class="col-sm-6">
+                    <label for="search-reverse-color" class="form-label"
+                      >Reverse strand color</label
+                    >
+                    <input
+                      id="search-reverse-color"
+                      v-model="reverseColor"
+                      type="color"
+                      class="form-control form-control-color"
+                    />
+                  </div>
+                </div>
               </template>
-            </div>
-            <details v-if="!isRemote" class="mt-3">
-              <summary>Advanced</summary>
-              <div class="row g-3 mt-0">
-                <div class="col-sm-6">
-                  <label for="search-forward-color" class="form-label"
-                    >Forward strand color</label
-                  >
-                  <input
-                    id="search-forward-color"
-                    v-model="forwardColor"
-                    type="color"
-                    class="form-control form-control-color"
-                  />
-                </div>
-                <div class="col-sm-6">
-                  <label for="search-reverse-color" class="form-label"
-                    >Reverse strand color</label
-                  >
-                  <input
-                    id="search-reverse-color"
-                    v-model="reverseColor"
-                    type="color"
-                    class="form-control form-control-color"
-                  />
-                </div>
-              </div>
-            </details>
-            <div v-if="!isRemote" class="form-check mt-3">
-              <input
-                id="search-save-data"
-                v-model="saveReusable"
-                type="checkbox"
-                class="form-check-input"
-              /><label for="search-save-data" class="form-check-label"
-                >Save reusable BED under DATA_DIR</label
-              >
-            </div>
-            <div v-if="saveReusable && !isRemote" class="row g-3 mt-0">
-              <div class="col-sm-9">
-                <label for="search-output" class="form-label"
-                  >BED output path</label
-                ><input
-                  id="search-output"
-                  v-model.trim="outputFilename"
-                  class="form-control"
-                  required
-                  placeholder="sequence-analysis/search-results.bed"
-                /><small class="form-text"
-                  >Relative to DATA_DIR; parent folders are created.</small
-                >
-              </div>
-              <div class="col-sm-3 form-check align-self-end pb-2">
+              <div v-if="!isRemote" class="form-check mt-3">
                 <input
-                  id="search-overwrite"
-                  v-model="overwrite"
+                  id="search-save-data"
+                  v-model="saveReusable"
                   type="checkbox"
                   class="form-check-input"
-                /><label for="search-overwrite" class="form-check-label"
-                  >Overwrite</label
+                /><label for="search-save-data" class="form-check-label"
+                  >Save a reusable BED file in the data folder</label
                 >
               </div>
-            </div>
+              <div v-if="saveReusable && !isRemote" class="row g-3 mt-0">
+                <div class="col-sm-9">
+                  <label for="search-output" class="form-label"
+                    >BED output path</label
+                  ><input
+                    id="search-output"
+                    v-model.trim="outputFilename"
+                    class="form-control"
+                    required
+                    placeholder="sequence-analysis/search-results.bed"
+                  /><small class="form-text"
+                    >HiCT creates the path under the data folder.</small
+                  >
+                </div>
+                <div class="col-sm-3 form-check align-self-end pb-2">
+                  <input
+                    id="search-overwrite"
+                    v-model="overwrite"
+                    type="checkbox"
+                    class="form-check-input"
+                  /><label for="search-overwrite" class="form-check-label"
+                    >Overwrite</label
+                  >
+                </div>
+              </div>
+              <details class="small mb-3">
+                <summary>How this works</summary>
+                <p v-if="isRetrieval" class="mt-2">
+                  Only the existing RID is sent to NCBI. Pasted queries are
+                  checked on the HiCT server against returned labels, lengths
+                  and available aligned bases. Results keep external database
+                  coordinates.
+                </p>
+                <p v-else-if="isRemote" class="mt-2">
+                  Only the pasted query sequences and generated query IDs are
+                  sent to NCBI. Results use external database coordinates. Your
+                  linked FASTA and assembly are not uploaded.
+                </p>
+                <p v-else class="mt-2">
+                  The active assembly is searched in its current order and
+                  orientation, preserving AGP gaps and using the configured
+                  default between scaffolds. Excluded regions and debris are
+                  omitted. Searches do not cross positive-length gaps.
+                </p>
+              </details>
+            </AdvancedSection>
           </fieldset>
           <div v-if="job" class="mt-3" role="status" aria-live="polite">
             <span
@@ -500,7 +500,7 @@
               (isRemote && !remoteConsent)
             "
           >
-            {{ isRetrieval ? "Retrieve NCBI results" : "Find sequences" }}
+            {{ isRetrieval ? "Retrieve NCBI results" : "Search" }}
           </button>
         </footer>
       </form>
@@ -509,6 +509,7 @@
 </template>
 
 <script setup lang="ts">
+import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { ref, computed, onBeforeUnmount, watch } from "vue";

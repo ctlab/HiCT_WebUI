@@ -3,6 +3,9 @@ import fs from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import { Collection } from "ol";
+import { createRequire } from "node:module";
+import * as vue from "vue";
+import { hiddenContigDescriptors, hiddenContigResolutions } from "./hidden-contig-fixture.mjs";
 
 function load(file, imports = {}) {
   const exports = {};
@@ -153,7 +156,10 @@ assert.equal(model.snapRegionBoundary(30.2, true), 31);
 
 const { HiCViewAndLayersManager } = load(
   "../src/app/core/mapmanagers/HiCViewAndLayersManager.ts",
-  { "./regionSelection": model }
+  {
+    "./regionSelection": model,
+    "./shiftSelection": load("../src/app/core/mapmanagers/shiftSelection.ts"),
+  }
 );
 const layers = Object.create(HiCViewAndLayersManager.prototype);
 layers.currentViewState = {
@@ -161,7 +167,7 @@ layers.currentViewState = {
   selectionBorders: {},
   selectedContigIds: [],
   selectedScaffoldIds: [],
-  entitySelectionKind: "contig",
+  entitySelectionKind: "scaffold",
 };
 layers.activeAxisScopes = { row: { kind: "all" }, column: { kind: "all" } };
 layers.selectedContigIds = new Set();
@@ -173,6 +179,7 @@ layers.selectionCollections = {
 let worldExtent, vertexVisible;
 layers.selectionInteractions = {
   contigSelectExtent: {
+    cancelGesture() {},
     setExtent: (extent) => {
       worldExtent = extent;
     },
@@ -188,6 +195,8 @@ const holder = {
     { contigId: 8, contigLengthBp: 300 },
   ],
   contigIdToOrd: { 7: 0, 8: 1 },
+  prefix_sum_px: new Map([[100, [0, 1, 4]], [1, [0, 100, 400]]]),
+  getContigIdByBp: (bp) => bp < 100 ? 7 : 8,
   getFractionalPxOfBp: (bp, res) => bp / res,
   getFractionalBpOfPx: (px, res) => px * res,
 };
@@ -232,8 +241,12 @@ assert.deepEqual(plain(layers.getSelectedEntityRange()), {
   startBP: 0,
   endBP: 400,
 });
-layers.selectEntityRangeByBp(101, 102, "scaffold");
+layers.selectEntityRangeByBp(101, 102);
+assert.deepEqual(Array.from(layers.currentViewState.selectedContigIds), [7, 8]);
 assert.deepEqual(Array.from(layers.currentViewState.selectedScaffoldIds), [42]);
+layers.selectEntityRangeByBp(101, 102, { expand: false });
+assert.deepEqual(Array.from(layers.currentViewState.selectedContigIds), [8]);
+assert.deepEqual(Array.from(layers.currentViewState.selectedScaffoldIds), []);
 layers.setRegionBounds(exact);
 assert.equal(layers.currentViewState.selectedContigIds.length, 0);
 assert.equal(layers.selectionCollections.selectedContigFeatures.getLength(), 0);
@@ -243,3 +256,57 @@ assert.equal(vertexVisible, false);
 console.log(
   "Separate entity/region state, exact BP projections, coordinate conventions, scopes, malformed inputs and long positions passed."
 );
+
+for (const frame of ["assembly", "scaffold", "contig"]) {
+  for (const convention of ["one-based", "zero-based"]) {
+    const formatted = (x, end) =>
+      model.formatBoundary(x, end, convention, references, frame);
+    const heading =
+      frame[0].toUpperCase() +
+      frame.slice(1) +
+      " coordinates (bp, " +
+      (convention === "one-based"
+        ? "1-based inclusive)"
+        : "0-based, end excluded)");
+    const text = [
+      heading,
+      "Rows\t" + formatted(240, false) + "\t" + formatted(290, true),
+      "Columns\t" + formatted(259, false) + "\t" + formatted(333, true),
+    ].join("\r\n");
+    assert.deepEqual(plain(model.parseCopiedRegion(text, references, domain)), {
+      frame,
+      convention,
+      bounds: { rowStart: 240, rowEnd: 290, columnStart: 259, columnEnd: 333 },
+    });
+    assert.throws(() =>
+      model.parseCopiedRegion(text + "\textra", references, domain)
+    );
+  }
+}
+
+const require = createRequire(import.meta.url);
+const Holder = load("../src/app/core/mapmanagers/ContigDimensionHolder.ts", {
+  "binary-search": { default: require("binary-search") },
+  "binary-search-bounds": { default: require("binary-search-bounds") },
+  "@/CommonUtils": { default: { clamp: (value, lo, hi) => Math.max(lo, Math.min(value, hi)) } },
+  "../domain/common": load("../src/app/core/domain/common.ts"),
+  vue,
+}).default;
+const hidden = new Holder(hiddenContigDescriptors());
+layers.mapManager.contigDimensionHolder = hidden;
+for (const bpResolution of hiddenContigResolutions) {
+  const pixelResolution = 1.3;
+  layers.currentViewState.resolutionDesciptor = { bpResolution, pixelResolution };
+  const [, start, end] = hidden.prefix_sum_px.get(bpResolution);
+  const a = start * pixelResolution, b = end * pixelResolution;
+  const region = layers.regionFromExtent([a, -b, b, -a]);
+  assert.deepEqual(plain(region), {
+    rowStart: 1_000_000, rowEnd: 1_300_000,
+    columnStart: 1_000_000, columnEnd: 1_300_000,
+  });
+  const selected = hidden.contigDescriptors.filter((_, i) =>
+    hidden.prefix_sum_bp[i] < region.columnEnd &&
+    hidden.prefix_sum_bp[i + 1] > region.columnStart
+  );
+  assert.equal(selected.length, 1);
+}

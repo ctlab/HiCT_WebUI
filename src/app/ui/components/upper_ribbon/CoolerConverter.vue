@@ -20,23 +20,30 @@
  -->
 
 <template>
+  <div class="modal-backdrop fade show"></div>
   <div
-    class="modal fade in"
+    class="modal fade show converter-shell"
     id="loadAGPModal"
     ref="convertCoolerModal"
+    role="dialog"
+    aria-modal="true"
     aria-labelledby="matrix-converter-title"
     tabindex="-1"
-    data-keyboard="false"
-    data-backdrop="static"
   >
     <div
-      class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable converter-dialog"
+      class="modal-dialog modal-dialog-centered modal-dialog-scrollable hict-heavy-dialog converter-dialog"
     >
       <div class="modal-content">
         <div class="modal-header">
-          <h5 id="matrix-converter-title" class="modal-title">
-            Convert matrix files for HiCT
-          </h5>
+          <div>
+            <h5 id="matrix-converter-title" class="modal-title">
+              Convert matrices for HiCT
+            </h5>
+            <p class="mb-0 small text-muted">
+              Turns .mcool, .cool, .hic and 4DN .pairs files into HiCT maps.
+              Your original files stay unchanged.
+            </p>
+          </div>
           <button
             type="button"
             class="btn-close"
@@ -48,106 +55,106 @@
           <div class="d-flex align-items-center" v-if="errorMessage">
             <p class="error-message">Error: {{ errorMessage }}</p>
           </div>
-          <div
-            class="toolchain-card"
-            v-if="toolchainStatus || toolchainLoading"
-          >
-            <div class="toolchain-header">
-              <strong>.hic conversion</strong>
-              <span
-                class="status-pill"
-                :class="hictkAvailabilityClass"
-                v-if="toolchainStatus"
-              >
-                {{ hictkAvailabilityLabel }}
-              </span>
-              <span v-else>loading…</span>
-            </div>
-            <p class="toolchain-summary">
-              .hic files are handled by
-              <a
-                href="https://github.com/paulsengroup/hictk"
-                target="_blank"
-                rel="noopener noreferrer"
-                >hictk</a
-              >.
-              <span :class="hictkAvailabilityClass">
-                {{ hictkAvailabilityLabel }}.
-              </span>
-            </p>
-            <details v-if="toolchainStatus" class="toolchain-details">
-              <summary>Notices, attribution and diagnostics</summary>
-              <p>{{ toolchainStatus.summary }}</p>
-              <p v-if="toolchainStatus.hictkCommand">
-                <strong>hictk:</strong> {{ toolchainStatus.hictkCommand }}
-              </p>
-              <p v-if="toolchainStatus.source">
-                <strong>source:</strong> {{ toolchainStatus.source }}
-              </p>
-              <p
-                v-for="(limitation, index) in toolchainStatus.limitations"
-                :key="'limitation-' + index"
-                class="toolchain-limitation"
-              >
-                {{ limitation }}
-              </p>
-              <p
-                v-for="(notice, index) in toolchainStatus.notices"
-                :key="'notice-' + index"
-                class="toolchain-note"
-              >
-                {{ notice }}
-              </p>
-              <p
-                v-for="(citation, index) in toolchainStatus.citations"
-                :key="'citation-' + index"
-                class="toolchain-note"
-              >
-                {{ citation }}
-              </p>
-            </details>
-          </div>
           <div>
             <div v-if="batchStep === 'select'">
-              <div class="batch-actions">
-                <button
-                  class="btn btn-sm btn-outline-primary"
-                  @click="selectAll"
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <nav
+                  class="d-flex align-items-center flex-wrap gap-1"
+                  aria-label="Conversion folders"
                 >
-                  Select All
-                </button>
-                <button
-                  class="btn btn-sm btn-outline-secondary"
-                  @click="selectNone"
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    :disabled="filesLoading"
+                    @click="loadBatchFiles('')"
+                  >
+                    Data folder
+                  </button>
+                  <template v-for="folder in folderTrail" :key="folder.path">
+                    <span aria-hidden="true">/</span>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary"
+                      :disabled="filesLoading"
+                      @click="loadBatchFiles(folder.path)"
+                    >
+                      {{ folder.name }}
+                    </button>
+                  </template>
+                  <span v-if="recursiveList">/ All folders</span>
+                  <button
+                    v-else
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    :disabled="filesLoading"
+                    @click="loadBatchFiles('', true)"
+                  >
+                    All folders
+                  </button>
+                </nav>
+                <span v-if="filesLoading" role="status">Loading files…</span>
+                <span v-if="batchSelection.size"
+                  >{{ batchSelection.size }} selected</span
                 >
-                  Select None
-                </button>
+              </div>
+              <div class="dropdown mb-2">
                 <button
-                  class="btn btn-sm btn-outline-secondary"
-                  @click="invertSelection"
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                  data-bs-toggle="dropdown"
                 >
-                  Invert Selection
+                  Select
                 </button>
-                <button
-                  class="btn btn-sm btn-outline-success"
-                  @click="selectAllConverted"
-                >
-                  Select All Converted
-                </button>
-                <button
-                  class="btn btn-sm btn-outline-success"
-                  @click="selectAllUnconverted"
-                >
-                  Select All Unconverted
-                </button>
-                <button
-                  class="btn btn-sm btn-outline-secondary"
-                  @click="viewCurrentJobs"
-                >
-                  View current conversion jobs
-                </button>
+                <ul class="dropdown-menu">
+                  <li>
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      @click="selectAll"
+                    >
+                      All
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      @click="selectNone"
+                    >
+                      None
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      @click="invertSelection"
+                    >
+                      Invert
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      @click="selectConvertedStatus(false)"
+                    >
+                      All not converted
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      class="dropdown-item"
+                      @click="selectConvertedStatus(true)"
+                    >
+                      All converted
+                    </button>
+                  </li>
+                </ul>
               </div>
               <FileSelectionTable
+                v-if="!filesLoading"
                 :entries="batchFileEntries"
                 :multi-select="true"
                 :selected-path="null"
@@ -159,193 +166,292 @@
                 :status-label="batchFileStatusLabel"
                 empty-message="No convertible matrix files found"
                 scroll-height="44vh"
+                @activate="onBatchEntryActivated"
                 @update:selected-paths="onBatchSelectionUpdated"
               />
-              <div class="mt-3 d-flex gap-2">
-                <button
-                  class="btn btn-primary"
-                  @click="proceedBatchSettings"
-                  :disabled="
-                    batchSelection.size === 0 || Boolean(batchBlockedMessage)
-                  "
+              <div v-if="showPairsBinSize" class="mt-3">
+                <label for="converter-bin-size" class="form-label"
+                  >Bin size for .pairs files</label
                 >
-                  Continue
-                </button>
-                <button class="btn btn-secondary" @click="onDismissClicked">
-                  Dismiss
-                </button>
+                <input
+                  id="converter-bin-size"
+                  type="number"
+                  class="form-control"
+                  v-model.number="batchBinSize"
+                  placeholder="1,000 bp"
+                  min="1"
+                  step="1"
+                />
               </div>
-              <p v-if="batchBlockedMessage" class="error-message mt-2">
-                {{ batchBlockedMessage }}
-              </p>
-            </div>
-            <div v-if="batchStep === 'settings'">
-              <div class="mb-3">
-                <label class="form-label"
-                  >Optional .assembly for selected .hic files</label
-                >
-                <div class="input-group">
-                  <input
-                    class="form-control"
-                    type="text"
-                    readonly
-                    :value="
-                      batchAssemblyFilename || 'No Juicebox .assembly selected'
-                    "
-                  />
-                  <button
-                    class="btn btn-outline-secondary"
-                    @click="assemblySelectorOpen = true"
+              <AdvancedSection dialog-id="convert-matrices" class="mt-3">
+                <div class="mb-3">
+                  <label class="form-label"
+                    >Optional .assembly for selected .hic files</label
                   >
-                    Browse…
-                  </button>
-                  <button
-                    class="btn btn-outline-danger"
-                    :disabled="!batchAssemblyFilename"
-                    @click="batchAssemblyFilename = ''"
-                  >
-                    Clear
-                  </button>
+                  <div class="input-group">
+                    <input
+                      class="form-control"
+                      type="text"
+                      readonly
+                      :value="batchAssemblyFilename || 'No .assembly selected'"
+                    />
+                    <button
+                      class="btn btn-outline-secondary"
+                      @click="assemblySelectorOpen = true"
+                    >
+                      Browse…
+                    </button>
+                    <button
+                      class="btn btn-outline-danger"
+                      :disabled="!batchAssemblyFilename"
+                      @click="batchAssemblyFilename = ''"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <small class="text-muted">
+                    The assembly file is passed only to .hic conversions. Leave
+                    empty to keep the sealed single-contig conversion layout.
+                  </small>
                 </div>
-                <small class="text-muted">
-                  The assembly file is passed only to .hic conversions. Leave
-                  empty to keep the sealed single-contig conversion layout.
-                </small>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Optional BED3+ bin table</label>
-                <div class="input-group">
-                  <input
-                    class="form-control"
-                    type="text"
-                    readonly
-                    :value="
-                      batchBinTableFilename ||
-                      'Auto-detect same-stem .bed when possible'
-                    "
-                  />
-                  <button
-                    class="btn btn-outline-secondary"
-                    @click="sidecarSelectorKind = 'bin-table'"
-                  >
-                    Browse…
-                  </button>
-                  <button
-                    class="btn btn-outline-danger"
-                    :disabled="!batchBinTableFilename"
-                    @click="batchBinTableFilename = ''"
-                  >
-                    Clear
-                  </button>
-                </div>
-                <small class="text-muted">
-                  Used by Hi-C Pro .matrix and generic COO conversions. Leave
-                  empty for auto-discovery or synthetic COO bins.
-                </small>
-              </div>
-              <div class="row g-2 mb-3">
-                <div class="col-md-8">
-                  <label class="form-label">Optional chrom sizes</label>
+                <div class="mb-3">
+                  <label class="form-label">Optional BED3+ bin table</label>
                   <div class="input-group">
                     <input
                       class="form-control"
                       type="text"
                       readonly
                       :value="
-                        batchChromSizesFilename ||
-                        'Required for BEDPE/bedGraph2 and validPairs'
+                        batchBinTableFilename ||
+                        'Auto-detect same-stem .bed when possible'
                       "
                     />
                     <button
                       class="btn btn-outline-secondary"
-                      @click="sidecarSelectorKind = 'chrom-sizes'"
+                      @click="sidecarSelectorKind = 'bin-table'"
                     >
                       Browse…
                     </button>
                     <button
                       class="btn btn-outline-danger"
-                      :disabled="!batchChromSizesFilename"
-                      @click="batchChromSizesFilename = ''"
+                      :disabled="!batchBinTableFilename"
+                      @click="batchBinTableFilename = ''"
                     >
                       Clear
                     </button>
                   </div>
+                  <small class="text-muted">
+                    Used by Hi-C Pro .matrix and generic COO conversions. Leave
+                    empty for auto-discovery or synthetic COO bins.
+                  </small>
                 </div>
-                <div class="col-md-4">
-                  <label class="form-label">Bin size</label>
+                <div class="row g-2 mb-3">
+                  <div class="col-md-8">
+                    <label class="form-label">Optional chrom sizes</label>
+                    <div class="input-group">
+                      <input
+                        class="form-control"
+                        type="text"
+                        readonly
+                        :value="
+                          batchChromSizesFilename ||
+                          'Required for BEDPE/bedGraph2 and validPairs'
+                        "
+                      />
+                      <button
+                        class="btn btn-outline-secondary"
+                        @click="sidecarSelectorKind = 'chrom-sizes'"
+                      >
+                        Browse…
+                      </button>
+                      <button
+                        class="btn btn-outline-danger"
+                        :disabled="!batchChromSizesFilename"
+                        @click="batchChromSizesFilename = ''"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  <div v-if="!showPairsBinSize" class="col-md-4">
+                    <label for="converter-other-bin-size" class="form-label"
+                      >Bin size</label
+                    >
+                    <input
+                      id="converter-other-bin-size"
+                      type="number"
+                      class="form-control"
+                      v-model.number="batchBinSize"
+                      min="1"
+                      step="1"
+                    />
+                  </div>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Parallel jobs</label>
                   <input
                     type="number"
                     class="form-control"
-                    v-model.number="batchBinSize"
+                    v-model.number="batchParallelJobs"
                     min="1"
                   />
                 </div>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Parallel jobs</label>
-                <input
-                  type="number"
-                  class="form-control"
-                  v-model.number="batchParallelJobs"
-                  min="1"
-                />
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Parallelism per file</label>
-                <input
-                  type="number"
-                  class="form-control"
-                  v-model.number="batchParallelism"
-                  min="-1"
-                  title="-1: automatic server CPU allocation"
-                />
-              </div>
-              <div class="mt-3 d-flex gap-2">
-                <button
-                  class="btn btn-primary"
-                  @click="startBatchConversion"
-                  :disabled="Boolean(batchBlockedMessage)"
+                <div class="mb-3">
+                  <label class="form-label">Parallelism per file</label>
+                  <input
+                    type="number"
+                    class="form-control"
+                    v-model.number="batchParallelism"
+                    min="-1"
+                    title="-1: automatic server CPU allocation"
+                  />
+                </div>
+                <label class="form-check">
+                  <input
+                    v-model="forceConversion"
+                    type="checkbox"
+                    class="form-check-input"
+                  />
+                  Re-convert even if converted
+                </label>
+                <div
+                  class="toolchain-card"
+                  v-if="toolchainStatus || toolchainLoading"
                 >
-                  Start
-                </button>
-                <button class="btn btn-secondary" @click="batchStep = 'select'">
-                  Back
-                </button>
-              </div>
+                  <div class="toolchain-header">
+                    <strong>.hic conversion</strong>
+                    <span
+                      class="status-pill"
+                      :class="hictkAvailabilityClass"
+                      v-if="toolchainStatus"
+                    >
+                      {{ hictkAvailabilityLabel }}
+                    </span>
+                    <span v-else>loading…</span>
+                  </div>
+                  <p class="toolchain-summary">
+                    .hic files are handled by
+                    <a
+                      href="https://github.com/paulsengroup/hictk"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      >hictk</a
+                    >.
+                    <span :class="hictkAvailabilityClass">
+                      {{ hictkAvailabilityLabel }}.
+                    </span>
+                  </p>
+                  <details v-if="toolchainStatus" class="toolchain-details">
+                    <summary>Notices, attribution and diagnostics</summary>
+                    <p>{{ toolchainStatus.summary }}</p>
+                    <p v-if="toolchainStatus.hictkCommand">
+                      <strong>hictk:</strong> {{ toolchainStatus.hictkCommand }}
+                    </p>
+                    <p v-if="toolchainStatus.source">
+                      <strong>source:</strong> {{ toolchainStatus.source }}
+                    </p>
+                    <p
+                      v-for="(limitation, index) in toolchainStatus.limitations"
+                      :key="'limitation-' + index"
+                      class="toolchain-limitation"
+                    >
+                      {{ limitation }}
+                    </p>
+                    <p
+                      v-for="(notice, index) in toolchainStatus.notices"
+                      :key="'notice-' + index"
+                      class="toolchain-note"
+                    >
+                      {{ notice }}
+                    </p>
+                    <p
+                      v-for="(citation, index) in toolchainStatus.citations"
+                      :key="'citation-' + index"
+                      class="toolchain-note"
+                    >
+                      {{ citation }}
+                    </p>
+                  </details>
+                </div>
+              </AdvancedSection>
               <p v-if="batchBlockedMessage" class="error-message mt-2">
                 {{ batchBlockedMessage }}
               </p>
             </div>
             <div v-if="batchStep === 'progress'">
-              <h6>Batch progress</h6>
               <p v-if="batchJobIds.length === 0" class="text-muted">
                 No active conversion jobs.
               </p>
-              <div v-else class="overall-status">
-                <span class="status-pill" :class="overallBatchStatusClass">
-                  {{ overallBatchStatusLabel }}
-                </span>
-              </div>
               <div class="batch-progress-list">
                 <ConverterStatusChecker
-                  v-for="job in batchJobIds"
-                  :key="job"
+                  v-for="jobId in batchJobIds"
+                  :key="jobId"
                   :network-manager="networkManager"
-                  :job-id="job"
-                  :show-stop="true"
+                  :job-id="jobId"
+                  :show-tool-info="false"
                   @status-update="onBatchStatusUpdate"
-                />
+                >
+                  <template #result="{ job }">
+                    <button
+                      v-if="batchJobIds.length > 1 && isMap(job)"
+                      type="button"
+                      class="btn btn-link align-self-end p-0"
+                      @click="openConvertedMap(job)"
+                    >
+                      Open
+                    </button>
+                  </template>
+                </ConverterStatusChecker>
               </div>
+              <details v-if="batchToolInfo.length" class="batch-tool-info">
+                <summary>About the bundled tools (hictk, licences and citations)</summary>
+                <p v-for="line in batchToolInfo" :key="line">{{ line }}</p>
+              </details>
             </div>
           </div>
         </div>
-        <div class="modal-footer">
+        <div class="modal-footer hict-modal-footer">
+          <label class="open-on-ready me-auto">
+            <input v-model="openWhenReady" class="form-check-input" type="checkbox" />
+            Open the map when it is ready
+          </label>
+          <button
+            v-if="batchStep === 'select'"
+            type="button"
+            class="btn btn-link"
+            @click="viewCurrentJobs"
+          >
+            View conversion jobs
+          </button>
           <button
             type="button"
-            class="btn btn-secondary"
+            class="btn btn-outline-secondary"
             @click="onDismissClicked"
           >
-            Dismiss
+            {{ batchStep === "select" ? "Cancel" : "Close" }}
+          </button>
+          <button
+            v-if="finishedMap"
+            type="button"
+            class="btn btn-success open-converted-map"
+            @click="openConvertedMap(finishedMap)"
+          >
+            <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Open map
+          </button>
+          <button
+            v-if="batchStep === 'select'"
+            type="button"
+            class="btn btn-primary"
+            :disabled="
+              submitting ||
+              filesLoading ||
+              !batchSelection.size ||
+              Boolean(batchBlockedMessage)
+            "
+            @click="startBatchConversion"
+          >
+            Convert {{ batchSelection.size }}
+            {{ batchSelection.size === 1 ? "file" : "files" }}
           </button>
         </div>
         <div v-if="overwriteConfirmVisible" class="overwrite-confirm-backdrop">
@@ -374,48 +480,51 @@
         </div>
       </div>
     </div>
-    <UniversalFileSelector
-      v-if="assemblySelectorOpen"
-      :network-manager="networkManager"
-      title="Select optional Juicebox assembly file"
-      file-type=".assembly"
-      note="Used for selected .hic conversions only. Non-.hic conversions ignore this field."
-      :file-name-predicate="isAssemblyFilename"
-      @selected="onAssemblySelected"
-      @dismissed="assemblySelectorOpen = false"
-    />
-    <UniversalFileSelector
-      v-if="sidecarSelectorKind !== null"
-      :network-manager="networkManager"
-      :title="
-        sidecarSelectorKind === 'bin-table'
-          ? 'Select BED bin table'
-          : 'Select chrom sizes file'
-      "
-      :file-type="sidecarSelectorKind === 'bin-table' ? '.bed' : '.chrom.sizes'"
-      :note="
-        sidecarSelectorKind === 'bin-table'
-          ? 'BED3+ bin table for hictk load.'
-          : 'Chrom sizes for hictk load.'
-      "
-      :file-name-predicate="
-        sidecarSelectorKind === 'bin-table'
-          ? isBinTableFilename
-          : isChromSizesFilename
-      "
-      @selected="onSidecarSelected"
-      @dismissed="sidecarSelectorKind = null"
-    />
   </div>
+  <UniversalFileSelector
+    v-if="assemblySelectorOpen"
+    :network-manager="networkManager"
+    :z-index="1070"
+    title="Select optional .assembly file"
+    file-type=".assembly"
+    note="Used for selected .hic conversions only. Non-.hic conversions ignore this field."
+    :file-name-predicate="isAssemblyFilename"
+    @selected="onAssemblySelected"
+    @dismissed="assemblySelectorOpen = false"
+  />
+  <UniversalFileSelector
+    v-if="sidecarSelectorKind !== null"
+    :network-manager="networkManager"
+    :z-index="1070"
+    :title="
+      sidecarSelectorKind === 'bin-table'
+        ? 'Select BED bin table'
+        : 'Select chrom sizes file'
+    "
+    :file-type="sidecarSelectorKind === 'bin-table' ? '.bed' : '.chrom.sizes'"
+    :note="
+      sidecarSelectorKind === 'bin-table'
+        ? 'BED3+ bin table for hictk load.'
+        : 'Chrom sizes for hictk load.'
+    "
+    :file-name-predicate="
+      sidecarSelectorKind === 'bin-table'
+        ? isBinTableFilename
+        : isChromSizesFilename
+    "
+    @selected="onSidecarSelected"
+    @dismissed="sidecarSelectorKind = null"
+  />
 </template>
 
 <script setup lang="ts">
-import { type Ref, ref, onMounted, computed } from "vue";
-import { Modal } from "bootstrap";
+import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
+import { type Ref, ref, onBeforeUnmount, onMounted, computed, watch } from "vue";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
 import { StartBatchConversionJobsRequest } from "@/app/core/net/api/request";
-import { ConversionToolchainStatusResponse } from "@/app/core/net/api/response";
+import type { ConversionJobResponse, ConversionToolchainStatusResponse } from "@/app/core/net/api/response";
+import { useBackgroundJobsUiStore } from "@/app/stores/backgroundJobsUiStore";
 import ConverterStatusChecker from "./converter/ConverterStatusChecker.vue";
 import FileSelectionTable from "@/app/ui/components/common/FileSelectionTable.vue";
 import type { FileSelectionTableEntry } from "@/app/ui/components/common/FileSelectionTableTypes";
@@ -424,6 +533,7 @@ import UniversalFileSelector from "./UniversalFileSelector.vue";
 
 const emit = defineEmits<{
   (e: "dismissed"): void;
+  (e: "open-map", filename: string): void;
 }>();
 
 const props = defineProps<{
@@ -432,11 +542,35 @@ const props = defineProps<{
 }>();
 
 const errorMessage: Ref<unknown | null> = ref(null);
-const modal: Ref<Modal | null> = ref(null);
 const convertCoolerModal = ref<HTMLElement | null>(null);
 useModalFocus(convertCoolerModal);
-const batchStep: Ref<"select" | "settings" | "progress"> = ref("select");
-const batchFiles: Ref<string[]> = ref([]);
+const forceConversion = ref(false);
+const submitting = ref(false);
+const folderTrail = computed(() => {
+  const parts = currentFolder.value.split("/").filter(Boolean);
+  return parts.map((name, index) => ({
+    name,
+    path: parts.slice(0, index + 1).join("/"),
+  }));
+});
+const showPairsBinSize = computed(() =>
+  [...batchFiles.value, ...batchSelection.value].some((path) =>
+    /\.pairs(?:\.(?:gz|bgz|xz|zst|zstd|bz2|lz4|lzo))?$/i.test(path)
+  )
+);
+const batchStep: Ref<"select" | "progress"> = ref("select");
+const batchFileEntries = ref<FileSelectionTableEntry[]>([]);
+const batchFiles = computed(() =>
+  batchFileEntries.value
+    .filter((e) => e.type !== "directory")
+    .map((e) => e.path)
+);
+const currentFolder = ref("");
+const filesLoading = ref(false);
+const recursiveList = ref(false);
+let listingRequest = 0;
+const parentFolder = (file: string) =>
+  file.replaceAll("\\", "/").split("/").slice(0, -1).join("/");
 const batchSelection: Ref<Set<string>> = ref(new Set<string>());
 const batchAssemblyFilename: Ref<string> = ref("");
 const assemblySelectorOpen: Ref<boolean> = ref(false);
@@ -447,9 +581,25 @@ const sidecarSelectorKind: Ref<"bin-table" | "chrom-sizes" | null> = ref(null);
 const batchParallelJobs: Ref<number> = ref(2);
 const batchParallelism: Ref<number> = ref(-1);
 const batchJobIds: Ref<string[]> = ref([]);
-const batchStatusMap: Ref<Map<string, string>> = ref(new Map());
-const batchProgressMap: Ref<Map<string, number>> = ref(new Map());
-const allFiles: Ref<Set<string>> = ref(new Set<string>());
+const batchJobs = ref(new Map<string, ConversionJobResponse>());
+const jobsUi = useBackgroundJobsUiStore();
+let disposed = false;
+let submittedBatch = false;
+const OPEN_WHEN_READY_KEY = "hict.ui.converter.openWhenReady";
+const openWhenReady = ref(true);
+try {
+  openWhenReady.value = localStorage.getItem(OPEN_WHEN_READY_KEY) !== "false";
+} catch {
+  // Keep the default if this browser denies storage.
+}
+watch(openWhenReady, (value) => {
+  try {
+    localStorage.setItem(OPEN_WHEN_READY_KEY, String(value));
+  } catch {
+    // The choice still applies to the current dialog.
+  }
+});
+const existingOutputs: Ref<Set<string>> = ref(new Set<string>());
 const overwriteConfirmVisible: Ref<boolean> = ref(false);
 const overwriteConfirmMessage: Ref<string> = ref("");
 const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> =
@@ -500,33 +650,14 @@ function resolveOverwriteConfirm(approved: boolean): void {
   }
 }
 
-function resetState(): void {
+onBeforeUnmount(() => {
+  disposed = true;
+  if (submittedBatch) trackPendingJobs(batchJobIds.value);
   cancelPendingOverwriteConfirm();
-  try {
-    modal.value?.dispose();
-  } catch (e: unknown) {
-    // Expected
-  } finally {
-    modal.value = null;
-    errorMessage.value = null;
-    batchStep.value = "select";
-    batchFiles.value = [];
-    batchSelection.value = new Set<string>();
-    batchJobIds.value = [];
-    batchStatusMap.value.clear();
-    batchProgressMap.value.clear();
-    allFiles.value = new Set<string>();
-    toolchainStatus.value = null;
-    toolchainLoading.value = true;
-    batchBinTableFilename.value = "";
-    batchChromSizesFilename.value = "";
-    batchBinSize.value = null;
-    sidecarSelectorKind.value = null;
-  }
-}
+  listingRequest++;
+});
 
 function onDismissClicked(): void {
-  resetState();
   emit("dismissed");
 }
 
@@ -556,12 +687,9 @@ function onSidecarSelected(filename: string): void {
 onMounted(() => {
   batchStep.value = "select";
   loadToolchainStatus();
-  loadBatchFiles();
-  modal.value = new Modal(convertCoolerModal.value ?? "loadAGPModal", {
-    backdrop: "static",
-    keyboard: false,
-  });
-  modal.value.show();
+  const initial = props.initialCoolerFilename;
+  if (initial) batchSelection.value = new Set([initial]);
+  void loadBatchFiles(parentFolder(initial ?? ""));
 });
 
 function viewCurrentJobs(): void {
@@ -579,26 +707,45 @@ function viewCurrentJobs(): void {
     });
 }
 
-function loadBatchFiles(): void {
-  Promise.all([
-    props.networkManager.requestManager.listConvertibleMatrices(),
-    props.networkManager.requestManager.listFiles(),
-  ])
-    .then(([coolers, files]) => {
-      batchFiles.value = coolers;
-      allFiles.value = new Set(files);
-      if (
-        props.initialCoolerFilename &&
-        coolers.includes(props.initialCoolerFilename)
-      ) {
-        batchSelection.value = new Set<string>([props.initialCoolerFilename]);
-      } else {
-        batchSelection.value = new Set<string>();
-      }
-    })
-    .catch((e) => {
-      errorMessage.value = e;
-    });
+function convertible(file: string) {
+  return /\.(hic|m?cool)$/i.test(file) || isHictkLoadFilename(file);
+}
+async function loadBatchFiles(folder: string, recursive = false) {
+  const request = ++listingRequest;
+  filesLoading.value = true;
+  errorMessage.value = null;
+  try {
+    const api = props.networkManager.requestManager;
+    const entries: FileSelectionTableEntry[] = recursive
+      ? (await api.listFiles()).map((path) => ({ path, type: "file" }))
+      : await api.listDirectory(folder);
+    if (request !== listingRequest) return;
+    currentFolder.value = folder;
+    recursiveList.value = recursive;
+    for (const entry of entries) {
+      if (entry.type !== "directory" && convertible(entry.path))
+        existingOutputs.value.delete(deriveOutputFilename(entry.path));
+    }
+    for (const entry of entries) {
+      if (entry.path.toLowerCase().endsWith(".hict.hdf5"))
+        existingOutputs.value.add(entry.path);
+    }
+    batchFileEntries.value = entries.filter(
+      (e) => e.type === "directory" || convertible(e.path)
+    );
+  } catch (error) {
+    if (request === listingRequest) errorMessage.value = error;
+  } finally {
+    if (request === listingRequest) filesLoading.value = false;
+  }
+}
+function onBatchEntryActivated(path: string) {
+  if (
+    batchFileEntries.value.some(
+      (e) => e.path === path && e.type === "directory"
+    )
+  )
+    void loadBatchFiles(path);
 }
 
 function loadToolchainStatus(): void {
@@ -619,19 +766,17 @@ function loadToolchainStatus(): void {
 
 function isConverted(file: string): boolean {
   const output = deriveOutputFilename(file);
-  return allFiles.value.has(output);
+  return existingOutputs.value.has(output);
 }
-
-const batchFileEntries = computed<FileSelectionTableEntry[]>(() =>
-  batchFiles.value.map((filename) => ({
-    path: filename,
-  }))
-);
 
 const batchSelectedPaths = computed(() => Array.from(batchSelection.value));
 
 const batchFileStatusLabel = (filename: string): string =>
-  isConverted(filename) ? "Converted" : "Unconverted";
+  !convertible(filename)
+    ? ""
+    : isConverted(filename)
+    ? "Converted"
+    : "Unconverted";
 
 const batchFileStatusClass = (filename: string): string =>
   isConverted(filename) ? "converted" : "unconverted";
@@ -666,7 +811,10 @@ function onBatchSelectionUpdated(files: string[]): void {
 }
 
 function selectAll(): void {
-  batchSelection.value = new Set(batchFiles.value);
+  batchSelection.value = new Set([
+    ...batchSelection.value,
+    ...batchFiles.value,
+  ]);
 }
 
 function selectNone(): void {
@@ -674,40 +822,30 @@ function selectNone(): void {
 }
 
 function invertSelection(): void {
-  const next = new Set<string>();
-  batchFiles.value.forEach((file) => {
-    if (!batchSelection.value.has(file)) {
-      next.add(file);
-    }
-  });
+  const next = new Set(batchSelection.value);
+  for (const file of batchFiles.value) {
+    if (!next.delete(file)) next.add(file);
+  }
   batchSelection.value = next;
 }
 
-function selectAllConverted(): void {
-  const next = new Set<string>();
-  batchFiles.value.forEach((file) => {
-    if (isConverted(file)) {
-      next.add(file);
-    }
-  });
+function selectConvertedStatus(converted: boolean): void {
+  const next = new Set(batchSelection.value);
+  for (const file of batchFiles.value) {
+    if (isConverted(file) === converted) next.add(file);
+    else next.delete(file);
+  }
   batchSelection.value = next;
-}
-
-function selectAllUnconverted(): void {
-  const next = new Set<string>();
-  batchFiles.value.forEach((file) => {
-    if (!isConverted(file)) {
-      next.add(file);
-    }
-  });
-  batchSelection.value = next;
-}
-
-function proceedBatchSettings(): void {
-  batchStep.value = "settings";
 }
 
 async function startBatchConversion(): Promise<void> {
+  if (
+    submitting.value ||
+    batchBlockedMessage.value ||
+    !batchSelection.value.size
+  )
+    return;
+  submitting.value = true;
   const files = Array.from(batchSelection.value);
   const alreadyConverted = files.filter((file) => isConverted(file));
   const overwriteExisting = alreadyConverted.length > 0;
@@ -716,11 +854,12 @@ async function startBatchConversion(): Promise<void> {
       `${alreadyConverted.length} selected file(s) already have converted outputs. Overwrite existing outputs?`
     );
     if (!approved) {
+      submitting.value = false;
       return;
     }
   }
-  batchStatusMap.value.clear();
-  batchProgressMap.value.clear();
+  if (disposed) return;
+  batchJobs.value.clear();
   props.networkManager.requestManager
     .startBatchConversionJobs(
       new StartBatchConversionJobsRequest({
@@ -728,57 +867,81 @@ async function startBatchConversion(): Promise<void> {
         assemblyFilename: batchAssemblyFilename.value || undefined,
         parallelJobs: batchParallelJobs.value,
         parallelism: batchParallelism.value,
-        overwrite: overwriteExisting,
+        overwrite: overwriteExisting || forceConversion.value,
         binTableFilename: batchBinTableFilename.value || undefined,
         chromSizesFilename: batchChromSizesFilename.value || undefined,
-        binSize: batchBinSize.value ?? undefined,
+        binSize:
+          typeof batchBinSize.value === "number"
+            ? batchBinSize.value
+            : undefined,
       })
     )
     .then((resp) => {
+      if (disposed) {
+        trackPendingJobs(resp.jobIds);
+        return;
+      }
+      submittedBatch = true;
       batchJobIds.value = resp.jobIds;
       batchStep.value = "progress";
     })
     .catch((e) => {
       errorMessage.value = e;
+    })
+    .finally(() => {
+      submitting.value = false;
     });
 }
 
-function onBatchStatusUpdate(payload: {
-  jobId: string;
-  status: string;
-  overallProgress: number;
-}): void {
-  batchStatusMap.value.set(payload.jobId, payload.status);
-  batchProgressMap.value.set(payload.jobId, payload.overallProgress);
+function trackPendingJobs(ids: string[]): void {
+  for (const id of ids) {
+    const status = batchJobs.value.get(id)?.status;
+    if (!status || status === "queued" || status === "running") {
+      jobsUi.closedConverterJobs.add(`conversion/${id}`);
+    }
+  }
 }
 
-const overallBatchStatusLabel = computed(() => {
-  const statuses = Array.from(batchStatusMap.value.values());
-  if (!statuses.length) return "Running";
-  if (statuses.some((s) => s === "failed")) return "Failed";
-  if (statuses.some((s) => s === "cancelled")) return "Cancelled";
-  if (statuses.every((s) => s === "finished")) return "Finished";
-  if (statuses.some((s) => s === "running")) return "Running";
-  if (statuses.some((s) => s === "queued")) return "Queued";
-  return "Running";
+function isMap(job: ConversionJobResponse): boolean {
+  return job.outputFilename.toLowerCase().endsWith(".hict.hdf5");
+}
+
+const finishedMap = computed(() => {
+  if (batchJobIds.value.length !== 1) return undefined;
+  const job = batchJobs.value.get(batchJobIds.value[0]);
+  return job?.status === "finished" && isMap(job) ? job : undefined;
 });
 
-const overallBatchStatusClass = computed(() => {
-  switch (overallBatchStatusLabel.value) {
-    case "Finished":
-      return "finished";
-    case "Failed":
-      return "failed";
-    case "Cancelled":
-      return "cancelled";
-    case "Queued":
-      return "queued";
-    default:
-      return "running";
+const batchToolInfo = computed(() =>
+  Array.from(new Set(Array.from(batchJobs.value.values()).flatMap((job) => [
+    ...job.toolchainNotices,
+    ...job.toolchainCitations,
+  ])))
+);
+
+function openConvertedMap(job: ConversionJobResponse): void {
+  disposed = true;
+  jobsUi.closedConverterJobs.delete(`conversion/${job.jobId}`);
+  emit("dismissed");
+  emit("open-map", job.outputFilename);
+}
+
+function onBatchStatusUpdate(job: ConversionJobResponse): void {
+  if (disposed) return;
+  const wasFinished = batchJobs.value.get(job.jobId)?.status === "finished";
+  batchJobs.value.set(job.jobId, job);
+  if (submittedBatch && !wasFinished && openWhenReady.value && finishedMap.value) {
+    openConvertedMap(finishedMap.value);
   }
-});
+}
 
 const batchBlockedMessage = computed(() => {
+  if (
+    typeof batchBinSize.value === "number" &&
+    (!Number.isSafeInteger(batchBinSize.value) || batchBinSize.value < 1)
+  ) {
+    return "Enter a positive whole number for the bin size.";
+  }
   const hasHicSelection = Array.from(batchSelection.value).some((file) =>
     requiresHicToolchain(file)
   );
@@ -942,49 +1105,32 @@ function isChromSizesFilename(name: string): boolean {
   padding-right: 6px;
 }
 
-.overall-status {
-  margin-bottom: 8px;
+.batch-tool-info {
+  margin-top: 12px;
+  color: #475467;
+  font-size: 13px;
 }
-
-.status-pill.finished {
-  background: #d1fae5;
-  color: #065f46;
+.batch-tool-info summary { cursor: pointer; }
+.open-on-ready {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
 }
-.status-pill.running {
-  background: #bfdbfe;
-  color: #1e3a8a;
-}
-.status-pill.queued {
-  background: #fef3c7;
-  color: #92400e;
-}
-.status-pill.failed {
-  background: #fee2e2;
-  color: #991b1b;
-}
-.status-pill.cancelled {
-  background: #e5e7eb;
-  color: #374151;
-}
-
-.modal-content {
-  position: relative;
+.open-on-ready input { margin: 0; }
+.open-converted-map { font-weight: 600; }
+.converter-shell {
+  display: block;
 }
 
 .converter-dialog {
-  max-width: 80vw;
-  width: 80vw;
+  --bs-modal-width: 760px;
 }
 
 .converter-dialog .modal-content {
+  position: relative;
   max-height: min(92vh, 980px);
-}
-
-@media (max-width: 768px) {
-  .converter-dialog {
-    max-width: calc(100vw - 1rem);
-    width: calc(100vw - 1rem);
-  }
+  --hict-surface-bg: #fff;
 }
 
 .overwrite-confirm-backdrop {

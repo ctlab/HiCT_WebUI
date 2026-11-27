@@ -80,11 +80,12 @@ import {
   ListFilesRequest,
   ResolveMatrixSourceRequest,
   DropAllCachesRequest,
+  CleanupProcessedStorageRequest,
+  type ProcessedStorageAction,
   LoadAGPRequest,
   MoveSelectionRangeRequest,
   OpenFileRequest,
   ReverseSelectionRangeRequest,
-  SaveFileRequest,
   UngroupContigsFromScaffoldRequest,
   type HiCTAPIRequest,
   SplitContigRequest,
@@ -113,6 +114,7 @@ import {
   GetSessionSnapshotRequest,
   RestoreSessionRequest,
   AttachSessionRequest,
+  SessionAvailabilityRequest,
   CloseFileRequest,
   OpenProgressRequest,
   OpenSecondarySourceRequest,
@@ -170,7 +172,10 @@ import {
   WorkerSchedulerDiagnosticsResponse,
 } from "./response";
 import { toast } from "vue-sonner";
-import { SequenceAnalysisRequest } from "./SequenceAnalysisRequest";
+import { SequenceAnalysisRequest, type SequenceAnalysisEstimate, type SequenceAnalysisJob } from "./SequenceAnalysisRequest";
+import { EstimateFastaDotplotRequest, SequenceOverlayRequest, type SequenceOverlayOptions } from "./request";
+import { ListDotplotResultsRequest, OpenDotplotResultRequest, ShowDotplotResultRequest,
+  DeleteDotplotResultRequest, DownloadDotplotResultRequest } from "./request";
 import { useSessionStore } from "@/app/stores/sessionStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 import { extractErrorMessage } from "./errorMessage";
@@ -185,6 +190,7 @@ export interface BackgroundJobOutput {
     | "download"
     | "open_tracks"
     | "open_blast_results"
+    | "attach_overview"
     | "attach_identity"
     | "attach_dotplot"
     | "fasta_only"
@@ -367,6 +373,9 @@ const assemblySessionPaths = new Set([
   "/secondary/open",
   "/secondary/close",
   "/secondary/set_assembly_source",
+  "/sequence/overlays/open",
+  "/sequence/overlays/show",
+  "/sequence/overlays/delete",
   "/session/restore",
 ]);
 
@@ -384,6 +393,9 @@ export interface AttachedSession {
   tracks?: Record<string, unknown>[];
 }
 
+export type NormalizationSource = "PRIMARY" | "SECONDARY";
+export type NormalizationWeightMode = "FILE" | "SQRT_COVERAGE";
+
 /** State of the square-root coverage preparation job and of the weights tiles use. */
 export type CoverageNormalizationStatus = {
   state: "IDLE" | "RUNNING" | "READY" | "FAILED" | "CANCELLED";
@@ -391,12 +403,11 @@ export type CoverageNormalizationStatus = {
   message: string;
   algorithm: string;
   error: string | null;
-  /** Vectors exist for every open source. */
+  source: NormalizationSource;
+  jobId: number;
+  /** All resolutions of this source have coverage vectors. */
   prepared: boolean;
-  /** Weights the primary source uses when weights are applied. */
-  mode: "FILE" | "SQRT_COVERAGE";
-  /** Every open source uses the same weights. */
-  consistent: boolean;
+  mode: NormalizationWeightMode;
   estimatedBytes: number;
 };
 
@@ -507,11 +518,70 @@ const journalResetPaths = new Set([
   "/secondary/open",
   "/secondary/close",
   "/secondary/set_assembly_source",
+  "/sequence/overlays/open",
+  "/sequence/overlays/show",
+  "/sequence/overlays/delete",
 ]);
+
+export type DotplotDisplayMode = "overlay" | "above" | "below";
+export type DotplotRegion = {
+  index: number;
+  rows: { start: number; end: number };
+  columns: { start: number; end: number };
+  levels: number[];
+  finest: number;
+  addedAt: string;
+  split: boolean;
+};
+export type DotplotResult = {
+  id: string;
+  kind: "dotplot" | "moddotplot";
+  name: string;
+  settingsSummary: string;
+  file: string;
+  downloadFilename: string;
+  sizeBytes: number;
+  resolutions: number[];
+  shown: boolean;
+  displayMode: DotplotDisplayMode;
+  regions: DotplotRegion[];
+};
+export type DotplotResultMutation = Pick<DotplotResult, "id" | "kind" | "shown" | "displayMode"> & {
+  secondarySource?: SecondarySourceStatusResponse;
+};
+
+export type ProcessedStorageCategory = "cache" | "coverage" | "maps" | "dotplots" | "scratch" | "sequence" | "metadata" | "other";
+
+export type ProcessedStorageFile = {
+  id: string;
+  path: string;
+  category: ProcessedStorageCategory;
+  bytes: number;
+  modifiedAtMs: number;
+  action: ProcessedStorageAction | null;
+  protectedReason: string | null;
+};
+
+export type ProcessedStorage = {
+  roots: string[];
+  files: ProcessedStorageFile[];
+  jobsActive: boolean;
+  oldDays: number;
+  unreadable: number;
+};
+
+export type ProcessedStorageCleanup = {
+  deleted: number;
+  bytes: number;
+  changedOrMissing: number;
+  skipped: { path: string; reason: string }[];
+};
 
 class RequestManager {
   private workspaceVersion?: { session: string; revision: number };
+  private pendingSessionClose?: Promise<void>;
   public renderPipelineRevision = 0;
+  public lastRenderPipelineConfig?: Readonly<Record<string, unknown>>;
   private readonly sequenceState = shallowReactive({
     revision: 0,
     linked: false,
@@ -596,6 +666,18 @@ class RequestManager {
     return response.data as HistoryPage;
   }
 
+  public async refreshDisplayedAssembly(onlyIfChanged = false): Promise<boolean> {
+    const { summary } = await this.getAssemblyHistory();
+    if (!summary) throw new Error("No assembly is open.");
+    const applied = this.history.applied;
+    if (onlyIfChanged && summary.session === applied?.session && summary.revision === applied.revision) {
+      return false;
+    }
+    if (this.history.busy) throw new Error("Wait for the current assembly edit to finish, then try again.");
+    await this.restoreAssemblyHistory("restore", summary.currentId);
+    return true;
+  }
+
   public async restoreAssemblyHistory(
     action: "undo" | "redo" | "restore",
     id?: number
@@ -618,11 +700,7 @@ class RequestManager {
     if (!manager) return;
     manager.deactivateTranslocation();
     manager.viewAndLayersManager.currentViewState.activeTool = undefined;
-    manager.eventManager.resetSelection();
-    manager.contigDimensionHolder.updateContigData(assembly.contigDescriptors);
-    manager.scaffoldHolder.updateScaffoldData(assembly.scaffoldDescriptors);
-    manager.getLayersManager().reapplyAxisScopes();
-    manager.refreshOverviewMinimap();
+    manager.eventManager.applyAssemblyInfo(assembly, action === "restore" ? "clear" : action);
     manager.reloadVisuals();
   }
 
@@ -836,9 +914,19 @@ class RequestManager {
 
   public async sendRequest(
     request: HiCTAPIRequest,
-    axiosConfig?: AxiosRequestConfig | undefined
+    axiosConfig?: AxiosRequestConfig,
+    address = this.networkManager.host
   ): Promise<AxiosResponse> {
-    const host = this.networkManager.host.replace(/\/+$/, "");
+    if (
+      this.pendingSessionClose &&
+      ((assemblySessionPaths.has(request.requestPath) &&
+        request.requestPath !== "/close") ||
+        request.requestPath === "/attach" ||
+        request.requestPath === "/session/availability")
+    ) {
+      await this.pendingSessionClose.catch(() => undefined);
+    }
+    const host = address.replace(/\/+$/, "");
     const path = request.requestPath.replace(/^\/+/, "");
     const mutation = assemblyMutationPaths.has(request.requestPath);
     if (
@@ -939,6 +1027,12 @@ class RequestManager {
       .catch((err) => {
         // A failed/conflicting command can leave another client's newer journal.
         if (tracked) void this.getAssemblyHistory().catch(() => undefined);
+        if (axios.isAxiosError(err) && !err.response && !axios.isCancel(err)) {
+          throw new Error(
+            `Can't reach the HiCT server at ${host}. Start HiCT, or check the address in File → Join running session.`,
+            { cause: err }
+          );
+        }
         throw err;
       })
       .finally(() => {
@@ -960,7 +1054,10 @@ class RequestManager {
         this.bumpSequenceRevision();
         this.markAssemblySaved();
         const response = new OpenFileResponseDTO(json).toEntity();
+        this.resetNormalization("PRIMARY");
+        this.resetNormalization("SECONDARY");
         this.sourceCapabilities = { PRIMARY: response.capabilities };
+        this.lastRenderPipelineConfig = undefined;
         return response;
       });
   }
@@ -978,16 +1075,19 @@ class RequestManager {
 
   /** Keeps the "open files" display in step with every attach/detach, whichever dialog caused it. */
   private publishSecondarySourceStatus(
-    status: SecondarySourceStatusResponse
+    status: SecondarySourceStatusResponse,
+    replaced = false
   ): SecondarySourceStatusResponse {
     if (!status.requiresConfirmation) {
+      const session = useSessionStore();
+      const filename = status.attached ? status.filename : "";
+      if (replaced || session.secondaryMapFilename !== filename)
+        this.resetNormalization("SECONDARY");
       this.sourceCapabilities = {
         ...this.sourceCapabilities,
         SECONDARY: status.attached ? status.capabilities : undefined,
       };
-      useSessionStore().setSecondaryMapFilename(
-        status.attached ? status.filename : ""
-      );
+      session.setSecondaryMapFilename(filename);
     }
     return status;
   }
@@ -1039,14 +1139,47 @@ class RequestManager {
     )
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => this.parseSecondarySourceStatus(json))
-      .then((status) => this.publishSecondarySourceStatus(status));
+      .then((status) => this.publishSecondarySourceStatus(status, true));
   }
 
   public async closeSecondarySource(): Promise<SecondarySourceStatusResponse> {
     return this.sendRequest(new CloseSecondarySourceRequest())
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => this.parseSecondarySourceStatus(json))
-      .then((status) => this.publishSecondarySourceStatus(status));
+      .then((status) => this.publishSecondarySourceStatus(status, true));
+  }
+
+  public async listDotplotResults(): Promise<DotplotResult[]> {
+    return (await this.sendRequest(new ListDotplotResultsRequest())).data;
+  }
+
+  private async mutateDotplotResult(
+    request: OpenDotplotResultRequest | ShowDotplotResultRequest | DeleteDotplotResultRequest
+  ): Promise<DotplotResultMutation> {
+    const { data } = await this.sendRequest(request);
+    const secondarySource = data.secondarySource
+      ? this.publishSecondarySourceStatus(this.parseSecondarySourceStatus(data.secondarySource), true)
+      : undefined;
+    return { ...data, secondarySource };
+  }
+
+  public openDotplotResult(filename: string): Promise<DotplotResultMutation> {
+    return this.mutateDotplotResult(new OpenDotplotResultRequest(filename));
+  }
+
+  public showDotplotResult(id: string, shown: boolean): Promise<DotplotResultMutation> {
+    return this.mutateDotplotResult(new ShowDotplotResultRequest(id, shown));
+  }
+
+  public deleteDotplotResult(id: string): Promise<DotplotResultMutation> {
+    return this.mutateDotplotResult(new DeleteDotplotResultRequest(id));
+  }
+
+  public downloadDotplotResult(id: string): Promise<Response> {
+    const request = new DownloadDotplotResultRequest(id);
+    const address = this.networkManager.host.replace(/\/+$/, "");
+    const params = new URLSearchParams(HiCTAPIRequestDTO.toDTOClass(request).toDTO() as { id: string });
+    return fetch(`${address}${request.requestPath}?${params}`);
   }
 
   public async setAssemblyInfoSource(
@@ -1070,17 +1203,34 @@ class RequestManager {
       }));
   }
 
-  public async closeFile(): Promise<void> {
-    await this.sendRequest(new CloseFileRequest());
-    this.assemblySavedMark = null;
-    this.sourceCapabilities = {};
-    this.workspaceVersion = undefined;
-    this.hasLinkedFasta = false;
-    this.bumpSequenceRevision();
+  public closeFile(pendingOptions?: Promise<void>): Promise<void> {
+    const close = async () => {
+      await pendingOptions?.catch(() => undefined);
+      await this.sendRequest(new CloseFileRequest());
+      this.assemblySavedMark = null;
+      this.resetNormalization("PRIMARY");
+      this.resetNormalization("SECONDARY");
+      this.sourceCapabilities = {};
+      this.lastRenderPipelineConfig = undefined;
+      this.workspaceVersion = undefined;
+      this.hasLinkedFasta = false;
+      this.bumpSequenceRevision();
+    };
+    this.pendingSessionClose ??= close().finally(() => {
+      this.pendingSessionClose = undefined;
+    });
+    return this.pendingSessionClose;
   }
 
-  public async attachSession(): Promise<AttachedSession> {
-    return this.sendRequest(new AttachSessionRequest())
+  public async canJoinSession(address?: string): Promise<boolean> {
+    const reply = await this.sendRequest(
+      new SessionAvailabilityRequest(), { method: "GET" }, address
+    );
+    return reply.data?.available === true;
+  }
+
+  public async attachSession(address?: string): Promise<AttachedSession> {
+    return this.sendRequest(new AttachSessionRequest(), undefined, address)
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => this.adoptSessionPayload(json));
   }
@@ -1115,7 +1265,12 @@ class RequestManager {
     const response = new OpenFileResponseDTO(
       json["openFileResponse"] as Record<string, unknown>
     ).toEntity();
+    this.resetNormalization("PRIMARY");
+    this.resetNormalization("SECONDARY");
     this.sourceCapabilities = { PRIMARY: response.capabilities };
+    this.lastRenderPipelineConfig = json.renderPipeline as
+      | Record<string, unknown>
+      | undefined;
     return {
       filename,
       fastaFilename,
@@ -1234,6 +1389,22 @@ class RequestManager {
       }));
   }
 
+  public async getProcessedStorage(): Promise<ProcessedStorage> {
+    const response = await this.sendRequest(
+      { requestPath: "/storage/processed" },
+      { method: "GET" }
+    );
+    return response.data;
+  }
+
+  public async cleanupProcessedStorage(
+    action: ProcessedStorageAction,
+    ids: string[]
+  ): Promise<ProcessedStorageCleanup> {
+    const response = await this.sendRequest(new CleanupProcessedStorageRequest(action, ids));
+    return response.data;
+  }
+
   public async openTrack(
     filename: string,
     name?: string,
@@ -1244,20 +1415,50 @@ class RequestManager {
       .then((json) => new TrackSummaryResponseDTO(json).toEntity());
   }
 
-  private readonly normalizationState = shallowReactive({
-    mode: "FILE" as "FILE" | "SQRT_COVERAGE",
+  private readonly normalizationState = shallowReactive<
+    Record<
+      NormalizationSource,
+      { mode: NormalizationWeightMode; revision: number }
+    >
+  >({
+    PRIMARY: { mode: "FILE", revision: 0 },
+    SECONDARY: { mode: "FILE", revision: 0 },
   });
-  /** The weights the server applies when weights are on. Reactive, shared by every view of it. */
-  public get normalizationWeightsMode(): "FILE" | "SQRT_COVERAGE" {
-    return this.normalizationState.mode;
+
+  public getNormalizationWeightsMode(
+    source: NormalizationSource
+  ): NormalizationWeightMode {
+    return this.normalizationState[source].mode;
+  }
+
+  public getNormalizationSourceRevision(source: NormalizationSource): number {
+    return this.normalizationState[source].revision;
+  }
+
+  private resetNormalization(source: NormalizationSource): void {
+    this.normalizationState[source] = {
+      mode: "FILE",
+      revision: this.getNormalizationSourceRevision(source) + 1,
+    };
   }
 
   private noteNormalization(
-    status: CoverageNormalizationStatus
-  ): CoverageNormalizationStatus {
-    if (status.mode === "FILE" || status.mode === "SQRT_COVERAGE")
-      this.normalizationState.mode = status.mode;
-    return status;
+    source: NormalizationSource,
+    mode: NormalizationWeightMode,
+    revision: number,
+    receivedSource: NormalizationSource | undefined
+  ): void {
+    if ((receivedSource ?? "PRIMARY") !== source)
+      throw new Error(
+        "The server returned normalization for a different source."
+      );
+    const current = this.normalizationState[source];
+    if (
+      revision === current.revision &&
+      (mode === "FILE" || mode === "SQRT_COVERAGE") &&
+      current.mode !== mode
+    )
+      this.normalizationState[source] = { mode, revision };
   }
 
   public readonly backgroundResultDelivery = new BackgroundResultDelivery();
@@ -1334,40 +1535,66 @@ class RequestManager {
     );
   }
 
-  public async prepareCoverageNormalization(): Promise<CoverageNormalizationStatus> {
-    return this.sendRequest(new PrepareCoverageNormalizationRequest())
-      .then((response) => this.noteNormalization(response.data))
-      .catch((error) => {
-        throw new Error(
-          extractErrorMessage(error, "Coverage preparation request failed")
-        );
-      });
+  private async requestNormalizationStatus(
+    request: HiCTAPIRequest,
+    source: NormalizationSource
+  ): Promise<CoverageNormalizationStatus> {
+    const revision = this.getNormalizationSourceRevision(source);
+    const { data } = await this.sendRequest(request);
+    const status = data as CoverageNormalizationStatus;
+    this.noteNormalization(source, status.mode, revision, status.source);
+    return status;
   }
 
-  public async coverageNormalizationStatus(): Promise<CoverageNormalizationStatus> {
-    return this.sendRequest(new CoverageNormalizationStatusRequest()).then(
-      (response) => this.noteNormalization(response.data)
+  public async prepareCoverageNormalization(
+    source: NormalizationSource = "PRIMARY"
+  ): Promise<CoverageNormalizationStatus> {
+    try {
+      return await this.requestNormalizationStatus(
+        new PrepareCoverageNormalizationRequest({ source }),
+        source
+      );
+    } catch (error) {
+      throw new Error(
+        extractErrorMessage(error, "Coverage preparation request failed")
+      );
+    }
+  }
+
+  public coverageNormalizationStatus(
+    source: NormalizationSource = "PRIMARY"
+  ): Promise<CoverageNormalizationStatus> {
+    return this.requestNormalizationStatus(
+      new CoverageNormalizationStatusRequest({ source }),
+      source
     );
   }
 
-  public async cancelCoverageNormalization(): Promise<CoverageNormalizationStatus> {
-    return this.sendRequest(new CancelCoverageNormalizationRequest()).then(
-      (response) => this.noteNormalization(response.data)
+  public cancelCoverageNormalization(
+    source: NormalizationSource = "PRIMARY"
+  ): Promise<CoverageNormalizationStatus> {
+    return this.requestNormalizationStatus(
+      new CancelCoverageNormalizationRequest({ source }),
+      source
     );
   }
 
-  /** Switches the weights of every open source together. Coverage must have been prepared. */
+  /** Selects vectors only for the source whose signal settings are being edited. */
   public async selectNormalizationWeights(
-    mode: "FILE" | "SQRT_COVERAGE"
-  ): Promise<{ mode: string; version: number }> {
-    return this.sendRequest(
-      new SelectNormalizationWeightsRequest({ mode })
-    ).then((response) => {
-      const result = response.data as { mode: string; version: number };
-      if (result.mode === "FILE" || result.mode === "SQRT_COVERAGE")
-        this.normalizationState.mode = result.mode;
-      return result;
-    });
+    mode: NormalizationWeightMode,
+    source: NormalizationSource = "PRIMARY"
+  ): Promise<{ mode: NormalizationWeightMode; version: number }> {
+    const revision = this.getNormalizationSourceRevision(source);
+    const { data } = await this.sendRequest(
+      new SelectNormalizationWeightsRequest({ mode, source })
+    );
+    const result = data as {
+      source: NormalizationSource;
+      mode: NormalizationWeightMode;
+      version: number;
+    };
+    this.noteNormalization(source, result.mode, revision, result.source);
+    return result;
   }
 
   public async openCoolerWeightsTrack(
@@ -1663,26 +1890,37 @@ class RequestManager {
   }
 
   public async getRenderPipelineConfig(): Promise<Record<string, unknown>> {
-    return this.sendRequest(new GetRenderPipelineRequest()).then(
-      (response) => response.data as Record<string, unknown>
-    );
+    const revision = this.renderPipelineRevision;
+    const session = this.workspaceVersion?.session;
+    const response = await this.sendRequest(new GetRenderPipelineRequest());
+    const config = response.data as Record<string, unknown>;
+    if (
+      revision === this.renderPipelineRevision &&
+      session === this.workspaceVersion?.session
+    )
+      this.lastRenderPipelineConfig = config;
+    return config;
   }
 
   public async setRenderPipelineConfig(
     config: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    ++this.renderPipelineRevision;
+    const revision = ++this.renderPipelineRevision;
     const response = await this.sendRequest(
       new SetRenderPipelineRequest(config)
     );
+    if (revision === this.renderPipelineRevision)
+      this.lastRenderPipelineConfig = response.data as Record<string, unknown>;
     if (typeof window !== "undefined")
       window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
     return response.data as Record<string, unknown>;
   }
 
   public async resetRenderPipelineConfig(): Promise<Record<string, unknown>> {
-    ++this.renderPipelineRevision;
+    const revision = ++this.renderPipelineRevision;
     const response = await this.sendRequest(new ResetRenderPipelineRequest());
+    if (revision === this.renderPipelineRevision)
+      this.lastRenderPipelineConfig = response.data as Record<string, unknown>;
     if (typeof window !== "undefined")
       window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
     return response.data as Record<string, unknown>;
@@ -1739,10 +1977,30 @@ class RequestManager {
     return this.sendRequest(request).then((response) => response.data);
   }
 
+  public async estimateSequenceOverlay(
+    kind: "dotplot" | "moddotplot",
+    options: SequenceOverlayOptions
+  ): Promise<SequenceAnalysisEstimate> {
+    const response = await this.sendRequest(new SequenceOverlayRequest(kind, "estimate", options));
+    return response.data;
+  }
+
+  public async listSequenceJobs(): Promise<SequenceAnalysisJob[]> {
+    const response = await this.sendRequest(new SequenceAnalysisRequest("/sequence/jobs/list"));
+    return response.data;
+  }
+
   public async startDotplotJobs(
     request: StartDotplotJobsRequest
   ): Promise<{ status: string; groupId: string; jobIds: string[] }> {
     return this.sendRequest(request).then((response) => response.data);
+  }
+
+  public async estimateFastaDotplot(
+    options: StartDotplotJobsRequest["options"]
+  ): Promise<SequenceAnalysisEstimate> {
+    const result = await this.sendRequest(new EstimateFastaDotplotRequest(options));
+    return result.data;
   }
 
   public async listDotplotJobs(): Promise<ConversionJobResponse[]> {
@@ -1848,7 +2106,8 @@ class RequestManager {
   }
 
   public async getBackendVersion(): Promise<
-    { version: string; webuiVersion?: string } | string
+    | { version: string; webuiVersion?: string; backendRevision?: string }
+    | string
   > {
     const host = this.networkManager.host.replace(/\/+$/, "");
     return axios
@@ -1966,6 +2225,7 @@ class RequestManager {
       | "PIPELINE_SIGNAL";
     expression?: Record<string, unknown>;
     signal?: AbortSignal;
+    respectDiagonalMask?: boolean;
   }): Promise<{
     rows: number;
     cols: number;
@@ -1994,6 +2254,7 @@ class RequestManager {
         signalMode: options.signalMode ?? "TRADITIONAL_NORMALIZED",
         format: "BINARY_FLOAT32",
         expression: options.expression,
+        ...(options.respectDiagonalMask ? { respectDiagonalMask: true } : {}),
       },
       {
         responseType: "arraybuffer",
@@ -2024,12 +2285,6 @@ class RequestManager {
     return response.data as string[];
   }
 
-  public async save(): Promise<void> {
-    return this.sendRequest(new SaveFileRequest({})).then(() => {
-      return;
-    });
-  }
-
   public async loadAGP(
     request: LoadAGPRequest,
     options: { updateAssemblyState?: boolean } = {}
@@ -2057,7 +2312,10 @@ class RequestManager {
           asmInfo.scaffoldDescriptors
         );
         this.networkManager.mapManager?.getLayersManager().reapplyAxisScopes();
-        this.networkManager.mapManager?.reloadVisuals();
+        const version = response.data.version;
+        this.networkManager.mapManager?.reloadVisuals(
+          Number.isSafeInteger(version) && version >= 0 ? version : undefined
+        );
       }
       return asmInfo;
     } catch (err) {
@@ -2320,7 +2578,10 @@ class RequestManager {
   ): Promise<VisualizationOptions> {
     const publishesPipeline = request.options.renderPipeline !== undefined;
     if (publishesPipeline) ++this.renderPipelineRevision;
+    const revision = this.renderPipelineRevision;
     const response = await this.sendRequest(request);
+    if (publishesPipeline && revision === this.renderPipelineRevision)
+      this.lastRenderPipelineConfig = request.options.renderPipeline;
     if (publishesPipeline && typeof window !== "undefined")
       window.dispatchEvent(new CustomEvent("hict:render-pipeline-changed"));
     return new VisualizationOptionsDTO(response.data).toEntity();

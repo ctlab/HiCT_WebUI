@@ -6,7 +6,7 @@ comparison layers, background analyses and PNG, SVG and PDF export.
 
 ## Run a packaged application
 
-Download the package for your platform from the JVM repository's releases.
+Download the package for your platform from the [HiCT releases](https://github.com/ctlab/HiCT_JVM/releases).
 It includes the server, this WebUI, Java and native analysis tools. Choose a
 writable data folder in the Launcher, press Start and open the browser interface.
 The default interface is `http://localhost:8080` with its API on port 5000.
@@ -20,13 +20,13 @@ examples retain their conversion wizard.
 
 Use **Open map…** for native `.hict.hdf5` files and **Open with options…** for
 conversion. Select with a click or Shift-drag. The toolbar edits the assembly.
-The Journal provides Undo and Redo. File saves and restores sessions. Assembly
+Undo and Redo are available in the left toolbar and Edit menu. File saves and restores sessions. Assembly
 exports AGP and FASTA. Export above the map produces PNG, SVG and PDF.
 [User guide and shortcuts](https://github.com/ctlab/HiCT_JVM/blob/jvm-sfx-native/docs/user-guide.md).
 
 ## Develop
 
-Use Node.js and npm. Keep `HiCT_JVM` beside this checkout for the integrated
+Use Node.js 24 LTS and npm. Keep `HiCT_JVM` beside this checkout for the integrated
 packaged build. A WebUI-only build also works independently in this Git checkout.
 
 ```sh
@@ -43,11 +43,15 @@ About. Run ESLint without automatic edits when reviewing changes.
 npx eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --ignore-path .gitignore
 ```
 
-The development UI connects to `http://localhost:5000`. Start the JVM server
-with disposable data for integration testing. The backend serves its offline
-API reference at `http://localhost:5000/api/v1/`. Remote use requires forwarding
-both service ports or configuring the API address. Restrict the server's bind
-host and network access as described in the JVM README.
+The production UI uses the same address as the server that serves the page.
+The JVM server serves both the UI and its offline API reference at
+`http://localhost:8080/` and `http://localhost:8080/api/v1/`. Remote use needs
+one forwarded port. For local frontend development, Vite uses 8080 and the
+development UI connects to `http://localhost:5000` by default. Start a JVM
+server with `HICT_PORT=5000` and disposable data, or set `VITE_HICT_API` to the
+address of the chosen development server. Running `start-server`
+directly binds to `0.0.0.0` by default. Set `HICT_BIND_HOST=127.0.0.1` for
+local-only connections. Portable launchers already default to loopback.
 
 Electron and Tauri payload build scripts are listed in `package.json`. The JVM
 portable pipeline incorporates the selected browser payload. Desktop save-dialog

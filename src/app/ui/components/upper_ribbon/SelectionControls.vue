@@ -1,36 +1,27 @@
 <template>
-  <li class="nav-item dropdown">
-    <a
-      class="nav-link active dropdown-toggle selection-label"
-      aria-label="Selection"
+  <div class="nav-item dropdown">
+    <button
+      type="button"
+      class="btn btn-sm btn-outline-primary dropdown-toggle selection-label"
       data-bs-toggle="dropdown"
-      :data-bs-popper-config="popperConfig"
-      href="#"
-      :title="
-        summary + ' · Shift-drag entities; Ctrl/Cmd-drag a region; Esc clears.'
-      "
-      >{{ label }}</a
+      :data-bs-popper-config="navbarPopperConfig"
+      :disabled="!mapManager"
+      :title="mapManager ? fullLabel : 'Open a map to select a region'"
+      :aria-label="fullLabel"
     >
+      <span>{{ label }}</span>
+    </button>
     <ul class="dropdown-menu selection-menu">
-      <li class="px-3 py-2 small" role="status" aria-live="polite">
-        {{ summary }}
+      <li class="px-3 py-2 small">
+        <span role="status">{{ state?.entitySelectionStatus ?? summary }}</span>
       </li>
       <li class="px-3 pb-2 small text-muted">
-        Shift-click/drag selects entities. Ctrl-drag (⌘ on macOS) selects a
-        persistent region. Esc clears.
+        Shift-click or Shift-drag on the diagonal selects contigs. A scaffold
+        that is touched is selected whole. Ctrl-drag (⌘ on macOS) selects a
+        region. Esc clears.
       </li>
-      <li><hr class="dropdown-divider" /></li>
-      <li v-for="kind in ['contig','scaffold'] as const" :key="kind">
-        <button
-          class="dropdown-item"
-          role="menuitemradio"
-          :aria-checked="state?.entitySelectionKind === kind"
-          :disabled="!mapManager"
-          @click="mapManager?.viewAndLayersManager.setEntitySelectionKind(kind)"
-        >
-          {{ state?.entitySelectionKind === kind ? "✓ " : "" }}Shift selects
-          {{ kind === "contig" ? "contigs" : "scaffolds" }}
-        </button>
+      <li class="px-3 pb-2 small text-muted">
+        To change one contig inside a scaffold, right-click it.
       </li>
       <li><hr class="dropdown-divider" /></li>
       <li>
@@ -50,27 +41,9 @@
         <button
           class="dropdown-item"
           :disabled="!region && !count"
-          @click="copyCoordinates('assembly')"
+          @click="copyCoordinates"
         >
-          Copy selection coordinates
-        </button>
-      </li>
-      <li>
-        <button
-          class="dropdown-item"
-          :disabled="!region && !count"
-          @click="copyCoordinates('scaffold')"
-        >
-          Copy scaffold coordinates
-        </button>
-      </li>
-      <li>
-        <button
-          class="dropdown-item"
-          :disabled="!region && !count"
-          @click="copyCoordinates('contig')"
-        >
-          Copy contig coordinates
+          Copy coordinates
         </button>
       </li>
       <li>
@@ -80,7 +53,7 @@
           title="Select a region with Ctrl-drag or ⌘-drag to copy its image"
           @click="copyPng"
         >
-          Copy selection as PNG
+          Copy as image
         </button>
       </li>
       <li>
@@ -96,8 +69,7 @@
       <li>
         <button
           class="dropdown-item"
-          role="menuitemcheckbox"
-          :aria-checked="state?.hideScopedBorders ?? false"
+          :aria-pressed="state?.hideScopedBorders ?? false"
           :disabled="!bothScoped"
           @click="
             mapManager?.viewAndLayersManager.setHideScopedBorders(
@@ -118,12 +90,13 @@
       :map-manager="mapManager"
       @dismissed="coordinateOpen = false"
     />
-  </li>
+  </div>
 </template>
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { formatLength } from "@/app/core/format/formatSignal";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
-import type { CoordinateFrame } from "@/app/core/mapmanagers/regionSelection";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import {
   copySelectionCoordinates,
   copySelectionPng,
@@ -131,8 +104,13 @@ import {
 import RegionSelectionDialog from "../common/RegionSelectionDialog.vue";
 const props = defineProps<{
   mapManager?: ContactMapManager;
-  popperConfig?: string;
 }>();
+const navbarPopperConfig = JSON.stringify({
+  modifiers: [
+    { name: "applyStyles", enabled: true },
+    { name: "preventOverflow", options: { padding: 8, altAxis: true } },
+  ],
+});
 const coordinateOpen = ref(false);
 const state = computed(
   () => props.mapManager?.viewAndLayersManager.currentViewState
@@ -144,29 +122,49 @@ const count = computed(() => state.value?.selectedContigIds.length ?? 0);
 const summary = computed(() => {
   const r = region.value;
   if (r)
-    return `Region: rows ${r.rowStart + 1}–${r.rowEnd}, columns ${
+    return `Region: rows ${(
+      r.rowStart + 1
+    ).toLocaleString()}–${r.rowEnd.toLocaleString()}, columns ${(
       r.columnStart + 1
-    }–${r.columnEnd} bp (1-based inclusive).`;
-  const n = state.value?.selectedScaffoldIds.length ?? 0;
-  return count.value
-    ? `${n ? n + (n === 1 ? " scaffold; " : " scaffolds; ") : ""}${
-        count.value
-      } ${
-        count.value === 1 ? "contig" : "contigs"
-      } selected for assembly editing.`
+    ).toLocaleString()}–${r.columnEnd.toLocaleString()} bp (1-based inclusive).`;
+  const range = props.mapManager?.viewAndLayersManager.getSelectedEntityRange();
+  return range
+    ? `${entityLabel.value} · ${range.startBP.toLocaleString()}–${range.endBP.toLocaleString()} bp`
     : "No selection.";
+});
+const entityLabel = computed(() => {
+  const n = count.value;
+  const m = state.value?.selectedScaffoldIds.length ?? 0;
+  return `${n} ${n === 1 ? "contig" : "contigs"}${m ? ` in ${m} ${m === 1 ? "scaffold" : "scaffolds"}` : ""}`;
 });
 const label = computed(() => {
   const r = region.value;
-  return r
-    ? `Region · ${r.rowEnd - r.rowStart} × ${r.columnEnd - r.columnStart} bp`
-    : count.value
-    ? `Selection · ${count.value} ${count.value === 1 ? "contig" : "contigs"}`
-    : "Selection";
+  if (r) {
+    return `Region · ${formatSelectionLength(
+      r.rowEnd - r.rowStart
+    )} × ${formatSelectionLength(r.columnEnd - r.columnStart)}`;
+  }
+  return count.value ? `Selection · ${entityLabel.value}` : "Selection";
 });
+const fullLabel = computed(() => {
+  const r = region.value;
+  if (r)
+    return `Region · rows ${(r.rowStart + 1).toLocaleString()}–${r.rowEnd.toLocaleString()} bp × columns ${(r.columnStart + 1).toLocaleString()}–${r.columnEnd.toLocaleString()} bp`;
+  return count.value ? `Selection · ${summary.value}` : "Selection";
+});
+function formatSelectionLength(bp: number): string {
+  return bp >= 1000 && bp < 1e6
+    ? `${Math.round(bp / 1000)} kb`
+    : formatLength(bp);
+}
 const bothScoped = computed(() => state.value?.scopedAxes ?? false);
-function copyCoordinates(frame: CoordinateFrame) {
-  if (props.mapManager) copySelectionCoordinates(props.mapManager, frame);
+function copyCoordinates() {
+  const mode = useUiSettingsStore().rulerCoordinateMode;
+  if (props.mapManager)
+    copySelectionCoordinates(
+      props.mapManager,
+      mode === "global" ? "assembly" : mode
+    );
 }
 function copyPng() {
   if (props.mapManager) void copySelectionPng(props.mapManager);
@@ -179,14 +177,31 @@ function copyPng() {
   background: rgba(255, 176, 0, 0.16);
 }
 .selection-label {
-  max-width: 18rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 13rem;
+  justify-content: space-between;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.selection-label span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.selection-label::after {
+  flex: none;
+  margin-left: 0;
+}
 .selection-menu {
-  min-width: min(25rem, 90vw);
-  max-width: 90vw;
+  width: min(360px, 90vw);
+  white-space: normal;
+  max-height: min(25rem, calc(100dvh - 8rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .selection-menu .dropdown-item {
   white-space: normal;

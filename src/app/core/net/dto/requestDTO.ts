@@ -45,6 +45,7 @@ import {
   CancelCoverageNormalizationRequest,
   SelectNormalizationWeightsRequest,
   AttachSessionRequest,
+  SessionAvailabilityRequest,
   GetFastaForAssemblyRequest,
   type HiCTAPIRequest,
   GroupContigsIntoScaffoldRequest,
@@ -71,13 +72,13 @@ import {
   SetNormalizationRequest,
   SetContrastRangeRequest,
   GetCurrentSignalRangeRequest,
-  SaveFileRequest,
   GetAGPForAssemblyRequest,
   ListCoolerFilesRequest,
   ListConvertibleMatrixFilesRequest,
   ListTrackFilesRequest,
   ResolveMatrixSourceRequest,
   DropAllCachesRequest,
+  CleanupProcessedStorageRequest,
   OpenTrackRequest,
   OpenCoolerWeightsTrackRequest,
   ProbeTrackCompatibilityRequest,
@@ -118,6 +119,12 @@ import { ColormapDTO, OutboundDTO, VisualizationOptionsDTO } from "./dto";
 import {
   AssemblyHistoryRequest,
   RestoreAssemblyHistoryRequest,
+  ListDotplotResultsRequest,
+  OpenDotplotResultRequest,
+  ShowDotplotResultRequest,
+  DeleteDotplotResultRequest,
+  DownloadDotplotResultRequest,
+  SequenceOverlayRequest,
 } from "../api/request";
 import { SequenceAnalysisRequest } from "../api/SequenceAnalysisRequest";
 
@@ -145,8 +152,21 @@ abstract class HiCTAPIRequestDTO<
         return new RemoteBlastRetrievalRequestDTO(
           entity as RemoteBlastRetrievalRequest
         );
+      case entity instanceof SequenceOverlayRequest:
+        return { toDTO: () => ({ ...(entity as SequenceOverlayRequest).options }) };
       case entity instanceof SequenceAnalysisRequest:
         return { toDTO: () => (entity as SequenceAnalysisRequest).options };
+      case entity instanceof ListDotplotResultsRequest:
+        return { toDTO: () => ({}) };
+      case entity instanceof OpenDotplotResultRequest:
+        return { toDTO: () => ({ filename: (entity as OpenDotplotResultRequest).filename }) };
+      case entity instanceof ShowDotplotResultRequest: {
+        const { id, shown } = entity as ShowDotplotResultRequest;
+        return { toDTO: () => ({ id, shown }) };
+      }
+      case entity instanceof DeleteDotplotResultRequest:
+      case entity instanceof DownloadDotplotResultRequest:
+        return { toDTO: () => ({ id: (entity as DeleteDotplotResultRequest | DownloadDotplotResultRequest).id }) };
       case entity instanceof AssemblyHistoryRequest:
       case entity instanceof RestoreAssemblyHistoryRequest:
         return {
@@ -216,8 +236,6 @@ abstract class HiCTAPIRequestDTO<
         );
       case entity instanceof OpenFileRequest:
         return new OpenFileRequestDTO(entity as OpenFileRequest);
-      case entity instanceof SaveFileRequest:
-        return new SaveFileRequestDTO(entity as SaveFileRequest);
       case entity instanceof ListFilesRequest:
         return new ListFilesRequestDTO(entity);
       case entity instanceof ListFilesDetailedRequest:
@@ -236,6 +254,8 @@ abstract class HiCTAPIRequestDTO<
         );
       case entity instanceof DropAllCachesRequest:
         return new DropAllCachesRequestDTO(entity as DropAllCachesRequest);
+      case entity instanceof CleanupProcessedStorageRequest:
+        return new CleanupProcessedStorageRequestDTO(entity as CleanupProcessedStorageRequest);
       case entity instanceof OpenTrackRequest:
         return new OpenTrackRequestDTO(entity as OpenTrackRequest);
       case entity instanceof OpenCoolerWeightsTrackRequest:
@@ -357,20 +377,20 @@ abstract class HiCTAPIRequestDTO<
       case entity instanceof CancelExampleDownloadRequest:
       case entity instanceof FastaOnlyStatusRequest:
       case entity instanceof CancelFastaOnlyRequest:
+        return new EmptyBodyRequestDTO(entity);
       case entity instanceof PrepareCoverageNormalizationRequest:
       case entity instanceof CoverageNormalizationStatusRequest:
       case entity instanceof CancelCoverageNormalizationRequest:
-        return new EmptyBodyRequestDTO(entity);
+      case entity instanceof SelectNormalizationWeightsRequest:
+        return new NormalizationRequestDTO(entity as NormalizationRequest);
       case entity instanceof StartExampleDownloadRequest:
         return new StartExampleDownloadRequestDTO(
           entity as StartExampleDownloadRequest
         );
       case entity instanceof StartFastaOnlyRequest:
         return new StartFastaOnlyRequestDTO(entity as StartFastaOnlyRequest);
-      case entity instanceof SelectNormalizationWeightsRequest:
-        return new SelectNormalizationWeightsRequestDTO(
-          entity as SelectNormalizationWeightsRequest
-        );
+      case entity instanceof SessionAvailabilityRequest:
+        return new SessionAvailabilityRequestDTO(entity);
       case entity instanceof AttachSessionRequest:
         return new AttachSessionRequestDTO(entity as AttachSessionRequest);
       case entity instanceof GetFastaForAssemblyRequest:
@@ -574,6 +594,7 @@ class SetVisualizationOptionsRequestDTO extends HiCTAPIRequestDTO<SetVisualizati
       ),
       signalDisplayMode: options.signalDisplayMode,
       coolerWeightsNaNPolicy: options.coolerWeightsNaNPolicy,
+      diagonalMask: options.diagonalMask,
       preserveRenderPipeline:
         this.entity.options.preserveRenderPipeline ?? false,
       renderPipeline: this.entity.options.renderPipeline,
@@ -692,6 +713,7 @@ class StartDotplotJobsRequestDTO extends HiCTAPIRequestDTO<StartDotplotJobsReque
       alignmentThreads: this.entity.options.alignmentThreads,
       conversionThreads: this.entity.options.conversionThreads,
       overwrite: this.entity.options.overwrite,
+      acceptLargeOutput: this.entity.options.acceptLargeOutput,
     };
   }
 }
@@ -780,6 +802,7 @@ class MoveSelectionRangeRequestDTO extends HiCTAPIRequestDTO<MoveSelectionRangeR
       startBP: this.entity.options.startBP,
       endBP: this.entity.options.endBP,
       targetStartBP: this.entity.options.targetStartBP,
+      ...(this.entity.options.exactContig ? { exactContig: true } : {}),
     };
   }
 }
@@ -805,14 +828,6 @@ class OpenFileRequestDTO extends HiCTAPIRequestDTO<OpenFileRequest> {
     return {
       filename: this.entity.options.filename,
       fastaFilename: this.entity.options.fastaFilename,
-    };
-  }
-}
-
-class SaveFileRequestDTO extends HiCTAPIRequestDTO<SaveFileRequest> {
-  toDTO(): Record<string, unknown> {
-    return {
-      filename: this.entity.options.filename,
     };
   }
 }
@@ -953,6 +968,12 @@ class ResolveMatrixSourceRequestDTO extends HiCTAPIRequestDTO<ResolveMatrixSourc
 class DropAllCachesRequestDTO extends HiCTAPIRequestDTO<DropAllCachesRequest> {
   toDTO(): Record<string, unknown> {
     return {};
+  }
+}
+
+class CleanupProcessedStorageRequestDTO extends HiCTAPIRequestDTO<CleanupProcessedStorageRequest> {
+  toDTO(): Record<string, unknown> {
+    return { action: this.entity.action, ids: this.entity.ids };
   }
 }
 
@@ -1158,14 +1179,26 @@ class StartFastaOnlyRequestDTO extends HiCTAPIRequestDTO<StartFastaOnlyRequest> 
   }
 }
 
-class SelectNormalizationWeightsRequestDTO extends HiCTAPIRequestDTO<SelectNormalizationWeightsRequest> {
+type NormalizationRequest =
+  | PrepareCoverageNormalizationRequest
+  | CoverageNormalizationStatusRequest
+  | CancelCoverageNormalizationRequest
+  | SelectNormalizationWeightsRequest;
+
+class NormalizationRequestDTO extends HiCTAPIRequestDTO<NormalizationRequest> {
   toDTO(): Record<string, unknown> {
-    return { mode: this.entity.options.mode };
+    return { ...this.entity.options };
   }
 }
 
 class CloseFileRequestDTO extends HiCTAPIRequestDTO<CloseFileRequest> {
   toDTO(): Record<string, unknown> {
+    return {};
+  }
+}
+
+class SessionAvailabilityRequestDTO extends HiCTAPIRequestDTO<SessionAvailabilityRequest> {
+  toDTO(): Record<string, never> {
     return {};
   }
 }
@@ -1235,7 +1268,6 @@ export {
   SetNormalizationRequestDTO,
   SetContrastRangeRequestDTO,
   GetCurrentSignalRangeRequestDTO,
-  SaveFileRequestDTO,
   ListTrackFilesRequestDTO,
   OpenTrackRequestDTO,
   ProbeTrackCompatibilityRequestDTO,

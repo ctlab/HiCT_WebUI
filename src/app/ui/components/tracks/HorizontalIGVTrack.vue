@@ -36,13 +36,40 @@
     @contextmenu.prevent="onContextMenu"
   >
     <canvas ref="trackCanvas"></canvas>
+    <div
+      v-for="(track, index) in axisTracks"
+      :key="'scroll-' + track.trackId"
+      class="track-scroll"
+      :data-track-id="track.trackId"
+      tabindex="0"
+      role="region"
+      :aria-label="track.name + ' feature rows'"
+      :style="{
+        top: laneBounds[index].start * 100 + '%',
+        height: (laneBounds[index].end - laneBounds[index].start) * 100 + '%',
+      }"
+      @scroll="
+        props.mapManager?.linearTrackManager.scrollTrack(
+          'horizontal',
+          track.trackId,
+          ($event.currentTarget as HTMLElement).scrollTop
+        )
+      "
+    >
+      <div
+        :style="{
+          width: '1px',
+          height: (scrollSizes[track.trackId] ?? 0) + 'px',
+        }"
+      ></div>
+    </div>
     <button
       v-for="(track, index) in axisTracks"
       :key="track.trackId"
       type="button"
       class="track-close-button"
       :style="{
-        top: `calc(${((index + 0.5) * 100) / axisTracks.length}% - 10px)`,
+        top: `calc(${(laneBounds[index].start + laneBounds[index].end) * 50}% - 10px)`,
       }"
       :title="`Hide ${track.name} horizontally`"
       :aria-label="`Hide ${track.name} horizontally`"
@@ -51,6 +78,16 @@
     >
       <i class="bi bi-x"></i>
     </button>
+    <TrackLaneDivider
+      v-for="(track, index) in axisTracks.slice(0, -1)"
+      :key="'divider-' + track.trackId"
+      orientation="horizontal"
+      :label="`Resize ${track.name} and ${axisTracks[index + 1].name}`"
+      :style="{ top: laneBounds[index].end * 100 + '%' }"
+      :pair-size="pairSize(index)"
+      :share="(laneBounds[index].end - laneBounds[index].start) / pairFraction(index)"
+      @resize="resizeLanePair(index, $event)"
+    />
     <div ref="statusOverlay" class="track-status-overlay"></div>
     <FloatingTrackTooltip
       :open="featureTooltipVisible"
@@ -94,6 +131,7 @@
 </template>
 
 <script setup lang="ts">
+import TrackLaneDivider from "./TrackLaneDivider.vue";
 import FloatingTrackTooltip from "./FloatingTrackTooltip.vue";
 import AxisContextMenu from "../common/AxisContextMenu.vue";
 import { buildTrackContextMenu } from "./trackContextMenu";
@@ -115,11 +153,34 @@ const axisTracks = ref(
   props.mapManager?.linearTrackManager.getVisibleTracksForAxis("horizontal") ??
     []
 );
+const layoutRevision = ref(0);
+const laneBounds = computed(() => {
+  void layoutRevision.value;
+  return props.mapManager?.linearTrackManager.getTrackLaneBounds(
+    "horizontal",
+    axisTracks.value.map((track) => track.trackId)
+  ) ?? [];
+});
+const pairFraction = (index: number) =>
+  laneBounds.value[index + 1].end - laneBounds.value[index].start;
+const trackDepth = ref(0);
+const pairSize = (index: number) => trackDepth.value * pairFraction(index);
+function resizeLanePair(index: number, share: number) {
+  props.mapManager?.linearTrackManager.resizeTrackLanePair(
+    "horizontal", axisTracks.value[index].trackId, axisTracks.value[index + 1].trackId, share
+  );
+  layoutRevision.value++;
+}
 let unsubscribeRenderState: (() => void) | undefined;
 let unsubscribeTrackList: (() => void) | undefined;
 let draggingPointerId: number | null = null;
 let dragStartClientX = 0;
 let dragCenterX = 0;
+const scrollSizes = ref<Record<string, number>>({});
+let scroller: HTMLElement | null = null;
+let crossStart = 0;
+let scrollStart = 0;
+let direction: "cross" | "axis" | null = null;
 let pointerMoved = false;
 
 const featureTooltipVisible = ref(false);
@@ -164,6 +225,7 @@ const bindCanvas = () => {
 const bindSubscriptions = () => {
   unsubscribeRenderState?.();
   unsubscribeTrackList?.();
+  axisTracks.value = props.mapManager?.linearTrackManager.getVisibleTracksForAxis("horizontal") ?? [];
   if (statusOverlay.value) {
     statusOverlay.value.textContent = props.mapManager
       ? "No tracks loaded"
@@ -176,6 +238,8 @@ const bindSubscriptions = () => {
     props.mapManager.linearTrackManager.subscribeRenderState(
       "horizontal",
       (state) => {
+        trackDepth.value = trackHost.value?.clientHeight ?? 0;
+        if (state.scrollSizes) scrollSizes.value = state.scrollSizes;
         if (statusOverlay.value) {
           statusOverlay.value.textContent = state.statusMessage ?? "";
           statusOverlay.value.style.display = state.statusMessage
@@ -235,7 +299,12 @@ const hideFeatureTooltip = (): void => {
 
 const onMouseMoveFeature = (event: MouseEvent): void => {
   cancelTooltipHide();
-  if (!props.mapManager || draggingPointerId !== null || contextMenu.value) {
+  if (
+    !props.mapManager ||
+    draggingPointerId !== null ||
+    contextMenu.value ||
+    (event.target as Element).closest(".track-lane-divider")
+  ) {
     hideFeatureTooltip();
     return;
   }
@@ -357,6 +426,10 @@ const onPointerDown = (event: PointerEvent): void => {
   if (!center) {
     return;
   }
+  direction = null;
+  scroller = (event.target as Element).closest<HTMLElement>(".track-scroll");
+  crossStart = event.clientY;
+  scrollStart = scroller?.scrollTop ?? 0;
   draggingPointerId = event.pointerId;
   dragStartClientX = event.clientX;
   dragCenterX = center[0];
@@ -377,10 +450,13 @@ const onPointerMove = (event: PointerEvent): void => {
     return;
   }
   const dx = event.clientX - dragStartClientX;
-  if (Math.abs(dx) > 2) {
-    pointerMoved = true;
-  }
-  if (!pointerMoved) {
+  const crossDelta = event.clientY - crossStart;
+  if (!direction && Math.max(Math.abs(crossDelta), Math.abs(dx)) > 2)
+    direction = Math.abs(crossDelta) > Math.abs(dx) ? "cross" : "axis";
+  if (!direction) return;
+  pointerMoved = true;
+  if (direction === "cross") {
+    if (scroller) scroller.scrollTop = scrollStart - crossDelta;
     return;
   }
   view.setCenter([dragCenterX - dx * resolution, center[1]]);
@@ -391,7 +467,12 @@ const stopPointerDrag = (event: PointerEvent): void => {
   if (draggingPointerId !== event.pointerId) {
     return;
   }
-  if (!pointerMoved && props.mapManager && trackHost.value) {
+  if (
+    event.type === "pointerup" &&
+    !pointerMoved &&
+    props.mapManager &&
+    trackHost.value
+  ) {
     const rect = trackHost.value.getBoundingClientRect();
     const axisOffsetPx = event.clientX - rect.left;
     const crossOffsetPx = event.clientY - rect.top;
@@ -408,6 +489,15 @@ const stopPointerDrag = (event: PointerEvent): void => {
 
 const onWheelForward = (event: WheelEvent): void => {
   hideFeatureTooltip();
+  const rows = (event.target as Element).closest<HTMLElement>(".track-scroll");
+  if (uiSettingsStore.scrollTracksWithWheel && !event.ctrlKey && !event.metaKey) {
+    if (rows) {
+      const delta = event.deltaY;
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rows.clientHeight : 1;
+      rows.scrollTop += delta * unit;
+    }
+    return;
+  }
   if (!props.mapManager || !trackHost.value) {
     return;
   }
@@ -506,6 +596,22 @@ onBeforeUnmount(() => {
   display: block;
 }
 
+.track-scroll {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #98a2b3 #eaecf0;
+}
+.track-scroll::-webkit-scrollbar { width: 5px; }
+.track-scroll::-webkit-scrollbar-thumb { background: #98a2b3; border-radius: 3px; }
+.track-scroll::-webkit-scrollbar-track { background: #eaecf0; }
+.track-scroll:focus-visible {
+  outline: 2px solid #196ca6;
+  outline-offset: -2px;
+}
 .track-chip-list {
   display: none;
 }

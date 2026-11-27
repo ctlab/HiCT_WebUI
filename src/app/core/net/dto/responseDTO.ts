@@ -117,7 +117,9 @@ class ConversionJobResponseDTO extends InboundDTO<ConversionJobResponse> {
       (this.json["toolchainNotices"] as string[]) ?? [],
       (this.json["toolchainCitations"] as string[]) ?? [],
       (this.json["logs"] as string[]) ?? [],
-      (this.json["error"] as string) ?? ""
+      (this.json["error"] as string) ?? "",
+      (this.json["stageIndex"] as number | null) ?? undefined,
+      (this.json["stageCount"] as number | null) ?? undefined
     );
   }
 }

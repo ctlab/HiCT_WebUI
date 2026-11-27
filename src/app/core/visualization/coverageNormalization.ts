@@ -21,6 +21,7 @@
 
 import type {
   CoverageNormalizationStatus,
+  NormalizationSource,
   RequestManager,
 } from "@/app/core/net/api/RequestManager";
 
@@ -42,15 +43,28 @@ export async function prepareCoverage(
     "prepareCoverageNormalization" | "coverageNormalizationStatus"
   >,
   onProgress: (status: CoverageNormalizationStatus) => void,
-  options: { start?: boolean; shouldStop?: () => boolean; pollMs?: number } = {}
+  options: {
+    source?: NormalizationSource;
+    start?: boolean;
+    shouldStop?: () => boolean;
+    pollMs?: number;
+  } = {}
 ): Promise<CoveragePreparation> {
   const pollMs = options.pollMs ?? 500;
+  const source = options.source ?? "PRIMARY";
   try {
     let current =
       options.start === false
-        ? await requests.coverageNormalizationStatus()
-        : await requests.prepareCoverageNormalization();
+        ? await requests.coverageNormalizationStatus(source)
+        : await requests.prepareCoverageNormalization(source);
+    const jobId = current.jobId;
     for (;;) {
+      if (
+        options.shouldStop?.() ||
+        current.jobId !== jobId ||
+        current.state === "IDLE"
+      )
+        return { ok: false, cancelled: true, message: "Preparation stopped." };
       onProgress(current);
       if (current.state === "READY") return { ok: true };
       if (current.state === "FAILED")
@@ -66,7 +80,7 @@ export async function prepareCoverage(
       if (options.shouldStop?.())
         return { ok: false, cancelled: true, message: "Stopped waiting." };
       await sleep(pollMs);
-      current = await requests.coverageNormalizationStatus();
+      current = await requests.coverageNormalizationStatus(source);
     }
   } catch (error) {
     console.debug("Coverage preparation failed", error);

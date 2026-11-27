@@ -124,7 +124,7 @@ export function buildTrackContextMenu(
       },
     },
     {
-      label: "Tracks and layers…",
+      label: "1D tracks…",
       run: () =>
         window.dispatchEvent(new CustomEvent(OPEN_TRACK_MANAGER_EVENT)),
     }

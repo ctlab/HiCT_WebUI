@@ -23,6 +23,22 @@ export interface SequenceSearchSettings {
   overwrite?: boolean;
 }
 
+export interface SequenceAnalysisEstimate {
+  rowBp: number;
+  columnBp: number;
+  requestedLevels: number[];
+  overviewLevels: number[];
+  expectedBytes: number;
+  worstCaseBytes: number;
+  estimatedBytes: number;
+  diskBudgetBytes: number;
+  warningLevel?: number;
+  limitingLevel?: number;
+  hardLimitReason?: string;
+  hasResultsOfKind?: boolean;
+  hasCompatibleResults?: boolean;
+}
+
 export interface SequenceAnalysisJob {
   jobId: string;
   kind:
@@ -31,7 +47,8 @@ export interface SequenceAnalysisJob {
     | "dotplot"
     | "moddotplot"
     | "alignment_detail"
-    | "repeat_period";
+    | "repeat_period"
+    | "overview-cache";
   searchTarget?: "LOCAL_ASSEMBLY" | "NCBI_REMOTE";
   remoteDatabase?: string;
   remoteRequestId?: string | null;
@@ -43,6 +60,7 @@ export interface SequenceAnalysisJob {
     | "failed"
     | "cancelled";
   outputFile?: string;
+  resultSet?: { id: string; name: string; regionCount: number; bytes: number } | null;
   error?: string;
   logs: string[];
   hits: number;
@@ -62,7 +80,7 @@ export class SequenceAnalysisRequest {
     public readonly options: object = {}
   ) {
     if (
-      !/^\/sequence\/(settings|cleanup|repeat_period|remote_blast\/result|(?:search|moddotplot|dotplot)\/jobs|jobs\/list|jobs\/[a-zA-Z0-9-]+\/stop)$/.test(
+      !/^\/sequence\/(settings|cleanup|repeat_period|remote_blast\/result|(?:search|overview)\/jobs|(?:moddotplot|dotplot)\/(?:jobs|estimate)|jobs\/list|jobs\/[a-zA-Z0-9-]+\/stop)$/.test(
         requestPath
       )
     )

@@ -20,7 +20,10 @@
  -->
 
 <template>
-  <div class="header-ribbon">
+  <div
+    class="header-ribbon"
+    :class="{ 'header-ribbon--empty': !props.mapManager }"
+  >
     <div id="left-header-block" class="header-block">
       <div id="search-container">
         <div id="search-input-group" class="input-group input-group-sm mb-3">
@@ -34,7 +37,7 @@
             "
             aria-label="Find a contig, scaffold or feature"
             class="form-control form-control-sm m-0"
-            placeholder="Search map"
+            placeholder="Find contig or feature"
             type="text"
             autocomplete="off"
             v-model="searchQuery"
@@ -178,26 +181,47 @@
           </div>
         </div>
       </div>
-      <div class="mb-3">
-        <select
-          v-model="signalDisplayMode"
-          class="form-select form-select-sm"
-          title="Expected and O/E use the standard renderer for the primary map, within scaffolds (or contigs when unscaffolded). The secondary overlay and observed rendering graph are preserved. After exact cuts, repeated bin pairs share one sample’s weight across their positions in the fitting window."
-          :disabled="signalDisplayModePending"
-          @change="onSignalDisplayModeChanged"
-        >
-          <option value="OBSERVED">Show Observed</option>
-          <option value="EXPECTED">Show Expected</option>
-          <option value="OBSERVED_OVER_EXPECTED">Show O/E</option>
-        </select>
-      </div>
       <span
         v-if="sequenceScaleStatus"
-        class="small text-dark bg-light rounded px-2 py-1 mb-3"
+        class="sequence-scale-status small text-dark bg-light rounded px-2 py-1 mb-3"
         data-testid="sequence-scale-status"
-        title="Display coordinates follow individual bases. Matrix values retain their stored bin resolution."
+        :title="`${sequenceScaleStatus}. Display coordinates follow individual bases. Matrix values retain their stored bin resolution.`"
         >{{ sequenceScaleStatus }}</span
       >
+      <div class="mb-3">
+        <select
+          :value="signalDisplayMode"
+          class="form-select form-select-sm"
+          aria-label="Signal display"
+          :title="
+            props.mapManager
+              ? 'Expected shows the average contact level at each distance. Observed/Expected highlights contacts above or below that average.'
+              : 'Open a map to change the signal display'
+          "
+          :disabled="!props.mapManager || signalDisplayModePending"
+          @change="onSignalDisplayModeChanged"
+        >
+          <option value="OBSERVED">Observed</option>
+          <option value="EXPECTED">Expected</option>
+          <option value="OBSERVED_OVER_EXPECTED">Observed/Expected</option>
+        </select>
+      </div>
+      <div class="selection-tools">
+        <SelectionControls :map-manager="props.mapManager" />
+        <label
+          ><input
+            v-model="uiSettingsStore.squareSelection"
+            type="checkbox"
+            :disabled="!props.mapManager"
+            :title="
+              props.mapManager
+                ? 'Constrain new selections to a square'
+                : 'Open a map to select'
+            "
+          />
+          Square selection</label
+        >
+      </div>
     </div>
     <div id="right-header-block" class="header-block">
       <div class="export-group">
@@ -205,6 +229,7 @@
           id="toggle-osd-button"
           class="btn btn-sm btn-outline-primary"
           type="button"
+          :disabled="!props.mapManager"
           @click="osdOverlayVisible = !osdOverlayVisible"
           :aria-pressed="osdOverlayVisible"
           aria-label="Map Info"
@@ -221,8 +246,13 @@
           id="ruler-mode-button"
           class="btn btn-sm btn-outline-primary"
           type="button"
+          :disabled="!props.mapManager"
           @click="cycleRulerMode"
-          :title="`Cycle ruler coordinate mode. Current: ${rulerModeLabel}`"
+          :title="
+            props.mapManager
+              ? `Cycle ruler coordinate mode. Current: ${rulerModeLabel}`
+              : 'Open a map to change the ruler'
+          "
         >
           <i class="bi bi-rulers me-1" aria-hidden="true"></i>
           <span class="ruler-button-label">{{ rulerModeLabel }}</span>
@@ -234,15 +264,17 @@
         type="button"
         aria-haspopup="dialog"
         :aria-expanded="exportOpen"
-        :disabled="!props.mapManager"
+        :disabled="!props.mapManager || props.mapOpening"
         :title="
-          props.mapManager
+          props.mapOpening
+            ? 'Wait for the map to finish opening'
+            : props.mapManager
             ? 'Preview and export a figure'
             : 'Open a map to export it'
         "
         @click="exportOpen = true"
       >
-        Export
+        Export…
       </button>
       <FigureExportModal
         v-if="exportOpen && props.mapManager"
@@ -254,6 +286,7 @@
 </template>
 
 <script setup lang="ts">
+import SelectionControls from "./SelectionControls.vue";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import type { AxisScopeSelection } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
 import { useVisualizationOptionsSync } from "./useVisualizationOptionsSync";
@@ -272,6 +305,7 @@ import { storeToRefs } from "pinia";
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
+  mapOpening?: boolean;
 }>();
 
 useVisualizationOptionsSync(() => props.mapManager);
@@ -300,14 +334,14 @@ interface ScopeOption extends AxisScopeSelection {
 }
 const selectedRowScope = ref<AxisScopeSelection>({
   kind: "all",
-  label: "All Rows",
+  label: "All rows",
 });
 const selectedColumnScope = ref<AxisScopeSelection>({
   kind: "all",
-  label: "All Columns",
+  label: "All columns",
 });
-const rowScopeQuery = ref("All Rows");
-const columnScopeQuery = ref("All Columns");
+const rowScopeQuery = ref("All rows");
+const columnScopeQuery = ref("All columns");
 const rowScopeFilterQuery = ref("");
 const columnScopeFilterQuery = ref("");
 const rowScopeOpen = ref(false);
@@ -340,7 +374,7 @@ const { mapBackgroundColor } = storeToRefs(stylesStore);
 const { signalDisplayMode } = storeToRefs(visualizationOptionsStore);
 
 const allScopeLabel = (axis: ScopeAxis) =>
-  axis === "row" ? "All Rows" : "All Columns";
+  axis === "row" ? "All rows" : "All columns";
 
 const allScopeOption = (axis: ScopeAxis): ScopeOption => ({
   kind: "all",
@@ -352,6 +386,7 @@ const allScopeOption = (axis: ScopeAxis): ScopeOption => ({
 });
 
 function scopeToSelection(option: AxisScopeSelection): AxisScopeSelection {
+  if (option.kind === "selection") return { ...option };
   if (option.kind === "all" || option.id === undefined) {
     return { kind: "all", label: option.label };
   }
@@ -368,6 +403,7 @@ function normalizeSelectionForAxis(
   selection: AxisScopeSelection,
   axis: ScopeAxis
 ): AxisScopeSelection {
+  if (selection.kind === "selection") return { ...selection };
   if (selection.kind === "all" || selection.id === undefined) {
     return { kind: "all", label: allScopeLabel(axis) };
   }
@@ -542,12 +578,12 @@ function deferScopePickerClose(axis: ScopeAxis): void {
 
 function restoreScopeQuery(axis: ScopeAxis): void {
   if (axis === "row") {
-    rowScopeQuery.value = selectedRowScope.value.label || "All Rows";
+    rowScopeQuery.value = selectedRowScope.value.label || "All rows";
     rowScopeFilterQuery.value = "";
     rowScopeOpen.value = false;
     rowScopeIndex.value = 0;
   } else {
-    columnScopeQuery.value = selectedColumnScope.value.label || "All Columns";
+    columnScopeQuery.value = selectedColumnScope.value.label || "All columns";
     columnScopeFilterQuery.value = "";
     columnScopeOpen.value = false;
     columnScopeIndex.value = 0;
@@ -596,18 +632,18 @@ function acceptHighlightedScope(axis: ScopeAxis): void {
 function syncScopeQueriesFromManager(): void {
   const scopes = props.mapManager?.getLayersManager().getAxisScopes();
   if (!scopes) {
-    selectedRowScope.value = { kind: "all", label: "All Rows" };
-    selectedColumnScope.value = { kind: "all", label: "All Columns" };
+    selectedRowScope.value = { kind: "all", label: "All rows" };
+    selectedColumnScope.value = { kind: "all", label: "All columns" };
   } else {
     selectedRowScope.value = scopes.row;
     selectedColumnScope.value = scopes.column;
   }
   if (!rowScopeOpen.value) {
-    rowScopeQuery.value = selectedRowScope.value.label || "All Rows";
+    rowScopeQuery.value = selectedRowScope.value.label || "All rows";
     rowScopeFilterQuery.value = "";
   }
   if (!columnScopeOpen.value) {
-    columnScopeQuery.value = selectedColumnScope.value.label || "All Columns";
+    columnScopeQuery.value = selectedColumnScope.value.label || "All columns";
     columnScopeFilterQuery.value = "";
   }
 }
@@ -906,14 +942,17 @@ onBeforeUnmount(() => {
 });
 
 const signalDisplayModePending = ref(false);
-async function onSignalDisplayModeChanged() {
+async function onSignalDisplayModeChanged(event: Event) {
+  const select = event.currentTarget as HTMLSelectElement;
+  const requested = select.value as typeof signalDisplayMode.value;
+  const previous = signalDisplayMode.value;
   if (!props.mapManager || signalDisplayModePending.value) return;
   signalDisplayModePending.value = true;
   try {
-    await props.mapManager.visualizationManager.setSignalDisplayMode(
-      signalDisplayMode.value
-    );
+    await props.mapManager.visualizationManager.setSignalDisplayMode(requested);
   } catch (error) {
+    signalDisplayMode.value = previous;
+    select.value = previous;
     toast.error("Failed to update signal display mode");
     console.debug(error);
   } finally {
@@ -923,6 +962,24 @@ async function onSignalDisplayModeChanged() {
 </script>
 
 <style scoped>
+.selection-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  white-space: nowrap;
+  list-style: none;
+  font-size: 0.85rem;
+}
+.selection-tools label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bs-body-bg, white);
+  color: var(--bs-body-color, #20252a);
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
 /* Narrow windows: tighter spacing so the toolbar takes fewer rows. */
 @media (max-width: 767.98px) {
   .header-ribbon {
@@ -1012,7 +1069,7 @@ async function onSignalDisplayModeChanged() {
   /* Auto layout */
   align-items: center;
   padding: 0px;
-  gap: 16px;
+  gap: 9px;
 
   width: auto;
   min-height: 30px;
@@ -1039,10 +1096,9 @@ async function onSignalDisplayModeChanged() {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 0px 16px 0px 0px;
   gap: 10px;
 
-  width: 216px;
+  width: 200px;
   height: 30px;
 
   /* Inside auto layout */
@@ -1078,7 +1134,6 @@ async function onSignalDisplayModeChanged() {
 
 #search-input-group > :is(input, button):disabled {
   background: #f0f3f6;
-  opacity: 1;
 }
 
 #search-input-group > button {
@@ -1150,8 +1205,56 @@ async function onSignalDisplayModeChanged() {
 
 .scope-picker {
   position: relative;
-  width: 180px;
-  flex: 0 0 180px;
+  width: 120px;
+  flex: 0 0 120px;
+}
+
+@media (min-width: 1280px) {
+  .header-ribbon {
+    flex-wrap: nowrap;
+  }
+
+  #right-header-block {
+    flex: 0 0 auto;
+  }
+
+  .selection-tools {
+    flex-shrink: 0;
+  }
+
+  #search-container {
+    flex: 0 1 200px;
+    min-width: 120px;
+  }
+
+  #search-input-group {
+    width: 100%;
+  }
+}
+
+@media (min-width: 1280px) and (max-width: 1499.98px) {
+  #left-header-block:has(.sequence-scale-status) {
+    gap: 6px;
+  }
+
+  #left-header-block:has(.sequence-scale-status) #search-container {
+    flex-basis: 120px;
+  }
+
+  .sequence-scale-status {
+    flex: 0 1 112px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.header-ribbon--empty :deep(.btn:disabled),
+.header-ribbon--empty :deep(.form-select:disabled),
+.header-ribbon--empty :deep(.form-control:disabled),
+.header-ribbon--empty .selection-tools label {
+  opacity: 0.55;
 }
 
 .scope-picker .form-control {
@@ -1330,18 +1433,18 @@ async function onSignalDisplayModeChanged() {
   }
 }
 
+#ruler-mode-button {
+  max-width: 8.75rem;
+}
+
+.ruler-button-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @media (max-width: 1120px) {
   .optional-button-label {
     display: none;
-  }
-
-  #ruler-mode-button {
-    max-width: 8.75rem;
-  }
-
-  .ruler-button-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 }
 

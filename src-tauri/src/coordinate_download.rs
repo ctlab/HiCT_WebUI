@@ -327,6 +327,8 @@ mod tests {
     fn addresses_and_revision_headers_are_bounded_without_network_access() {
         for url in [
             "http://localhost:5000/get_fasta_for_assembly",
+            "http://127.0.0.1:8080/get_fasta_for_assembly",
+            "http://127.0.0.1:37841/get_fasta_for_assembly",
             "https://10.0.0.1/base/get_fasta_for_selection",
             "http://[::1]:5000/get_agp_for_assembly",
         ] {

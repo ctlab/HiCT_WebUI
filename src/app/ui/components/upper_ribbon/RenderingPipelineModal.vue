@@ -32,13 +32,13 @@
       style="display: block"
       ref="modalFocusElement"
       role="dialog"
-      aria-label="Rendering Pipeline"
+      aria-label="Rendering pipeline"
       :aria-modal="!previewMode"
     >
       <div class="modal-dialog pipeline-dialog">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title">Rendering Pipeline</h5>
+            <h5 class="modal-title">Rendering pipeline</h5>
             <button
               type="button"
               class="btn btn-sm btn-outline-secondary ms-auto me-2 d-flex align-items-center gap-1"
@@ -58,138 +58,147 @@
             ></button>
           </div>
           <div v-show="!previewMode" class="modal-body">
-            <div
-              v-if="allowOeTarget"
-              role="tablist"
-              aria-label="Rendering target"
-              class="pipeline-target-tabs mb-3"
-            >
-              <button
-                id="pipeline-tab-observed"
-                role="tab"
-                aria-controls="pipeline-panel-observed"
-                :aria-selected="editorTarget === 'observed'"
-                :tabindex="editorTarget === 'observed' ? 0 : -1"
+            <div v-if="editorTarget === 'observed'" class="form-check">
+              <input
+                id="pipeline-enabled"
+                v-model="enabled"
+                class="form-check-input"
+                type="checkbox"
                 :disabled="loading || saving"
-                @click="switchEditorTarget('observed')"
-                @keydown="onEditorTabKey"
+              />
+              <label class="form-check-label" for="pipeline-enabled"
+                >Enable custom rendering</label
               >
-                Observed graph
-              </button>
-              <button
-                id="pipeline-tab-oe"
-                role="tab"
-                aria-controls="pipeline-panel-oe"
-                :aria-selected="editorTarget === 'oe'"
-                :tabindex="editorTarget === 'oe' ? 0 : -1"
-                :disabled="loading || saving"
-                @click="switchEditorTarget('oe')"
-                @keydown="onEditorTabKey"
-              >
-                Primary O/E colormap
-              </button>
             </div>
-            <OePaletteEditor
-              v-if="editorTarget === 'oe' && mapManager"
-              id="pipeline-panel-oe"
-              ref="oeEditor"
-              :map-manager="mapManager"
-              role="tabpanel"
-              aria-labelledby="pipeline-tab-oe"
-              @busy="oeBusy = $event"
-            />
-            <div
-              v-show="editorTarget === 'observed'"
-              id="pipeline-panel-observed"
-              :role="allowOeTarget ? 'tabpanel' : undefined"
-              aria-label="Observed graph"
-              :aria-labelledby="
-                allowOeTarget ? 'pipeline-tab-observed' : undefined
-              "
-            >
-              <div class="alert alert-warning py-2 mb-3">
-                This graph controls the Observed view. Expected and O/E keep
-                their own primary-map processing and palette. Use the O/E
-                palette in a Colormap node for a signal that already represents
-                contact ratios; its neutral value is 1.
-              </div>
-              <div class="d-flex gap-3 align-items-center mb-3">
-                <div class="form-check">
-                  <input
-                    id="pipeline-enabled"
-                    v-model="enabled"
-                    class="form-check-input"
-                    type="checkbox"
-                    :disabled="loading || saving"
-                  />
-                  <label class="form-check-label" for="pipeline-enabled"
-                    >Enable custom pipeline</label
-                  >
-                </div>
-                <div class="form-check">
-                  <input
-                    id="pipeline-swap"
-                    v-model="swapUpperLower"
-                    class="form-check-input"
-                    type="checkbox"
-                    :disabled="loading || saving"
-                  />
-                  <label class="form-check-label" for="pipeline-swap"
-                    >Swap upper/lower diagonal branches</label
-                  >
-                </div>
-                <select
-                  v-model="selectedPresetId"
-                  class="form-select form-select-sm pipeline-preset-select"
-                  :disabled="loading || saving"
-                >
-                  <option
-                    v-for="preset in RENDERING_PRESETS"
-                    :key="preset.id"
-                    :value="preset.id"
-                  >
-                    {{ preset.label }}
-                  </option>
-                </select>
+            <p v-if="editorTarget === 'observed' && !enabled" class="small text-muted">
+              HiCT uses the sidebar settings. Turn this on to design your own
+              colouring.
+            </p>
+            <AdvancedSection dialog-id="rendering-pipeline" class="mt-3">
+              <div
+                v-if="allowOeTarget"
+                role="tablist"
+                aria-label="Rendering target"
+                class="pipeline-target-tabs mb-3"
+              >
                 <button
-                  class="btn btn-sm btn-outline-primary"
+                  id="pipeline-tab-observed"
+                  role="tab"
+                  aria-controls="pipeline-panel-observed"
+                  :aria-selected="editorTarget === 'observed'"
+                  :tabindex="editorTarget === 'observed' ? 0 : -1"
                   :disabled="loading || saving"
-                  @click="loadSelectedPreset"
+                  @click="switchEditorTarget('observed')"
+                  @keydown="onEditorTabKey"
                 >
-                  Load preset
+                  Observed graph
                 </button>
                 <button
-                  class="btn btn-sm btn-outline-secondary ms-auto"
+                  id="pipeline-tab-oe"
+                  role="tab"
+                  aria-controls="pipeline-panel-oe"
+                  :aria-selected="editorTarget === 'oe'"
+                  :tabindex="editorTarget === 'oe' ? 0 : -1"
                   :disabled="loading || saving"
-                  @click="loadConfig"
+                  @click="switchEditorTarget('oe')"
+                  @keydown="onEditorTabKey"
                 >
-                  Reload
+                  Primary O/E colormap
                 </button>
               </div>
+              <OePaletteEditor
+                v-if="editorTarget === 'oe' && mapManager"
+                id="pipeline-panel-oe"
+                ref="oeEditor"
+                :map-manager="mapManager"
+                role="tabpanel"
+                aria-labelledby="pipeline-tab-oe"
+                @busy="oeBusy = $event"
+              />
+              <div
+                v-show="editorTarget === 'observed'"
+                id="pipeline-panel-observed"
+                :role="allowOeTarget ? 'tabpanel' : undefined"
+                aria-label="Observed graph"
+                :aria-labelledby="
+                  allowOeTarget ? 'pipeline-tab-observed' : undefined
+                "
+              >
+                <div class="alert alert-warning py-2 mb-3">
+                  This graph controls the Observed view. Expected and O/E keep
+                  their own primary-map processing and palette. Use the O/E
+                  palette in a Colormap node for a signal that already
+                  represents contact ratios; its neutral value is 1.
+                </div>
+                <div class="d-flex gap-3 align-items-center mb-3">
+                  <div class="form-check">
+                    <input
+                      id="pipeline-swap"
+                      v-model="swapUpperLower"
+                      class="form-check-input"
+                      type="checkbox"
+                      :disabled="loading || saving"
+                    />
+                    <label class="form-check-label" for="pipeline-swap"
+                      >Swap upper/lower diagonal branches</label
+                    >
+                  </div>
+                  <select
+                    v-model="selectedPresetId"
+                    class="form-select form-select-sm pipeline-preset-select"
+                    :disabled="loading || saving"
+                  >
+                    <option
+                      v-for="preset in RENDERING_PRESETS"
+                      :key="preset.id"
+                      :value="preset.id"
+                    >
+                      {{ preset.label }}
+                    </option>
+                  </select>
+                  <button
+                    class="btn btn-sm btn-outline-primary"
+                    :disabled="loading || saving"
+                    @click="loadSelectedPreset"
+                  >
+                    Load preset
+                  </button>
+                  <button
+                    class="btn btn-sm btn-outline-secondary ms-auto"
+                    :disabled="loading || saving"
+                    @click="loadConfig"
+                  >
+                    Reload
+                  </button>
+                </div>
 
-              <div class="pipeline-graph card mb-2">
-                <div class="card-body p-0">
-                  <div
-                    ref="graphHost"
-                    class="graph-host"
-                    :inert="loading || saving || previewing"
-                    :aria-busy="loading || saving || previewing"
-                  >
-                    <canvas ref="graphCanvasRef" class="graph-canvas"></canvas>
+                <div class="pipeline-graph card mb-2">
+                  <div class="card-body p-0">
+                    <div
+                      ref="graphHost"
+                      class="graph-host"
+                      :inert="loading || saving || previewing"
+                      :aria-busy="loading || saving || previewing"
+                    >
+                      <canvas
+                        ref="graphCanvasRef"
+                        class="graph-canvas"
+                      ></canvas>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <small class="text-muted d-block mb-2">
-                Blue round ports carry numeric signals; purple square ports
-                carry colors. Sinks accept only colors. Right-click to add
-                nodes; use the same full-map graph on both sinks for overlays.
-              </small>
+                <small class="text-muted d-block mb-2">
+                  Blue round ports carry numeric signals; purple square ports
+                  carry colors. Sinks accept only colors. Right-click to add
+                  nodes; use the same full-map graph on both sinks for overlays.
+                </small>
 
-              <div v-if="loading" class="py-2">
-                <span class="spinner-border spinner-border-sm me-2"></span>
-                Loading pipeline configuration…
+                <div v-if="loading" class="py-2">
+                  <span class="spinner-border spinner-border-sm me-2"></span>
+                  Loading pipeline configuration…
+                </div>
               </div>
-            </div>
+            </AdvancedSection>
           </div>
           <div v-show="!previewMode" class="modal-footer">
             <button
@@ -197,7 +206,7 @@
               :disabled="saving || loading || oeBusy"
               @click="resetConfig"
             >
-              Reset
+              Reset to default
             </button>
             <input
               ref="importInputRef"
@@ -259,6 +268,7 @@
 </template>
 
 <script setup lang="ts">
+import AdvancedSection from "../common/AdvancedSection.vue";
 import { saveFileWithNotice } from "@/app/ui/fileSaveNotice";
 import { pipelineEditorStorageKey } from "@/app/core/visualization/renderPipelinePreset";
 import { reportFailure } from "@/app/ui/reportFailure";
@@ -267,9 +277,13 @@ import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager
 import { VisualizationManager } from "@/app/core/mapmanagers/VisualizationManager";
 import type { TrackSummaryResponse } from "@/app/core/net/api/response";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
+import { validatedCurveMode, type CurveMode } from "@/app/core/visualization/colorMidpoint";
 import SignalHistogramModal from "./SignalHistogramModal.vue";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
-import { modDotPlotLowerExpression } from "@/app/core/sequence/modDotPlot";
+import {
+  identityColors,
+  modDotPlotLowerExpression,
+} from "@/app/core/sequence/modDotPlot";
 import {
   restorePipelineEditorGraph,
   pipelineExpressionSignature,
@@ -363,6 +377,8 @@ type PipelineExpression =
       minSignal: number;
       maxSignal: number;
       gamma?: number;
+      curve?: number[];
+      curveMode?: CurveMode;
       min?: PipelineExpression;
       max?: PipelineExpression;
     }
@@ -750,15 +766,22 @@ const buildColorExpressionFromVisualizationOptions = (
     minSignal?: number;
     maxSignal?: number;
     gamma?: number;
+    curve?: number[];
+    curveMode?: CurveMode;
   }
 ): PipelineExpression => {
   const gradient = getVisualizationGradient();
   const minSignal = gradient?.minSignal;
   const maxSignal = gradient?.maxSignal;
+  const curveMode = overrides?.curveMode ?? gradient?.curveMode;
   return {
     type: "colormap",
     mode: "LINEAR",
     input: buildSignalExpressionFromVisualizationOptions(source, overrides),
+    ...(overrides?.curve ?? gradient?.curve
+      ? { curve: overrides?.curve ?? gradient?.curve }
+      : {}),
+    ...(curveMode ? { curveMode } : {}),
     ...((overrides?.gamma ?? gradient?.gamma ?? 1) !== 1
       ? { gamma: overrides?.gamma ?? gradient?.gamma }
       : {}),
@@ -1059,6 +1082,8 @@ const parseExpression = (raw: unknown): PipelineExpression => {
           ? node.mode
           : "LINEAR",
       input: parseExpression(node.input),
+      ...(Array.isArray(node.curve) ? { curve: node.curve } : {}),
+      ...(node.curveMode != null ? { curveMode: validatedCurveMode(node.curveMode) } : {}),
       ...(node.gamma !== undefined && node.gamma !== 1
         ? { gamma: Number(node.gamma) }
         : {}),
@@ -1642,19 +1667,9 @@ const ensureNodeTypesRegistered = (): void => {
         this.size[0] - 14,
         0
       );
-      [
-        "#313695",
-        "#4575b4",
-        "#74add1",
-        "#abd9e9",
-        "#e0f3f8",
-        "#ffffbf",
-        "#fee090",
-        "#fdae61",
-        "#f46d43",
-        "#d73027",
-        "#a50026",
-      ].forEach((color, index) => gradient.addColorStop(index / 10, color));
+      identityColors.forEach((color, index) =>
+        gradient.addColorStop(index / 10, color)
+      );
       context.fillStyle = gradient;
       context.fillRect(14, 78, this.size[0] - 28, 16);
       context.restore();
@@ -2526,6 +2541,8 @@ const createNodeForExpression = (
         node.properties.endColor = expression.endColor;
         node.properties.minSignal = expression.minSignal;
         node.properties.maxSignal = expression.maxSignal;
+        node.properties.curve = expression.curve;
+        node.properties.curveMode = expression.curveMode;
         node.properties.gamma = expression.gamma ?? 1;
       }
       break;
@@ -3047,6 +3064,8 @@ const expressionFromNode = (
           ? "OBSERVED_OVER_EXPECTED"
           : "LINEAR",
       input: input(0),
+      ...(node.properties?.curve ? { curve: node.properties.curve } : {}),
+      ...(node.properties?.curveMode != null ? { curveMode: validatedCurveMode(node.properties.curveMode) } : {}),
       ...(node.properties?.gamma !== undefined && node.properties.gamma !== 1
         ? { gamma: Number(node.properties.gamma) }
         : {}),
@@ -3293,7 +3312,7 @@ const onImportFileSelected = async (event: Event): Promise<void> => {
     const parsed = JSON.parse(text) as Record<string, unknown>;
     if (parsed.target === "PRIMARY_OE")
       throw new Error(
-        "Select Show O/E and use the Primary O/E colormap tab to import this palette."
+        "Select Observed/Expected and use the Primary O/E colormap tab to import this palette."
       );
     const importedEnabled = parsed.enabled;
     const importedSwap = parsed.swapUpperLower;

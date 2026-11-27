@@ -21,8 +21,36 @@
 
 <template>
   <AGPImportChoiceModal />
-  <div :class="{ 'modal-notifications': hasActiveModal() }">
-    <Toaster position="bottom-center" richColors closeButton />
+  <ConfirmActionDialog
+    v-if="confirmation"
+    v-bind="confirmation"
+    :dont-ask-again="
+      confirmation.rememberKey ? rememberConfirmation : undefined
+    "
+    @update:dont-ask-again="rememberConfirmation = $event"
+    @cancel="settleConfirmation('cancel')"
+    @secondary="settleConfirmation('secondary')"
+    @confirm="settleConfirmation('confirm', rememberConfirmation)"
+  >
+    {{ confirmation.body }}
+    <ul v-if="confirmation.details?.length">
+      <li v-for="item in confirmation.details" :key="item">{{ item }}</li>
+    </ul>
+  </ConfirmActionDialog>
+  <UniversalFileSelector
+    v-if="missingSessionFile"
+    :network-manager="networkManager"
+    :title="missingSessionFile.title"
+    :file-type="missingSessionFile.kind"
+    :file-name-predicate="missingSessionFile.accept"
+    @selected="finishSessionFile"
+    @dismissed="finishSessionFile(null)"
+  />
+  <div
+    v-show="mapManager?.viewAndLayersManager.currentViewState.activeTool !== ActiveTool.TRANSLOCATION"
+    :class="{ 'modal-notifications': hasActiveModal() }"
+  >
+    <Toaster position="bottom-center" close-button close-button-position="top-right" />
   </div>
   <!-- <button @click="() => toast.message('My first toast')">Render a toast</button> -->
   <div class="main-ui-component">
@@ -33,14 +61,16 @@
         style="display: block"
         tabindex="-1"
         role="dialog"
+        aria-labelledby="open-progress-title"
       >
         <div class="modal-dialog modal-dialog-centered">
           <div class="modal-content">
             <div class="modal-header">
-              <h5 class="modal-title">Opening file</h5>
+              <h5 id="open-progress-title" class="modal-title">Opening file</h5>
               <button
                 type="button"
                 class="btn-close"
+                aria-label="Close"
                 @click="closeOpenProgress"
               ></button>
             </div>
@@ -50,6 +80,7 @@
                 <div
                   class="progress-bar"
                   role="progressbar"
+                  aria-label="Opening map"
                   :style="{ width: `${openProgressPct}%` }"
                   :aria-valuenow="openProgressPct"
                   aria-valuemin="0"
@@ -173,7 +204,7 @@
                 class="btn btn-primary"
                 @click="chooseCoolerWeightsNaNPolicy('DISABLE_WEIGHTS', false)"
               >
-                Do not use Cooler weights
+                Show raw contacts (no balancing)
               </button>
               <button
                 type="button"
@@ -182,7 +213,7 @@
                   chooseCoolerWeightsNaNPolicy('REPLACE_NANS_WITH_ONE', true)
                 "
               >
-                Replace NaNs with weight 1.0
+                Treat missing weight as 1
               </button>
               <button
                 type="button"
@@ -202,6 +233,7 @@
       ref="upperFrame"
       :networkManager="networkManager"
       :mapManager="mapManager"
+      :mapOpening="mapOpening"
       @jobResult="openJobResult"
       @selected="onFileSelected"
       @closed="onClosed"
@@ -277,8 +309,7 @@
       <h2 id="empty-workspace-title">No contact map open</h2>
       <p>
         Open a <code>.hict.hdf5</code>, <code>.mcool</code> or
-        <code>.hic</code> map, load a saved session, or attach to a session
-        running on the server.
+        <code>.hic</code> map, try an example, or continue a saved session.
       </p>
       <div class="empty-workspace-actions">
         <button
@@ -291,37 +322,44 @@
         <button
           type="button"
           class="btn btn-outline-secondary"
-          @click="upperFrame?.openSession()"
+          @click="examplesOpen = true"
         >
-          Load saved session…
+          <i class="bi bi-stars me-1" aria-hidden="true"></i>Examples…
         </button>
         <button
           type="button"
           class="btn btn-outline-secondary"
+          @click="upperFrame?.openSession()"
+        >
+          <i class="bi bi-clock-history me-1" aria-hidden="true"></i>Open
+          session…
+        </button>
+      </div>
+      <div class="empty-workspace-links">
+        <span>Also:</span>
+        <button
+          type="button"
+          class="btn btn-link btn-sm p-0"
           @click="wizardOpen = true"
         >
           Open with options…
         </button>
+        <span aria-hidden="true">·</span>
         <button
           type="button"
-          class="btn btn-outline-secondary"
-          @click="examplesOpen = true"
-        >
-          Open example…
-        </button>
-        <button
-          type="button"
-          class="btn btn-outline-secondary"
+          class="btn btn-link btn-sm p-0"
           @click="fastaOnlyOpen = true"
         >
           Open FASTA only…
         </button>
+        <span aria-hidden="true">·</span>
         <button
           type="button"
-          class="btn btn-outline-secondary"
-          @click="onAttached"
+          class="btn btn-link btn-sm p-0"
+          @click="onAttached()"
+          title="Show the map that is already open in another window or tab"
         >
-          <i class="bi bi-plug me-1"></i>Attach to open session
+          Join running session
         </button>
       </div>
     </section>
@@ -345,6 +383,14 @@
 </template>
 
 <script setup lang="ts">
+import { resolveApiBase } from "@/app/core/net/apiBase";
+import ConfirmActionDialog from "./components/common/ConfirmActionDialog.vue";
+import UniversalFileSelector from "./components/upper_ribbon/UniversalFileSelector.vue";
+import {
+  askForConfirmation,
+  confirmation,
+  settleConfirmation,
+} from "./confirmAction";
 import type { JobOpenRequest } from "@/app/stores/backgroundJobsUiStore";
 import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
 import { copyText } from "@/app/core/mapmanagers/contextMenuActions";
@@ -359,6 +405,8 @@ import type {
   AttachedSession,
   FastaOnlyStatus,
   ExampleEntry,
+  NormalizationSource,
+  NormalizationWeightMode,
 } from "@/app/core/net/api/RequestManager";
 import { pipelineTransferIssues } from "@/app/core/visualization/transferVisualization";
 import { prepareCoverage } from "@/app/core/visualization/coverageNormalization";
@@ -377,7 +425,6 @@ import {
 import { ensureMapFonts } from "@/app/core/rendering/MapFonts";
 import UpperFrame from "@/app/ui/components/upper_ribbon/UpperFrame.vue";
 import { ActiveTool } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
-import { showTranslocationStatus } from "@/app/core/mapmanagers/TranslocationStatusToast";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import UnsavedEditsDialog from "@/app/ui/components/common/UnsavedEditsDialog.vue";
 import FastaOnlyDialog from "@/app/ui/components/common/FastaOnlyDialog.vue";
@@ -392,6 +439,7 @@ import {
   onMounted,
   onUnmounted,
   ref,
+  shallowRef,
   watch,
   type Ref,
   type CSSProperties,
@@ -426,6 +474,7 @@ import {
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 import { useRemoteBlastResultsStore } from "@/app/stores/remoteBlastResultsStore";
 import { GetVisualizationOptionsRequest } from "@/app/core/net/api/request";
+import { validatedDiagonalMask } from "@/app/core/visualization/diagonalMask";
 import {
   dismissTopmostEscDialog,
   hasAnyOpenEscDialog,
@@ -480,7 +529,7 @@ async function reconnectDesktop(): Promise<void> {
   }
 }
 const networkManager: NetworkManager = new NetworkManager(
-  "http://localhost:5000/",
+  resolveApiBase(window.location, import.meta.env),
   undefined
 );
 // Opt-in automation access. Opening, editing and rendering use native handlers.
@@ -499,6 +548,10 @@ const visualizationOptionsStore = useVisualizationOptionsStore();
 const stylesStore = useStyleStore();
 const uiSettingsStore = useUiSettingsStore();
 const { mapBackgroundColor } = storeToRefs(stylesStore);
+const rememberConfirmation = ref(false);
+watch(confirmation, () => {
+  rememberConfirmation.value = false;
+});
 const sessionStore = useSessionStore();
 const remoteBlastResults = useRemoteBlastResultsStore();
 watch(fastaFilename, (v) => sessionStore.setLinkedFastaFilename(v ?? ""), {
@@ -531,6 +584,7 @@ const htmlElementReferencesStore = usehtmlElementReferencesStore();
 const { miniMapTarget } = storeToRefs(htmlElementReferencesStore);
 const lastAgpFilename: Ref<string> = ref("");
 let openProgressTimer: number | undefined;
+const mapOpening = ref(false);
 const openProgressVisible = ref(false);
 const openProgressStage = ref("starting");
 const openProgressPct = ref(0);
@@ -603,6 +657,7 @@ function startOpenProgress() {
   }
   openProgressStage.value = "starting";
   openProgressPct.value = 0;
+  mapOpening.value = true;
   openProgressVisible.value = true;
   openProgressTimer = window.setInterval(() => {
     if (openProgressInFlight) return;
@@ -629,6 +684,7 @@ function stopOpenProgress() {
     openProgressTimer = undefined;
   }
   openProgressInFlight = false;
+  mapOpening.value = false;
   openProgressVisible.value = false;
 }
 
@@ -647,6 +703,16 @@ function handleGlobalEscape(event: KeyboardEvent): void {
   }
   if (!hasAnyOpenEscDialog()) {
     const target = event.target;
+    if (target instanceof Element) {
+      const disclosure = target.closest("[data-escape-disclosure]");
+      if (
+        disclosure
+          ?.querySelector(':scope > button[aria-expanded="true"]')
+          ?.getClientRects().length
+      ) {
+        return;
+      }
+    }
     if (
       target instanceof Element &&
       target.closest(
@@ -661,7 +727,6 @@ function handleGlobalEscape(event: KeyboardEvent): void {
     if (tool === ActiveTool.SCISSORS) manager?.deactivateScissors();
     else if (tool === ActiveTool.TRANSLOCATION) {
       manager?.deactivateTranslocation();
-      showTranslocationStatus(false);
     }
     manager?.eventManager.resetSelection();
     event.preventDefault();
@@ -688,6 +753,8 @@ function safeColorTranslator(
  * without asking. A one-line note says how many bins are masked and offers Change. The choice is
  * remembered per file, and Attach never asks.
  */
+const maskedMapNotifications = new WeakMap<ContactMapManager, string>();
+
 async function settleExcludedBins(carriedAppearance?: {
   applyCoolerWeights?: boolean;
 }): Promise<void> {
@@ -733,6 +800,8 @@ async function settleExcludedBins(carriedAppearance?: {
   }
   await applyExcludedBinsPolicy("REPLACE_NANS_WITH_ZERO", true);
   if (manager !== mapManager.value) return;
+  if (maskedMapNotifications.get(manager) === file) return;
+  maskedMapNotifications.set(manager, file);
   const count = options.coolerWeightsNaNCount;
   toast.message(
     `${count.toLocaleString()} excluded bin${count === 1 ? "" : "s"} masked.`,
@@ -825,13 +894,11 @@ function resetState() {
 async function onClosed() {
   if (!(await confirmDiscardUnsavedEdits("close this map"))) return;
   const manager = mapManager.value;
-  resetState();
-  void (
-    manager?.visualizationManager.waitForPendingOptionRequests() ??
-    Promise.resolve()
-  ).finally(() =>
-    networkManager.requestManager.closeFile().catch(() => undefined)
+  const closing = networkManager.requestManager.closeFile(
+    manager?.visualizationManager.waitForPendingOptionRequests()
   );
+  resetState();
+  void closing.catch((error) => reportFailure("Close map", error));
 }
 
 /**
@@ -886,28 +953,31 @@ async function adoptSession(
   return newManager;
 }
 
-async function onAttached() {
-  await persistWorkspace();
-  workspaceRestoring = true;
+let joinSessionInFlight = false;
+
+async function onAttached(address = networkManager.host) {
+  if (joinSessionInFlight) return;
+  joinSessionInFlight = true;
+  const changedServer = address !== networkManager.host;
   try {
-    const attached = await networkManager.requestManager.attachSession();
+    await persistWorkspace();
+    workspaceRestoring = true;
+    if (!(await networkManager.requestManager.canJoinSession(address))) {
+      toast.message("Open a map first");
+      return;
+    }
+    const attached = await networkManager.requestManager.attachSession(address);
     if (!attached.filename) {
       toast.error("No active session to attach");
       return;
     }
-    await adoptSession(attached, { fresh: false });
+    networkManager.onHostChanged(address);
+    await adoptSession(attached, { fresh: changedServer });
     toast.success("Attached to session " + attached.filename);
-  } catch (err) {
-    const failure = err as {
-      response?: { data?: { error?: string } };
-      message?: string;
-    };
-    toast.error(
-      failure?.response?.data?.error ??
-        failure?.message ??
-        "Failed to attach session"
-    );
+  } catch (error) {
+    reportFailure("Join running session", error);
   } finally {
+    joinSessionInFlight = false;
     workspaceRestoring = false;
   }
 }
@@ -1069,7 +1139,7 @@ async function openJobResult({
       if (!example) throw new Error("The example is no longer in the catalog");
       if (!example.downloaded)
         throw new Error(
-          "The example files or catalog changed. Open Examples to verify them again."
+          "The example files or catalog changed. Use Examples… to verify them again."
         );
       await openExampleInWizard({ example, folder: `examples/${example.id}` });
     } else if (output.action === "fasta_only") {
@@ -1120,6 +1190,14 @@ async function openJobResult({
         tracks.setTrackVisibleOnAxis(track.trackId, "horizontal", true);
         tracks.setTrackVisibleOnAxis(track.trackId, "vertical", true);
         manager.scheduleWorkspaceLayoutRefresh();
+      } else if (output.action === "attach_overview") {
+        const status = await requests.openSecondarySource(output.filename);
+        if (!status.attached || status.requiresConfirmation)
+          throw Error("The overview does not match the current map.");
+        manager.viewAndLayersManager.setSecondaryResolutionModel(
+          status.compatibility
+        );
+        await manager.reloadTilesFromBackend();
       } else if (
         output.action === "attach_identity" ||
         output.action === "attach_dotplot"
@@ -1274,7 +1352,7 @@ async function openPrimaryDatasetFromWizard(
   await openFileWithOptions(fname, ffname, options);
 }
 
-function displayNewMap(fname: string, ffname?: string) {
+function displayNewMap(fname: string, ffname?: string, converted = false) {
   if (!fname) {
     const message =
       "Cannot open non-specified files: filename=" +
@@ -1288,7 +1366,9 @@ function displayNewMap(fname: string, ffname?: string) {
     .then((proceed) =>
       proceed
         ? openFileWithOptions(fname, ffname).then(() => {
-            toast.success("Opened file " + fname);
+            toast.success(
+              converted ? `Opened ${fname.split(/[\\/]/).pop()}` : "Opened file " + fname
+            );
           })
         : undefined
     )
@@ -1358,7 +1438,9 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
     safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
     minSignal,
     maxSignal,
-    cmap["gamma"] === undefined ? 1 : Number(cmap["gamma"])
+    cmap["gamma"] === undefined ? 1 : Number(cmap["gamma"]),
+    cmap["curve"],
+    cmap["curveMode"]
   );
   let finalCmap = cmapObj;
   if (
@@ -1372,7 +1454,9 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
       typeof signalThresholds.upperSignalBound === "number"
         ? signalThresholds.upperSignalBound
         : cmapObj.maxSignal,
-      cmapObj.gamma
+      cmapObj.gamma,
+      cmapObj.curve,
+      cmapObj.curveMode
     );
   }
   const manager = mapManager.value;
@@ -1388,7 +1472,11 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
         finalCmap,
         autoThresholdEnabled,
         autoThresholdQuantile,
-        signalDisplayMode
+        signalDisplayMode,
+        undefined,
+        undefined,
+        undefined,
+        validatedDiagonalMask(opt["diagonalMask"])
       )
     );
   visualizationOptionsStore.setVisualizationOptions(openingOptions);
@@ -1529,9 +1617,17 @@ async function onSaveSession(): Promise<boolean> {
         "The open map changed while choosing a destination. Save again."
       );
     await manager.visualizationManager.waitForPendingOptionRequests();
-    const normalization = await networkManager.requestManager
-      .coverageNormalizationStatus()
-      .catch(() => undefined);
+    const normalizationSources: NormalizationSource[] =
+      sessionStore.secondaryMapFilename
+        ? ["PRIMARY", "SECONDARY"]
+        : ["PRIMARY"];
+    const normalization = await Promise.all(
+      normalizationSources.map((source) =>
+        networkManager.requestManager
+          .coverageNormalizationStatus(source)
+          .catch(() => undefined)
+      )
+    );
     const captured = networkManager.requestManager.history.applied;
     const savedState = captured
       ? { session: captured.session, currentId: captured.currentId }
@@ -1539,7 +1635,12 @@ async function onSaveSession(): Promise<boolean> {
     const savedSnapshotRevision = manager.figureSnapshots.revision;
     const clientState = {
       figureSnapshots: manager.figureSnapshots.documents(),
-      normalizationWeights: normalization?.mode,
+      sourceNormalizationWeights: Object.fromEntries(
+        normalizationSources.flatMap((source, index) => {
+          const status = normalization[index];
+          return status ? [[source, status.mode]] : [];
+        })
+      ),
       workspace: JSON.parse(
         JSON.stringify(captureWorkspace(manager))
       ) as Record<string, unknown>,
@@ -1616,6 +1717,37 @@ async function onSaveSession(): Promise<boolean> {
   }
 }
 
+const missingSessionFile = shallowRef<{
+  title: string;
+  kind: string;
+  accept: (name: string) => boolean;
+  complete: (name: string | null) => void;
+}>();
+
+function finishSessionFile(name: string | null): void {
+  const pending = missingSessionFile.value;
+  if (name && !pending?.accept(name)) return;
+  missingSessionFile.value = undefined;
+  pending?.complete(name);
+}
+
+function chooseSessionFile(
+  kind: string,
+  list: string[],
+  title: string
+): Promise<string | null> {
+  if (missingSessionFile.value) return Promise.resolve(null);
+  const names = new Set(list);
+  return new Promise((complete) => {
+    missingSessionFile.value = {
+      kind,
+      title,
+      accept: (name) => names.has(name),
+      complete,
+    };
+  });
+}
+
 async function resolveFilename(
   label: string,
   original: string,
@@ -1623,15 +1755,21 @@ async function resolveFilename(
 ): Promise<string | null> {
   if (!original) return "";
   if (list.includes(original)) return original;
-  const replacement = window.prompt(
-    `${label} file '${original}' not found. Enter an alternative filename or leave empty to cancel:`
-  );
-  if (!replacement) return null;
-  if (!list.includes(replacement)) {
-    toast.error(`${label} file '${replacement}' not found`);
-    return null;
-  }
-  return replacement;
+  const basename = pathBasename(original);
+  const decision = await askForConfirmation({
+    title: `Where is “${basename}”?`,
+    body: `The saved session links this ${label}, but it could not be found. Choose its new location${
+      label === "FASTA" ? ", or continue without it" : ""
+    }.`,
+    tone: "info",
+    icon: "bi-folder2-open",
+    confirmLabel: "Choose file…",
+    cancelLabel: "Cancel restore",
+    secondaryLabel: label === "FASTA" ? "Continue without FASTA" : undefined,
+  });
+  if (decision === "secondary" && label === "FASTA") return "";
+  if (decision !== "confirm") return null;
+  return chooseSessionFile(label, list, `Choose ${label} file`);
 }
 
 function pathBasename(path: string): string {
@@ -1708,48 +1846,48 @@ async function resolveRequiredHiCTSessionFilename(
   const visibleCandidates = (likely.length > 0 ? likely : ranked)
     .slice(0, 10)
     .map((entry) => entry.candidate);
-  const defaultCandidate = visibleCandidates[0] ?? "";
-  const promptLines = [
-    "This session does not record the HiCT map filename.",
-    "Enter the relative .hict.hdf5 file path to open, or leave empty to cancel.",
-  ];
-  if (visibleCandidates.length > 0) {
-    promptLines.push("", "Likely candidates:");
-    visibleCandidates.forEach((candidate) => {
-      promptLines.push(`- ${candidate}`);
-    });
-  }
-  const replacement = window.prompt(promptLines.join("\n"), defaultCandidate);
-  if (!replacement) return null;
-  if (!list.includes(replacement)) {
-    toast.error(`HiCT file '${replacement}' not found`);
-    return null;
-  }
-  if (!isHiCTMapFilename(replacement)) {
-    toast.error(`'${replacement}' is not a HiCT map file`);
-    return null;
-  }
-  return replacement;
+  const decision = await askForConfirmation({
+    title: "Choose a map for this saved session",
+    body: "This session does not record the HiCT map filename.",
+    tone: "info",
+    icon: "bi-folder2-open",
+    confirmLabel: "Choose file…",
+    cancelLabel: "Cancel restore",
+    details: visibleCandidates,
+  });
+  if (decision !== "confirm") return null;
+  return chooseSessionFile(
+    "HiCT maps",
+    list.filter(isHiCTMapFilename),
+    "Choose a map"
+  );
 }
 
 /** Opens a v3 session. The server prepares everything first, so a rejected file leaves the open map untouched. */
 /** The saved map used square-root coverage, which is computed from the matrix and not stored. */
-async function restoreCoverageNormalization(): Promise<void> {
+async function restoreCoverageNormalization(
+  source: NormalizationSource
+): Promise<void> {
   const requests = networkManager.requestManager;
-  sessionBusy.value = "Restoring square-root coverage normalization\u2026";
-  const outcome = await prepareCoverage(requests, (status) => {
-    sessionBusy.value = `Restoring square-root coverage normalization: ${Math.round(
-      status.progress * 100
-    )}%`;
-  });
+  const label = source === "PRIMARY" ? "Primary" : "Secondary";
+  sessionBusy.value = `Restoring square-root coverage for ${label}…`;
+  const outcome = await prepareCoverage(
+    requests,
+    (status) => {
+      sessionBusy.value = `Restoring square-root coverage for ${label}: ${Math.round(
+        status.progress * 100
+      )}%`;
+    },
+    { source }
+  );
   try {
     if (!outcome.ok) throw new Error(outcome.message);
-    await requests.selectNormalizationWeights("SQRT_COVERAGE");
+    await requests.selectNormalizationWeights("SQRT_COVERAGE", source);
     await mapManager.value?.reloadTilesFromBackend();
   } catch (error) {
     console.debug("Square-root coverage was not restored", error);
     toast.message(
-      "The saved square-root coverage normalization could not be prepared, so the weights from the file are shown instead.",
+      `Square-root coverage could not be restored for ${label}. That source uses weights from the file.`,
       { duration: 10000 }
     );
   }
@@ -1764,7 +1902,10 @@ async function restoreCompleteSession(
     workspace?: WorkspaceState | null;
     savedLocations?: SessionSavedLocation[];
     savedVisualizationPresets?: SessionVisualizationPreset[];
-    normalizationWeights?: "FILE" | "SQRT_COVERAGE";
+    normalizationWeights?: NormalizationWeightMode;
+    sourceNormalizationWeights?: Partial<
+      Record<NormalizationSource, NormalizationWeightMode>
+    >;
   };
   sessionBusy.value =
     "Restoring session: checking files and rebuilding the assembly\u2026";
@@ -1783,8 +1924,13 @@ async function restoreCompleteSession(
     sessionStore.setSavedVisualizationPresets(
       client.savedVisualizationPresets ?? []
     );
-    if (client.normalizationWeights === "SQRT_COVERAGE")
-      await restoreCoverageNormalization();
+    const normalization = client.sourceNormalizationWeights ?? {
+      PRIMARY: client.normalizationWeights,
+    };
+    for (const source of ["PRIMARY", "SECONDARY"] as const) {
+      if (normalization[source] === "SQRT_COVERAGE")
+        await restoreCoverageNormalization(source);
+    }
     toast.success(
       "Session restored. Undo history starts from the restored assembly.",
       { duration: 6000 }
@@ -1932,7 +2078,9 @@ async function onOpenSession(file: File): Promise<void> {
         safeColorTranslator(endColor, "rgba(0,96,0,1.0)"),
         minSignal,
         maxSignal,
-        cmap["gamma"] === undefined ? 1 : Number(cmap["gamma"])
+        cmap["gamma"] === undefined ? 1 : Number(cmap["gamma"]),
+        cmap["curve"],
+        cmap["curveMode"]
       );
       visualizationOptionsStore.setVisualizationOptions(
         new VisualizationOptions(
@@ -1947,7 +2095,8 @@ async function onOpenSession(file: File): Promise<void> {
           signalDisplayMode,
           coolerWeightsNaNPolicy,
           coolerWeightsHaveNaNs,
-          coolerWeightsNaNCount
+          coolerWeightsNaNCount,
+          validatedDiagonalMask(visRaw["diagonalMask"])
         )
       );
     }
@@ -2078,7 +2227,7 @@ onUnmounted(() => {
   stopOpenProgress();
 });
 
-function onFileSelected(newFilename: string) {
+function onFileSelected(newFilename: string, converted = false) {
   if (newFilename === filename.value && newFilename) {
     toast.message(
       "This file is already open. Use File > Close, then open it again to reset the assembly."
@@ -2088,7 +2237,7 @@ function onFileSelected(newFilename: string) {
   if (newFilename !== filename.value) {
     if (newFilename.trim() !== "") {
       // Keep the current manager and source names until the server accepts the replacement.
-      displayNewMap(newFilename);
+      displayNewMap(newFilename, undefined, converted);
     }
   }
 }
@@ -2097,6 +2246,10 @@ function onFileSelected(newFilename: string) {
 <style scoped>
 .modal-notifications {
   --hict-guidance-visibility: hidden;
+}
+
+.modal-notifications :deep([data-sonner-toaster]) {
+  z-index: 1030;
 }
 
 .modal-notifications :deep([data-sonner-toast][data-type="success"]) {
@@ -2126,36 +2279,67 @@ function onFileSelected(newFilename: string) {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -40%);
+  transform: translate(-50%, -50%);
   z-index: 10;
-  width: min(460px, calc(100vw - 32px));
-  padding: 24px 28px;
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
+  width: min(520px, calc(100vw - 32px));
+  padding: 28px 32px;
+  border: 1px solid var(--hict-border, #dfe3ea);
+  border-radius: 14px;
   background: #ffffff;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  box-shadow: var(--hict-surface-shadow);
   color: #1f2937;
   text-align: center;
 }
 
 .empty-workspace-prompt h2 {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.375rem;
   font-size: 1.25rem;
   font-weight: 600;
 }
 
 .empty-workspace-prompt p {
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
   color: #475569;
-  font-size: 0.9rem;
+  font-size: var(--hict-text-md);
 }
 
 .empty-workspace-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
-  margin-bottom: 0.75rem;
+  gap: 10px;
+  margin-bottom: 0.625rem;
+}
+
+.empty-workspace-actions .btn {
+  min-height: 36px;
+  padding: 6px 14px;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  border-radius: 8px;
+}
+
+.empty-workspace-actions .btn-outline-secondary {
+  color: #344054;
+  border-color: #d0d5dd;
+}
+
+.empty-workspace-links {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  color: #667085;
+  font-size: 0.8125rem;
+}
+
+.empty-workspace-links .btn-link {
+  font-size: inherit;
+  text-decoration: none;
+}
+
+.empty-workspace-links .btn-link:hover {
+  text-decoration: underline;
 }
 
 .main-ui-component {

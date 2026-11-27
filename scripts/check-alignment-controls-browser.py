@@ -35,7 +35,7 @@ with sync_playwright() as pw:
     page.wait_for_function('window.__hictBenchmark')
     page.evaluate('a => window.__hictBenchmark.open(a.matrix,a.api,a.fasta)', vars(args))
     page.wait_for_timeout(1000)
-    toggle = page.get_by_role('menuitemcheckbox', name='Automatically align visible FASTA')
+    toggle = page.get_by_role('menuitemcheckbox', name='Align visible FASTA automatically')
 
     def menu():
         page.get_by_role('link', name='View', exact=True).click()

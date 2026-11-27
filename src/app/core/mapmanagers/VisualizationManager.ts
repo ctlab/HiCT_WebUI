@@ -38,6 +38,7 @@ import {
   querySignalHistogram,
 } from "../visualization/signalDiagnostics";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
+import { viewportLevels } from "../visualization/viewportHistogram";
 import {
   VisualizationDrafts,
   applyVisualizationDraft,
@@ -344,6 +345,10 @@ const replaceColormapNode = (
     : replacement.mode ?? "LINEAR";
   target.node.startColor = replacement.startColor;
   target.node.endColor = replacement.endColor;
+  if (replacement.curve) target.node.curve = replacement.curve;
+  else delete target.node.curve;
+  if (replacement.curveMode) target.node.curveMode = replacement.curveMode;
+  else delete target.node.curveMode;
   if (replacement.gamma === undefined) delete target.node.gamma;
   else target.node.gamma = replacement.gamma;
   target.node.minSignal = replacement.minSignal;
@@ -378,7 +383,9 @@ const visualizationOptionsFromTarget = (
       safeColorTranslator(target.node.endColor, "#006000ff"),
       target.minSignal,
       target.maxSignal,
-      Number(target.node.gamma ?? 1)
+      Number(target.node.gamma ?? 1),
+      target.node.curve,
+      target.node.curveMode
     ),
     currentOptions.autoThresholdEnabled,
     currentOptions.autoThresholdQuantile,
@@ -389,7 +396,8 @@ const visualizationOptionsFromTarget = (
       ? "REPLACE_NANS_WITH_ZERO"
       : currentOptions.coolerWeightsNaNPolicy,
     currentOptions.coolerWeightsHaveNaNs,
-    currentOptions.coolerWeightsNaNCount
+    currentOptions.coolerWeightsNaNCount,
+    currentOptions.diagonalMask
   );
 
 const swapPixelBlendLayers = (expression: unknown): boolean => {
@@ -487,6 +495,12 @@ class VisualizationManager {
     string,
     { revision: number; quantile: number }
   >();
+  private readonly manualCoverageLimits = new Set<string>();
+  private readonly coverageFits = new Map<
+    SourceName,
+    { key: string; controller: AbortController }
+  >();
+  private readonly savedCoverageFits = new Map<string, { lower: number; upper: number }>();
 
   // Opening fits contrast once. Navigation may update the slider domain, but
   // must not refit thresholds, publish a pipeline or invalidate decoded tiles.
@@ -494,6 +508,8 @@ class VisualizationManager {
   public constructor(public readonly mapManager: ContactMapManager) {
     this.moveEndListener = this.mapManager.getMap().on("moveend", () => {
       void this.refreshExpectedProfileOnMoveEnd();
+      void this.refitCoverageOnResolutionChange("PRIMARY");
+      void this.refitCoverageOnResolutionChange("SECONDARY");
     });
   }
 
@@ -501,6 +517,9 @@ class VisualizationManager {
     ++this.visualizationOptionsLoadGeneration;
     this.latestApplications.clear();
     this.normalizationFits.clear();
+    for (const fit of this.coverageFits.values()) fit.controller.abort();
+    this.coverageFits.clear();
+    this.savedCoverageFits.clear();
     for (const { timer } of this.draftTimers.values())
       window.clearTimeout(timer);
     this.draftTimers.clear();
@@ -570,10 +589,20 @@ class VisualizationManager {
     if (this.mapManager.isDisposed || !Object.keys(patch).length) return;
     const context = this.captureVisualizationContext();
     this.drafts.note(context, patch);
+    if ("minSignal" in patch || "maxSignal" in patch) {
+      this.manualCoverageLimits.add(visualizationContextKey(context));
+      this.coverageFits.get(context.source)?.controller.abort();
+    }
     if (
-      ["minSignal", "maxSignal", "startColor", "endColor", "gamma"].some(
-        (field) => field in patch
-      )
+      [
+        "minSignal",
+        "maxSignal",
+        "startColor",
+        "endColor",
+        "gamma",
+        "curve",
+        "curveMode",
+      ].some((field) => field in patch)
     )
       this.normalizationFits.delete(visualizationContextKey(context));
     this.cancelDraftTimer(context);
@@ -1232,14 +1261,17 @@ class VisualizationManager {
           options.colormap.endColorRGBA,
           options.colormap.minSignal,
           nextUpperBound,
-          options.colormap.gamma
+          options.colormap.gamma,
+          options.colormap.curve,
+          options.colormap.curveMode
         ),
         options.autoThresholdEnabled,
         options.autoThresholdQuantile,
         options.signalDisplayMode,
         options.coolerWeightsNaNPolicy,
         options.coolerWeightsHaveNaNs,
-        options.coolerWeightsNaNCount
+        options.coolerWeightsNaNCount,
+        options.diagonalMask
       )
     );
     return nextUpperBound;
@@ -1388,7 +1420,8 @@ class VisualizationManager {
           current.signalDisplayMode,
           current.coolerWeightsNaNPolicy,
           current.coolerWeightsHaveNaNs,
-          current.coolerWeightsNaNCount
+          current.coolerWeightsNaNCount,
+          current.diagonalMask
         )
       );
       await this.sendVisualizationOptionsToServer({
@@ -1532,14 +1565,17 @@ class VisualizationManager {
           options.colormap.endColorRGBA,
           options.colormap.minSignal,
           updatedMaxSignal,
-          options.colormap.gamma
+          options.colormap.gamma,
+          options.colormap.curve,
+          options.colormap.curveMode
         ),
         false,
         quantile,
         options.signalDisplayMode,
         options.coolerWeightsNaNPolicy,
         options.coolerWeightsHaveNaNs,
-        options.coolerWeightsNaNCount
+        options.coolerWeightsNaNCount,
+        options.diagonalMask
       )
     );
     await this.sendVisualizationOptionsToServer({
@@ -1559,7 +1595,7 @@ class VisualizationManager {
       "OBSERVED_OVER_EXPECTED"
     )
       return Promise.reject(
-        new Error("Select Show O/E before editing its palette.")
+        new Error("Select Observed/Expected before editing its palette.")
       );
     const context: VisualizationContext = {
       source: "PRIMARY",
@@ -1590,6 +1626,8 @@ class VisualizationManager {
       max: cmap.maxSignal,
       startColor: cmap.startColorRGBA.HEXA,
       endColor: cmap.endColorRGBA.HEXA,
+      ...(cmap.curve ? { curve: cmap.curve } : {}),
+      ...(cmap.curveMode ? { curveMode: cmap.curveMode } : {}),
       ...(cmap.gamma !== 1 ? { gamma: cmap.gamma } : {}),
     });
   }
@@ -1632,7 +1670,9 @@ class VisualizationManager {
           new ColorTranslator(remembered.endColor, { legacyCSS: true }),
           remembered.min,
           remembered.max,
-          remembered.gamma ?? 1
+          remembered.gamma ?? 1,
+          remembered.curve,
+          remembered.curveMode
         )
       : mode === "OBSERVED_OVER_EXPECTED"
       ? new SimpleLinearGradient(
@@ -1654,7 +1694,8 @@ class VisualizationManager {
       mode,
       previous.coolerWeightsNaNPolicy,
       previous.coolerWeightsHaveNaNs,
-      previous.coolerWeightsNaNCount
+      previous.coolerWeightsNaNCount,
+      previous.diagonalMask
     );
     try {
       await this.sendVisualizationOptionsToServer({
@@ -1760,6 +1801,22 @@ class VisualizationManager {
     );
   }
 
+  public applyDiagonalMask(mask: VisualizationOptions["diagonalMask"]): Promise<void> {
+    const context = this.captureVisualizationContext("PRIMARY", null);
+    return this.runVisualizationMutation(context, async () => {
+      const current = await this.mapManager.networkManager.requestManager.getVisualizationOptions(
+        new GetVisualizationOptionsRequest({})
+      );
+      if (current.diagonalMask.enabled === mask.enabled && current.diagonalMask.distanceBp === mask.distanceBp) return;
+      await this.sendVisualizationOptionsToServer({
+        skipAutoThresholdRefresh: true,
+        preserveCustomPipeline: true,
+        visualizationOptions: applyVisualizationDraft(current, { diagonalMask: mask }),
+      });
+      await this.mapManager.reloadTilesFromBackend();
+    });
+  }
+
   public applyVisualizationPreset(
     options: VisualizationOptions,
     pipeline?: Record<string, unknown>
@@ -1772,13 +1829,7 @@ class VisualizationManager {
     };
     const snapshot = applyVisualizationDraft(options, {});
     const config = pipeline ? cloneRecord(pipeline) : undefined;
-    const revision = this.drafts.note(
-      context,
-      visualizationOptionsDraft(snapshot)
-    );
-    this.drafts.discardBefore(revision);
-    this.normalizationFits.clear();
-    this.refreshVisualizationDraftState();
+    const revision = this.drafts.checkpoint();
     return this.runVisualizationMutation(context, async () => {
       if (!this.validVisualizationRange(snapshot, context))
         throw new Error("This preset has an invalid color range.");
@@ -1786,17 +1837,19 @@ class VisualizationManager {
         await this.mapManager.networkManager.requestManager.getVisualizationOptions(
           new GetVisualizationOptionsRequest({})
         );
-      if (
-        previous.signalDisplayMode === "OBSERVED" &&
-        snapshot.signalDisplayMode !== "OBSERVED"
-      )
-        this.observedDisplayOptions = previous;
       const result = await this.sendVisualizationOptionsToServer({
         skipAutoThresholdRefresh: true,
         visualizationOptions: snapshot,
         renderPipeline: config,
       });
-      this.acknowledgeVisualizationDraft(context, revision);
+      if (
+        previous.signalDisplayMode === "OBSERVED" &&
+        snapshot.signalDisplayMode !== "OBSERVED"
+      )
+        this.observedDisplayOptions = previous;
+      this.drafts.discardBefore(revision);
+      this.normalizationFits.clear();
+      this.projectVisualizationOptions(result, context);
       await this.mapManager.reloadTilesFromBackend();
       return result;
     });
@@ -1811,9 +1864,7 @@ class VisualizationManager {
     const context = this.captureVisualizationContext(source, targetId ?? null);
     if (source === "PRIMARY") context.mode = options.signalDisplayMode;
     const patch = visualizationOptionsDraft(options);
-    const revision = this.drafts.note(context, patch);
-    this.normalizationFits.delete(visualizationContextKey(context));
-    this.refreshVisualizationDraftState();
+    const revision = this.drafts.checkpoint();
     return this.runVisualizationMutation(context, async () => {
       const fresh = await this.freshVisualizationOptions(context);
       const next = applyVisualizationDraft(
@@ -1824,6 +1875,7 @@ class VisualizationManager {
           : fresh.signalDisplayMode
       );
       const result = await this.applyVisualizationSnapshot(context, next);
+      this.normalizationFits.delete(visualizationContextKey(context));
       this.acknowledgeVisualizationDraft(context, revision);
       return result;
     });
@@ -1969,11 +2021,111 @@ class VisualizationManager {
     });
   }
 
+  private rememberCoverageFit(key: string, limits: { lower: number; upper: number }): void {
+    this.savedCoverageFits.delete(key);
+    this.savedCoverageFits.set(key, limits);
+    if (this.savedCoverageFits.size > 64) {
+      const oldest = this.savedCoverageFits.keys().next();
+      if (!oldest.done) this.savedCoverageFits.delete(oldest.value);
+    }
+  }
+
+  private async refitCoverageOnResolutionChange(
+    source: SourceName
+  ): Promise<void> {
+    const manager = this.mapManager;
+    const request = manager.networkManager.requestManager;
+    const previous = this.coverageFits.get(source);
+    if (request.getNormalizationWeightsMode(source) !== "SQRT_COVERAGE") {
+      previous?.controller.abort();
+      this.coverageFits.delete(source);
+      return;
+    }
+    const layers = manager.viewAndLayersManager;
+    const context = this.captureVisualizationContext(source, null);
+    if (
+      manager.isDisposed ||
+      (source === "PRIMARY" && context.mode !== "OBSERVED") ||
+      layers.isSequenceScale
+    )
+      return;
+    const key = visualizationContextKey(context);
+    if (this.manualCoverageLimits.has(key) || this.normalizationFits.has(key)) return;
+    const resolutionForSource = () => {
+      const levels = layers.getVisibleSourceResolutionDescriptors();
+      return (source === "PRIMARY" ? levels.primary : levels.secondary)
+        ?.bpResolution;
+    };
+    const resolution = resolutionForSource();
+    const sourceRevision = request.getNormalizationSourceRevision(source);
+    if (resolution === undefined) return;
+    const fitKey = JSON.stringify([key, resolution, sourceRevision]);
+    if (previous?.key === fitKey) return;
+    previous?.controller.abort();
+    const controller = new AbortController();
+    const fit = { key: fitKey, controller };
+    this.coverageFits.set(source, fit);
+    const current = () =>
+      !controller.signal.aborted &&
+      !manager.isDisposed &&
+      !this.manualCoverageLimits.has(key) &&
+      visualizationContextKey(this.captureVisualizationContext(source, null)) === key &&
+      request.getNormalizationSourceRevision(source) === sourceRevision &&
+      request.getNormalizationWeightsMode(source) === "SQRT_COVERAGE" &&
+      resolutionForSource() === resolution;
+    try {
+      let levels = this.savedCoverageFits.get(fitKey);
+      if (!levels) {
+        const expression = await this.getSourceSignalExpression(source);
+        const sample = await querySignalHistogram(manager, diagnosticBounds(manager), {
+          source: expression ? "PRIMARY" : source,
+          signalMode: expression ? "PIPELINE_SIGNAL" : "TRADITIONAL_NORMALIZED",
+          expression,
+          signal: controller.signal,
+          domain: "matrix",
+          tileEdge: 64,
+          concurrency: 4,
+        });
+        levels = viewportLevels(sample.values, false);
+      }
+      if (!current()) return;
+      const fitLevels = levels;
+      await this.runVisualizationMutation(context, async () => {
+        const options = await this.freshVisualizationOptions(context);
+        if (
+          !current() ||
+          !options.applyCoolerWeights ||
+          (source === "PRIMARY" && options.signalDisplayMode !== "OBSERVED")
+        )
+          return;
+        await this.applyVisualizationSnapshot(
+          context,
+          applyVisualizationDraft(options, {
+            minSignal: fitLevels.lower,
+            maxSignal: fitLevels.upper,
+          })
+        );
+        if (current()) this.rememberCoverageFit(fitKey, fitLevels);
+      });
+    } catch {
+      if (this.coverageFits.get(source) === fit)
+        this.coverageFits.delete(source);
+    }
+  }
+
   private async fitVisualizationContext(
     context: VisualizationContext,
     quantile: number,
     revision: number
   ): Promise<void> {
+    const request = this.mapManager.networkManager.requestManager;
+    const layers = this.mapManager.viewAndLayersManager;
+    const resolutionForSource = () => {
+      const levels = layers.getVisibleSourceResolutionDescriptors();
+      return (context.source === "PRIMARY" ? levels.primary : levels.secondary)?.bpResolution;
+    };
+    const resolution = resolutionForSource();
+    const sourceRevision = request.getNormalizationSourceRevision(context.source);
     const options = await this.freshVisualizationOptions(context);
     if (
       context.source === "PRIMARY" &&
@@ -2023,6 +2175,13 @@ class VisualizationManager {
       context,
       applyVisualizationDraft(options, { maxSignal: next })
     );
+    if (resolution !== undefined && resolution === resolutionForSource() &&
+        sourceRevision === request.getNormalizationSourceRevision(context.source) &&
+        request.getNormalizationWeightsMode(context.source) === "SQRT_COVERAGE" &&
+        this.drafts.revision(context) === revision) {
+      const key = JSON.stringify([visualizationContextKey(context), resolution, sourceRevision]);
+      this.rememberCoverageFit(key, { lower: options.colormap.minSignal, upper: next });
+    }
   }
 
   /** Swaps the top/bottom layers of every pixel blend; false when no blend exists. */
@@ -2080,7 +2239,13 @@ class VisualizationManager {
     return changed;
   }
 
-  public async refreshAutoThresholdAndReload(
+  public refreshAutoThresholdAndReload(
+    source?: SourceName
+  ): Promise<number | null> {
+    return this.trackOptionRequest(this.refreshAutoThreshold(source));
+  }
+
+  private async refreshAutoThreshold(
     source?: SourceName
   ): Promise<number | null> {
     const pipelineConfig = await this.getActiveRenderPipelineConfig();

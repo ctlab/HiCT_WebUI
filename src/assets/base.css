@@ -21,12 +21,15 @@
 
 /* color palette from <https://github.com/vuejs/theme> */
 :root {
-  --hict-font-sans: Avenir, Helvetica, "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif;
+  --hict-font-sans: Avenir, Helvetica, "Segoe UI", Inter, "Helvetica Neue",
+    Arial, sans-serif;
   --hict-ui-bg: rgba(255, 255, 255, 0.98);
   --hict-ui-fg: rgba(18, 25, 35, 0.96);
   --hict-ui-muted: rgba(73, 84, 99, 0.88);
   --hict-ui-border: rgba(15, 23, 38, 0.18);
   --hict-ui-outline: rgba(255, 255, 255, 0.92);
+  --hict-strand-plus: #d92d20;
+  --hict-strand-minus: #1d4ed8;
   --hict-surface-bg: var(--hict-ui-bg);
   --hict-surface-bg-muted: var(--hict-ui-bg);
   --hict-surface-fg: var(--hict-ui-fg);
@@ -55,8 +58,38 @@
   --vt-c-text-dark-2: rgba(235, 235, 235, 0.64);
 }
 
+.modal-footer.hict-modal-footer {
+  gap: 8px;
+  padding: 14px 20px;
+}
+
+.modal-footer.hict-modal-footer > * {
+  margin: 0;
+}
+
+.hict-modal-footer .btn {
+  min-height: 36px;
+  border-radius: 8px;
+}
+
+.hict-heavy-dialog > .modal-content {
+  border-radius: 12px;
+  box-shadow: var(--hict-surface-shadow);
+}
+
+.hict-heavy-dialog > .modal-content > .modal-header {
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px 12px;
+}
+
+.hict-heavy-dialog > .modal-content > .modal-body {
+  padding: 16px 20px;
+}
+
 /* semantic color variables for this project */
 :root {
+  color-scheme: light;
   --color-background: var(--vt-c-white);
   --color-background-soft: var(--vt-c-white-soft);
   --color-background-mute: var(--vt-c-white-mute);
@@ -68,20 +101,6 @@
   --color-text: var(--vt-c-text-light-1);
 
   --section-gap: 160px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-background: var(--vt-c-black);
-    --color-background-soft: var(--vt-c-black-soft);
-    --color-background-mute: var(--vt-c-black-mute);
-
-    --color-border: var(--vt-c-divider-dark-2);
-    --color-border-hover: var(--vt-c-divider-dark-1);
-
-    --color-heading: var(--vt-c-text-dark-1);
-    --color-text: var(--vt-c-text-dark-2);
-  }
 }
 
 *,
@@ -208,11 +227,155 @@ body:has(> .assembly-context-menu, > .axis-context-menu) [data-sonner-toaster] {
   z-index: 1049;
 }
 
-[data-sonner-toaster][data-sonner-theme="light"] [data-sonner-toast][data-type="success"] {
-  --success-text: #087328;
+[data-sonner-toast][data-styled="true"][data-type="error"] {
+  --hict-toast-accent: var(--hict-danger);
+}
+
+[data-sonner-toast][data-styled="true"][data-type="warning"] {
+  --hict-toast-accent: var(--hict-warning);
+}
+
+[data-sonner-toast][data-styled="true"][data-type="info"] {
+  --hict-toast-accent: var(--hict-primary);
+}
+
+[data-sonner-toast][data-styled="true"][data-type="success"] {
+  --hict-toast-accent: var(--hict-success);
+}
+
+[data-sonner-toaster][data-sonner-theme="light"]
+  [data-sonner-toast][data-styled="true"] {
+  --hict-toast-shadow: 0 8px 24px rgba(15, 23, 38, 0.12);
+  border-color: #eaecf0;
+  border-left: 4px solid var(--hict-toast-accent, var(--hict-primary));
+  border-radius: var(--hict-radius-md);
+  padding: 12px 14px;
+  gap: 10px;
+  background: #fff;
+  color: #101828;
+  box-shadow: var(--hict-toast-shadow);
+  font-size: 13.5px;
+}
+
+[data-sonner-toaster][data-sonner-theme="light"]
+  [data-sonner-toast][data-styled="true"]:focus-visible {
+  box-shadow: var(--hict-toast-shadow), var(--hict-focus-ring);
+}
+
+[data-sonner-toaster][data-sonner-theme="light"] [data-sonner-toast] [data-title] {
+  font-weight: 650;
+}
+
+[data-sonner-toaster][data-sonner-theme="light"] [data-sonner-toast] [data-description] {
+  color: #475467;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+[data-sonner-toaster][data-sonner-theme="light"] [data-sonner-toast] [data-icon] {
+  color: var(--hict-toast-accent, var(--hict-primary));
+}
+
+[data-sonner-toaster][data-sonner-theme="light"] [data-close-button-position="top-right"] {
+  top: 6px;
+  right: 6px;
+  transform: none;
+}
+
+[data-sonner-toaster][data-sonner-theme="light"]
+  [data-close-button] ~ :is([data-content], [data-button]):last-child {
+  margin-right: 20px;
+}
+
+.ol-viewport > .ol-overlaycontainer-stopevent .ol-zoom,
+.map-shell .ol-zoom {
+  top: auto;
+  bottom: .5em;
+  left: .5em;
+}
+
+.map-shell .ol-zoomslider {
+  top: auto;
+  bottom: calc(.5em + 60px);
+  left: .5em;
+  height: 120px;
+}
+
+body.map-zoom-controls-hidden .ol-zoom,
+body.map-zoom-controls-hidden .ol-zoomslider {
+  display: none;
 }
 
 .ol-zoom button {
   min-width: 24px;
   min-height: 24px;
+}
+
+:root {
+  /* NEW tokens */
+  --hict-primary: #0d6efd; /* Bootstrap 5.2 primary; PrimeVue must use this too */
+  --hict-primary-soft: #e7f1ff;
+  --hict-danger: #b42318;
+  --hict-danger-soft: #fef3f2;
+  --hict-warning: #b54708;
+  --hict-warning-soft: #fffaeb;
+  --hict-success: #067647;
+  --hict-success-soft: #ecfdf3;
+  --hict-radius-sm: 6px;
+  --hict-radius-md: 10px;
+  --hict-space-1: 4px;
+  --hict-space-2: 8px;
+  --hict-space-3: 12px;
+  --hict-space-4: 16px;
+  --hict-space-5: 24px;
+  --hict-text-xs: 0.75rem; /* 12px: captions, help text */
+  --hict-text-sm: 0.8125rem; /* 13px: secondary labels */
+  --hict-text-md: 0.875rem; /* 14px: body, controls */
+  --hict-text-lg: 1.0625rem; /* 17px: dialog titles */
+  --hict-focus-ring: 0 0 0 3px rgba(13, 110, 253, 0.28);
+  --hict-toolbar-btn: 44px;
+}
+
+.hict-source-resolutions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.hict-source-resolutions .source-placement {
+  border-radius: 4px;
+  padding-inline: 5px;
+  background: #f2f4f7;
+  color: #475467;
+  font-size: 10.5px;
+}
+.hict-source-resolutions .source-name {
+  color: #344054;
+  pointer-events: auto;
+}
+.hict-source-resolutions .source-resolution {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+.hict-source-resolutions .source-resolution.loading {
+  color: var(--hict-warning);
+  font-weight: 500;
+}
+
+/* Use the same accent in file tables, selection checkboxes, and range sliders. */
+:root {
+  --primary-color: var(--bs-primary, #0d6efd);
+  --primary-color-text: #fff;
+}
+.p-slider .p-slider-range {
+  background: var(--primary-color);
+}
+.p-slider .p-slider-handle {
+  border-color: var(--primary-color);
+}
+.p-slider:not(.p-disabled) .p-slider-handle:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
 }

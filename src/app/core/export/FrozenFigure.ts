@@ -13,6 +13,40 @@ export interface FrozenFigure {
   readonly capturedAt: string;
 }
 
+async function rasterizePrintScene(
+  svg: SVGSVGElement,
+  width: number,
+  height: number
+): Promise<Blob> {
+  const source = new Blob([new XMLSerializer().serializeToString(svg)], {
+    type: "image/svg+xml",
+  });
+  const url = URL.createObjectURL(source);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  try {
+    const image = new Image();
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () =>
+        reject(Error("The adjusted figure could not be rendered."));
+      image.src = url;
+    });
+    canvas.getContext("2d")!.drawImage(image, 0, 0, width, height);
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (blob) =>
+          blob ? resolve(blob) : reject(Error("PNG encoding failed.")),
+        "image/png"
+      )
+    );
+  } finally {
+    URL.revokeObjectURL(url);
+    canvas.width = canvas.height = 0;
+  }
+}
+
 export async function freezeFigureScene(
   scene: {
     svg: SVGSVGElement;
@@ -74,10 +108,26 @@ export async function encodeFrozenFigure(
       throw Error("The captured figure has no provenance.");
     const metadata = JSON.parse(node.textContent);
     metadata.outputSize = print;
+    const requestedMinimum = printOptions?.minimumTextPoints;
+    let adjustedText = false;
+    if (requestedMinimum !== undefined) {
+      const { applyMinimumPrintText } = await import(
+        "./FigurePrintReadability"
+      );
+      adjustedText = applyMinimumPrintText(
+        figure,
+        svg,
+        print.widthMm,
+        requestedMinimum
+      );
+      metadata.outputSize.minimumTextPoints = requestedMinimum;
+    }
     node.textContent = JSON.stringify(metadata);
     if (format === "png")
       return printSizedPng(
-        figure.png,
+        adjustedText
+          ? await rasterizePrintScene(svg, figure.width, figure.height)
+          : figure.png,
         figure.width,
         print.widthMm,
         node.textContent

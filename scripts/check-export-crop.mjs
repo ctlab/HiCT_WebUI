@@ -119,6 +119,10 @@ assert.equal(
 );
 assert.equal(bounds(rectangle, [0, 100]), undefined);
 assert.equal(bounds([[NaN, 0], ...rectangle.slice(1)], [100, 100]), undefined);
+// Fitting 1,000 bases to the Electron viewport produced 797.0000000000001 px.
+assert.equal(module.exports.exportPixelSpan(112 + 797.0000000000001), 909);
+assert.equal(module.exports.exportPixelSpan(112 + 797.01), 910);
+assert.equal(module.exports.exportPixelSpan(0.00000001), 1);
 const cropped = module.exports.cropSelectionScene(
   { svg: { childNodes: [] }, canvas: { width: 100, height: 100 } },
   {

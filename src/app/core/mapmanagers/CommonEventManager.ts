@@ -1,3 +1,5 @@
+import { askForConfirmation } from "@/app/ui/confirmAction";
+import { offerFastaLink } from "@/app/ui/fastaExportPrerequisite";
 import { reportFailure } from "@/app/ui/reportFailure";
 import { prepareFileSave } from "../export/FileSave";
 import { writeCoordinateFile } from "../export/CoordinateFileExport";
@@ -46,27 +48,32 @@ import { ActiveTool } from "./HiCViewAndLayersManager";
 import { BorderStyle, NamePlacement } from "@/app/core/tracks/Track2DSymmetric";
 import { Coordinate } from "ol/coordinate";
 import { toast } from "vue-sonner";
-import { showTranslocationStatus } from "./TranslocationStatusToast";
 
 class CommonEventManager {
   public constructor(public readonly mapManager: ContactMapManager) {}
 
-  public applyAssemblyInfo(asmInfo: {
-    contigDescriptors: ContigDescriptor[];
-    scaffoldDescriptors: ScaffoldDescriptor[];
-  }): void {
-    this.mapManager.viewAndLayersManager.clearSelections();
+  public applyAssemblyInfo(
+    asmInfo: {
+      contigDescriptors: ContigDescriptor[];
+      scaffoldDescriptors: ScaffoldDescriptor[];
+    },
+    selection: Parameters<ContactMapManager["viewAndLayersManager"]["reconcileSelectionAfterAssemblyChange"]>[0] = "clear"
+  ): void {
+    const layers = this.mapManager.viewAndLayersManager;
+    const previousIds = layers.currentViewState.selectedContigIds;
+    layers.clearSelections();
     this.mapManager.contigDimensionHolder.updateContigData(
       asmInfo.contigDescriptors
     );
     this.mapManager.scaffoldHolder.updateScaffoldData(
       asmInfo.scaffoldDescriptors
     );
-    this.mapManager.viewAndLayersManager.reapplyAxisScopes();
+    layers.reapplyAxisScopes();
+    layers.reconcileSelectionAfterAssemblyChange(selection, previousIds);
     this.mapManager.refreshOverviewMinimap();
   }
 
-  private getSelectedContigBpRange(actionLabel: string): {
+  private getSelectedContigBpRange(): {
     startBP: number;
     endBP: number;
   } | null {
@@ -82,7 +89,7 @@ class CommonEventManager {
         .getArray()
         .map((cd) => cd.get("contigDescriptor") as ContigDescriptor);
     if (selectedArray.length === 0) {
-      toast.error(`Select one or more contigs before ${actionLabel}.`);
+      toast.error("Select a contig or scaffold first");
       return null;
     }
 
@@ -105,12 +112,6 @@ class CommonEventManager {
     if (typeof startBP !== "number" || typeof endBP !== "number") {
       toast.error(
         "Selected contig range is no longer available in the current assembly."
-      );
-      console.log(
-        `Not ${actionLabel}: left border bp is`,
-        startBP,
-        " right border bp is ",
-        endBP
       );
       return null;
     }
@@ -331,7 +332,7 @@ class CommonEventManager {
       ),
     ];
     */
-    const range = this.getSelectedContigBpRange("grouping a scaffold");
+    const range = this.getSelectedContigBpRange();
     if (!range) return;
     const { startBP, endBP } = range;
     this.mapManager.networkManager.requestManager
@@ -342,9 +343,8 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.applyAssemblyInfo(asmInfo);
+        this.applyAssemblyInfo(asmInfo, "group");
         void this.mapManager.linearTrackManager.clearCachesAndRender();
-        this.resetSelection();
         this.reloadTracks();
       })
       .catch((error) =>
@@ -355,7 +355,7 @@ class CommonEventManager {
   public onRemoveScaffoldClicked(): void {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
-    const range = this.getSelectedContigBpRange("ungrouping a scaffold");
+    const range = this.getSelectedContigBpRange();
     if (!range) return;
     const { startBP, endBP } = range;
     this.mapManager.networkManager.requestManager
@@ -366,9 +366,8 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.applyAssemblyInfo(asmInfo);
+        this.applyAssemblyInfo(asmInfo, "ungroup");
         void this.mapManager.linearTrackManager.clearCachesAndRender();
-        this.resetSelection();
         this.reloadTracks();
       })
       .catch((error) => reportFailure("Ungroup selection", error));
@@ -378,17 +377,17 @@ class CommonEventManager {
     const assembly =
       await this.mapManager.networkManager.requestManager.unscaffoldAll();
     this.applyAssemblyInfo(assembly);
-    this.resetSelection();
     await this.mapManager.reloadVisuals();
   }
 
-  public onMoveToDebrisClicked(): void {
+  public async onMoveToDebrisClicked(): Promise<void> {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
-    const range = this.getSelectedContigBpRange("moving selection to debris");
+    const range = this.getSelectedContigBpRange();
     if (!range) {
       return;
     }
+    if (!(await this.confirmDebris(range))) return;
     this.mapManager.networkManager.requestManager
       .moveSelectionToDebris(
         new MoveSelectionToDebrisRequest({
@@ -399,16 +398,36 @@ class CommonEventManager {
       .then((asmInfo) => {
         this.applyAssemblyInfo(asmInfo);
         void this.mapManager.linearTrackManager.clearCachesAndRender();
-        this.resetSelection();
         this.reloadTracks();
       })
-      .catch((error) => reportFailure("Move selection to debris", error));
+      .catch((error) => reportFailure("Move to unplaced (debris)", error));
+  }
+
+  public async confirmDebris(range: { startBP: number; endBP: number }): Promise<boolean> {
+    const manager = this.mapManager;
+    const api = manager.networkManager.requestManager;
+    const history = api.history.applied;
+    const scaffolds = manager.scaffoldHolder.scaffoldBordersSorted
+      .filter(([bounds]) => bounds.startBP < range.endBP && bounds.endBP > range.startBP)
+      .map(([, id]) => manager.scaffoldHolder.getScaffoldById(id).scaffoldName);
+    if (scaffolds.length < 2) return true;
+    const details = scaffolds.slice(0, 5);
+    if (scaffolds.length > details.length) details.push(`and ${scaffolds.length - details.length} more`);
+    const result = await askForConfirmation({
+      title: `Move ${scaffolds.length} scaffolds to unplaced?`,
+      body: "These scaffolds will be removed from the assembly and from AGP and FASTA exports. Undo restores them.",
+      tone: "danger",
+      icon: "bi-box-arrow-down",
+      confirmLabel: `Move ${scaffolds.length} scaffolds`,
+      details,
+    });
+    return result === "confirm" && !manager.isDisposed && history === api.history.applied;
   }
 
   public onReverseSelectionClicked(): void {
     this.mapManager.viewAndLayersManager.currentViewState.activeTool =
       undefined;
-    const range = this.getSelectedContigBpRange("reversing a selection");
+    const range = this.getSelectedContigBpRange();
     if (!range) {
       return;
     }
@@ -420,27 +439,22 @@ class CommonEventManager {
         })
       )
       .then((asmInfo) => {
-        this.applyAssemblyInfo(asmInfo);
-        this.resetSelection();
+        this.applyAssemblyInfo(asmInfo, "reverse");
         this.mapManager.reloadVisuals();
       })
       .catch((error) => reportFailure("Reverse selection", error));
   }
 
-  public onMoveSelectionClicked(): void {
+  public onMoveSelectionClicked(exactContig = false): void {
     const activeTool =
       this.mapManager.viewAndLayersManager.currentViewState.activeTool;
     if (activeTool === ActiveTool.TRANSLOCATION) {
-      showTranslocationStatus(false);
       this.mapManager.deactivateTranslocation();
     } else {
-      const range = this.getSelectedContigBpRange(
-        "entering translocation mode"
-      );
+      const range = this.getSelectedContigBpRange();
       if (!range) {
         return;
       }
-      showTranslocationStatus(true);
       this.mapManager.viewAndLayersManager.currentViewState.activeTool =
         ActiveTool.TRANSLOCATION;
       this.mapManager.viewAndLayersManager.selectionInteractions.contigSelectionInteraction.setActive(
@@ -465,6 +479,10 @@ class CommonEventManager {
       this.mapManager.viewAndLayersManager.selectionInteractions.translocationArrowSelectionInteraction.set(
         "endBP",
         range.endBP
+      );
+      this.mapManager.viewAndLayersManager.selectionInteractions.translocationArrowSelectionInteraction.set(
+        "exactContig",
+        exactContig
       );
     }
 
@@ -532,38 +550,13 @@ class CommonEventManager {
       "rightContigDescriptor",
     ].map((key) => clickedArrow.get(key) as ContigDescriptor | undefined);
 
-    let targetOrder: number;
-    let targetBP: number;
-    if (leftContigDescriptor && rightContigDescriptor) {
-      targetOrder = idToOrder[leftContigDescriptor.contigId];
-      targetBP = prefixSumBp[1 + targetOrder];
-    } else if (rightContigDescriptor) {
-      targetOrder = 0;
-      targetBP = -1;
-    } else {
-      targetOrder = this.mapManager.contigDimensionHolder.contig_count;
-      targetBP = prefixSumBp[prefixSumBp.length - 1] + 1;
-    }
-
-    console.log(
-      "Click in Translocation mode:",
-      "leftContigDescriptor:",
-      leftContigDescriptor,
-      "left contig order: ",
-      idToOrder[leftContigDescriptor?.contigId ?? 0],
-      "left contig start bp: ",
-      prefixSumBp[idToOrder[leftContigDescriptor?.contigId ?? 0]],
-      "rightContigDescirptor:",
-      rightContigDescriptor,
-      "right contig order: ",
-      idToOrder[rightContigDescriptor?.contigId ?? 0],
-      "right contig start bp: ",
-      prefixSumBp[idToOrder[rightContigDescriptor?.contigId ?? 0]],
-      "targetOrder:",
-      targetOrder,
-      "targetBP:",
-      targetBP
-    );
+    // The outermost visible arrows represent the assembly boundaries,
+    // even when the first or last contigs are hidden at this resolution.
+    const targetBP = !leftContigDescriptor
+      ? 0
+      : !rightContigDescriptor
+      ? prefixSumBp[prefixSumBp.length - 1]
+      : prefixSumBp[1 + idToOrder[leftContigDescriptor.contigId]];
 
     const [startBP, endBP] = ["startBP", "endBP"].map(
       (key) => interaction.get(key) as number
@@ -575,15 +568,15 @@ class CommonEventManager {
           startBP: startBP,
           endBP: endBP,
           targetStartBP: targetBP,
+          exactContig: interaction.get("exactContig") === true,
         })
       )
       .then((asmInfo) => {
-        this.applyAssemblyInfo(asmInfo);
+        this.applyAssemblyInfo(asmInfo, "move");
       })
       .catch((error) => reportFailure("Move selection", error))
       .finally(() => {
-        this.onMoveSelectionClicked();
-        this.resetSelection();
+        this.mapManager.deactivateTranslocation();
         this.mapManager.reloadVisuals();
       });
   }
@@ -660,7 +653,6 @@ class CommonEventManager {
       const layers = this.mapManager.viewAndLayersManager;
       const position = layers.captureViewPosition();
       this.applyAssemblyInfo(response);
-      this.resetSelection();
       this.mapManager.reloadVisuals();
       layers.restoreViewPosition(position);
       return true;
@@ -699,7 +691,6 @@ class CommonEventManager {
     void operation
       .then((response) => {
         this.applyAssemblyInfo(response);
-        this.resetSelection();
         this.mapManager.reloadVisuals();
       })
       .catch(() => {
@@ -708,6 +699,10 @@ class CommonEventManager {
   }
 
   public async onExportFASTAForSelectionClicked(): Promise<void> {
+    if (!this.mapManager.networkManager.requestManager.hasLinkedFasta) {
+      await offerFastaLink(this.mapManager, () => void this.onExportFASTAForSelectionClicked());
+      return;
+    }
     const matrixViewStore = useMatrixViewStore();
     this.mapManager.deactivateTranslocation();
     const [fromBp, toBp] = [

@@ -4,7 +4,6 @@
     class="signal-range"
     :class="{
       'handles-close': close,
-      'has-histogram': !!$slots.histogram,
       'has-midpoint': midpoint !== undefined,
     }"
     :style="colors"
@@ -25,19 +24,20 @@
     ></div>
     <button
       v-for="side in sides"
+      v-show="side !== 'midpoint' || isVisible(valueFor(side))"
       :key="side"
       type="button"
       class="range-handle"
-      :class="side"
+      :class="[side, edgeFor(side)]"
       role="slider"
       :aria-label="
         side === 'midpoint'
           ? 'Color midpoint'
           : `${side === 'lower' ? 'Lower' : 'Upper'} threshold`
       "
-      :aria-valuemin="side === 'midpoint' ? lower : min"
-      :aria-valuemax="side === 'midpoint' ? upper : max"
-      :aria-valuenow="valueFor(side)"
+      :aria-valuemin="side === 'midpoint' ? clamp(lower) : min"
+      :aria-valuemax="side === 'midpoint' ? clamp(upper) : max"
+      :aria-valuenow="clamp(valueFor(side))"
       :aria-valuetext="textFor(side)"
       :title="
         side === 'midpoint'
@@ -46,11 +46,30 @@
       "
       :style="{ left: `${fraction(valueFor(side)) * 100}%` }"
       @pointerdown.stop="start($event, side)"
+      @contextmenu="side === 'midpoint' && removeMidpoint($event)"
       @keydown="key($event, side)"
     ></button>
-    <div v-if="$slots.histogram" class="range-histogram" @pointerdown.stop>
-      <slot name="histogram" />
-    </div>
+    <button
+      v-for="(point, index) in points"
+      v-show="isVisible(point)"
+      :key="index"
+      type="button"
+      class="range-handle midpoint"
+      role="slider"
+      :aria-label="'Curve point ' + (index + 1)"
+      :aria-valuemin="lower"
+      :aria-valuemax="upper"
+      :aria-valuenow="point"
+      :style="{ left: fraction(point) * 100 + '%' }"
+      @contextmenu.stop.prevent="emit('remove', index)"
+      @keydown.delete.prevent="emit('remove', index)"
+      @keydown.left.prevent="emit('point', index, point - (max - min) / 100)"
+      @keydown.right.prevent="emit('point', index, point + (max - min) / 100)"
+      @pointerdown.stop="startPoint($event, index)"
+    ></button>
+  </div>
+  <div v-if="$slots.histogram" class="range-histogram">
+    <slot name="histogram" />
   </div>
 </template>
 <script setup lang="ts">
@@ -71,18 +90,24 @@ const props = defineProps<{
   lowerColor: string;
   upperColor: string;
   neutral?: number;
+  points?: number[];
   midpoint?: number;
   midpointText?: string;
   gradient?: string;
 }>();
 const emit = defineEmits<{
   (event: "lower" | "upper" | "midpoint", value: number): void;
+  (event: "remove", index: number): void;
+  (event: "point", index: number, value: number): void;
   (event: "adjustment-start"): void;
+  (event: "adjustment-end"): void;
 }>();
 const rail = ref<HTMLElement>();
 const width = ref(300);
 let observer: ResizeObserver | undefined;
 let drag: { pointer: number; side: Side } | undefined;
+const clamp = (value: number) => Math.max(props.min, Math.min(props.max, value));
+const isVisible = (value: number) => value >= props.min && value <= props.max;
 const fraction = (value: number) =>
   props.max > props.min
     ? Math.max(0, Math.min(1, (value - props.min) / (props.max - props.min)))
@@ -111,6 +136,12 @@ const valueFor = (side: Side) =>
     : side === "lower"
     ? props.lower
     : props.upper;
+function edgeFor(side: Side): string | undefined {
+  if (side === "midpoint") return;
+  const value = valueFor(side);
+  if (value < props.min) return "pinned-below";
+  if (value > props.max) return "pinned-above";
+}
 const textFor = (side: Side) =>
   side === "midpoint"
     ? props.midpointText
@@ -132,6 +163,18 @@ function at(event: PointerEvent) {
       (props.max - props.min)
   );
 }
+let pointDrag: { id: number; index: number } | undefined;
+function removeMidpoint(event: MouseEvent) {
+  event.preventDefault();
+  emit("remove", 0);
+}
+function startPoint(event: PointerEvent, index: number) {
+  if (event.button !== 0 || !rail.value) return;
+  emit("adjustment-start");
+  pointDrag = { id: event.pointerId, index };
+  rail.value.setPointerCapture(event.pointerId);
+  event.preventDefault();
+}
 function start(event: PointerEvent, side?: Side) {
   if (event.button !== 0 || !rail.value || !(props.max > props.min)) return;
   emit("adjustment-start");
@@ -151,21 +194,26 @@ function start(event: PointerEvent, side?: Side) {
   event.preventDefault();
 }
 function move(event: PointerEvent) {
+  if (pointDrag?.id === event.pointerId)
+    emit("point", pointDrag.index, at(event));
   if (drag?.pointer === event.pointerId) {
     change(drag.side, at(event));
     event.preventDefault();
   }
 }
 function stop(event: PointerEvent) {
-  if (drag?.pointer !== event.pointerId) return;
+  if (drag?.pointer !== event.pointerId && pointDrag?.id !== event.pointerId)
+    return;
+  pointDrag = undefined;
   if (rail.value?.hasPointerCapture(event.pointerId))
     rail.value.releasePointerCapture(event.pointerId);
   drag = undefined;
+  emit("adjustment-end");
 }
 function key(event: KeyboardEvent, side: Side) {
-  const current = valueFor(side);
-  const lower = side === "midpoint" ? props.lower : props.min;
-  const upper = side === "midpoint" ? props.upper : props.max;
+  const current = clamp(valueFor(side));
+  const lower = side === "midpoint" ? clamp(props.lower) : props.min;
+  const upper = side === "midpoint" ? clamp(props.upper) : props.max;
   const step = (upper - lower) / (event.shiftKey ? 1000 : 100);
   const values: Record<string, number> = {
     ArrowLeft: current - step,
@@ -180,6 +228,7 @@ function key(event: KeyboardEvent, side: Side) {
   if (event.key in values) {
     emit("adjustment-start");
     change(side, values[event.key]);
+    emit("adjustment-end");
     event.preventDefault();
     event.stopPropagation();
   }
@@ -208,14 +257,8 @@ onBeforeUnmount(() => observer?.disconnect());
   border-radius: 4px;
   pointer-events: none;
 }
-.signal-range.has-histogram {
-  height: 122px;
-}
 .range-histogram {
-  position: absolute;
-  top: 42px;
-  left: 0;
-  right: 0;
+  margin: -10px 10px 0;
 }
 .range-rail {
   left: 0;
@@ -282,4 +325,15 @@ onBeforeUnmount(() => observer?.disconnect());
 .range-handle:active {
   cursor: grabbing;
 }
+.pinned-below, .pinned-above { width: 10px; }
+.pinned-below { transform: translate(0, -50%); border-radius: 0 10px 10px 0; }
+.pinned-above { transform: translate(-100%, -50%); border-radius: 10px 0 0 10px; }
+.pinned-below::after, .pinned-above::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  border: 3px solid transparent;
+}
+.pinned-below::after { right: 100%; border-right-color: #475467; }
+.pinned-above::after { left: 100%; border-left-color: #475467; }
 </style>

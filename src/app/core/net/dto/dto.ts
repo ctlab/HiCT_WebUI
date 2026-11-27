@@ -33,6 +33,7 @@ import type {
 } from "../../domain/ScaffoldDescriptor";
 import Colormap from "../../visualization/colormap/Colormap";
 import SimpleLinearGradient from "../../visualization/colormap/SimpleLinearGradient";
+import { validatedDiagonalMask } from "../../visualization/diagonalMask";
 import VisualizationOptions, {
   type CoolerWeightsNaNPolicy,
 } from "../../visualization/VisualizationOptions";
@@ -337,6 +338,8 @@ class SimpleLinearGradientDTO extends InboundDTO<SimpleLinearGradient> {
       endColorRGBAString: e.endColorRGBA.RGBA,
       minSignal: e.minSignal,
       maxSignal: e.maxSignal,
+      ...(e.curve ? { curve: e.curve } : {}),
+      ...(e.curveMode ? { curveMode: e.curveMode } : {}),
       ...(e.gamma !== 1 ? { gamma: e.gamma } : {}),
     });
   }
@@ -365,7 +368,9 @@ class SimpleLinearGradientDTO extends InboundDTO<SimpleLinearGradient> {
       end,
       minSignal,
       maxSignal,
-      this.json["gamma"] === undefined ? 1 : Number(this.json["gamma"])
+      this.json["gamma"] === undefined ? 1 : Number(this.json["gamma"]),
+      this.json["curve"],
+      this.json["curveMode"]
     );
   }
 }
@@ -409,6 +414,7 @@ class VisualizationOptionsDTO extends InboundDTO<VisualizationOptions> {
       coolerWeightsNaNPolicy: e.coolerWeightsNaNPolicy,
       coolerWeightsHaveNaNs: e.coolerWeightsHaveNaNs,
       coolerWeightsNaNCount: e.coolerWeightsNaNCount,
+      diagonalMask: e.diagonalMask,
       colormap: ColormapDTO.fromEntity(e.colormap),
     });
   }
@@ -448,7 +454,8 @@ class VisualizationOptionsDTO extends InboundDTO<VisualizationOptions> {
         : "OBSERVED",
       coolerWeightsNaNPolicy,
       Boolean(this.json["coolerWeightsHaveNaNs"] ?? false),
-      coolerWeightsNaNCount
+      coolerWeightsNaNCount,
+      validatedDiagonalMask(this.json["diagonalMask"])
     );
   }
 }

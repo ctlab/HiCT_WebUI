@@ -67,7 +67,7 @@
                 :disabled="loading"
                 class="form-control"
                 type="text"
-                placeholder="Relative folder or file path under DATA_DIR"
+                placeholder="Relative path in the HiCT data folder"
                 @keydown.enter.prevent="onPathGoClicked"
               />
               <button
@@ -160,7 +160,7 @@
             }}</small>
 
             <div v-if="loading" class="d-flex align-items-center gap-2 py-3">
-              <strong>Loading {{ currentDirectory || "DATA_DIR" }}…</strong>
+              <strong>Loading {{ currentDirectory || "the data folder" }}…</strong>
               <div
                 class="spinner-border spinner-border-sm ms-auto"
                 role="status"
@@ -179,6 +179,31 @@
               />
             </div>
             <div v-else class="tree-host">
+              <div
+                v-if="filteredEntries.length > treePageSize"
+                class="d-flex align-items-center gap-2"
+              >
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  :disabled="!treePage"
+                  @click="treePage--"
+                >
+                  Previous
+                </button>
+                <span
+                  >Page {{ treePage + 1 }} of
+                  {{ Math.ceil(filteredEntries.length / treePageSize) }}</span
+                >
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  :disabled="
+                    (treePage + 1) * treePageSize >= filteredEntries.length
+                  "
+                  @click="treePage++"
+                >
+                  Next
+                </button>
+              </div>
               <Tree
                 v-if="treeNodes.length > 0"
                 :value="treeNodes"
@@ -250,6 +275,7 @@
 </template>
 
 <script setup lang="ts">
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import type { FileEntryResponse } from "@/app/core/net/api/response";
 import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
@@ -435,29 +461,36 @@ type PrimeTreeNode = {
 const fileSelectionKey = (path: string): string => `file:${path}`;
 const directorySelectionKey = (path: string): string => `dir:${path}`;
 
+const treePageSize = 100;
+const treePage = ref(0);
+watch(filteredEntries, () => {
+  treePage.value = 0;
+});
 const treeNodes = computed<PrimeTreeNode[]>(() => {
-  return filteredEntries.value.map((entry) => {
-    const isDirectory = entry.type === "directory";
-    return {
-      key: isDirectory
-        ? directorySelectionKey(entry.path)
-        : fileSelectionKey(entry.path),
-      label: entry.name,
-      selectable: true,
-      leaf: !isDirectory,
-      data: {
-        path: entry.path,
-        meta: isDirectory
-          ? entry.symbolicLink
-            ? "linked folder"
-            : "folder"
-          : `${formatBytes(entry.sizeBytes)}, ${formatTimestamp(
-              entry.modifiedAtMs
-            )}`,
-        iconCls: getIconForEntry(entry.path, isDirectory),
-      },
-    };
-  });
+  return filteredEntries.value
+    .slice(treePage.value * treePageSize, (treePage.value + 1) * treePageSize)
+    .map((entry) => {
+      const isDirectory = entry.type === "directory";
+      return {
+        key: isDirectory
+          ? directorySelectionKey(entry.path)
+          : fileSelectionKey(entry.path),
+        label: entry.name,
+        selectable: true,
+        leaf: !isDirectory,
+        data: {
+          path: entry.path,
+          meta: isDirectory
+            ? entry.symbolicLink
+              ? "linked folder"
+              : "folder"
+            : `${formatBytes(entry.sizeBytes)}, ${formatTimestamp(
+                entry.modifiedAtMs
+              )}`,
+          iconCls: getIconForEntry(entry.path, isDirectory),
+        },
+      };
+    });
 });
 
 const selectedPathFromTreeKeys = (): string | null => {
@@ -504,7 +537,9 @@ const parentDirectoryEntry = (): FileEntryResponse => {
   };
 };
 
+let directoryRequest = 0;
 const loadDirectory = async (directory: string): Promise<boolean> => {
+  const request = ++directoryRequest;
   const normalizedDirectory = normalizeRelativePath(directory);
   loading.value = true;
   errorMessage.value = "";
@@ -512,6 +547,7 @@ const loadDirectory = async (directory: string): Promise<boolean> => {
     const entries = await props.networkManager.requestManager.listDirectory(
       normalizedDirectory
     );
+    if (request !== directoryRequest) return false;
     currentDirectory.value = normalizedDirectory;
     pathInput.value = normalizedDirectory;
     allEntries.value = entries.slice();
@@ -519,10 +555,10 @@ const loadDirectory = async (directory: string): Promise<boolean> => {
     treeSelectionKeys.value = {};
     return true;
   } catch (error: unknown) {
-    errorMessage.value = String(error);
+    if (request === directoryRequest) errorMessage.value = extractErrorMessage(error);
     return false;
   } finally {
-    loading.value = false;
+    if (request === directoryRequest) loading.value = false;
   }
 };
 

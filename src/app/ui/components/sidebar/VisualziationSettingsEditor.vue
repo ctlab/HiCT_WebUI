@@ -34,11 +34,17 @@
           <div class="threshold-field-row">
             <input
               class="form-control form-control-sm threshold-number-input"
-              type="number"
+              inputmode="decimal"
               :aria-label="'Lower signal threshold'"
               lang="en"
-              step="any"
-              v-model.number="lowerBound"
+              :value="
+                focusedThreshold === 'lower'
+                  ? thresholdDraft
+                  : formatSignal(lowerBound)
+              "
+              @focus="startThresholdEdit($event, 'lower', lowerBound)"
+              @blur="focusedThreshold = null"
+              @input="lowerBound = readThreshold($event)"
               @keydown.enter="applySettings"
             />
             <ColorPickerRectangle
@@ -53,11 +59,17 @@
           <div class="threshold-field-row">
             <input
               class="form-control form-control-sm threshold-number-input"
-              type="number"
+              inputmode="decimal"
               aria-label="Upper signal threshold"
               lang="en"
-              step="any"
-              v-model.number="upperBound"
+              :value="
+                focusedThreshold === 'upper'
+                  ? thresholdDraft
+                  : formatSignal(upperBound)
+              "
+              @focus="startThresholdEdit($event, 'upper', upperBound)"
+              @blur="focusedThreshold = null"
+              @input="upperBound = readThreshold($event)"
               @keydown.enter="applySettings"
             />
             <ColorPickerRectangle
@@ -96,10 +108,14 @@
         :lower-color="fromColor.RGBA"
         :upper-color="toColor.RGBA"
         :neutral="observedExpectedPalette ? toSliderPosition(1) : undefined"
-        :midpoint="midpointPosition"
+        :midpoint="curveData ? undefined : midpointPosition"
+        :points="curveData ? controlPoints.map((p) => p.position) : undefined"
+        @remove="removePoint"
+        @point="editPoint"
         :midpoint-text="formatSignal(midpointSignal) + ' signal; half color'"
         :gradient="colorRailGradient"
         @adjustment-start="keepAdjustmentLimits"
+        @adjustment-end="adjustingView = undefined"
         @lower="onLowerRangeInput"
         @upper="onUpperRangeInput"
         @midpoint="onMidpointInput"
@@ -115,13 +131,58 @@
             "
             :oe="observedExpectedPalette"
             :context="histogramContext"
+            :diagonal-mask="diagonalMask"
             :min="sliderPositionMin"
             :max="sliderPositionMax"
+            :view-from="viewFrom"
+            :view-to="viewTo"
+            :view-mode="viewMode"
+            :view-minimum="viewScale.minimum"
             :lower="lowerSliderValue"
             :upper="upperSliderValue"
             :position="toHistogramPosition"
+            :transfer="transferPolyline"
+            :control-points="controlPoints"
+            :curve-endpoints="
+              midpointPosition === undefined ? undefined : endpointWeights
+            "
+            @edit="editPoint"
+            @edit-endpoint="editEndpoint"
+            @remove="removePoint"
             @levels="fitViewportLevels"
-          />
+            @view="setViewRange"
+            @fit-view="fitHistogramView"
+            @whole-data="storeHistogramView(undefined)"
+            @zoom-view="zoomHistogramView"
+            @pan-view="panHistogramView"
+          >
+            <div class="slider-spacing">
+              <span id="slider-scale-label" class="scale-caption">
+                Slider scale
+              </span>
+              <div
+                class="scale-choice"
+                role="group"
+                aria-labelledby="slider-scale-label"
+                title="Spacing of the slider and histogram only. The map colours do not change."
+              >
+                <button
+                  type="button"
+                  :aria-pressed="!sliderLogScale"
+                  @click="setSliderLogScale(false)"
+                >
+                  Linear
+                </button>
+                <button
+                  type="button"
+                  :aria-pressed="sliderLogScale"
+                  @click="setSliderLogScale(true)"
+                >
+                  Log
+                </button>
+              </div>
+            </div>
+          </ViewportSignalHistogram>
         </template>
       </SignalRangeControl>
       <p
@@ -153,177 +214,144 @@
         O/E: lower color is depleted, white is 1, upper color is enriched.
         Limits must satisfy 0 &lt; lower &lt; 1 &lt; upper.
       </p>
-      <div class="range-actions">
-        <button
-          v-if="midpointPosition !== undefined && colorGamma !== 1"
-          type="button"
-          class="range-text-button"
-          @click="setColorGamma(1)"
-          title="Restore a linear color transition without changing thresholds"
-        >
-          Reset midpoint
-        </button>
-        <div class="scale-group">
-          <span id="slider-scale-label" class="scale-caption"
-            >Slider scale</span
-          >
-          <div
-            class="scale-choice"
-            role="group"
-            aria-labelledby="slider-scale-label"
-            title="Changes slider sensitivity, not matrix values"
-          >
-            <button
-              type="button"
-              :aria-pressed="!sliderLogScale"
-              @click="sliderLogScale = false"
-            >
-              Linear
-            </button>
-            <button
-              type="button"
-              :aria-pressed="sliderLogScale"
-              @click="sliderLogScale = true"
-            >
-              Log
-            </button>
-          </div>
-        </div>
-        <button
-          type="button"
-          class="range-text-button"
-          @click="focusThresholds"
-          title="Expand the selected range across the slider for finer adjustment"
-        >
-          Focus range
-        </button>
-      </div>
-      <details class="range-details">
-        <summary>
-          <span>Slider limits &amp; data</span
-          ><span class="range-summary-value"
-            >{{ formatSignal(sliderMin) }} – {{ formatSignal(sliderMax) }}</span
-          >
-        </summary>
-        <p class="range-help">
-          Slider limits control adjustment precision. They do not change the
-          selected colors or thresholds.
-        </p>
-        <div class="domain-inputs">
-          <label
-            >Minimum<input
-              v-model.number="sliderLowerLimit"
-              type="number"
-              step="any"
-              aria-label="Slider minimum signal"
-              @change="onSliderLimitChanged"
-          /></label>
-          <label
-            >Maximum<input
-              v-model.number="sliderUpperLimit"
-              type="number"
-              step="any"
-              aria-label="Slider maximum signal"
-              @change="onSliderLimitChanged"
-          /></label>
-        </div>
-        <button
-          v-if="!primaryDerivedSignal"
-          type="button"
-          class="range-text-button"
-          title="Use the exact minimum and maximum of the loaded tiles, including rare extreme pixels"
-          @click="useLoadedRange"
-        >
-          Use full loaded range
-        </button>
-        <p class="range-help" role="status" data-testid="exact-range-status">
-          {{ percentageSignalScale ? "Percentage scale: 0–100" : rangeStatus }}
-        </p>
-        <button
-          v-if="!percentageSignalScale"
-          type="button"
-          class="range-text-button"
-          :disabled="rangeScanning"
-          @click="fetchExactRange"
-        >
-          Scan whole map
-        </button>
-        <button
-          v-if="rangeScanning"
-          type="button"
-          class="range-text-button"
-          @click="cancelExactRange"
-        >
-          Cancel scan
-        </button>
-        <span v-if="!percentageSignalScale" class="range-help">
-          · Reads all tiles; may take time.</span
-        >
-        <p v-if="primaryDerivedSignal" class="range-help">
-          Whole-map Expected/O/E limits use a profile fitted across this
-          resolution, independently of the viewport profile. Scanning changes
-          slider limits only.
-        </p>
-      </details>
-      <p
-        v-if="applyCoolerWeights && coolerWeightsHaveNaNs"
-        class="small mb-1"
-        :class="weightsNeedAttention ? 'text-danger' : 'text-muted'"
-        role="status"
-      >
-        {{
-          weightsNeedAttention
-            ? "Excluded bins use replacement weights."
-            : `${coolerWeightsNaNCount} excluded bins masked.`
-        }}
-      </p>
       <NormalizationSelector
         :map-manager="props.mapManager"
         @apply="applySettings"
       >
-        <template #excluded-bins>
-          <details v-if="coolerWeightsHaveNaNs" :class="coolerWeightsHintClass">
-            <summary
-              :title="
-                weightsNeedAttention
-                  ? 'Excluded-bin policy needs attention'
-                  : 'Excluded-bin settings'
-              "
+        <template #normalization-note>
+          <p
+            v-if="applyCoolerWeights && coolerWeightsHaveNaNs"
+            class="small text-muted mb-0"
+          >
+            <span role="status">{{
+              weightsNeedAttention
+                ? "Excluded bins use replacement weights."
+                : `${coolerWeightsNaNCount.toLocaleString()} bins without weights are hidden.`
+            }}</span>
+            <button
+              type="button"
+              class="range-text-button ms-1"
+              @click="openExcludedBinsChoice"
             >
-              <i
-                v-if="weightsNeedAttention"
-                class="bi bi-exclamation-triangle-fill"
-              ></i>
-              Cooler weights
-            </summary>
-            <div v-if="coolerWeightsHaveNaNs">
-              Detected {{ coolerWeightsNaNCount }} non-finite Cooler balancing
-              weight{{ coolerWeightsNaNCount === 1 ? "" : "s" }}. Selected
-              tactic: {{ coolerWeightsNaNPolicyLabel }}.
-              <label
-                class="form-label small mt-2 mb-1"
-                for="cooler-weights-nan-policy"
+              Change
+            </button>
+          </p>
+        </template>
+        <template #advanced-top>
+          <div class="diagonal-mask">
+            <label class="diagonal-toggle">
+              <input
+                type="checkbox"
+                :checked="pendingDiagonalMask?.enabled ?? diagonalMask.enabled"
+                :disabled="!mapManager || !!pendingDiagonalMask"
+                aria-describedby="diagonal-mask-help"
+                @change="toggleDiagonalMask(($event.target as HTMLInputElement).checked)"
+              />
+              Ignore values near the diagonal
+            </label>
+            <label class="diagonal-distance">
+              Distance ±
+              <input
+                :value="diagonalDistance"
+                :disabled="!diagonalMask.enabled || !!pendingDiagonalMask"
+                :aria-invalid="!!diagonalError || undefined"
+                :aria-describedby="diagonalError ? 'diagonal-mask-error' : 'diagonal-mask-help'"
+                aria-label="Diagonal mask distance"
+                type="text"
+                @input="diagonalDistance = ($event.target as HTMLInputElement).value"
+                @change="commitDiagonalDistance()"
+              />
+              bp
+            </label>
+            <p v-if="diagonalError" id="diagonal-mask-error" class="small text-danger mb-0" role="alert">
+              {{ diagonalError }}
+            </p>
+            <p id="diagonal-mask-help" class="range-help mb-0">
+              Hides contacts within this distance of the main diagonal and
+              leaves them out of the histogram, Fit levels and the automatic range.
+            </p>
+          </div>
+          <div class="range-details">
+            <button
+              v-if="!primaryDerivedSignal"
+              type="button"
+              class="range-text-button"
+              title="Use the exact minimum and maximum of the loaded tiles, including rare extreme pixels"
+              @click="useLoadedRange"
+            >
+              Use full loaded range
+            </button>
+            <div class="range-option" v-if="!percentageSignalScale">
+              <span>Exact limits</span>
+              <button
+                v-if="rangeScanning"
+                type="button"
+                class="range-text-button"
+                @click="cancelExactRange"
               >
-                NaN weight tactic
-              </label>
-              <select
-                id="cooler-weights-nan-policy"
-                v-model="coolerWeightsNaNPolicy"
-                class="form-select form-select-sm"
-                @change="onCoolerWeightsNaNPolicyChanged"
+                Cancel scan
+              </button>
+              <button
+                v-else
+                type="button"
+                class="range-text-button"
+                title="Reads all tiles to update the data range used by Auto"
+                @click="fetchExactRange"
               >
-                <option value="DISABLE_WEIGHTS">
-                  Do not use Cooler weights
-                </option>
-                <option value="REPLACE_NANS_WITH_ONE">
-                  Replace NaNs with weight 1.0
-                </option>
-                <option value="REPLACE_NANS_WITH_ZERO">
-                  Replace NaNs with weight 0
-                </option>
-              </select>
+                Scan whole map
+              </button>
             </div>
-          </details>
+            <p
+              class="range-help mb-0"
+              role="status"
+              data-testid="exact-range-status"
+            >
+              {{
+                percentageSignalScale ? "Percentage scale: 0–100" : rangeStatus
+              }}
+            </p>
+            <button
+              v-if="
+                midpointPosition !== undefined &&
+                (colorGamma !== 1 || curveData)
+              "
+              type="button"
+              class="range-text-button"
+              @click="setColorGamma(1)"
+              title="Restore a linear color transition without changing thresholds"
+            >
+              Reset curve
+            </button>
+          </div>
+        </template>
+        <template #excluded-bins>
+          <div v-if="coolerWeightsHaveNaNs" class="range-option">
+            <label for="cooler-weights-nan-policy">Bins without weights</label>
+            <select
+              id="cooler-weights-nan-policy"
+              ref="excludedBinsSelect"
+              v-model="coolerWeightsNaNPolicy"
+              class="form-select form-select-sm excluded-bins-choice"
+              @change="onCoolerWeightsNaNPolicyChanged"
+            >
+              <option value="DISABLE_WEIGHTS">
+                Show raw contacts (no balancing)
+              </option>
+              <option value="REPLACE_NANS_WITH_ONE">
+                Treat missing weight as 1
+              </option>
+              <option value="REPLACE_NANS_WITH_ZERO">
+                Hide bins without balancing weight (recommended)
+              </option>
+            </select>
+          </div>
+        </template>
+        <template #advanced-help>
+          <p v-if="midpointPosition !== undefined" class="range-help mb-0">
+            Double-click the histogram to add a curve point. Drag to move it or
+            right-click to remove it. Drag the square endpoints to change the
+            color at and beyond the limits.
+          </p>
         </template>
       </NormalizationSelector>
 
@@ -340,8 +368,11 @@
 </template>
 
 <script setup lang="ts">
+import { formatSignal } from "@/app/core/format/formatSignal";
+import { identityColors } from "@/app/core/sequence/modDotPlot";
 import {
   computed,
+  nextTick,
   Ref,
   onBeforeUnmount,
   onMounted,
@@ -364,11 +395,19 @@ import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsS
 import { storeToRefs } from "pinia";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import {
+  buildCurve,
   midpointFraction,
   gammaFromMidpoint,
-  colorFraction,
+  prepareColorFraction,
+  curveParts,
+  logarithmicPosition,
+  valueFractionFromLog,
+  type CurveMode,
+  MAX_CURVE_POINTS,
 } from "@/app/core/visualization/colorMidpoint";
 import { ColorTranslator } from "colortranslator";
+import { histogramScale, validHistogramView, type HistogramRange } from "@/app/core/visualization/histogramView";
+import { parseDistanceBp, type DiagonalMask } from "@/app/core/visualization/diagonalMask";
 import type { CurrentSignalRangeResponse } from "@/app/core/net/api/response";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 import { robustUpperLimit } from "@/app/core/visualization/tileSignalRange";
@@ -385,7 +424,41 @@ const {
   coolerWeightsNaNPolicy,
   coolerWeightsHaveNaNs,
   coolerWeightsNaNCount,
+  diagonalMask,
 } = storeToRefs(visualizationOptionsStore);
+const diagonalDistance = ref("");
+const diagonalError = ref("");
+const pendingDiagonalMask = ref<DiagonalMask>();
+watch(diagonalMask, ({ distanceBp }) => {
+  diagonalDistance.value = distanceBp.toLocaleString("en-US");
+  diagonalError.value = "";
+}, { immediate: true });
+
+async function updateDiagonalMask(mask: DiagonalMask) {
+  const manager = props.mapManager?.visualizationManager;
+  if (!manager || pendingDiagonalMask.value) return;
+  pendingDiagonalMask.value = mask;
+  diagonalError.value = "";
+  try {
+    await manager.applyDiagonalMask(mask);
+  } catch (error) {
+    diagonalError.value = error instanceof Error ? error.message : "Could not update the diagonal mask.";
+  } finally {
+    pendingDiagonalMask.value = undefined;
+  }
+}
+function toggleDiagonalMask(enabled: boolean) {
+  void updateDiagonalMask({ enabled, distanceBp: diagonalMask.value.distanceBp });
+}
+function commitDiagonalDistance() {
+  const bp = parseDistanceBp(diagonalDistance.value);
+  if (bp === undefined) {
+    diagonalError.value = "Enter a distance between 1 bp and 1 Gb.";
+    return;
+  }
+  diagonalDistance.value = bp.toLocaleString("en-US");
+  void updateDiagonalMask({ enabled: true, distanceBp: bp });
+}
 const matrixViewStore = useMatrixViewStore();
 const {
   presentationMode,
@@ -426,6 +499,25 @@ const fromColor: Ref<ColorTranslator> = ref(
 const toColor = ref(
   new ColorTranslator("rgba(0,96,0,1.0)", { legacyCSS: true })
 ) as Ref<ColorTranslator>;
+const focusedThreshold = ref<string | null>(null);
+const thresholdDraft = ref("");
+function startThresholdEdit(
+  event: FocusEvent,
+  field: string,
+  value: number
+): void {
+  const input = event.currentTarget as HTMLInputElement;
+  thresholdDraft.value = Number.isFinite(value) ? String(value) : "";
+  focusedThreshold.value = field;
+  void nextTick(() => {
+    if (document.activeElement === input) input.select();
+  });
+}
+function readThreshold(event: Event): number {
+  thresholdDraft.value = (event.target as HTMLInputElement).value;
+  const value = thresholdDraft.value.trim();
+  return value ? Number(value) : NaN;
+}
 const lowerBound: Ref<number> = ref(signalMin.value);
 const upperBound: Ref<number> = ref(signalMax.value);
 const rangeValidationError = computed(() => {
@@ -440,15 +532,21 @@ const rangeValidationError = computed(() => {
     return "O/E limits must satisfy 0 < lower < 1 < upper.";
   return "";
 });
-const sliderLowerLimit: Ref<number> = ref(0);
-const sliderUpperLimit: Ref<number> = ref(1);
-const sliderBoundsManual: Ref<boolean> = ref(false);
+type ManualHistogramView = HistogramRange & { domain: HistogramRange };
+const autoDataRange = shallowRef<HistogramRange>({ from: 0, to: 1 });
+const manualView = shallowRef<ManualHistogramView>();
+const adjustingView = shallowRef<ManualHistogramView>();
+const histogramViewsByMap = new WeakMap<ContactMapManager, Map<string, ManualHistogramView>>();
+const useFullLoadedBounds = ref(false);
+let viewMap: ContactMapManager | undefined;
+const excludedBinsSelect = ref<HTMLSelectElement>();
 const sliderLogScale: Ref<boolean> = ref(false);
 const syncingFromColormap: Ref<boolean> = ref(false);
 const liveApplyReady: Ref<boolean> = ref(false);
 const percentageSignalScale: Ref<boolean> = ref(false);
 let registeredRangeMapManager: ContactMapManager | undefined;
 let optionsHydrationGeneration = 0;
+let optionsHydration: Promise<void> = Promise.resolve();
 let rangeController: AbortController | undefined;
 let exactRangeResolution: number | undefined;
 let rangeTimer: number | undefined;
@@ -474,16 +572,46 @@ const histogramContext = computed(() =>
 function fitViewportLevels(lower: number, upper: number): void {
   lowerBound.value = lower;
   upperBound.value = upper;
-  sliderBoundsManual.value = true;
-  sliderLowerLimit.value = lower;
-  sliderUpperLimit.value = upper;
 }
 let rangeDomainContext = "";
 let rangeMap: ContactMapManager | undefined;
 const onViewportRangeChanged = () => refreshProcessedRange();
 const rangeCache = new Map<string, ExactRange>();
-const LOG_SLIDER_FLOOR_FRACTION = 1e-10;
+const completedRanges = new Map<string, ExactRange>();
+let completedRangesMap: ContactMapManager | undefined;
 
+function exactRangeContext(
+  manager: ContactMapManager,
+  bpResolution: number
+): string {
+  if (completedRangesMap !== manager) {
+    completedRangesMap = manager;
+    completedRanges.clear();
+    rangeCache.clear();
+  }
+  const request = manager.networkManager.requestManager;
+  return JSON.stringify([
+    bpResolution,
+    histogramContext.value,
+    request.getNormalizationWeightsMode("PRIMARY"),
+    request.getNormalizationWeightsMode("SECONDARY"),
+    request.history.summary?.session,
+    request.history.summary?.revision,
+  ]);
+}
+
+function showExactLimits(range: ExactRange, bpResolution: number): void {
+  exactRangeResolution = bpResolution;
+  signalMin.value = range.min;
+  signalMax.value = range.max > range.min ? range.max : range.min + 1;
+  autoDataRange.value = { from: signalMin.value, to: signalMax.value };
+  const displayMode = visualizationOptionsStore.signalDisplayMode;
+  const mode = displayMode === "OBSERVED_OVER_EXPECTED" ? "O/E" : "Expected";
+  const suffix = primaryDerivedSignal.value ? ` (whole-map ${mode})` : "";
+  rangeStatus.value = `Exact limits${suffix}: ${formatSignal(
+    range.min
+  )} – ${formatSignal(range.max)} (${range.count} finite cells)`;
+}
 const fromColorFn: Ref<() => ColorTranslator> = ref(
   () => fromColor.value
 ) as Ref<() => ColorTranslator>;
@@ -491,48 +619,35 @@ const toColorFn: Ref<() => ColorTranslator> = ref(() => toColor.value) as Ref<
   () => ColorTranslator
 >;
 
-const coolerWeightsNaNPolicyLabel = computed(() => {
-  switch (coolerWeightsNaNPolicy.value) {
-    case "DISABLE_WEIGHTS":
-      return "do not use Cooler weights";
-    case "REPLACE_NANS_WITH_ZERO":
-      return "replace NaNs with weight 0";
-    case "REPLACE_NANS_WITH_ONE":
-    default:
-      return "replace NaNs with weight 1";
-  }
-});
-
 const weightsNeedAttention = computed(
   () =>
     applyCoolerWeights.value &&
     coolerWeightsHaveNaNs.value &&
     coolerWeightsNaNPolicy.value !== "REPLACE_NANS_WITH_ZERO"
 );
-const coolerWeightsHintClass = computed(() => ({
-  "cooler-weights-hint": true,
-  "cooler-weights-hint_error": weightsNeedAttention.value,
-}));
+function openExcludedBinsChoice() {
+  const select = excludedBinsSelect.value;
+  const advanced = select?.closest("details");
+  if (!select || !advanced) return;
+  advanced.open = true;
+  select.focus();
+}
 
-const sliderMin = computed(() =>
-  Math.min(
-    finiteOr(sliderLowerLimit.value, 0),
-    finiteOr(lowerBound.value, 0),
-    finiteOr(upperBound.value, 1)
-  )
-);
-const sliderMax = computed(() => {
-  const max = Math.max(
-    finiteOr(sliderUpperLimit.value, 1),
-    finiteOr(lowerBound.value, 0),
-    finiteOr(upperBound.value, 1)
-  );
-  return max <= sliderMin.value ? sliderMin.value + 1 : max;
+const autoView = computed<HistogramRange>(() => {
+  const from = Math.min(autoDataRange.value.from, finiteOr(lowerBound.value, 0), finiteOr(upperBound.value, 1));
+  const to = Math.max(autoDataRange.value.to, finiteOr(lowerBound.value, 0), finiteOr(upperBound.value, 1));
+  return { from, to: to > from ? to : from + 1 };
 });
-const sliderPositionMin = computed(() => toSliderPosition(sliderMin.value));
-const sliderPositionMax = computed(() => toSliderPosition(sliderMax.value));
-const lowerSliderValue = computed(() => toSliderPosition(lowerBound.value));
-const upperSliderValue = computed(() => toSliderPosition(upperBound.value));
+const viewMode = computed(() => manualView.value ? "manual" : "auto");
+const visibleView = computed(() => adjustingView.value ?? manualView.value ?? autoView.value);
+const viewFrom = computed(() => visibleView.value.from);
+const viewTo = computed(() => visibleView.value.to);
+const axisDomain = computed(() => adjustingView.value?.domain ?? manualView.value?.domain ?? autoView.value);
+const viewScale = computed(() => histogramScale(axisDomain.value, sliderLogScale.value));
+const sliderPositionMin = computed(() => viewScale.value.position(viewFrom.value));
+const sliderPositionMax = computed(() => viewScale.value.position(viewTo.value));
+const lowerSliderValue = computed(() => toHistogramPosition(lowerBound.value));
+const upperSliderValue = computed(() => toHistogramPosition(upperBound.value));
 const colorGamma = computed(() =>
   colormap.value instanceof SimpleLinearGradient ? colormap.value.gamma : 1
 );
@@ -542,13 +657,123 @@ const midpointSignal = computed(
     (upperBound.value - lowerBound.value) * midpointFraction(colorGamma.value)
 );
 const midpointPosition = computed(() =>
-  !observedExpectedPalette.value &&
-  !percentageSignalScale.value &&
-  upperBound.value > lowerBound.value
-    ? toSliderPosition(midpointSignal.value)
+  !observedExpectedPalette.value && upperBound.value > lowerBound.value
+    ? toHistogramPosition(midpointSignal.value)
     : undefined
 );
-function setColorGamma(gamma: number): void {
+const curveData = computed(() =>
+  colormap.value instanceof SimpleLinearGradient
+    ? colormap.value.curve
+    : undefined
+);
+const curve = computed(() => curveParts(curveData.value));
+const curveMode = computed(() => colormap.value instanceof SimpleLinearGradient
+  ? colormap.value.curveMode : undefined);
+const transfer = computed(() => prepareColorFraction(colorGamma.value, curveData.value, curveMode.value));
+const colorSpan = computed(() => upperBound.value - lowerBound.value);
+const sliderCurveMode = (): CurveMode => sliderLogScale.value ? "smooth-log" : "smooth-value";
+const endpointWeights = computed(() => ({
+  lower: curve.value.start,
+  upper: curve.value.end,
+}));
+const controlPoints = computed(() => {
+  if (midpointPosition.value === undefined) return [];
+  const data = curveData.value
+    ? curve.value.interior
+    : [{ x: midpointFraction(colorGamma.value), y: 0.5 }];
+  return data.map((p) => {
+    const fraction = curveMode.value === "smooth-log" ? valueFractionFromLog(p.x) : p.x;
+    const position = toHistogramPosition(lowerBound.value + fraction * colorSpan.value);
+    return {
+      fraction: p.x,
+      position,
+      x:
+        (position - sliderPositionMin.value) /
+        (sliderPositionMax.value - sliderPositionMin.value),
+      y: p.y,
+    };
+  });
+});
+const transferPolyline = computed(() => {
+  if (midpointPosition.value === undefined) return undefined;
+  const samples = Array.from({ length: 129 }, (_, i) => i / 128)
+    .concat(controlPoints.value.map((p) => p.x))
+    .concat(
+      [lowerSliderValue.value, upperSliderValue.value].map(
+        (limit) =>
+          (limit - sliderPositionMin.value) /
+          (sliderPositionMax.value - sliderPositionMin.value)
+      )
+    )
+    .filter((x) => x >= 0 && x <= 1)
+    .sort((a, b) => a - b);
+  return samples
+    .map((x) => {
+      const v = fromSliderPosition(
+        sliderPositionMin.value +
+          x * (sliderPositionMax.value - sliderPositionMin.value)
+      );
+      const y = transfer.value((v - lowerBound.value) / colorSpan.value);
+      return 1000 * x + "," + 64 * (1 - y);
+    })
+    .join(" ");
+});
+function editEndpoint(side: "lower" | "upper", output: number) {
+  const { start, end, interior } = curve.value;
+  const next = buildCurve(
+    side === "lower" ? output : start,
+    side === "upper" ? output : end,
+    interior
+  );
+  if (
+    midpointPosition.value === undefined ||
+    endpointWeights.value[side] === output ||
+    (next?.length ?? 0) > MAX_CURVE_POINTS * 2
+  )
+    return;
+  updateCurve(next);
+}
+function editPoint(index: number, position: number, output?: number) {
+  if (midpointPosition.value === undefined) return;
+  const { start, end } = curve.value;
+  const mode = curveData.value === undefined ? sliderCurveMode() : curveMode.value;
+  const data = index < 0 && curveData.value === undefined
+    ? [] : controlPoints.value.map((p) => ({ x: p.fraction, y: p.y }));
+  let x = (fromSliderPosition(position) - lowerBound.value) / colorSpan.value;
+  if (mode === "smooth-log") x = logarithmicPosition(x);
+  if (index < 0) {
+    if (
+      data.length + Number(start !== 0) + Number(end !== 1) >=
+        MAX_CURVE_POINTS ||
+      !(x > 0 && x < 1) ||
+      data.some((p) => Math.abs(p.x - x) < 1e-6)
+    )
+      return;
+    data.push({ x, y: output ?? 0.5 });
+    data.sort((a, b) => a.x - b.x);
+  } else {
+    if (!data[index]) return;
+    x = Math.max(
+      (data[index - 1]?.x ?? 0) + 1e-7,
+      Math.min((data[index + 1]?.x ?? 1) - 1e-7, x)
+    );
+    data[index] = { x, y: output ?? data[index].y };
+  }
+  updateCurve(buildCurve(start, end, data));
+}
+function removePoint(index: number) {
+  if (midpointPosition.value === undefined) return;
+  const { start, end } = curve.value;
+  const interior = controlPoints.value
+    .filter((_, i) => i !== index)
+    .map((p) => ({ x: p.fraction, y: p.y }));
+  updateCurve(buildCurve(start, end, interior));
+}
+function updateCurve(next?: number[]): void {
+  const mode = next ? curveData.value === undefined ? sliderCurveMode() : curveMode.value : undefined;
+  setColorGamma(1, next, mode);
+}
+function setColorGamma(gamma: number, curve?: number[], mode?: CurveMode): void {
   const current = colormap.value;
   if (!(current instanceof SimpleLinearGradient)) return;
   colormap.value = new SimpleLinearGradient(
@@ -556,9 +781,15 @@ function setColorGamma(gamma: number): void {
     current.endColorRGBA,
     current.minSignal,
     current.maxSignal,
-    gamma
+    gamma,
+    curve,
+    mode
   );
-  props.mapManager?.visualizationManager.noteVisualizationDraft({ gamma });
+  props.mapManager?.visualizationManager.noteVisualizationDraft({
+    gamma,
+    curve: curve ?? null,
+    curveMode: mode ?? null,
+  });
 }
 function onMidpointInput(position: number): void {
   if (midpointPosition.value === undefined) return;
@@ -574,16 +805,23 @@ const colorRailGradient = computed(() => {
     return undefined;
   const start = fromColor.value,
     end = toColor.value;
+  const left = Math.max(lowerSliderValue.value, sliderPositionMin.value);
+  const right = Math.min(upperSliderValue.value, sliderPositionMax.value);
+  if (!(right > left)) return undefined;
   const stops = Array.from({ length: 33 }, (_, index) => {
     const offset = index / 32;
-    const value = fromSliderPosition(
-      lowerSliderValue.value +
-        offset * (upperSliderValue.value - lowerSliderValue.value)
-    );
-    const mix = colorFraction(
-      (value - lowerBound.value) / (upperBound.value - lowerBound.value),
-      colorGamma.value
-    );
+    const value = fromSliderPosition(left + offset * (right - left));
+    const mix = transfer.value((value - lowerBound.value) / colorSpan.value);
+    if (activePaletteMode.value === "MODDOTPLOT_IDENTITY") {
+      const index = mix * (identityColors.length - 1);
+      const left = Math.min(identityColors.length - 2, Math.floor(index));
+      const channels = [1, 3, 5].map((i) => {
+        const low = parseInt(identityColors[left].slice(i, i + 2), 16);
+        const high = parseInt(identityColors[left + 1].slice(i, i + 2), 16);
+        return Math.round(low + (high - low) * (index - left));
+      });
+      return `rgb(${channels.join(",")}) ${offset * 100}%`;
+    }
     const channels = [start.R, start.G, start.B, start.A].map(
       (value, index) =>
         value + ([end.R, end.G, end.B, end.A][index] - value) * mix
@@ -595,25 +833,68 @@ const colorRailGradient = computed(() => {
 // Capture both ends before either threshold changes. Otherwise an outlying selected
 // threshold can drag the computed domain along with it on every pointer move.
 function keepAdjustmentLimits() {
-  const min = sliderMin.value,
-    max = sliderMax.value;
-  sliderBoundsManual.value = true;
-  sliderLowerLimit.value = min;
-  sliderUpperLimit.value = max;
+  adjustingView.value = { from: viewFrom.value, to: viewTo.value, domain: axisDomain.value };
 }
-function focusThresholds() {
-  if (!(upperBound.value > lowerBound.value)) return;
-  sliderBoundsManual.value = true;
-  sliderLowerLimit.value = lowerBound.value;
-  sliderUpperLimit.value = upperBound.value;
+function storeHistogramView(view: ManualHistogramView | undefined): void {
+  adjustingView.value = undefined;
+  manualView.value = view;
+  const manager = props.mapManager;
+  if (!manager) return;
+  let contexts = histogramViewsByMap.get(manager);
+  if (!contexts) {
+    contexts = new Map();
+    histogramViewsByMap.set(manager, contexts);
+  }
+  if (view) {
+    contexts.delete(rangeDomainContext);
+    contexts.set(rangeDomainContext, view);
+    const oldest = contexts.keys().next().value;
+    if (contexts.size > 64 && oldest !== undefined) contexts.delete(oldest);
+  } else contexts.delete(rangeDomainContext);
+}
+function setViewRange(range: HistogramRange): void {
+  if (validHistogramView(range, viewScale.value.minimum)) {
+    storeHistogramView({ ...range, domain: axisDomain.value });
+  }
+}
+function setViewPositions(from: number, to: number): void {
+  const scale = viewScale.value;
+  const minimum = sliderLogScale.value ? scale.position(scale.minimum) : -Infinity;
+  const shift = Math.max(0, minimum - from);
+  setViewRange({ from: Math.max(scale.minimum, scale.value(from + shift)), to: scale.value(to + shift) });
+}
+function zoomHistogramView(anchor: number, steps: number): void {
+  const from = sliderPositionMin.value, to = sliderPositionMax.value;
+  const position = from + (to - from) * anchor;
+  const scale = Math.pow(1.25, Math.max(-8, Math.min(8, steps)));
+  setViewPositions(position + (from - position) * scale, position + (to - position) * scale);
+}
+function panHistogramView(fraction: number): void {
+  const from = sliderPositionMin.value, to = sliderPositionMax.value;
+  const delta = (to - from) * fraction;
+  setViewPositions(from - delta, to - delta);
+}
+function fitHistogramView(): void {
+  if (rangeValidationError.value) return;
+  const from = toSliderPosition(lowerBound.value), to = toSliderPosition(upperBound.value);
+  const pad = (to - from) * 0.05;
+  if (!(pad > 0)) return;
+  const scale = viewScale.value;
+  setViewRange({ from: Math.max(scale.minimum, scale.value(from - pad)), to: scale.value(to + pad) });
+}
+function setSliderLogScale(enabled: boolean): void {
+  sliderLogScale.value = enabled;
+  const view = manualView.value;
+  if (enabled && view && view.from < viewScale.value.minimum) {
+    const clamped = { ...view, from: viewScale.value.minimum };
+    storeHistogramView(validHistogramView(clamped, viewScale.value.minimum) ? clamped : undefined);
+  }
 }
 function useLoadedRange() {
   exactRangeResolution = undefined;
+  useFullLoadedBounds.value = true;
+  autoDataRange.value = { from: signalMin.value, to: signalMax.value };
   fetchProcessedRange();
-  sliderBoundsManual.value = false;
-  sliderLowerLimit.value = signalMin.value;
-  sliderUpperLimit.value =
-    signalMax.value > signalMin.value ? signalMax.value : signalMin.value + 1;
 }
 
 watch(
@@ -662,9 +943,13 @@ watch(
       syncingFromColormap.value = true;
       if (lowerBound.value !== cmap.minSignal) {
         lowerBound.value = cmap.minSignal;
+        if (focusedThreshold.value === "lower")
+          thresholdDraft.value = String(cmap.minSignal);
       }
       if (upperBound.value !== cmap.maxSignal) {
         upperBound.value = cmap.maxSignal;
+        if (focusedThreshold.value === "upper")
+          thresholdDraft.value = String(cmap.maxSignal);
       }
       queueMicrotask(() => {
         syncingFromColormap.value = false;
@@ -699,7 +984,9 @@ watch(
         toColor.value,
         nextMin,
         nextMax,
-        existing instanceof SimpleLinearGradient ? existing.gamma : 1
+        existing instanceof SimpleLinearGradient ? existing.gamma : 1,
+        existing instanceof SimpleLinearGradient ? existing.curve : undefined,
+        existing instanceof SimpleLinearGradient ? existing.curveMode : undefined
       );
     }
     // console.log("UpperBound", upperBound.value);
@@ -736,7 +1023,7 @@ watch(
   () => {
     if (props.mapManager && !props.mapManager.isDisposed) {
       registerSignalRangeCallback(props.mapManager);
-      void hydrateOptionsForActiveSource();
+      hydrateOptionsForActiveSource();
     }
   }
 );
@@ -750,7 +1037,7 @@ watch(
     ] as const,
   () => {
     if (!props.mapManager || props.mapManager.isDisposed) return;
-    void hydrateOptionsForActiveSource();
+    hydrateOptionsForActiveSource();
   }
 );
 
@@ -760,7 +1047,7 @@ onMounted(() => {
     registerSignalRangeCallback(props.mapManager);
   }
   if (!props.mapManager || props.mapManager.isDisposed) return;
-  void hydrateOptionsForActiveSource();
+  hydrateOptionsForActiveSource();
 });
 
 onBeforeUnmount(() => {
@@ -769,6 +1056,7 @@ onBeforeUnmount(() => {
   rangeMap?.getMap().un("rendercomplete", onViewportRangeChanged);
   ++rangeGeneration;
   ++rangeProbe;
+  ++optionsHydrationGeneration;
   window.clearTimeout(rangeTimer);
   rangeController?.abort();
 });
@@ -778,10 +1066,14 @@ function activeSourceForOptions(): "PRIMARY" | "SECONDARY" | undefined {
 }
 
 function onPipelineChanged(): void {
-  void hydrateOptionsForActiveSource();
+  hydrateOptionsForActiveSource();
 }
 
-async function hydrateOptionsForActiveSource(): Promise<void> {
+function hydrateOptionsForActiveSource(): void {
+  optionsHydration = loadOptionsForActiveSource();
+}
+
+async function loadOptionsForActiveSource(): Promise<void> {
   const manager = props.mapManager;
   if (!manager || manager.isDisposed) return;
   ++rangeProbe;
@@ -814,12 +1106,13 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
       : activeTarget?.mode ?? "LINEAR";
     percentageSignalScale.value =
       !primaryDerivedSignal.value && activeTarget?.displayUnit === "PERCENT";
-    activeRangeExpression.value =
+    const rangeExpression =
       await manager.visualizationManager.getSourceSignalExpression(
         activeVisualizationSource.value,
         activeVisualizationTargetId.value
       );
     if (generation !== optionsHydrationGeneration || manager.isDisposed) return;
+    activeRangeExpression.value = rangeExpression;
     const domainContext = JSON.stringify([
       activeVisualizationSource.value,
       activeVisualizationTargetId.value,
@@ -828,11 +1121,13 @@ async function hydrateOptionsForActiveSource(): Promise<void> {
         : "OBSERVED",
       activeTarget?.mode ?? "LINEAR",
     ]);
-    if (domainContext !== rangeDomainContext) {
+    if (manager !== viewMap || domainContext !== rangeDomainContext) {
+      viewMap = manager;
       rangeDomainContext = domainContext;
-      sliderBoundsManual.value = false;
-      sliderLowerLimit.value = lowerBound.value;
-      sliderUpperLimit.value = upperBound.value;
+      adjustingView.value = undefined;
+      manualView.value = histogramViewsByMap.get(manager)?.get(domainContext);
+      useFullLoadedBounds.value = false;
+      autoDataRange.value = { from: finiteOr(lowerBound.value, 0), to: finiteOr(upperBound.value, 1) };
     }
     updateFromStore();
     exactRangeResolution = undefined;
@@ -859,10 +1154,7 @@ function updateSignalRange(ranges: CurrentSignalRangeResponse): void {
   if (percentageSignalScale.value) {
     signalMin.value = 0;
     signalMax.value = 100;
-    if (!sliderBoundsManual.value) {
-      sliderLowerLimit.value = 0;
-      sliderUpperLimit.value = 100;
-    }
+    autoDataRange.value = { from: 0, to: 100 };
     return;
   }
   void refreshProcessedRange();
@@ -873,10 +1165,7 @@ function updateSignalRange(ranges: CurrentSignalRangeResponse): void {
   if (nextMax > nextMin) {
     signalMin.value = nextMin;
     signalMax.value = nextMax;
-    if (!sliderBoundsManual.value) {
-      sliderLowerLimit.value = nextMin;
-      sliderUpperLimit.value = nextMax;
-    }
+    autoDataRange.value = { from: nextMin, to: nextMax };
   }
 }
 
@@ -887,16 +1176,19 @@ function refreshProcessedRange(): void {
 
 function fetchProcessedRange(): void {
   const manager = props.mapManager;
-  if (rangeScanning.value) return;
+  if (rangeScanning.value || !manager || manager.isDisposed) return;
+  const resolution =
+    manager.viewAndLayersManager.currentViewState.resolutionDesciptor
+      .bpResolution;
+  const completedRange = !useFullLoadedBounds.value && completedRanges.get(
+    exactRangeContext(manager, resolution)
+  );
+  if (completedRange) {
+    showExactLimits(completedRange, resolution);
+    return;
+  }
   if (exactRangeResolution !== undefined) {
-    if (
-      exactRangeResolution ===
-      manager?.viewAndLayersManager.currentViewState.resolutionDesciptor
-        .bpResolution
-    )
-      return;
     exactRangeResolution = undefined;
-    rangeStatus.value = "Resolution changed; scan again for exact limits";
   }
   if (primaryDerivedSignal.value) return;
   if (
@@ -925,15 +1217,14 @@ function fetchProcessedRange(): void {
   // Hi-C signal is heavy-tailed: a few diagonal pixels can exceed typical
   // thresholds by orders of magnitude and would pin both handles to the left.
   const robustMax = robustUpperLimit(range.processed) ?? range.processed.max;
-  if (!sliderBoundsManual.value) {
-    sliderLowerLimit.value = signalMin.value;
-    sliderUpperLimit.value =
-      robustMax > signalMin.value ? robustMax : signalMax.value;
-  }
+  autoDataRange.value = {
+    from: signalMin.value,
+    to: !useFullLoadedBounds.value && robustMax > signalMin.value ? robustMax : signalMax.value,
+  };
   rangeStatus.value = `Loaded viewport tiles (${range.tiles}): ${formatSignal(
     range.processed.min
   )} – ${formatSignal(range.processed.max)}${
-    robustMax < range.processed.max
+    !useFullLoadedBounds.value && robustMax < range.processed.max
       ? `; slider limited to ${formatSignal(robustMax)} (4 × 99.5th percentile)`
       : ""
   }; raw ${formatSignal(range.raw.min ?? 0)} – ${formatSignal(
@@ -957,7 +1248,19 @@ watch(histogramContext, () => {
 
 async function fetchExactRange(): Promise<void> {
   const manager = props.mapManager;
-  if (!manager || manager.isDisposed || percentageSignalScale.value) return;
+  if (!manager || manager.isDisposed) return;
+  const optionsGeneration = optionsHydrationGeneration;
+  // The selected source is visible before its signal context finishes loading.
+  await optionsHydration;
+  if (
+    manager !== props.mapManager ||
+    manager.isDisposed ||
+    optionsGeneration !== optionsHydrationGeneration ||
+    percentageSignalScale.value ||
+    rangeScanning.value
+  )
+    return;
+  useFullLoadedBounds.value = false;
   const probe = ++rangeProbe,
     generation = ++rangeGeneration;
   rangeController?.abort();
@@ -983,6 +1286,7 @@ async function fetchExactRange(): Promise<void> {
           activeVisualizationTargetId.value
         );
     const displayMode = visualizationOptionsStore.signalDisplayMode;
+    const contextKey = exactRangeContext(manager, bpResolution);
     const api = manager.networkManager.requestManager;
     const snapshot = await api.querySignalStatistics({
       bpResolution,
@@ -993,6 +1297,8 @@ async function fetchExactRange(): Promise<void> {
     if (controller.signal.aborted || probe !== rangeProbe || manager.isDisposed)
       return;
     const key = JSON.stringify([
+      activeVisualizationSource.value,
+      activeVisualizationTargetId.value,
       bpResolution,
       signalMode,
       expression,
@@ -1035,24 +1341,12 @@ async function fetchExactRange(): Promise<void> {
     const oldestKey = rangeCache.keys().next().value;
     if (rangeCache.size > 8 && oldestKey !== undefined)
       rangeCache.delete(oldestKey);
-    exactRangeResolution = bpResolution;
-    signalMin.value = range.min;
-    signalMax.value = range.max > range.min ? range.max : range.min + 1;
-    // Whole-map limits are an explicit user choice and must outlive viewport tile refreshes.
-    sliderBoundsManual.value = true;
-    sliderLowerLimit.value = signalMin.value;
-    sliderUpperLimit.value = signalMax.value;
-    rangeStatus.value = `Exact limits${
-      derived
-        ? " (whole-map " +
-          displayMode
-            .replace("OBSERVED_OVER_EXPECTED", "O/E")
-            .replace("EXPECTED", "Expected") +
-          ")"
-        : ""
-    }: ${formatSignal(range.min)} – ${formatSignal(range.max)} (${
-      range.count
-    } finite cells)`;
+    completedRanges.set(contextKey, range);
+    const oldestContext = completedRanges.keys().next().value;
+    if (completedRanges.size > 8 && oldestContext !== undefined) {
+      completedRanges.delete(oldestContext);
+    }
+    showExactLimits(range, bpResolution);
   } catch (error) {
     if (generation !== rangeGeneration || manager.isDisposed) return;
     exactRangeResolution = undefined;
@@ -1083,9 +1377,7 @@ function updateFromStore() {
         if (percentageSignalScale.value) {
           signalMin.value = 0;
           signalMax.value = 100;
-          sliderBoundsManual.value = false;
-          sliderLowerLimit.value = 0;
-          sliderUpperLimit.value = 100;
+          autoDataRange.value = { from: 0, to: 100 };
         }
         queueMicrotask(() => {
           syncingFromColormap.value = false;
@@ -1148,8 +1440,8 @@ function onLowerRangeInput(value: number): void {
   const actual = fromSliderPosition(value);
   const minGap = Math.max(
     Math.abs(upperBound.value) * Number.EPSILON,
-    Math.abs(sliderMin.value) * Number.EPSILON,
-    Math.abs(sliderMax.value) * Number.EPSILON
+    Math.abs(viewFrom.value) * Number.EPSILON,
+    Math.abs(viewTo.value) * Number.EPSILON
   );
   lowerBound.value = observedExpectedPalette.value
     ? Math.max(
@@ -1166,78 +1458,32 @@ function onUpperRangeInput(value: number): void {
   const actual = fromSliderPosition(value);
   const minGap = Math.max(
     Math.abs(lowerBound.value) * Number.EPSILON,
-    Math.abs(sliderMin.value) * Number.EPSILON,
-    Math.abs(sliderMax.value) * Number.EPSILON
+    Math.abs(viewFrom.value) * Number.EPSILON,
+    Math.abs(viewTo.value) * Number.EPSILON
   );
   upperBound.value = observedExpectedPalette.value
     ? Math.max(actual, 1 + Math.max(Number.EPSILON, minGap))
     : Math.max(actual, lowerBound.value + minGap);
 }
 
-function onSliderLimitChanged(): void {
-  sliderBoundsManual.value = true;
-  if (!(sliderUpperLimit.value > sliderLowerLimit.value)) {
-    sliderUpperLimit.value = sliderLowerLimit.value + 1;
-  }
-}
-
 function toHistogramPosition(value: number): number {
-  if (value < sliderMin.value) return sliderPositionMin.value - 1;
-  if (value > sliderMax.value) return sliderPositionMax.value + 1;
+  if (value < viewFrom.value) return sliderPositionMin.value - 1;
+  if (value > viewTo.value) return sliderPositionMax.value + 1;
   return toSliderPosition(value);
 }
 
 function toSliderPosition(value: number): number {
-  const min = finiteOr(sliderMin.value, 0);
-  const max = finiteOr(sliderMax.value, min + 1);
-  const clamped = Math.max(min, Math.min(max, finiteOr(value, min)));
-  if (!sliderLogScale.value) {
-    return clamped;
-  }
-  const span = Math.max(max - min, Number.EPSILON);
-  const normalized = (clamped - min) / span;
-  if (normalized <= 0) {
-    return 0;
-  }
-  const floorLog = Math.log10(LOG_SLIDER_FLOOR_FRACTION);
-  const valueLog = Math.log10(Math.max(LOG_SLIDER_FLOOR_FRACTION, normalized));
-  return Math.max(0, Math.min(1, (valueLog - floorLog) / -floorLog));
+  return viewScale.value.position(finiteOr(value, viewFrom.value));
 }
 
 function fromSliderPosition(value: number): number {
-  const min = finiteOr(sliderMin.value, 0);
-  const max = finiteOr(sliderMax.value, min + 1);
-  if (!sliderLogScale.value) {
-    return Math.max(min, Math.min(max, finiteOr(value, min)));
-  }
-  const position = Math.max(0, Math.min(1, finiteOr(value, 0)));
-  if (position <= 0) {
-    return min;
-  }
-  const span = Math.max(max - min, Number.EPSILON);
-  const floorLog = Math.log10(LOG_SLIDER_FLOOR_FRACTION);
-  const normalized = Math.pow(10, floorLog + position * -floorLog);
-  const actual = min + normalized * span;
-  return Math.max(min, Math.min(max, actual));
+  if (value <= sliderPositionMin.value) return viewFrom.value;
+  if (value >= sliderPositionMax.value) return viewTo.value;
+  return viewScale.value.value(value);
 }
 
 function finiteOr(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
-}
-
-function formatSignal(value: number): string {
-  if (!Number.isFinite(value)) {
-    return "n/a";
-  }
-  if (
-    Math.abs(value) >= 1000 ||
-    (Math.abs(value) > 0 && Math.abs(value) < 0.01)
-  ) {
-    return value.toExponential(2);
-  }
-  return value.toLocaleString(undefined, {
-    maximumFractionDigits: 4,
-  });
 }
 </script>
 
@@ -1258,6 +1504,12 @@ function formatSignal(value: number): string {
   color: var(--hict-surface-fg, #334155);
   position: relative;
   z-index: 30;
+}
+@media (max-height: 799px) {
+  .threshold-compact-card {
+    gap: 8px;
+    padding-block: 10px;
+  }
 }
 .threshold-card-title {
   font-size: 0.8rem;
@@ -1283,8 +1535,7 @@ function formatSignal(value: number): string {
   gap: 6px;
   align-items: center;
 }
-.threshold-number-input,
-.domain-inputs input {
+.threshold-number-input {
   width: 100%;
   min-width: 0;
   padding: 7px 8px;
@@ -1296,46 +1547,70 @@ function formatSignal(value: number): string {
   color: var(--hict-surface-fg, #1e293b);
   appearance: textfield;
 }
+.threshold-number-input {
+  min-height: 32px;
+  padding-block: 4px;
+  border-radius: 6px;
+}
 .threshold-number-input::-webkit-inner-spin-button {
   appearance: none;
 }
-.threshold-number-input:focus,
-.domain-inputs input:focus {
+.threshold-number-input:focus {
   outline: 2px solid #2563eb;
   outline-offset: 1px;
   box-shadow: none;
 }
-.range-actions {
+.range-option {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px 8px;
+  font-size: 0.8rem;
 }
-.scale-group {
-  display: inline-flex;
+.diagonal-mask {
+  display: grid;
+  gap: 6px;
+  padding-block: 6px;
+  font-size: 0.8rem;
+}
+.diagonal-toggle,
+.diagonal-distance {
+  display: flex;
   align-items: center;
   gap: 6px;
 }
+.diagonal-distance input {
+  width: min(8rem, 42%);
+  padding: 3px 6px;
+  border: 1px solid var(--hict-surface-border, #cbd5e1);
+  border-radius: 4px;
+}
+.slider-spacing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
 .scale-caption {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: #475569;
 }
 .scale-choice {
   display: inline-flex;
-  padding: 3px;
+  padding: 0;
   border-radius: 7px;
   background: #f1f5f9;
   border: 1px solid #e2e8f0;
 }
 .scale-choice button {
-  padding: 3px 10px;
+  padding: 2px 8px;
   background: transparent;
   border: 0;
   border-radius: 4px;
   color: #475569;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 .scale-choice button[aria-pressed="true"] {
   background: white;
@@ -1355,22 +1630,14 @@ function formatSignal(value: number): string {
   text-decoration: underline;
 }
 .range-details {
-  padding-top: 10px;
-  border-top: 1px solid #e2e8f0;
-  font-size: 0.8rem;
+  display: grid;
+  gap: 0.35rem;
 }
-.range-details summary {
-  cursor: pointer;
-  color: #475569;
-}
-.range-summary-value {
-  float: right;
-  font-variant-numeric: tabular-nums;
-  color: #64748b;
-  max-width: 46%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.excluded-bins-choice {
+  width: 11rem;
+  max-width: 100%;
+  appearance: auto;
+  padding-inline-end: 0.5rem;
 }
 .range-help {
   font-size: 0.78rem;
@@ -1378,73 +1645,19 @@ function formatSignal(value: number): string {
   margin: 8px 0 4px;
   line-height: 1.5;
 }
-.domain-inputs {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
-}
-.domain-inputs label {
-  display: grid;
-  gap: 4px;
-  color: #64748b;
-}
-.domain-inputs input {
-  font-size: 0.75rem;
-}
 .threshold-toolbar:empty {
   display: none;
 }
 .gradient-apply-button {
+  position: sticky;
+  bottom: 6px;
+  z-index: 2;
   width: 100%;
   min-height: 34px;
   border-radius: 7px;
   font-size: 0.8rem;
   font-weight: 600;
 }
-.cooler-weights-hint {
-  min-width: 0;
-  margin: 0;
-  color: var(--hict-surface-fg, #343a40);
-  font-size: 0.72rem;
-  line-height: 1.2;
-}
-
-.cooler-weights-hint summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  cursor: pointer;
-  color: #8a5a05;
-  list-style: none;
-  white-space: nowrap;
-}
-
-.cooler-weights-hint_error summary {
-  color: #b02a37;
-  font-weight: 700;
-}
-
-.cooler-weights-hint summary::-webkit-details-marker {
-  display: none;
-}
-
-.cooler-weights-hint[open] {
-  padding: 0.35rem 0.45rem;
-  border-left: 3px solid #f0ad4e;
-  border-radius: 0.35rem;
-  background: rgba(240, 173, 78, 0.12);
-}
-
-.cooler-weights-hint_error[open] {
-  border-left-color: #dc3545;
-  background: rgba(220, 53, 69, 0.12);
-  color: #842029;
-}
-
-.cooler-weights-hint[open] summary {
-  margin-bottom: 0.25rem;
-}
-
 :deep(.picker_wrapper) {
   z-index: 2147483000 !important;
   max-width: min(18rem, calc(100vw - 1.5rem));

@@ -1,7 +1,6 @@
 <template>
   <div
     class="zoom-slider ol-control ol-zoomslider custom-zoomslider"
-    :style="{ height: `${sliderHeight}px` }"
     title="Zoom level"
   >
     <input
@@ -99,10 +98,6 @@ const marks = computed(() => {
   return result;
 });
 
-const sliderHeight = computed(() => {
-  return Math.max(220, marks.value.length * 22 + 20);
-});
-
 function syncFromView() {
   const map = props.mapManager;
   if (!map) return;
@@ -152,8 +147,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .zoom-slider {
-  position: relative;
+  position: absolute;
   width: 24px;
+  pointer-events: auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -165,7 +161,7 @@ onBeforeUnmount(() => {
 
 .zoom-range {
   position: absolute;
-  width: 180px;
+  width: 108px;
   height: 24px;
   transform: rotate(-90deg);
 }

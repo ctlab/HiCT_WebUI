@@ -27,13 +27,21 @@
     ref="modalFocusElement"
     role="dialog"
     aria-modal="true"
+    aria-labelledby="matrix-export-title"
   >
     <div
-      class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"
+      class="modal-dialog modal-dialog-centered modal-dialog-scrollable hict-heavy-dialog matrix-export-dialog"
     >
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">Export matrix to Cooler</h5>
+          <div>
+            <h5 id="matrix-export-title" class="modal-title">
+              Export matrix to Cooler
+            </h5>
+            <p class="mb-0 small text-muted">
+              Writes a .cool or .mcool you can open in other Hi-C tools.
+            </p>
+          </div>
           <button
             type="button"
             class="btn-close"
@@ -46,54 +54,11 @@
             {{ errorMessage }}
           </div>
 
-          <div class="job-history-panel mb-3">
-            <div
-              class="d-flex flex-wrap align-items-center justify-content-between gap-2"
-            >
-              <div>
-                <strong>Conversion jobs</strong>
-                <small class="text-muted d-block">
-                  Reopen this window and use this list to check exports started
-                  earlier.
-                </small>
-              </div>
-              <button
-                class="btn btn-sm btn-outline-secondary"
-                type="button"
-                :disabled="jobsLoading"
-                @click="loadConversionJobs"
-              >
-                <span
-                  v-if="jobsLoading"
-                  class="spinner-border spinner-border-sm me-1"
-                ></span>
-                Refresh jobs
-              </button>
-            </div>
-            <div v-if="recentJobs.length" class="job-history-list mt-2">
-              <button
-                v-for="job in recentJobs"
-                :key="job.jobId"
-                class="job-history-item"
-                :class="{ active: job.jobId === jobId }"
-                type="button"
-                @click="jobId = job.jobId"
-              >
-                <span class="job-history-main">
-                  {{ job.outputFilename || job.sourceFilename }}
-                </span>
-                <span class="job-history-meta">
-                  {{ job.direction }} · {{ job.status }} ·
-                  {{ Math.round((job.overallProgress ?? 0) * 100) }}%
-                </span>
-              </button>
-            </div>
-          </div>
-
           <div class="mb-3">
-            <label class="form-label">Source .hict.hdf5 matrix</label>
+            <label class="form-label" for="export-source-map">Map</label>
             <div class="input-group">
               <input
+                id="export-source-map"
                 class="form-control"
                 type="text"
                 readonly
@@ -104,63 +69,48 @@
                 type="button"
                 @click="selectorKind = 'source'"
               >
-                Browse...
+                Browse…
               </button>
             </div>
           </div>
 
-          <div class="mb-3">
-            <label class="form-label">Output Cooler filename</label>
-            <input
-              v-model="outputFilename"
-              class="form-control"
-              type="text"
-              placeholder="matrix.mcool"
-              @input="outputFilenameTouched = true"
-            />
-            <small class="text-muted">
-              Relative to the HiCT data directory. Use .cool for one selected
-              resolution, or .mcool for multiple resolutions.
-            </small>
-          </div>
-
-          <div class="mb-3">
-            <div class="form-check form-switch">
-              <input
-                id="export-current-assembly"
-                v-model="useCurrentAssembly"
-                class="form-check-input"
-                type="checkbox"
-                role="switch"
-              />
-              <label class="form-check-label" for="export-current-assembly">
-                Use current state of assembly for export
+          <fieldset class="mb-3">
+            <legend class="form-label fs-6">Assembly order</legend>
+            <div
+              v-for="option in assemblyOrderOptions"
+              :key="option.value"
+              class="form-check"
+            >
+              <label class="form-check-label">
+                <input
+                  v-model="assemblyOrder"
+                  class="form-check-input"
+                  name="export-assembly-order"
+                  type="radio"
+                  :value="option.value"
+                />
+                {{ option.label }}
               </label>
             </div>
-            <small class="text-muted">
-              Turn this off to export the matrix exactly as saved, or to apply a
-              custom AGP file.
-            </small>
-          </div>
+          </fieldset>
 
-          <div v-if="!useCurrentAssembly" class="mb-3">
-            <label class="form-label">Custom assembly AGP</label>
+          <div v-if="assemblyOrder === 'agp'" class="mb-3">
+            <label class="form-label" for="export-matrix-agp">Assembly file</label>
             <div class="input-group">
               <input
+                id="export-matrix-agp"
                 class="form-control"
                 type="text"
                 readonly
-                :value="
-                  customAgpFilename ||
-                  'No AGP selected; export saved matrix layout'
-                "
+                :value="customAgpFilename"
+                placeholder="Select an AGP file"
               />
               <button
                 class="btn btn-outline-secondary"
                 type="button"
                 @click="selectorKind = 'agp'"
               >
-                Browse...
+                Browse…
               </button>
               <button
                 class="btn btn-outline-danger"
@@ -173,134 +123,211 @@
             </div>
           </div>
 
-          <div v-if="useCurrentAssembly || customAgpFilename" class="mb-3">
-            <div class="form-check">
+          <div class="mb-3">
+            <label class="form-label" for="export-matrix-filename">Save as</label>
+            <input
+              id="export-matrix-filename"
+              v-model="outputFilename"
+              class="form-control"
+              type="text"
+              placeholder="matrix.mcool"
+              @input="outputFilenameTouched = true"
+            />
+            <small class="text-muted">
+              Relative to the HiCT data directory. Use .cool for one selected
+              resolution, or .mcool for multiple resolutions.
+            </small>
+          </div>
+
+          <p
+            v-if="useCurrentAssembly && hasSequenceCuts"
+            class="small text-muted mb-3"
+          >
+            This assembly contains sequence cuts. Enable approximate rebinning
+            under Advanced to export its current layout.
+          </p>
+          <AdvancedSection
+            dialog-id="matrix-export"
+            hint="engine, compression, threads, resolutions, balancing"
+          >
+            <div class="row g-2 mb-3">
+              <div class="col-md-4">
+                <label class="form-label" for="export-matrix-mode">Export mode</label>
+                <select
+                  id="export-matrix-mode"
+                  v-model="exportModeModel"
+                  class="form-select"
+                  :disabled="effectiveApproximateRebin"
+                >
+                  <option value="auto">auto (prefer hictk-assisted)</option>
+                  <option value="hictk">hictk-assisted</option>
+                  <option value="internal">direct internal exporter</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="export-matrix-compression">Compression</label>
+                <select
+                  id="export-matrix-compression"
+                  v-model="compressionAlgorithm"
+                  class="form-select"
+                >
+                  <option value="deflate">deflate</option>
+                  <option value="zstd" disabled>zstd (unavailable)</option>
+                  <option value="lzf" disabled>lzf (unavailable)</option>
+                </select>
+                <small class="text-muted">
+                  Cooler export supports Deflate. Level 0 leaves interaction
+                  data uncompressed.
+                </small>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label" for="export-matrix-level">Level</label>
+                <input
+                  id="export-matrix-level"
+                  v-model.number="compression"
+                  class="form-control"
+                  type="number"
+                  min="0"
+                  max="9"
+                />
+              </div>
+              <div class="col-md-2">
+                <label class="form-label" for="export-matrix-threads">Threads</label>
+                <input
+                  id="export-matrix-threads"
+                  v-model.number="parallelism"
+                  class="form-control"
+                  type="number"
+                  min="-1"
+                  title="-1: automatic server CPU allocation"
+                />
+              </div>
+            </div>
+
+            <div class="form-check form-switch mb-2">
               <input
-                id="export-approximate-rebin"
-                v-model="approximateRebin"
+                id="export-all-resolutions"
+                v-model="exportAllResolutions"
+                class="form-check-input"
+                type="checkbox"
+                role="switch"
+              />
+              <label class="form-check-label" for="export-all-resolutions">
+                Export all resolutions present in .hict.hdf5
+              </label>
+            </div>
+            <small class="text-muted d-block mb-3">
+              Disabled by default: only the finest resolution is exported, so
+              you can zoomify later if needed.
+            </small>
+
+            <div class="form-check form-switch mb-2">
+              <input
+                id="export-balance-coolers"
+                v-model="exportBalanceModel"
+                :disabled="
+                  exportMode === 'internal' || effectiveApproximateRebin
+                "
+                class="form-check-input"
+                type="checkbox"
+                role="switch"
+              />
+              <label class="form-check-label" for="export-balance-coolers">
+                Balance exported Cooler with hictk
+              </label>
+            </div>
+            <small
+              v-if="exportMode === 'internal' || effectiveApproximateRebin"
+              class="text-muted d-block mb-3"
+            >
+              {{
+                effectiveApproximateRebin
+                  ? "Approximate rebinning exports unbalanced fractional counts with the internal exporter."
+                  : "Balancing requires auto or hictk-assisted export."
+              }}
+            </small>
+            <small v-else class="text-muted d-block mb-3">
+              Enabled by default. Auto and hictk-assisted modes run ICE
+              balancing so downstream Cooler tools can use generated weights.
+            </small>
+
+            <div class="form-check mb-3">
+              <input
+                id="export-overwrite"
+                v-model="overwrite"
                 class="form-check-input"
                 type="checkbox"
               />
-              <label class="form-check-label" for="export-approximate-rebin"
-                >Approximate rebinning for sequence cuts</label
+              <label class="form-check-label" for="export-overwrite">
+                Overwrite existing output
+              </label>
+            </div>
+            <div
+              v-if="useCurrentAssembly || assemblyOrder === 'agp'"
+              class="mb-3"
+            >
+              <div class="form-check">
+                <input
+                  id="export-approximate-rebin"
+                  v-model="approximateRebin"
+                  class="form-check-input"
+                  type="checkbox"
+                />
+                <label class="form-check-label" for="export-approximate-rebin"
+                  >Approximate rebinning for sequence cuts</label
+                >
+              </div>
+              <small class="text-muted"
+                >Distribute contacts by sequence overlap. Exported counts can be
+                fractional estimates; the original HiCT data stays
+                unchanged.</small
               >
             </div>
-            <small class="text-muted"
-              >Distribute contacts by sequence overlap. Exported counts can be
-              fractional estimates; the original HiCT data stays
-              unchanged.</small
-            >
-            <small
-              v-if="useCurrentAssembly && hasSequenceCuts"
-              class="d-block mt-1"
-              >This assembly contains sequence cuts. Enable approximate
-              rebinning to export its current layout.</small
-            >
-          </div>
 
-          <div class="row g-2 mb-3">
-            <div class="col-md-4">
-              <label class="form-label">Export mode</label>
-              <select
-                v-model="exportModeModel"
-                class="form-select"
-                :disabled="effectiveApproximateRebin"
+            <div class="job-history-panel mb-3">
+              <div
+                class="d-flex flex-wrap align-items-center justify-content-between gap-2"
               >
-                <option value="auto">auto (prefer hictk-assisted)</option>
-                <option value="hictk">hictk-assisted</option>
-                <option value="internal">direct internal exporter</option>
-              </select>
+                <div>
+                  <strong>Conversion jobs</strong>
+                  <small class="text-muted d-block">
+                    Reopen this window and use this list to check exports started
+                    earlier.
+                  </small>
+                </div>
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  type="button"
+                  :disabled="jobsLoading"
+                  @click="loadConversionJobs"
+                >
+                  <span
+                    v-if="jobsLoading"
+                    class="spinner-border spinner-border-sm me-1"
+                  ></span>
+                  Refresh jobs
+                </button>
+              </div>
+              <div v-if="recentJobs.length" class="job-history-list mt-2">
+                <button
+                  v-for="job in recentJobs"
+                  :key="job.jobId"
+                  class="job-history-item"
+                  :class="{ active: job.jobId === jobId }"
+                  type="button"
+                  @click="jobId = job.jobId"
+                >
+                  <span class="job-history-main">
+                    {{ job.outputFilename || job.sourceFilename }}
+                  </span>
+                  <span class="job-history-meta">
+                    {{ job.direction }} · {{ job.status }} ·
+                    {{ Math.round((job.overallProgress ?? 0) * 100) }}%
+                  </span>
+                </button>
+              </div>
             </div>
-            <div class="col-md-4">
-              <label class="form-label">Compression</label>
-              <select v-model="compressionAlgorithm" class="form-select">
-                <option value="deflate">deflate</option>
-                <option value="zstd" disabled>zstd (unavailable)</option>
-                <option value="lzf" disabled>lzf (unavailable)</option>
-              </select>
-              <small class="text-muted">
-                Cooler export supports Deflate. Level 0 leaves interaction data
-                uncompressed.
-              </small>
-            </div>
-            <div class="col-md-2">
-              <label class="form-label">Level</label>
-              <input
-                v-model.number="compression"
-                class="form-control"
-                type="number"
-                min="0"
-                max="9"
-              />
-            </div>
-            <div class="col-md-2">
-              <label class="form-label">Threads</label>
-              <input
-                v-model.number="parallelism"
-                class="form-control"
-                type="number"
-                min="-1"
-                title="-1: automatic server CPU allocation"
-              />
-            </div>
-          </div>
-
-          <div class="form-check form-switch mb-2">
-            <input
-              id="export-all-resolutions"
-              v-model="exportAllResolutions"
-              class="form-check-input"
-              type="checkbox"
-              role="switch"
-            />
-            <label class="form-check-label" for="export-all-resolutions">
-              Export all resolutions present in .hict.hdf5
-            </label>
-          </div>
-          <small class="text-muted d-block mb-3">
-            Disabled by default: only the finest resolution is exported, so you
-            can zoomify later if needed.
-          </small>
-
-          <div class="form-check form-switch mb-2">
-            <input
-              id="export-balance-coolers"
-              v-model="exportBalanceModel"
-              :disabled="exportMode === 'internal' || effectiveApproximateRebin"
-              class="form-check-input"
-              type="checkbox"
-              role="switch"
-            />
-            <label class="form-check-label" for="export-balance-coolers">
-              Balance exported Cooler with hictk
-            </label>
-          </div>
-          <small
-            v-if="exportMode === 'internal' || effectiveApproximateRebin"
-            class="text-muted d-block mb-3"
-          >
-            {{
-              effectiveApproximateRebin
-                ? "Approximate rebinning exports unbalanced fractional counts with the internal exporter."
-                : "Balancing requires auto or hictk-assisted export."
-            }}
-          </small>
-          <small v-else class="text-muted d-block mb-3">
-            Enabled by default. Auto and hictk-assisted modes run ICE balancing
-            so downstream Cooler tools can use generated weights.
-          </small>
-
-          <div class="form-check mb-3">
-            <input
-              id="export-overwrite"
-              v-model="overwrite"
-              class="form-check-input"
-              type="checkbox"
-            />
-            <label class="form-check-label" for="export-overwrite">
-              Overwrite existing output
-            </label>
-          </div>
+          </AdvancedSection>
 
           <ConverterStatusChecker
             v-if="jobId"
@@ -308,25 +335,30 @@
             :job-id="jobId"
           />
         </div>
-        <div class="modal-footer">
+        <div class="modal-footer hict-modal-footer">
+          <span v-if="numericError" role="alert" class="text-danger small me-auto">{{
+            numericError
+          }}</span>
           <button
-            class="btn btn-secondary"
+            class="btn btn-outline-secondary"
             type="button"
             @click="emit('dismissed')"
           >
-            Dismiss
+            Cancel
           </button>
           <button
             class="btn btn-primary"
             type="button"
-            :disabled="submitting || !sourceFilename"
+            :disabled="
+              submitting || !sourceFilename || missingAgp || !!numericError
+            "
             @click="startExport"
           >
             <span
               v-if="submitting"
               class="spinner-border spinner-border-sm me-2"
             ></span>
-            Export Cooler
+            Export
           </button>
         </div>
       </div>
@@ -336,6 +368,7 @@
   <UniversalFileSelector
     v-if="selectorKind"
     :network-manager="props.networkManager"
+    :z-index="1070"
     :title="
       selectorKind === 'source'
         ? 'Select source .hict.hdf5'
@@ -351,6 +384,8 @@
 </template>
 
 <script setup lang="ts">
+import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import { computed, onMounted, ref, watch } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
@@ -370,7 +405,19 @@ const props = defineProps<{
 
 const sourceFilename = ref(props.initialSourceFilename ?? "");
 const customAgpFilename = ref("");
-const useCurrentAssembly = ref(true);
+const assemblyOrderOptions = [
+  { value: "current", label: "Current edited assembly" },
+  { value: "original", label: "Original order in the file" },
+  { value: "agp", label: "From an AGP file…" },
+] as const;
+const assemblyOrder = ref<"current" | "original" | "agp">("current");
+const useCurrentAssembly = computed(() => assemblyOrder.value === "current");
+const exportAgpFilename = computed(() =>
+  assemblyOrder.value === "agp" ? customAgpFilename.value : ""
+);
+const missingAgp = computed(
+  () => assemblyOrder.value === "agp" && !exportAgpFilename.value
+);
 const approximateRebin = ref(false);
 const hasSequenceCuts = computed(
   () =>
@@ -382,13 +429,28 @@ const overwrite = ref(false);
 const compressionAlgorithm = ref("deflate");
 const compression = ref(6);
 const parallelism = ref(-1);
+const numericError = computed(() => {
+  if (
+    !Number.isInteger(compression.value) ||
+    compression.value < 0 ||
+    compression.value > 9
+  )
+    return "Compression level must be a whole number from 0 to 9.";
+  if (
+    !Number.isInteger(parallelism.value) ||
+    parallelism.value < -1 ||
+    parallelism.value > 2147483647
+  )
+    return "Threads must be a whole number from -1 to 2147483647.";
+  return "";
+});
 const exportMode = ref("auto");
 const exportAllResolutions = ref(false);
 const balanceExportedCoolers = ref(true);
 const effectiveApproximateRebin = computed(
   () =>
     approximateRebin.value &&
-    (useCurrentAssembly.value || !!customAgpFilename.value)
+    (useCurrentAssembly.value || !!exportAgpFilename.value)
 );
 const exportModeModel = computed({
   get: () => (effectiveApproximateRebin.value ? "internal" : exportMode.value),
@@ -408,8 +470,8 @@ const exportBalanceModel = computed({
 watch(
   [
     effectiveApproximateRebin,
-    useCurrentAssembly,
-    customAgpFilename,
+    assemblyOrder,
+    exportAgpFilename,
     sourceFilename,
   ],
   () => {
@@ -519,6 +581,7 @@ function loadConversionJobs(): void {
 }
 
 async function startExport(): Promise<void> {
+  if (numericError.value || missingAgp.value) return;
   if (!sourceFilename.value) {
     errorMessage.value = "Select a .hict.hdf5 source matrix first.";
     return;
@@ -529,7 +592,7 @@ async function startExport(): Promise<void> {
     !effectiveApproximateRebin.value
   ) {
     errorMessage.value =
-      "Enable approximate rebinning to export this sequence-cut assembly, or turn off current assembly to export the saved matrix.";
+      "Enable approximate rebinning under Advanced to export the edited assembly, or choose Original order in the file.";
     return;
   }
   submitting.value = true;
@@ -548,9 +611,7 @@ async function startExport(): Promise<void> {
               exportAllResolutions.value
             ),
           useCurrentAssembly: useCurrentAssembly.value,
-          assemblyFilename: useCurrentAssembly.value
-            ? undefined
-            : customAgpFilename.value || undefined,
+          assemblyFilename: exportAgpFilename.value || undefined,
           overwrite: overwrite.value,
           compression: compression.value,
           compressionAlgorithm: compressionAlgorithm.value,
@@ -576,12 +637,21 @@ onMounted(() => {
 
 const modalFocusElement = ref<HTMLElement | null>(null);
 useModalFocus(modalFocusElement);
+useEscDismissableDialog({
+  priority: 1055,
+  isOpen: () => true,
+  requestClose: () => emit("dismissed"),
+});
 </script>
 
 <style scoped>
 .export-matrix-shell {
   display: block;
   z-index: 1055;
+}
+
+.matrix-export-dialog {
+  --bs-modal-width: 560px;
 }
 
 .modal-backdrop {

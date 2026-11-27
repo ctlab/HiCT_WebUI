@@ -100,12 +100,49 @@ function loadTypeScript(filename) {
   );
   return module.exports;
 }
-const { ContigDescriptorDTO, AssemblyInfoDTO } = loadTypeScript(
+const { ContigDescriptorDTO, AssemblyInfoDTO, SimpleLinearGradientDTO, VisualizationOptionsDTO } = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/dto/dto.ts")
 );
-const { TrackQueryResponseDTO } = loadTypeScript(
+const endpointPayload = {
+  startColorRGBAString: "rgba(255,255,255,0.0)",
+  endColorRGBAString: "rgba(255,0,0,1.0)",
+  minSignal: 0,
+  maxSignal: 1,
+  curve: [0, 0.25, 0.85, 1, 1, 0],
+};
+const endpointGradient = new SimpleLinearGradientDTO(endpointPayload).toEntity();
+assert.deepEqual(SimpleLinearGradientDTO.fromEntity(endpointGradient).toEntity().curve, endpointPayload.curve);
+assert.equal(endpointGradient.curveMode, undefined);
+for (const curveMode of ["smooth-value", "smooth-log"]) {
+  const smooth = new SimpleLinearGradientDTO({ ...endpointPayload, curveMode }).toEntity();
+  assert.equal(SimpleLinearGradientDTO.fromEntity(smooth).toEntity().curveMode, curveMode);
+}
+assert.throws(() => new SimpleLinearGradientDTO({ ...endpointPayload, curveMode: "unknown" }).toEntity(), /curve mode/);
+assert.throws(() => new SimpleLinearGradientDTO({
+  ...endpointPayload,
+  curve: [1, 0, 0.85, 1],
+}).toEntity());
+const { ConversionJobResponseDTO, TrackQueryResponseDTO } = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/dto/responseDTO.ts")
 );
+const runningConversion = new ConversionJobResponseDTO({
+  elapsedMillis: 7380,
+  etaMillis: -1,
+  resolutionElapsedMillis: 1390,
+  resolutionEtaMillis: -1,
+  stageIndex: 2,
+  stageCount: 5,
+}).toEntity();
+assert.equal(runningConversion.elapsedMillis, 7380);
+assert.equal(runningConversion.etaMillis, -1);
+assert.equal(runningConversion.resolutionElapsedMillis, 1390);
+assert.equal(runningConversion.resolutionEtaMillis, -1);
+assert.equal(runningConversion.stageIndex, 2);
+assert.equal(runningConversion.stageCount, 5);
+const legacyConversion = new ConversionJobResponseDTO({ etaMillis: 0 }).toEntity();
+assert.equal(legacyConversion.etaMillis, 0);
+assert.equal(legacyConversion.stageIndex, undefined);
+assert.equal(legacyConversion.stageCount, undefined);
 const baseQuery = new TrackQueryResponseDTO({
   startBp: 3,
   endBp: 6,
@@ -309,6 +346,18 @@ const { HiCTAPIRequestDTO } = loadTypeScript(
 const requestClasses = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/api/request.ts")
 );
+const diagonalMask = { enabled: true, distanceBp: 150_000 };
+const visualization = new VisualizationOptionsDTO({
+  colormap: { ...endpointPayload, colormapType: "SimpleLinearGradient" },
+  diagonalMask,
+}).toEntity();
+const visualizationRequest = new requestClasses.SetVisualizationOptionsRequest({
+  options: visualization,
+  preserveRenderPipeline: true,
+});
+const serializedVisualization = HiCTAPIRequestDTO.toDTOClass(visualizationRequest).toDTO();
+assert.deepEqual(serializedVisualization.diagonalMask, diagonalMask);
+assert.equal(serializedVisualization.preserveRenderPipeline, true);
 const { SequenceAnalysisRequest } = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/api/SequenceAnalysisRequest.ts")
 );
@@ -351,6 +400,13 @@ for (const approximateRebin of [undefined, false, true]) {
     HiCTAPIRequestDTO.toDTOClass(batch).toDTO().approximateRebin,
     approximateRebin
   );
+}
+for (const exactContig of [undefined, false, true]) {
+  const request = new requestClasses.MoveSelectionRangeRequest({
+    startBP: 10, endBP: 20, targetStartBP: 0, exactContig,
+  });
+  assert.equal(HiCTAPIRequestDTO.toDTOClass(request).toDTO().exactContig,
+    exactContig || undefined);
 }
 for (const name of [
   "ReverseSelectionRangeRequest",
@@ -473,7 +529,9 @@ let sentTimeout;
 let sentPayload;
 let requestsSent = 0;
 let serializationFailure = false;
+let transportFailure;
 let pendingWorkspace;
+let observeCloseOrder;
 let fetched;
 let downloadResponse;
 const notificationErrors = [];
@@ -499,10 +557,17 @@ vm.runInNewContext(adapterSource, {
       return { SequenceAnalysisRequest };
     if (name === "axios")
       return {
+        ...createRequire(import.meta.url)("axios"),
         post: async (url, payload, config) => {
+          if (transportFailure) throw transportFailure;
           requestsSent++;
           sentPayload = payload;
           sentTimeout = config?.timeout;
+          if (observeCloseOrder) {
+            const path = new URL(url).pathname;
+            observeCloseOrder.requests.push(path);
+            if (path === "/close") await observeCloseOrder.response;
+          }
           if (url.endsWith("/workspace/state"))
             return new Promise((resolve, reject) => {
               pendingWorkspace = { payload, resolve, reject };
@@ -567,6 +632,35 @@ assert.equal(adapter.history.busy, 0);
 console.log(
   "History reads cannot authorize edits on stale displayed coordinates."
 );
+
+const closingAdapter = new adapterExports.RequestManager({
+  host: "http://example.test",
+});
+closingAdapter.notifyInboundPayload = () => {};
+let finishOptions;
+let finishClose;
+const pendingOptions = new Promise((resolve) => {
+  finishOptions = resolve;
+});
+const closeResponse = new Promise((resolve) => {
+  finishClose = resolve;
+});
+observeCloseOrder = { requests: [], response: closeResponse };
+const closing = closingAdapter.closeFile(pendingOptions);
+const replacementPaths = ["/open", "/attach", "/session/restore"];
+const replacements = replacementPaths.map((requestPath) =>
+  closingAdapter.sendRequest({ requestPath })
+);
+await new Promise(setImmediate);
+assert.deepEqual(observeCloseOrder.requests, []);
+finishOptions();
+await new Promise(setImmediate);
+assert.deepEqual(observeCloseOrder.requests, ["/close"]);
+finishClose();
+await Promise.all([closing, ...replacements]);
+assert.deepEqual(observeCloseOrder.requests, ["/close", ...replacementPaths]);
+observeCloseOrder = undefined;
+console.log("Workspace requests wait for pending options and the server close.");
 
 await adapter.querySequenceRegion(0, 60, undefined, {
   includeGaps: true,
@@ -732,6 +826,22 @@ console.log(
   "Synchronous serialization failures release the edit guard and reject to the caller."
 );
 
+serializationFailure = false;
+const axios = createRequire(import.meta.url)("axios");
+transportFailure = new axios.AxiosError("Network Error", "ERR_NETWORK");
+await assert.rejects(
+  adapter.sendRequest({ requestPath: "/list_fasta_files" }),
+  (error) => error.message ===
+    "Can't reach the HiCT server at http://example.test. Start HiCT, or check the address in File → Join running session."
+    && error.cause === transportFailure
+);
+transportFailure = new axios.CanceledError();
+await assert.rejects(
+  adapter.sendRequest({ requestPath: "/list_fasta_files" }),
+  (error) => error === transportFailure
+);
+transportFailure = undefined;
+
 const originalVersion = { session: "workspace-a", revision: 0 };
 adapter.workspaceVersion = originalVersion;
 const save = adapter.saveWorkspaceState("same.hict.hdf5", { version: 1 });
@@ -796,6 +906,72 @@ const retrievalRequests = loadTypeScript(
 const retrievalDtos = loadTypeScript(
   resolve(projectRoot, "src/app/core/net/dto/requestDTO.ts")
 );
+const sequenceAdapter = new adapterExports.RequestManager({ host: "http://example.test" });
+const resultSet = { id: "set-1", name: "ModDotPlot · k 21 · identity 80%", regionCount: 2, bytes: 8192 };
+const { formatHttpError } = loadTypeScript(resolve(projectRoot, "src/app/core/net/api/errorMessage.ts"));
+const mismatchText = "This dotplot file belongs to a different map. Open that map first, then open the dotplot file again.";
+assert.equal(formatHttpError(409, mismatchText), mismatchText);
+assert.equal(formatHttpError(409, "No active map"), "Open a map first");
+sequenceAdapter.sendRequest = async (request) => {
+  assert.equal(request.requestPath, "/sequence/jobs/list");
+  assert.deepEqual(retrievalDtos.HiCTAPIRequestDTO.toDTOClass(request).toDTO(), {});
+  return { data: [{ jobId: "current", resultSet }, { jobId: "older" }] };
+};
+assert.deepEqual(await sequenceAdapter.listSequenceJobs(), [
+  { jobId: "current", resultSet },
+  { jobId: "older" },
+]);
+const overlayOptions = {
+  scope: "selection",
+  mergeCompatible: false,
+  resolutions: [100, 1000],
+  region: { rowStart: 50, rowEnd: 500, columnStart: 150, columnEnd: 800 },
+  acceptLargeOutput: true,
+};
+for (const [name, action, args, expected] of [
+  ["ListDotplotResultsRequest", "list", [], {}],
+  ["OpenDotplotResultRequest", "open", ["copy.hict.hdf5"], { filename: "copy.hict.hdf5" }],
+  ["ShowDotplotResultRequest", "show", ["set-1", false], { id: "set-1", shown: false }],
+  ["DeleteDotplotResultRequest", "delete", ["set-1"], { id: "set-1" }],
+  ["DownloadDotplotResultRequest", "download", ["set-1"], { id: "set-1" }],
+]) {
+  const request = new retrievalRequests[name](...args);
+  assert.equal(request.requestPath, `/sequence/overlays/${action}`);
+  assert.deepEqual(retrievalDtos.HiCTAPIRequestDTO.toDTOClass(request).toDTO(), expected);
+}
+for (const kind of ["dotplot", "moddotplot"]) {
+  for (const action of ["estimate", "jobs"]) {
+    const request = new retrievalRequests.SequenceOverlayRequest(kind, action, overlayOptions);
+    assert.equal(request.requestPath, `/sequence/${kind}/${action}`);
+    assert.deepEqual(retrievalDtos.HiCTAPIRequestDTO.toDTOClass(request).toDTO(), overlayOptions);
+  }
+}
+const legacyEstimate = new retrievalRequests.EstimateFastaDotplotRequest({
+  fastaFiles: ["assembly.fa"],
+  binSize: 100,
+  acceptLargeOutput: true,
+});
+assert.equal(legacyEstimate.requestPath, "/dotplot/estimate");
+const legacyEstimateDto = retrievalDtos.HiCTAPIRequestDTO.toDTOClass(legacyEstimate).toDTO();
+assert.deepEqual(legacyEstimateDto.fastaFiles, ["assembly.fa"]);
+assert.equal(legacyEstimateDto.binSize, 100);
+assert.equal(legacyEstimateDto.acceptLargeOutput, true);
+
+for (const [name, options] of [
+  ["PrepareCoverageNormalizationRequest", { source: "SECONDARY" }],
+  ["CoverageNormalizationStatusRequest", { source: "SECONDARY" }],
+  ["CancelCoverageNormalizationRequest", { source: "SECONDARY" }],
+  [
+    "SelectNormalizationWeightsRequest",
+    { source: "SECONDARY", mode: "SQRT_COVERAGE" },
+  ],
+]) {
+  const request = new retrievalRequests[name](options);
+  assert.deepEqual(
+    retrievalDtos.HiCTAPIRequestDTO.toDTOClass(request).toDTO(),
+    options
+  );
+}
 const recoverySettings = {
   queries: "ACGT",
   remoteRequestId: " fr9p7tgf016 ",

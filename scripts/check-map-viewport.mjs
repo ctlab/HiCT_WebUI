@@ -105,7 +105,7 @@ function fixture() {
     resolution: 2.5,
     rotation: 0.2,
   });
-  manager.currentViewState = {};
+  manager.currentViewState = { selectedContigIds: [] };
   const layerExtents = [];
   manager.layersHolder = Object.fromEntries(
     [
@@ -152,6 +152,7 @@ function fixture() {
         renders += 1;
       },
     },
+    deactivateTranslocation() {},
     refreshOverviewMinimap() {
       minimapRefreshes += 1;
     },
@@ -174,7 +175,6 @@ function fixture() {
   manager.scheduleRulerRender = () => undefined;
   const events = new CommonEventManager(manager.mapManager);
   events.getSelectedContigBpRange = () => ({ startBP: 0, endBP: 5000 });
-  events.resetSelection = () => undefined;
   events.onMoveSelectionClicked = () => undefined;
   manager.selectionInteractions = {
     translocationArrowSelectionInteraction: {

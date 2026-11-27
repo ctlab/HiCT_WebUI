@@ -1,4 +1,11 @@
+import {
+  cropSelectionScene,
+  exportPixelSpan,
+  includeMapCaptions,
+  visibleMapBounds,
+} from "../export/SelectionScene";
 import { FigureSnapshotLibrary } from "../export/FigureSnapshotLibrary";
+import { sourceResolutionLabel } from "../visualization/sourceResolutionInfo";
 import type { FigurePrintOptions } from "../export/FigurePrintSize";
 import { watchMapRenderCompletion } from "./mapRenderCompletion";
 /*
@@ -29,7 +36,8 @@ import {
   type FileSaveResult,
 } from "../export/FileSave";
 import { ZoomSlider } from "ol/control";
-import { DoubleClickZoom, DragPan } from "ol/interaction";
+import { DoubleClickZoom, DragPan, Interaction, KeyboardPan } from "ol/interaction";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
 import VectorSource from "ol/source/Vector";
@@ -69,6 +77,7 @@ export interface FigureCaptureOptions {
   cropToMap?: boolean;
   includeRulers?: boolean;
   includeTracks?: boolean;
+  includeSecondary?: boolean;
   fitSmallWholeMap?: boolean;
   signal?: AbortSignal;
 }
@@ -146,7 +155,7 @@ class ContactMapManager {
 
     this.visualizationManager = new VisualizationManager(this);
     this.visualizationManager.fetchVisualizationOptions();
-    this.linearTrackManager = new LinearTrackManager(this);
+    this.linearTrackManager = markRaw(new LinearTrackManager(this));
 
     this.minimap = null;
     this.minimapViewportFeature = null;
@@ -181,15 +190,73 @@ class ContactMapManager {
   public initializeMapInteractions(): void {
     this.map.addInteraction(new DoubleClickZoom());
     this.map.addInteraction(new DragPan());
+    const settings = useUiSettingsStore();
+    this.map.addInteraction(new Interaction({
+      handleEvent: (event) => {
+        if (event.type !== "keydown" || settings.mapAnchorTopLeft) return true;
+        const key = event.originalEvent as KeyboardEvent;
+        const target = this.map.getTargetElement();
+        if (key.target !== target || target !== document.activeElement ||
+            key.altKey || key.ctrlKey || key.metaKey) return true;
+        const horizontal = key.key === "ArrowLeft" || key.key === "ArrowRight";
+        const vertical = key.key === "ArrowUp" || key.key === "ArrowDown";
+        const size = this.map.getSize();
+        if (!size || (!horizontal && !vertical)) return true;
+        const pixels = size[horizontal ? 0 : 1] * (key.shiftKey ? 1 / 2 : 1 / 8);
+        // OpenLayers handles the pan and prevents page scrolling.
+        return new KeyboardPan({ pixelDelta: pixels, condition: () => true }).handleEvent(event);
+      },
+    }));
     this.viewAndLayersManager.initializeMapInteractions();
+  }
+
+  /** Step around the current center with the view's active resolution limits. */
+  public stepZoom(direction: 1 | -1): boolean {
+    const view = this.map.getView();
+    const zoom = view.getZoom();
+    if (zoom === undefined) return false;
+    const target = view.getConstrainedZoom(zoom + direction);
+    const resolution = view.getResolution();
+    const limit = direction > 0 ? view.getMinResolution() : view.getMaxResolution();
+    if (target === undefined || Math.abs(target - zoom) < 1e-9
+        || (resolution !== undefined && Math.abs(resolution - limit) <= limit * 1e-9)) {
+      return false;
+    }
+    view.animate({ zoom: target, duration: 250 });
+    return true;
   }
 
   public initializeMapControls(): void {
     this.map.addControl(new ZoomSlider());
-    // OpenLayers supplies keyboard zoom through the separate + and − buttons.
-    const zoomThumb = this.map.getViewport().querySelector<HTMLButtonElement>(
-      ".ol-zoomslider-thumb"
-    );
+    for (const [className, zoomOut] of [
+      [".ol-zoom-in", false],
+      [".ol-zoom-out", true],
+    ] as const) {
+      this.map
+        .getViewport()
+        .querySelector(className)
+        ?.addEventListener(
+          "click",
+          (event) => {
+            const view = this.map.getView();
+            const current = view.getResolution();
+            const limit = zoomOut
+              ? view.getMaxResolution()
+              : view.getMinResolution();
+            if (
+              current !== undefined &&
+              Math.abs(current - limit) <= limit * 1e-9
+            ) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+            }
+          },
+          { capture: true }
+        );
+    }
+    const zoomThumb = this.map
+      .getViewport()
+      .querySelector<HTMLButtonElement>(".ol-zoomslider-thumb");
     if (zoomThumb) {
       zoomThumb.tabIndex = -1;
       zoomThumb.setAttribute("aria-hidden", "true");
@@ -1173,8 +1240,12 @@ class ContactMapManager {
   }
 
   private exportInProgress = false;
+  private figureCapturePending = false;
   public get isExporting(): boolean {
     return this.exportInProgress;
+  }
+  public get isFigureCapturePending(): boolean {
+    return this.figureCapturePending;
   }
   private sequenceViewExporter?: (options?: {
     metadata?: Record<string, unknown>;
@@ -1208,6 +1279,7 @@ class ContactMapManager {
     cropToMap?: boolean;
     includeRulers?: boolean;
     includeTracks?: boolean;
+    includeSecondary?: boolean;
     signal?: AbortSignal;
     fitSmallWholeMap?: boolean;
     progress?: (value: number) => void;
@@ -1281,6 +1353,8 @@ class ContactMapManager {
       options?.progress?.(0.05);
       interactions.forEach(([item]) => item.setActive(false));
       this.viewAndLayersManager.settleProjectedOverlayForFigure();
+      if (options?.includeSecondary === false)
+        this.viewAndLayersManager.setSecondaryCaptureVisible(false);
       // The overview shares a coarser source with the map but is excluded from
       // figure content. Suspend it so it cannot request another capture grid.
       overviewLayers.forEach(([layer]) => layer.setVisible(false));
@@ -1494,6 +1568,11 @@ class ContactMapManager {
       const viewportBounds = this.map.getViewport().getBoundingClientRect();
       const workspaceBounds = workspace.getBoundingClientRect();
       const { captureCanvasScene } = await import("../export/CanvasScene");
+      const sourceResolutions =
+        this.viewAndLayersManager.getDisplayedSourceResolutions();
+      const provenance = options?.metadata?.provenance as
+        | (Record<string, unknown> & { notes?: readonly string[] })
+        | undefined;
       const svg = await captureCanvasScene(
         workspace,
         async () => {
@@ -1508,6 +1587,18 @@ class ContactMapManager {
         options?.metadata
           ? {
               ...options.metadata,
+              ...(provenance && sourceResolutions.length > 1
+                ? {
+                    provenance: {
+                      ...provenance,
+                      notes: [
+                        ...(Array.isArray(provenance.notes) ? provenance.notes : []),
+                        "Resolution " + sourceResolutionLabel(sourceResolutions),
+                      ],
+                      sourceResolutions,
+                    },
+                  }
+                : {}),
               renderCapture,
               renderedGrid: JSON.parse(
                 JSON.stringify(
@@ -1550,9 +1641,6 @@ class ContactMapManager {
         selection ?? (options?.cropToMap !== false ? dataExtent : undefined);
       if (cropExtent) {
         const size = this.map.getSize()!;
-        const { cropSelectionScene, visibleMapBounds } = await import(
-          "../export/SelectionScene"
-        );
         const bounds = visibleMapBounds(
           [
             [cropExtent[0], cropExtent[3]],
@@ -1577,9 +1665,6 @@ class ContactMapManager {
           height: bounds.height,
         };
         if (!selection) {
-          const { includeMapCaptions } = await import(
-            "../export/SelectionScene"
-          );
           crop = includeMapCaptions(svg.svg, crop, {
             left: marginLeft,
             top: marginTop,
@@ -1591,6 +1676,8 @@ class ContactMapManager {
       }
       return svg;
     } finally {
+      if (options?.includeSecondary === false && !this.disposed)
+        this.viewAndLayersManager.setSecondaryCaptureVisible(true);
       if (renderCapture) {
         this.viewAndLayersManager.figureRenderCaptureId = undefined;
         this.viewAndLayersManager.figureRenderCaptureError = undefined;
@@ -1631,11 +1718,24 @@ class ContactMapManager {
     progress?: (fraction: number) => void
   ): Promise<FrozenFigure> {
     options.signal?.throwIfAborted();
-    if (this.disposed || this.exportInProgress)
+    if (this.disposed || this.exportInProgress || this.figureCapturePending)
       throw Error(
         "Wait for the current export to finish before capturing a figure."
       );
+    this.figureCapturePending = true;
+    try {
+      return await this.prepareFigure(options, progress);
+    } finally {
+      this.figureCapturePending = false;
+    }
+  }
+
+  private async prepareFigure(
+    options: FigureCaptureOptions,
+    progress?: (fraction: number) => void
+  ): Promise<FrozenFigure> {
     await this.visualizationManager.waitForPendingOptionRequests();
+    options.signal?.throwIfAborted();
     const api = this.networkManager.requestManager;
     const captured = api.history.applied;
     const { compactFigureProvenance } = await import(
@@ -1678,6 +1778,7 @@ class ContactMapManager {
           map: true,
           rulers: options.includeRulers !== false,
           tracks: options.includeTracks !== false,
+          secondary: options.includeSecondary !== false,
         },
         history: captured
           ? {
@@ -1757,6 +1858,64 @@ class ContactMapManager {
     return result;
   }
 
+  public selectionExportEstimate() {
+    const layers = this.viewAndLayersManager;
+    const extent = layers.selectionInteractions.contigSelectExtent.getExtent();
+    const size = this.map.getSize();
+    const region =
+      layers.getRegionBounds() ?? (extent && layers.regionFromExtent(extent));
+    if (!extent || !region || !size)
+      throw Error("Select a nonempty rectangle before exporting.");
+    const w = extent[2] - extent[0],
+      h = extent[3] - extent[1];
+    const fit = this.getView().getConstrainedResolution(
+      Math.max(w / Math.max(1, size[0] - 2), h / Math.max(1, size[1] - 2)),
+      1
+    );
+    if (!fit || !Number.isFinite(fit))
+      throw Error("Wait for the map to finish loading before exporting.");
+    const map = this.map.getViewport().getBoundingClientRect();
+    const scene = document
+      .querySelector(".interactive-workspace")
+      ?.getBoundingClientRect();
+    const width = exportPixelSpan(
+      Math.min(size[0], w / fit) + map.left - (scene?.left ?? map.left)
+    );
+    const height = exportPixelSpan(
+      Math.min(size[1], h / fit) + map.top - (scene?.top ?? map.top)
+    );
+    const columns = region.columnEnd - region.columnStart,
+      rows = region.rowEnd - region.rowStart;
+    const current = layers.getVisibleSourceResolutionDescriptors();
+    const fitted = layers.getVisibleSourceResolutionDescriptors(fit);
+    const bin = Math.min(
+      current.primary.bpResolution,
+      current.secondary?.bpResolution ?? Infinity,
+      fitted.primary.bpResolution,
+      fitted.secondary?.bpResolution ?? Infinity
+    );
+    const nx = Math.ceil(columns / bin),
+      ny = Math.ceil(rows / bin);
+    return {
+      width,
+      height,
+      columns,
+      rows,
+      bin,
+      nx,
+      ny,
+      large:
+        nx * ny >= 4_000_000 ||
+        Math.max(nx, ny) >= 32768 ||
+        width * height >= 4_000_000,
+    };
+  }
+
+  private figureFilename(format: string, scope?: string) {
+    const base = this.options.filename.split(/[\\/]/).pop() || "HiCT";
+    return `${base}${scope === "selection" ? "-selection" : ""}.${format}`;
+  }
+
   public async exportCurrentMapSvg(
     progressCallback?: (progress: number) => void,
     options?: {
@@ -1768,7 +1927,7 @@ class ContactMapManager {
     }
   ): Promise<FileSaveResult> {
     const destination = await prepareFileSave(
-      `${this.options.filename}.svg`,
+      this.figureFilename("svg", options?.scope),
       "figure"
     );
     if (!destination) return cancelledFileSave;
@@ -1799,7 +1958,7 @@ class ContactMapManager {
     }
   ): Promise<FileSaveResult> {
     const destination = await prepareFileSave(
-      `${this.options.filename}.png`,
+      this.figureFilename("png", options?.scope),
       "figure"
     );
     if (!destination) return cancelledFileSave;
@@ -1837,7 +1996,7 @@ class ContactMapManager {
     }
   ): Promise<FileSaveResult> {
     const destination = await prepareFileSave(
-      `${this.options.filename}.pdf`,
+      this.figureFilename("pdf", options?.scope),
       "figure"
     );
     if (!destination) return cancelledFileSave;
@@ -2141,9 +2300,9 @@ class ContactMapManager {
     );
   }
 
-  public reloadVisuals(): void {
+  public reloadVisuals(version?: number): void {
     if (this.disposed) return;
-    this.viewAndLayersManager.reloadVisuals();
+    this.viewAndLayersManager.reloadVisuals(version);
     void this.linearTrackManager.clearCachesAndRender();
     this.scheduleMinimapViewportSync();
   }
@@ -2463,13 +2622,23 @@ class ContactMapManager {
     if (!transformedMainExtent.every((value) => Number.isFinite(value))) {
       return;
     }
-    const clampedExtent = this.clampExtentToBounds(
-      transformedMainExtent as [number, number, number, number],
-      minimapProjectionExtent as [number, number, number, number]
-    );
-    this.minimapViewportFeature.setGeometry(
-      clampedExtent ? fromExtent(clampedExtent) : undefined
-    );
+    // At base scale both corners can project into the same overview bin.
+    const marker = [...transformedMainExtent];
+    for (const axis of [0, 1]) {
+      const low = minimapProjectionExtent[axis],
+        high = minimapProjectionExtent[axis + 2];
+      const size = Math.min(
+        high - low,
+        Math.max(
+          7 * (minimapView.getResolution() ?? 1),
+          marker[axis + 2] - marker[axis]
+        )
+      );
+      const center = (marker[axis] + marker[axis + 2]) / 2;
+      marker[axis] = Math.max(low, Math.min(high - size, center - size / 2));
+      marker[axis + 2] = marker[axis] + size;
+    }
+    this.minimapViewportFeature.setGeometry(fromExtent(marker));
     this.minimap.render();
   }
 

@@ -24,19 +24,6 @@
   <div class="pills w-100">
     <div class="btn-group" role="group">
       <input
-        id="bookmarks-btn"
-        autocomplete="off"
-        class="btn-check"
-        name="btnradio"
-        type="radio"
-        :checked="activeTab === 'bookmarks'"
-        @change="setActiveTab('bookmarks')"
-      />
-      <label class="btn btn-outline-primary" for="bookmarks-btn">
-        Bookmarks
-      </label>
-
-      <input
         id="contigs-btn"
         autocomplete="off"
         class="btn-check"
@@ -58,6 +45,19 @@
       />
       <label class="btn btn-outline-primary" for="scaffolds-btn">
         Scaffolds
+      </label>
+
+      <input
+        id="bookmarks-btn"
+        autocomplete="off"
+        class="btn-check"
+        name="btnradio"
+        type="radio"
+        :checked="activeTab === 'bookmarks'"
+        @change="setActiveTab('bookmarks')"
+      />
+      <label class="btn btn-outline-primary" for="bookmarks-btn">
+        Bookmarks
       </label>
     </div>
   </div>
@@ -90,8 +90,14 @@
         </label>
       </div>
     </div>
-    <div class="saved-locations-div">
-      <div v-for="[id, loc] of savedLocations" :key="id">
+    <div ref="bookmarkList" class="saved-locations-div">
+      <div
+        v-for="[id, loc] of bookmarksNewestFirst"
+        :key="id"
+        :data-bookmark-id="id"
+        class="bookmark-row"
+        :class="{ 'bookmark-row-new': highlightedBookmark === id }"
+      >
         <SavedLocationElement
           v-if="loc"
           :map-manager="props.mapManager"
@@ -128,6 +134,7 @@
           type="text"
           class="form-control m-0"
           v-model="contigDraftNames[contig.contigId]"
+          :aria-label="`Name of contig ${contig.contigName}`"
           @input="markContigDirty(contig.contigId)"
           @focus="isEditingNames = true"
           @blur="isEditingNames = false"
@@ -198,6 +205,7 @@
           type="text"
           class="form-control m-0"
           v-model="scaffoldDraftNames[scaffold.scaffoldId]"
+          :aria-label="`Name of scaffold ${scaffold.scaffoldName}`"
           @input="markScaffoldDirty(scaffold.scaffoldId)"
           @focus="isEditingNames = true"
           @blur="isEditingNames = false"
@@ -257,7 +265,7 @@ import { notifyFileSave } from "@/app/ui/fileSaveNotice";
 import { saveFileWithNotice } from "@/app/ui/fileSaveNotice";
 import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import SavedLocationElement from "./SavedLocationElement.vue";
-import { computed, Ref, ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { computed, nextTick, Ref, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import { Coordinate } from "ol/coordinate";
 import { toast } from "vue-sonner";
 import type { ContigDescriptor } from "@/app/core/domain/ContigDescriptor";
@@ -270,7 +278,9 @@ import { validateSessionLibraries } from "@/app/core/mapmanagers/SessionDocument
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
+  bookmarkRequest?: { locationId: number };
 }>();
+const emit = defineEmits<{ (event: "bookmark-revealed"): void }>();
 
 const activeTab = ref<"bookmarks" | "contigs" | "scaffolds">("bookmarks");
 const tabSelectedByUser = ref(false);
@@ -290,6 +300,10 @@ const savedLocations: Ref<
     }
   >
 > = ref(new Map());
+const bookmarksNewestFirst = computed(() => Array.from(savedLocations.value).reverse());
+const bookmarkList = ref<HTMLElement | null>(null);
+const highlightedBookmark = ref<number>();
+let highlightTimer: number | undefined;
 
 const locationCount = ref(0);
 const sessionStore = useSessionStore();
@@ -376,6 +390,7 @@ onMounted(() => {
   // restored session) while this panel is not mounted. Pushing the empty local
   // list here would erase them.
   loadFromSessionStore();
+  if (props.bookmarkRequest) void revealBookmark(props.bookmarkRequest.locationId);
   // Poll for assembly changes triggered by backend ops (group/ungroup/move).
   // This keeps Contigs/Scaffolds tabs in sync without tab switches.
   refreshTimer = window.setInterval(() => {
@@ -386,11 +401,27 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  window.clearTimeout(highlightTimer);
   if (refreshTimer) {
     clearInterval(refreshTimer);
     refreshTimer = undefined;
   }
 });
+
+watch(() => props.bookmarkRequest, (request) => {
+  if (request) void revealBookmark(request.locationId);
+});
+
+async function revealBookmark(locationId: number): Promise<void> {
+  setActiveTab("bookmarks");
+  highlightedBookmark.value = locationId;
+  window.clearTimeout(highlightTimer);
+  highlightTimer = window.setTimeout(() => { highlightedBookmark.value = undefined; }, 2000);
+  await nextTick();
+  bookmarkList.value?.querySelector(`[data-bookmark-id="${locationId}"]`)
+    ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  emit("bookmark-revealed");
+}
 
 function saveLocation() {
   const map = props.mapManager;
@@ -713,7 +744,18 @@ function importNames(event: Event): void {
   overflow-x: hidden;
   width: 100%;
   padding-top: 15px;
-  padding-right: 20px;
+  padding-inline: 16px;
+}
+
+.bookmark-row {
+  width: 100%;
+  border-radius: 6px;
+}
+
+.bookmark-row-new {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: -2px;
+  background: #eff8ff;
 }
 
 .bookmark-actions {

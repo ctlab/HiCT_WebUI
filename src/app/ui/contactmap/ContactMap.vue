@@ -36,9 +36,21 @@
     >
       {{
         props.mapManager?.viewAndLayersManager.overlayStatus.zoomRequired.value
-          ? "Zoom in to see the fine overlay."
+          ? cacheError || "The fine overlay needs an overview at this zoom."
           : "Loading overlay…"
       }}
+      <button
+        v-if="
+          cacheJobId &&
+          props.mapManager?.viewAndLayersManager.overlayStatus.zoomRequired
+            .value
+        "
+        type="button"
+        class="btn btn-sm btn-link"
+        @click="jobsUi.open('sequence/' + cacheJobId)"
+      >
+        View overview job
+      </button>
     </div>
     <aside
       v-if="props.mapManager?.alignmentDetail?.state.visible.value"
@@ -50,6 +62,17 @@
         Local alignments between visible FASTA regions · updates with
         navigation.
       </p>
+      <label class="alignment-length"
+        >Minimum alignment length (bp)
+        <input
+          type="number"
+          min="1"
+          max="8192"
+          step="1"
+          :value="uiSettingsStore.alignmentMinimumLength"
+          @change="changeMinimumLength"
+        />
+      </label>
       <ul>
         <li v-for="marker in alignmentMarkers" :key="marker.id">
           <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -79,7 +102,26 @@
         {{ props.mapManager.alignmentDetail.state.message.value }}
       </p>
     </aside>
-    <div id="hic-contact-map" :style="mapContainerStyle" ref="mapTarget"></div>
+    <div v-if="translocationActive" class="tl-hint" role="status">
+      <b>Translocation mode.</b> Click a triangle to move the selection there. Esc leaves.
+      <template v-if="translocationTarget">
+        <br />Target:
+        <template v-if="translocationTarget.left">after <b>{{ translocationTarget.left }}</b></template>
+        <template v-if="translocationTarget.left && translocationTarget.right">, </template>
+        <template v-if="translocationTarget.right">before <b>{{ translocationTarget.right }}</b></template>
+      </template>
+    </div>
+    <div
+      id="hic-contact-map"
+      :style="mapContainerStyle"
+      ref="mapTarget"
+      :tabindex="props.mapManager ? 0 : -1"
+      role="region"
+      aria-label="Contact map"
+      @keydown.self="zoomFromKeyboard"
+    >
+      <DotplotRegionOutlines v-if="props.mapManager" :key="managerKey" :map-manager="props.mapManager" />
+    </div>
     <div
       class="zoom-slider-overlay"
       v-if="props.mapManager && customZoomSliderEnabled"
@@ -90,9 +132,15 @@
 </template>
 
 <script setup lang="ts">
+import { ActiveTool } from "@/app/core/mapmanagers/HiCViewAndLayersManager";
 import "ol/ol.css";
+import { useSessionStore } from "@/app/stores/sessionStore";
+import { useBackgroundJobsUiStore } from "@/app/stores/backgroundJobsUiStore";
+import { SequenceAnalysisRequest } from "@/app/core/net/api/SequenceAnalysisRequest";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { alignmentMarkers } from "@/app/core/visualization/alignmentMarkers";
 import AssemblyContextMenu from "./AssemblyContextMenu.vue";
+import DotplotRegionOutlines from "./DotplotRegionOutlines.vue";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { ref, computed, Ref, toRaw, watch } from "vue";
 import { storeToRefs } from "pinia";
@@ -101,6 +149,12 @@ import ZoomSlider from "@/app/ui/components/toolbar/upper_blocks/ZoomSlider.vue"
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 
+function changeMinimumLength(event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (input.validity.valid && Number.isInteger(input.valueAsNumber))
+    uiSettingsStore.alignmentMinimumLength = input.valueAsNumber;
+  input.value = String(uiSettingsStore.alignmentMinimumLength);
+}
 const stylesStore = useStyleStore();
 
 const htmlElementReferencesStore = usehtmlElementReferencesStore();
@@ -123,7 +177,54 @@ const props = defineProps<{
   mapManager?: ContactMapManager;
 }>();
 
+function zoomFromKeyboard(event: KeyboardEvent): void {
+  if (!props.mapManager || event.altKey || event.ctrlKey || event.metaKey) return;
+  const direction = event.key === "+" || event.key === "=" ? 1
+    : event.key === "-" || event.key === "−" ? -1 : 0;
+  if (!direction) return;
+  event.preventDefault();
+  props.mapManager.stepZoom(direction);
+}
+
+const jobsUi = useBackgroundJobsUiStore();
+const session = useSessionStore();
+const cacheJobId = ref("");
+const cacheError = ref("");
+watch(
+  () =>
+    [
+      props.mapManager,
+      session.secondaryMapFilename,
+      props.mapManager?.viewAndLayersManager.overlayStatus.zoomRequired.value,
+    ] as const,
+  async ([manager, source, needed], _, cleanup) => {
+    let active = true;
+    cleanup(() => {
+      active = false;
+    });
+    cacheJobId.value = "";
+    cacheError.value = "";
+    if (!manager || !source || !needed) return;
+    try {
+      const job = await manager.networkManager.requestManager.sendRequest(
+        new SequenceAnalysisRequest("/sequence/overview/jobs", {
+          sourceFilename: source,
+        })
+      );
+      if (active) cacheJobId.value = job.data.jobId;
+    } catch (error) {
+      if (active) cacheError.value = extractErrorMessage(error);
+    }
+  },
+  { immediate: true }
+);
 const uiSettingsStore = useUiSettingsStore();
+const translocationActive = computed(() =>
+  props.mapManager?.viewAndLayersManager.currentViewState.activeTool === ActiveTool.TRANSLOCATION
+);
+const translocationTarget = computed(() =>
+  props.mapManager?.viewAndLayersManager.currentViewState.translocationTarget
+);
 const { customZoomSliderEnabled } = storeToRefs(uiSettingsStore);
 
 // The context menu binds to its map's viewport once, when it is created. Replacing the manager
@@ -143,6 +244,33 @@ const managerKey = computed(() => {
 </script>
 
 <style scoped>
+#hic-contact-map {
+  background: #ffffff;
+}
+
+.tl-hint {
+  position: absolute;
+  left: 48px;
+  bottom: .5em;
+  max-width: min(430px, calc(100% - 56px));
+  z-index: 2;
+  background: rgba(16, 24, 40, .78);
+  color: #fff;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.tl-hint b {
+  color: #d1e9ff;
+}
+
+#hic-contact-map:focus-visible {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: -2px;
+}
 .alignment-legend {
   position: absolute;
   z-index: 10;
@@ -187,6 +315,18 @@ const managerKey = computed(() => {
   padding-top: 0.35rem;
 }
 
+.alignment-length {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  pointer-events: auto;
+}
+.alignment-length input {
+  width: 5em;
+}
+.overlay-loading button {
+  pointer-events: auto;
+}
 .overlay-loading {
   position: absolute;
   z-index: 2;
@@ -207,9 +347,8 @@ const managerKey = computed(() => {
 
 .zoom-slider-overlay {
   position: absolute;
-  left: 8px;
-  top: 140px;
+  inset: 0;
   z-index: 20;
-  pointer-events: auto;
+  pointer-events: none;
 }
 </style>

@@ -23,6 +23,8 @@
   <div class="file-selection-table">
     <DataTable
       :value="tableRows"
+      :paginator="tableRows.length > 100"
+      :rows="100"
       data-key="path"
       class="p-datatable-sm file-selection-datatable"
       column-resize-mode="fit"
@@ -44,6 +46,17 @@
         header-class="selection-cell"
         style="width: 3rem; min-width: 3rem"
       >
+        <template #header>
+          <input
+            aria-label="Select all listed files"
+            class="form-check-input file-row-checkbox"
+            type="checkbox"
+            :checked="allListedSelected"
+            :indeterminate.prop="someListedSelected && !allListedSelected"
+            :disabled="listedFiles.length === 0"
+            @change="toggleListedFiles"
+          />
+        </template>
         <template #body="{ data }">
           <input
             :aria-label="`Select ${data.name}`"
@@ -225,9 +238,34 @@ const activeRows = computed(() =>
   renderedRows.value.length > 0 ? renderedRows.value : tableRows.value
 );
 
+const selectedPathSet = computed(() => new Set(props.selectedPaths));
+const listedFiles = computed(() =>
+  activeRows.value
+    .filter((row) => row.type !== "directory")
+    .map((row) => row.path)
+);
+const allListedSelected = computed(
+  () =>
+    listedFiles.value.length > 0 &&
+    listedFiles.value.every((path) => selectedPathSet.value.has(path))
+);
+const someListedSelected = computed(() =>
+  listedFiles.value.some((path) => selectedPathSet.value.has(path))
+);
+
+function toggleListedFiles(): void {
+  const selected = new Set(selectedPathSet.value);
+  const deselect = allListedSelected.value;
+  listedFiles.value.forEach((path) => {
+    if (deselect) selected.delete(path);
+    else selected.add(path);
+  });
+  emit("update:selectedPaths", [...selected]);
+}
+
 const isSelected = (path: string): boolean =>
   props.multiSelect
-    ? (props.selectedPaths ?? []).includes(path)
+    ? selectedPathSet.value.has(path)
     : path === props.selectedPath;
 
 const selectPath = (path: string, event?: MouseEvent): void => {
@@ -255,7 +293,7 @@ const togglePath = (path: string, event?: MouseEvent): void => {
       const max = Math.max(start, end);
       for (let i = min; i <= max; i++) {
         const rowPath = rows[i]?.path;
-        if (!rowPath) {
+        if (!rowPath || rows[i].type === "directory") {
           continue;
         }
         if (shouldSelect) {
@@ -281,8 +319,9 @@ const togglePath = (path: string, event?: MouseEvent): void => {
 const emitSelectedPaths = (selected: Set<string>): void => {
   const knownOrder = tableRows.value.map((row) => row.path);
   const ordered = knownOrder.filter((path) => selected.has(path));
+  const known = new Set(knownOrder);
   for (const path of selected) {
-    if (!knownOrder.includes(path)) {
+    if (!known.has(path)) {
       ordered.push(path);
     }
   }
@@ -460,6 +499,9 @@ const formatTimestamp = (timestampMs: number): string => {
 .file-path-cell {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.file-path-cell {
+  color: #475467;
 }
 
 .file-link-badge {

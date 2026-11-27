@@ -100,15 +100,13 @@ def main():
               'Loaded viewport tiles' in status, status)
         page.screenshot(path=str(output / 'navigation.png'))
 
-        lower = page.get_by_role('spinbutton', name='Lower signal threshold')
-        upper = page.get_by_role('spinbutton', name='Upper signal threshold')
+        lower = page.get_by_label('Lower signal threshold')
+        upper = page.get_by_label('Upper signal threshold')
         lower.fill('0')
         upper.fill('0.0001')
-        page.locator('.range-details summary').click()
-        maximum = page.get_by_role('spinbutton', name='Slider maximum signal')
+        maximum = page.get_by_label('Histogram view to')
         maximum.fill('1')
         maximum.press('Tab')
-        page.locator('.range-details summary').click()
         page.wait_for_timeout(800)
         lo = page.get_by_role('slider', name='Lower threshold', exact=True)
         hi = page.get_by_role('slider', name='Upper threshold', exact=True)
@@ -140,8 +138,8 @@ def main():
         check('Log slider sensitivity preserves thresholds',
               (lower.input_value(), upper.input_value()) == before)
         page.get_by_role('button', name='Linear', exact=True).first.click()
-        page.get_by_role('button', name='Focus range', exact=True).click()
-        check('Focus range spreads the handles',
+        page.get_by_role('button', name='Fit view to colour range', exact=True).click()
+        check('Fit view spreads the handles',
               hi.bounding_box()['x'] - lo.bounding_box()['x'] > 200)
         check('No browser errors', not errors, errors)
         (output / 'results.json').write_text(json.dumps(checks, indent=2) + '\n')

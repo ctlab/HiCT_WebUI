@@ -29,10 +29,13 @@ function load({
   ClipboardItem,
   secure = true,
   execCommand = () => true,
+  confirm = async () => "cancel",
 }) {
   const toasts = [];
   const copied = [];
   const removed = [];
+  const prompts = [];
+  const failures = [];
   const document = {
     activeElement: { focus() {} },
     body: { appendChild() {} },
@@ -54,6 +57,17 @@ function load({
     exports: {},
     require: (name) => {
       if (name === "./regionSelection") return coordinates.exports;
+      if (name === "@/app/ui/confirmAction") {
+        return {
+          askForConfirmation: (options) => {
+            prompts.push(options);
+            return confirm();
+          },
+        };
+      }
+      if (name === "@/app/ui/reportFailure") {
+        return { reportFailure: (action, error) => failures.push([action, error.message]) };
+      }
       assert.equal(name, "vue-sonner");
       return {
         toast: {
@@ -85,7 +99,7 @@ function load({
     ).outputText,
     sandbox
   );
-  return { ...sandbox.exports, toasts, copied, removed };
+  return { ...sandbox.exports, toasts, copied, removed, prompts, failures };
 }
 
 {
@@ -154,6 +168,7 @@ function load({
     },
   });
   const pendingCopy = copySelectionPng({
+    selectionExportEstimate: () => ({ large: false }),
     renderCurrentMapPng: (options) => {
       assert.equal(options.scope, "selection");
       return png;
@@ -165,6 +180,85 @@ function load({
   await pendingCopy;
   assert.deepEqual(written, [blob]);
   assert.deepEqual(toasts, [["success", "Selection copied as PNG"]]);
+}
+
+{
+  let region = { rowStart: 100, rowEnd: 12100, columnStart: 100, columnEnd: 12100 };
+  let estimate = { large: true, columns: 12_000, rows: 12_000, bin: 1,
+                   nx: 12_000, ny: 12_000, width: 800, height: 700 };
+  let rendered = 0;
+  const manager = {
+    selectionExportEstimate: () => ({ ...estimate }),
+    viewAndLayersManager: {
+      getRegionBounds: () => undefined,
+      regionFromExtent: () => region,
+      selectionInteractions: {
+        contigSelectExtent: { getExtent: () => [0, -10, 10, 0] },
+      },
+    },
+    renderCurrentMapPng: async () => {
+      rendered += 1;
+      return new Blob(["png"], { type: "image/png" });
+    },
+  };
+  let confirmed;
+  const writes = [];
+  const env = load({
+    ClipboardItem: class {
+      constructor(data) {
+        this.data = data;
+      }
+    },
+    clipboard: {
+      write: async ([item]) => {
+        assert.deepEqual(Object.keys(item.data), ["image/png"]);
+        writes.push(await item.data["image/png"]);
+      },
+    },
+    confirm: () => new Promise((resolve) => { confirmed = resolve; }),
+  });
+  let copy = env.copySelectionPng(manager);
+  assert.equal(rendered, 0);
+  assert.equal(env.prompts[0].confirmLabel, "Copy as PNG");
+  assert.match(env.prompts[0].details.at(-1), /800 × 700 px/);
+  confirmed("cancel");
+  await copy;
+  assert.equal(rendered, 0);
+  assert.equal(writes.length, 0);
+
+  const review = env.reviewSelectionImageSize(manager, "Export PDF");
+  region = { ...region, rowStart: 101, rowEnd: 12101 };
+  confirmed("confirm");
+  await assert.rejects(review, /selection or estimated size changed/);
+
+  copy = env.copySelectionPng(manager);
+  estimate = { ...estimate, width: 700 };
+  confirmed("confirm");
+  await copy;
+  assert.equal(rendered, 0);
+  assert.equal(writes.length, 0);
+  assert.deepEqual(env.failures, [[
+    "Copy selection as PNG",
+    "The selection or estimated size changed. Review the selection and try again.",
+  ]]);
+
+  copy = env.copySelectionPng(manager);
+  confirmed("confirm");
+  await copy;
+  assert.equal(rendered, 1);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].type, "image/png");
+}
+
+{
+  const env = load({});
+  await env.copySelectionPng({
+    renderCurrentMapPng: () => assert.fail("Clipboard is unavailable"),
+  });
+  assert.deepEqual(env.toasts, [[
+    "error",
+    "Image clipboard is unavailable. Use Export → Image as PNG…",
+  ]]);
 }
 
 // Copyable loci never contain locale grouping, negative or fractional positions.
@@ -237,5 +331,5 @@ function load({
   assert.equal(thrown.toasts[0][0], "error");
 }
 console.log(
-  "Context menu actions: locus format, clipboard, fallback and failure reporting passed."
+  "Context menu actions: coordinate and PNG copying, export confirmation, clipboard fallback and failure reporting passed."
 );

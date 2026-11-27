@@ -281,7 +281,7 @@ async function reload(): Promise<void> {
     if (disposed || current !== generation || props.mapManager !== manager)
       return;
     if (options.signalDisplayMode !== "OBSERVED_OVER_EXPECTED")
-      throw new Error("Select Show O/E before editing its palette.");
+      throw new Error("Select Observed/Expected before editing its palette.");
     if (!(options.colormap instanceof SimpleLinearGradient))
       throw new Error("This O/E colormap cannot be edited here.");
     const p = {

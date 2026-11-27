@@ -37,10 +37,11 @@
         <div class="modal-content">
           <div class="modal-header">
             <div>
-              <h5 class="modal-title">Generate self-alignment dotplots</h5>
+              <h5 class="modal-title">{{ props.modDotPlot ? "ModDotPlot" : "Dotplots" }} from FASTA files</h5>
               <small class="text-muted">
-                Builds self-alignment maps from FASTA files using the configured
-                dotplot toolchain.
+                {{ props.modDotPlot
+                  ? "Builds standalone sequence identity maps from k-mer sketches."
+                  : "Builds self-alignment maps with the configured dotplot aligner." }}
               </small>
             </div>
             <button
@@ -55,302 +56,379 @@
               {{ errorMessage }}
             </div>
             <div v-if="step === 'select'">
-              <div class="batch-actions">
+              <div class="d-flex gap-2 mb-2">
                 <button
-                  class="btn btn-sm btn-outline-primary"
-                  @click="selectAll"
+                  v-if="!fastaDiscoveryError"
+                  type="button"
+                  class="btn btn-outline-primary btn-sm"
+                  @click="fastaSelectorOpen = true"
                 >
-                  Select All
+                  Browse for FASTA…
                 </button>
-                <button
-                  class="btn btn-sm btn-outline-secondary"
-                  @click="selectNone"
-                >
-                  Select None
-                </button>
-                <button
-                  class="btn btn-sm btn-outline-secondary"
-                  @click="invertSelection"
-                >
-                  Invert Selection
-                </button>
-                <button
-                  class="btn btn-sm btn-outline-secondary"
-                  @click="viewCurrentJobs"
-                >
-                  View current dotplot jobs
-                </button>
+                <div class="dropdown">
+                  <button
+                    type="button"
+                    class="btn btn-outline-secondary btn-sm dropdown-toggle"
+                    data-bs-toggle="dropdown"
+                  >
+                    Select
+                  </button>
+                  <ul class="dropdown-menu">
+                    <li>
+                      <button
+                        type="button"
+                        class="dropdown-item"
+                        @click="selectAll"
+                      >
+                        All
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        type="button"
+                        class="dropdown-item"
+                        @click="selectNone"
+                      >
+                        None
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        type="button"
+                        class="dropdown-item"
+                        @click="invertSelection"
+                      >
+                        Invert
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <div v-if="loadingFasta" class="small text-muted mb-2" role="status">
+                <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+                Looking for FASTA files in the data directory…
+              </div>
+              <div v-else-if="fastaDiscoveryError" class="alert alert-danger mb-2" role="alert">
+                <i class="bi bi-exclamation-circle me-2" aria-hidden="true"></i>
+                <strong>Could not list FASTA files.</strong>
+                {{ fastaDiscoveryError }} Choose a file with Browse…, or try again.
+              </div>
+              <div v-if="fastaDiscoveryError" class="d-flex gap-2 mb-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" @click="fastaSelectorOpen = true">Browse…</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @click="discoverFastaFiles">Try again</button>
               </div>
               <FileSelectionTable
+                v-if="fastaEntries.length || (!loadingFasta && !fastaDiscoveryError)"
                 :entries="fastaEntries"
                 :multi-select="true"
                 :selected-path="null"
                 :selected-paths="selectedFastaPaths"
                 :show-modified="false"
                 :show-size="false"
-                empty-message="No FASTA files found"
+                empty-message="No FASTA files listed. Browse to choose a file."
                 scroll-height="44vh"
                 @update:selected-paths="onSelectionUpdated"
               />
-            </div>
-
-            <div v-else-if="step === 'settings'" class="dotplot-settings">
-              <div class="alert alert-warning dotplot-ram-warning">
-                <strong>Memory warning.</strong>
-                <div class="mt-1">
-                  Dotplot generation can require a large amount of RAM,
-                  depending on genome assembly size. Machines with less than 64
-                  GB of memory may not be enough for large inputs.
-                </div>
-                <details class="mt-2">
-                  <summary>Show cluster guidance</summary>
-                  <div class="mt-2">
-                    If you have access to a Linux-powered cluster with enough
-                    resources, you can run HiCT in remote server mode and
-                    connect to it with SSH port forwarding for HTTP 5000 and
-                    8080.
+              <div v-if="props.modDotPlot" class="mt-3">
+                <label for="fasta-moddotplot-k" class="form-label">K-mer size</label>
+                <input id="fasta-moddotplot-k" v-model.number="modDotPlotK" type="number"
+                  class="form-control mb-3" min="1" max="65535" />
+                <div v-if="modLevels.length > 1" class="mb-3">
+                  <div class="small">
+                    Resolution range · {{ modLevels[modRange[0]].toLocaleString() }}–{{ modLevels[modRange[1]].toLocaleString() }} bp
                   </div>
-                </details>
+                  <Slider
+                    class="mx-2 my-3"
+                    range
+                    :model-value="modRange"
+                    :min="0"
+                    :max="modLevels.length - 1"
+                    :step="1"
+                    :pt="{
+                      startHandler: { 'aria-label': 'Finest resolution', 'aria-valuetext': modLevels[modRange[0]] + ' bp' },
+                      endHandler: { 'aria-label': 'Coarsest resolution', 'aria-valuetext': modLevels[modRange[1]] + ' bp' },
+                    }"
+                    @update:model-value="changeModRange"
+                  />
+                </div>
+                <div class="d-flex flex-wrap gap-3">
+                  <label v-for="level in modLevels" :key="level" class="form-check">
+                    <input type="checkbox" class="form-check-input" :value="level" v-model="modSelectedLevels" />
+                    {{ level.toLocaleString() }} bp
+                  </label>
+                </div>
+                <p class="form-text">For large FASTA files, choose coarser windows to reduce memory and disk use.</p>
               </div>
-              <div class="row g-3">
-                <div class="col-md-4">
-                  <label class="form-label" for="dotplot-base-resolution"
-                    >Base dotplot resolution, bp/bin</label
-                  >
-                  <input
-                    id="dotplot-base-resolution"
-                    v-model.number="binSize"
-                    type="number"
-                    min="1"
-                    class="form-control"
-                  />
-                  <small class="text-muted"
-                    >Fine values such as 25 are supported when the toolchain can
-                    handle the output size.</small
-                  >
+              <AdvancedSection v-else dialog-id="dotplot-fasta" class="mt-3">
+                <div class="alert alert-warning dotplot-ram-warning">
+                  <strong>Memory warning.</strong>
+                  <div class="mt-1">
+                    Dotplot generation can require a large amount of RAM,
+                    depending on genome assembly size. Machines with less than
+                    64 GB of memory may not be enough for large inputs.
+                  </div>
+                  <details class="mt-2">
+                    <summary>Show cluster guidance</summary>
+                    <div class="mt-2">
+                      If you have access to a Linux-powered cluster with enough
+                      resources, you can run HiCT in remote server mode and
+                      connect to it with SSH port forwarding for port 8080.
+                    </div>
+                  </details>
                 </div>
-                <div class="col-md-8">
-                  <label class="form-label" for="dotplot-zoom-resolutions"
-                    >Zoom resolutions</label
-                  >
-                  <input
-                    id="dotplot-zoom-resolutions"
-                    v-model.trim="resolutions"
-                    type="text"
-                    class="form-control"
-                  />
-                  <small class="text-muted">
-                    Comma-separated. Leave empty to mirror the reference map if
-                    selected, otherwise derive a pyramid up to roughly 500 px
-                    per axis.
-                  </small>
-                </div>
-                <div class="col-md-12">
-                  <label class="form-label"
-                    >Reference .hict.hdf5 map for resolution sync
-                    (optional)</label
-                  >
-                  <div class="input-group">
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <label class="form-label" for="dotplot-base-resolution"
+                      >Base dotplot resolution, bp/bin</label
+                    >
                     <input
+                      id="dotplot-base-resolution"
+                      v-model.number="binSize"
+                      type="number"
+                      min="1"
                       class="form-control"
-                      :value="
-                        referenceMapFilename ||
-                        'No reference map: derive zoom resolutions automatically'
-                      "
-                      readonly
                     />
-                    <button
-                      type="button"
-                      class="btn btn-outline-primary"
-                      @click="referenceMapSelectorOpen = true"
+                    <small class="text-muted"
+                      >Fine values such as 25 are supported when the toolchain
+                      can handle the output size.</small
                     >
-                      Browse...
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-outline-secondary"
-                      :disabled="!referenceMapFilename"
-                      @click="referenceMapFilename = ''"
-                    >
-                      Clear
-                    </button>
                   </div>
-                  <small class="text-muted">
-                    When selected and zoom resolutions are empty, the dotplot
-                    reuses this map's resolutions and adds finer intermediate
-                    levels from the base dotplot resolution.
-                  </small>
-                </div>
-                <div class="col-md-12">
-                  <label class="form-label"
-                    >Apply AGP to FASTA before self-alignment (optional)</label
-                  >
-                  <select v-model="assemblyAgpFilename" class="form-select">
-                    <option value="">Use FASTA as-is</option>
-                    <option v-for="file in agpFiles" :key="file" :value="file">
-                      {{ file }}
-                    </option>
-                  </select>
-                  <small class="text-muted">
-                    Use this when the dotplot should be generated for a
-                    scaffolded assembly state. The AGP-defined sequence is
-                    written to a temporary FASTA before mm2-plus/minimap2 runs.
-                  </small>
-                </div>
-                <div v-if="dotplotOffsetWarnings.length" class="col-12">
-                  <div class="alert alert-warning py-2 mb-0">
-                    <strong>Overlay alignment warning.</strong>
-                    <ul class="mb-0 ps-3">
-                      <li
-                        v-for="warning in dotplotOffsetWarnings"
-                        :key="warning"
+                  <div class="col-md-8">
+                    <label class="form-label" for="dotplot-zoom-resolutions"
+                      >Zoom resolutions</label
+                    >
+                    <input
+                      id="dotplot-zoom-resolutions"
+                      v-model.trim="resolutions"
+                      type="text"
+                      class="form-control"
+                    />
+                    <small class="text-muted">
+                      Comma-separated. Leave empty to mirror the reference map
+                      if selected, otherwise derive a pyramid up to roughly 500
+                      px per axis.
+                    </small>
+                  </div>
+                  <div class="col-md-12">
+                    <label class="form-label"
+                      >Reference .hict.hdf5 map for resolution sync
+                      (optional)</label
+                    >
+                    <div class="input-group">
+                      <input
+                        class="form-control"
+                        :value="
+                          referenceMapFilename ||
+                          'No reference map: derive zoom resolutions automatically'
+                        "
+                        readonly
+                      />
+                      <button
+                        type="button"
+                        class="btn btn-outline-primary"
+                        @click="referenceMapSelectorOpen = true"
                       >
-                        {{ warning }}
-                      </li>
-                    </ul>
+                        Browse…
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-outline-secondary"
+                        :disabled="!referenceMapFilename"
+                        @click="referenceMapFilename = ''"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <small class="text-muted">
+                      When selected and zoom resolutions are empty, the dotplot
+                      reuses this map's resolutions and adds finer intermediate
+                      levels from the base dotplot resolution.
+                    </small>
                   </div>
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Minimizer k-mer length</label>
-                  <input
-                    v-model.number="minimizerK"
-                    type="number"
-                    min="5"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Minimizer window size</label>
-                  <input
-                    v-model.number="minimizerWindow"
-                    type="number"
-                    min="1"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Aligner -m chain score</label>
-                  <input
-                    v-model.number="minChainScore"
-                    type="number"
-                    min="0"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Drop near-diagonal bins</label>
-                  <input
-                    v-model.number="dropNearDiagonalBins"
-                    type="number"
-                    min="0"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">PAF sample step, bp</label>
-                  <input
-                    v-model.number="sampleBp"
-                    type="number"
-                    min="1"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Minimum alignment length</label>
-                  <input
-                    v-model.number="minAlignmentLength"
-                    type="number"
-                    min="0"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Aligner threads</label>
-                  <input
-                    v-model.number="alignmentThreads"
-                    type="number"
-                    min="-1"
-                    title="-1: automatic server CPU allocation"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Conversion threads</label>
-                  <input
-                    v-model.number="conversionThreads"
-                    type="number"
-                    min="-1"
-                    title="-1: automatic server CPU allocation"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Self-alignment engine</label>
-                  <select v-model="alignerPreference" class="form-select">
-                    <option value="auto">
-                      Auto (mm2-plus AVX-512 -> AVX2 -> minimap2)
-                    </option>
-                    <option value="mm2plus">mm2-plus best available</option>
-                    <option value="mm2plus-avx512">mm2-plus AVX-512</option>
-                    <option value="mm2plus-avx2">mm2-plus AVX2</option>
-                    <option value="minimap2">minimap2</option>
-                  </select>
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Extra aligner arguments</label>
-                  <input
-                    v-model.trim="extraMinimap2Args"
-                    type="text"
-                    class="form-control"
-                    placeholder="e.g. -f 0.0002"
-                  />
-                  <small class="text-muted"
-                    >Passed as separate arguments without a shell; leave empty
-                    for HiCT defaults.</small
-                  >
-                </div>
-                <div class="col-12">
-                  <label class="form-label">Alignment command preview</label>
-                  <pre class="dotplot-command-preview">{{
-                    alignerCommandPreview
-                  }}</pre>
-                  <small class="text-muted">
-                    The final PAF path is a runtime temporary file; arguments
-                    and selected aligner match the current settings.
-                  </small>
-                </div>
-                <div class="col-md-3 d-flex align-items-end">
-                  <div class="form-check form-switch">
+                  <div class="col-md-12">
+                    <label class="form-label"
+                      >Apply AGP to FASTA before self-alignment
+                      (optional)</label
+                    >
+                    <select v-model="assemblyAgpFilename" class="form-select">
+                      <option value="">Use FASTA as-is</option>
+                      <option
+                        v-for="file in agpFiles"
+                        :key="file"
+                        :value="file"
+                      >
+                        {{ file }}
+                      </option>
+                    </select>
+                    <small class="text-muted">
+                      Use this when the dotplot should be generated for a
+                      scaffolded assembly state. The AGP-defined sequence is
+                      written to a temporary FASTA before mm2-plus/minimap2
+                      runs.
+                    </small>
+                  </div>
+                  <div v-if="dotplotOffsetWarnings.length" class="col-12">
+                    <div class="alert alert-warning py-2 mb-0">
+                      <strong>Overlay alignment warning.</strong>
+                      <ul class="mb-0 ps-3">
+                        <li
+                          v-for="warning in dotplotOffsetWarnings"
+                          :key="warning"
+                        >
+                          {{ warning }}
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Minimizer k-mer length</label>
                     <input
-                      id="dotplot-skip-diag"
-                      v-model="skipDiagonal"
-                      class="form-check-input"
-                      type="checkbox"
+                      v-model.number="minimizerK"
+                      type="number"
+                      min="5"
+                      class="form-control"
                     />
-                    <label class="form-check-label" for="dotplot-skip-diag"
-                      >Skip exact diagonal</label
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Minimizer window size</label>
+                    <input
+                      v-model.number="minimizerWindow"
+                      type="number"
+                      min="1"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Aligner -m chain score</label>
+                    <input
+                      v-model.number="minChainScore"
+                      type="number"
+                      min="0"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Drop near-diagonal bins</label>
+                    <input
+                      v-model.number="dropNearDiagonalBins"
+                      type="number"
+                      min="0"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">PAF sample step, bp</label>
+                    <input
+                      v-model.number="sampleBp"
+                      type="number"
+                      min="1"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Minimum alignment length</label>
+                    <input
+                      v-model.number="minAlignmentLength"
+                      type="number"
+                      min="0"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Aligner threads</label>
+                    <input
+                      v-model.number="alignmentThreads"
+                      type="number"
+                      min="-1"
+                      title="-1: automatic server CPU allocation"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Conversion threads</label>
+                    <input
+                      v-model.number="conversionThreads"
+                      type="number"
+                      min="-1"
+                      title="-1: automatic server CPU allocation"
+                      class="form-control"
+                    />
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Self-alignment engine</label>
+                    <select v-model="alignerPreference" class="form-select">
+                      <option value="auto">
+                        Auto (mm2-plus AVX-512 -> AVX2 -> minimap2)
+                      </option>
+                      <option value="mm2plus">mm2-plus best available</option>
+                      <option value="mm2plus-avx512">mm2-plus AVX-512</option>
+                      <option value="mm2plus-avx2">mm2-plus AVX2</option>
+                      <option value="minimap2">minimap2</option>
+                    </select>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Extra aligner arguments</label>
+                    <input
+                      v-model.trim="extraMinimap2Args"
+                      type="text"
+                      class="form-control"
+                      placeholder="e.g. -f 0.0002"
+                    />
+                    <small class="text-muted"
+                      >Passed as separate arguments without a shell; leave empty
+                      for HiCT defaults.</small
                     >
                   </div>
-                </div>
-                <div class="col-md-3 d-flex align-items-end">
-                  <div class="form-check form-switch">
-                    <input
-                      id="dotplot-overwrite"
-                      v-model="overwrite"
-                      class="form-check-input"
-                      type="checkbox"
-                    />
-                    <label class="form-check-label" for="dotplot-overwrite"
-                      >Overwrite outputs</label
-                    >
+                  <div class="col-12">
+                    <label class="form-label">Alignment command preview</label>
+                    <pre class="dotplot-command-preview">{{
+                      alignerCommandPreview
+                    }}</pre>
+                    <small class="text-muted">
+                      The final PAF path is a runtime temporary file; arguments
+                      and selected aligner match the current settings.
+                    </small>
+                  </div>
+                  <div class="col-md-3 d-flex align-items-end">
+                    <div class="form-check form-switch">
+                      <input
+                        id="dotplot-skip-diag"
+                        v-model="skipDiagonal"
+                        class="form-check-input"
+                        type="checkbox"
+                      />
+                      <label class="form-check-label" for="dotplot-skip-diag"
+                        >Skip exact diagonal</label
+                      >
+                    </div>
+                  </div>
+                  <div class="col-md-3 d-flex align-items-end">
+                    <div class="form-check form-switch">
+                      <input
+                        id="dotplot-overwrite"
+                        v-model="overwrite"
+                        class="form-check-input"
+                        type="checkbox"
+                      />
+                      <label class="form-check-label" for="dotplot-overwrite"
+                        >Overwrite outputs</label
+                      >
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div class="alert alert-info mt-3 mb-0">
-                Packaged builds use mm2-plus or minimap2 for self-alignment,
-                HiCT's integrated Java/native PAF writer, and hictk for
-                <code>load</code>/<code>zoomify</code>.
-              </div>
+                <div class="alert alert-info mt-3 mb-0">
+                  Packaged builds use mm2-plus or minimap2 for self-alignment,
+                  HiCT's integrated Java/native PAF writer, and hictk for
+                  <code>load</code>/<code>zoomify</code>.
+                </div>
+              </AdvancedSection>
+              <SequenceEstimateCallout
+                v-if="cost"
+                v-model:accept-large-output="acceptLargeOutput"
+                :estimate="cost"
+                class="mt-3"
+              />
+              <p v-if="costError" class="mt-3 mb-0 text-danger small" role="alert">{{ costError }}</p>
             </div>
 
             <div v-else>
@@ -406,40 +484,51 @@
                       job.stageDetail ||
                       job.toolchainSummary
                     }}</small>
-                    <pre v-if="job.error" class="dotplot-error mt-2">{{
-                      job.error
-                    }}</pre>
+                    <p
+                      v-if="job.status === 'failed'"
+                      class="alert alert-danger mt-2 mb-0"
+                      role="alert"
+                    >
+                      The dotplot could not finish. The bundled tool reported an
+                      error.
+                    </p>
                     <details v-if="job.logs.length" class="mt-2">
-                      <summary>Logs</summary>
-                      <pre class="dotplot-logs">{{ job.logs.join("\n") }}</pre>
+                      <summary>Show log</summary>
+                      <pre class="dotplot-logs">{{
+                        job.logs.slice(-40).join("\n")
+                      }}</pre>
                     </details>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-          <div class="modal-footer">
+          <div class="modal-footer hict-modal-footer">
             <button
-              class="btn btn-secondary"
+              v-if="step === 'select' && !props.modDotPlot"
+              type="button"
+              class="btn btn-link me-auto"
+              @click="viewCurrentJobs"
+            >
+              View dotplot jobs
+            </button>
+            <button
+              type="button"
+              class="btn btn-outline-secondary"
               @click="step === 'select' ? emit('dismissed') : (step = 'select')"
             >
-              {{ step === "select" ? "Dismiss" : "Back" }}
+              {{ step === "select" ? "Cancel" : "Back" }}
             </button>
             <button
               v-if="step === 'select'"
+              type="button"
               class="btn btn-primary"
-              :disabled="selection.size === 0"
-              @click="step = 'settings'"
-            >
-              Continue
-            </button>
-            <button
-              v-else-if="step === 'settings'"
-              class="btn btn-success"
-              :disabled="submitting"
+              :disabled="!!generateDisabledReason"
+              :title="generateDisabledReason || undefined"
               @click="startDotplots"
             >
-              Start
+              Generate {{ selection.size }}
+              {{ plotName }}{{ selection.size === 1 ? "" : "s" }}
             </button>
             <button v-else class="btn btn-outline-primary" @click="refreshJobs">
               Refresh
@@ -448,6 +537,17 @@
         </div>
       </div>
     </div>
+    <UniversalFileSelector
+      v-if="fastaSelectorOpen"
+      :network-manager="props.networkManager"
+      title="Choose FASTA for generation"
+      file-type="FASTA"
+      :file-name-predicate="isFastaFilename"
+      multi-select
+      :z-index="1080"
+      @selected-many="addFastaFiles"
+      @dismissed="fastaSelectorOpen = false"
+    />
     <UniversalFileSelector
       v-if="referenceMapSelectorOpen"
       :network-manager="props.networkManager"
@@ -463,7 +563,13 @@
 </template>
 
 <script setup lang="ts">
-import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
+import SequenceEstimateCallout from "./SequenceEstimateCallout.vue";
+import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
+import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
+import Slider from "primevue/slider";
+import { useBackgroundJobsUiStore } from "@/app/stores/backgroundJobsUiStore";
+import { type SequenceAnalysisEstimate, type SequenceAnalysisJob } from "@/app/core/net/api/SequenceAnalysisRequest";
+import { defaultSequenceResolutions, dotplotResolutionLevels } from "@/app/core/sequence/generationDefaults";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import {
   computed,
@@ -474,7 +580,7 @@ import {
   type Ref,
 } from "vue";
 import type { NetworkManager } from "@/app/core/net/NetworkManager";
-import { StartDotplotJobsRequest } from "@/app/core/net/api/request";
+import { SequenceOverlayRequest, StartDotplotJobsRequest, type SequenceOverlayOptions } from "@/app/core/net/api/request";
 import type {
   ConversionJobResponse,
   ConversionToolchainStatusResponse,
@@ -493,12 +599,33 @@ const props = defineProps<{
   initialFastaFilename?: string;
   initialReferenceMapFilename?: string;
   initialResolutions?: number[];
+  modDotPlot?: boolean;
 }>();
 
-const step: Ref<"select" | "settings" | "progress"> = ref("select");
-const fastaFiles: Ref<string[]> = ref([]);
+const step: Ref<"select" | "progress"> = ref("select");
+const initialFasta = props.initialFastaFilename;
+const fastaFiles: Ref<string[]> = ref(initialFasta ? [initialFasta] : []);
+const loadingFasta = ref(true);
+const fastaDiscoveryError = ref("");
+const fastaSelectorOpen = ref(false);
+const plotName = computed(() => props.modDotPlot ? "ModDotPlot" : "dotplot");
+const jobsUi = useBackgroundJobsUiStore();
+const modDotPlotK = ref(21);
+const modLevels = computed(() => dotplotResolutionLevels(
+  props.initialResolutions?.length ? props.initialResolutions : [1000, 2000, 5000, 10000, 25000, 50000, 100000],
+  modDotPlotK.value,
+  modDotPlotK.value
+));
+const modRange = ref<[number, number]>([0, 0]);
+const modSelectedLevels = ref<number[]>([]);
+function changeModRange(range: number | number[]) {
+  if (!Array.isArray(range)) return;
+  modRange.value = [range[0], range[1]];
+  modSelectedLevels.value = modLevels.value.slice(range[0], range[1] + 1);
+}
+watch(modLevels, (levels) => changeModRange([0, Math.max(0, levels.length - 1)]), { immediate: true });
 const allFiles: Ref<string[]> = ref([]);
-const selection: Ref<Set<string>> = ref(new Set<string>());
+const selection: Ref<Set<string>> = ref(new Set(initialFasta ? [initialFasta] : []));
 const jobs: Ref<ConversionJobResponse[]> = ref([]);
 const toolchainStatus: Ref<ConversionToolchainStatusResponse | null> =
   ref(null);
@@ -633,6 +760,38 @@ const alignerCommandPreview = computed(() => {
   )}`;
 });
 
+function isFastaFilename(name: string): boolean {
+  return /\.(?:fa|fasta|fna|fas)(?:\.gz)?$/i.test(name);
+}
+
+function fastaPathKey(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function mergeFastaFiles(paths: string[]): void {
+  const known = new Map(fastaFiles.value.map((path) => [fastaPathKey(path), path]));
+  for (const path of paths) {
+    if (isFastaFilename(path) && !known.has(fastaPathKey(path))) known.set(fastaPathKey(path), path);
+  }
+  fastaFiles.value = [...known.values()];
+}
+
+function addFasta(path: string): void {
+  if (!isFastaFilename(path)) {
+    errorMessage.value = "Choose a FASTA file (.fa, .fasta, .fna or .fas, optionally .gz).";
+    return;
+  }
+  mergeFastaFiles([path]);
+  const key = fastaPathKey(path);
+  selection.value.add(fastaFiles.value.find((item) => fastaPathKey(item) === key) ?? path);
+  errorMessage.value = "";
+  fastaSelectorOpen.value = false;
+}
+
+function addFastaFiles(paths: string[]): void {
+  for (const path of paths) addFasta(path);
+}
+
 function onSelectionUpdated(files: string[]): void {
   selection.value = new Set(files);
 }
@@ -684,40 +843,129 @@ async function viewCurrentJobs(): Promise<void> {
   syncAutoRefresh();
 }
 
+const legacyOptions = computed<StartDotplotJobsRequest["options"]>(() => ({
+  fastaFiles: Array.from(selection.value),
+  binSize: Math.max(1, Math.trunc(binSize.value || 1000)),
+  resolutions: resolutions.value.trim() || undefined,
+  referenceMapFilename: referenceMapFilename.value || undefined,
+  assemblyAgpFilename: assemblyAgpFilename.value || undefined,
+  minimizerK: Math.max(1, Math.trunc(minimizerK.value || 17)),
+  minimizerWindow: Math.max(1, Math.trunc(minimizerWindow.value || 5)),
+  minChainScore: Math.max(0, Math.trunc(minChainScore.value || 40)),
+  skipDiagonal: skipDiagonal.value,
+  dropNearDiagonalBins: Math.max(
+    0,
+    Math.trunc(dropNearDiagonalBins.value || 0)
+  ),
+  sampleBp: Math.max(1, Math.trunc(sampleBp.value || 250)),
+  minAlignmentLength: Math.max(
+    0,
+    Math.trunc(minAlignmentLength.value || 50)
+  ),
+  extraMinimap2Args: extraMinimap2Args.value.trim() || undefined,
+  alignerPreference: alignerPreference.value,
+  alignmentThreads:
+    alignmentThreads.value > 0 ? Math.trunc(alignmentThreads.value) : -1,
+  conversionThreads:
+    conversionThreads.value > 0
+      ? Math.trunc(conversionThreads.value)
+      : -1,
+  overwrite: overwrite.value,
+}));
+const modOptions = computed<SequenceOverlayOptions>(() => ({
+  scope: "assembly",
+  mergeCompatible: true,
+  resolutions: modSelectedLevels.value,
+  k: modDotPlotK.value,
+}));
+const cost = ref<SequenceAnalysisEstimate | null>(null);
+const costError = ref("");
+const acceptLargeOutput = ref(false);
+const invalidK = computed(() => props.modDotPlot &&
+  (!Number.isSafeInteger(modDotPlotK.value) || modDotPlotK.value < 1 || modDotPlotK.value > 65535));
+const costInput = computed(() => props.modDotPlot
+  ? { files: selectedFastaPaths.value, mod: modOptions.value }
+  : { files: selectedFastaPaths.value, legacy: legacyOptions.value });
+watch([costInput, step, submitting], ([input, currentStep, submittingNow], _, cleanup) => {
+  cost.value = null;
+  costError.value = "";
+  acceptLargeOutput.value = false;
+  if (submittingNow || currentStep !== "select" || !input.files.length ||
+      invalidK.value || (!input.legacy && !input.mod?.resolutions.length))
+    return;
+  let active = true;
+  const timer = window.setTimeout(async () => {
+    const api = props.networkManager.requestManager;
+    try {
+      if (input.legacy) {
+        const estimate = await api.estimateFastaDotplot(input.legacy);
+        if (active) cost.value = estimate;
+        return;
+      }
+      if (!input.mod) return;
+      let combined: SequenceAnalysisEstimate | undefined;
+      for (const sourceFastaFilename of input.files) {
+        if (!active) return;
+        const estimate = await api.estimateSequenceOverlay("moddotplot", { ...input.mod, sourceFastaFilename });
+        if (!combined) combined = { ...estimate };
+        else {
+          combined.expectedBytes += estimate.expectedBytes;
+          combined.worstCaseBytes += estimate.worstCaseBytes;
+          combined.warningLevel ??= estimate.warningLevel;
+          if (!combined.limitingLevel && estimate.limitingLevel) {
+            combined.limitingLevel = estimate.limitingLevel;
+            combined.hardLimitReason = estimate.hardLimitReason;
+          }
+        }
+      }
+      if (active && combined) {
+        if (combined.worstCaseBytes > combined.diskBudgetBytes) combined.warningLevel ??= combined.requestedLevels[0];
+        cost.value = combined;
+      }
+    } catch (error) {
+      if (active) costError.value = extractErrorMessage(error);
+    }
+  }, 250);
+  cleanup(() => {
+    active = false;
+    window.clearTimeout(timer);
+  });
+}, { immediate: true });
+const generateDisabledReason = computed(() => {
+  if (submitting.value) return "Analysis is in progress.";
+  if (!selection.value.size) return "Choose a FASTA file.";
+  if (invalidK.value) return "Enter a k-mer size between 1 and 65,535.";
+  if (props.modDotPlot && !modSelectedLevels.value.length) return "Choose at least one resolution.";
+  if (costError.value) return costError.value;
+  if (!cost.value) return "Estimating analysis size…";
+  if (cost.value.limitingLevel) return cost.value.hardLimitReason ?? "This size cannot run here.";
+  if (cost.value.warningLevel && !acceptLargeOutput.value)
+    return "Tick Generate anyway to accept the large worst case";
+  return "";
+});
+
 async function startDotplots(): Promise<void> {
+  if (generateDisabledReason.value) return;
+  const accepted = acceptLargeOutput.value ? { acceptLargeOutput: true } : {};
   submitting.value = true;
   errorMessage.value = "";
   try {
+    if (props.modDotPlot) {
+      const options = modOptions.value;
+      let jobId: string | null = null;
+      for (const sourceFastaFilename of selectedFastaPaths.value) {
+        const response = await props.networkManager.requestManager.sendRequest(
+          new SequenceOverlayRequest("moddotplot", "jobs", { ...options, ...accepted, sourceFastaFilename })
+        );
+        jobId = (response.data as SequenceAnalysisJob).jobId;
+        selection.value.delete(sourceFastaFilename);
+      }
+      emit("dismissed");
+      jobsUi.open(jobId);
+      return;
+    }
     await props.networkManager.requestManager.startDotplotJobs(
-      new StartDotplotJobsRequest({
-        fastaFiles: Array.from(selection.value),
-        binSize: Math.max(1, Math.trunc(binSize.value || 1000)),
-        resolutions: resolutions.value.trim() || undefined,
-        referenceMapFilename: referenceMapFilename.value || undefined,
-        assemblyAgpFilename: assemblyAgpFilename.value || undefined,
-        minimizerK: Math.max(1, Math.trunc(minimizerK.value || 17)),
-        minimizerWindow: Math.max(1, Math.trunc(minimizerWindow.value || 5)),
-        minChainScore: Math.max(0, Math.trunc(minChainScore.value || 40)),
-        skipDiagonal: skipDiagonal.value,
-        dropNearDiagonalBins: Math.max(
-          0,
-          Math.trunc(dropNearDiagonalBins.value || 0)
-        ),
-        sampleBp: Math.max(1, Math.trunc(sampleBp.value || 250)),
-        minAlignmentLength: Math.max(
-          0,
-          Math.trunc(minAlignmentLength.value || 50)
-        ),
-        extraMinimap2Args: extraMinimap2Args.value.trim() || undefined,
-        alignerPreference: alignerPreference.value,
-        alignmentThreads:
-          alignmentThreads.value > 0 ? Math.trunc(alignmentThreads.value) : -1,
-        conversionThreads:
-          conversionThreads.value > 0
-            ? Math.trunc(conversionThreads.value)
-            : -1,
-        overwrite: overwrite.value,
-      })
+      new StartDotplotJobsRequest({ ...legacyOptions.value, ...accepted })
     );
     await refreshJobs();
     step.value = "progress";
@@ -856,27 +1104,43 @@ watch(
   { immediate: true }
 );
 
-onMounted(async () => {
-  try {
-    toolchainStatus.value =
-      await props.networkManager.requestManager.getConversionToolchainStatus();
-  } catch (error) {
-    console.warn("Failed to inspect dotplot toolchain", error);
+async function discoverFastaFiles(): Promise<void> {
+  const api = props.networkManager.requestManager;
+  fastaDiscoveryError.value = "";
+  loadingFasta.value = true;
+  const search = api.listFASTAFiles();
+  const directories = new Set(
+    [initialFasta, props.initialReferenceMapFilename].filter((path): path is string => !!path)
+      .map((path) => fastaPathKey(path).split("/").slice(0, -1).join("/"))
+  );
+  for (const directory of directories) {
+    void api.listDirectory(directory).then((entries) => {
+      mergeFastaFiles(entries.filter((entry) => entry.type === "file").map((entry) => entry.path));
+    }).catch(() => { /* The wider search and file browser are still available. */ });
   }
   try {
-    allFiles.value = await props.networkManager.requestManager.listFiles();
-    fastaFiles.value =
-      await props.networkManager.requestManager.listFASTAFiles();
-    if (
-      props.initialFastaFilename &&
-      fastaFiles.value.includes(props.initialFastaFilename)
-    ) {
-      selection.value = new Set([props.initialFastaFilename]);
-    }
-    await refreshJobs();
+    mergeFastaFiles(await search);
   } catch (error) {
-    errorMessage.value = String(error);
+    const status = (error as { response?: { status?: number } })?.response?.status;
+    fastaDiscoveryError.value = status
+      ? `The server did not answer (HTTP ${status}).`
+      : "The server did not answer.";
+  } finally {
+    loadingFasta.value = false;
   }
+}
+
+onMounted(() => {
+  const api = props.networkManager.requestManager;
+  void discoverFastaFiles();
+  if (props.modDotPlot) return;
+  void api.getConversionToolchainStatus().then((status) => {
+    toolchainStatus.value = status;
+  }).catch((error) => console.warn("Failed to inspect dotplot toolchain", error));
+  void api.listFiles().then((files) => {
+    allFiles.value = files;
+  }).catch((error) => console.warn("Failed to list AGP files for dotplot generation", error));
+  void refreshJobs();
 });
 
 onBeforeUnmount(() => {

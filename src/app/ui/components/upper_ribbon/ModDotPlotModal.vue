@@ -3,6 +3,7 @@
     <div class="analysis-backdrop"></div>
     <section
       class="analysis-modal"
+      :class="{ 'moddotplot-modal': !alignment, 'finished-dotplot': delivered && job?.resultSet }"
       ref="modalFocusElement"
       role="dialog"
       aria-modal="true"
@@ -19,24 +20,6 @@
           ></button>
         </header>
         <div class="modal-body">
-          <details class="small mb-3">
-            <summary>How this works</summary>
-            <p>
-              {{
-                alignment
-                  ? "Align sequence from the linked FASTA"
-                  : "Estimate sequence identity from the linked FASTA"
-              }}
-              in the current assembly order, preserving AGP gaps and adding the
-              configured separator between scaffolds. Debris and excluded
-              sequence are omitted.
-            </p>
-            <p class="small">
-              Scores are anchored to contact bins and follow assembly edits.
-              They describe the captured sequence: new joins need recomputation.
-              Each selected resolution is computed independently.
-            </p>
-          </details>
           <p v-if="error" class="alert alert-danger" role="alert">
             {{ error }}
           </p>
@@ -64,10 +47,7 @@
               Check again
             </button>
           </div>
-          <fieldset :disabled="busy">
-            <SequenceGapSettings
-              :request-manager="props.mapManager.networkManager.requestManager"
-            />
+          <fieldset v-if="!delivered" :disabled="busy">
             <label for="moddotplot-scope" class="form-label"
               >Analysis scope</label
             >
@@ -77,174 +57,181 @@
               class="form-select mb-3"
             >
               <option value="assembly">Whole active assembly</option>
-              <option value="selection" :disabled="!selection">
-                Selected rectangle
+              <option v-if="selection" value="selection">
+                Selected region · {{ regionDimensions(selection) }}
               </option>
+              <option value="view" :disabled="!currentView">Current view</option>
             </select>
-            <p v-if="scope === 'selection' && selection" class="small">
-              Rows {{ selection.rowStart.toLocaleString() }}–{{
-                selection.rowEnd.toLocaleString()
-              }}; columns {{ selection.columnStart.toLocaleString() }}–{{
-                selection.columnEnd.toLocaleString()
-              }}
-              bp (zero-based, end excluded). Boundary bins{{
-                alignment ? "" : " and neighboring sketch context"
-              }}
-              are included.
-            </p>
-            <label for="sequence-overlay-resolutions" class="form-label">
-              {{
-                alignment
-                  ? "Dotplot resolutions (bp/bin)"
-                  : "ModDotPlot window sizes (bp)"
-              }}
-            </label>
-            <input
-              id="sequence-overlay-resolutions"
-              v-model="resolutionList"
-              type="text"
-              class="form-control"
-              :class="{ 'is-invalid': resolutionError }"
-              :aria-invalid="!!resolutionError"
-              aria-describedby="sequence-overlay-resolution-help"
-            />
-            <p id="sequence-overlay-resolution-help" class="form-text">
-              Enter sizes separated by commas or spaces, for example 50, 250,
-              1000. The checkboxes change only their own sizes.
+            <label for="sequence-overlay-detail" class="form-label">Finest detail</label>
+            <select
+              id="sequence-overlay-detail"
+              v-model="detail"
+              class="form-select"
+              @focus="loadDetailEstimates"
+              @pointerdown="loadDetailEstimates"
+            >
+              <option
+                v-for="size in suggested"
+                :key="size"
+                :value="size"
+                :disabled="!!detailEstimate(size)?.limitingLevel"
+                :title="detailEstimate(size)?.hardLimitReason"
+              >
+                {{ detailLabel(size) }}
+              </option>
+              <option value="custom">Custom sizes…</option>
+            </select>
+            <div v-if="detail === 'custom'" class="mt-3">
+              <label for="sequence-overlay-resolutions" class="form-label">
+                Sizes in bp, separated by commas or spaces
+              </label>
+              <input
+                id="sequence-overlay-resolutions"
+                v-model="resolutionList"
+                type="text"
+                class="form-control"
+                :class="{ 'is-invalid': resolutionError }"
+                :aria-invalid="!!resolutionError"
+              />
+            </div>
+            <p v-if="cost?.overviewLevels.length" class="form-text">
+              {{ detail === "custom"
+                ? "These sizes are generated. Overview levels reported by the server are added:"
+                : "Coarser overview levels are added automatically:" }}
+              {{ overviewLabel }}.
             </p>
             <p v-if="resolutionError" class="small text-danger" role="alert">
               {{ resolutionError }}
             </p>
-            <div class="resolution-options mb-3">
-              <label
-                v-for="resolution in availableResolutions"
-                :key="resolution"
-                class="form-check"
-              >
-                <input
-                  class="form-check-input"
-                  type="checkbox"
-                  :value="resolution"
-                  :checked="resolutions.includes(resolution)"
-                  @change="toggleResolution(resolution, $event)"
-                />
-                {{ resolution.toLocaleString() }} bp
-              </label>
-            </div>
-            <p class="form-text">
-              Fine windows over a whole genome can require many comparisons.
-              Select a rectangle for a shorter calculation; other regions can be
-              added later.
+            <label for="dotplot-display" class="form-label"
+              >Show result as</label
+            >
+            <select
+              id="dotplot-display"
+              v-model="displayMode"
+              class="form-select mb-2"
+            >
+              <option value="overlay">Overlay on the Hi-C map</option>
+              <option value="above">Above the diagonal</option>
+              <option value="below">Below diagonal</option>
+              <option value="none">Don’t link</option>
+            </select>
+            <p v-if="mergeCompatible && cost?.hasResultsOfKind && !cost.hasCompatibleResults" class="dotplot-new-set">
+              <i class="bi bi-info-circle" aria-hidden="true"></i>
+              These settings differ from your existing {{ alignment ? 'Dotplot' : 'ModDotPlot' }} results, so a new result set will start. The earlier sets stay in Dotplot results.
             </p>
-            <div v-if="!alignment" class="row g-3">
-              <div class="col-sm-6">
-                <label for="moddotplot-identity" class="form-label"
-                  >Minimum identity (%)</label
-                ><input
-                  id="moddotplot-identity"
-                  v-model.number="identity"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  class="form-control"
-                  required
-                />
-              </div>
-              <div class="col-sm-6">
-                <label for="moddotplot-threads" class="form-label"
-                  >Worker threads</label
-                ><input
-                  id="moddotplot-threads"
-                  v-model.number="threads"
-                  type="number"
-                  min="-1"
-                  max="256"
-                  step="1"
-                  class="form-control"
-                  required
-                /><small class="form-text"
-                  >-1 uses all allocated logical CPUs; 0 chooses automatically;
-                  1 is single-threaded.</small
-                >
-              </div>
-            </div>
-            <details v-if="!alignment" class="mt-3">
-              <summary>Advanced</summary>
-              <div class="row g-3 mt-0">
+            <SequenceEstimateCallout
+              v-if="cost"
+              v-model:accept-large-output="acceptLargeOutput"
+              :estimate="cost"
+              class="mb-3"
+            >
+              <template #recovery>
+                <button type="button" class="btn btn-link analysis-estimate-action" @click="useSizesThatFit">
+                  Use sizes that fit
+                </button>
+              </template>
+            </SequenceEstimateCallout>
+            <p v-if="costError" class="text-danger small" role="alert">{{ costError }}</p>
+            <AdvancedSection
+              dialog-id="moddotplot"
+              hint="k-mer, window, identity, output"
+            >
+              <dl v-if="cost" class="small">
+                <dt>Requested analysis levels</dt>
+                <dd>{{ cost.requestedLevels.join(", ") }} bp</dd>
+                <dt>Automatic overview levels</dt>
+                <dd>{{ cost.overviewLevels.join(", ") || "None" }}</dd>
+              </dl>
+              <div v-if="!alignment" class="row g-3">
                 <div class="col-sm-6">
-                  <label for="moddotplot-k" class="form-label"
-                    >k-mer length</label
+                  <label for="moddotplot-identity" class="form-label"
+                    >Minimum identity (%)</label
                   ><input
-                    id="moddotplot-k"
-                    v-model.number="k"
-                    type="number"
-                    min="1"
-                    max="65535"
-                    step="1"
-                    class="form-control"
-                    required
-                  />
-                </div>
-                <div class="col-sm-6">
-                  <label for="moddotplot-sketch" class="form-label"
-                    >Target sketch size</label
-                  ><input
-                    id="moddotplot-sketch"
-                    v-model.number="sketchSize"
-                    type="number"
-                    min="1"
-                    max="1000000"
-                    step="1"
-                    class="form-control"
-                    required
-                  />
-                </div>
-                <div class="col-sm-6">
-                  <label for="moddotplot-delta" class="form-label"
-                    >Neighbor expansion (fraction of window)</label
-                  ><input
-                    id="moddotplot-delta"
-                    v-model.number="delta"
+                    id="moddotplot-identity"
+                    v-model.number="identity"
                     type="number"
                     min="0"
-                    max="1"
+                    max="100"
                     step="0.1"
                     class="form-control"
                     required
                   />
                 </div>
               </div>
-            </details>
-            <div v-else class="row g-3">
-              <div
-                class="col-sm-6"
-                v-for="option in primaryAlignmentOptions"
-                :key="option.key"
-              >
-                <label :for="'dotplot-' + option.key" class="form-label">{{
-                  option.label
-                }}</label
-                ><input
-                  :id="'dotplot-' + option.key"
-                  v-model.number="alignmentSettings[option.key]"
-                  type="number"
-                  :min="option.min ?? 1"
-                  :max="option.max"
-                  step="1"
-                  class="form-control"
-                  required
-                /><small v-if="option.key === 'threads'" class="form-text"
-                  >-1 uses all allocated CPUs; 0 chooses automatically.</small
-                >
+              <div v-if="!alignment" class="mt-3">
+                <SequenceGapSettings
+                  :request-manager="
+                    props.mapManager.networkManager.requestManager
+                  "
+                />
+
+                <div class="row g-3 mt-0">
+                  <div class="col-sm-6">
+                    <label for="moddotplot-threads" class="form-label"
+                      >Worker threads</label
+                    ><input
+                      id="moddotplot-threads"
+                      v-model.number="threads"
+                      type="number"
+                      min="-1"
+                      max="256"
+                      step="1"
+                      class="form-control"
+                      required
+                    /><small class="form-text"
+                      >-1 uses all allocated logical CPUs; 0 chooses
+                      automatically; 1 is single-threaded.</small
+                    >
+                  </div>
+                  <div class="col-sm-6">
+                    <label for="moddotplot-k" class="form-label"
+                      >k-mer length</label
+                    ><input
+                      id="moddotplot-k"
+                      v-model.number="k"
+                      type="number"
+                      min="1"
+                      max="65535"
+                      step="1"
+                      class="form-control"
+                      required
+                    />
+                  </div>
+                  <div class="col-sm-6">
+                    <label for="moddotplot-sketch" class="form-label"
+                      >Target sketch size</label
+                    ><input
+                      id="moddotplot-sketch"
+                      v-model.number="sketchSize"
+                      type="number"
+                      min="1"
+                      max="1000000"
+                      step="1"
+                      class="form-control"
+                      required
+                    />
+                  </div>
+                  <div class="col-sm-6">
+                    <label for="moddotplot-delta" class="form-label"
+                      >Neighbor expansion (fraction of window)</label
+                    ><input
+                      id="moddotplot-delta"
+                      v-model.number="delta"
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      class="form-control"
+                      required
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
-            <details v-if="alignment" class="mt-3">
-              <summary>Advanced</summary>
-              <div class="row g-3 mt-0">
+              <div v-if="alignment" class="row g-3">
                 <div
                   class="col-sm-6"
-                  v-for="option in advancedAlignmentOptions"
+                  v-for="option in primaryAlignmentOptions"
                   :key="option.key"
                 >
                   <label :for="'dotplot-' + option.key" class="form-label">{{
@@ -264,92 +251,144 @@
                   >
                 </div>
               </div>
-            </details>
-            <div class="form-check mt-3">
-              <input
-                id="analysis-save-data"
-                v-model="saveReusable"
-                type="checkbox"
-                class="form-check-input"
-              />
-              <label for="analysis-save-data" class="form-check-label"
-                >Save a reusable copy under DATA_DIR</label
-              >
-            </div>
-            <div v-if="saveReusable" class="row g-3 mt-0">
-              <div class="col-sm-9">
-                <label for="analysis-output" class="form-label"
-                  >Output path</label
-                ><input
-                  id="analysis-output"
-                  v-model.trim="outputFilename"
-                  class="form-control"
-                  required
-                  :placeholder="defaultOutputFilename"
-                /><small class="form-text"
-                  >Relative to DATA_DIR; parent folders are created.</small
-                >
+              <div v-if="alignment" class="mt-3">
+                <SequenceGapSettings
+                  :request-manager="
+                    props.mapManager.networkManager.requestManager
+                  "
+                />
+
+                <div class="row g-3 mt-0">
+                  <div
+                    class="col-sm-6"
+                    v-for="option in advancedAlignmentOptions"
+                    :key="option.key"
+                  >
+                    <label :for="'dotplot-' + option.key" class="form-label">{{
+                      option.label
+                    }}</label
+                    ><input
+                      :id="'dotplot-' + option.key"
+                      v-model.number="alignmentSettings[option.key]"
+                      type="number"
+                      :min="option.min ?? 1"
+                      :max="option.max"
+                      step="1"
+                      class="form-control"
+                      required
+                    /><small v-if="option.key === 'threads'" class="form-text"
+                      >-1 uses all allocated CPUs; 0 chooses
+                      automatically.</small
+                    >
+                  </div>
+                </div>
               </div>
-              <div class="col-sm-3 form-check align-self-end pb-2">
+              <div class="form-check mt-3">
                 <input
-                  id="analysis-overwrite"
-                  v-model="overwrite"
+                  id="analysis-save-data"
+                  v-model="saveReusable"
                   type="checkbox"
                   class="form-check-input"
-                /><label for="analysis-overwrite" class="form-check-label"
-                  >Overwrite</label
+                />
+                <label for="analysis-save-data" class="form-check-label"
+                  >Save a reusable copy in the data folder</label
                 >
               </div>
-            </div>
-            <label class="form-check mt-3"
-              ><input
-                v-model="mergeCompatible"
-                type="checkbox"
-                class="form-check-input"
-              />Accumulate compatible regions; replace scores within this
-              rectangle</label
-            >
-            <p class="small">
-              Different settings create a separate overlay. After a successful
-              update, the superseded matrix is removed once detached. Logs and
-              provenance are retained. Cancellation or failure retains the
-              previous matrix.
-            </p>
-            <label for="dotplot-display" class="form-label"
-              >Display completed result</label
-            >
-            <select
-              id="dotplot-display"
-              v-model="displayMode"
-              class="form-select mb-2"
-            >
-              <option value="overlay">Overlay on the Hi-C map</option>
-              <option value="above">Above the diagonal</option>
-              <option value="below">Below diagonal</option>
-              <option value="none">Do not link now</option>
-            </select>
-            <details class="small">
-              <summary>How this works</summary>
+              <div v-if="saveReusable" class="row g-3 mt-0">
+                <div class="col-sm-9">
+                  <label for="analysis-output" class="form-label"
+                    >Output path</label
+                  ><input
+                    id="analysis-output"
+                    v-model.trim="outputFilename"
+                    class="form-control"
+                    required
+                    :placeholder="defaultOutputFilename"
+                  /><small class="form-text"
+                    >Relative to DATA_DIR; parent folders are created.</small
+                  >
+                </div>
+                <div class="col-sm-3 form-check align-self-end pb-2">
+                  <input
+                    id="analysis-overwrite"
+                    v-model="overwrite"
+                    type="checkbox"
+                    class="form-check-input"
+                  /><label for="analysis-overwrite" class="form-check-label"
+                    >Overwrite</label
+                  >
+                </div>
+              </div>
+              <label class="form-check mt-3"
+                ><input
+                  v-model="mergeCompatible"
+                  type="checkbox"
+                  class="form-check-input"
+                />Add to compatible results</label
+              >
               <p class="small">
-                Attaching replaces the current secondary source and starts a new
-                edit journal. To retain the current journal, choose “Do not link
-                now” and attach the saved sidecar later.
+                Different settings create a separate overlay. After a successful
+                update, the superseded matrix is removed once detached. Logs and
+                provenance are retained. Cancellation or failure retains the
+                previous matrix.
               </p>
-              <p v-if="!alignment" class="small">
-                Uses Observed display. The ModDotPlot identity colormap runs
-                from blue through yellow to red at 100%; zero/uncomputed cells
-                are transparent. Coverage and provenance are saved in the
-                sidecar.
-              </p>
-              <p v-if="alignment" class="small">
-                Uses Observed display with sampled alignment counts. Counts are
-                not identity percentages. The active minimap2/mm2-plus aligner
-                is used; zeros are transparent.
-              </p>
-            </details>
+              <details class="small mb-3">
+                <summary>How the scores are calculated</summary>
+                <p>
+                  {{
+                    alignment
+                      ? "Align sequence from the linked FASTA"
+                      : "Estimate sequence identity from the linked FASTA"
+                  }}
+                  in the current assembly order, preserving AGP gaps and adding
+                  the configured separator between scaffolds. Debris and
+                  excluded sequence are omitted.
+                </p>
+                <p class="small">
+                  Scores are anchored to contact bins and follow assembly edits.
+                  They describe the captured sequence: new joins need
+                  recomputation. Each selected resolution is computed
+                  independently.
+                </p>
+              </details>
+              <details class="small">
+                <summary>How this works</summary>
+                <p class="small">
+                  Attaching replaces the current secondary source. To keep the
+                  current secondary map, choose “Don’t link” and attach the
+                  saved result later.
+                </p>
+                <p v-if="!alignment" class="small">
+                  Uses Observed display. The ModDotPlot identity colormap runs
+                  from blue through yellow to red at 100%; zero/uncomputed cells
+                  are transparent. Coverage and provenance are saved in the
+                  sidecar.
+                </p>
+                <p v-if="alignment" class="small">
+                  Uses Observed display with sampled alignment counts. Counts
+                  are not identity percentages. The active minimap2/mm2-plus
+                  aligner is used; zeros are transparent.
+                </p>
+              </details>
+            </AdvancedSection>
           </fieldset>
           <div
-            v-if="job?.status === 'finished' && job.outputFile"
+            v-if="delivered && job?.resultSet"
+            class="dotplot-result-ready"
+            role="status"
+          >
+            <strong>
+              <i class="bi bi-check-circle" aria-hidden="true"></i>
+              Added region {{ job.resultSet.regionCount }} to “{{ job.resultSet.name }}”.
+            </strong>
+            <div>
+              The result set now has {{ job.resultSet.regionCount }}
+              {{ job.resultSet.regionCount === 1 ? "region" : "regions" }}
+              ({{ formatEstimateBytes(job.resultSet.bytes) }}) and {{ resultDisplayText }}.
+            </div>
+          </div>
+          <div
+            v-else-if="job?.status === 'finished' && job.outputFile"
             class="alert alert-success mt-3"
             role="status"
           >
@@ -388,7 +427,7 @@
               Attach despite differences
             </button>
           </div>
-          <div v-if="job" class="mt-3" role="status" aria-live="polite">
+          <div v-if="job && !delivered" class="mt-3" role="status" aria-live="polite">
             <span
               v-if="busy"
               class="spinner-border spinner-border-sm me-2"
@@ -400,12 +439,20 @@
               }}</span
             >
           </div>
-          <pre
-            v-if="job?.logs.length"
-            class="analysis-logs"
-            aria-label="ModDotPlot log"
-            >{{ job.logs.join("\n") }}</pre
-          >
+          <div v-if="delivered && job?.resultSet" class="d-flex gap-2 mt-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" @click="openResults">
+              <i class="bi bi-list-ul" aria-hidden="true"></i> Dotplot results…
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="savingResult" @click="saveResult">
+              <i class="bi bi-download" aria-hidden="true"></i> Save a copy…
+            </button>
+          </div>
+          <details v-if="job?.logs.length" class="analysis-log-details">
+            <summary>Show log</summary>
+            <pre class="analysis-logs" aria-label="ModDotPlot log">{{
+              job.logs.slice(-40).join("\n")
+            }}</pre>
+          </details>
         </div>
         <footer class="modal-footer">
           <button
@@ -427,6 +474,7 @@
             v-if="
               job?.status === 'finished' &&
               job.outputFile &&
+              !delivered &&
               !pendingCompatibility
             "
             type="button"
@@ -441,16 +489,21 @@
             }}
           </button>
           <button
+            v-if="delivered"
+            type="button"
+            class="btn btn-primary"
+            @click="emit('dismissed')"
+          >
+            Generate another region
+          </button>
+          <button
+            v-else
             type="submit"
             class="btn btn-primary"
-            :disabled="
-              busy ||
-              !!unavailableReason ||
-              !!resolutionError ||
-              !resolutions.length
-            "
+            :disabled="!!generateDisabledReason"
+            :title="generateDisabledReason || undefined"
           >
-            {{ title }}
+            Generate
           </button>
         </footer>
       </form>
@@ -458,8 +511,11 @@
   </Teleport>
 </template>
 <script setup lang="ts">
+import SequenceEstimateCallout from "./SequenceEstimateCallout.vue";
+import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
 import { useModalFocus } from "@/app/ui/modalFocus";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
+import { showFailure } from "@/app/ui/reportFailure";
 import { watch, ref, computed, onBeforeUnmount } from "vue";
 import { useSequenceReadiness } from "./useSequenceReadiness";
 import SequenceGapSettings from "./SequenceGapSettings.vue";
@@ -468,22 +524,25 @@ import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager
 import {
   SequenceAnalysisRequest,
   type SequenceAnalysisJob,
+  type SequenceAnalysisEstimate,
 } from "@/app/core/net/api/SequenceAnalysisRequest";
 import type { SecondarySourceStatusResponse } from "@/app/core/net/api/RequestManager";
-import { defaultSequenceResolutions } from "@/app/core/sequence/generationDefaults";
+import { SequenceOverlayRequest, type SequenceOverlayOptions } from "@/app/core/net/api/request";
+import { formatEstimateBytes } from "@/app/core/sequence/formatEstimateBytes";
+import { dotplotResolutionLevels } from "@/app/core/sequence/generationDefaults";
 import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
+import { saveDotplotResult } from "@/app/core/sequence/dotplotResults";
+import { useDotplotResultsStore } from "@/app/stores/dotplotResultsStore";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
+import { formatLength } from "@/app/core/format/formatSignal";
 const props = defineProps<{
   mapManager: ContactMapManager;
-  initialSelection?: boolean;
   kind?: "moddotplot" | "dotplot";
 }>();
 const alignment = props.kind === "dotplot";
 const kind = alignment ? "dotplot" : "moddotplot";
-const title = alignment
-  ? "Generate dotplot from active assembly"
-  : "Generate ModDotPlot";
+const title = alignment ? "Dotplot from current assembly" : "ModDotPlot";
 const alignmentSettings = ref({
   k: 15,
   window: 10,
@@ -527,54 +586,54 @@ const unavailableReason = computed(() =>
 );
 // eslint-disable-next-line vue/no-setup-props-destructure
 const view = props.mapManager.viewAndLayersManager;
-const borders = view.currentViewState.selectionBorders;
-const selection =
-  borders.leftBP && borders.rightBP
-    ? {
-        rowStart: Math.min(borders.leftBP[1], borders.rightBP[1]),
-        rowEnd: Math.max(borders.leftBP[1], borders.rightBP[1]),
-        columnStart: Math.min(borders.leftBP[0], borders.rightBP[0]),
-        columnEnd: Math.max(borders.leftBP[0], borders.rightBP[0]),
-      }
-    : null;
-const availableResolutions = [...new Set([50, ...view.resolutions])].sort(
-  (a, b) => a - b
+const entityRange = view.getSelectedEntityRange();
+const selection = view.getRegionBounds() ?? (entityRange ? {
+  rowStart: entityRange.startBP,
+  rowEnd: entityRange.endBP,
+  columnStart: entityRange.startBP,
+  columnEnd: entityRange.endBP,
+} : null);
+const currentView = view.regionFromExtent(
+  props.mapManager.getView().calculateExtent(props.mapManager.getMap().getSize())
 );
-const resolutionList = ref(
-  defaultSequenceResolutions(
+function regionDimensions(region: NonNullable<typeof selection>): string {
+  return `${formatLength(region.rowEnd - region.rowStart)} × ${formatLength(region.columnEnd - region.columnStart)}`;
+}
+const k = ref(21);
+const suggested = computed(() =>
+  dotplotResolutionLevels(
     view.resolutions,
-    view.currentViewState.resolutionDesciptor.bpResolution
-  ).join(", ")
+    alignment ? alignmentSettings.value.k : k.value,
+    alignment ? 1 : k.value
+  )
 );
-const resolutionTokens = computed(() =>
-  resolutionList.value.split(/[,\s]+/).filter(Boolean)
-);
+const initialResolution = view.currentViewState.resolutionDesciptor.bpResolution;
+function closestDetail(levels: number[]): number {
+  return levels.reduce((best, next) =>
+    Math.abs(next - initialResolution) < Math.abs(best - initialResolution) ? next : best,
+    levels[0] ?? 1000
+  );
+}
+const detail = ref<number | "custom">(closestDetail(suggested.value));
+const resolutionList = ref(String(detail.value));
+watch(suggested, (levels) => {
+  if (detail.value !== "custom" && !levels.includes(detail.value))
+    detail.value = closestDetail(levels);
+});
+watch(detail, (size) => {
+  if (size !== "custom") resolutionList.value = String(size);
+});
+const resolutionTokens = computed(() => resolutionList.value.split(/[,\s]+/).filter(Boolean));
 function asResolution(token: string): number {
   const value = Number(token);
-  return /^\d+$/.test(token) && Number.isSafeInteger(value) && value > 0
-    ? value
-    : NaN;
+  return /^\d+$/.test(token) && Number.isSafeInteger(value) && value > 0 ? value : NaN;
 }
-const resolutions = computed(() =>
-  [
-    ...new Set(
-      resolutionTokens.value.map(asResolution).filter(Number.isFinite)
-    ),
-  ].sort((a, b) => a - b)
-);
-function toggleResolution(resolution: number, event: Event): void {
-  const checked = (event.target as HTMLInputElement).checked;
-  const tokens = resolutionTokens.value.filter(
-    (token) => asResolution(token) !== resolution
-  );
-  if (checked) tokens.push(String(resolution));
-  resolutionList.value = tokens.join(", ");
-}
-const scope = ref(
-  props.initialSelection && selection ? "selection" : "assembly"
-);
+const resolutions = computed(() => {
+  if (detail.value !== "custom") return [detail.value];
+  return [...new Set(resolutionTokens.value.map(asResolution).filter(Number.isFinite))].sort((a, b) => a - b);
+});
+const scope = ref<"assembly" | "selection" | "view">(selection ? "selection" : "assembly");
 const identity = ref(80),
-  k = ref(21),
   sketchSize = ref(1000),
   delta = ref(0.5);
 const resolutionError = computed(() => {
@@ -596,27 +655,182 @@ const saveReusable = ref(false),
 const defaultOutputFilename = `sequence-analysis/${kind}.hict.hdf5`;
 const mergeCompatible = ref(true),
   displayMode = ref<"overlay" | "below" | "above" | "none">(
-    scope.value === "selection" ? "overlay" : "below"
+    scope.value === "assembly" ? "below" : "overlay"
   ),
   submitting = ref(false),
   error = ref("");
+const jobOptions = computed<SequenceOverlayOptions>(() => ({
+  gapLengthBp: uiSettings.sequenceGapLengthBp,
+  scope: scope.value === "assembly" ? "assembly" : "selection",
+  displayMode: displayMode.value,
+  region: (scope.value === "view" ? currentView : scope.value === "selection" ? selection : null) ?? undefined,
+  resolutions: resolutions.value,
+  mergeCompatible: mergeCompatible.value,
+  ...(alignment
+    ? alignmentSettings.value
+    : {
+        identity: identity.value,
+        k: k.value,
+        sketchSize: sketchSize.value,
+        delta: delta.value,
+        threads: threads.value,
+      }),
+  ...(saveReusable.value
+    ? {
+        outputFilename: outputFilename.value || defaultOutputFilename,
+        overwrite: overwrite.value,
+      }
+    : {}),
+}));
+const cost = ref<SequenceAnalysisEstimate | null>(null);
+const costError = ref("");
+const acceptLargeOutput = ref(false);
+const findingFittingSizes = ref(false);
+const estimates = ref(new Map<string, SequenceAnalysisEstimate>());
+const pendingEstimates = new Map<string, Promise<SequenceAnalysisEstimate>>();
+const estimateContext = computed(() => JSON.stringify([
+  scope.value, jobOptions.value.region, uiSettings.sequenceGapLengthBp,
+  alignmentSettings.value, k.value, identity.value, sketchSize.value, delta.value,
+]));
+function estimateKey(context: string, sizes: number[]): string {
+  return `${context}:${sizes.join(",")}`;
+}
+function detailEstimate(size: number): SequenceAnalysisEstimate | undefined {
+  return estimates.value.get(estimateKey(estimateContext.value, [size]));
+}
+function detailLabel(size: number): string {
+  const estimate = detailEstimate(size);
+  return `${size.toLocaleString()} bp${estimate
+    ? ` · ≈ ${formatEstimateBytes(estimate.expectedBytes)}${estimate.warningLevel ? " ⚠" : ""}`
+    : ""}`;
+}
+const overviewLabel = computed(() => {
+  const levels = cost.value?.overviewLevels ?? [];
+  return levels.length <= 3
+    ? levels.map(formatLength).join(", ")
+    : `${formatLength(levels[0])} … ${formatLength(levels[levels.length - 1])}`;
+});
+function estimateCost(
+  context: string,
+  options: SequenceOverlayOptions
+): Promise<SequenceAnalysisEstimate> {
+  const key = estimateKey(context, options.resolutions);
+  const cached = estimates.value.get(key);
+  if (cached) return Promise.resolve(cached);
+  const pending = pendingEstimates.get(key);
+  if (pending) return pending;
+  const requested = api.estimateSequenceOverlay(kind, options).then((estimate) => {
+    estimates.value.set(key, estimate);
+    return estimate;
+  }).finally(() => pendingEstimates.delete(key));
+  pendingEstimates.set(key, requested);
+  return requested;
+}
+let loadingContext = "";
+async function loadDetailEstimates(): Promise<void> {
+  const context = estimateContext.value;
+  if (loadingContext === context || unavailableReason.value) return;
+  loadingContext = context;
+  const options = jobOptions.value;
+  try {
+    for (const size of suggested.value) {
+      if (disposed || estimateContext.value !== context) return;
+      await estimateCost(context, { ...options, resolutions: [size] }).catch(() => undefined);
+    }
+  } finally {
+    if (loadingContext === context) loadingContext = "";
+  }
+}
+async function useSizesThatFit(): Promise<void> {
+  const context = estimateContext.value;
+  const options = jobOptions.value;
+  findingFittingSizes.value = true;
+  costError.value = "";
+  try {
+    const minSize = options.resolutions[0];
+    const candidates = [...new Set([...options.resolutions, ...suggested.value])]
+      .sort((a, b) => a - b)
+      .filter((size) => size > minSize);
+    for (const size of candidates) {
+      const estimate = await estimateCost(context, { ...options, resolutions: [size] });
+      if (disposed || estimateContext.value !== context) return;
+      if (estimate.limitingLevel || estimate.warningLevel) continue;
+      if (suggested.value.includes(size)) detail.value = size;
+      else {
+        detail.value = "custom";
+        resolutionList.value = String(size);
+      }
+      return;
+    }
+    costError.value = "Select a smaller region or choose a coarser resolution.";
+  } catch (failure) {
+    if (!disposed && estimateContext.value === context) costError.value = extractErrorMessage(failure);
+  } finally {
+    findingFittingSizes.value = false;
+  }
+}
+watch(
+  [estimateContext, resolutions, resolutionError, unavailableReason],
+  ([context, sizes, invalid, unavailable], _, cleanup) => {
+    cost.value = null;
+    costError.value = "";
+    acceptLargeOutput.value = false;
+    if (invalid || unavailable || !sizes.length) return;
+    const options = jobOptions.value;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        const estimate = await estimateCost(context, options);
+        if (active) cost.value = estimate;
+      } catch (failure) {
+        if (active) costError.value = extractErrorMessage(failure);
+      }
+    }, 200);
+    cleanup(() => {
+      active = false;
+      window.clearTimeout(timer);
+    });
+  },
+  { immediate: true, flush: "sync" }
+);
 watch(scope, (value) => {
-  displayMode.value = value === "selection" ? "overlay" : "below";
+  displayMode.value = value === "assembly" ? "below" : "overlay";
 });
 const job = ref<SequenceAnalysisJob | null>(null);
-let delivered = false;
+const dotplotResults = useDotplotResultsStore();
+const savingResult = ref(false);
+function openResults(): void {
+  emit("dismissed");
+  dotplotResults.dialogOpen = true;
+}
+async function saveResult(): Promise<void> {
+  const current = job.value;
+  if (!current?.resultSet || savingResult.value) return;
+  const map = current.mapFilename.split(/[\\/]/).at(-1)?.replace(/\.hict\.hdf5$/i, "") || "map";
+  savingResult.value = true;
+  try {
+    await saveDotplotResult(api, current.resultSet.id, `${map}.${kind}.hict.hdf5`);
+  } catch (failure) {
+    error.value = extractErrorMessage(failure);
+  } finally {
+    savingResult.value = false;
+  }
+}
+const delivered = ref(false);
+const resultDisplayText = computed(() => ({
+  below: "is shown below the diagonal",
+  above: "is shown above the diagonal",
+  overlay: "is shown over the map",
+  none: "is saved",
+}[displayMode.value]));
 function deferResult(): void {
-  if (!job.value || delivered || displayMode.value === "none") return;
+  if (!job.value || delivered.value || displayMode.value === "none") return;
   const id = job.value.jobId;
   api.backgroundResultDelivery.defer(
     "sequence/" + id,
-    () => !props.mapManager.isDisposed && !delivered,
+    () => !props.mapManager.isDisposed && !delivered.value,
     async () => {
-      const jobs: SequenceAnalysisJob[] = (
-        await api.sendRequest(
-          new SequenceAnalysisRequest("/sequence/jobs/list")
-        )
-      ).data;
+      const jobs = await api.listSequenceJobs();
       const current = jobs.find((item) => item.jobId === id);
       if (!current) return;
       job.value = current;
@@ -629,11 +843,24 @@ const displaying = ref(false);
 const pendingCompatibility = ref<SecondarySourceStatusResponse | null>(null);
 const busy = computed(
   () =>
+    findingFittingSizes.value ||
     submitting.value ||
     displaying.value ||
     (!!job.value &&
       ["submitted", "preparing", "running"].includes(job.value.status))
 );
+const generateDisabledReason = computed(() => {
+  if (busy.value) return "Analysis is in progress.";
+  if (unavailableReason.value) return unavailableReason.value;
+  if (resolutionError.value) return resolutionError.value;
+  if (!resolutions.value.length) return "Choose at least one resolution.";
+  if (costError.value) return costError.value;
+  if (!cost.value) return "Estimating analysis size…";
+  if (cost.value.limitingLevel) return cost.value.hardLimitReason ?? "This size cannot run here.";
+  if (cost.value.warningLevel && !acceptLargeOutput.value)
+    return "Tick Generate anyway to accept the large worst case";
+  return "";
+});
 let disposed = false,
   openingResult = false,
   timer: number | undefined,
@@ -649,44 +876,19 @@ onBeforeUnmount(() => {
   deferResult();
 });
 async function start() {
-  if (
-    busy.value ||
-    unavailableReason.value ||
-    resolutionError.value ||
-    !resolutions.value.length
-  )
-    return;
+  if (generateDisabledReason.value) return;
   submitting.value = true;
   error.value = "";
   pendingCompatibility.value = null;
   openingResult = false;
-  delivered = false;
+  delivered.value = false;
   session = api.history.applied?.session;
   try {
     job.value = (
       await api.sendRequest(
-        new SequenceAnalysisRequest(`/sequence/${kind}/jobs`, {
-          gapLengthBp: uiSettings.sequenceGapLengthBp,
-          scope: scope.value,
-          displayMode: displayMode.value,
-          region: scope.value === "selection" ? selection : undefined,
-          resolutions: resolutions.value,
-          mergeCompatible: mergeCompatible.value,
-          ...(alignment
-            ? alignmentSettings.value
-            : {
-                identity: identity.value,
-                k: k.value,
-                sketchSize: sketchSize.value,
-                delta: delta.value,
-                threads: threads.value,
-              }),
-          ...(saveReusable.value
-            ? {
-                outputFilename: outputFilename.value || defaultOutputFilename,
-                overwrite: overwrite.value,
-              }
-            : {}),
+        new SequenceOverlayRequest(kind, "jobs", {
+          ...jobOptions.value,
+          ...(acceptLargeOutput.value ? { acceptLargeOutput: true } : {}),
         })
       )
     ).data;
@@ -707,9 +909,7 @@ async function start() {
 async function poll() {
   if (disposed || !job.value) return;
   try {
-    const jobs: SequenceAnalysisJob[] = (
-      await api.sendRequest(new SequenceAnalysisRequest("/sequence/jobs/list"))
-    ).data;
+    const jobs = await api.listSequenceJobs();
     const current = jobs.find((item) => item.jobId === job.value?.jobId);
     if (!current) {
       error.value =
@@ -728,8 +928,13 @@ async function poll() {
       return;
     }
     if (current.status === "failed") {
-      error.value = current.error ?? `${title} failed`;
-      notifications.add("error", error.value);
+      const title = alignment
+        ? "The dotplot could not finish."
+        : "ModDotPlot could not finish.";
+      const stopped = current.error?.startsWith("Stopped:") ? current.error : undefined;
+      const description = stopped ?? "The bundled tool reported an error.";
+      error.value = stopped ?? `${title} ${description}`;
+      showFailure(title, description, current.logs.slice(-40).join("\n"));
       return;
     }
     if (current.status === "cancelled") {
@@ -793,9 +998,11 @@ async function displaySavedResult(allowMismatch = false) {
         )}`
       );
     }
-    delivered = true;
-    notifications.add("success", `${title} completed: ${current.outputFile}.`);
-    emit("dismissed");
+    delivered.value = true;
+    if (disposed || !current.resultSet) {
+      notifications.add("success", `${title} completed: ${current.outputFile}.`);
+      if (!disposed) emit("dismissed");
+    }
   } catch (failure) {
     error.value = `The overlay was saved, but could not be displayed: ${extractErrorMessage(
       failure
@@ -820,6 +1027,15 @@ const modalFocusElement = ref<HTMLElement | null>(null);
 useModalFocus(modalFocusElement);
 </script>
 <style scoped>
+.dotplot-result-ready {
+  background: var(--hict-success-soft, #ecfdf3);
+  border: 1px solid #abefc6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #054f31;
+}
+
 .analysis-backdrop {
   position: fixed;
   inset: 0;
@@ -833,15 +1049,31 @@ useModalFocus(modalFocusElement);
   width: min(850px, 96vw);
   z-index: 1070;
 }
+.dotplot-new-set {
+  background: #eff4ff;
+  border: 1px solid #b2ccff;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: #1d2939;
+  display: flex;
+  gap: 8px;
+}
+.moddotplot-modal {
+  width: min(760px, 96vw);
+}
+.finished-dotplot {
+  width: min(560px, 96vw);
+}
 .analysis-modal .modal-body {
   max-height: 77vh;
   overflow-y: auto;
 }
-.resolution-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 2rem;
-  padding-left: 1.5rem;
+.analysis-estimate-action {
+  padding: 0;
+  margin-inline-start: 6px;
+  font-size: inherit;
+  font-weight: 600;
 }
 .analysis-logs {
   margin-top: 0.8rem;

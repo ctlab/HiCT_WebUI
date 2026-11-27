@@ -37,7 +37,7 @@
       @fastaOnlyRequested="emit('fastaOnlyRequested')"
       @examplesRequested="emit('examplesRequested')"
     ></NavigationBar>
-    <HeaderRibbon :mapManager="props.mapManager"></HeaderRibbon>
+    <HeaderRibbon :mapManager="props.mapManager" :mapOpening="props.mapOpening" />
   </div>
 </template>
 
@@ -52,7 +52,7 @@ const emit = defineEmits<{
   (e: "jobResult", output: JobOpenRequest): void;
   (e: "selected", filename: string): void;
   (e: "closed"): void;
-  (e: "attached"): void;
+  (e: "attached", address: string): void;
   (e: "saveSession"): void;
   (e: "openSession", file: File): void;
   (e: "agpLoaded", filename: string): void;
@@ -65,6 +65,7 @@ const emit = defineEmits<{
 const props = defineProps<{
   networkManager: NetworkManager;
   mapManager?: ContactMapManager;
+  mapOpening?: boolean;
 }>();
 
 const navigationBar = ref<InstanceType<typeof NavigationBar> | null>(null);
@@ -81,8 +82,8 @@ function onClosed(): void {
   emit("closed");
 }
 
-function onAttached(): void {
-  emit("attached");
+function onAttached(address: string): void {
+  emit("attached", address);
 }
 
 function onSaveSession(): void {
@@ -119,7 +120,6 @@ function onWizardRequested(): void {
   /* position: absolute; */
   /* width: 1840px; */
   width: 100%;
-  /* TODO: Константа глобальная */
   height: auto;
   flex: 0 0 auto;
   left: 0px;

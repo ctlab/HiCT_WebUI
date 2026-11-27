@@ -38,12 +38,12 @@
       type="button"
       data-bs-toggle="tooltip"
       data-bs-placement="right"
-      title="Move selection to debris"
-      aria-label="Move selection to debris"
-      :disabled="!props.mapManager"
+      title="Removed from the assembly and from AGP and FASTA exports. Undo restores it."
+      aria-label="Move to unplaced (debris)…"
+      :disabled="!props.mapManager || props.mapManager.networkManager.requestManager.history.busy > 0"
       @click="moveToDebrisClicked"
     >
-      <i class="bi bi-trash"></i>
+      <i class="bi bi-box-arrow-down"></i>
     </button>
   </div>
 </template>
@@ -65,15 +65,18 @@ function saveCurrentLocation() {
   const resolution = view?.getResolution();
   if (!view || !center || resolution === undefined) return;
   const existing = sessionStore.savedLocations;
+  const locationId = existing.length;
   sessionStore.setSavedLocations([
     ...existing,
     {
-      location_id: existing.length,
+      location_id: locationId,
+      name: `Location ${locationId + 1}`,
       center_point: [center[0], center[1]],
       resolution,
       rotation: view.getRotation(),
     },
   ]);
+  window.dispatchEvent(new CustomEvent("hict:show-bookmark", { detail: locationId }));
   toast.success(
     `Location ${existing.length + 1} bookmarked (Entities → Bookmarks)`
   );

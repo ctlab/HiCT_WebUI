@@ -1,0 +1,284 @@
+<template>
+  <div class="settings-backdrop" @click.self="emit('dismissed')">
+    <section
+      ref="dialog"
+      class="settings-modal guide-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="User guide and shortcuts"
+    >
+      <header class="settings-header">
+        <div>
+          <h2>HiCT user guide</h2>
+          <p>
+            {{
+              installedVersion
+                ? `Version ${installedVersion} · works offline`
+                : "Works offline"
+            }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Close dialog"
+          @click="emit('dismissed')"
+        />
+      </header>
+      <div v-if="loading || !documentHtml" class="guide-content settings-body">
+        <p v-if="loading" role="status">Loading guide…</p>
+        <p v-else role="status">
+          The guide is unavailable. Reopen it to try again.
+        </p>
+      </div>
+      <div v-else class="guide-reading-layout">
+        <nav v-if="sections.length" class="guide-sections" aria-label="Guide sections">
+          <a
+            v-for="section in sections"
+            :key="section.id"
+            :href="`#${section.id}`"
+            :aria-current="activeSection === section.id ? 'location' : undefined"
+            @click.prevent="showSection(section.id)"
+            >{{ section.title }}</a
+          >
+        </nav>
+        <!-- The renderer accepts Markdown from bundled docs and discards raw HTML. -->
+        <!-- eslint-disable-next-line vue/no-v-html -->
+        <article ref="article" class="guide-content" v-html="documentHtml"></article>
+      </div>
+      <footer class="settings-footer">
+        <a v-if="guidePageUrl" :href="guidePageUrl" target="_blank" rel="noopener">
+          Open in a new tab
+        </a>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          @click="emit('dismissed')"
+        >
+          Close
+        </button>
+      </footer>
+    </section>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import { marked, Renderer } from "marked";
+import type { NetworkManager } from "@/app/core/net/NetworkManager.js";
+import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
+import { useModalFocus } from "@/app/ui/modalFocus";
+
+const emit = defineEmits<{ (event: "dismissed"): void }>();
+const props = defineProps<{ networkManager: NetworkManager }>();
+const dialog = ref<HTMLElement | null>(null);
+const loading = ref(true);
+const documentHtml = ref("");
+const article = ref<HTMLElement | null>(null);
+const sections = ref<{ id: string; title: string }[]>([]);
+const activeSection = ref("");
+const guidePageUrl = ref("");
+const installedVersion = ref("");
+const abort = new AbortController();
+
+useModalFocus(dialog, () => true);
+useEscDismissableDialog({
+  priority: 1041,
+  isOpen: () => true,
+  requestClose: () => emit("dismissed"),
+});
+
+function showSection(id: string): void {
+  const target = article.value?.querySelector<HTMLElement>(`#${id}`);
+  if (!target) return;
+  activeSection.value = id;
+  target.scrollIntoView({ block: "start" });
+  target.focus({ preventScroll: true });
+}
+
+onMounted(async () => {
+  void props.networkManager.requestManager.getBackendVersion().then((result) => {
+    const version = typeof result === "string" ? result : result.version;
+    if (!abort.signal.aborted && version && version !== "unknown") {
+      installedVersion.value = version;
+    }
+  });
+  const url = new URL("./docs/user-guide.md", document.baseURI);
+  try {
+    const response = await fetch(url, { signal: abort.signal });
+    if (
+      !response.ok ||
+      response.headers.get("Content-Type")?.includes("text/html")
+    )
+      return;
+    const renderer = new Renderer();
+    renderer.html = () => "";
+    renderer.image = () => "";
+    const originalLink = renderer.link.bind(renderer);
+    renderer.link = (href, title, text) => {
+      if (!href) return text;
+      const destination = new URL(href, url);
+      if (destination.protocol !== "http:" && destination.protocol !== "https:")
+        return text;
+      return originalLink(destination.href, title, text);
+    };
+    const markdown = await response.text();
+    if (abort.signal.aborted) return;
+    const rendered = marked.parse(markdown, {
+      async: false,
+      renderer,
+      mangle: false,
+    }) as string;
+    const { body } = new DOMParser().parseFromString(rendered, "text/html");
+    sections.value = Array.from(body.querySelectorAll("h2"), (heading, index) => {
+      heading.id = `hict-guide-section-${index + 1}`;
+      heading.tabIndex = -1;
+      return { id: heading.id, title: heading.textContent ?? "" };
+    });
+    activeSection.value = sections.value[0]?.id ?? "";
+    body.querySelectorAll("a[href]").forEach((link) => {
+      link.setAttribute("target", "_blank");
+      link.setAttribute("rel", "noopener");
+    });
+    const html = body.innerHTML;
+    body.querySelector("h1")?.remove();
+    documentHtml.value = body.innerHTML;
+    guidePageUrl.value = URL.createObjectURL(new Blob([
+      '<!doctype html><html lang="en"><head><meta charset="utf-8">',
+      '<meta name="viewport" content="width=device-width,initial-scale=1">',
+      '<title>HiCT user guide</title><style>',
+      'body{font:1rem/1.6 system-ui;margin:2rem auto;max-width:50rem;padding:0 1rem}',
+      'td,th{padding:.3rem .65rem;border:1px solid #d0d5dd}table{border-collapse:collapse}',
+      '</style></head><body><main>',
+      html,
+      '</main></body></html>',
+    ], { type: "text/html" }));
+  } catch {
+    // The dialog provides a readable status and can be reopened to retry.
+  } finally {
+    loading.value = false;
+  }
+});
+
+onBeforeUnmount(() => {
+  abort.abort();
+  if (guidePageUrl.value) URL.revokeObjectURL(guidePageUrl.value);
+});
+</script>
+
+<style scoped>
+.settings-backdrop {
+  position: fixed;
+  z-index: 1045;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(15, 23, 38, 0.42);
+}
+.guide-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(820px, 100%);
+  max-height: min(780px, 92vh);
+  background: white;
+  border-radius: 12px;
+  box-shadow: var(--hict-surface-shadow);
+}
+.settings-header,
+.settings-footer {
+  display: flex;
+  justify-content: space-between;
+}
+.settings-header {
+  align-items: flex-start;
+  border-bottom: 1px solid #eaecf0;
+  gap: 12px;
+  padding: 18px 20px 12px;
+}
+.settings-header h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+.settings-header p {
+  color: var(--hict-ui-muted, #667085);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+.settings-footer {
+  align-items: center;
+  border-top: 1px solid #eaecf0;
+  gap: 8px;
+  padding: 14px 20px;
+}
+.settings-footer a {
+  font-size: 13px;
+}
+.settings-footer button {
+  border-radius: 8px;
+  margin-left: auto;
+  min-height: 36px;
+}
+.guide-reading-layout {
+  min-height: 0;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 190px minmax(0, 1fr);
+  padding: 16px 20px;
+}
+.guide-sections {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  border-right: 1px solid #eaecf0;
+}
+.guide-sections a {
+  font-size: 13px;
+  padding: 3px 8px;
+  color: var(--hict-ui-fg);
+  text-decoration: none;
+  border-radius: var(--hict-radius-sm);
+}
+.guide-sections a:hover,
+.guide-sections a[aria-current] {
+  background: var(--hict-primary-soft);
+  color: var(--hict-primary);
+}
+.guide-content {
+  font-size: 14px;
+  line-height: 1.55;
+  overflow: auto;
+}
+.guide-content.settings-body {
+  padding: 16px 20px;
+}
+.guide-content :deep(h2) {
+  font-size: 16px;
+}
+.guide-content :deep(table) {
+  margin-bottom: 1rem;
+}
+.guide-content :deep(th),
+.guide-content :deep(td) {
+  border: 1px solid #d0d5dd;
+  padding: 5px 10px;
+}
+@media (max-width: 575.98px) {
+  .guide-reading-layout {
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .guide-sections {
+    gap: 4px;
+    flex-direction: row;
+    padding-bottom: 8px;
+    border-right: 0;
+    border-bottom: 1px solid #eaecf0;
+  }
+  .guide-sections a {
+    white-space: nowrap;
+  }
+}
+</style>

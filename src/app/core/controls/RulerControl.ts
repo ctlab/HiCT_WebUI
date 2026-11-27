@@ -702,7 +702,7 @@ class RulerControl extends Control {
           ? contigEnd
           : Math.min(
               contigEnd,
-              Math.ceil(holder.getFractionalBpOfPx(endPx, resolution))
+              Math.ceil(holder.getFractionalBpOfPx(endPx, resolution, "end"))
             );
       const originBp =
         mode === "global"

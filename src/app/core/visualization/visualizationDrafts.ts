@@ -4,6 +4,7 @@ import VisualizationOptions, {
 } from "./VisualizationOptions";
 import SimpleLinearGradient from "./colormap/SimpleLinearGradient";
 import { ColorTranslator } from "colortranslator";
+import type { CurveMode } from "./colorMidpoint";
 
 export type VisualizationContext = {
   source: "PRIMARY" | "SECONDARY";
@@ -24,6 +25,9 @@ export type VisualizationDraft = {
   startColor?: string;
   endColor?: string;
   gamma?: number;
+  curve?: number[] | null;
+  curveMode?: CurveMode | null;
+  diagonalMask?: VisualizationOptions["diagonalMask"];
 };
 export const visualizationContextKey = (context: VisualizationContext) =>
   JSON.stringify([
@@ -40,12 +44,15 @@ export class VisualizationDrafts {
     string,
     Map<keyof VisualizationDraft, { value: unknown; revision: number }>
   >();
+  public checkpoint(): number {
+    return ++this.sequence;
+  }
   public note(
     context: VisualizationContext,
     patch: VisualizationDraft
   ): number {
     const key = visualizationContextKey(context);
-    const revision = ++this.sequence;
+    const revision = this.checkpoint();
     const fields = this.drafts.get(key) ?? new Map();
     for (const [field, value] of Object.entries(patch))
       if (value !== undefined)
@@ -98,6 +105,8 @@ export function applyVisualizationDraft(
     "startColor",
     "endColor",
     "gamma",
+    "curve",
+    "curveMode",
   ].some((key) => key in patch);
   const colormap =
     hasPalette && map instanceof SimpleLinearGradient
@@ -110,7 +119,9 @@ export function applyVisualizationDraft(
             : map.endColorRGBA,
           patch.minSignal ?? map.minSignal,
           patch.maxSignal ?? map.maxSignal,
-          patch.gamma ?? map.gamma
+          patch.gamma ?? map.gamma,
+          patch.curve === undefined ? map.curve : patch.curve,
+          patch.curveMode === undefined ? map.curveMode : patch.curveMode
         )
       : map;
   return new VisualizationOptions(
@@ -125,7 +136,8 @@ export function applyVisualizationDraft(
     displayMode,
     patch.coolerWeightsNaNPolicy ?? base.coolerWeightsNaNPolicy,
     base.coolerWeightsHaveNaNs,
-    base.coolerWeightsNaNCount
+    base.coolerWeightsNaNCount,
+    patch.diagonalMask ?? base.diagonalMask
   );
 }
 
@@ -153,6 +165,8 @@ export function visualizationOptionsDraft(
           startColor: gradient.startColorRGBA.HEXA,
           endColor: gradient.endColorRGBA.HEXA,
           gamma: gradient.gamma,
+          ...(gradient.curve ? { curve: gradient.curve } : {}),
+          ...(gradient.curveMode ? { curveMode: gradient.curveMode } : {}),
         }
       : {}),
   };

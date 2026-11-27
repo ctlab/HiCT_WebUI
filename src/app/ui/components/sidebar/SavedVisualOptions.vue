@@ -106,6 +106,7 @@ import { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
 import { Ref, ref, shallowRef, triggerRef, onMounted, watch } from "vue";
 import SavedVisualOptionsElement from "./SavedVisualOptionsElement.vue";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
+import { validatedDiagonalMask } from "@/app/core/visualization/diagonalMask";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import Colormap from "@/app/core/visualization/colormap/Colormap";
 import type { TrackStylePresetBundle } from "@/app/core/tracks/TrackStylePreset";
@@ -536,12 +537,15 @@ function serializeVisualizationOptions(
       signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
       coolerWeightsNaNPolicy:
         options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
+      diagonalMask: options.diagonalMask,
       colormap: {
         colormapType: cmap.colormapType,
         startColorRGBAString: cmap.startColorRGBA.RGBA,
         endColorRGBAString: cmap.endColorRGBA.RGBA,
         minSignal: cmap.minSignal,
         maxSignal: cmap.maxSignal,
+        ...(cmap.curve ? { curve: cmap.curve } : {}),
+        ...(cmap.curveMode ? { curveMode: cmap.curveMode } : {}),
         ...(cmap.gamma !== 1 ? { gamma: cmap.gamma } : {}),
       },
     };
@@ -557,6 +561,7 @@ function serializeVisualizationOptions(
     signalDisplayMode: options.signalDisplayMode ?? "OBSERVED",
     coolerWeightsNaNPolicy:
       options.coolerWeightsNaNPolicy ?? "REPLACE_NANS_WITH_ONE",
+    diagonalMask: options.diagonalMask,
     colormap: {
       colormapType: options.colormap?.colormapType ?? "Unknown",
     },
@@ -621,7 +626,9 @@ function deserializeVisualizationOptions(
       endCt,
       minSignal,
       maxSignal,
-      cmapRaw.gamma === undefined ? 1 : Number(cmapRaw.gamma)
+      cmapRaw.gamma === undefined ? 1 : Number(cmapRaw.gamma),
+      cmapRaw.curve,
+      cmapRaw.curveMode
     );
   } else {
     cmap = new Colormap(cmapType);
@@ -647,7 +654,10 @@ function deserializeVisualizationOptions(
     raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ZERO" ||
     raw.coolerWeightsNaNPolicy === "REPLACE_NANS_WITH_ONE"
       ? raw.coolerWeightsNaNPolicy
-      : "REPLACE_NANS_WITH_ONE"
+      : "REPLACE_NANS_WITH_ONE",
+    false,
+    0,
+    validatedDiagonalMask(raw.diagonalMask)
   );
 }
 
@@ -682,7 +692,9 @@ function applySignalThresholds(option: {
       cmap.endColorRGBA,
       lower,
       typeof upper === "number" ? upper : cmap.maxSignal,
-      cmap.gamma
+      cmap.gamma,
+      cmap.curve,
+      cmap.curveMode
     );
   }
 }

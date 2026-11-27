@@ -23,19 +23,23 @@
   <div ref="workspaceRoot" :class="iwsClass" :style="iwcStyle">
     <div class="interactive-workspace_corner_track">
       <div
-        v-if="visibleTrackCount > 0"
+        v-if="trackPanelsVisible"
         ref="cornerMiniMapTarget"
         class="interactive-workspace_corner_minimap"
       ></div>
     </div>
     <div class="interactive-workspace_corner_tracks_ruler"></div>
-    <div class="interactive-workspace_horizontal_tracks">
+    <div
+      id="workspace-horizontal-tracks"
+      v-show="trackPanelsVisible"
+      class="interactive-workspace_horizontal_tracks"
+    >
       <HorizontalIGVTrack :map-manager="props.mapManager"></HorizontalIGVTrack>
     </div>
     <div class="interactive-workspace_corner_ruler_tracks"></div>
     <div class="interactive-workspace_corner_ruler">
       <div
-        v-if="visibleTrackCount <= 0"
+        v-if="!trackPanelsVisible"
         ref="cornerMiniMapFallbackTarget"
         class="interactive-workspace_corner_minimap interactive-workspace_corner_minimap--compact"
       ></div>
@@ -51,6 +55,16 @@
         @click="toggleMapAnchor"
       >
         <i :class="mapAnchored ? 'bi bi-lock-fill' : 'bi bi-unlock'"></i>
+      </button>
+      <button
+        v-if="compactWorkspace && visibleTrackCount > 0"
+        type="button"
+        class="btn btn-sm btn-light compact-tracks-toggle"
+        aria-controls="workspace-horizontal-tracks workspace-vertical-tracks"
+        :aria-expanded="compactTracksOpen"
+        @click="compactTracksOpen = !compactTracksOpen"
+      >
+        Tracks
       </button>
     </div>
     <div class="interactive-workspace_horizontal_ruler">
@@ -68,7 +82,11 @@
         @presence="horizontalSequencePresent = $event"
       />
     </div>
-    <div class="interactive-workspace_vertical_tracks">
+    <div
+      id="workspace-vertical-tracks"
+      v-show="trackPanelsVisible"
+      class="interactive-workspace_vertical_tracks"
+    >
       <VerticalIGVTrack :map-manager="props.mapManager"></VerticalIGVTrack>
     </div>
     <div class="interactive-workspace_vertical_ruler">
@@ -88,7 +106,7 @@
       <ContactMap :map-manager="props.mapManager"></ContactMap>
     </div>
     <div
-      v-if="visibleTrackCount > 0"
+      v-if="trackPanelsVisible"
       class="interactive-workspace_resize_handle interactive-workspace_resize_handle_horizontal"
       role="separator"
       tabindex="0"
@@ -102,7 +120,7 @@
       title="Drag to resize horizontal tracks panel"
     ></div>
     <div
-      v-if="visibleTrackCount > 0"
+      v-if="trackPanelsVisible"
       class="interactive-workspace_resize_handle interactive-workspace_resize_handle_vertical"
       role="separator"
       tabindex="0"
@@ -199,6 +217,15 @@ const cornerMiniMapTarget = ref<HTMLElement | null>(null);
 const cornerMiniMapFallbackTarget = ref<HTMLElement | null>(null);
 
 const visibleTrackCount = ref(0);
+const compactWorkspace = ref(false);
+const compactTracksOpen = ref(false);
+const compactLayout = window.matchMedia("(max-width: 700px)");
+const trackPanelsVisible = computed(
+  () => visibleTrackCount.value > 0 && (!compactWorkspace.value || compactTracksOpen.value)
+);
+function syncCompactLayout(): void {
+  compactWorkspace.value = compactLayout.matches;
+}
 const horizontalSequencePresent = ref(false);
 const verticalSequencePresent = ref(false);
 watch([horizontalSequencePresent, verticalSequencePresent], async () => {
@@ -208,6 +235,7 @@ watch([horizontalSequencePresent, verticalSequencePresent], async () => {
 });
 let unsubscribeTrackList: (() => void) | undefined;
 const trackPanelMaximum = ref(420);
+const manuallySized = { horizontal: false, vertical: false };
 const horizontalTrackPanelSizePx = ref(140);
 const verticalTrackPanelSizePx = ref(140);
 let trackPanelResizeState: {
@@ -238,7 +266,7 @@ const bindTrackVisibility = () => {
 
 const bindCornerMinimap = () => {
   const target =
-    visibleTrackCount.value > 0
+    trackPanelsVisible.value
       ? cornerMiniMapTarget.value
       : cornerMiniMapFallbackTarget.value;
   if (!props.mapManager || !target) {
@@ -315,6 +343,8 @@ function onRulerContextMenu(event: Event): void {
 }
 
 onMounted(() => {
+  syncCompactLayout();
+  compactLayout.addEventListener("change", syncCompactLayout);
   if (workspaceRoot.value) {
     workspaceResizeObserver = new ResizeObserver(() => {
       if (props.mapManager?.isExporting) return;
@@ -357,12 +387,11 @@ watch(visibleTrackCount, async () => {
   if (visibleTrackCount.value <= 0) {
     stopTrackPanelResize();
   } else {
-    if (horizontalTrackPanelSizePx.value < 60) {
-      horizontalTrackPanelSizePx.value = 140;
-    }
-    if (verticalTrackPanelSizePx.value < 60) {
-      verticalTrackPanelSizePx.value = 140;
-    }
+    const preferred = clampTrackPanelSize(
+      Math.max(140, visibleTrackCount.value * 56)
+    );
+    if (!manuallySized.horizontal) horizontalTrackPanelSizePx.value = preferred;
+    if (!manuallySized.vertical) verticalTrackPanelSizePx.value = preferred;
   }
   // The visible track count changes the workspace grid dimensions. OpenLayers,
   // rulers and 1D canvases all cache viewport state, so refresh them after Vue
@@ -370,7 +399,13 @@ watch(visibleTrackCount, async () => {
   await refreshWorkspaceAfterLayout();
 });
 
+watch([compactWorkspace, compactTracksOpen], () => {
+  if (!trackPanelsVisible.value) stopTrackPanelResize();
+  void refreshWorkspaceAfterLayout();
+});
+
 onBeforeUnmount(() => {
+  compactLayout.removeEventListener("change", syncCompactLayout);
   workspaceResizeObserver?.disconnect();
   if (workspaceResizeFrame !== undefined)
     window.cancelAnimationFrame(workspaceResizeFrame);
@@ -433,6 +468,7 @@ const resizeTrackPanelByKey = (
   const larger = orientation === "horizontal" ? "ArrowDown" : "ArrowRight";
   if (![smaller, larger, "Home", "End"].includes(event.key)) return;
   event.preventDefault();
+  manuallySized[orientation] = true;
   const size =
     orientation === "horizontal"
       ? horizontalTrackPanelSizePx
@@ -454,6 +490,7 @@ const startTrackPanelResize = (
   if (visibleTrackCount.value <= 0) {
     return;
   }
+  manuallySized[orientation] = true;
   trackPanelResizeState = {
     orientation,
     startPointer: orientation === "horizontal" ? event.clientY : event.clientX,
@@ -470,10 +507,10 @@ const startTrackPanelResize = (
 };
 
 const horizontalTrackPanelCssSize = computed(() =>
-  visibleTrackCount.value > 0 ? `${horizontalTrackPanelSizePx.value}px` : "0px"
+  trackPanelsVisible.value ? `${horizontalTrackPanelSizePx.value}px` : "0px"
 );
 const verticalTrackPanelCssSize = computed(() =>
-  visibleTrackCount.value > 0 ? `${verticalTrackPanelSizePx.value}px` : "0px"
+  trackPanelsVisible.value ? `${verticalTrackPanelSizePx.value}px` : "0px"
 );
 const sequenceStripPx = computed(() =>
   sequenceStripSize(uiSettingsForStrip.sequenceShowReverseStrand)
@@ -623,8 +660,20 @@ const verticalRulerCssSize = computed(() => {
   outline-offset: 1px;
 }
 
+.compact-tracks-toggle {
+  position: absolute;
+  z-index: 5;
+  bottom: 2px;
+  left: 2px;
+  padding: 0.125rem 0.35rem;
+  color: var(--hict-surface-fg, #1f2937);
+  background: var(--hict-surface-bg, #fff);
+  border-color: var(--hict-surface-border, #94a3b8);
+}
+
 .interactive-workspace_horizontal_tracks {
   grid-area: horizontal-tracks;
+  overflow-y: auto;
 }
 
 .interactive-workspace_horizontal_ruler {
@@ -649,6 +698,7 @@ const verticalRulerCssSize = computed(() => {
 
 .interactive-workspace_vertical_tracks {
   grid-area: vertical-tracks;
+  overflow-x: auto;
 }
 
 .interactive-workspace_vertical_ruler {
@@ -672,24 +722,43 @@ const verticalRulerCssSize = computed(() => {
 .interactive-workspace_resize_handle {
   position: absolute;
   z-index: 26;
-  background: transparent;
+  display: grid;
+  place-items: center;
+}
+
+.interactive-workspace_resize_handle::before {
+  content: "";
+  background: #727e8c;
+}
+
+.interactive-workspace_resize_handle:hover::before,
+.interactive-workspace_resize_handle:focus-visible::before {
+  background: #2563eb;
 }
 
 .interactive-workspace_resize_handle_horizontal {
-  left: 0;
+  left: calc(v-bind(verticalTrackPanelCssSize) + v-bind(verticalRulerCssSize));
   right: 0;
   top: v-bind(horizontalTrackPanelCssSize);
-  height: 8px;
-  transform: translateY(-4px);
+  height: 10px;
+  transform: translateY(-5px);
   cursor: row-resize;
 }
 
 .interactive-workspace_resize_handle_vertical {
-  top: 0;
+  top: calc(v-bind(horizontalTrackPanelCssSize) + v-bind(horizontalRulerCssSize));
   bottom: 0;
   left: v-bind(verticalTrackPanelCssSize);
-  width: 8px;
-  transform: translateX(-4px);
+  width: 10px;
+  transform: translateX(-5px);
   cursor: col-resize;
+}
+.interactive-workspace_resize_handle_horizontal::before {
+  width: 100%;
+  height: 3px;
+}
+.interactive-workspace_resize_handle_vertical::before {
+  width: 3px;
+  height: 100%;
 }
 </style>

@@ -36,11 +36,13 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 id="track-manager-title" class="modal-title">
-              Tracks and layers
+              {{
+                props.section === "tracks" ? "1D tracks" : "Sources and layers"
+              }}
             </h5>
             <button
               class="btn-close"
-              aria-label="Close tracks and layers"
+              aria-label="Close manager"
               @click="$emit('dismissed')"
             ></button>
           </div>
@@ -49,33 +51,9 @@
               Open a HiCT file first.
             </div>
             <template v-else>
-              <div
-                class="nav nav-tabs mb-3"
-                role="tablist"
-                aria-label="Tracks and map sources"
-              >
-                <button
-                  v-for="tab in managerTabs"
-                  :key="tab.id"
-                  :id="`track-tab-${tab.id}`"
-                  type="button"
-                  class="nav-link"
-                  :class="{ active: activeTab === tab.id }"
-                  role="tab"
-                  :aria-selected="activeTab === tab.id"
-                  :aria-controls="`track-panel-${tab.id}`"
-                  :tabindex="activeTab === tab.id ? 0 : -1"
-                  @click="activeTab = tab.id"
-                  @keydown="onTabKeydown($event, tab.id)"
-                >
-                  {{ tab.label }}
-                </button>
-              </div>
               <section
                 id="track-panel-tracks"
-                role="tabpanel"
-                aria-labelledby="track-tab-tracks"
-                v-show="activeTab === 'tracks'"
+                v-if="props.section === 'tracks'"
               >
                 <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                   <label for="track-add-kind" class="form-label mb-0"
@@ -369,7 +347,9 @@
                         >
                           <option value="MAX">Maximum</option>
                           <option value="MEAN">Mean (covered span)</option>
-                          <option value="SUM">Mean (gaps as zero)</option>
+                          <option value="MEAN_WITH_ZERO_GAPS">
+                            Mean (gaps as zero)
+                          </option>
                         </select>
                         <div
                           v-if="
@@ -487,8 +467,11 @@
                   </div>
                 </div>
 
-                <details class="track-extra-settings mt-3">
-                  <summary>Track appearance</summary>
+                <AdvancedSection
+                  dialog-id="tracks"
+                  @open-change="onPreparationToggle"
+                >
+                  <h6 class="mb-0">Track appearance</h6>
                   <div class="alert alert-light border py-2">
                     <div
                       class="d-flex align-items-center justify-content-between gap-2"
@@ -524,12 +507,7 @@
                       </div>
                     </div>
                   </div>
-                </details>
-                <details
-                  class="track-extra-settings mt-3"
-                  @toggle="onPreparationToggle"
-                >
-                  <summary>Preparation</summary>
+                  <h6 class="mb-0">Preparation</h6>
                   <p
                     v-if="
                       tracks.some((track) => track.type === 'COOLER_WEIGHTS')
@@ -603,13 +581,11 @@
                       >No background jobs yet.</small
                     >
                   </div>
-                </details>
+                </AdvancedSection>
               </section>
               <section
                 id="track-panel-sources"
-                role="tabpanel"
-                aria-labelledby="track-tab-sources"
-                v-show="activeTab === 'sources'"
+                v-if="props.section === 'sources'"
               >
                 <p class="small mb-3">
                   Primary map:
@@ -699,17 +675,6 @@
                       </select>
                     </div>
                   </div>
-                  <p class="small mb-1 mt-2">
-                    Source changes start a new edit journal; earlier undo/redo
-                    states will no longer be available. When Secondary is the
-                    assembly source, replacing it also adopts the new source’s
-                    layout.
-                  </p>
-                  <p class="small mb-1">
-                    Generated dotplot scores move with their original sequence
-                    bins. Recompute after changing joins to refresh
-                    context-dependent scores.
-                  </p>
                   <small class="text-muted d-block mt-1">
                     {{
                       secondaryStatus.attached
@@ -719,7 +684,7 @@
                   </small>
                 </div>
 
-                <div class="border rounded p-3">
+                <div class="border rounded p-3 mb-3">
                   <h6>Map layers</h6>
                   <p class="small text-muted">
                     Adjust contig and scaffold borders, labels and their
@@ -733,6 +698,19 @@
                     Borders and labels…
                   </button>
                 </div>
+                <AdvancedSection dialog-id="sources">
+                  <h6 class="mb-0">Compatibility</h6>
+                  <p class="small mb-0">
+                    HiCT keeps a separate edit history for each assembly.
+                    Choose the secondary map as the assembly source to display
+                    its layout.
+                  </p>
+                  <p class="small mb-0">
+                    Generated dotplot scores move with their original sequence
+                    bins. Recompute after changing joins to refresh scores that
+                    depend on the surrounding sequence.
+                  </p>
+                </AdvancedSection>
               </section>
             </template>
           </div>
@@ -917,6 +895,7 @@
 </template>
 
 <script setup lang="ts">
+import AdvancedSection from "@/app/ui/components/common/AdvancedSection.vue";
 import CommittedTrackInput from "@/app/ui/components/tracks/CommittedTrackInput.vue";
 import { reportFailure } from "@/app/ui/reportFailure";
 import { useModalFocus } from "@/app/ui/modalFocus";
@@ -941,41 +920,17 @@ useModalFocus(rootElement);
 
 const props = defineProps<{
   mapManager?: ContactMapManager;
+  section: "tracks" | "sources";
 }>();
 
 const emit = defineEmits<{
   (e: "dismissed"): void;
 }>();
 
-const managerTabs = [
-  { id: "tracks", label: "1D tracks" },
-  { id: "sources", label: "Sources and layers" },
-] as const;
-type ManagerTab = typeof managerTabs[number]["id"];
-const activeTab = ref<ManagerTab>("tracks");
 const addKind = ref<"file" | "weights">("file");
 const weightSource = ref<"PRIMARY" | "SECONDARY">("PRIMARY");
 const isAddingTrack = ref(false);
 const sourceChanging = ref(false);
-async function onTabKeydown(
-  event: KeyboardEvent,
-  current: ManagerTab
-): Promise<void> {
-  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-  event.preventDefault();
-  activeTab.value =
-    event.key === "Home"
-      ? "tracks"
-      : event.key === "End"
-      ? "sources"
-      : current === "tracks"
-      ? "sources"
-      : "tracks";
-  await nextTick();
-  rootElement.value
-    ?.querySelector<HTMLElement>(`#track-tab-${activeTab.value}`)
-    ?.focus();
-}
 function showMapLayers(): void {
   emit("dismissed");
   void nextTick(() => window.dispatchEvent(new Event("hict:show-map-layers")));
@@ -1053,12 +1008,14 @@ const normalizeBamMode = (value: string): "COVERAGE" | "READ_DENSITY" => {
   return value === "READ_DENSITY" ? "READ_DENSITY" : "COVERAGE";
 };
 
-const normalizeBigWigAggregation = (value: string): "MAX" | "MEAN" | "SUM" => {
+const normalizeBigWigAggregation = (
+  value: string
+): "MAX" | "MEAN" | "MEAN_WITH_ZERO_GAPS" => {
   if (value === "MEAN") {
     return "MEAN";
   }
-  if (value === "SUM") {
-    return "SUM";
+  if (value === "SUM" || value === "MEAN_WITH_ZERO_GAPS") {
+    return "MEAN_WITH_ZERO_GAPS";
   }
   return "MAX";
 };
@@ -1256,8 +1213,9 @@ const weightsAlreadyAdded = computed(() =>
 );
 const computedWeights = computed(
   () =>
-    props.mapManager?.networkManager.requestManager.normalizationWeightsMode ===
-    "SQRT_COVERAGE"
+    props.mapManager?.networkManager.requestManager.getNormalizationWeightsMode(
+      weightSource.value
+    ) === "SQRT_COVERAGE"
 );
 const weightsCapability = computed(() => {
   const capabilities =
@@ -1619,8 +1577,10 @@ const onChangeBigWigAggregation = async (
     return;
   }
   try {
+    const mode = normalizeBigWigAggregation(aggregationMode);
     await props.mapManager.linearTrackManager.updateTrack(trackId, {
-      aggregationMode: normalizeBigWigAggregation(aggregationMode),
+      // The existing API and saved tracks use SUM for this zero-filled mean.
+      aggregationMode: mode === "MEAN_WITH_ZERO_GAPS" ? "SUM" : mode,
     });
     await refreshTracks();
   } catch (err) {
@@ -1729,9 +1689,9 @@ const stopPrecomputePolling = (): void => {
   if (precomputePollHandle !== null) window.clearInterval(precomputePollHandle);
   precomputePollHandle = null;
 };
-const onPreparationToggle = (event: Event): void => {
+const onPreparationToggle = (open: boolean): void => {
   stopPrecomputePolling();
-  if (disposed || !(event.target as HTMLDetailsElement).open) return;
+  if (disposed || !open) return;
   void refreshPrecomputeStatus();
   precomputePollHandle = window.setInterval(() => {
     void refreshPrecomputeStatus();
@@ -1739,6 +1699,10 @@ const onPreparationToggle = (event: Event): void => {
 };
 
 onMounted(async () => {
+  if (props.section === "sources") {
+    await refreshSecondaryStatus();
+    return;
+  }
   unsubscribeTracks = props.mapManager?.linearTrackManager.subscribeTrackList(
     (snapshot) => {
       tracks.value = snapshot;

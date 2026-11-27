@@ -29,12 +29,18 @@ declare module "*.vue" {
 }
 
 declare module "marked" {
+  export class Renderer {
+    html(html: string): string;
+    image(href: string, title: string | null, text: string): string;
+    link(href: string, title: string | null, text: string): string;
+  }
   export interface MarkedOptions {
     async?: boolean;
     breaks?: boolean;
     gfm?: boolean;
     headerIds?: boolean;
     mangle?: boolean;
+    renderer?: Renderer;
   }
 
   export const marked: {

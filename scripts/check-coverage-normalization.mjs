@@ -19,7 +19,7 @@ vm.runInNewContext(
 const { prepareCoverage } = sandbox.exports;
 const status = (state, progress = 0, extra = {}) => ({
   state, progress, message: "m", algorithm: "a", error: null, prepared: state === "READY",
-  mode: "FILE", consistent: true, estimatedBytes: 1, ...extra,
+  source: "PRIMARY", jobId: 1, mode: "FILE", estimatedBytes: 1, ...extra,
 });
 const stub = (first, later) => {
   const queue = [...later];
@@ -61,4 +61,17 @@ assert.match(r.message, /could not be prepared.*network.*Nothing was changed/);
 
 r = await prepareCoverage(stub(status("READY", 1), []), () => {}, { pollMs: 1 });
 assert.equal(r.ok, true, "an already prepared map is ready at once");
+const sources = [];
+r = await prepareCoverage({
+  prepareCoverageNormalization: async (source) => {
+    sources.push(source);
+    return status("RUNNING", 0, { source, jobId: 2 });
+  },
+  coverageNormalizationStatus: async (source) => {
+    sources.push(source);
+    return status("READY", 1, { source, jobId: 3 });
+  },
+}, () => {}, { source: "SECONDARY", pollMs: 1 });
+assert.deepEqual(sources, ["SECONDARY", "SECONDARY"]);
+assert.equal(r.cancelled, true, "a replacement job cannot finish the old request");
 console.log("Coverage normalization job following passed.");

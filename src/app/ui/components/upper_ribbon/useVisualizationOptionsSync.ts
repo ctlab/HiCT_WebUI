@@ -50,13 +50,14 @@ export function useVisualizationOptionsSync(
   }
 
   function scheduleAutoThresholdRefresh(): void {
+    const manager = getManager();
     clearAutoThresholdTimer();
-    if (!autoThresholdEnabled.value || !getManager()) {
+    if (!autoThresholdEnabled.value || !manager || manager.isExporting || manager.isFigureCapturePending) {
       return;
     }
     autoThresholdTimer = window.setTimeout(() => {
-      getManager()
-        ?.visualizationManager.refreshAutoThresholdAndReload(
+      if (getManager() !== manager || manager.isExporting || manager.isFigureCapturePending) return;
+      manager.visualizationManager.refreshAutoThresholdAndReload(
           hasTwoSources() ? activeVisualizationSource.value : undefined
         )
         .catch(() => undefined);

@@ -45,21 +45,21 @@
       v-if="!props.mapManager && !sidebarCollapsed"
       class="sidebar-empty-hint"
     >
-      Settings for borders, colors, presets, contigs and the edit journal appear
-      here once a map is open.
+      Colors, borders, contigs and the edit history appear here once a map is
+      open.
     </div>
     <div id="upper-block" v-show="!sidebarCollapsed">
       <button
         v-if="props.mapManager"
         type="button"
         ref="layersToggle"
-        aria-label="Borders and labels"
         class="layers-block-toggle"
         :aria-expanded="layersBlockExpanded"
         aria-controls="layers-block"
         @click="toggleLayersBlock"
       >
         <i
+          aria-hidden="true"
           :class="
             layersBlockExpanded ? 'bi bi-chevron-down' : 'bi bi-chevron-right'
           "
@@ -334,7 +334,11 @@
 
         <template v-else-if="activeSidebarPanel === 'entities'">
           <div id="saved-locations">
-            <SavedLocations :map-manager="props.mapManager"></SavedLocations>
+            <SavedLocations
+              :map-manager="props.mapManager"
+              :bookmark-request="bookmarkRequest"
+              @bookmark-revealed="bookmarkRequest = undefined"
+            />
           </div>
         </template>
       </div>
@@ -377,6 +381,7 @@ const matrixViewStore = useMatrixViewStore();
 const activeSidebarPanel = ref<"visualization" | "entities" | "history">(
   "visualization"
 );
+const bookmarkRequest = ref<{ locationId: number }>();
 
 // Per-viewer layout conveniences; storage can be unavailable (private mode).
 function readLayoutFlag(key: string, fallback: boolean): boolean {
@@ -405,6 +410,23 @@ async function showMapLayers(): Promise<void> {
   await nextTick();
   layersToggle.value?.focus();
 }
+function showEditHistory(): void {
+  sidebarCollapsed.value = false;
+  activeSidebarPanel.value = "history";
+}
+function showBookmark(event: Event): void {
+  sidebarCollapsed.value = false;
+  activeSidebarPanel.value = "entities";
+  bookmarkRequest.value = { locationId: (event as CustomEvent<number>).detail };
+}
+onMounted(() => window.addEventListener("hict:show-bookmark", showBookmark));
+onUnmounted(() => window.removeEventListener("hict:show-bookmark", showBookmark));
+onMounted(() =>
+  window.addEventListener("hict:show-edit-history", showEditHistory)
+);
+onUnmounted(() =>
+  window.removeEventListener("hict:show-edit-history", showEditHistory)
+);
 onMounted(() => window.addEventListener("hict:show-map-layers", showMapLayers));
 onUnmounted(() =>
   window.removeEventListener("hict:show-map-layers", showMapLayers)
@@ -1152,6 +1174,7 @@ function selectVisualizationSource(source: "PRIMARY" | "SECONDARY"): void {
   flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: hidden;
+  scroll-padding-bottom: 46px;
   width: 100%;
 }
 

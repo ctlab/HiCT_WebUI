@@ -1,3 +1,9 @@
+/** Preserve fractional pixels, while ignoring roundoff at integer pixel boundaries. */
+export function exportPixelSpan(span: number): number {
+  const nearest = Math.round(span);
+  return Math.max(1, Math.abs(span - nearest) < 1e-7 ? nearest : Math.ceil(span));
+}
+
 /** Bounds of a transformed map rectangle after clipping it to the viewport. */
 export function visibleMapBounds(
   corners: number[][],
@@ -76,8 +82,8 @@ export function cropSelectionScene(
   const svg = document.createElementNS(ns, "svg");
   // Match the raster canvas page size. Fractional SVG dimensions cause editors
   // to round the page and rescale otherwise pixel-aligned heatmap images.
-  const pageWidth = Math.ceil(marginLeft + width);
-  const pageHeight = Math.ceil(marginTop + height);
+  const pageWidth = exportPixelSpan(marginLeft + width);
+  const pageHeight = exportPixelSpan(marginTop + height);
   svg.setAttribute("xmlns", ns);
   svg.setAttribute("width", String(pageWidth));
   svg.setAttribute("height", String(pageHeight));

@@ -202,3 +202,55 @@ export function parseRegion(
     domain
   );
 }
+
+/** Decode the clipboard formats produced by Copy coordinates for rectangles and entity ranges. */
+export function parseCopiedRegion(
+  text: string,
+  references: CoordinateReferences,
+  domain: RegionBounds
+) {
+  const [heading, ...lines] = text.trim().split(/\r?\n/);
+  const header =
+    /^(Assembly|Scaffold|Contig) coordinates \(bp, (1-based inclusive|0-based, end excluded)\)$/.exec(
+      heading
+    );
+  if (!header)
+    throw Error("Paste coordinates copied from HiCT, including their heading.");
+  const frame = header[1].toLowerCase() as CoordinateFrame;
+  const convention: CoordinateConvention =
+    header[2] === "1-based inclusive" ? "one-based" : "zero-based";
+  let rows: string[], columns: string[];
+  if (lines.length === 1) {
+    rows = columns = lines[0].split("\t");
+  } else if (
+    lines.length === 2 &&
+    lines[0].startsWith("Rows\t") &&
+    lines[1].startsWith("Columns\t")
+  ) {
+    rows = lines[0].split("\t").slice(1);
+    columns = lines[1].split("\t").slice(1);
+  } else throw Error("Expected one interval or labeled Rows and Columns.");
+  if (rows.length !== 2 || columns.length !== 2)
+    throw Error("Each axis needs a start and end.");
+  const prefix = frame === "contig" ? "ctg:" : "scf:";
+  for (const field of [...rows, ...columns]) {
+    if (
+      !field.startsWith("assembly:") &&
+      (frame === "assembly" ? field.includes(":") : !field.startsWith(prefix))
+    )
+      throw Error("A coordinate does not match the copied frame.");
+  }
+  const bounds = parseRegion(
+    {
+      rowStart: rows[0],
+      rowEnd: rows[1],
+      columnStart: columns[0],
+      columnEnd: columns[1],
+    },
+    convention,
+    references,
+    domain,
+    frame
+  );
+  return { bounds, frame, convention };
+}

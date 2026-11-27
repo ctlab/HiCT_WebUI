@@ -24,10 +24,54 @@ import {
   NormalizationSettings,
 } from "@/app/ui/components/ComponentCommon";
 import assert from "assert";
-import type { SequenceSearchSettings } from "./SequenceAnalysisRequest";
+import { SequenceAnalysisRequest, type SequenceSearchSettings } from "./SequenceAnalysisRequest";
 import { ImageTile, Tile } from "ol";
 import { VisualizationOptionsDTO } from "../dto/dto";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
+
+export interface SequenceOverlayOptions {
+  scope: "assembly" | "selection";
+  resolutions: number[];
+  mergeCompatible: boolean;
+  region?: { rowStart: number; rowEnd: number; columnStart: number; columnEnd: number };
+  sourceFastaFilename?: string;
+  acceptLargeOutput?: boolean;
+  [setting: string]: unknown;
+}
+
+export class SequenceOverlayRequest extends SequenceAnalysisRequest {
+  constructor(
+    kind: "dotplot" | "moddotplot",
+    action: "estimate" | "jobs",
+    public override readonly options: SequenceOverlayOptions
+  ) {
+    super(`/sequence/${kind}/${action}`, options);
+  }
+}
+
+export class ListDotplotResultsRequest implements HiCTAPIRequest {
+  readonly requestPath = "/sequence/overlays/list";
+}
+
+export class OpenDotplotResultRequest implements HiCTAPIRequest {
+  readonly requestPath = "/sequence/overlays/open";
+  constructor(public readonly filename: string) {}
+}
+
+export class ShowDotplotResultRequest implements HiCTAPIRequest {
+  readonly requestPath = "/sequence/overlays/show";
+  constructor(public readonly id: string, public readonly shown: boolean) {}
+}
+
+export class DeleteDotplotResultRequest implements HiCTAPIRequest {
+  readonly requestPath = "/sequence/overlays/delete";
+  constructor(public readonly id: string) {}
+}
+
+export class DownloadDotplotResultRequest implements HiCTAPIRequest {
+  readonly requestPath = "/sequence/overlays/download";
+  constructor(public readonly id: string) {}
+}
 interface HiCTAPIRequest {
   requestPath: string;
 }
@@ -124,17 +168,6 @@ class OpenFileRequest implements HiCTAPIRequest {
   ) {}
 }
 
-class SaveFileRequest implements HiCTAPIRequest {
-  requestPath = "/save";
-
-  public constructor(
-    public readonly options: {
-      readonly filename?: string;
-      // readonly fastaFilename?: string | undefined;
-    }
-  ) {}
-}
-
 class ListFilesRequest implements HiCTAPIRequest {
   requestPath = "/list_files";
 }
@@ -189,21 +222,41 @@ class DropAllCachesRequest implements HiCTAPIRequest {
   requestPath = "/cache/drop_all";
 }
 
+export type ProcessedStorageAction = "cache" | "old" | "maps";
+
+export class CleanupProcessedStorageRequest implements HiCTAPIRequest {
+  requestPath = "/storage/processed/cleanup";
+
+  constructor(
+    public readonly action: ProcessedStorageAction,
+    public readonly ids: string[]
+  ) {}
+}
+
 class CloseFileRequest implements HiCTAPIRequest {
   requestPath = "/close";
 }
 
-/** Starts computing square-root coverage vectors for every open source. */
+/** Starts computing square-root coverage vectors for a source. */
 class PrepareCoverageNormalizationRequest implements HiCTAPIRequest {
   requestPath = "/normalization/coverage/prepare";
+  public constructor(
+    public readonly options: { readonly source: "PRIMARY" | "SECONDARY" }
+  ) {}
 }
 
 class CoverageNormalizationStatusRequest implements HiCTAPIRequest {
   requestPath = "/normalization/coverage/status";
+  public constructor(
+    public readonly options: { readonly source: "PRIMARY" | "SECONDARY" }
+  ) {}
 }
 
 class CancelCoverageNormalizationRequest implements HiCTAPIRequest {
   requestPath = "/normalization/coverage/cancel";
+  public constructor(
+    public readonly options: { readonly source: "PRIMARY" | "SECONDARY" }
+  ) {}
 }
 
 /** Chooses which per-bin weights tiles use when weights are applied. */
@@ -211,7 +264,10 @@ class SelectNormalizationWeightsRequest implements HiCTAPIRequest {
   requestPath = "/normalization/weights";
 
   public constructor(
-    public readonly options: { readonly mode: "FILE" | "SQRT_COVERAGE" }
+    public readonly options: {
+      readonly source: "PRIMARY" | "SECONDARY";
+      readonly mode: "FILE" | "SQRT_COVERAGE";
+    }
   ) {}
 }
 
@@ -253,6 +309,10 @@ class ExampleDownloadStatusRequest implements HiCTAPIRequest {
 
 class CancelExampleDownloadRequest implements HiCTAPIRequest {
   requestPath = "/examples/download/cancel";
+}
+
+class SessionAvailabilityRequest implements HiCTAPIRequest {
+  requestPath = "/session/availability";
 }
 
 class AttachSessionRequest implements HiCTAPIRequest {
@@ -458,8 +518,13 @@ class StartDotplotJobsRequest implements HiCTAPIRequest {
       readonly alignmentThreads: number;
       readonly conversionThreads: number;
       readonly overwrite?: boolean;
+      readonly acceptLargeOutput?: boolean;
     }
   ) {}
+}
+
+export class EstimateFastaDotplotRequest extends StartDotplotJobsRequest {
+  override requestPath = "/dotplot/estimate";
 }
 
 class ListDotplotJobsRequest implements HiCTAPIRequest {
@@ -538,6 +603,7 @@ class MoveSelectionRangeRequest implements HiCTAPIRequest {
       readonly startBP: number;
       readonly endBP: number;
       readonly targetStartBP: number;
+      readonly exactContig?: boolean;
     }
   ) {}
 }
@@ -890,6 +956,7 @@ class ProbeTrackPrecomputeCacheRequest implements HiCTAPIRequest {
 export {
   type HiCTAPIRequest,
   AttachSessionRequest,
+  SessionAvailabilityRequest,
   CloseFileRequest,
   ListExamplesRequest,
   StartExampleDownloadRequest,
@@ -946,7 +1013,6 @@ export {
   SetNormalizationRequest,
   SetContrastRangeRequest,
   GetCurrentSignalRangeRequest,
-  SaveFileRequest,
   SplitContigRequest,
   SplitContigAtBpRequest,
   // TileLoadPOSTRequest,

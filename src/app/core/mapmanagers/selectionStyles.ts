@@ -28,6 +28,8 @@
  * The dash pattern is a cue that does not depend on color, and a translucent warm fill marks the
  * selected area without hiding the signal. Selections are screen-only and are never exported.
  */
+import MultiPoint from "ol/geom/MultiPoint";
+import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { Circle as CircleStyle, Fill, Stroke, Style } from "ol/style";
 
 export const SELECTION_DARK = "rgba(15, 23, 42, 0.95)";
@@ -50,6 +52,28 @@ export function selectionAreaStyle(): Style[] {
         color: SELECTION_LIGHT,
         width: LIGHT_WIDTH,
         lineDash: SELECTION_DASH,
+      }),
+    }),
+    new Style({
+      geometry: (feature) => {
+        const extent = feature.getGeometry()?.getExtent();
+        if (!extent) return undefined;
+        const [left, bottom, right, top] = extent;
+        return new MultiPoint([
+          [left, top],
+          [right, bottom],
+          ...(!useUiSettingsStore().squareSelection
+            ? [
+                [left, bottom],
+                [right, top],
+              ]
+            : []),
+        ]);
+      },
+      image: new CircleStyle({
+        radius: 5,
+        fill: new Fill({ color: "#fff" }),
+        stroke: new Stroke({ color: SELECTION_DARK, width: 2 }),
       }),
     }),
   ];

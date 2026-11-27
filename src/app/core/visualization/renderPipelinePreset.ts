@@ -195,6 +195,8 @@ export function parseRenderPipelinePreset(
           raw.gamma > 100)
       )
         invalid("Color gamma must be between 0.05 and 100.");
+      if (raw.curveMode != null && raw.curveMode !== "smooth-value" && raw.curveMode !== "smooth-log")
+        invalid("Invalid color curve mode.");
       if (
         raw.mode !== undefined &&
         !["LINEAR", "MODDOTPLOT_IDENTITY", "OBSERVED_OVER_EXPECTED"].includes(

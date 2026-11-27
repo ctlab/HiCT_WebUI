@@ -37,7 +37,7 @@
         data-bs-placement="bottom"
         @click="$emit('goto', props.location_id)"
       >
-        <i class="bi bi-box-arrow-in-right"></i>
+        Go
       </button>
       <button
         class="btn btn-outline-danger"
@@ -91,8 +91,6 @@ const name = computed({
 
   width: 100%;
   height: 40px;
-  margin-left: 10px;
-  margin-right: 10px;
 
   /* Inside auto layout */
   flex: none;

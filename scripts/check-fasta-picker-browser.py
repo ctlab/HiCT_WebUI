@@ -73,7 +73,7 @@ with sync_playwright() as pw:
     picker.get_by_text('empty', exact=True).first.dblclick()
     page.wait_for_timeout(250)
     check('An empty folder cannot start creation', start.is_disabled() and listings[-1] == 'empty')
-    path = picker.get_by_placeholder('Relative folder or file path under DATA_DIR')
+    path = picker.get_by_placeholder('Relative path in the HiCT data folder')
     path.fill('nested/assembly.FASTA.GZ')
     path.press('Enter')
     page.wait_for_function("document.querySelector('#fasta-only-file')?.textContent==='nested/assembly.FASTA.GZ'")

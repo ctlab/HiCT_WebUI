@@ -37,6 +37,7 @@ import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { useVisualizationOptionsStore } from "@/app/stores/visualizationOptionsStore";
 import { useStyleStore } from "@/app/stores/styleStore";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
+import { prepareColorFraction, type CurveMode } from "@/app/core/visualization/colorMidpoint";
 
 const PROJECTED_TILE_CACHE_BYTES = 48 * 1024 * 1024;
 
@@ -291,6 +292,7 @@ class VersionedXYZContactMapSource extends XYZ {
       signalMode: "PIPELINE_SIGNAL",
       format: "BINARY_FLOAT32",
       includeTileStatistics: true,
+      respectDiagonalMask: true,
     };
     const xhr = new XMLHttpRequest();
     const requestEpoch = this.tileRequestEpoch;
@@ -446,11 +448,17 @@ class VersionedXYZContactMapSource extends XYZ {
     const colormap = visualizationOptionsStore.colormap;
     let minSignal = 0;
     let maxSignal = 1;
+    let gamma = 1;
+    let curve: number[] | undefined;
+    let curveMode: CurveMode | undefined;
     let start = this.parseRgba("rgba(0,255,0,0.0)");
     let end = this.parseRgba("rgba(0,96,0,1.0)");
     if (colormap instanceof SimpleLinearGradient) {
       minSignal = colormap.minSignal;
       maxSignal = colormap.maxSignal;
+      gamma = colormap.gamma;
+      curve = colormap.curve;
+      curveMode = colormap.curveMode;
       start = this.parseRgba(
         colormap.startColorRGBA?.RGBA || "rgba(0,255,0,0.0)"
       );
@@ -461,15 +469,17 @@ class VersionedXYZContactMapSource extends XYZ {
         | string
         | undefined) ?? "rgba(255,255,255,1.0)";
     const background = this.parseRgba(backgroundColor);
-    const signalRange = Math.max(1e-9, maxSignal - minSignal);
+    const signalRange = curveMode && maxSignal > minSignal ? maxSignal - minSignal : Math.max(1e-9, maxSignal - minSignal);
+    const colorFraction = prepareColorFraction(gamma, curve, curveMode);
     const pixelCount = Math.min(values.length, rows * cols);
     for (let idx = 0; idx < pixelCount; idx += 1) {
+      if (visualizationOptionsStore.diagonalMask.enabled && !Number.isFinite(values[idx])) continue;
       const signal = Number.isFinite(values[idx]) ? values[idx] : 0;
       const normalized = Math.max(
         0,
         Math.min(1, (signal - minSignal) / signalRange)
       );
-      const mix = normalized;
+      const mix = colorFraction(normalized);
       const alpha = (start[3] + (end[3] - start[3]) * mix) / 255.0;
       const colorR = start[0] + (end[0] - start[0]) * mix;
       const colorG = start[1] + (end[1] - start[1]) * mix;
