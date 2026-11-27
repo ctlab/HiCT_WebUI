@@ -275,7 +275,7 @@ function beginPoint(event: PointerEvent, index: number) {
 }
 function beginEndpoint(event: PointerEvent, point: Endpoint) {
   if (event.button !== 0) return;
-  (event.currentTarget as HTMLButtonElement).focus();
+  (event.currentTarget as HTMLButtonElement).focus({ preventScroll: true });
   dragging = { id: event.pointerId, point };
   activeEndpoint.value = point;
   editor.value?.setPointerCapture(event.pointerId);
