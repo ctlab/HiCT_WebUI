@@ -902,6 +902,10 @@ const retrievalDtos = loadTypeScript(
 );
 const sequenceAdapter = new adapterExports.RequestManager({ host: "http://example.test" });
 const resultSet = { id: "set-1", name: "ModDotPlot · k 21 · identity 80%", regionCount: 2, bytes: 8192 };
+const { formatHttpError } = loadTypeScript(resolve(projectRoot, "src/app/core/net/api/errorMessage.ts"));
+const mismatchText = "This dotplot file belongs to a different map. Open that map first, then open the dotplot file again.";
+assert.equal(formatHttpError(409, mismatchText), mismatchText);
+assert.equal(formatHttpError(409, "No active map"), "Open a map first");
 sequenceAdapter.sendRequest = async (request) => {
   assert.equal(request.requestPath, "/sequence/jobs/list");
   assert.deepEqual(retrievalDtos.HiCTAPIRequestDTO.toDTOClass(request).toDTO(), {});
@@ -918,6 +922,17 @@ const overlayOptions = {
   region: { rowStart: 50, rowEnd: 500, columnStart: 150, columnEnd: 800 },
   acceptLargeOutput: true,
 };
+for (const [name, action, args, expected] of [
+  ["ListDotplotResultsRequest", "list", [], {}],
+  ["OpenDotplotResultRequest", "open", ["copy.hict.hdf5"], { filename: "copy.hict.hdf5" }],
+  ["ShowDotplotResultRequest", "show", ["set-1", false], { id: "set-1", shown: false }],
+  ["DeleteDotplotResultRequest", "delete", ["set-1"], { id: "set-1" }],
+  ["DownloadDotplotResultRequest", "download", ["set-1"], { id: "set-1" }],
+]) {
+  const request = new retrievalRequests[name](...args);
+  assert.equal(request.requestPath, `/sequence/overlays/${action}`);
+  assert.deepEqual(retrievalDtos.HiCTAPIRequestDTO.toDTOClass(request).toDTO(), expected);
+}
 for (const kind of ["dotplot", "moddotplot"]) {
   for (const action of ["estimate", "jobs"]) {
     const request = new retrievalRequests.SequenceOverlayRequest(kind, action, overlayOptions);

@@ -119,7 +119,9 @@
       role="region"
       aria-label="Contact map"
       @keydown.self="zoomFromKeyboard"
-    ></div>
+    >
+      <DotplotRegionOutlines v-if="props.mapManager" :key="managerKey" :map-manager="props.mapManager" />
+    </div>
     <div
       class="zoom-slider-overlay"
       v-if="props.mapManager && customZoomSliderEnabled"
@@ -138,6 +140,7 @@ import { SequenceAnalysisRequest } from "@/app/core/net/api/SequenceAnalysisRequ
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import { alignmentMarkers } from "@/app/core/visualization/alignmentMarkers";
 import AssemblyContextMenu from "./AssemblyContextMenu.vue";
+import DotplotRegionOutlines from "./DotplotRegionOutlines.vue";
 import { useStyleStore } from "@/app/stores/styleStore";
 import { ref, computed, Ref, toRaw, watch } from "vue";
 import { storeToRefs } from "pinia";

@@ -35,6 +35,8 @@ export interface SequenceAnalysisEstimate {
   warningLevel?: number;
   limitingLevel?: number;
   hardLimitReason?: string;
+  hasResultsOfKind?: boolean;
+  hasCompatibleResults?: boolean;
 }
 
 export interface SequenceAnalysisJob {

@@ -48,6 +48,30 @@ export class SequenceOverlayRequest extends SequenceAnalysisRequest {
     super(`/sequence/${kind}/${action}`, options);
   }
 }
+
+export class ListDotplotResultsRequest implements HiCTAPIRequest {
+  readonly requestPath = "/sequence/overlays/list";
+}
+
+export class OpenDotplotResultRequest implements HiCTAPIRequest {
+  readonly requestPath = "/sequence/overlays/open";
+  constructor(public readonly filename: string) {}
+}
+
+export class ShowDotplotResultRequest implements HiCTAPIRequest {
+  readonly requestPath = "/sequence/overlays/show";
+  constructor(public readonly id: string, public readonly shown: boolean) {}
+}
+
+export class DeleteDotplotResultRequest implements HiCTAPIRequest {
+  readonly requestPath = "/sequence/overlays/delete";
+  constructor(public readonly id: string) {}
+}
+
+export class DownloadDotplotResultRequest implements HiCTAPIRequest {
+  readonly requestPath = "/sequence/overlays/download";
+  constructor(public readonly id: string) {}
+}
 interface HiCTAPIRequest {
   requestPath: string;
 }

@@ -398,6 +398,21 @@ class HiCViewAndLayersManager {
     });
   }
 
+  public goToDotplotRegion(region: {
+    rows: { start: number; end: number };
+    columns: { start: number; end: number };
+    finest: number;
+  }): void {
+    if (this.activeAxisScopes.row.kind !== "all" || this.activeAxisScopes.column.kind !== "all") {
+      this.setAxisScopes({ kind: "all", label: "All rows" }, { kind: "all", label: "All columns" });
+    }
+    const resolution = this.getPixelResolutionForBpResolution(region.finest);
+    this.restoreViewPosition({
+      resolution,
+      centerBp: [(region.columns.start + region.columns.end) / 2, (region.rows.start + region.rows.end) / 2],
+    });
+  }
+
   public isolateSelectedEntities(): void {
     const contigIds = [...this.currentViewState.selectedContigIds];
     if (!contigIds.length) return;

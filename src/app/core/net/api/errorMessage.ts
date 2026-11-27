@@ -10,7 +10,7 @@ const ERROR_PREFIX_RE =
   /^(AxiosError|Error|TypeError|ReferenceError|RangeError|URIError|SyntaxError|EvalError|AggregateError):\s*/;
 
 export function formatHttpError(status: unknown, message: string): string {
-  if (status === 409 && /(?:no (?:open|active) (?:file|map)|open .{0,20}\b(?:map|file) first)/i.test(message)) {
+  if (status === 409 && /^(?:no (?:open|active) (?:file|map)|open .{0,20}\b(?:map|file) first)/i.test(message)) {
     return "Open a map first";
   }
   if (typeof status === "number" && status >= 500) {

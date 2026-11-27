@@ -547,6 +547,11 @@
                   ModDotPlot…
                 </button>
               </li>
+              <li>
+                <button type="button" class="dropdown-item" :disabled="!props.mapManager" @click="dotplotResults.dialogOpen = true">
+                  <i class="bi bi-collection" aria-hidden="true"></i> Dotplot results…
+                </button>
+              </li>
             </ul>
           </li>
           <!-- Dev -->
@@ -994,6 +999,8 @@
     @dismissed="modDotPlotOpen = false"
     @link-fasta="startLinkFastaForTool('moddotplot')"
   />
+  <DotplotResultsModal v-if="dotplotResults.dialogOpen && props.mapManager" :map-manager="props.mapManager"
+    @dismissed="dotplotResults.dialogOpen = false" />
   <SequenceSearchModal
     v-if="sequenceSearchOpen && (props.mapManager || sequenceSearchRemote)"
     :map-manager="props.mapManager"
@@ -1623,6 +1630,7 @@ import { storeToRefs } from "pinia";
 import { useErrorToastStore } from "@/app/stores/errorToastStore";
 import { useUiSettingsStore } from "@/app/stores/uiSettingsStore";
 import { useSessionStore } from "@/app/stores/sessionStore";
+import { useDotplotResultsStore } from "@/app/stores/dotplotResultsStore";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
 import {
   hasAnyOpenEscDialog,
@@ -1678,6 +1686,7 @@ const renderedChangelog = computed(() => renderMarkdown(changelogText.value));
 const pendingFastaFilename = ref<string | null>(null);
 const fastaLinkReport = ref<FastaLinkResponse | null>(null);
 const sessionStore = useSessionStore();
+const dotplotResults = useDotplotResultsStore();
 const { activeVisualizationSource } = storeToRefs(useMatrixViewStore());
 const sourceDetailsOpen = ref(false);
 const sourceDetailsToggle = ref<HTMLButtonElement>();
@@ -1731,6 +1740,7 @@ const ExportedFigureModal = defineAsyncComponent(
 const ModDotPlotModal = defineAsyncComponent(
   () => import("./ModDotPlotModal.vue")
 );
+const DotplotResultsModal = defineAsyncComponent(() => import("./DotplotResultsModal.vue"));
 const DotplotGenerator = defineAsyncComponent(
   () => import("./DotplotGenerator.vue")
 );

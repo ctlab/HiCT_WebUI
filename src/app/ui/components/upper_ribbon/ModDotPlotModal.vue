@@ -3,7 +3,7 @@
     <div class="analysis-backdrop"></div>
     <section
       class="analysis-modal"
-      :class="{ 'moddotplot-modal': !alignment }"
+      :class="{ 'moddotplot-modal': !alignment, 'finished-dotplot': delivered && job?.resultSet }"
       ref="modalFocusElement"
       role="dialog"
       aria-modal="true"
@@ -116,6 +116,10 @@
               <option value="below">Below diagonal</option>
               <option value="none">Don’t link</option>
             </select>
+            <p v-if="mergeCompatible && cost?.hasResultsOfKind && !cost.hasCompatibleResults" class="dotplot-new-set">
+              <i class="bi bi-info-circle" aria-hidden="true"></i>
+              These settings differ from your existing {{ alignment ? 'Dotplot' : 'ModDotPlot' }} results, so a new result set will start. The earlier sets stay in Dotplot results.
+            </p>
             <SequenceEstimateCallout
               v-if="cost"
               v-model:accept-large-output="acceptLargeOutput"
@@ -435,6 +439,14 @@
               }}</span
             >
           </div>
+          <div v-if="delivered && job?.resultSet" class="d-flex gap-2 mt-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" @click="openResults">
+              <i class="bi bi-list-ul" aria-hidden="true"></i> Dotplot results…
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="savingResult" @click="saveResult">
+              <i class="bi bi-download" aria-hidden="true"></i> Save a copy…
+            </button>
+          </div>
           <details v-if="job?.logs.length" class="analysis-log-details">
             <summary>Show log</summary>
             <pre class="analysis-logs" aria-label="ModDotPlot log">{{
@@ -519,6 +531,8 @@ import { SequenceOverlayRequest, type SequenceOverlayOptions } from "@/app/core/
 import { formatEstimateBytes } from "@/app/core/sequence/formatEstimateBytes";
 import { dotplotResolutionLevels } from "@/app/core/sequence/generationDefaults";
 import { displaySequenceOverlay } from "@/app/core/sequence/displaySequenceOverlay";
+import { saveDotplotResult } from "@/app/core/sequence/dotplotResults";
+import { useDotplotResultsStore } from "@/app/stores/dotplotResultsStore";
 import { useEscDismissableDialog } from "@/app/ui/escapeDialogRegistry";
 import { useNotificationCenterStore } from "@/app/stores/notificationCenterStore";
 import { formatLength } from "@/app/core/format/formatSignal";
@@ -783,6 +797,25 @@ watch(scope, (value) => {
   displayMode.value = value === "assembly" ? "below" : "overlay";
 });
 const job = ref<SequenceAnalysisJob | null>(null);
+const dotplotResults = useDotplotResultsStore();
+const savingResult = ref(false);
+function openResults(): void {
+  emit("dismissed");
+  dotplotResults.dialogOpen = true;
+}
+async function saveResult(): Promise<void> {
+  const current = job.value;
+  if (!current?.resultSet || savingResult.value) return;
+  const map = current.mapFilename.split(/[\\/]/).at(-1)?.replace(/\.hict\.hdf5$/i, "") || "map";
+  savingResult.value = true;
+  try {
+    await saveDotplotResult(api, current.resultSet.id, `${map}.${kind}.hict.hdf5`);
+  } catch (failure) {
+    error.value = extractErrorMessage(failure);
+  } finally {
+    savingResult.value = false;
+  }
+}
 const delivered = ref(false);
 const resultDisplayText = computed(() => ({
   below: "is shown below the diagonal",
@@ -1016,8 +1049,21 @@ useModalFocus(modalFocusElement);
   width: min(850px, 96vw);
   z-index: 1070;
 }
+.dotplot-new-set {
+  background: #eff4ff;
+  border: 1px solid #b2ccff;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: #1d2939;
+  display: flex;
+  gap: 8px;
+}
 .moddotplot-modal {
   width: min(760px, 96vw);
+}
+.finished-dotplot {
+  width: min(560px, 96vw);
 }
 .analysis-modal .modal-body {
   max-height: 77vh;

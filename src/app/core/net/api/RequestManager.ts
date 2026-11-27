@@ -174,6 +174,8 @@ import {
 import { toast } from "vue-sonner";
 import { SequenceAnalysisRequest, type SequenceAnalysisEstimate, type SequenceAnalysisJob } from "./SequenceAnalysisRequest";
 import { EstimateFastaDotplotRequest, SequenceOverlayRequest, type SequenceOverlayOptions } from "./request";
+import { ListDotplotResultsRequest, OpenDotplotResultRequest, ShowDotplotResultRequest,
+  DeleteDotplotResultRequest, DownloadDotplotResultRequest } from "./request";
 import { useSessionStore } from "@/app/stores/sessionStore";
 import VisualizationOptions from "../../visualization/VisualizationOptions";
 import { extractErrorMessage } from "./errorMessage";
@@ -371,6 +373,9 @@ const assemblySessionPaths = new Set([
   "/secondary/open",
   "/secondary/close",
   "/secondary/set_assembly_source",
+  "/sequence/overlays/open",
+  "/sequence/overlays/show",
+  "/sequence/overlays/delete",
   "/session/restore",
 ]);
 
@@ -513,9 +518,39 @@ const journalResetPaths = new Set([
   "/secondary/open",
   "/secondary/close",
   "/secondary/set_assembly_source",
+  "/sequence/overlays/open",
+  "/sequence/overlays/show",
+  "/sequence/overlays/delete",
 ]);
 
-export type ProcessedStorageCategory = "cache" | "coverage" | "maps" | "scratch" | "sequence" | "metadata" | "other";
+export type DotplotDisplayMode = "overlay" | "above" | "below";
+export type DotplotRegion = {
+  index: number;
+  rows: { start: number; end: number };
+  columns: { start: number; end: number };
+  levels: number[];
+  finest: number;
+  addedAt: string;
+  split: boolean;
+};
+export type DotplotResult = {
+  id: string;
+  kind: "dotplot" | "moddotplot";
+  name: string;
+  settingsSummary: string;
+  file: string;
+  downloadFilename: string;
+  sizeBytes: number;
+  resolutions: number[];
+  shown: boolean;
+  displayMode: DotplotDisplayMode;
+  regions: DotplotRegion[];
+};
+export type DotplotResultMutation = Pick<DotplotResult, "id" | "kind" | "shown" | "displayMode"> & {
+  secondarySource?: SecondarySourceStatusResponse;
+};
+
+export type ProcessedStorageCategory = "cache" | "coverage" | "maps" | "dotplots" | "scratch" | "sequence" | "metadata" | "other";
 
 export type ProcessedStorageFile = {
   id: string;
@@ -1112,6 +1147,39 @@ class RequestManager {
       .then((response) => response.data as Record<string, unknown>)
       .then((json) => this.parseSecondarySourceStatus(json))
       .then((status) => this.publishSecondarySourceStatus(status, true));
+  }
+
+  public async listDotplotResults(): Promise<DotplotResult[]> {
+    return (await this.sendRequest(new ListDotplotResultsRequest())).data;
+  }
+
+  private async mutateDotplotResult(
+    request: OpenDotplotResultRequest | ShowDotplotResultRequest | DeleteDotplotResultRequest
+  ): Promise<DotplotResultMutation> {
+    const { data } = await this.sendRequest(request);
+    const secondarySource = data.secondarySource
+      ? this.publishSecondarySourceStatus(this.parseSecondarySourceStatus(data.secondarySource), true)
+      : undefined;
+    return { ...data, secondarySource };
+  }
+
+  public openDotplotResult(filename: string): Promise<DotplotResultMutation> {
+    return this.mutateDotplotResult(new OpenDotplotResultRequest(filename));
+  }
+
+  public showDotplotResult(id: string, shown: boolean): Promise<DotplotResultMutation> {
+    return this.mutateDotplotResult(new ShowDotplotResultRequest(id, shown));
+  }
+
+  public deleteDotplotResult(id: string): Promise<DotplotResultMutation> {
+    return this.mutateDotplotResult(new DeleteDotplotResultRequest(id));
+  }
+
+  public downloadDotplotResult(id: string): Promise<Response> {
+    const request = new DownloadDotplotResultRequest(id);
+    const address = this.networkManager.host.replace(/\/+$/, "");
+    const params = new URLSearchParams(HiCTAPIRequestDTO.toDTOClass(request).toDTO() as { id: string });
+    return fetch(`${address}${request.requestPath}?${params}`);
   }
 
   public async setAssemblyInfoSource(

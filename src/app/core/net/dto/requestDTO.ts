@@ -119,6 +119,11 @@ import { ColormapDTO, OutboundDTO, VisualizationOptionsDTO } from "./dto";
 import {
   AssemblyHistoryRequest,
   RestoreAssemblyHistoryRequest,
+  ListDotplotResultsRequest,
+  OpenDotplotResultRequest,
+  ShowDotplotResultRequest,
+  DeleteDotplotResultRequest,
+  DownloadDotplotResultRequest,
   SequenceOverlayRequest,
 } from "../api/request";
 import { SequenceAnalysisRequest } from "../api/SequenceAnalysisRequest";
@@ -151,6 +156,17 @@ abstract class HiCTAPIRequestDTO<
         return { toDTO: () => ({ ...(entity as SequenceOverlayRequest).options }) };
       case entity instanceof SequenceAnalysisRequest:
         return { toDTO: () => (entity as SequenceAnalysisRequest).options };
+      case entity instanceof ListDotplotResultsRequest:
+        return { toDTO: () => ({}) };
+      case entity instanceof OpenDotplotResultRequest:
+        return { toDTO: () => ({ filename: (entity as OpenDotplotResultRequest).filename }) };
+      case entity instanceof ShowDotplotResultRequest: {
+        const { id, shown } = entity as ShowDotplotResultRequest;
+        return { toDTO: () => ({ id, shown }) };
+      }
+      case entity instanceof DeleteDotplotResultRequest:
+      case entity instanceof DownloadDotplotResultRequest:
+        return { toDTO: () => ({ id: (entity as DeleteDotplotResultRequest | DownloadDotplotResultRequest).id }) };
       case entity instanceof AssemblyHistoryRequest:
       case entity instanceof RestoreAssemblyHistoryRequest:
         return {
