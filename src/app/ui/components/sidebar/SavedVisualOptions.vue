@@ -545,6 +545,7 @@ function serializeVisualizationOptions(
         minSignal: cmap.minSignal,
         maxSignal: cmap.maxSignal,
         ...(cmap.curve ? { curve: cmap.curve } : {}),
+        ...(cmap.curveMode ? { curveMode: cmap.curveMode } : {}),
         ...(cmap.gamma !== 1 ? { gamma: cmap.gamma } : {}),
       },
     };
@@ -626,7 +627,8 @@ function deserializeVisualizationOptions(
       minSignal,
       maxSignal,
       cmapRaw.gamma === undefined ? 1 : Number(cmapRaw.gamma),
-      cmapRaw.curve
+      cmapRaw.curve,
+      cmapRaw.curveMode
     );
   } else {
     cmap = new Colormap(cmapType);
@@ -691,7 +693,8 @@ function applySignalThresholds(option: {
       lower,
       typeof upper === "number" ? upper : cmap.maxSignal,
       cmap.gamma,
-      cmap.curve
+      cmap.curve,
+      cmap.curveMode
     );
   }
 }

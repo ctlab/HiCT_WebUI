@@ -454,8 +454,11 @@ import {
   buildCurve,
   midpointFraction,
   gammaFromMidpoint,
-  colorFraction,
+  prepareColorFraction,
   curveParts,
+  logarithmicPosition,
+  valueFractionFromLog,
+  type CurveMode,
   MAX_CURVE_POINTS,
 } from "@/app/core/visualization/colorMidpoint";
 import { ColorTranslator } from "colortranslator";
@@ -666,8 +669,6 @@ function showExactLimits(range: ExactRange, bpResolution: number): void {
     range.min
   )} – ${formatSignal(range.max)} (${range.count} finite cells)`;
 }
-const LOG_SLIDER_FLOOR_FRACTION = 1e-10;
-
 const fromColorFn: Ref<() => ColorTranslator> = ref(
   () => fromColor.value
 ) as Ref<() => ColorTranslator>;
@@ -727,6 +728,11 @@ const curveData = computed(() =>
     : undefined
 );
 const curve = computed(() => curveParts(curveData.value));
+const curveMode = computed(() => colormap.value instanceof SimpleLinearGradient
+  ? colormap.value.curveMode : undefined);
+const transfer = computed(() => prepareColorFraction(colorGamma.value, curveData.value, curveMode.value));
+const colorSpan = computed(() => upperBound.value - lowerBound.value);
+const sliderCurveMode = (): CurveMode => sliderLogScale.value ? "smooth-log" : "smooth-value";
 const endpointWeights = computed(() => ({
   lower: curve.value.start,
   upper: curve.value.end,
@@ -737,9 +743,8 @@ const controlPoints = computed(() => {
     ? curve.value.interior
     : [{ x: midpointFraction(colorGamma.value), y: 0.5 }];
   return data.map((p) => {
-    const position = toSliderPosition(
-      lowerBound.value + p.x * (upperBound.value - lowerBound.value)
-    );
+    const fraction = curveMode.value === "smooth-log" ? valueFractionFromLog(p.x) : p.x;
+    const position = toSliderPosition(lowerBound.value + fraction * colorSpan.value);
     return {
       fraction: p.x,
       position,
@@ -768,11 +773,7 @@ const transferPolyline = computed(() => {
         sliderPositionMin.value +
           x * (sliderPositionMax.value - sliderPositionMin.value)
       );
-      const y = colorFraction(
-        (v - lowerBound.value) / (upperBound.value - lowerBound.value),
-        colorGamma.value,
-        curveData.value
-      );
+      const y = transfer.value((v - lowerBound.value) / colorSpan.value);
       return 1000 * x + "," + 64 * (1 - y);
     })
     .join(" ");
@@ -790,16 +791,17 @@ function editEndpoint(side: "lower" | "upper", output: number) {
     (next?.length ?? 0) > MAX_CURVE_POINTS * 2
   )
     return;
-  setColorGamma(1, next);
+  updateCurve(next);
 }
 function editPoint(index: number, position: number, output?: number) {
   if (midpointPosition.value === undefined) return;
   keepAdjustmentLimits();
   const { start, end } = curve.value;
-  const data = controlPoints.value.map((p) => ({ x: p.fraction, y: p.y }));
-  let x =
-    (fromSliderPosition(position) - lowerBound.value) /
-    (upperBound.value - lowerBound.value);
+  const mode = curveData.value === undefined ? sliderCurveMode() : curveMode.value;
+  const data = index < 0 && curveData.value === undefined
+    ? [] : controlPoints.value.map((p) => ({ x: p.fraction, y: p.y }));
+  let x = (fromSliderPosition(position) - lowerBound.value) / colorSpan.value;
+  if (mode === "smooth-log") x = logarithmicPosition(x);
   if (index < 0) {
     if (
       data.length + Number(start !== 0) + Number(end !== 1) >=
@@ -818,7 +820,7 @@ function editPoint(index: number, position: number, output?: number) {
     );
     data[index] = { x, y: output ?? data[index].y };
   }
-  setColorGamma(1, buildCurve(start, end, data));
+  updateCurve(buildCurve(start, end, data));
 }
 function removePoint(index: number) {
   if (midpointPosition.value === undefined) return;
@@ -826,9 +828,13 @@ function removePoint(index: number) {
   const interior = controlPoints.value
     .filter((_, i) => i !== index)
     .map((p) => ({ x: p.fraction, y: p.y }));
-  setColorGamma(1, buildCurve(start, end, interior));
+  updateCurve(buildCurve(start, end, interior));
 }
-function setColorGamma(gamma: number, curve?: number[]): void {
+function updateCurve(next?: number[]): void {
+  const mode = next ? curveData.value === undefined ? sliderCurveMode() : curveMode.value : undefined;
+  setColorGamma(1, next, mode);
+}
+function setColorGamma(gamma: number, curve?: number[], mode?: CurveMode): void {
   const current = colormap.value;
   if (!(current instanceof SimpleLinearGradient)) return;
   colormap.value = new SimpleLinearGradient(
@@ -837,11 +843,13 @@ function setColorGamma(gamma: number, curve?: number[]): void {
     current.minSignal,
     current.maxSignal,
     gamma,
-    curve
+    curve,
+    mode
   );
   props.mapManager?.visualizationManager.noteVisualizationDraft({
     gamma,
     curve: curve ?? null,
+    curveMode: mode ?? null,
   });
 }
 function onMidpointInput(position: number): void {
@@ -864,11 +872,7 @@ const colorRailGradient = computed(() => {
       lowerSliderValue.value +
         offset * (upperSliderValue.value - lowerSliderValue.value)
     );
-    const mix = colorFraction(
-      (value - lowerBound.value) / (upperBound.value - lowerBound.value),
-      colorGamma.value,
-      curveData.value
-    );
+    const mix = transfer.value((value - lowerBound.value) / colorSpan.value);
     if (activePaletteMode.value === "MODDOTPLOT_IDENTITY") {
       const index = mix * (identityColors.length - 1);
       const left = Math.min(identityColors.length - 2, Math.floor(index));
@@ -999,7 +1003,8 @@ watch(
         nextMin,
         nextMax,
         existing instanceof SimpleLinearGradient ? existing.gamma : 1,
-        existing instanceof SimpleLinearGradient ? existing.curve : undefined
+        existing instanceof SimpleLinearGradient ? existing.curve : undefined,
+        existing instanceof SimpleLinearGradient ? existing.curveMode : undefined
       );
     }
     // console.log("UpperBound", upperBound.value);
@@ -1506,14 +1511,7 @@ function toSliderPosition(value: number): number {
   if (!sliderLogScale.value) {
     return clamped;
   }
-  const span = Math.max(max - min, Number.EPSILON);
-  const normalized = (clamped - min) / span;
-  if (normalized <= 0) {
-    return 0;
-  }
-  const floorLog = Math.log10(LOG_SLIDER_FLOOR_FRACTION);
-  const valueLog = Math.log10(Math.max(LOG_SLIDER_FLOOR_FRACTION, normalized));
-  return Math.max(0, Math.min(1, (valueLog - floorLog) / -floorLog));
+  return logarithmicPosition((clamped - min) / (max > min ? max - min : Number.EPSILON));
 }
 
 function fromSliderPosition(value: number): number {
@@ -1523,13 +1521,7 @@ function fromSliderPosition(value: number): number {
     return Math.max(min, Math.min(max, finiteOr(value, min)));
   }
   const position = Math.max(0, Math.min(1, finiteOr(value, 0)));
-  if (position <= 0) {
-    return min;
-  }
-  const span = Math.max(max - min, Number.EPSILON);
-  const floorLog = Math.log10(LOG_SLIDER_FLOOR_FRACTION);
-  const normalized = Math.pow(10, floorLog + position * -floorLog);
-  const actual = min + normalized * span;
+  const actual = min + valueFractionFromLog(position) * (max - min);
   return Math.max(min, Math.min(max, actual));
 }
 

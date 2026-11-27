@@ -4,6 +4,7 @@ import VisualizationOptions, {
 } from "./VisualizationOptions";
 import SimpleLinearGradient from "./colormap/SimpleLinearGradient";
 import { ColorTranslator } from "colortranslator";
+import type { CurveMode } from "./colorMidpoint";
 
 export type VisualizationContext = {
   source: "PRIMARY" | "SECONDARY";
@@ -25,6 +26,7 @@ export type VisualizationDraft = {
   endColor?: string;
   gamma?: number;
   curve?: number[] | null;
+  curveMode?: CurveMode | null;
   diagonalMask?: VisualizationOptions["diagonalMask"];
 };
 export const visualizationContextKey = (context: VisualizationContext) =>
@@ -104,6 +106,7 @@ export function applyVisualizationDraft(
     "endColor",
     "gamma",
     "curve",
+    "curveMode",
   ].some((key) => key in patch);
   const colormap =
     hasPalette && map instanceof SimpleLinearGradient
@@ -117,7 +120,8 @@ export function applyVisualizationDraft(
           patch.minSignal ?? map.minSignal,
           patch.maxSignal ?? map.maxSignal,
           patch.gamma ?? map.gamma,
-          patch.curve === undefined ? map.curve : patch.curve
+          patch.curve === undefined ? map.curve : patch.curve,
+          patch.curveMode === undefined ? map.curveMode : patch.curveMode
         )
       : map;
   return new VisualizationOptions(
@@ -162,6 +166,7 @@ export function visualizationOptionsDraft(
           endColor: gradient.endColorRGBA.HEXA,
           gamma: gradient.gamma,
           ...(gradient.curve ? { curve: gradient.curve } : {}),
+          ...(gradient.curveMode ? { curveMode: gradient.curveMode } : {}),
         }
       : {}),
   };

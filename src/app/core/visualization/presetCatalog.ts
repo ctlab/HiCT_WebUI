@@ -113,6 +113,7 @@ export const serializeVisualizationOptions = (
         minSignal: cmap.minSignal,
         maxSignal: cmap.maxSignal,
         ...(cmap.curve ? { curve: cmap.curve } : {}),
+        ...(cmap.curveMode ? { curveMode: cmap.curveMode } : {}),
         ...(cmap.gamma !== 1 ? { gamma: cmap.gamma } : {}),
       },
     };
@@ -194,7 +195,8 @@ export const deserializeVisualizationOptions = (
       minSignal,
       maxSignal,
       cmapRaw.gamma === undefined ? 1 : Number(cmapRaw.gamma),
-      cmapRaw.curve
+      cmapRaw.curve,
+      cmapRaw.curveMode
     );
   } else {
     cmap = new Colormap(cmapType);

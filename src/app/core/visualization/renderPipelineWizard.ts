@@ -21,6 +21,7 @@
 
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
 import VisualizationOptions from "@/app/core/visualization/VisualizationOptions";
+import type { CurveMode } from "./colorMidpoint";
 import {
   buildSignalInput,
   flagsFromOptions,
@@ -65,6 +66,7 @@ type PipelineExpression =
       maxSignal: number;
       gamma?: number;
       curve?: number[];
+      curveMode?: CurveMode;
     }
   | {
       type: "pixel_blend";
@@ -111,6 +113,7 @@ export const buildColorExpression = (
     type: "colormap",
     mode: "LINEAR",
     ...(linearGradient?.curve ? { curve: linearGradient.curve } : {}),
+    ...(linearGradient?.curveMode ? { curveMode: linearGradient.curveMode } : {}),
     ...(linearGradient && linearGradient.gamma !== 1
       ? { gamma: linearGradient.gamma }
       : {}),

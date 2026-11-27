@@ -1439,7 +1439,8 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
     minSignal,
     maxSignal,
     cmap["gamma"] === undefined ? 1 : Number(cmap["gamma"]),
-    cmap["curve"]
+    cmap["curve"],
+    cmap["curveMode"]
   );
   let finalCmap = cmapObj;
   if (
@@ -1454,7 +1455,8 @@ async function applyDefaultVisualizationPreset(): Promise<void> {
         ? signalThresholds.upperSignalBound
         : cmapObj.maxSignal,
       cmapObj.gamma,
-      cmapObj.curve
+      cmapObj.curve,
+      cmapObj.curveMode
     );
   }
   const manager = mapManager.value;
@@ -2077,7 +2079,8 @@ async function onOpenSession(file: File): Promise<void> {
         minSignal,
         maxSignal,
         cmap["gamma"] === undefined ? 1 : Number(cmap["gamma"]),
-        cmap["curve"]
+        cmap["curve"],
+        cmap["curveMode"]
       );
       visualizationOptionsStore.setVisualizationOptions(
         new VisualizationOptions(

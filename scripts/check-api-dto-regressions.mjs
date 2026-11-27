@@ -112,6 +112,12 @@ const endpointPayload = {
 };
 const endpointGradient = new SimpleLinearGradientDTO(endpointPayload).toEntity();
 assert.deepEqual(SimpleLinearGradientDTO.fromEntity(endpointGradient).toEntity().curve, endpointPayload.curve);
+assert.equal(endpointGradient.curveMode, undefined);
+for (const curveMode of ["smooth-value", "smooth-log"]) {
+  const smooth = new SimpleLinearGradientDTO({ ...endpointPayload, curveMode }).toEntity();
+  assert.equal(SimpleLinearGradientDTO.fromEntity(smooth).toEntity().curveMode, curveMode);
+}
+assert.throws(() => new SimpleLinearGradientDTO({ ...endpointPayload, curveMode: "unknown" }).toEntity(), /curve mode/);
 assert.throws(() => new SimpleLinearGradientDTO({
   ...endpointPayload,
   curve: [1, 0, 0.85, 1],

@@ -347,6 +347,8 @@ const replaceColormapNode = (
   target.node.endColor = replacement.endColor;
   if (replacement.curve) target.node.curve = replacement.curve;
   else delete target.node.curve;
+  if (replacement.curveMode) target.node.curveMode = replacement.curveMode;
+  else delete target.node.curveMode;
   if (replacement.gamma === undefined) delete target.node.gamma;
   else target.node.gamma = replacement.gamma;
   target.node.minSignal = replacement.minSignal;
@@ -382,7 +384,8 @@ const visualizationOptionsFromTarget = (
       target.minSignal,
       target.maxSignal,
       Number(target.node.gamma ?? 1),
-      target.node.curve
+      target.node.curve,
+      target.node.curveMode
     ),
     currentOptions.autoThresholdEnabled,
     currentOptions.autoThresholdQuantile,
@@ -598,6 +601,7 @@ class VisualizationManager {
         "endColor",
         "gamma",
         "curve",
+        "curveMode",
       ].some((field) => field in patch)
     )
       this.normalizationFits.delete(visualizationContextKey(context));
@@ -1258,7 +1262,8 @@ class VisualizationManager {
           options.colormap.minSignal,
           nextUpperBound,
           options.colormap.gamma,
-          options.colormap.curve
+          options.colormap.curve,
+          options.colormap.curveMode
         ),
         options.autoThresholdEnabled,
         options.autoThresholdQuantile,
@@ -1561,7 +1566,8 @@ class VisualizationManager {
           options.colormap.minSignal,
           updatedMaxSignal,
           options.colormap.gamma,
-          options.colormap.curve
+          options.colormap.curve,
+          options.colormap.curveMode
         ),
         false,
         quantile,
@@ -1621,6 +1627,7 @@ class VisualizationManager {
       startColor: cmap.startColorRGBA.HEXA,
       endColor: cmap.endColorRGBA.HEXA,
       ...(cmap.curve ? { curve: cmap.curve } : {}),
+      ...(cmap.curveMode ? { curveMode: cmap.curveMode } : {}),
       ...(cmap.gamma !== 1 ? { gamma: cmap.gamma } : {}),
     });
   }
@@ -1664,7 +1671,8 @@ class VisualizationManager {
           remembered.min,
           remembered.max,
           remembered.gamma ?? 1,
-          remembered.curve
+          remembered.curve,
+          remembered.curveMode
         )
       : mode === "OBSERVED_OVER_EXPECTED"
       ? new SimpleLinearGradient(

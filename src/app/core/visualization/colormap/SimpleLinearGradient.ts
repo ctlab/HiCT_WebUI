@@ -21,20 +21,23 @@
 
 import { ColorTranslator } from "colortranslator";
 import Colormap from "./Colormap";
-import { validateColorGamma, validatedCurve } from "../colorMidpoint";
+import { validateColorGamma, validatedCurve, validatedCurveMode, type CurveMode } from "../colorMidpoint";
 
 export default class SimpleLinearGradient extends Colormap {
   public readonly curve?: number[];
+  public readonly curveMode?: CurveMode;
   public constructor(
     public readonly startColorRGBA: ColorTranslator,
     public readonly endColorRGBA: ColorTranslator,
     public readonly minSignal: number,
     public readonly maxSignal: number,
     public readonly gamma: number = 1,
-    curve?: unknown
+    curve?: unknown,
+    curveMode?: unknown
   ) {
     super("SimpleLinearGradient");
     validateColorGamma(gamma);
     if (curve != null) this.curve = validatedCurve(curve);
+    this.curveMode = validatedCurveMode(curveMode);
   }
 }

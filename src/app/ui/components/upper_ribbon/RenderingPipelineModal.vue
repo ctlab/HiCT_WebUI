@@ -277,6 +277,7 @@ import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager
 import { VisualizationManager } from "@/app/core/mapmanagers/VisualizationManager";
 import type { TrackSummaryResponse } from "@/app/core/net/api/response";
 import SimpleLinearGradient from "@/app/core/visualization/colormap/SimpleLinearGradient";
+import { validatedCurveMode, type CurveMode } from "@/app/core/visualization/colorMidpoint";
 import SignalHistogramModal from "./SignalHistogramModal.vue";
 import { extractErrorMessage } from "@/app/core/net/api/errorMessage";
 import {
@@ -377,6 +378,7 @@ type PipelineExpression =
       maxSignal: number;
       gamma?: number;
       curve?: number[];
+      curveMode?: CurveMode;
       min?: PipelineExpression;
       max?: PipelineExpression;
     }
@@ -765,11 +767,13 @@ const buildColorExpressionFromVisualizationOptions = (
     maxSignal?: number;
     gamma?: number;
     curve?: number[];
+    curveMode?: CurveMode;
   }
 ): PipelineExpression => {
   const gradient = getVisualizationGradient();
   const minSignal = gradient?.minSignal;
   const maxSignal = gradient?.maxSignal;
+  const curveMode = overrides?.curveMode ?? gradient?.curveMode;
   return {
     type: "colormap",
     mode: "LINEAR",
@@ -777,6 +781,7 @@ const buildColorExpressionFromVisualizationOptions = (
     ...(overrides?.curve ?? gradient?.curve
       ? { curve: overrides?.curve ?? gradient?.curve }
       : {}),
+    ...(curveMode ? { curveMode } : {}),
     ...((overrides?.gamma ?? gradient?.gamma ?? 1) !== 1
       ? { gamma: overrides?.gamma ?? gradient?.gamma }
       : {}),
@@ -1078,6 +1083,7 @@ const parseExpression = (raw: unknown): PipelineExpression => {
           : "LINEAR",
       input: parseExpression(node.input),
       ...(Array.isArray(node.curve) ? { curve: node.curve } : {}),
+      ...(node.curveMode != null ? { curveMode: validatedCurveMode(node.curveMode) } : {}),
       ...(node.gamma !== undefined && node.gamma !== 1
         ? { gamma: Number(node.gamma) }
         : {}),
@@ -2536,6 +2542,7 @@ const createNodeForExpression = (
         node.properties.minSignal = expression.minSignal;
         node.properties.maxSignal = expression.maxSignal;
         node.properties.curve = expression.curve;
+        node.properties.curveMode = expression.curveMode;
         node.properties.gamma = expression.gamma ?? 1;
       }
       break;
@@ -3058,6 +3065,7 @@ const expressionFromNode = (
           : "LINEAR",
       input: input(0),
       ...(node.properties?.curve ? { curve: node.properties.curve } : {}),
+      ...(node.properties?.curveMode != null ? { curveMode: validatedCurveMode(node.properties.curveMode) } : {}),
       ...(node.properties?.gamma !== undefined && node.properties.gamma !== 1
         ? { gamma: Number(node.properties.gamma) }
         : {}),

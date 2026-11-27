@@ -137,6 +137,8 @@ function visualization(
     for (const key of ["startColorRGBAString", "endColorRGBAString"])
       if (key in cmap) color(cmap[key], `${path}.colormap.${key}`);
     ordered(cmap, `${path}.colormap`, "minSignal", "maxSignal");
+    if (cmap.curveMode != null)
+      choice(cmap.curveMode, `${path}.colormap.curveMode`, ["smooth-value", "smooth-log"]);
   }
 }
 

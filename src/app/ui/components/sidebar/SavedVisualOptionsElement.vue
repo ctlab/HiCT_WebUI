@@ -180,7 +180,8 @@ async function setOptionsPreset() {
             active?.minSignal ?? 0,
             active?.maxSignal ?? 1,
             active?.gamma ?? 1,
-            active?.curve
+            active?.curve,
+            active?.curveMode
           ),
           current.autoThresholdEnabled,
           current.autoThresholdQuantile,
