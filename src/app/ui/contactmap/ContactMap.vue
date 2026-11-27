@@ -241,6 +241,10 @@ const managerKey = computed(() => {
 </script>
 
 <style scoped>
+#hic-contact-map {
+  background: #ffffff;
+}
+
 .tl-hint {
   position: absolute;
   left: 48px;
