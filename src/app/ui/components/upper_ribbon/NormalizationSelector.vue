@@ -195,7 +195,7 @@
 
     <AdvancedSection
       dialog-id="sidebar-visualization"
-      hint="diagonal, slider limits, log base, pipeline"
+      hint="diagonal, data range, log base, pipeline"
       class="signal-advanced"
       id="signal-advanced"
     >

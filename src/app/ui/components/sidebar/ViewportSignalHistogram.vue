@@ -12,6 +12,7 @@
       @pointermove="movePoint"
       @pointerup="endPoint"
       @pointercancel="endPoint"
+      @wheel.stop.prevent="wheelView"
     >
       <svg
         viewBox="0 0 1000 64"
@@ -36,8 +37,11 @@
         />
         <polyline v-if="transfer" :points="transfer" class="transfer-line" />
       </svg>
+      <span v-if="belowPercent > 0" class="outside-count below">◂ {{ belowPercent }} % below</span>
+      <span v-if="abovePercent > 0" class="outside-count above">{{ abovePercent }} % above ▸</span>
       <button
         v-for="(p, i) in controlPoints"
+        v-show="p.x >= 0 && p.x <= 1"
         :key="i"
         type="button"
         class="curve-point"
@@ -74,6 +78,24 @@
         </span>
       </button>
     </div>
+    <div ref="axisStrip" class="histogram-axis-strip" title="Drag to move the histogram view"
+      @pointerdown="startViewPan" @pointermove="moveViewPan" @pointerup="endViewPan" @pointercancel="endViewPan"
+      @dblclick.stop="emit('whole-data')" @wheel.stop.prevent="wheelView"></div>
+    <div class="histogram-view-row" role="group" aria-label="Histogram view" :data-mode="viewMode">
+      <span class="view-caption">View</span>
+      <input aria-label="Histogram view from" inputmode="decimal" :value="String(viewFrom)"
+        :aria-invalid="invalid.from || undefined" @focus="selectViewInput" @change="editView('from', $event)"
+        @keydown.enter.prevent="commitViewInput" />
+      <span aria-hidden="true">–</span>
+      <input aria-label="Histogram view to" inputmode="decimal" :value="String(viewTo)"
+        :aria-invalid="invalid.to || undefined" @focus="selectViewInput" @change="editView('to', $event)"
+        @keydown.enter.prevent="commitViewInput" />
+      <button type="button" class="view-action ms-auto" title="Fit view to colour range" aria-label="Fit view to colour range" @click="emit('fit-view')">
+        <i class="bi bi-arrows-angle-contract" aria-hidden="true"></i>
+      </button>
+      <button type="button" class="view-action" title="Whole data" aria-label="Whole data" :class="{ manual: viewMode === 'manual' }"
+        @click="emit('whole-data')"><i class="bi bi-arrows-angle-expand" aria-hidden="true"></i></button>
+    </div>
     <div class="histogram-controls">
       <slot />
       <button
@@ -85,6 +107,7 @@
         Fit levels
       </button>
     </div>
+    <p class="histogram-view-hint">Scroll over the histogram to zoom the view, drag the axis strip to move it.</p>
     <div class="histogram-caption">
       <span role="status" :title="description">
         {{ status }}<template v-if="diagonalMask?.enabled"> · diagonal ±{{ formatLength(diagonalMask.distanceBp) }} ignored</template>
@@ -112,12 +135,14 @@
 <script setup lang="ts">
 import { formatLength, formatSignalCompact } from "@/app/core/format/formatSignal";
 import type { DiagonalMask } from "@/app/core/visualization/diagonalMask";
+import { validHistogramView, type HistogramRange } from "@/app/core/visualization/histogramView";
 import {
   computed,
   onBeforeUnmount,
   onMounted,
   shallowRef,
   ref,
+  reactive,
   watch,
 } from "vue";
 import type { ContactMapManager } from "@/app/core/mapmanagers/ContactMapManager";
@@ -146,6 +171,10 @@ const props = defineProps<{
   context: string;
   min: number;
   max: number;
+  viewFrom: number;
+  viewTo: number;
+  viewMode: "auto" | "manual";
+  viewMinimum: number;
   lower: number;
   upper: number;
   position: (value: number) => number;
@@ -155,8 +184,62 @@ const emit = defineEmits<{
   (event: "edit-endpoint", endpoint: Endpoint, output: number): void;
   (event: "remove", index: number): void;
   (event: "levels", lower: number, upper: number): void;
+  (event: "view", view: HistogramRange): void;
+  (event: "fit-view" | "whole-data"): void;
+  (event: "zoom-view", anchor: number, steps: number): void;
+  (event: "pan-view", fraction: number): void;
 }>();
 const editor = ref<HTMLElement>();
+const axisStrip = ref<HTMLElement>();
+const invalid = reactive({ from: false, to: false });
+const invalidTimers: Partial<Record<"from" | "to", number>> = {};
+
+function selectViewInput(event: FocusEvent): void {
+  (event.currentTarget as HTMLInputElement).select();
+}
+function commitViewInput(event: KeyboardEvent): void {
+  (event.currentTarget as HTMLInputElement).blur();
+}
+function editView(side: "from" | "to", event: Event): void {
+  const input = event.currentTarget as HTMLInputElement;
+  const value = input.value.trim() ? Number(input.value) : NaN;
+  const from = side === "from" ? value : Math.max(props.viewFrom, props.viewMinimum);
+  const to = side === "to" ? value : props.viewTo;
+  window.clearTimeout(invalidTimers[side]);
+  invalid[side] = !validHistogramView({ from, to }, props.viewMinimum);
+  if (invalid[side]) {
+    input.value = String(side === "from" ? props.viewFrom : props.viewTo);
+    invalidTimers[side] = window.setTimeout(() => { invalid[side] = false; }, 2000);
+    return;
+  }
+  emit("view", { from, to });
+}
+
+function wheelView(event: WheelEvent): void {
+  const box = editor.value?.getBoundingClientRect();
+  if (!box?.width || !event.deltaY) return;
+  const anchor = Math.max(0, Math.min(1, (event.clientX - box.left) / box.width));
+  const steps = event.deltaY / (event.deltaMode === 1 ? 3 : event.deltaMode === 2 ? 1 : 100);
+  emit("zoom-view", anchor, steps);
+}
+
+let pan: { pointer: number; lastX: number; width: number } | undefined;
+function startViewPan(event: PointerEvent): void {
+  const width = axisStrip.value?.getBoundingClientRect().width;
+  if (event.button !== 0 || !width) return;
+  axisStrip.value?.setPointerCapture(event.pointerId);
+  pan = { pointer: event.pointerId, lastX: event.clientX, width };
+}
+function moveViewPan(event: PointerEvent): void {
+  if (pan?.pointer !== event.pointerId) return;
+  const delta = event.clientX - pan.lastX;
+  pan.lastX = event.clientX;
+  if (delta) emit("pan-view", delta / pan.width);
+}
+function endViewPan(event: PointerEvent): void {
+  if (pan?.pointer === event.pointerId) pan = undefined;
+}
+
 const activeEndpoint = ref<Endpoint>();
 const endpoints = computed(() => {
   if (!props.curveEndpoints || props.oe || props.min >= props.max) return [];
@@ -260,6 +343,14 @@ const binned = computed(() =>
 const curve = computed(() =>
   binned.value ? histogramCurve(binned.value.counts) : ""
 );
+function outsidePercent(side: "below" | "above"): number {
+  const bins = binned.value;
+  const count = result.value?.values.length ?? 0;
+  if (!bins || count <= bins.nonfinite) return 0;
+  return Math.round(100 * bins[side] / (count - bins.nonfinite));
+}
+const belowPercent = computed(() => outsidePercent("below"));
+const abovePercent = computed(() => outsidePercent("above"));
 const marks = computed(() =>
   [
     { name: "lower", value: props.lower },
@@ -296,7 +387,7 @@ const description = computed(() => {
     b.below
   } below and ${
     b.above
-  } above slider limits. Fit levels uses sample percentiles 0.5 and 99.5${
+  } above the histogram view. Fit levels uses sample percentiles 0.5 and 99.5${
     props.oe ? " of positive ratios, with 0.5/2 fallbacks around neutral 1" : ""
   }. Curve height uses square-root counts.`;
 });
@@ -361,6 +452,7 @@ watch(
 );
 onMounted(observe);
 onBeforeUnmount(() => {
+  Object.values(invalidTimers).forEach((timer) => window.clearTimeout(timer));
   disposed = true;
   ++generation;
   controller?.abort();
@@ -373,6 +465,57 @@ onBeforeUnmount(() => {
 .viewport-histogram {
   cursor: default;
 }
+.histogram-axis-strip {
+  background: #f2f4f7;
+  cursor: ew-resize;
+  height: 8px;
+  touch-action: none;
+}
+.outside-count {
+  position: absolute;
+  top: 24px;
+  color: #475467;
+  font-size: 10.5px;
+  background: #ffffffe0;
+  border-radius: 3px;
+  padding-inline: 3px;
+  pointer-events: none;
+}
+.outside-count.below { left: 2px; }
+.outside-count.above { right: 2px; }
+.histogram-view-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  color: #475467;
+  font-size: 12px;
+}
+.view-caption { font-weight: 600; color: #344054; }
+.histogram-view-row input {
+  width: min(74px, 24%);
+  height: 26px;
+  border: 1px solid #ced4da;
+  border-radius: 5px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.histogram-view-row input[aria-invalid="true"] { outline: 1px solid #b42318; border-color: #b42318; }
+.view-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid #d0d5dd;
+  border-radius: 5px;
+  color: #344054;
+  background: white;
+}
+.view-action.manual { color: var(--bs-primary); border-color: var(--bs-primary); }
+.histogram-view-hint { margin: 0; color: #667085; font-size: 11.5px; }
 svg {
   display: block;
   width: 100%;

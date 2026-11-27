@@ -24,19 +24,20 @@
     ></div>
     <button
       v-for="side in sides"
+      v-show="side !== 'midpoint' || isVisible(valueFor(side))"
       :key="side"
       type="button"
       class="range-handle"
-      :class="side"
+      :class="[side, edgeFor(side)]"
       role="slider"
       :aria-label="
         side === 'midpoint'
           ? 'Color midpoint'
           : `${side === 'lower' ? 'Lower' : 'Upper'} threshold`
       "
-      :aria-valuemin="side === 'midpoint' ? lower : min"
-      :aria-valuemax="side === 'midpoint' ? upper : max"
-      :aria-valuenow="valueFor(side)"
+      :aria-valuemin="side === 'midpoint' ? clamp(lower) : min"
+      :aria-valuemax="side === 'midpoint' ? clamp(upper) : max"
+      :aria-valuenow="clamp(valueFor(side))"
       :aria-valuetext="textFor(side)"
       :title="
         side === 'midpoint'
@@ -50,6 +51,7 @@
     ></button>
     <button
       v-for="(point, index) in points"
+      v-show="isVisible(point)"
       :key="index"
       type="button"
       class="range-handle midpoint"
@@ -98,11 +100,14 @@ const emit = defineEmits<{
   (event: "remove", index: number): void;
   (event: "point", index: number, value: number): void;
   (event: "adjustment-start"): void;
+  (event: "adjustment-end"): void;
 }>();
 const rail = ref<HTMLElement>();
 const width = ref(300);
 let observer: ResizeObserver | undefined;
 let drag: { pointer: number; side: Side } | undefined;
+const clamp = (value: number) => Math.max(props.min, Math.min(props.max, value));
+const isVisible = (value: number) => value >= props.min && value <= props.max;
 const fraction = (value: number) =>
   props.max > props.min
     ? Math.max(0, Math.min(1, (value - props.min) / (props.max - props.min)))
@@ -131,6 +136,12 @@ const valueFor = (side: Side) =>
     : side === "lower"
     ? props.lower
     : props.upper;
+function edgeFor(side: Side): string | undefined {
+  if (side === "midpoint") return;
+  const value = valueFor(side);
+  if (value < props.min) return "pinned-below";
+  if (value > props.max) return "pinned-above";
+}
 const textFor = (side: Side) =>
   side === "midpoint"
     ? props.midpointText
@@ -197,11 +208,12 @@ function stop(event: PointerEvent) {
   if (rail.value?.hasPointerCapture(event.pointerId))
     rail.value.releasePointerCapture(event.pointerId);
   drag = undefined;
+  emit("adjustment-end");
 }
 function key(event: KeyboardEvent, side: Side) {
-  const current = valueFor(side);
-  const lower = side === "midpoint" ? props.lower : props.min;
-  const upper = side === "midpoint" ? props.upper : props.max;
+  const current = clamp(valueFor(side));
+  const lower = side === "midpoint" ? clamp(props.lower) : props.min;
+  const upper = side === "midpoint" ? clamp(props.upper) : props.max;
   const step = (upper - lower) / (event.shiftKey ? 1000 : 100);
   const values: Record<string, number> = {
     ArrowLeft: current - step,
@@ -216,6 +228,7 @@ function key(event: KeyboardEvent, side: Side) {
   if (event.key in values) {
     emit("adjustment-start");
     change(side, values[event.key]);
+    emit("adjustment-end");
     event.preventDefault();
     event.stopPropagation();
   }
@@ -312,4 +325,15 @@ onBeforeUnmount(() => observer?.disconnect());
 .range-handle:active {
   cursor: grabbing;
 }
+.pinned-below, .pinned-above { width: 10px; }
+.pinned-below { transform: translate(0, -50%); border-radius: 0 10px 10px 0; }
+.pinned-above { transform: translate(-100%, -50%); border-radius: 10px 0 0 10px; }
+.pinned-below::after, .pinned-above::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  border: 3px solid transparent;
+}
+.pinned-below::after { right: 100%; border-right-color: #475467; }
+.pinned-above::after { left: 100%; border-left-color: #475467; }
 </style>

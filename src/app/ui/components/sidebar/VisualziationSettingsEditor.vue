@@ -115,6 +115,7 @@
         :midpoint-text="formatSignal(midpointSignal) + ' signal; half color'"
         :gradient="colorRailGradient"
         @adjustment-start="keepAdjustmentLimits"
+        @adjustment-end="adjustingView = undefined"
         @lower="onLowerRangeInput"
         @upper="onUpperRangeInput"
         @midpoint="onMidpointInput"
@@ -133,6 +134,10 @@
             :diagonal-mask="diagonalMask"
             :min="sliderPositionMin"
             :max="sliderPositionMax"
+            :view-from="viewFrom"
+            :view-to="viewTo"
+            :view-mode="viewMode"
+            :view-minimum="viewScale.minimum"
             :lower="lowerSliderValue"
             :upper="upperSliderValue"
             :position="toHistogramPosition"
@@ -145,6 +150,11 @@
             @edit-endpoint="editEndpoint"
             @remove="removePoint"
             @levels="fitViewportLevels"
+            @view="setViewRange"
+            @fit-view="fitHistogramView"
+            @whole-data="storeHistogramView(undefined)"
+            @zoom-view="zoomHistogramView"
+            @pan-view="panHistogramView"
           >
             <div class="slider-spacing">
               <span id="slider-scale-label" class="scale-caption">
@@ -159,14 +169,14 @@
                 <button
                   type="button"
                   :aria-pressed="!sliderLogScale"
-                  @click="sliderLogScale = false"
+                  @click="setSliderLogScale(false)"
                 >
                   Linear
                 </button>
                 <button
                   type="button"
                   :aria-pressed="sliderLogScale"
-                  @click="sliderLogScale = true"
+                  @click="setSliderLogScale(true)"
                 >
                   Log
                 </button>
@@ -262,62 +272,8 @@
             </p>
           </div>
           <div class="range-details">
-            <div class="range-option">
-              <span>Slider limits</span>
-              <span class="range-summary-value">
-                {{ formatSignal(sliderMin) }} – {{ formatSignal(sliderMax) }}
-                <button
-                  type="button"
-                  class="range-text-button"
-                  aria-label="Edit slider limits"
-                  aria-controls="slider-limit-editor"
-                  :aria-expanded="editingSliderLimits"
-                  @click="editingSliderLimits = !editingSliderLimits"
-                >
-                  {{ editingSliderLimits ? "Done" : "Edit…" }}
-                </button>
-              </span>
-            </div>
-            <div
-              v-show="editingSliderLimits"
-              id="slider-limit-editor"
-              class="domain-inputs"
-            >
-              <label
-                >Minimum<input
-                  :value="
-                    focusedThreshold === 'slider-min'
-                      ? thresholdDraft
-                      : formatSignal(sliderLowerLimit)
-                  "
-                  @focus="
-                    startThresholdEdit($event, 'slider-min', sliderLowerLimit)
-                  "
-                  @blur="focusedThreshold = null"
-                  @input="sliderLowerLimit = readThreshold($event)"
-                  inputmode="decimal"
-                  aria-label="Slider minimum signal"
-                  @change="onSliderLimitChanged"
-              /></label>
-              <label
-                >Maximum<input
-                  :value="
-                    focusedThreshold === 'slider-max'
-                      ? thresholdDraft
-                      : formatSignal(sliderUpperLimit)
-                  "
-                  @focus="
-                    startThresholdEdit($event, 'slider-max', sliderUpperLimit)
-                  "
-                  @blur="focusedThreshold = null"
-                  @input="sliderUpperLimit = readThreshold($event)"
-                  inputmode="decimal"
-                  aria-label="Slider maximum signal"
-                  @change="onSliderLimitChanged"
-              /></label>
-            </div>
             <button
-              v-if="editingSliderLimits && !primaryDerivedSignal"
+              v-if="!primaryDerivedSignal"
               type="button"
               class="range-text-button"
               title="Use the exact minimum and maximum of the loaded tiles, including rare extreme pixels"
@@ -339,7 +295,7 @@
                 v-else
                 type="button"
                 class="range-text-button"
-                title="Reads all tiles to adjust only the slider limits"
+                title="Reads all tiles to update the data range used by Auto"
                 @click="fetchExactRange"
               >
                 Scan whole map
@@ -354,18 +310,6 @@
                 percentageSignalScale ? "Percentage scale: 0–100" : rangeStatus
               }}
             </p>
-            <div class="range-option">
-              <span>Focus range</span>
-              <button
-                type="button"
-                class="range-text-button"
-                aria-label="Focus range"
-                @click="focusThresholds"
-                title="Expand the selected range across the slider for finer adjustment"
-              >
-                Focus
-              </button>
-            </div>
             <button
               v-if="
                 midpointPosition !== undefined &&
@@ -462,6 +406,7 @@ import {
   MAX_CURVE_POINTS,
 } from "@/app/core/visualization/colorMidpoint";
 import { ColorTranslator } from "colortranslator";
+import { histogramScale, validHistogramView, type HistogramRange } from "@/app/core/visualization/histogramView";
 import { parseDistanceBp, type DiagonalMask } from "@/app/core/visualization/diagonalMask";
 import type { CurrentSignalRangeResponse } from "@/app/core/net/api/response";
 import { useMatrixViewStore } from "@/app/stores/matrixViewStore";
@@ -587,10 +532,13 @@ const rangeValidationError = computed(() => {
     return "O/E limits must satisfy 0 < lower < 1 < upper.";
   return "";
 });
-const sliderLowerLimit: Ref<number> = ref(0);
-const sliderUpperLimit: Ref<number> = ref(1);
-const sliderBoundsManual: Ref<boolean> = ref(false);
-const editingSliderLimits = ref(false);
+type ManualHistogramView = HistogramRange & { domain: HistogramRange };
+const autoDataRange = shallowRef<HistogramRange>({ from: 0, to: 1 });
+const manualView = shallowRef<ManualHistogramView>();
+const adjustingView = shallowRef<ManualHistogramView>();
+const histogramViewsByMap = new WeakMap<ContactMapManager, Map<string, ManualHistogramView>>();
+const useFullLoadedBounds = ref(false);
+let viewMap: ContactMapManager | undefined;
 const excludedBinsSelect = ref<HTMLSelectElement>();
 const sliderLogScale: Ref<boolean> = ref(false);
 const syncingFromColormap: Ref<boolean> = ref(false);
@@ -624,9 +572,6 @@ const histogramContext = computed(() =>
 function fitViewportLevels(lower: number, upper: number): void {
   lowerBound.value = lower;
   upperBound.value = upper;
-  sliderBoundsManual.value = true;
-  sliderLowerLimit.value = lower;
-  sliderUpperLimit.value = upper;
 }
 let rangeDomainContext = "";
 let rangeMap: ContactMapManager | undefined;
@@ -659,9 +604,7 @@ function showExactLimits(range: ExactRange, bpResolution: number): void {
   exactRangeResolution = bpResolution;
   signalMin.value = range.min;
   signalMax.value = range.max > range.min ? range.max : range.min + 1;
-  sliderBoundsManual.value = true;
-  sliderLowerLimit.value = signalMin.value;
-  sliderUpperLimit.value = signalMax.value;
+  autoDataRange.value = { from: signalMin.value, to: signalMax.value };
   const displayMode = visualizationOptionsStore.signalDisplayMode;
   const mode = displayMode === "OBSERVED_OVER_EXPECTED" ? "O/E" : "Expected";
   const suffix = primaryDerivedSignal.value ? ` (whole-map ${mode})` : "";
@@ -690,25 +633,21 @@ function openExcludedBinsChoice() {
   select.focus();
 }
 
-const sliderMin = computed(() =>
-  Math.min(
-    finiteOr(sliderLowerLimit.value, 0),
-    finiteOr(lowerBound.value, 0),
-    finiteOr(upperBound.value, 1)
-  )
-);
-const sliderMax = computed(() => {
-  const max = Math.max(
-    finiteOr(sliderUpperLimit.value, 1),
-    finiteOr(lowerBound.value, 0),
-    finiteOr(upperBound.value, 1)
-  );
-  return max <= sliderMin.value ? sliderMin.value + 1 : max;
+const autoView = computed<HistogramRange>(() => {
+  const from = Math.min(autoDataRange.value.from, finiteOr(lowerBound.value, 0), finiteOr(upperBound.value, 1));
+  const to = Math.max(autoDataRange.value.to, finiteOr(lowerBound.value, 0), finiteOr(upperBound.value, 1));
+  return { from, to: to > from ? to : from + 1 };
 });
-const sliderPositionMin = computed(() => toSliderPosition(sliderMin.value));
-const sliderPositionMax = computed(() => toSliderPosition(sliderMax.value));
-const lowerSliderValue = computed(() => toSliderPosition(lowerBound.value));
-const upperSliderValue = computed(() => toSliderPosition(upperBound.value));
+const viewMode = computed(() => manualView.value ? "manual" : "auto");
+const visibleView = computed(() => adjustingView.value ?? manualView.value ?? autoView.value);
+const viewFrom = computed(() => visibleView.value.from);
+const viewTo = computed(() => visibleView.value.to);
+const axisDomain = computed(() => adjustingView.value?.domain ?? manualView.value?.domain ?? autoView.value);
+const viewScale = computed(() => histogramScale(axisDomain.value, sliderLogScale.value));
+const sliderPositionMin = computed(() => viewScale.value.position(viewFrom.value));
+const sliderPositionMax = computed(() => viewScale.value.position(viewTo.value));
+const lowerSliderValue = computed(() => toHistogramPosition(lowerBound.value));
+const upperSliderValue = computed(() => toHistogramPosition(upperBound.value));
 const colorGamma = computed(() =>
   colormap.value instanceof SimpleLinearGradient ? colormap.value.gamma : 1
 );
@@ -719,7 +658,7 @@ const midpointSignal = computed(
 );
 const midpointPosition = computed(() =>
   !observedExpectedPalette.value && upperBound.value > lowerBound.value
-    ? toSliderPosition(midpointSignal.value)
+    ? toHistogramPosition(midpointSignal.value)
     : undefined
 );
 const curveData = computed(() =>
@@ -744,7 +683,7 @@ const controlPoints = computed(() => {
     : [{ x: midpointFraction(colorGamma.value), y: 0.5 }];
   return data.map((p) => {
     const fraction = curveMode.value === "smooth-log" ? valueFractionFromLog(p.x) : p.x;
-    const position = toSliderPosition(lowerBound.value + fraction * colorSpan.value);
+    const position = toHistogramPosition(lowerBound.value + fraction * colorSpan.value);
     return {
       fraction: p.x,
       position,
@@ -766,6 +705,7 @@ const transferPolyline = computed(() => {
           (sliderPositionMax.value - sliderPositionMin.value)
       )
     )
+    .filter((x) => x >= 0 && x <= 1)
     .sort((a, b) => a - b);
   return samples
     .map((x) => {
@@ -795,7 +735,6 @@ function editEndpoint(side: "lower" | "upper", output: number) {
 }
 function editPoint(index: number, position: number, output?: number) {
   if (midpointPosition.value === undefined) return;
-  keepAdjustmentLimits();
   const { start, end } = curve.value;
   const mode = curveData.value === undefined ? sliderCurveMode() : curveMode.value;
   const data = index < 0 && curveData.value === undefined
@@ -866,12 +805,12 @@ const colorRailGradient = computed(() => {
     return undefined;
   const start = fromColor.value,
     end = toColor.value;
+  const left = Math.max(lowerSliderValue.value, sliderPositionMin.value);
+  const right = Math.min(upperSliderValue.value, sliderPositionMax.value);
+  if (!(right > left)) return undefined;
   const stops = Array.from({ length: 33 }, (_, index) => {
     const offset = index / 32;
-    const value = fromSliderPosition(
-      lowerSliderValue.value +
-        offset * (upperSliderValue.value - lowerSliderValue.value)
-    );
+    const value = fromSliderPosition(left + offset * (right - left));
     const mix = transfer.value((value - lowerBound.value) / colorSpan.value);
     if (activePaletteMode.value === "MODDOTPLOT_IDENTITY") {
       const index = mix * (identityColors.length - 1);
@@ -894,25 +833,68 @@ const colorRailGradient = computed(() => {
 // Capture both ends before either threshold changes. Otherwise an outlying selected
 // threshold can drag the computed domain along with it on every pointer move.
 function keepAdjustmentLimits() {
-  const min = sliderMin.value,
-    max = sliderMax.value;
-  sliderBoundsManual.value = true;
-  sliderLowerLimit.value = min;
-  sliderUpperLimit.value = max;
+  adjustingView.value = { from: viewFrom.value, to: viewTo.value, domain: axisDomain.value };
 }
-function focusThresholds() {
-  if (!(upperBound.value > lowerBound.value)) return;
-  sliderBoundsManual.value = true;
-  sliderLowerLimit.value = lowerBound.value;
-  sliderUpperLimit.value = upperBound.value;
+function storeHistogramView(view: ManualHistogramView | undefined): void {
+  adjustingView.value = undefined;
+  manualView.value = view;
+  const manager = props.mapManager;
+  if (!manager) return;
+  let contexts = histogramViewsByMap.get(manager);
+  if (!contexts) {
+    contexts = new Map();
+    histogramViewsByMap.set(manager, contexts);
+  }
+  if (view) {
+    contexts.delete(rangeDomainContext);
+    contexts.set(rangeDomainContext, view);
+    const oldest = contexts.keys().next().value;
+    if (contexts.size > 64 && oldest !== undefined) contexts.delete(oldest);
+  } else contexts.delete(rangeDomainContext);
+}
+function setViewRange(range: HistogramRange): void {
+  if (validHistogramView(range, viewScale.value.minimum)) {
+    storeHistogramView({ ...range, domain: axisDomain.value });
+  }
+}
+function setViewPositions(from: number, to: number): void {
+  const scale = viewScale.value;
+  const minimum = sliderLogScale.value ? scale.position(scale.minimum) : -Infinity;
+  const shift = Math.max(0, minimum - from);
+  setViewRange({ from: Math.max(scale.minimum, scale.value(from + shift)), to: scale.value(to + shift) });
+}
+function zoomHistogramView(anchor: number, steps: number): void {
+  const from = sliderPositionMin.value, to = sliderPositionMax.value;
+  const position = from + (to - from) * anchor;
+  const scale = Math.pow(1.25, Math.max(-8, Math.min(8, steps)));
+  setViewPositions(position + (from - position) * scale, position + (to - position) * scale);
+}
+function panHistogramView(fraction: number): void {
+  const from = sliderPositionMin.value, to = sliderPositionMax.value;
+  const delta = (to - from) * fraction;
+  setViewPositions(from - delta, to - delta);
+}
+function fitHistogramView(): void {
+  if (rangeValidationError.value) return;
+  const from = toSliderPosition(lowerBound.value), to = toSliderPosition(upperBound.value);
+  const pad = (to - from) * 0.05;
+  if (!(pad > 0)) return;
+  const scale = viewScale.value;
+  setViewRange({ from: Math.max(scale.minimum, scale.value(from - pad)), to: scale.value(to + pad) });
+}
+function setSliderLogScale(enabled: boolean): void {
+  sliderLogScale.value = enabled;
+  const view = manualView.value;
+  if (enabled && view && view.from < viewScale.value.minimum) {
+    const clamped = { ...view, from: viewScale.value.minimum };
+    storeHistogramView(validHistogramView(clamped, viewScale.value.minimum) ? clamped : undefined);
+  }
 }
 function useLoadedRange() {
   exactRangeResolution = undefined;
+  useFullLoadedBounds.value = true;
+  autoDataRange.value = { from: signalMin.value, to: signalMax.value };
   fetchProcessedRange();
-  sliderBoundsManual.value = false;
-  sliderLowerLimit.value = signalMin.value;
-  sliderUpperLimit.value =
-    signalMax.value > signalMin.value ? signalMax.value : signalMin.value + 1;
 }
 
 watch(
@@ -1139,11 +1121,13 @@ async function loadOptionsForActiveSource(): Promise<void> {
         : "OBSERVED",
       activeTarget?.mode ?? "LINEAR",
     ]);
-    if (domainContext !== rangeDomainContext) {
+    if (manager !== viewMap || domainContext !== rangeDomainContext) {
+      viewMap = manager;
       rangeDomainContext = domainContext;
-      sliderBoundsManual.value = false;
-      sliderLowerLimit.value = lowerBound.value;
-      sliderUpperLimit.value = upperBound.value;
+      adjustingView.value = undefined;
+      manualView.value = histogramViewsByMap.get(manager)?.get(domainContext);
+      useFullLoadedBounds.value = false;
+      autoDataRange.value = { from: finiteOr(lowerBound.value, 0), to: finiteOr(upperBound.value, 1) };
     }
     updateFromStore();
     exactRangeResolution = undefined;
@@ -1170,10 +1154,7 @@ function updateSignalRange(ranges: CurrentSignalRangeResponse): void {
   if (percentageSignalScale.value) {
     signalMin.value = 0;
     signalMax.value = 100;
-    if (!sliderBoundsManual.value) {
-      sliderLowerLimit.value = 0;
-      sliderUpperLimit.value = 100;
-    }
+    autoDataRange.value = { from: 0, to: 100 };
     return;
   }
   void refreshProcessedRange();
@@ -1184,10 +1165,7 @@ function updateSignalRange(ranges: CurrentSignalRangeResponse): void {
   if (nextMax > nextMin) {
     signalMin.value = nextMin;
     signalMax.value = nextMax;
-    if (!sliderBoundsManual.value) {
-      sliderLowerLimit.value = nextMin;
-      sliderUpperLimit.value = nextMax;
-    }
+    autoDataRange.value = { from: nextMin, to: nextMax };
   }
 }
 
@@ -1202,7 +1180,7 @@ function fetchProcessedRange(): void {
   const resolution =
     manager.viewAndLayersManager.currentViewState.resolutionDesciptor
       .bpResolution;
-  const completedRange = completedRanges.get(
+  const completedRange = !useFullLoadedBounds.value && completedRanges.get(
     exactRangeContext(manager, resolution)
   );
   if (completedRange) {
@@ -1211,7 +1189,6 @@ function fetchProcessedRange(): void {
   }
   if (exactRangeResolution !== undefined) {
     exactRangeResolution = undefined;
-    sliderBoundsManual.value = false;
   }
   if (primaryDerivedSignal.value) return;
   if (
@@ -1240,15 +1217,14 @@ function fetchProcessedRange(): void {
   // Hi-C signal is heavy-tailed: a few diagonal pixels can exceed typical
   // thresholds by orders of magnitude and would pin both handles to the left.
   const robustMax = robustUpperLimit(range.processed) ?? range.processed.max;
-  if (!sliderBoundsManual.value) {
-    sliderLowerLimit.value = signalMin.value;
-    sliderUpperLimit.value =
-      robustMax > signalMin.value ? robustMax : signalMax.value;
-  }
+  autoDataRange.value = {
+    from: signalMin.value,
+    to: !useFullLoadedBounds.value && robustMax > signalMin.value ? robustMax : signalMax.value,
+  };
   rangeStatus.value = `Loaded viewport tiles (${range.tiles}): ${formatSignal(
     range.processed.min
   )} – ${formatSignal(range.processed.max)}${
-    robustMax < range.processed.max
+    !useFullLoadedBounds.value && robustMax < range.processed.max
       ? `; slider limited to ${formatSignal(robustMax)} (4 × 99.5th percentile)`
       : ""
   }; raw ${formatSignal(range.raw.min ?? 0)} – ${formatSignal(
@@ -1284,6 +1260,7 @@ async function fetchExactRange(): Promise<void> {
     rangeScanning.value
   )
     return;
+  useFullLoadedBounds.value = false;
   const probe = ++rangeProbe,
     generation = ++rangeGeneration;
   rangeController?.abort();
@@ -1400,9 +1377,7 @@ function updateFromStore() {
         if (percentageSignalScale.value) {
           signalMin.value = 0;
           signalMax.value = 100;
-          sliderBoundsManual.value = false;
-          sliderLowerLimit.value = 0;
-          sliderUpperLimit.value = 100;
+          autoDataRange.value = { from: 0, to: 100 };
         }
         queueMicrotask(() => {
           syncingFromColormap.value = false;
@@ -1465,8 +1440,8 @@ function onLowerRangeInput(value: number): void {
   const actual = fromSliderPosition(value);
   const minGap = Math.max(
     Math.abs(upperBound.value) * Number.EPSILON,
-    Math.abs(sliderMin.value) * Number.EPSILON,
-    Math.abs(sliderMax.value) * Number.EPSILON
+    Math.abs(viewFrom.value) * Number.EPSILON,
+    Math.abs(viewTo.value) * Number.EPSILON
   );
   lowerBound.value = observedExpectedPalette.value
     ? Math.max(
@@ -1483,46 +1458,28 @@ function onUpperRangeInput(value: number): void {
   const actual = fromSliderPosition(value);
   const minGap = Math.max(
     Math.abs(lowerBound.value) * Number.EPSILON,
-    Math.abs(sliderMin.value) * Number.EPSILON,
-    Math.abs(sliderMax.value) * Number.EPSILON
+    Math.abs(viewFrom.value) * Number.EPSILON,
+    Math.abs(viewTo.value) * Number.EPSILON
   );
   upperBound.value = observedExpectedPalette.value
     ? Math.max(actual, 1 + Math.max(Number.EPSILON, minGap))
     : Math.max(actual, lowerBound.value + minGap);
 }
 
-function onSliderLimitChanged(): void {
-  sliderBoundsManual.value = true;
-  if (!(sliderUpperLimit.value > sliderLowerLimit.value)) {
-    sliderUpperLimit.value = sliderLowerLimit.value + 1;
-  }
-}
-
 function toHistogramPosition(value: number): number {
-  if (value < sliderMin.value) return sliderPositionMin.value - 1;
-  if (value > sliderMax.value) return sliderPositionMax.value + 1;
+  if (value < viewFrom.value) return sliderPositionMin.value - 1;
+  if (value > viewTo.value) return sliderPositionMax.value + 1;
   return toSliderPosition(value);
 }
 
 function toSliderPosition(value: number): number {
-  const min = finiteOr(sliderMin.value, 0);
-  const max = finiteOr(sliderMax.value, min + 1);
-  const clamped = Math.max(min, Math.min(max, finiteOr(value, min)));
-  if (!sliderLogScale.value) {
-    return clamped;
-  }
-  return logarithmicPosition((clamped - min) / (max > min ? max - min : Number.EPSILON));
+  return viewScale.value.position(finiteOr(value, viewFrom.value));
 }
 
 function fromSliderPosition(value: number): number {
-  const min = finiteOr(sliderMin.value, 0);
-  const max = finiteOr(sliderMax.value, min + 1);
-  if (!sliderLogScale.value) {
-    return Math.max(min, Math.min(max, finiteOr(value, min)));
-  }
-  const position = Math.max(0, Math.min(1, finiteOr(value, 0)));
-  const actual = min + valueFractionFromLog(position) * (max - min);
-  return Math.max(min, Math.min(max, actual));
+  if (value <= sliderPositionMin.value) return viewFrom.value;
+  if (value >= sliderPositionMax.value) return viewTo.value;
+  return viewScale.value.value(value);
 }
 
 function finiteOr(value: number, fallback: number): number {
@@ -1578,8 +1535,7 @@ function finiteOr(value: number, fallback: number): number {
   gap: 6px;
   align-items: center;
 }
-.threshold-number-input,
-.domain-inputs input {
+.threshold-number-input {
   width: 100%;
   min-width: 0;
   padding: 7px 8px;
@@ -1599,8 +1555,7 @@ function finiteOr(value: number, fallback: number): number {
 .threshold-number-input::-webkit-inner-spin-button {
   appearance: none;
 }
-.threshold-number-input:focus,
-.domain-inputs input:focus {
+.threshold-number-input:focus {
   outline: 2px solid #2563eb;
   outline-offset: 1px;
   box-shadow: none;
@@ -1678,10 +1633,6 @@ function finiteOr(value: number, fallback: number): number {
   display: grid;
   gap: 0.35rem;
 }
-.range-summary-value {
-  font-variant-numeric: tabular-nums;
-  color: #64748b;
-}
 .excluded-bins-choice {
   width: 11rem;
   max-width: 100%;
@@ -1693,19 +1644,6 @@ function finiteOr(value: number, fallback: number): number {
   color: #64748b;
   margin: 8px 0 4px;
   line-height: 1.5;
-}
-.domain-inputs {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
-}
-.domain-inputs label {
-  display: grid;
-  gap: 4px;
-  color: #64748b;
-}
-.domain-inputs input {
-  font-size: 0.75rem;
 }
 .threshold-toolbar:empty {
   display: none;
